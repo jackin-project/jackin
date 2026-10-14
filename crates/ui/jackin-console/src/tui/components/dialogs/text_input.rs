@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `TextInputState` and rendering.
 
 use jackin_oppicker::ModalOutcome;
 use ratatui::{Frame, layout::Rect};
@@ -45,7 +44,6 @@ impl TextInputState<'_> {
         Self::new_with_forbidden(label, initial, Vec::new())
     }
 
-    /// Credential editor with redacted Debug and protected clipboard behavior.
     #[must_use]
     pub fn new_secret(label: impl Into<String>, initial: impl Into<String>) -> Self {
         let mut state = Self::new(label, "");

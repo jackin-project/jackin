@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Run the bounded fuzz contract for one workspace crate without workflow scripting.
-
 use std::env;
 use std::io::{self, Write};
 use std::process::Command;
@@ -38,9 +36,7 @@ pub(crate) fn run(args: CiFuzzArgs) -> Result<()> {
         "--locked",
         "--offline",
     ]))?;
-    // cargo-fuzz resolves the parent crate manifest from the invocation
-    // root, so run here (repo root) with an explicit --fuzz-dir instead of
-    // entering the auxiliary workspace (which has no parent manifest).
+
     for target in contract.targets {
         cmd::run_streaming(Command::new(&cargo_fuzz).args([
             "fuzz",

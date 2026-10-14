@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Keyboard-help overlay (`?` from any console stage) — builds the merged
-//! [`HelpEntry`] list for the active route from the live console keymaps.
-//!
-//! TODO(keyboard-help-mouse): pointer input is not routed to the overlay yet.
-
 use termrock::keymap::{KeyBinding, Keymap};
 use termrock::style::DesignSystem;
 use termrock::widgets::{HelpEntry, help_entries_from_keymap, merge_help_entries};
@@ -36,9 +31,6 @@ where
     })
 }
 
-/// Merged help entries for the route `state` currently shows. Every route
-/// also contributes the console-global bindings (`? help`). Pure function —
-/// the renderer and the dispatcher call it per event/frame.
 #[must_use]
 pub fn console_help_entries(state: &ManagerState<'_>, system: &DesignSystem) -> Vec<HelpEntry> {
     let mut parts: Vec<Vec<HelpEntry>> = Vec::new();

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Top-level console frame composition helpers.
 mod areas;
 mod brand_header_crop;
 mod chrome;

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Settings Auth tab key and modal handlers.
 mod apply;
 mod form;
 mod keys;

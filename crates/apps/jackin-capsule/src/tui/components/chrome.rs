@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Ratatui widgets for capsule chrome: status bar, pane borders, branch bar.
-//!
-//! These widgets replace the raw-ANSI rendering in `compose_full_frame` and
-//! `compose_partial_frame`. Together with `PaneBodyWidget` they make the
-//! capsule's full rendering path go through the Ratatui `Buffer` → `SocketBackend`
-//! pipeline, eliminating the old hand-rolled pane-body ANSI diff.
-
 #[cfg(test)]
 use crate::tui::components::status_bar::{PrefixMode, StatusTabCell};
 #[cfg(test)]
@@ -17,9 +10,6 @@ use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 use termrock::style::DesignSystem;
 use termrock::widgets::{Panel, PanelChrome};
 
-// ── Pane border ───────────────────────────────────────────────────────────────
-
-/// Renders the border and title for one pane through the Ratatui buffer.
 #[derive(Debug)]
 pub struct PaneBorderWidget {
     pub title: String,
@@ -45,10 +35,6 @@ impl Widget for PaneBorderWidget {
     }
 }
 
-/// Bottom chrome (branch/PR bar, hint row, debug chip) as a widget. Replaces
-/// the raw-ANSI append + byte cache: the rows ride the Ratatui cell buffer
-/// like every other cell, so one compositor owns the whole frame (§3.2 of
-/// the capsule rendering plan).
 pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) branch: Option<&'a str>,
     pub(crate) usage_status_label: Option<&'a str>,
@@ -59,13 +45,9 @@ pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) scrollback_active: bool,
     pub(crate) scroll_axes: termrock::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
-    /// When the operator has pressed the prefix key and the multiplexer is
-    /// awaiting a command chord, the hint bar switches to a prefix-command
-    /// cheat-sheet instead of the normal navigation hints.
+
     pub(crate) prefix_awaiting: bool,
-    /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
-    /// Passed to the hint builder so the palette-key glyph matches the
-    /// operator's `JACKIN_PALETTE_KEY` configuration.
+
     pub(crate) palette_key: u8,
 }
 
@@ -92,8 +74,6 @@ impl Widget for BottomChromeWidget<'_> {
     }
 }
 
-/// Dialog variant of the bottom chrome: branch/PR bar plus the dialog's own
-/// footer hint spans.
 pub(crate) struct DialogBottomChromeWidget<'a> {
     pub(crate) branch: Option<&'a str>,
     pub(crate) usage_status_label: Option<&'a str>,
@@ -106,10 +86,6 @@ pub(crate) struct DialogBottomChromeWidget<'a> {
 
 impl Widget for DialogBottomChromeWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // The bottom branch/context bar under a dialog renders only in a debug
-        // launch, where invocation correlation is visible. Outside debug it is
-        // hidden so the modal stays clean; only the dialog hint renders below
-        // the dialog in that case.
         if self.debug_run_id.is_some() {
             render_branch_bar_row(
                 buf,
@@ -164,8 +140,6 @@ fn render_branch_bar_row(
     );
 }
 
-/// The pane and footer chrome need one spacer each, so hints stay visually
-/// separate from both the agent border and the branch context bar.
 fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::widgets::HintSpan<'_>]) {
     use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
     use crate::tui::layout::{
@@ -179,7 +153,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[termrock::widget
     {
         return;
     }
-    let available = area.width.saturating_sub(4); // 2 col padding each side
+    let available = area.width.saturating_sub(4);
     let lines = termrock::widgets::wrapped_hint_lines(spans, available, &DesignSystem::default());
     let hint_rows = usize::from(CAPSULE_HINT_BAR_ROWS);
     if lines.is_empty() {

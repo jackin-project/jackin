@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch cockpit message vocabulary.
-
 use crate::tui::components::footer::StatusFooterHover;
 use ratatui::layout::Rect;
 

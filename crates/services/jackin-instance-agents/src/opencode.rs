@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `OpenCode` credential provisioning.
 
 use jackin_instance_credentials::AuthProvisionOutcome;
 
@@ -15,13 +14,6 @@ use crate::{
 };
 use jackin_instance_credentials::{reject_auth_path, repair_permissions, write_private_bytes};
 
-/// Provision `OpenCode`'s host-side `auth.json` per the chosen mode.
-///
-/// Source: `~/.local/share/opencode/auth.json` (`XDG_DATA`).
-/// `OpenCode` stores provider credentials (e.g. Z.AI Coding Plan API
-/// keys) in this file.
-///
-/// Follows the same semantics as `provision_amp_auth`.
 pub fn provision_opencode_auth(
     auth_json: &Path,
     mode: AuthForwardMode,
@@ -60,10 +52,6 @@ fn provision_opencode_auth_from_path(
             ));
         };
         if content.trim().is_empty() {
-            // A present-but-blank ambient file is invalid input, not an
-            // absent host login. Preserve the documented missing-file
-            // behavior (an in-container login may survive), but never
-            // carry stale role-state credentials across this invalidation.
             wipe_agent_file_state(auth_json, "OpenCode auth.json")?;
             return Ok((AuthProvisionOutcome::HostMissing, None));
         }

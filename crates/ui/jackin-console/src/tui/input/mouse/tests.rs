@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Mouse drag-resize tests for the console TUI.
-//! Unit tests for `handle_mouse`: the list/details seam is a
-//! mouse-draggable resize affordance driven entirely from `ManagerState`.
-//! These build `MouseEvent` values directly and bypass the ratatui
-//! event loop — enough to pin the seam hit-test + drag math without a
-//! real terminal.
-
 use super::super::InputOutcome;
 use super::{
     ConsoleHoverTarget, ConsoleScrollBlock, ScrollBlockRegion, container_info_copyable_row_at,

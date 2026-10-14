@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Client and control handshake negotiation.
 
 use super::{AttachHandshake, ControlReply, ControlRequest};
 use tokio::io::AsyncReadExt;
@@ -11,22 +10,12 @@ use tokio::time::Duration;
 use crate::protocol::attach::{ClientFrame, read_client_frame};
 use crate::socket;
 
-/// Per-connection handshake task. Negotiates the transport major before
-/// reading an application byte, then routes control-channel requests back to
-/// the main daemon loop (one-shot reply, closes the socket) or forwards a
-/// validated attach Hello via `handshake_tx`. Owning the slow `read_exact`
-/// calls here keeps a silent or slow client from stalling the daemon's main
-/// `select!`.
 pub(crate) async fn perform_handshake(
     mut stream: UnixStream,
     client_permit: tokio::sync::OwnedSemaphorePermit,
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
     control_tx: mpsc::UnboundedSender<ControlRequest>,
 ) -> jackin_telemetry::spawn::DetachedCompletion {
-    // Bound the handshake reads. A client that opens the socket and
-    // never sends a byte otherwise holds the `OwnedSemaphorePermit`
-    // forever — sixteen silent peers would starve the
-    // `MAX_CONCURRENT_CLIENTS` cap and lock out legitimate attaches.
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
     let peer_uid = if let Ok(credentials) = stream.peer_cred() {
@@ -59,8 +48,6 @@ pub(crate) async fn perform_handshake(
 
     let mut first = [0u8; 1];
     match tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.read(&mut first)).await {
-        // `protocol-check` closes after the ACK and sends no application
-        // bytes. That is a successful read-only negotiation, not a failed RPC.
         Ok(Ok(0)) => return jackin_telemetry::spawn::DetachedCompletion::success(),
         Ok(Ok(_)) => {}
         Ok(Err(_)) => {
@@ -216,15 +203,6 @@ pub(crate) async fn perform_control_handshake(
     completion
 }
 
-/// Serve one `events` subscription for as long as the peer reads it.
-///
-/// Unlike every other control RPC this connection is long-lived, so it holds
-/// its `MAX_CONCURRENT_CLIENTS` permit for its whole lifetime — a subscription
-/// is an attached client, not a query. Two things end it: the daemon dropping
-/// the sender (shutdown), or the peer going away. The peer's departure is
-/// detected from either side of the socket — a failed write, or EOF on the
-/// read half — so a subscriber that hangs up while the container is quiet is
-/// still reaped rather than lingering until the next event.
 pub(crate) async fn serve_control_subscription(
     mut stream: UnixStream,
     ctx: jackin_protocol::TelemetryContext,
@@ -253,7 +231,7 @@ pub(crate) async fn serve_control_subscription(
         tokio::select! {
             event = event_rx.recv() => {
                 let Some(event) = event else {
-                    // Daemon shutdown dropped the sender: a clean end of stream.
+
                     return jackin_telemetry::spawn::DetachedCompletion::success();
                 };
                 if socket::write_control_frame(&mut stream, &event).await.is_err() {
@@ -262,10 +240,10 @@ pub(crate) async fn serve_control_subscription(
                     );
                 }
             }
-            // The peer sends nothing on an events connection, so any readable
-            // event is EOF (hang-up) or a protocol violation. Both end the
-            // subscription; dropping `event_rx` unsubscribes on the next
-            // publish.
+
+
+
+
             read = stream.read(&mut discard) => {
                 return match read {
                     Ok(0) => jackin_telemetry::spawn::DetachedCompletion::success(),

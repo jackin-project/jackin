@@ -1,11 +1,3 @@
-//! jackin-usage-provider-core: provider snapshot collection, caching, and view formatting.
-//!
-//! **Architecture Invariant:** T2.
-//! Entry point: [`UsageCache`] — snapshot cache; [`usage_view`] — view composition.
-//!
-//! Shared substrate for the per-vendor provider crates (`jackin-usage-provider-*`):
-//! snapshot cache, fetch transport, outcome mapping, labels, and usage views.
-
 mod cache;
 mod cache_keys;
 mod consts;
@@ -70,7 +62,7 @@ pub use self::view::{
     status_bar_label, status_bar_quota_labels, summary_bucket, timed_bucket, usage_account_tab_id,
     usage_tab_source_label, usage_tab_status_label, with_status_slot,
 };
-// Crate-visible re-exports for host overview/compact presentation (plan 008).
+
 pub use self::format::{CliOutput, percent_before_used, run_cli_with_timeout_full};
 pub use self::format::{
     PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, usage_bucket_presentation,

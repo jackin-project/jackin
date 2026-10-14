@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `AppConfig` load/init behavior: TOML read, workspace-split migration,
-//! reserved-env validation, and builtin-agent sync.
-
 use crate::ConfigError;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -55,8 +52,6 @@ impl LoadedConfig {
         validate_editor_config_semantics(&self.config)
     }
 
-    /// Mutable access for first-run bootstrap scans, which register
-    /// discovered accounts before the editor validates and commits.
     pub(crate) fn config_mut(&mut self) -> &mut AppConfig {
         &mut self.config
     }
@@ -88,67 +83,55 @@ fn commit_pending_config_writes(
     commit_staged_config(journal_path, &mut staged, &mut deletes)
 }
 
-/// Stable content generation for one admitted config tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigGeneration(String);
 
 impl ConfigGeneration {
-    /// Lowercase SHA-256 digest of the sorted config-relative path and byte sequence.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
-/// Sanitized source scope for a read-only config diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigSourceScope {
-    /// Top-level `config.toml`.
     Global,
-    /// The split-workspace collection, without exposing a filesystem path.
+
     Workspaces,
-    /// One validated workspace name.
+
     Workspace(String),
 }
 
-/// Machine-readable failure category for one config source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigSourceIssue {
-    /// Source bytes could not be read.
     Unreadable,
-    /// TOML syntax or typed schema was malformed.
+
     Malformed,
-    /// Source schema is newer than this binary supports.
+
     UnsupportedVersion,
-    /// Source failed semantic validation.
+
     Invalid,
-    /// Workspace filename was not a valid workspace name.
+
     InvalidWorkspaceName,
-    /// Embedded and split definitions for one workspace disagreed.
+
     ConflictingWorkspaceDefinitions,
-    /// The config tree changed repeatedly while it was being read, or a
-    /// crashed multi-file publication is still pending (a write-locked open
-    /// forward-rolls it; the read path never serves the skewed bytes).
+
     TransientConflict,
 }
 
-/// Sanitized diagnostic produced while building a read-only config snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigSourceDiagnostic {
-    /// Logical source that failed; never a filesystem path.
     pub scope: ConfigSourceScope,
-    /// Stable failure category; never raw parser or credential text.
+
     pub issue: ConfigSourceIssue,
 }
 
-/// Valid portions of the operator config tree loaded without filesystem mutation.
 #[derive(Debug, Clone)]
 pub struct ReadOnlyConfigSnapshot {
-    /// Parsed global config with every valid embedded/split workspace attached.
     pub config: AppConfig,
-    /// Per-source failures; unrelated valid sources remain available.
+
     pub diagnostics: Vec<ConfigSourceDiagnostic>,
-    /// Content-derived generation for every readable config source encountered.
+
     pub generation: ConfigGeneration,
 }
 
@@ -165,11 +148,6 @@ struct RawConfigTree {
     diagnostics: Vec<ConfigSourceDiagnostic>,
 }
 
-/// Load the complete config tree without creating, migrating, or rewriting files.
-///
-/// A shared advisory lock is used when a writer lock already exists. A full
-/// content re-read still brackets parsing so first-writer races and external
-/// editors cannot produce a torn multi-file snapshot.
 pub fn load_read_only_config_snapshot(
     paths: &JackinPaths,
 ) -> crate::ConfigResult<ReadOnlyConfigSnapshot> {
@@ -185,9 +163,6 @@ where
 {
     let _guard = crate::persist::acquire_config_read_lock(&paths.config_file)?;
     for attempt in 0..READ_ONLY_SNAPSHOT_ATTEMPTS {
-        // A pending publication journal means a writer died mid-rename: the
-        // tree may hold global-new/workspace-old skew. Report it as transient
-        // instead of serving skew as stable, without touching disk.
         if publication_journal_path(&paths.config_file)
             .symlink_metadata()
             .is_ok()
@@ -206,8 +181,6 @@ where
     Ok(transient_config_snapshot())
 }
 
-/// Stable fallback snapshot when the on-disk tree cannot be trusted: either it
-/// tore repeatedly mid-read or a crashed publication is still pending.
 fn transient_config_snapshot() -> ReadOnlyConfigSnapshot {
     ReadOnlyConfigSnapshot {
         config: AppConfig::default(),
@@ -458,14 +431,6 @@ impl From<ConfigError> for WorkspaceNormalizationError {
     }
 }
 
-/// Normalize one workspace document before typed comparison or deserialization.
-///
-/// The split migration path can encounter a file written by an older binary
-/// while an embedded legacy workspace is being split. Compare the migrated
-/// semantic value, not the old version marker or fields that the current typed
-/// schema no longer accepts. Legacy fields are transformed only by their
-/// versioned migration step; mislabeled newer documents remain invalid. The
-/// caller owns the eventual atomic write.
 fn normalize_workspace_contents(
     raw: &str,
 ) -> Result<(String, Option<migrations::SchemaVersion>, bool), WorkspaceNormalizationError> {
@@ -545,13 +510,12 @@ pub(crate) fn workspace_file_path(paths: &JackinPaths, name: &str) -> PathBuf {
     paths.workspaces_dir.join(format!("{name}.toml"))
 }
 
-/// Load global config plus split workspace files, migrating legacy embedded workspaces.
 pub fn load_split_config(
     paths: &JackinPaths,
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
     let _lock = acquire_config_write_lock(&paths.config_file)?;
-    // Lock acquisition already forward-rolled any pending publication.
+
     let loaded = load_split_config_locked(paths, contents_opt)?;
     loaded.validate()?;
     loaded.commit(&publication_journal_path(&paths.config_file))
@@ -561,11 +525,6 @@ pub(crate) fn load_split_config_locked(
     paths: &JackinPaths,
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<LoadedConfig> {
-    // Capture legacy per-workspace `op_account` from the raw TOML before
-    // the typed parse below drops it: `WorkspaceConfig` no longer has that
-    // field (it moved onto each op ref in v1alpha5), so a typed round-trip
-    // would silently lose it for operators still on an embedded
-    // `[workspaces.*]` config. See `plan_legacy_workspace_writes`.
     let legacy_op_accounts = match contents_opt.as_deref() {
         Some(c) => legacy_workspace_op_accounts(c)?,
         None => BTreeMap::new(),
@@ -591,10 +550,7 @@ pub(crate) fn load_split_config_locked(
             );
             let migrated = migrated_from?.is_some();
             migrate_embedded_op_accounts(&mut doc)?;
-            // Legacy embedded workspaces predate per-workspace schema
-            // versions; migrate each through WORKSPACE_MIGRATIONS before
-            // strict parse, otherwise unknown agent tables brick the load
-            // (`WorkspaceConfig` denies unknown fields).
+
             migrate_embedded_workspaces(&mut doc).map_err(|issue| {
                 ConfigError::msg(format_args!(
                     "migrating embedded workspace configuration: {issue:?}"
@@ -614,9 +570,6 @@ pub(crate) fn load_split_config_locked(
     let mut pending_writes = split_writes;
     let mut global_write = None;
     if !legacy_workspaces.is_empty() {
-        // Lossy: serde round-trip drops comments and blank lines from
-        // `config.toml`. Acceptable here because this path runs once at
-        // legacy migration; steady-state edits go through `ConfigEditor`.
         let global_contents = toml::to_string_pretty(&config).with_context(|| {
             format!(
                 "serializing migrated global config for {}",
@@ -641,9 +594,6 @@ pub(crate) fn load_split_config_locked(
     }
 
     if let Some(global_write) = global_write {
-        // Keep the global rewrite last: it remains the migration commit
-        // marker, while the transaction restores earlier split files if a
-        // later rename or directory sync fails.
         pending_writes.push(global_write);
     }
     for (name, workspace) in legacy_workspaces {
@@ -656,7 +606,6 @@ pub(crate) fn load_split_config_locked(
     })
 }
 
-/// Run the complete workspace migration chain before strict deserialization.
 fn migrate_embedded_workspaces(doc: &mut DocumentMut) -> Result<(), ConfigSourceIssue> {
     let Some(workspaces) = doc
         .get_mut("workspaces")
@@ -681,7 +630,6 @@ fn migrate_embedded_workspaces(doc: &mut DocumentMut) -> Result<(), ConfigSource
     Ok(())
 }
 
-/// Upgrade embedded legacy `op_account` fields before strict deserialization.
 fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     let Some(workspaces) = doc
         .get_mut("workspaces")
@@ -704,7 +652,6 @@ fn migrate_embedded_op_accounts(doc: &mut DocumentMut) -> crate::ConfigResult<()
     Ok(())
 }
 
-/// Read and migrate every `*.toml` workspace file under `workspaces_dir`.
 pub fn load_workspace_files(
     workspaces_dir: &Path,
 ) -> crate::ConfigResult<BTreeMap<String, WorkspaceConfig>> {
@@ -801,14 +748,6 @@ fn load_workspace_files_locked(
     Ok((workspaces, pending_writes))
 }
 
-/// Extract `[workspaces.<name>].op_account` string values from a raw
-/// legacy `config.toml`. Absent `op_account` is skipped (the caller treats
-/// a missing entry as "no account to preserve"), but a present-but-
-/// non-string value bails loudly — it is operator data the v1alpha5
-/// migration (`migrate_workspace_op_account_to_refs`) refuses to silently
-/// drop, and this legacy-split path must honour the same contract. A TOML
-/// parse error is not handled here: the same `contents` is parsed with `?`
-/// upstream in the `load_or_init` flow before this runs.
 fn legacy_workspace_op_accounts(contents: &str) -> anyhow::Result<BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
     let Ok(doc) = contents.parse::<DocumentMut>() else {
@@ -836,10 +775,6 @@ fn legacy_workspace_op_accounts(contents: &str) -> anyhow::Result<BTreeMap<Strin
     Ok(out)
 }
 
-/// Validate every embedded workspace and plan only the split files that need
-/// to be created. This pass must stay read/compute-only: both
-/// `AppConfig::load_or_init` and `ConfigEditor::open` depend on a conflict in
-/// any later workspace leaving the complete config tree untouched.
 fn plan_legacy_workspace_writes(
     paths: &JackinPaths,
     workspaces: &BTreeMap<String, WorkspaceConfig>,
@@ -858,9 +793,6 @@ fn plan_legacy_workspace_writes(
         let desired: WorkspaceConfig = toml::from_str(&contents)
             .with_context(|| format!("parsing migrated workspace {name:?}"))?;
         if let Some(existing) = existing_workspaces.get(name) {
-            // The split loader has already normalized versioned/legacy bytes
-            // in memory and queued any required rewrite. Compare semantic
-            // current-schema values, never raw on-disk versions or fields.
             if existing == &desired {
                 continue;
             }
@@ -906,7 +838,6 @@ fn migrate_legacy_workspace_value(
     toml::from_str(&raw).with_context(|| format!("parsing migrated workspace {name:?}"))
 }
 
-/// Reject operator env maps that declare any reserved runtime name.
 pub fn validate_reserved_env_names(config: &AppConfig) -> crate::ConfigResult<()> {
     let mut offenses: Vec<String> = Vec::new();
     let mut check = |layer: &str, env: &BTreeMap<String, jackin_core::EnvValue>| {
@@ -950,20 +881,10 @@ fn validate_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
 
 fn validate_editor_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
     validate_reserved_env_names(config)?;
-    // Multi-account × #1006 reconciliation: the open-path gate keeps the
-    // pre-multi-account scope (registry + bindings). Launch-instance
-    // references stay enforced at save/load boundaries, so the editor can
-    // open a config whose instance account is not registered yet and
-    // repair it via `upsert_account` + `save`.
+
     config.validate_registry_and_bindings()
 }
 
-/// `true` when `raw` still embeds non-empty `[workspaces]` tables.
-///
-/// Every embedded-workspace document must take the in-memory migration and
-/// split path. A versioned document can still require splitting, and writing
-/// its schema migration first would mutate the global file before a conflicting
-/// split file is rejected.
 pub fn config_needs_split_migration(raw: &str) -> crate::ConfigResult<bool> {
     let doc: DocumentMut = raw.parse().context("parsing config.toml")?;
     let has_legacy_workspaces = doc
@@ -974,9 +895,6 @@ pub fn config_needs_split_migration(raw: &str) -> crate::ConfigResult<bool> {
 }
 
 pub(crate) fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<Option<String>> {
-    // Keep migration read-only here. `load_split_config_locked` combines the
-    // global and split plans, validates the complete config, then commits them
-    // under the caller's write lock.
     match std::fs::read_to_string(&paths.config_file) {
         Ok(raw) => Ok(Some(raw)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -987,22 +905,16 @@ pub(crate) fn load_config_contents(paths: &JackinPaths) -> crate::ConfigResult<O
 }
 
 impl AppConfig {
-    /// Load `config.toml` (migrate as needed), split workspaces, sync builtins, validate.
     pub fn load_or_init(paths: &JackinPaths) -> crate::ConfigResult<Self> {
         Self::load_or_init_detailed(paths).map(|(config, _)| config)
     }
 
-    /// [`load_or_init`](Self::load_or_init) plus the bootstrap report for
-    /// callers that surface first-run discovery results (the CLI `account
-    /// scan` report). The report carries accounts the builtin-sync open
-    /// imported; without it a first scan would print `Imported 0` for
-    /// accounts this load already registered.
     pub fn load_or_init_detailed(
         paths: &JackinPaths,
     ) -> crate::ConfigResult<(Self, crate::BootstrapReport)> {
         paths.ensure_base_dirs()?;
         let lock = acquire_config_write_lock(&paths.config_file)?;
-        // Lock acquisition already forward-rolled any pending publication.
+
         let loaded = (|| {
             let contents_opt = load_config_contents(paths)?;
             let loaded = load_split_config_locked(paths, contents_opt)?;
@@ -1029,17 +941,13 @@ impl AppConfig {
             loaded,
         )?;
 
-        // Keep the exclusive lock across migration, builtin repair, and all
-        // validation. Passing it into the editor avoids recursive acquisition
-        // while preserving one writer scope for the tree.
         let builtins_changed = config.sync_builtin_agents();
         let bootstrap = if builtins_changed {
             let (mut editor, report) = ConfigEditor::open_with_lock(paths, lock)?;
             for &(name, git) in super::roles::BUILTIN_ROLES {
                 editor.upsert_builtin_agent(name, git);
             }
-            // Take save()'s post-write parse: it preserves [roles.X.env] that
-            // sync_builtin_agents cleared in-memory.
+
             config = editor.save()?;
             report
         } else {

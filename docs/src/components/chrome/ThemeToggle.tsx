@@ -15,7 +15,7 @@ function storeTheme(theme: Theme) {
   try {
     localStorage.setItem(storageKey, theme)
   } catch {
-    // Storage may be unavailable; the DOM state still updates.
+
   }
 }
 

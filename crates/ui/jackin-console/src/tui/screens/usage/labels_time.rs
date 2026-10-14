@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage time and freshness labels.
 
 use super::UsageMetricGroup;
 
@@ -9,11 +8,6 @@ use jackin_protocol::usage_broker::{
     UsageQuotaStateV1, UsageWindowCategoryV1,
 };
 
-/// Lifecycle word for one account. The shared vocabulary (`needs login`,
-/// `needs secret`, `unsupported`, `unavailable`, `error`) matches Capsule
-/// `usage_tab_status_label`; `available`/`not started` have no Capsule
-/// snapshot-status counterpart (Capsule says `fresh` for the freshness axis,
-/// a different concept) and stay console-owned. See the alignment table test.
 pub(crate) fn lifecycle_label(lifecycle: UsageLifecycleV1) -> &'static str {
     match lifecycle {
         UsageLifecycleV1::Available => "available",
@@ -26,10 +20,6 @@ pub(crate) fn lifecycle_label(lifecycle: UsageLifecycleV1) -> &'static str {
     }
 }
 
-/// Quota-state word for one window/group. The Capsule tab vocabulary has no
-/// quota axis (`usage_tab_status_label` reports snapshot status plus the
-/// `{n}% left` headline, which the console mirrors in its list summary), so
-/// these words stay console-owned and are pinned by the alignment table test.
 pub(crate) fn quota_state_label(state: UsageQuotaStateV1) -> &'static str {
     match state {
         UsageQuotaStateV1::Available => "available",
@@ -45,8 +35,6 @@ pub(crate) fn quota_state_label(state: UsageQuotaStateV1) -> &'static str {
     }
 }
 
-/// Rank of one window category in the settled Overview-summary order (D30:
-/// long-range weekly/daily/monthly, model-specific, session, then other).
 pub(crate) const fn summary_category_rank(category: UsageWindowCategoryV1) -> u8 {
     match category {
         UsageWindowCategoryV1::LongRange => 0,
@@ -76,7 +64,6 @@ pub(crate) fn identity_kind_label(kind: UsageIdentityKindV1) -> &'static str {
     }
 }
 
-/// Past-age bucket shared by account and group freshness labels.
 pub(crate) fn past_age_label(age_secs: i64) -> String {
     if age_secs < 60 {
         "just now".to_owned()
@@ -89,9 +76,6 @@ pub(crate) fn past_age_label(age_secs: i64) -> String {
     }
 }
 
-/// `updated …` age fragment for freshness labels. The sub-minute bucket reads
-/// `updated now`, matching Capsule `relative_updated_label` ("Updated now")
-/// modulo the console's lowercase row style.
 pub(crate) fn updated_age_label(age_secs: i64) -> String {
     if age_secs < 60 {
         "updated now".to_owned()
@@ -100,9 +84,6 @@ pub(crate) fn updated_age_label(age_secs: i64) -> String {
     }
 }
 
-/// Relative time for a reset/renewal/expiry/retry epoch against an explicit
-/// `now`. Pure so tests stay deterministic; render passes wall-clock time.
-/// Past mirrors the freshness buckets; future uses `in …` buckets.
 pub(crate) fn relative_time_label(now_epoch: i64, epoch: i64) -> String {
     if epoch >= now_epoch {
         let ahead = epoch.saturating_sub(now_epoch);
@@ -120,9 +101,6 @@ pub(crate) fn relative_time_label(now_epoch: i64, epoch: i64) -> String {
     }
 }
 
-/// Credential/auth-session expiry as one relative fact. Derived only from the
-/// canonical expiry epoch: already-passed reads `expired …`, future reads
-/// `expires …`. Never confused with a quota reset or subscription renewal.
 pub(crate) fn credential_expiry_label(now_epoch: i64, expires_at_epoch: i64) -> String {
     if expires_at_epoch < now_epoch {
         format!(
@@ -137,8 +115,6 @@ pub(crate) fn credential_expiry_label(now_epoch: i64, expires_at_epoch: i64) -> 
     }
 }
 
-/// Operator-facing freshness age for one metric group. Staleness is per
-/// group: a fresh sibling never makes retained old data fresh.
 #[must_use]
 pub fn group_freshness_label(now_epoch: i64, group: &UsageMetricGroup) -> String {
     if group.phase == UsageFreshnessPhaseV1::Refreshing {

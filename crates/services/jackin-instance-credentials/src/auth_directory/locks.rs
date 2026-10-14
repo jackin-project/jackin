@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Source locks and transaction staging names.
 
 use super::{
     AUTH_DIRECTORY_SWAP_COUNTER, AuthMountLease, LockedSource, SOURCE_LOCK_POLL,

@@ -804,7 +804,7 @@ fn rejects_prewarm_image_workspace_with_role_git_override() {
 #[test]
 fn rejects_prewarm_keep_sidecar_container_without_sidecar_container() {
     let err = Cli::try_parse_from(["jackin", "prewarm", "--keep-sidecar-container"]).unwrap_err();
-    // `--keep-sidecar-container` requires `--sidecar-container`.
+
     assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     let msg = strip_ansi(&err.to_string());
     assert!(

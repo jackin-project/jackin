@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `op_reference`.
 use super::*;
 
 #[test]
@@ -103,8 +102,7 @@ fn legacy_breadcrumb_migration_treats_percent_as_literal_and_checks_structure() 
         ),
         Some("Vault/Item/Team%252FBlue/Token?attribute=username".to_owned())
     );
-    // Older snapshots often stored only the display path; the URI query is
-    // still preserved by `op` and must not be fabricated into the breadcrumb.
+
     assert_eq!(
         encode_legacy_op_breadcrumb(
             "Vault/Item/Token",

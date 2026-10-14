@@ -1,5 +1,3 @@
-//! Select CI test crates from changed paths and workspace dependencies.
-
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -13,19 +11,18 @@ use crate::cmd;
 
 #[derive(Args)]
 pub(crate) struct AffectedCratesArgs {
-    /// Read a previously resolved Cargo metadata document instead of invoking Cargo.
     #[arg(long, value_name = "PATH")]
     metadata: Option<PathBuf>,
-    /// Git revision at the base of the diff.
+
     #[arg(long, required_unless_present = "all")]
     base: Option<String>,
-    /// Git revision at the head of the diff.
+
     #[arg(long, default_value = "HEAD")]
     head: String,
-    /// Select every workspace crate (for manual/full CI runs).
+
     #[arg(long)]
     all: bool,
-    /// Emit a JSON object of crate names to dependency-closure cache keys.
+
     #[arg(long)]
     cache_keys: bool,
 }
@@ -110,9 +107,6 @@ pub(crate) fn cargo_metadata(snapshot: Option<&Path>) -> Result<Metadata> {
     cargo_metadata_inner(snapshot, true)
 }
 
-/// Online variant for local entry points (pre-commit hook): dev checkouts
-/// routinely lack cached manifests for non-host platforms, so `--offline`
-/// metadata fails where a build succeeds. `--locked` still holds.
 pub(crate) fn cargo_metadata_online() -> Result<Metadata> {
     cargo_metadata_inner(None, false)
 }
@@ -133,9 +127,6 @@ fn cargo_metadata_inner(snapshot: Option<&Path>, offline: bool) -> Result<Metada
 }
 
 fn changed_paths(base: &str, head: &str) -> Result<Vec<PathBuf>> {
-    // CI checks out the PR merge result and fetches only the base tip. A
-    // two-tree diff is exact for that shape and avoids downloading history
-    // solely to reconstruct a merge base.
     let range = format!("{base}..{head}");
     let output =
         cmd::output(cmd::command("git").args(["diff", "--name-only", "-z", &range, "--"]))?;
@@ -222,20 +213,14 @@ impl WorkspaceGraph {
         names
     }
 
-    /// Workspace-relative crate directories by package id, for mapping
-    /// changed paths (and nested-package path dependencies) to members.
     pub(crate) fn member_roots(&self) -> &BTreeMap<String, PathBuf> {
         &self.roots
     }
 
-    /// Package name for a workspace member id.
     pub(crate) fn member_name(&self, id: &str) -> Option<&str> {
         self.names.get(id).map(String::as_str)
     }
 
-    /// Names of members whose resolved forward closure contains a package
-    /// with this name. Used to pull in members affected by an on-disk
-    /// change to a non-member (detached) package.
     pub(crate) fn members_depending_on_package(&self, package: &str) -> Vec<String> {
         let changed = BTreeSet::from([package.to_owned()]);
         let mut names = self
@@ -546,11 +531,7 @@ fn is_workspace_wide(path: &Path) -> bool {
     let text = path.to_string_lossy();
     matches!(
         text.as_ref(),
-        "rust-toolchain.toml"
-            | "clippy.toml"
-            | ".config/nextest.toml"
-            | "mise.toml"
-            | "mise.lock"
+        "rust-toolchain.toml" | "clippy.toml" | ".config/nextest.toml" | "mise.toml" | "mise.lock"
     ) || text.starts_with(".cargo/")
 }
 

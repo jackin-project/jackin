@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Codex` usage response and window types.
 
 use super::{
     CodexAdditionalRateLimit, CodexResetCredits, CodexRpcCredits, CodexRpcRateLimitWindow,
@@ -52,15 +51,11 @@ pub struct CodexRateLimitDetails {
 
 #[derive(Debug, Deserialize)]
 pub struct CodexWindowSnapshot {
-    // Untyped so a float/string `used_percent` degrades to a used-less window
-    // instead of failing the whole response decode (wham shape drift).
     #[serde(rename = "used_percent")]
     pub(crate) used_percent: Option<serde_json::Value>,
     #[serde(rename = "reset_at")]
     pub(crate) reset_at: Option<i64>,
-    // Relative reset form the wham API sends instead of `reset_at` on some
-    // windows (`reset_at (epoch s) | reset_after_seconds`); resolved against
-    // the fetch time in `resets_at`.
+
     #[serde(rename = "reset_after_seconds")]
     pub(crate) reset_after_seconds: Option<i64>,
     #[serde(rename = "limit_window_seconds")]
@@ -83,24 +78,17 @@ impl CodexWindowSnapshot {
         }
     }
 
-    /// Raw used percent, rounded but unclamped: over-cap readings (>100%)
-    /// survive so the bucket can carry the raw figure (T02); only the bar
-    /// geometry clamps. `None` when the server sent no usable number.
     pub(crate) fn used_percent_raw(&self) -> Option<f64> {
         let used = json_number(self.used_percent.as_ref()?)?.round();
         used.is_finite().then_some(used)
     }
 
-    /// Used percent rounded and clamped to `0..=100`; `None` when the server
-    /// sent no usable number (missing, float drift handled, strings parsed).
     pub fn used_percent_clamped(&self) -> Option<u8> {
         let used = self.used_percent_raw()?;
         #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
         Some(used.clamp(0.0, 100.0) as u8)
     }
 
-    /// Effective reset epoch: absolute `reset_at` wins, otherwise `now` plus
-    /// the relative `reset_after_seconds` offset (negative offsets ignored).
     pub(crate) fn resets_at(&self, now: i64) -> Option<i64> {
         self.reset_at.or_else(|| {
             self.reset_after_seconds

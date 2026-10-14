@@ -1,8 +1,3 @@
-//! jackin-usage-provider-amp: `Amp` usage snapshot collection.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`amp_snapshot`] — `Amp` usage snapshot.
-
 mod fetch;
 mod parse;
 mod snapshot;

@@ -327,8 +327,6 @@ fn rejects_empty_source_hook() {
 #[cfg(unix)]
 #[test]
 fn accepts_symlinked_preflight_hook_inside_repo() {
-    // Contained hook symlinks (shared script conventions) validate;
-    // only repo escapes are rejected.
     let temp = tempdir().unwrap();
     std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
     std::fs::write(temp.path().join("real-hook.sh"), "#!/bin/bash\necho hi\n").unwrap();

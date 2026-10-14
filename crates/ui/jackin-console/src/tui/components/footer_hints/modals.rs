@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Modal footer dispatcher + the per-modal-mode hint-span builders
-//! (auth form, confirm save, container info, status popup, op picker).
-
 use crate::tui::components::{error_popup_hint_spans, save_discard_hint_spans};
 use termrock::scroll::ScrollAxes;
 use termrock::{keymap::glyph, widgets::HintSpan};
@@ -165,10 +162,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
         ModalFooterMode::ConfirmSave { scroll_axes } => confirm_save_footer_items(scroll_axes),
         ModalFooterMode::SaveDiscardCancel => save_discard_cancel_footer_items(),
         ModalFooterMode::ErrorPopup => error_popup_footer_items(),
-        // Generic default: no scroll segment. The actual render path (the host
-        // console's frame builder) has the dialog rect and re-derives the real
-        // axes, so this `none()` only guards a path that never reaches the
-        // screen — and even then it never claims an axis the body cannot move.
+
         ModalFooterMode::ContainerInfo => container_info_footer_items(ScrollAxes::none()),
         ModalFooterMode::StatusPopup => status_popup_footer_items(),
         ModalFooterMode::OpSection => super::settings::op_section_footer_items(),
@@ -185,10 +179,6 @@ pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'stati
     confirm_save::confirm_save_hint_spans_for_axes(scroll_axes)
 }
 
-/// Hint spans for inline yes/no confirm modals (`Modal::Confirm`,
-/// `SettingsModal::MountConfirm`, `SettingsModal::EnvConfirm`).
-///
-/// Delegates to [`crate::tui::components::confirm_hint_spans`] so this matches
 #[must_use]
 pub fn save_discard_cancel_footer_items() -> Vec<HintSpan<'static>> {
     save_discard_hint_spans()
@@ -199,16 +189,8 @@ pub fn error_popup_footer_items() -> Vec<HintSpan<'static>> {
     error_popup_hint_spans()
 }
 
-/// Debug-info modal footer: the *available* scroll axes (per `axes`), dismiss,
-/// and click-to-copy. The scroll segment is omitted when the body fits and
-/// shows only the axis/axes that actually overflow, so the footer never
-/// advertises a scroll direction the operator cannot move.
 #[must_use]
 pub fn container_info_footer_items(axes: ScrollAxes) -> Vec<HintSpan<'static>> {
-    // Delegate to the shared Debug-info hint builder so the console list modal,
-    // the launch cockpit, and any future surface render byte-identical hint bars
-    // for the same dialog. The UNREGISTERABLE annotations live at the shared
-    // definition in `crate::tui::components::container_info_surface::debug_info_hint_spans`.
     crate::tui::components::container_info_surface::debug_info_hint_spans(axes)
 }
 
@@ -235,70 +217,54 @@ pub fn auth_form_footer_items(
 ) -> Vec<HintSpan<'static>> {
     let mut items: Vec<HintSpan<'static>> = match focus {
         AuthFormFocus::Mode => {
-            let mut v = vec![
-                // UNREGISTERABLE(auth-form-no-keymap): Space cycles mode inline.
-                super::key_span("␣"),
-                HintSpan::Text("cycle"),
-            ];
+            let mut v = vec![super::key_span("␣"), HintSpan::Text("cycle")];
             if shows_source_folder || shows_credential_block {
                 v.extend([
                     HintSpan::Sep,
-                    // UNREGISTERABLE(auth-form-no-keymap): Down navigates fields inline.
                     super::key_span("↓"),
                     HintSpan::Text("navigate"),
                 ]);
             }
             v.extend([
                 HintSpan::GroupSep,
-                // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
                 super::key_span("⇥"),
                 HintSpan::Text("button row"),
             ]);
             v
         }
         AuthFormFocus::SourceFolder => vec![
-            // UNREGISTERABLE(auth-form-no-keymap): Enter handled inline.
             super::key_span("↵"),
             HintSpan::Text("browse"),
             HintSpan::Sep,
-            // UNREGISTERABLE(multi-key-display-group): combined navigate display.
             super::key_span(glyph::UP_DOWN),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
-            // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
             super::key_span("⇥"),
             HintSpan::Text("button row"),
         ],
         AuthFormFocus::CredentialSource => vec![
-            // UNREGISTERABLE(auth-form-no-keymap): Enter confirms the field inline.
             super::key_span("↵"),
             HintSpan::Text("set"),
             HintSpan::Sep,
-            // UNREGISTERABLE(auth-form-no-keymap): ↑↓ navigates credential source list inline.
             super::key_span("↑"),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
-            // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
             super::key_span("⇥"),
             HintSpan::Text("button row"),
         ],
         AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
-            // UNREGISTERABLE(multi-key-display-group): combined left/right display.
             super::key_span(glyph::LEFT_RIGHT),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
-            // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
             super::key_span("⇥"),
             HintSpan::Text("fields"),
             HintSpan::GroupSep,
-            // UNREGISTERABLE(auth-form-no-keymap): Enter handled inline.
             super::key_span("↵"),
             HintSpan::Text("select"),
         ],
     };
     items.extend([
         HintSpan::GroupSep,
-        // UNREGISTERABLE(auth-form-no-keymap): Esc cancels inline.
         super::key_span("Esc"),
         HintSpan::Text("cancel"),
     ]);

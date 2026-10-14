@@ -18,8 +18,6 @@ fn default_launch_scope_precedence_replaces_without_union() {
         ))
     );
 
-    // Clearing the role scope falls through to the workspace scope, not a
-    // union of both.
     config
         .workspaces
         .get_mut(ws.as_str())
@@ -48,8 +46,6 @@ fn global_default_filters_unauthorized_candidates() {
         ))
     );
 
-    // A global default that filters down to nothing admits nothing for
-    // the agent: an error, never a silent fallback to the eligible list.
     config.default_launch = Some(vec!["claude-out".into()]);
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
     assert!(!eligible.is_empty());
@@ -93,7 +89,7 @@ fn workspace_default_outside_allowlist_hard_errors() {
 #[test]
 fn incompatible_default_configuration_errors() {
     let (mut config, ws) = launch_config();
-    // `o-codex` is an OpenAI account: it cannot authenticate Claude.
+
     config.agent_configurations.insert(
         "claude-bogus".into(),
         agent_configuration(Agent::Claude, "o-codex"),
@@ -123,8 +119,7 @@ fn several_admitted_instances_open_picker_in_id_order() {
 #[test]
 fn shared_account_instances_open_picker_with_exact_configurations() {
     let (mut config, ws) = launch_config();
-    // Two instances, one account (different models): keep both configuration
-    // identities in the picker instead of collapsing them to the account.
+
     for (id, model) in [("claude-a-fast", "fast"), ("claude-a-deep", "deep")] {
         let mut configuration = agent_configuration(Agent::Claude, "a-claude");
         configuration.model = Some(model.into());
@@ -182,7 +177,6 @@ fn defaults_override_bindings_without_fallback() {
     set_role_default(&mut config, ws.as_str(), ROLE, &["claude-z"]);
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
 
-    // The binding points elsewhere, but the admitted set wins.
     assert_eq!(
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap(),
         LaunchAccountSelection::Launch(jackin_core::LaunchSelection::Configuration(
@@ -190,8 +184,6 @@ fn defaults_override_bindings_without_fallback() {
         ))
     );
 
-    // An invalid binding is ignored entirely while a valid default
-    // applies: the defaults regime never consults bindings.
     update_role_binding(&mut config, ws.as_str(), ROLE, Agent::Claude, "ghost");
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
     assert_eq!(
@@ -209,8 +201,6 @@ fn invalid_default_beats_valid_binding() {
     set_role_default(&mut config, ws.as_str(), ROLE, &["ghost"]);
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
 
-    // The binding is valid, but the invalid explicit default fails the
-    // whole selection instead of falling back to it.
     let error =
         select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap_err();
     assert!(

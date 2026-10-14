@@ -1,14 +1,3 @@
-//! jackin-usage-token-monitor: per-session token-spend monitor.
-//!
-//! **Architecture Invariant:** T2.
-//! Entry point: [`TokenMonitor`] — throttled session polling.
-//!
-//! Reads provider-specific local `JSONL` / `SQLite` files inside the container and
-//! tracks per-session input/output/cache token totals (and cost, from the
-//! provider stream or the static pricing table). Polled from the daemon state
-//! tick (self-throttled to a 30s/60s cadence); totals are served on demand
-//! through the `ClientMsg::TokenUsage` control reply.
-
 pub mod amp;
 pub mod claude;
 pub mod codex;

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage account list rendering.
 
 use super::{
     append_publication_age, empty_publication_lines, freshness_age_label, meter_line, meter_style,

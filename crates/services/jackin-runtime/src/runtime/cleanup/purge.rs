@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Class data and container state purge.
 
 use crate::instance::InstanceIndex;
 use jackin_core::CommandRunner;
@@ -21,11 +20,6 @@ pub async fn purge_class_data(
         return Ok(());
     }
 
-    // Drive each filesystem teardown to completion, then batch the
-    // index update for whichever containers succeeded. Returning early
-    // on the first failure without recording the prior successes would
-    // leave the index claiming the already-deleted state dirs still
-    // hold their pre-purge status.
     let role_slug = crate::instance::naming::compact_component(&selector.name, "role");
     let mut matched = Vec::new();
     let mut first_error: Option<anyhow::Error> = None;
@@ -63,9 +57,6 @@ pub async fn purge_container_state(
     InstanceIndex::mark_purged(&paths.data_dir, container_name)
 }
 
-/// Per-container filesystem teardown (docker-state guard + isolation
-/// cleanup + state directory removal). Index updates are batched by the
-/// caller so multi-container purges avoid an O(M²) read-rewrite cycle.
 pub(crate) async fn purge_container_filesystem(
     paths: &JackinPaths,
     container_name: &str,
@@ -85,17 +76,10 @@ pub(crate) async fn purge_container_filesystem(
     )
     .await?;
     let state_dir = paths.data_dir.join(container_name);
-    // Owned-validated-path removal: the container name is operator/index
-    // input, so deletion is containment-bound to the data dir and fd-pinned
-    // (`O_NOFOLLOW` at every level). Escapes and symlinks are refused
-    // loudly instead of followed; a missing dir is still a no-op.
+
     crate::isolation::safe_remove::safe_remove_dir_contained(&paths.data_dir, &state_dir)?;
-    // Remove the host-side bind-mount dir (~/.jackin/sockets/<container>/)
-    // that holds the daemon socket and Capsule launch config. Skipping it
-    // here leaks stale `agent.toml` across load/purge cycles; a future
-    // launch with the same container basename would bind-mount the old
-    // contents before the host's mkdir + write overwrites them.
+
     remove_socket_dir(paths, container_name).await;
-    // Coordination inodes live outside the purged runtime state and persist.
+
     Ok(())
 }

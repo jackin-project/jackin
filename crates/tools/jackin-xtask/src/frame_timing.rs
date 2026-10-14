@@ -1,5 +1,3 @@
-//! PTY-backed host-console frame timing for scheduled health measurement.
-
 use std::fs;
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -16,16 +14,15 @@ const FRAME_MIN_BYTES: usize = 256;
 
 #[derive(Args, Debug)]
 pub(crate) struct FrameTimingArgs {
-    /// Built jackin binary to execute.
     #[arg(long, default_value = "target/debug/jackin")]
     binary: PathBuf,
-    /// JSON artifact path.
+
     #[arg(long, default_value = "target/frame-timing.json")]
     output: PathBuf,
-    /// Independent PTY samples.
+
     #[arg(long, default_value_t = 3)]
     samples: usize,
-    /// Per-frame timeout.
+
     #[arg(long, default_value_t = 10_000)]
     timeout_ms: u64,
 }

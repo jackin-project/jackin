@@ -84,15 +84,10 @@ impl CommandRunner for ScriptedRunner {
         cwd: Option<&Path>,
         _opts: &RunOptions,
     ) -> anyhow::Result<String> {
-        // Scripted outputs are pre-pinned by construction; descriptor pinning
-        // is a no-op for the queue.
         self.capture(program, args, cwd).await
     }
 }
 
-/// Turn the fixture repo into a real repository with a real worktree plus
-/// registration for `branch`, returning the branch tip. Journaled cleanup
-/// pins these host structures, so the e2e exercises the real flow.
 #[expect(
     clippy::disallowed_methods,
     reason = "test fixture shells real git to build journaled-cleanup structures"
@@ -142,7 +137,7 @@ fn init_repo_with_scratch_worktree(
 async fn materialize_then_clean_exit_removes_record_and_branch() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
-    // Journaled cleanup pins and validates the host HEAD on disk.
+
     std::fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     let data = TempDir::new().unwrap();
     let cdir = data.path().join("jackin-the-architect");
@@ -164,12 +159,6 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
         mount_heal: jackin_config::MountHealReport::default(),
     };
 
-    // materialize_workspace capture queue:
-    //   rev-parse --show-toplevel (preflight)
-    //   status --porcelain (clean)
-    //   ext.worktreeConfig --get
-    //   format --get
-    //   rev-parse HEAD
     let mut runner =
         ScriptedRunner::new(&[&repo.path().to_string_lossy(), "", "", "0", "deadbeef\n"]);
     let mat = materialize_workspace(
@@ -192,19 +181,12 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     assert_eq!(recs.len(), 1);
     assert_eq!(recs[0].cleanup_status, CleanupStatus::Active);
 
-    // Override files were written alongside the materialized worktree
-    // and the MaterializedMount carries the auxiliary mount metadata
-    // for the three extra bind mounts (host .git/, .git pointer
-    // override, gitdir back-pointer override). No commondir override:
-    // the admin entry lives natively inside the host .git/ mount, so
-    // git's on-disk default `commondir = ../..` resolves correctly.
     let m = &mat.mounts[0];
     let aux = m
         .worktree_aux
         .as_ref()
         .expect("worktree mount must carry aux mount metadata");
 
-    // Container-side targets all live under a single /jackin/host/<dst-tree>/ root.
     assert_eq!(
         aux.host_git_target, "/jackin/host/workspace/jackin/.git",
         "host .git mount mirrors host topology and ends in .git",
@@ -217,7 +199,6 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     );
     assert_eq!(aux.host_git_dir, format!("{}/.git", repo.path().display()));
 
-    // Override file contents.
     let git_file_content = std::fs::read_to_string(&aux.git_file_override).unwrap();
     assert_eq!(
         git_file_content,
@@ -230,12 +211,6 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
         "back-pointer matches the worktree's <dst>/.git location inside the container",
     );
 
-    // Host layout: worktree under <state>/git/worktree/repo/<dst-tree>/<container>/,
-    // overrides under <state>/git/overrides/<dst-tree>/. The fake
-    // runner doesn't actually run `git worktree add` so the worktree
-    // subdir itself isn't materialized; assert via the recorded
-    // `bind_src` instead. Override files DO land on disk because
-    // `write_git_overrides` writes them via std::fs.
     assert!(
         m.bind_src
             .ends_with("/git/worktree/repo/workspace/jackin/jackin-the-architect"),
@@ -251,8 +226,6 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
         "commondir override removed in V1 final design",
     );
 
-    // Finalize a clean exit. Capture queue: status --porcelain (clean),
-    // for-each-ref refs/heads/ (single scratch branch parked at base).
     let branches = "jackin/scratch/jackin-the-architect\tdeadbeef\t\t\n";
     let wt_path = cdir.join("git/worktree/repo/workspace/jackin/jackin-the-architect");
     let tip = init_repo_with_scratch_worktree(
@@ -263,10 +236,6 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     .unwrap();
     let full_ref = format!("refs/heads/jackin/scratch/jackin-the-architect\t{tip}\t\tEND\n");
 
-    // Capture queue: status (clean), short for-each-ref (scratch parked at
-    // base), symbolic-ref (attached), then the journaled inventory: full
-    // for-each-ref, ref format, reinspect, and three post-deletion absence
-    // proofs.
     let mut finalize_runner =
         ScriptedRunner::new(&["", branches, "", &full_ref, "files", &full_ref, "", "", ""]);
     let mut prompt = NoPrompt;
@@ -287,8 +256,7 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
     assert!(read_records(&cdir).unwrap().is_empty());
-    // Journaled cleanup removes via pinned descriptors, not CLI: prove the
-    // worktree, its registration, and the scratch ref are gone from disk.
+
     assert!(!wt_path.exists(), "isolated worktree removed");
     assert!(
         !repo

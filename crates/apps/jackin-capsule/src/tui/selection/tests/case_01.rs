@@ -177,8 +177,6 @@ fn separators_and_blanks_yield_nothing() {
 
 #[test]
 fn wide_cells_map_columns_correctly() {
-    // "你好 jackin" — the two wide cells occupy columns 0..=3, so the
-    // ASCII word starts at display column 5.
     let line = "\u{4f60}\u{597d} jackin";
     let snapshot = row(line);
     let (start, end) = word_bounds_in_row(&snapshot, 7).expect("word under click");
@@ -191,12 +189,12 @@ fn wide_cells_map_columns_correctly() {
 #[test]
 fn quoted_paths_with_spaces_select_whole_without_quotes() {
     let line = r#"cp "/my docs/file one.txt" /dest"#;
-    // Click inside "docs".
+
     assert_eq!(
         word_at_col(line, 9).as_deref(),
         Some("/my docs/file one.txt")
     );
-    // Single quotes and backticks pair the same way.
+
     assert_eq!(
         word_at_col("see '/tmp/a b' now", 7).as_deref(),
         Some("/tmp/a b")
@@ -205,7 +203,6 @@ fn quoted_paths_with_spaces_select_whole_without_quotes() {
 
 #[test]
 fn quoted_text_without_a_slash_is_a_plain_token() {
-    // No `/` inside the quotes: the token pass owns the click.
     assert_eq!(
         word_at_col(r#"say "hello there""#, 6).as_deref(),
         Some("hello")
@@ -214,7 +211,6 @@ fn quoted_text_without_a_slash_is_a_plain_token() {
 
 #[test]
 fn escaped_quotes_are_content_not_delimiters() {
-    // The escaped quote must not close the pair early.
     let line = r#"x "/a \"b\" c/d" y"#;
     assert_eq!(word_at_col(line, 5).as_deref(), Some(r#"/a \"b\" c/d"#));
 }
@@ -235,8 +231,6 @@ fn blank_rows_select_nothing() {
 
 #[test]
 fn angle_brackets_break_like_the_bracket_family() {
-    // Alacritty / kitty / VS Code semantics: generics and includes
-    // double-click to the inner identifier.
     let line = "let v: Vec<String> = read();";
     assert_eq!(word_at_col(line, 13).as_deref(), Some("String"));
     assert_eq!(word_at_col(line, 8).as_deref(), Some("Vec"));
@@ -252,8 +246,6 @@ fn angle_brackets_break_like_the_bracket_family() {
 
 #[test]
 fn kitty_word_characters_all_join() {
-    // kitty's select_by_word_characters set: @ - . / _ ~ ? & = % + #
-    // must all extend a token so URLs-ish and env-ish tokens copy whole.
     let line = "FOO=bar+baz%2F~x#frag&q?y@host";
     assert_eq!(word_at_col(line, 12).as_deref(), Some(line));
 }

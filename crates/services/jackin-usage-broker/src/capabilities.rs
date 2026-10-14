@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker capability allowlists.
 
 use std::collections::BTreeSet;
 
@@ -8,7 +7,7 @@ use jackin_protocol::usage_broker::UsageAccountCapability;
 
 use crate::{ForwardedUsageSources, capability_for_binding, forwarding_requirement};
 use jackin_usage_discovery::{ValidatedCredentialSource, ValidatedUsageDiscovery};
-/// Derive an exact per-container capability allowlist before broker startup.
+
 #[must_use]
 pub(crate) fn forwarded_usage_capabilities(
     discovery: &ValidatedUsageDiscovery,
@@ -40,10 +39,6 @@ pub(crate) fn forwarded_usage_capabilities(
         .collect()
 }
 
-/// Resolve one exact configured account after intersecting it with the
-/// credential sources forwarded into the current Capsule. The source proof is
-/// part of launch authority: a provider surface or account id alone cannot
-/// select a credential when several routes share that identity.
 #[must_use]
 pub(crate) fn usage_capability_for_selected_account_with_sources(
     discovery: &ValidatedUsageDiscovery,
@@ -59,8 +54,6 @@ pub(crate) fn usage_capability_for_selected_account_with_sources(
         .filter(|binding| binding.provenance.contains(&provenance))
         .filter(|binding| {
             sources.is_none_or(|sources| match &binding.source {
-                // API-key/OAuth routes need exact staged source proof. Profile
-                // and forwarded capability behavior stays on the baseline path.
                 ValidatedCredentialSource::Env { .. } => {
                     forwarding_requirement(binding).is_forwarded(sources)
                 }

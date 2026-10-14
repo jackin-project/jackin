@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Backend selection for persisted runtime instances.
-//!
-//! The selector reads the backend recorded in the instance manifest
-//! (Docker vs Apple Container) and defaults legacy manifests without
-//! recorded resources to Docker. Lifecycle dispatch over the selected
-//! backend stays in the `jackin-runtime` hub.
-
 use jackin_core::JackinPaths;
 use jackin_instance::{BackendResources, InstanceManifest};
 

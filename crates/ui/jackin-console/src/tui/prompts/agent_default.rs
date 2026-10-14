@@ -1,49 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Launch agent default resolution.
 
 use jackin_config::AppConfig;
 
-/// Outcome of the per-agent `account_bindings` lookup shared by the
-/// committed-agent launch path and the new-session picker.
-///
-/// Mirrors `jackin_config::resolve_account` precedence — role binding, then
-/// workspace binding, then the global binding. Every binding that names an
-/// account outside the workspace allowlist is a hard error; an inherited
-/// global selection cannot widen workspace access or silently choose another
-/// account.
-///
-/// This is the legacy regime: bindings apply only when no `default_launch`
-/// is configured at any scope. A configured default set is authoritative
-/// admission and overrides every binding (see [`select_launch_account`]);
-/// defaults-aware callers gate on
-/// `crate::services::launch::admitted_account_choices` first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentDefaultResolution {
-    /// A binding resolved to a registered, authorized, agent-compatible
-    /// account. Launch it directly; never open the picker.
     Launch(String),
-    /// No binding applies. Fall back to the eligible-candidate list.
+
     NoDefault,
-    /// An explicit binding exists but is unusable: unknown account id,
-    /// unauthorized role/workspace binding, or an agent-incompatible
-    /// (including disabled) account. Fail atomically with the message;
-    /// never fall back to another candidate.
+
     Invalid(String),
 }
 
-/// Resolve the configured default account for `agent` without consulting the
-/// eligible-candidate list.
-///
-/// `workspace` is the saved workspace name (`None` for ad-hoc launches) and
-/// `role` its key (`name` or `namespace/name`, matching the workspace
-/// `roles` map). Unknown workspaces report `Invalid`: the launch paths
-/// resolve the workspace first, so this only fires on concurrent-delete
-/// races.
-///
-/// Legacy regime only: this lookup deliberately ignores `default_launch`.
-/// Defaults-aware callers ([`select_launch_account`]) consult the admitted
-/// set first and reach this only when no default is configured.
 #[must_use]
 pub fn resolve_agent_default(
     config: &AppConfig,

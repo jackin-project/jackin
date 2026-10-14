@@ -147,9 +147,7 @@ fn load_args_branch_optional() {
 #[test]
 fn parses_load_command() {
     let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
-    // `debug` is omitted from the pattern: it is env-backed
-    // (`JACKIN_DEBUG`), so its default depends on the runner's env.
-    // `tests/cli_debug_env.rs` covers the env-driven behavior.
+
     assert!(matches!(
         cli.command,
         Some(Command::Load(LoadArgs {
@@ -259,14 +257,12 @@ fn parses_console_with_debug() {
         cli.command,
         Some(Command::Console(ConsoleArgs { .. }))
     ));
-    // --debug is global on Cli, not on ConsoleArgs.
+
     assert!(cli.debug);
 }
 
 #[test]
 fn console_rejects_removed_flags() {
-    // The console is always the full experience; the old --no-rain /
-    // --no-tui / --intro / --outro toggles no longer exist.
     for flag in ["--no-rain", "--no-tui", "--intro", "--outro"] {
         Cli::try_parse_from(["jackin", "console", flag])
             .expect_err(&format!("console should reject {flag}"));
@@ -291,8 +287,7 @@ fn parses_bare_jackin_as_no_subcommand() {
 fn parses_bare_jackin_with_top_level_debug() {
     let cli = Cli::try_parse_from(["jackin", "--debug"]).unwrap();
     assert!(cli.command.is_none());
-    // CLI flag wins over env, so this assertion holds even when
-    // `JACKIN_DEBUG=0` is set in the runner's env.
+
     assert!(cli.debug);
 }
 

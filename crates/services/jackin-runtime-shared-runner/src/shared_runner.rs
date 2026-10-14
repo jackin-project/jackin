@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cloneable serialized wrapper for the mutable `CommandRunner` seam.
-//!
-//! Launch still has runner-bound work that must preserve one command stream
-//! for debug logs and tests, but future dependency-graph branches need owned
-//! runner handles. This adapter gives each branch a cloneable handle while a
-//! Tokio mutex keeps the underlying runner serialized.
-
 use jackin_core::{CommandRunner, RunOptions};
 use std::path::Path;
 use std::sync::Arc;

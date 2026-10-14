@@ -48,8 +48,6 @@ fn excluded_names_filtered_at_root() {
 
 #[test]
 fn excluded_names_visible_below_root() {
-    // EXCLUDED only applies at the sandbox root; a folder named
-    // "Library" one level below should still be visible.
     let tmp = tempdir().unwrap();
     let sub = tmp.path().join("sub");
     std::fs::create_dir_all(sub.join("Library")).unwrap();
@@ -176,9 +174,7 @@ fn symlink_to_outside_root_is_excluded_from_listing() {
     std::fs::create_dir_all(&root).unwrap();
     std::fs::create_dir_all(&outside).unwrap();
     std::fs::create_dir_all(root.join("normal_dir")).unwrap();
-    // Symlink under root pointing at the sibling directory. A lexical
-    // `starts_with(root)` check accepts this path; a canonical one
-    // correctly rejects it.
+
     std::os::unix::fs::symlink(&outside, root.join("escape_link")).unwrap();
 
     let fb = state_rooted_at(root.clone(), root);
@@ -196,9 +192,6 @@ fn symlink_to_outside_root_is_excluded_from_listing() {
 #[cfg(unix)]
 #[test]
 fn symlink_to_inside_root_still_appears() {
-    // Complementary test to `symlink_to_outside_root_is_excluded_from_listing`:
-    // we must not over-reject. A symlink that resolves back inside
-    // root is legitimate and should still be listed.
     let tmp = tempdir().unwrap();
     let root = tmp.path().join("home");
     let inner = root.join("inner");

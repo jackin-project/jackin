@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor secret row plans.
 
 use super::super::model::{SecretsEnterPlan, SecretsRow, SecretsScopeTag};
 use std::collections::{BTreeMap, BTreeSet};

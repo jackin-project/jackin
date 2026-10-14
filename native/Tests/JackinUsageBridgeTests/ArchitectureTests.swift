@@ -5,13 +5,13 @@ import JackinUsageBridge
 import SwiftUI
 import XCTest
 
-/// Static architecture checks: Swift tree must not grow provider probe logic.
+
 final class ArchitectureTests: XCTestCase {
     private var sourcesRoot: URL {
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // Tests/JackinUsageBridgeTests
-            .deletingLastPathComponent()  // Tests
-            .deletingLastPathComponent()  // native
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
             .appendingPathComponent("Sources")
     }
 
@@ -31,10 +31,10 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testSwiftSourcesHaveNoProviderProbeImports() throws {
-        // Probe/API machinery tokens (substring match).
+
         let machinery = ["URLSession", "Process(", "SecItem"]
-        // Non-jackin providers: whole-token only so `eventCursor` / comments about
-        // cursors are not false positives for the Cursor product.
+
+
         let providers = ["Gemini", "Copilot"]
         let cursorAsProvider = try NSRegularExpression(pattern: #"\bCursor\b"#)
         for file in try handwrittenSwiftFiles() {
@@ -106,8 +106,8 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testDesktopSourcesContainNoForbiddenUsagePresentation() throws {
-        // N3/B4: independent display-literal ban (token prices, spend/usage trends,
-        // histories, aggregate-spend/ranking chrome) across every handwritten source.
+
+
         let forbidden = [
             "$/token", "$/mtok", "cost of session", "spend over time", "usage trend",
             "token history", "spend history", "aggregate spend", "top model",
@@ -125,9 +125,9 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testNoSwiftPercentArithmeticOnDisplayStrings() throws {
-        // Heuristic: handwritten UI must not invent percentages via string
-        // interpolation of computed used/remaining math into Text(...).
-        // Gauge uses Rust-provided remaining only; forbid Text("…\(…)%…").
+
+
+
         let regex = try NSRegularExpression(
             pattern: #"Text\s*\(\s*"[^"]*\\\([^)]*\)[^"]*%"#
         )
@@ -150,7 +150,7 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertNotEqual(severityTint("normal"), Color.accentColor)
     }
 
-    // ProviderMarks live in JackinDesktopUI — covered by DesktopSoT / visual harness.
+
 
     func testJackinPhosphorTokensMatchBrandGuide() {
         XCTAssertEqual(JackinBrand.phosphorDarkSRGB.r, 0x5C / 255.0, accuracy: 0.0001)
@@ -161,7 +161,7 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(JackinBrand.phosphorLightSRGB.b, 0x4E / 255.0, accuracy: 0.0001)
     }
 
-    /// Overview is a native comparison table without custom meter geometry.
+
     func testOverviewHasNoOrphanOverviewLevelProgress() throws {
         let overview =
             sourcesRoot
@@ -297,10 +297,10 @@ final class ArchitectureTests: XCTestCase {
         )
     }
 
-    /// SB-5 vs FB1-6: bar stays template mono (no severity tint).
-    ///
-    /// Urgency color
-    /// on chip chrome is SB-P4 OPEN — not silently met as full SB-5.
+
+
+
+
     func testStatusBarIsTemplateMonoWithoutSeverityTint() throws {
         let label =
             sourcesRoot
@@ -316,7 +316,7 @@ final class ArchitectureTests: XCTestCase {
         )
     }
 
-    /// SB-13: ranked id order change forces status-item rebuild.
+
     func testStatusBarOrderRequiresRebuildOnRankChange() {
         XCTAssertFalse(
             statusBarOrderRequiresRebuild(
@@ -339,7 +339,7 @@ final class ArchitectureTests: XCTestCase {
         )
     }
 
-    /// SB-3/19 fixture filter for status-bar membership (QI / defensive path).
+
     func testSelectStatusBarGlanceRowsHidesZeroAndCapsThree() {
         func row(id: String, pct: UInt8?) -> PresentationStore.GlanceProviderRow {
             PresentationStore.GlanceProviderRow(
@@ -416,13 +416,13 @@ final class ArchitectureTests: XCTestCase {
             }
         }
         XCTAssertFalse(files.isEmpty, "expected JackinDesktop sources")
-        // Usage-string tokens: ban on display surfaces only. SettingsView may use
-        // "% left"/"% used" as preference *chrome* (format picker labels) — those
-        // are not composed usage numbers; Rust still owns every gauge/status string.
+
+
+
         let usageStringTokens = ["% left", "% used", "resets "]
-        // Always ban format composition everywhere under JackinDesktop.
+
         let alwaysBanned = ["String(format:"]
-        // Preference chrome only (S6 format pickers); never render usage data.
+
         let preferenceChromeFiles: Set<String> = ["SettingsView.swift", "VisualQAFixtures.swift"]
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
@@ -445,11 +445,11 @@ final class ArchitectureTests: XCTestCase {
         }
     }
 
-    /// The three Usage-window views render Rust `UsageDetailPresentation` mechanically.
-    ///
-    /// They must not split/index/join
-    /// usage strings, read raw buckets, use label-based identity, or invent field
-    /// copy; and must consume the shared model's rows/lines/ids.
+
+
+
+
+
     func testUsageWindowRendersSharedDetailModel() throws {
         let usageDir =
             sourcesRoot
@@ -605,7 +605,7 @@ final class ArchitectureTests: XCTestCase {
         )
     }
 
-    /// Cold launch: the AppKit delegate must open the host runtime without a menu click.
+
     func testApplicationDelegateOpensRuntimeOnLaunch() throws {
         let delegate =
             sourcesRoot

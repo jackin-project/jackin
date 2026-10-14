@@ -12,7 +12,6 @@ fn parity_antigravity_capsule_tabs_and_detail() {
         provider_issues: Vec::new(),
     });
 
-    // Capsule side: one tab, four bucket rows, same percents/resets.
     let enriched = parity_tabs(&views);
     let view = &enriched[0];
     assert_eq!(view.tabs.len(), 1);
@@ -23,10 +22,7 @@ fn parity_antigravity_capsule_tabs_and_detail() {
         view.tabs[0].source_label.as_deref(),
         Some("fresh · managed CLI")
     );
-    // First available Rust-ranked limit (D30) wins the tab status: the
-    // Weekly long-range window (41%), not the tighter unslotted 12% window
-    // and not the provider-first Session window — the same window as the
-    // console list summary.
+
     assert!(
         view.tabs[0].status_label.starts_with("41% left"),
         "tab status traces the ranked weekly window: {}",
@@ -69,7 +65,7 @@ fn parity_antigravity_capsule_tabs_and_detail() {
             row.display_label
         );
     }
-    // Same reset epoch, renderer-owned formats (see delta test).
+
     assert!(
         bucket_rows[0].display_label.contains("Resets in 1h 30m"),
         "capsule reset label: {}",
@@ -99,7 +95,7 @@ fn parity_duplicate_provider_accounts_stay_distinct() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     assert_eq!(screen.accounts.len(), 2);
-    // Projection order is preserved; stable ids never collide.
+
     assert_eq!(screen.accounts[0].account, "work@example.test");
     assert_eq!(screen.accounts[1].account, "personal@example.test");
     assert_ne!(
@@ -110,7 +106,7 @@ fn parity_duplicate_provider_accounts_stay_distinct() {
         screen.accounts[0].canonical_account_id,
         screen.accounts[1].canonical_account_id
     );
-    // Identity evidence kinds survive: provider id vs stable handle.
+
     assert_eq!(
         screen.accounts[0].identity_kind,
         Some(UsageIdentityKindV1::ProviderAccountId)
@@ -120,7 +116,6 @@ fn parity_duplicate_provider_accounts_stay_distinct() {
         Some(UsageIdentityKindV1::ProviderStableHandle)
     );
 
-    // Capsule tabs: one per account, distinct ids, exact-id active marking.
     let enriched = parity_tabs(&views);
     let tabs = &enriched[0].tabs;
     assert_eq!(tabs.len(), 2);
@@ -150,7 +145,6 @@ fn parity_duplicate_provider_accounts_stay_distinct() {
         ["personal@example.test"]
     );
 
-    // Duplicate snapshots for one account collapse to the newest fetch.
     let mut stale_work = parity_view(&work);
     stale_work.fetched_at_epoch = PARITY_NOW - 9_999;
     stale_work.account.plan_label = Some("Max OLD".to_owned());
@@ -162,7 +156,6 @@ fn parity_duplicate_provider_accounts_stay_distinct() {
         .unwrap();
     assert_eq!(work_tab.plan_label.as_deref(), Some("Max 20x"));
 
-    // Legacy provider-label remap is shared and stable.
     assert_eq!(provider_display_label("Anthropic / Claude"), "Anthropic");
     assert_eq!(provider_display_label("Anthropic"), "Anthropic");
 }
@@ -192,17 +185,16 @@ fn parity_cursor_groups_money_and_units() {
         .map(UsageWindow::meter_percent)
         .collect::<Vec<_>>();
     assert_eq!(meters, [Some(62), Some(55), None, Some(76)]);
-    // API-mirrored Warn severity becomes a Warning quota state.
+
     assert_eq!(account.windows[0].quota_state, UsageQuotaStateV1::Warning);
     assert_eq!(
         account.windows[0].reset_at_epoch,
         Some(PARITY_NOW + 1_200_000)
     );
-    // Used-only money still counts as quantity (Available), with no bar.
+
     assert_eq!(account.windows[2].quota_state, UsageQuotaStateV1::Available);
     assert_eq!(account.windows[2].value, "$8.30");
 
-    // Groups: window, window, spend, window, spend, window, plan, rate-limit.
     let kinds = account
         .metric_groups
         .iter()
@@ -221,7 +213,7 @@ fn parity_cursor_groups_money_and_units() {
             UsageMetricGroupKindV1::RateLimit,
         ]
     );
-    // Spend amounts stay in minor-unit scale end to end ($45.20, not $4520).
+
     match &account.metric_groups[2].value {
         UsageMetricValueV1::SpendCap {
             cap,
@@ -243,8 +235,7 @@ fn parity_cursor_groups_money_and_units() {
         }
         other => panic!("expected spend-cap value, got {other:?}"),
     }
-    // Balance-shaped money (used-only) yields a cap-less spend group
-    // (documented delta: renders as "uncapped" — see the render smoke test).
+
     match &account.metric_groups[4].value {
         UsageMetricValueV1::SpendCap {
             cap,
@@ -275,7 +266,6 @@ fn parity_cursor_groups_money_and_units() {
     );
     assert_eq!(freshness_age_label(PARITY_NOW, account), "updated 10m ago");
 
-    // Capsule side: same amounts, same units.
     let enriched = parity_tabs(&views);
     let view = &enriched[0];
     let spend = usage_bucket_presentation(&view.buckets[1]);
@@ -321,14 +311,14 @@ fn parity_exhausted_zero_is_not_unknown() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
-    // Fresh account, exhausted window: a legit zero, never unknown.
+
     assert_eq!(account.status, "Available");
     assert_eq!(account.windows.len(), 1);
     assert_eq!(account.windows[0].meter_percent(), Some(0));
     assert_eq!(account.windows[0].value, "0% left");
     assert_eq!(account.windows[0].quota_state, UsageQuotaStateV1::Exhausted);
     assert_ne!(account.windows[0].quota_state, UsageQuotaStateV1::Unknown);
-    // Missing plan label yields no plan group and no invented values.
+
     assert_eq!(account.metric_groups.len(), 1);
     assert_eq!(account.plan_label, None);
 

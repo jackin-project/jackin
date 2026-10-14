@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage screen key handling and entry render.
 
 use super::{now_epoch, render_account_list, render_detail};
 
@@ -49,12 +48,6 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
     render_at(frame, area, state, now_epoch());
 }
 
-/// Render one usage frame against one sampled wall-clock epoch.
-///
-/// The production entry point samples once and delegates here. Keeping the
-/// epoch explicit at this seam lets deterministic render tests use the same
-/// frame clock while ensuring the list and detail panes cannot cross a
-/// relative-time boundary independently.
 pub fn render_at(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, now_epoch: i64) {
     let body = crate::tui::view::workspace_frame_areas(area).body;
     let columns = Layout::default()

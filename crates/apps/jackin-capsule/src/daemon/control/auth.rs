@@ -1,15 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Attach-peer authorization and control-request admission.
 
 use super::super::{ClientMsg, Multiplexer};
 
-/// Whether a kernel-authenticated peer may open the interactive attach path.
-///
-/// The socket is intentionally still owner-only, but `DAC_OVERRIDE` makes file
-/// modes insufficient. Every admitted session identity is therefore denied at
-/// the protocol boundary. A non-admitted UID is an operator/host peer and
-/// retains the existing attach flow.
 pub(crate) fn attach_peer_is_authorized(mux: &Multiplexer, peer_uid: Option<u32>) -> bool {
     let Some(peer_uid) = peer_uid else {
         return false;
@@ -17,10 +10,6 @@ pub(crate) fn attach_peer_is_authorized(mux: &Multiplexer, peer_uid: Option<u32>
     !configured_session_uid(mux, peer_uid)
 }
 
-/// Authorize control requests using the peer credential supplied by the
-/// kernel, never a caller-controlled session id. Operator peers retain the
-/// existing control surface. A session peer may address only its own live
-/// session through target-scoped, non-administrative requests.
 pub(crate) fn control_request_allowed(
     mux: &Multiplexer,
     peer_uid: Option<u32>,
@@ -31,10 +20,6 @@ pub(crate) fn control_request_allowed(
         return false;
     };
 
-    // The in-container MCP/`jackin-exec` path has no target session field in
-    // its wire shape. Infer exactly one authorized session from the kernel
-    // peer UID plus its daemon-issued capability; never let a session peer
-    // enter the operator/global credential picker without both.
     if matches!(message, ClientMsg::ExecCommand { .. }) {
         if peer_uid == 0 {
             return true;
@@ -60,9 +45,7 @@ pub(crate) fn control_request_allowed(
         ClientMsg::Events {
             session: Some(session_id),
         } => Some(*session_id),
-        // Global inventory, usage, telemetry, execution, and unfiltered event
-        // streams are operator/admin surfaces. Session peers never receive
-        // them, even when the message has no obvious secret fields.
+
         ClientMsg::Events { session: None }
         | ClientMsg::TelemetryHealth
         | ClientMsg::Status
@@ -86,9 +69,6 @@ pub(crate) fn control_request_allowed(
     })
 }
 
-/// Compare the fixed-format session bearer without an early exit on the
-/// secret bytes. The socket is local, but keeping the comparison uniform costs
-/// nothing and avoids turning the authorization branch into a token oracle.
 fn capability_matches(expected: &str, presented: Option<&str>) -> bool {
     let Some(presented) = presented else {
         return false;

@@ -1,4 +1,4 @@
-// docs/components/landing/vocabularyData.ts
+
 export interface DefSegment {
   t: string;
   b?: boolean;

@@ -63,10 +63,6 @@ fn killing_zoomed_pane_clears_only_owning_tab_zoom() {
 
 #[test]
 fn resize_zero_zero_normalizes_to_default_dimensions() {
-    // A client sending Resize { rows: 0, cols: 0 } is asking for
-    // "use the defaults"; the daemon must floor through
-    // `normalize_size` and never store 0 in `term_rows`/`term_cols`,
-    // because zero-row PTYs collapse grid rendering.
     let mut mux = test_mux(48, 160);
     mux.resize(0, 0);
     assert_eq!(
@@ -122,11 +118,6 @@ fn resize_shrink_split_frame_stays_inside_new_geometry() {
 
 #[test]
 fn dialog_dismiss_frame_repaints_covered_pane_body() {
-    // Dialog-dismiss ghost regression (PR #495): closing a dialog must repaint
-    // the pane cells the backdrop covered, with no 2J clear. The frame
-    // apply_action(Dismiss) returns is that repaint — the SocketBackend cell
-    // diff turns the backdrop spaces back into pane content, so HELLO-PANE-BODY
-    // (one same-style run) reappears and no backdrop ghost survives.
     let needle = b"HELLO-PANE-BODY";
     let contains = |frame: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
 
@@ -138,12 +129,10 @@ fn dialog_dismiss_frame_repaints_covered_pane_body() {
     let first = compose_after(&mut mux, FullRedrawReason::FirstAttach);
     assert!(contains(&first), "first frame must paint the pane body");
 
-    // Open a dialog: the full-screen backdrop covers the pane body.
     mux.open_container_info_dialog();
     let opened = compose_after(&mut mux, FullRedrawReason::DialogChange);
     assert!(!contains(&opened), "backdrop must cover the pane body");
 
-    // Dismiss returns the repaint frame directly; it must restore the body.
     let dismissed = apply_action_frame(&mut mux, Action::Dialog(DialogAction::Dismiss))
         .expect("dismiss must emit a repaint frame");
     assert!(!mux.dialog_open(), "Dismiss must pop the dialog");
@@ -155,11 +144,6 @@ fn dialog_dismiss_frame_repaints_covered_pane_body() {
 
 #[test]
 fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
-    // Ratatui draw closures build a fresh current buffer before diffing against
-    // the previous one. A partial frame that paints only the dirty pane body can
-    // therefore turn every non-dirty split pane into blank cells in the emitted
-    // diff. Keep dirty-row patches in the direct backend path only; Ratatui
-    // fallback frames must repaint every visible pane body.
     let left_needle = b"LEFT-PANE-STABLE";
     let right_needle = b"RIGHT-PANE-UPDATE";
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
@@ -172,9 +156,6 @@ fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
     }
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    // Simulate an invalid/stale Ratatui backing buffer, matching what happens
-    // after direct dirty-patch frames or attach-side terminal disruption. The
-    // next fallback Ratatui frame must still be self-contained for pane bodies.
     drop(mux.render.ratatui_terminal.clear());
     drop(mux.render.ratatui_terminal.backend_mut().take_output());
 
@@ -202,8 +183,7 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session(20, 78);
     session.feed_pty(b"\x1b[1;1Hstable pane");
-    // Retain scrollback so the scrolled-chrome step below can park the view
-    // in history (the grid clamps the offset to the filled scrollback).
+
     for i in 0..30 {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }
@@ -218,8 +198,6 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
         String::from_utf8_lossy(&first)
     );
 
-    // Chrome is widget cells now: Ratatui emits it when it changes, then the
-    // previous buffer suppresses unchanged chrome on later frames.
     let unchanged = compose_after(&mut mux, status_change_redraw_reason());
     assert!(
         !contains(&unchanged, b"resize pane"),
@@ -249,7 +227,6 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
 
 #[test]
 fn scan_emitted_frame_reports_geometry_fingerprint() {
-    // \x1b[2J (erase) + move to (5,10) + move to (40,160).
     let frame = b"\x1b[2J\x1b[5;10Hx\x1b[40;160Hy".to_vec();
     let metrics = scan_emitted_frame(&frame);
     assert_eq!(metrics.cursor_moves, 2);
@@ -258,7 +235,6 @@ fn scan_emitted_frame_reports_geometry_fingerprint() {
     assert_eq!(metrics.full_screen_erases, 1);
     assert_eq!(metrics.painted_cells, 2);
 
-    // A move with no col defaults col to 1; `f` is an alias for `H`.
     let frame = b"\x1b[12Hz".to_vec();
     let metrics = scan_emitted_frame(&frame);
     assert_eq!(metrics.cursor_moves, 1);

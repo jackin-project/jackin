@@ -1,14 +1,3 @@
-//! Materialize-accounts hot path (plan 014 residual / R-014-materialize-bench).
-//!
-//! `UsageCache::materialize_accounts` encodes every cached focused usage view
-//! and atomically writes `accounts.json`. The production path is container-
-//! fixed (`/jackin/run/usage/accounts.json`); this bench injects a temp path
-//! via the `#[doc(hidden)]` seam so host CI is hermetic.
-//!
-//! ```sh
-//! cargo bench --bench materialize_accounts -p jackin-usage-provider-core -- --quick
-//! ```
-
 #![expect(clippy::panic, reason = "criterion bench harness: fail-fast setup")]
 
 use std::hint::black_box;

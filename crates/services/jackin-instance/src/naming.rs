@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Container naming: generate stable names, class-family matching, and slug derivation.
-//!
-//! Names encode workspace, role, and a random instance-id component so they
-//! are collision-free across concurrent launches of the same role. Not
-//! responsible for Docker label writes or image naming — only string
-//! derivation.
-
 use jackin_core::RoleSelector;
 use jackin_core::WorkspaceName;
 pub use jackin_core::{CONTAINER_PREFIX, CONTAINER_PREFIX_DASH, instance_id_from_container_base};
@@ -62,15 +55,10 @@ pub fn container_name_with_id(
     name
 }
 
-/// Recognize names of the shape `jk-<id>[-<workspace>]-<role>`
-/// produced by `new_container_name`. Scoping hook for `purge_class_data`.
 pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bool {
     class_family_matches_with_slug(&compact_component(&selector.name, "role"), container_name)
 }
 
-/// Loop-friendly variant of [`class_family_matches`] for callers that
-/// precompute the slug once across many candidates — avoids one
-/// [`compact_component`] allocation per comparison.
 #[must_use]
 pub fn class_family_matches_with_slug(role_slug: &str, container_name: &str) -> bool {
     let Some(rest) = container_name.strip_prefix(CONTAINER_PREFIX_DASH) else {
@@ -141,8 +129,6 @@ fn random_instance_id() -> String {
     id
 }
 
-/// Docker volume name for the TLS client certificates shared between the
-/// `DinD` sidecar (writer) and the role container (reader).
 pub fn dind_certs_volume(container_name: &str) -> String {
     format!("{container_name}-dind-certs")
 }

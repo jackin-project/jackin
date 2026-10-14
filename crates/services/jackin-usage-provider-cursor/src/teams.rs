@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Cursor` enterprise team spend.
 
 use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
 use jackin_usage_provider_core::{
@@ -8,10 +7,6 @@ use jackin_usage_provider_core::{
     provider_http_client, timed_bucket, with_status_slot,
 };
 
-/// Explicit Enterprise Admin credential. Never derived from a personal key: a
-/// personal execution key does not imply reporting access.
-// No `Debug`: this carries a live admin token and must never be formatted
-// into a log or error.
 #[expect(
     missing_debug_implementations,
     reason = "credential type: a live admin token must never be formatted into a log or error"
@@ -30,14 +25,12 @@ pub fn cursor_teams_events_url() -> &'static str {
     "https://api.cursor.com/teams/filtered-usage-events"
 }
 
-/// One member's spend row: team and member scopes stay distinct buckets.
 #[derive(Debug, Clone)]
 pub struct CursorMemberSpend {
     pub(crate) label: String,
     pub(crate) charged: Option<f64>,
 }
 
-/// Team spend report: actual charged vs estimated model cost, kept separate.
 #[derive(Debug, Clone)]
 pub struct CursorTeamSpend {
     pub(crate) charged: Option<f64>,
@@ -156,8 +149,7 @@ pub fn cursor_team_spend_buckets(spend: &CursorTeamSpend, now: i64) -> Vec<Quota
             Some(StatusSlot::Spend),
         ));
     }
-    // Estimated model cost is display-only: never the Spend slot, never mixed
-    // into the actual charged figure.
+
     if let Some(estimated) = spend.estimated {
         buckets.push(bucket(
             "Estimated model cost",

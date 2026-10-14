@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Exit diagnosis helpers extracted from launch coordinator for premature exits,
-//! attach failures, and outcome inspection.
-
 use jackin_core::CommandRunner;
 use jackin_core::ContainerHandle;
 use jackin_diagnostics;
@@ -11,24 +8,12 @@ use jackin_docker::docker_client::DockerApi;
 
 use jackin_docker::docker_client::ContainerState;
 
-/// Whether `diagnose_premature_exit` is firing before the operator's
-/// terminal was attached or after. The treatment of `exit 0` differs
-/// between the two: pre-attach it's PID 1 exiting before the client
-/// attaches (still worth surfacing — most likely a bad image or
-/// missing binary), post-attach it's the multiplexer shutting the
-/// container down because no live sessions remain (the
-/// container-lifecycle-policy happy path — swallow it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitPhase {
     PreAttach,
     PostAttach,
 }
 
-/// inspect + log fetch so the surfaced error names the exit code, OOM
-/// flag, and the last lines of the container's combined stdout/stderr.
-///
-/// Returns `None` when the container is still running (the normal
-/// happy path) so the caller can proceed to the session exec.
 pub async fn diagnose_premature_exit(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
@@ -39,8 +24,6 @@ pub async fn diagnose_premature_exit(
     diagnose_with_state(runner, container_name, &state, phase).await
 }
 
-/// Diagnose a container whose immutable ID was already captured by the
-/// lifecycle caller. Both inspect and log retrieval remain bound to that ID.
 pub async fn diagnose_premature_exit_by_id(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
@@ -51,7 +34,6 @@ pub async fn diagnose_premature_exit_by_id(
     diagnose_with_state_by_target(runner, container.name(), container.id(), &state, phase).await
 }
 
-/// Apply exit diagnosis to state already inspected by immutable ID.
 pub async fn diagnose_with_state_by_id(
     runner: &mut impl CommandRunner,
     container: &ContainerHandle,
@@ -61,10 +43,6 @@ pub async fn diagnose_with_state_by_id(
     diagnose_with_state_by_target(runner, container.name(), container.id(), state, phase).await
 }
 
-/// Same diagnostic logic as `diagnose_premature_exit` but with the
-/// inspected state passed in — callers that already inspected the
-/// container can avoid a second `docker inspect` round-trip (and the
-/// TOCTOU window between the two).
 pub async fn diagnose_with_state(
     runner: &mut impl CommandRunner,
     container_name: &str,
@@ -82,11 +60,6 @@ async fn diagnose_with_state_by_target(
     phase: ExitPhase,
 ) -> Option<anyhow::Error> {
     match state {
-        // Default to letting the `docker exec` attempt proceed when state is
-        // ambiguous: the daemon's own error from a true `NotFound`
-        // (`No such container`) is just as actionable as anything we
-        // could synthesize, and a transient inspect hiccup must not
-        // hijack an otherwise-healthy launch.
         ContainerState::Running
         | ContainerState::Paused
         | ContainerState::Restarting
@@ -99,28 +72,10 @@ async fn diagnose_with_state_by_target(
             exit_code,
             oom_killed,
         } => {
-            // Post-attach clean exit (exit 0, no OOM) is the normal
-            // shutdown path: the operator typed `/exit` in the agent,
-            // the multiplexer drained the last live session, and the
-            // container shut itself down. The container-lifecycle
-            // policy treats this as the happy path — return None so
-            // the caller does not synthesize a misleading "exited
-            // before attach" error. Pre-attach exit 0 is still
-            // surfaced because PID 1 died before the
-            // client connected indicates a bad image / missing binary
-            // even when the exit code looks clean.
             if phase == ExitPhase::PostAttach && *exit_code == 0 && !oom_killed {
                 return None;
             }
-            // Distinguish "docker logs succeeded but was empty" from
-            // "docker logs CLI failed" — the latter is a post-mortem
-            // signal the operator needs (daemon down, container gone)
-            // rather than the empty body the prose body falls back to.
-            // Combined stdout+stderr: the container runs without a TTY so
-            // `docker logs` keeps the streams split, and capsule early
-            // failures (`Error: ...` from `main() -> Result`) print to
-            // stderr only — a stdout-only read reports "no log output"
-            // while discarding the real reason.
+
             let logs = match runner
                 .capture_combined("docker", &["logs", "--tail", "40", container_ref], None)
                 .await
@@ -153,8 +108,7 @@ async fn diagnose_with_state_by_target(
                     "container {container_name} {phase_label} ({reason}) and produced no log output"
                 )
             };
-            // Emit only bounded typed exit state. Raw Docker output remains on the
-            // explicit operator error surface and never becomes telemetry.
+
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.container_exited((*exit_code).into(), *oom_killed);
             }
@@ -167,10 +121,6 @@ pub fn attach_failure_error(container_name: &str, err: &anyhow::Error) -> anyhow
     anyhow::anyhow!("capsule attach failed for {container_name}: {err}")
 }
 
-/// Return whether a failed capsule attach is the known clean-shutdown socket
-/// close. Admission and generation errors must never use this recovery path,
-/// even when a concurrent container shutdown happens to make the lifecycle
-/// inspect look clean.
 pub fn is_known_socket_close(error: &anyhow::Error, state: &ContainerState) -> bool {
     if !matches!(
         state,
@@ -189,30 +139,12 @@ pub fn is_known_socket_close(error: &anyhow::Error, state: &ContainerState) -> b
         || (detail.contains("docker exec") && detail.contains("jackin-capsule"))
 }
 
-/// Query a container's post-attach state for use by `finalize_foreground_session`.
-///
-/// Returns `AttachOutcome::still_running` when the container is still running
-/// (terminal closed / detach), `AttachOutcome::oom_killed` when the kernel
-/// killed the container OOM, otherwise `AttachOutcome::stopped(exit_code)`.
-///
-/// Capture failures (docker daemon hiccup, container removed mid-inspect)
-/// are mapped to `still_running()` — the **conservative** default. Returning
-/// `stopped(0)` here would route the call through `finalize_clean_exit`,
-/// which combined with any concurrent git failure inside `assess_cleanup`
-/// could auto-delete worktrees of containers that may actually still be
-/// running. `still_running()` instead skips the auto-cleanup path entirely
-/// and preserves records for `jackin hardline` to recover.
 pub async fn inspect_attach_outcome(
     docker: &impl DockerApi,
     container: &str,
 ) -> anyhow::Result<jackin_isolation::finalize::AttachOutcome> {
     use jackin_isolation::finalize::AttachOutcome;
-    // Only `Stopped` with a clean or non-zero exit legitimately routes through
-    // finalize_clean_exit. Paused/Restarting/Created/Removing are transient
-    // active states — treating them as still_running is the conservative choice
-    // that prevents finalize_clean_exit from auto-deleting worktrees of
-    // containers that may resume. Dead is rare (daemon failed to deinitialize)
-    // and also preserved for operator inspection.
+
     Ok(
         match docker.inspect_container_by_name(container).await.state {
             ContainerState::Running
@@ -236,9 +168,6 @@ pub async fn inspect_attach_outcome(
     )
 }
 
-/// Inspect attach outcome by the immutable container ID captured for the
-/// foreground lifecycle. This avoids resolving a mutable name again after
-/// the attach command returns.
 pub async fn inspect_attach_outcome_by_id(
     docker: &impl DockerApi,
     container: &ContainerHandle,

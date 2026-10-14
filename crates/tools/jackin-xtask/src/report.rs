@@ -1,10 +1,3 @@
-//! Shared gate reporter: human | json | github formats.
-//!
-//! Every first-party gate should emit structured violations so agents parse
-//! results instead of scraping prose. Human mode preserves the DX quality of
-//! existing messages; JSON is additive; Github emits workflow-command
-//! annotations (`::error file=…`) when running under Actions.
-
 use std::cell::Cell;
 use std::env;
 use std::io::{self, Write};
@@ -17,28 +10,23 @@ thread_local! {
     static STRUCTURED_OUTPUT: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Whether legacy human-only gate status lines should be emitted.
 #[must_use]
 pub(crate) fn human_output() -> bool {
     STRUCTURED_OUTPUT.with(|value| !value.get())
 }
 
-/// Output format for gate reports.
 #[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, Eq)]
 pub(crate) enum Format {
-    /// Prose suitable for a human operator (default).
     #[default]
     Human,
-    /// Machine-readable JSON on stdout.
+
     Json,
-    /// GitHub Actions workflow-command annotations + human block on stderr.
+
     Github,
 }
 
-/// Shared CLI output option embedded by first-party gate commands.
 #[derive(Args, Clone, Copy, Debug, Default)]
 pub(crate) struct FormatArgs {
-    /// Gate output format. JSON and GitHub modes emit structured diagnostics.
     #[arg(long, value_enum)]
     pub format: Option<Format>,
 }
@@ -51,8 +39,6 @@ impl FormatArgs {
 }
 
 impl Format {
-    /// Resolve the effective format: an explicit CLI flag wins; otherwise
-    /// `GITHUB_ACTIONS=true` selects Github; else Human.
     #[must_use]
     pub(crate) fn detect(cli_flag: Option<Format>) -> Self {
         if let Some(fmt) = cli_flag {
@@ -65,31 +51,27 @@ impl Format {
     }
 }
 
-/// One gate violation with the fields agents need to act.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct Violation {
-    /// Short rule id, e.g. `"file-size"`.
     pub rule: &'static str,
-    /// Repo-relative file path.
+
     pub file: String,
-    /// Optional 1-based line number.
+
     pub line: Option<u64>,
-    /// One sentence describing the violation.
+
     pub message: String,
-    /// The exact clearing edit or command.
+
     pub fix: String,
-    /// Narrowest rerun command.
+
     pub rerun: String,
 }
 
-/// Collected report for a single gate.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Report {
-    /// Informal schema version so field changes are detectable.
     pub schema: u32,
-    /// Gate name, e.g. `"file-size"`.
+
     pub gate: &'static str,
-    /// True when `violations` is empty.
+
     pub ok: bool,
     pub violations: Vec<Violation>,
 }
@@ -106,8 +88,6 @@ impl Report {
         }
     }
 
-    /// Emit the report in the requested format. Returns `Err` when there are
-    /// violations (exit-code behavior unchanged from pre-reporter gates).
     pub(crate) fn emit(&self, format: Format) -> Result<()> {
         match format {
             Format::Human => emit_human(self)?,
@@ -126,11 +106,6 @@ impl Report {
     }
 }
 
-/// Run a prose-first gate behind the shared structured-report contract.
-///
-/// Existing gates keep their actionable error text while JSON/GitHub callers
-/// receive a stable schema. Gates with richer collectors can construct a
-/// [`Report`] directly, as the file-size and agent-file gates do.
 pub(crate) fn run_gate(
     format: Format,
     gate: &'static str,
@@ -219,7 +194,7 @@ fn emit_github(report: &Report) -> Result<()> {
         );
         writeln!(out, "::error {props}::{msg}").context("writing github annotation")?;
     }
-    // Keep logs readable: human block on stderr.
+
     {
         let mut err = io::stderr().lock();
         if report.ok {
@@ -240,7 +215,6 @@ fn emit_github(report: &Report) -> Result<()> {
     Ok(())
 }
 
-/// Escape property values for workflow commands (`%`, `\r`, `\n`, `:`).
 fn escape_workflow_prop(s: &str) -> String {
     s.replace('%', "%25")
         .replace('\r', "%0D")
@@ -249,7 +223,6 @@ fn escape_workflow_prop(s: &str) -> String {
         .replace(',', "%2C")
 }
 
-/// Escape message data for workflow commands.
 fn escape_workflow_data(s: &str) -> String {
     s.replace('%', "%25")
         .replace('\r', "%0D")

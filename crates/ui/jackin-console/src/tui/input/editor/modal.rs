@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Editor modal leaf helpers: secret picker and text-input commits.
-
 use crate::tui::op_picker::OpPickerState;
 use crate::tui::screens::editor::update as editor_update;
 use crate::tui::screens::editor::view::{
@@ -32,9 +30,6 @@ pub fn open_secrets_picker_modal(
     });
 }
 
-/// Centralises `EnvKey` construction so every opener (Enter on
-/// sentinel, A on row, P-on-sentinel fast-path, empty-key re-open)
-/// stays consistent.
 pub fn env_key_input_state<'a>(
     editor: &EditorState<'_>,
     scope: &SecretsScopeTag,
@@ -51,10 +46,6 @@ pub fn env_key_input_state<'a>(
     )
 }
 
-/// Single source of truth for setting one env entry on the pending
-/// draft. Role scope auto-creates the override entry and
-/// auto-expands the section so the operator sees the new value —
-/// same semantics as `ConfigEditor::set_env_var` on save.
 fn set_pending_env_value(
     editor: &mut EditorState<'_>,
     scope: &SecretsScopeTag,
@@ -69,7 +60,6 @@ fn set_pending_env_value(
     );
 }
 
-/// Write an `OpRef` (picker commit result) into the pending env map.
 pub fn set_pending_env_op_ref(
     editor: &mut EditorState<'_>,
     scope: &SecretsScopeTag,
@@ -79,9 +69,6 @@ pub fn set_pending_env_op_ref(
     set_pending_env_value_typed(editor, scope, key, jackin_core::EnvValue::OpRef(op_ref));
 }
 
-/// Write an already-typed `EnvValue` into the pending env map.
-/// Used by the sentinel-add flow where the picker stashed an `OpRef`
-/// before the key name was known.
 fn set_pending_env_value_typed(
     editor: &mut EditorState<'_>,
     scope: &SecretsScopeTag,
@@ -125,11 +112,8 @@ pub fn apply_text_input_to_pending(
             );
         }
         TextInputTarget::EnvKey { scope } => {
-            // Empty key re-opens the EnvKey modal with the inline
-            // "cannot be empty" label instead of committing.
             let trimmed = value.trim();
             if trimmed.is_empty() {
-                // env_key context now in Modal::SourcePicker
                 let state =
                     env_key_input_state(editor, scope, secret_empty_key_label(), String::new());
                 editor.modal = Some(Modal::TextInput {

@@ -13,7 +13,7 @@ fn double_click_selects_word_and_copies_once() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(tx);
     let inner = mux.visible_panes()[0].inner;
-    // Cell (0, 6) sits inside "/model" (content columns 4..=9).
+
     let row = inner.row;
     let col = inner.col + 6;
 
@@ -54,8 +54,6 @@ fn double_click_selects_word_and_copies_once() {
         String::from_utf8_lossy(&clipboard)
     );
 
-    // The release that ends the double-click must not copy again or drop
-    // the highlight.
     drop(apply_action_frame(
         &mut mux,
         Action::MouseRelease {

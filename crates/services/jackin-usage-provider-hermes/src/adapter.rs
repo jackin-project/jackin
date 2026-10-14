@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Hermes` TUI attribution adapter logic (see `lib.rs`).
-
 use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
     UsageSource,
@@ -10,8 +8,6 @@ use jackin_protocol::control::{
 use jackin_usage_provider_core::{parse_iso_epoch, status_bar_quota_labels, timed_bucket};
 use serde::Deserialize;
 
-/// Exclusively owned Hermes runtime profile: concurrent processes must never
-/// share one profile, and cloned state drops rotating OAuth credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HermesRuntime {
     pub profile: String,
@@ -27,8 +23,6 @@ impl HermesRuntime {
     }
 }
 
-/// Raw Nous Portal `/api/billing/subscription` current tier. Money is decimal
-/// strings, never float.
 #[derive(Debug, Clone, Deserialize)]
 struct HermesSubscriptionCurrentRaw {
     #[serde(default)]
@@ -41,8 +35,6 @@ struct HermesSubscriptionCurrentRaw {
     cycle_ends_at: Option<String>,
 }
 
-/// Raw Nous Portal `/api/billing/subscription` response. `current` is null
-/// when no subscription is active.
 #[derive(Debug, Clone, Deserialize)]
 struct HermesSubscriptionRaw {
     #[serde(default)]
@@ -63,8 +55,6 @@ fn non_empty(value: Option<String>) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
-/// Parse one Portal subscription response. `Ok(None)` is the honest
-/// no-subscription state (current null/absent), never an error.
 pub fn parse_hermes_subscription(
     value: serde_json::Value,
 ) -> Result<Option<HermesSubscription>, String> {
@@ -89,18 +79,11 @@ pub fn parse_hermes_subscription(
         .transpose()
 }
 
-/// Renewal note for a Portal billing cycle end, e.g. `renews 2026-10-17`.
-/// UTC-explicit: the cycle timestamp is a date, not a local clock reading.
 pub fn hermes_renews_label(cycle_ends_at: i64) -> Option<String> {
     let date = chrono::DateTime::from_timestamp(cycle_ends_at, 0)?;
     Some(format!("renews {}", date.format("%Y-%m-%d")))
 }
 
-/// Portal subscription as an informational bucket. Decimal strings pass
-/// through verbatim — never parsed to float, never differenced into percents.
-/// `cycle_ends_at` is a renewal date, not a reset (F07 reset ≠ renewal): it
-/// renders as a `renews <date>` pace note with no reset stamp, never as
-/// "Resets in N days".
 pub fn hermes_subscription_bucket(subscription: &HermesSubscription, now: i64) -> QuotaBucketView {
     timed_bucket(
         "Credits",
@@ -123,16 +106,10 @@ pub fn hermes_subscription_bucket(subscription: &HermesSubscription, now: i64) -
     )
 }
 
-/// Local rate-limit tracker counters are display state, never quota: mapping
-/// them always yields zero buckets.
 pub fn hermes_tracker_counter_buckets(_counters: &serde_json::Value) -> Vec<QuotaBucketView> {
     Vec::new()
 }
 
-/// Portal auth failures fail closed: 401 (`invalid`/`session_revoked`) and 403
-/// (`insufficient_scope` / `remote_spending_revoked`) need a fresh login or device
-/// step-up; anything else (429/503 carry `retry_after`) surfaces as an error,
-/// never as fabricated quota.
 pub fn hermes_auth_status(status_code: u16) -> UsageSnapshotStatus {
     match status_code {
         401 | 403 => UsageSnapshotStatus::NeedsLogin,

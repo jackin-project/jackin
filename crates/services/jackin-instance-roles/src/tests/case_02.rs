@@ -156,8 +156,6 @@ fn prepare_for_bindings_provisions_two_instances_of_same_agent_independently() {
     let paths = JackinPaths::for_tests(temp.path());
     let manifest = simple_manifest(&temp);
 
-    // Ignore mode takes the lazy skip path (no filesystem writes),
-    // so both same-agent bindings provision deterministically.
     let bindings = vec![
         InstanceAuthBinding::new("work", Agent::Claude, AuthForwardMode::Ignore, None),
         InstanceAuthBinding::new("personal", Agent::Claude, AuthForwardMode::Ignore, None),
@@ -195,8 +193,7 @@ fn prepare_for_bindings_provisions_two_instances_of_same_agent_independently() {
         assert!(!slot.forward_auth);
         assert!(slot.home_dir.is_none());
     }
-    // First binding keeps the legacy layout; the second gets suffixed
-    // dirs so the two accounts never share a store or home.
+
     assert_eq!(work.slot_suffix, None);
     assert_eq!(work.container_home_rel, ".claude");
     assert_eq!(work.container_store_rel, "claude");
@@ -236,9 +233,6 @@ fn parent_kind_slots_isolate_under_a_unique_parent() {
     )
     .unwrap();
 
-    // `GEMINI_CLI_HOME` names the parent: the primary keeps the legacy
-    // home with the agent-home target, the secondary gets a unique
-    // parent whose `.gemini` child is its home.
     let primary_key = ProvisionedAuth::instance_key("g1", Agent::Gemini);
     let primary = state.auth.slots.get(&primary_key).unwrap();
     assert_eq!(primary.slot_suffix, None);

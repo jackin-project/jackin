@@ -300,8 +300,7 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
                 .generation,
             1
         );
-        // Recovery installs a fresh 300-second monotonic floor even when the
-        // prior wall deadline is one second away.
+
         assert_eq!(restarted.next_due_epoch(), Some(attempt_floor + 299));
         assert!(restarted.poll_due(attempt_floor - 1).is_empty());
         let forced_early = restarted
@@ -585,9 +584,6 @@ fn catalog_revision_retains_retry_after_across_restart() {
     assert_eq!(forced_early.generation, 2);
     assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
 
-    // The 3,000-second persisted Retry-After is longer than the fresh
-    // 300-second reload fence. It remains authoritative after monotonic time
-    // has passed the reload fence.
     restarted_clock.advance(Duration::from_secs(2_999));
     let before_retry_deadline = restarted.request_refresh(&account, 2, true, 4_999).unwrap();
     assert_eq!(before_retry_deadline.generation, 2);
@@ -724,8 +720,6 @@ fn failed_reconcile_does_not_erase_marker_when_store_preimage_was_missing() {
         UsageRefreshPhase::Completed
     );
 
-    // Simulate a missing durable preimage while the live coordinator retains
-    // evidence that a provider invocation occurred.
     store.inner.purge(&account).unwrap();
     store.fail_store_on_call.store(
         store.store_calls.load(Ordering::SeqCst) + 1,
@@ -784,8 +778,6 @@ fn after_apply_purge_failure_restores_preimage_and_catalog() {
     let before = store.inner.states.lock().unwrap().get(&account).cloned();
     store.fail_purge_after_apply.store(1, Ordering::SeqCst);
 
-    // The 300-second attempt floor has elapsed, so this exercises a real
-    // purge rather than the result-free cooldown-marker path.
     let error = coordinator.reconcile_catalog([], 10_000).unwrap_err();
     assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
     assert_eq!(store.purge_calls.load(Ordering::SeqCst), 1);
@@ -846,8 +838,6 @@ fn later_marker_store_failure_rolls_back_prior_marker_before_any_purge() {
     );
     let before = store.inner.states.lock().unwrap().clone();
 
-    // BTree order writes the first account's marker before the selected
-    // second write applies and fails. Both touched files must be restored.
     store.fail_store_on_call.store(
         store.store_calls.load(Ordering::SeqCst) + 2,
         Ordering::SeqCst,
@@ -933,9 +923,6 @@ fn crash_after_durable_cooldown_marker_precedes_purge_and_survives_restart() {
     assert!(tombstone.last_good.is_none());
     assert!(tombstone.terminal_error.is_none());
 
-    // The process died before the catalog publication. Restarting with the
-    // old catalog still cannot spend the durable marker's actual-call floor
-    // via a forward wall-clock jump.
     let restarted_clock = Arc::new(ManualClock::at(50_000));
     let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(100_301, 80),
@@ -1312,9 +1299,6 @@ fn restart_reload_fence_blocks_forward_wall_jump_but_not_fresh_accounts() {
     assert_eq!(persisted.provider_invoked_at_epoch, Some(1_000));
     drop(initial);
 
-    // A fresh monotonic origin models restart/reboot where no trustworthy
-    // boot-relative clock provenance survived. The wall clock is already
-    // beyond the old deadline, so only the conservative reload fence blocks.
     let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(2_800, 79),
     )));
@@ -1471,8 +1455,6 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
     assert!(reset_marker.reload_fence_required);
     drop(coordinator);
 
-    // The reload fence is itself durable safety state. It must survive even
-    // when no wall-clock retry/cooldown deadline remains to justify a tombstone.
     {
         let mut states = store.states.lock().unwrap();
         let uncertain = states.get_mut(&account).unwrap();
@@ -1523,8 +1505,6 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
     assert_eq!(purged_marker.success_deadline_epoch, None);
     drop(removal_coordinator);
 
-    // Clearing the wall projection after removal proves the persisted
-    // uncertainty marker independently reinstalls a monotonic fence on load.
     {
         let mut states = store.states.lock().unwrap();
         let uncertain = states.get_mut(&account).unwrap();
@@ -1533,9 +1513,6 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
         uncertain.success_deadline_epoch = None;
     }
 
-    // Restart again while uncertainty remains. A fresh monotonic origin models
-    // unavailable boot-clock provenance; moving wall time forward cannot
-    // consume the new process's conservative fence.
     let restarted_clock = Arc::new(ManualClock::at(2_500));
     let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(3_300, 78),
@@ -1669,9 +1646,7 @@ fn catalog_revision_keeps_pending_marker_and_completion_floor_across_readd() {
     clock.advance(Duration::from_secs(20));
     executor.release(1);
     executor.wait_idle();
-    // The executor's active count reaches zero just before the coordinator
-    // worker commits the fenced completion. Observe the durable state rather
-    // than treating provider return as completion of the whole transaction.
+
     let persistence_deadline = Instant::now() + Duration::from_secs(2);
     let completed_tombstone = loop {
         let persisted = store.states.lock().unwrap().get(&account).cloned();

@@ -28,7 +28,7 @@ fn tab_focus_falls_back_to_tab_bar_and_tracks_one_content_identity() {
     assert_eq!(focus.focused_content(), Some("settings"));
     assert!(focus.is_content("settings"));
     assert!(focus.show_cursor_for(&"settings"));
-    // Only one content identity is registered at a time (register-per-mutation).
+
     assert!(!focus.is_content("editor"));
 
     focus.focus_tab_bar();

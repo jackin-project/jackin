@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Scroll, key, and pre-render resolvers.
 
 use super::{
     ConsoleMouseWheelPlan, ListModalKeyTarget, ListModalScrollTarget, ListPreRenderFacts,

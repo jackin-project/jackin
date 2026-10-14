@@ -282,7 +282,7 @@ fn drag_extending_a_word_click_recopies_on_release() {
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     let row = inner.row;
-    let col = inner.col + 6; // inside "/model"
+    let col = inner.col + 6;
     let mut rx = attach_drained_client(&mut mux);
 
     drop(apply_action_frame(
@@ -298,8 +298,6 @@ fn drag_extending_a_word_click_recopies_on_release() {
         "word click copies immediately"
     );
 
-    // Extend the selection past the word, then release: the clipboard no
-    // longer matches the highlight, so release must copy again.
     drop(apply_action_frame(
         &mut mux,
         Action::PaneButtonMotion {
@@ -340,7 +338,7 @@ fn double_click_on_scrolled_back_row_copies_the_history_word() {
     mux.session_supervisor.sessions.insert(1, session);
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
-    let row = inner.row; // top visible row = scrollback row filled-5
+    let row = inner.row;
     let col = inner.col + 1;
     let mut rx = attach_drained_client(&mut mux);
 

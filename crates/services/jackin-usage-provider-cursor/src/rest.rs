@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Cursor` session REST transport.
 
 use super::CURSOR_SESSION_BASE;
 use jackin_usage_provider_core::provider_http_client;

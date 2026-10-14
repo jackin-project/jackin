@@ -2,7 +2,6 @@
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-//! Launch rich terminal renderer and modal loops.
 
 use std::io::Write;
 
@@ -42,13 +41,9 @@ pub fn rich_launch_dialog_required_message(what: &str) -> String {
 pub struct RichRenderer {
     terminal: ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     no_motion: bool,
-    /// Whether this renderer entered the alternate screen on construction.
-    /// Recorded so `drop` can leave it only when we entered it — under the
-    /// host `TerminalSession` guard the screen persists into the capsule attach.
+
     entered_alt_screen: bool,
-    /// Shared digital-rain engine (the same one the intro/outro use), ticked
-    /// per frame and painted into the loading box. Sized to the terminal so
-    /// the box shows a window into one continuous rainfall.
+
     rain: Option<crate::tui::components::rain::RainState>,
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,
@@ -57,8 +52,6 @@ pub struct RichRenderer {
     jank_monitor: jackin_telemetry::ui::JankMonitor,
 }
 
-/// Owns the background render task that ticks the cockpit independently of
-/// launch work, so rain and animation continue while a launch step waits on I/O.
 #[expect(
     missing_debug_implementations,
     reason = "RichDriver owns a render task handle and terminal renderer state that are not diagnostic data."
@@ -110,20 +103,13 @@ impl RichDriver {
                         &cancel_token,
                         &rr.input,
                     );
-                    // Ctrl+C — immediate hard stop. Restore the terminal, then
-                    // exit the process at once: no graceful teardown, no waiting
-                    // on in-flight blocking work (binary download/extract,
-                    // `docker build`). Stale docker resources are reclaimed by
-                    // the next launch's `gc_orphaned_resources`. This is the one
-                    // path that deliberately skips `LoadCleanup`.
+
                     if outcome == CockpitOutcome::HardExit {
                         rr.host.set_rich_surface_active(false);
                         restore_renderer_terminal_for_process_exit(&mut rr.terminal);
                         std::process::exit(0);
                     }
-                    // Other cancellation sources can still ask the launch
-                    // pipeline to unwind gracefully. Operator quit from the
-                    // cockpit uses the HardExit arm above.
+
                     if cancel_token.is_cancelled() {
                         rr.restore_terminal();
                         break;
@@ -262,7 +248,6 @@ enum ErrorPromptMessage {
 fn update_forced_select(picker: &mut PromptPicker, msg: SelectLoopMessage) -> Option<usize> {
     match msg {
         SelectLoopMessage::Key(key) => {
-            // Esc reports Cancel; ignored here so the choice is forced.
             if let Outcome::Activated(index) = picker.handle_key(key) {
                 Some(index)
             } else {
@@ -339,8 +324,7 @@ impl RichRenderer {
     ) -> anyhow::Result<Self> {
         terminal_check()?;
         let mut stdout = std::io::stdout();
-        // When the launch flow's host guard already owns the alternate screen,
-        // draw into it; only enter it ourselves when running standalone.
+
         let entered_alt_screen = !host.host_screen_owned();
         if entered_alt_screen {
             crossterm::terminal::enable_raw_mode().context("entering raw mode for launch TUI")?;
@@ -351,22 +335,12 @@ impl RichRenderer {
         stdout.execute(crossterm::cursor::Hide)?;
         let backend = ratatui::backend::CrosstermBackend::new(stdout);
         let mut terminal = ratatui::Terminal::new(backend)?;
-        // Wipe whatever the previous surface left on the screen and force a full
-        // first redraw. Under the host guard we skipped EnterAlternateScreen
-        // (which would have cleared), so the console's last frame is still on
-        // the inherited screen — clear it or the cockpit renders over it.
-        // Use backend_mut().clear() instead of terminal.clear(): ratatui-core ≥ 0.1.1
-        // added a cursor-position save/restore around the erase that blocks on a DSR
-        // query. On non-interactive PTYs (e.g. the script-based E2E harness) the
-        // terminal never answers, causing a timeout error. The backend call issues the
-        // same erase without the query; a freshly constructed Terminal already has
-        // default (empty) buffers so the next draw will repaint everything anyway.
+
         terminal
             .backend_mut()
             .clear()
             .context("clearing launch screen")?;
-        // Ancillary status printers (spinners) go silent while this surface
-        // owns the alternate screen.
+
         host.set_rich_surface_active(true);
         let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
         let _screen_result =
@@ -411,9 +385,7 @@ impl RichRenderer {
 
     pub fn render(&mut self, view: &LaunchView, run_id: &str) -> anyhow::Result<()> {
         let no_motion = self.no_motion;
-        // Keep the rain engine sized to the terminal. Advance it every other
-        // render so the rainfall reads at the calmer main-branch speed while
-        // the frame still redraws smoothly (~30fps). Paused under no-motion.
+
         if let Ok(size) = self.terminal.size() {
             let (cols, rows) = (size.width as usize, size.height as usize);
             let stale = self
@@ -445,8 +417,7 @@ impl RichRenderer {
                 jackin_version: self.jackin_version,
             },
         };
-        // Progress frame via shared drive_frame; OSC 8 post-pass
-        // remains caller-owned per drive_frame contract.
+
         let render_started = std::time::Instant::now();
         jackin_tui::runtime::drive_frame(&mut self.terminal, &adapter, view, area, |_| {})
             .map(|_| ())
@@ -472,8 +443,6 @@ impl RichRenderer {
         Ok(())
     }
 
-    /// Run a modal dialog loop while raw mode is already held by either the
-    /// host guard or this standalone renderer. `Ctrl-C` aborts the launch.
     fn with_raw_mode<T>(
         &mut self,
         _context: &'static str,
@@ -482,15 +451,12 @@ impl RichRenderer {
         f(self)
     }
 
-    /// Present a forced-choice picker over the dimmed launch frame.
     pub fn select(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
         self.with_raw_mode("entering raw mode for launch picker", |renderer| {
             renderer.select_loop(title, &[], items)
         })
     }
 
-    /// Forced-choice picker with a descriptive `context` block above the
-    /// options. Used by the standalone post-attach cleanup prompt.
     pub fn select_with_context(
         &mut self,
         title: &str,
@@ -678,10 +644,6 @@ impl RichRenderer {
         }
     }
 
-    // ── D23 launch dialog with D21 delete-in-place ─────────────────────────
-
-    /// D23/D21: rich launch picker supporting `Del` (delete candidate) and
-    /// `I` (inspect dirty state via the D24 surface). Returns `LaunchDialogResult`.
     pub fn launch_dialog(
         &mut self,
         title: &str,
@@ -706,7 +668,6 @@ impl RichRenderer {
         use crate::tui::components::dialog::{dialog_backdrop, percent_dialog_rect};
         use termrock::widgets::HintSpan;
 
-        // Item 0 = "Start new session"; items 1..=N = candidates.
         let mut labels = vec!["Start new session".to_owned()];
         labels.extend(candidates.iter().map(|c| c.label.clone()));
         let mut picker = PromptPicker::new(labels);
@@ -762,7 +723,7 @@ impl RichRenderer {
                     .context("rendering launch dialog")?;
 
                     let key = read_pressed_key(&self.input, "reading launch dialog input")?;
-                    // Check for I (inspect) or Del before passing to picker.
+
                     let sel = picker.selected_index();
                     if key.code == KeyCode::Char('i') || key.code == KeyCode::Char('I') {
                         if let Some(s) = sel
@@ -817,10 +778,6 @@ impl RichRenderer {
         }
     }
 
-    // ── D24 Inspect surface ──────────────────────────────────────────────────
-
-    /// D24: read-only inspect surface for dirty/unpushed worktrees.
-    /// Returns when the operator presses Esc.
     #[expect(
         clippy::excessive_nesting,
         reason = "Inspect-surface loop: per-focus-tab (Repos / Files / Diff) nested \
@@ -849,7 +806,6 @@ impl RichRenderer {
             HintSpan::Text("back"),
         ];
 
-        // If only one worktree, repos pane is hidden.
         let mut wt_sel: usize = 0;
         let mut file_sel: usize = 0;
         #[derive(PartialEq, Clone, Copy)]
@@ -890,15 +846,13 @@ impl RichRenderer {
                 );
             }
             let mut state = DiffState::new();
-            // Pre-bump surface painted no line-number gutter; keep parity.
+
             state.show_line_numbers = false;
-            // The inspect diff scrolls without a cursor; suppress the
-            // selection chrome the head widget paints on the cursor row.
+
             state.show_cursor = false;
             Some(InspectDiff { lines, state })
         };
 
-        // Build initial diff
         let mut diff_state = build_diff(&worktrees[wt_sel], file_sel);
 
         loop {
@@ -925,7 +879,6 @@ impl RichRenderer {
                     &termrock::style::DesignSystem::default(),
                 );
 
-                // Split body: repos (if >1) | files | diff
                 let constraints = if has_repos {
                     vec![
                         Constraint::Percentage(20),
@@ -946,8 +899,6 @@ impl RichRenderer {
                     (None, panes[0], panes[1])
                 };
 
-                // Mark the Tab-focused pane with the ▸ selection glyph so the
-                // operator sees which pane Up/Down/PageUp drive.
                 if let Some(repos_area) = repos_area {
                     let mut repos_state = PromptPicker::new(wt_labels.clone());
                     repos_state.select_index(wt_sel_c);
@@ -1018,8 +969,6 @@ impl RichRenderer {
             })
             .context("rendering inspect surface")?;
 
-            // Persist the widget-synced scroll metrics so the next frame's
-            // host offset injection clamps against real content/viewport.
             diff_state = diff_cloned;
 
             let key = read_pressed_key(&self.input, "reading inspect surface input")?;
@@ -1093,10 +1042,6 @@ impl RichRenderer {
         }
     }
 
-    // ── D24 exit dialog with inspect ─────────────────────────────────────────
-
-    /// Exit dialog with `I`-key inspect support. D23 three-way choice
-    /// (Return/Keep/Discard) with D24 inspect reachable per worktree.
     pub fn exit_dialog_with_inspect(
         &mut self,
         title: &str,
@@ -1129,11 +1074,7 @@ impl RichRenderer {
 
             let key = read_pressed_key(&self.input, "reading exit dialog input")?;
 
-            // Intercept I before passing to picker.
             if key.code == KeyCode::Char('i') || key.code == KeyCode::Char('I') {
-                // Inspect the worktrees for the first record (or all).
-                // The exit dialog selects a *batch* action (Keep all / Discard all),
-                // so we show the inspect surface for all preserved records.
                 let all_worktrees: Vec<crate::WorktreeInspect> = worktrees_per_record
                     .iter()
                     .flat_map(|wts| wts.iter().cloned())
@@ -1189,12 +1130,6 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
 }
 
 impl RichRenderer {
-    /// Restore the terminal to its pre-launch state immediately.
-    ///
-    /// Called explicitly from the render task on cancel detection so that the
-    /// terminal is visible before cleanup runs (cleanup can take 10-30 s).
-    /// Sets `entered_alt_screen = false` so the `Drop` impl is a no-op if this
-    /// was already called — restoration is idempotent.
     pub(super) fn restore_terminal(&mut self) {
         self.host.set_rich_surface_active(false);
         drop(self.terminal.backend_mut().execute(crossterm::cursor::Show));
@@ -1215,8 +1150,7 @@ impl Drop for RichRenderer {
         let _screen_result = self
             .screen_tracker
             .exit(jackin_telemetry::schema::enums::TransitionReason::Completion);
-        // `restore_terminal()` sets `entered_alt_screen = false` when called
-        // explicitly on cancel, making this a no-op for the cancel path.
+
         self.restore_terminal();
     }
 }

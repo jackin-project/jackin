@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Miscellaneous Multiplexer utility methods.
-
 use super::{FullRedrawReason, Multiplexer, SessionInfo};
 
 mod spawn_support;
@@ -12,11 +10,6 @@ mod usage_views;
 pub(crate) use usage_views::refresh_usage_targets_with_client;
 
 impl Multiplexer {
-    /// Record a state change that can affect the visible frame. Handlers
-    /// only mutate state and call this; the render loop composes when the
-    /// generation moved. `FirstAttach` and `Resize` additionally arm the
-    /// wipe policy — the only two reasons whose next frame starts with a
-    /// screen erase.
     pub(super) fn invalidate(&mut self, reason: FullRedrawReason) {
         self.render.frame_generation = self.render.frame_generation.wrapping_add(1);
         self.render.last_invalidate_reason = Some(reason);
@@ -48,12 +41,6 @@ impl Multiplexer {
             .collect()
     }
 
-    /// Build a tab/pane tree snapshot for the host console's preview
-    /// pane. The leaf order matches `PaneTree::leaves` so the operator
-    /// sees panes in the same left-to-right / top-to-bottom order the
-    /// multiplexer renders. Missing sessions (race against a kill)
-    /// fall back to a placeholder so the snapshot still covers every
-    /// leaf the tree references — the host UI can dim those rows.
     pub(super) fn tab_snapshots(&self) -> Vec<crate::protocol::control::TabSnapshot> {
         use crate::protocol::control::{PaneSnapshot, TabSnapshot};
         use crate::tui::layout::Rect;
@@ -96,8 +83,6 @@ impl Multiplexer {
             .collect()
     }
 
-    /// Snapshot the agent history for the control-channel `Agents` query.
-    /// Active agents have `exited_at == None`; exited agents have a timestamp.
     pub(super) fn agent_registry_snapshot(
         &self,
     ) -> Vec<jackin_protocol::control::AgentRegistryEntry> {
@@ -118,7 +103,7 @@ impl Multiplexer {
                 } else {
                     "active".to_owned()
                 },
-                // is_self is determined client-side from JACKIN_AGENT_CODENAME.
+
                 is_self: false,
             })
             .collect()

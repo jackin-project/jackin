@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Catalog reconciliation.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -101,8 +100,7 @@ pub(crate) fn restore_catalog_preimages(
             CatalogAccountPreimage::Missing => {
                 shared.store.purge(&capability)?;
             }
-            // The invalid bytes were deliberately quarantined during the
-            // failed rotation. Reintroducing them would re-poison recovery.
+
             CatalogAccountPreimage::Corrupt => {}
         }
     }

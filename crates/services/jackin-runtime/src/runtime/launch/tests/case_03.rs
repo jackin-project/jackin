@@ -38,9 +38,6 @@ async fn diagnose_premature_exit_surfaces_stderr_only_docker_logs() {
 
 #[tokio::test]
 async fn agent_mounts_for_claude_ignore_mode_mounts_state_but_no_auth_handoff() {
-    // Ignore mode must still mount durable Claude home state so
-    // conversations/plugins survive a Docker delete, but auth handoff
-    // files under /jackin/claude/ must not flow into the container.
     use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::Agent;
 
@@ -233,9 +230,6 @@ plugins = []
 
 #[tokio::test]
 async fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
-    // Sync mode + host auth present → both account.json and
-    // credentials.json flow under /jackin/claude/. Plugins are baked
-    // into the image and do not need a runtime mount.
     use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::Agent;
 
@@ -260,7 +254,6 @@ plugins = []
     .unwrap();
     let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
-    // Seed a fake host home with both Claude files so sync resolves.
     let host_home = temp.path().join("host_home");
     std::fs::create_dir_all(host_home.join(".claude")).unwrap();
     std::fs::write(
@@ -305,11 +298,6 @@ plugins = []
 
 #[tokio::test]
 async fn agent_mounts_for_claude_oauth_token_mode_mounts_skeleton_only() {
-    // OAuthToken mode writes a `{"hasCompletedOnboarding":true}`
-    // skeleton at account.json (so the in-container CLI does not
-    // run its login wizard) and removes credentials.json. The
-    // launcher must mount the skeleton AND must not mount any
-    // stale credentials.json that survived the provision step.
     use crate::instance::{PrepareResolvers, RoleState};
     use jackin_core::Agent;
 

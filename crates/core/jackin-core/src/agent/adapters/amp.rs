@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Amp adapter.
-
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
@@ -13,7 +11,6 @@ use crate::agent::runtime::{
 const FALLBACK_INSTALL_COMMAND: &str =
     bounded_fallback_curl!("https://ampcode.com/install.sh", " | bash");
 
-/// [`crate::agent::runtime::AgentRuntime`] adapter for Amp.
 #[derive(Debug)]
 pub(crate) struct AmpRuntime;
 

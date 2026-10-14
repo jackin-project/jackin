@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Config subcommand dispatch — extracted from `app::run` to keep mod.rs focused.
-
 use anyhow::Result;
 
 use crate::cli::{self, ConfigCommand};
@@ -17,17 +15,13 @@ pub(super) struct EnvRow {
     key: String,
     #[tabled(rename = "Value")]
     value: String,
-    /// Whether the value is resolved at `jackin-exec` time rather than at
-    /// launch. Visible in the table because the two kinds behave differently
-    /// at launch and an operator cannot otherwise tell them apart.
+
     #[tabled(rename = "On demand")]
     on_demand: String,
 }
 
-/// One `env list` row: name, display value, and whether it is on-demand.
 pub(super) type EnvListRow = (String, String, bool);
 
-/// Project a config env map onto `env list` rows.
 pub(super) fn env_rows<'a>(
     env: impl IntoIterator<Item = (&'a String, &'a jackin_core::EnvValue)>,
 ) -> Vec<EnvListRow> {
@@ -37,17 +31,10 @@ pub(super) fn env_rows<'a>(
         .collect()
 }
 
-/// Build the `EnvValue` a `env set` writes.
-///
-/// `on_demand` is carried by the table forms only: a bare scalar has nowhere
-/// to record it, so an on-demand literal is stored as the `Extended` table.
 pub(super) fn resolve_env_value_for_cli(
     value: &str,
     on_demand: bool,
 ) -> Result<jackin_core::EnvValue> {
-    // Probe op CLI availability before attempting structural queries. A
-    // failed probe keeps `account add --secret-ref op://...` (and `env set`)
-    // working: the ref is persisted unresolved and resolution stays lazy.
     let op_cli = jackin_env::OpCli::new();
     let runner = match jackin_env::OpRunner::probe(&op_cli) {
         Ok(()) => Some(op_cli),
@@ -68,12 +55,6 @@ pub(super) fn resolve_env_value_for_cli(
     resolve_env_value_for_cli_with_runner(value, on_demand, runner)
 }
 
-/// [`resolve_env_value_for_cli`] with an injected 1Password runner.
-///
-/// `Some` canonicalizes the `op://` URI through live `op` structural
-/// queries; `None` (probe failed, `op` absent) persists the ref unresolved
-/// after a syntactic check. Tests inject runners instead of mutating the
-/// process environment, mirroring the `jackin-env` convention.
 pub(super) fn resolve_env_value_for_cli_with_runner(
     value: &str,
     on_demand: bool,
@@ -101,11 +82,6 @@ pub(super) fn resolve_env_value_for_cli_with_runner(
     }
 }
 
-/// Build an unresolved [`jackin_core::OpRef`] from a syntactic `op://` URI
-/// without calling `op`. Same shape the `.zshrc` importer seeds: the URI
-/// verbatim as the resolution source, a vault/item/field breadcrumb for
-/// display. Lazy resolution (`op read` at value-use time) fails honestly
-/// when `op` is still missing.
 pub(super) fn unresolved_op_ref(value: &str, on_demand: bool) -> Result<jackin_core::OpRef> {
     let Some(parts) = jackin_core::parse_op_reference(value) else {
         anyhow::bail!(

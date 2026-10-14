@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Deferred control replies whose telemetry ends only after response delivery.
-
 use std::future::Future;
 
 use jackin_protocol::control::ServerMsg;
@@ -54,9 +52,6 @@ impl PendingExecReply {
                 &jackin_telemetry::operation::PROCESS_COMMAND,
                 &attrs,
                 async move {
-                    // Cancellation wins before the command future's first poll,
-                    // including closure between approval and task scheduling.
-                    // Dropping a running future also drops its owned process group.
                     let reply = tokio::select! {
                         biased;
                         () = self.reply_tx.closed() => {

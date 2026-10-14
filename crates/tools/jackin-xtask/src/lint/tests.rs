@@ -12,7 +12,7 @@ fn fixture(budget_text: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let crates = dir.path().join("crates");
     fs::create_dir_all(&crates).unwrap();
-    // One production file under cap, one production file over cap, one test file.
+
     write(&crates.join("small.rs"), "fn tiny() {}\n");
     write(&crates.join("big.rs"), &"// padding line\n".repeat(1500));
     fs::create_dir_all(crates.join("pkg")).unwrap();
@@ -23,8 +23,6 @@ fn fixture(budget_text: &str) -> tempfile::TempDir {
 
 #[test]
 fn passes_when_budgeted_file_matches_recorded_over_cap_count() {
-    // big.rs is 1500 lines, over the 1000-line cap, recorded at exactly 1500
-    // -> steady state, passes.
     let dir = fixture(
         "production_cap = 1000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1500\n",
     );
@@ -45,7 +43,6 @@ fn fails_when_unlisted_file_exceeds_cap() {
 
 #[test]
 fn allowlist_entry_must_match_actual_count_down_only() {
-    // Recorded 1000 lines but file is now 1500 -> ratchet exceeded (growth).
     let dir = fixture(
         "production_cap = 2000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1000\n",
     );
@@ -58,7 +55,6 @@ fn allowlist_entry_must_match_actual_count_down_only() {
 
 #[test]
 fn rejects_budget_row_for_missing_file() {
-    // The budget points at a file that does not exist on disk -> stale row.
     let dir = fixture(
         "production_cap = 1000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/ghost.rs\"\nlines = 1500\n",
     );
@@ -74,8 +70,6 @@ fn rejects_budget_row_for_missing_file() {
 
 #[test]
 fn rejects_budget_row_when_file_drops_under_cap() {
-    // big.rs is 1500 lines and under the 2000-line cap, yet it carries a
-    // budget row -> the row is no longer needed and must be deleted.
     let dir = fixture(
         "production_cap = 2000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1500\n",
     );
@@ -92,8 +86,6 @@ fn rejects_budget_row_when_file_drops_under_cap() {
 
 #[test]
 fn rejects_budget_row_when_recorded_count_higher_than_measured() {
-    // big.rs is 1500 lines (over the 1000-line cap) but recorded at 9999 -> the
-    // row must shrink to the measured count. Previously this passed silently.
     let dir = fixture(
         "production_cap = 1000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 9999\n",
     );

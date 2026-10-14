@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Concrete console manager state and type bindings.
-//!
-//! `ManagerState` is the single central struct that the host console TUI
-//! owns across its entire lifetime. All field types are lower-crate types
-//! (from `jackin-core`, `jackin-config`, `jackin-env`, `jackin-protocol`,
-//! `TermRock`, and this crate) so the root binary can depend on this
-//! module without creating a circular dependency.
 mod aliases;
 mod helpers;
 mod manager;

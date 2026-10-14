@@ -1108,7 +1108,7 @@ words = [
   "Gruevski's",
   "petgraph",
   "READMEs",
-  "READM", # codebook camelCase-splits `READMEs` into READM+Es after ignore-patterns run; allowlist the stem.
+  "READM",
   "SIGKILLs",
   "ccache",
   "ccache's",

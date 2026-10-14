@@ -72,9 +72,9 @@ const serverLoader = createServerFn({
       ? sectionSegment.charAt(0).toUpperCase() + sectionSegment.slice(1).replace(/-/g, ' ')
       : undefined
 
-    // The public/jackin❯ tab is the catch-all section — every page not under the
-    // /reference, /roadmap, or /research roots. It can't be matched by a url prefix (the
-    // section has several), so the switcher matches it by exact membership.
+
+
+
     return {
       path: page.path,
       markdownUrl: slugsToMarkdownPath(page.slugs).url,
@@ -137,20 +137,20 @@ function Page() {
       tree={pageTree}
       sidebar={{
         defaultOpenLevel: 2,
-        // Render the section switcher in the sidebar. The desktop sidebar only
-        // shows it when tabMode === 'auto'; don't rely on the fumadocs default
-        // (it changed across versions and silently dropped the switcher).
+
+
+
         tabMode: 'auto',
-        // Four doc blocks, switched via the sidebar dropdown (fumadocs Sidebar Tabs).
-        // Public is the default; Internals, Roadmap, and Research are separate roots, hidden
-        // until the reader switches. Order matters: `/` prefix-matches everything,
-        // so the more specific roots must come after it for active-tab detection.
+
+
+
+
         tabs: [
           {
-            // Public is the catch-all section (everything not under /reference or
-            // /roadmap or /research). It has no single url prefix isActive can match, so it's
-            // matched by exact page membership via `urls`. `url` is just the click
-            // target. Order matters: the three explicit roots win via findLast.
+
+
+
+
             title: 'jackin❯',
             description: 'Install, run, and operate jackin❯.',
             url: '/getting-started/why',

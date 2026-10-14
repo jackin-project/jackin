@@ -42,7 +42,6 @@ async fn reconcile_gate_false_with_no_pidfile_skips_docker_count() {
         .await
         .unwrap();
 
-    // Canonical fake records list_containers as `docker ps…` entries.
     let list_calls = docker
         .recorded
         .borrow()
@@ -71,8 +70,6 @@ fn read_pid_file_parses_trimmed_pid() {
 
 #[test]
 fn read_pid_file_returns_none_for_empty_file() {
-    // Empty file is the legitimate "no PID recorded" state — treat
-    // as a fresh start, not as corruption.
     let tmp = tempdir().unwrap();
     let path = tmp.path().join("p.pid");
     std::fs::write(&path, "").unwrap();
@@ -81,11 +78,6 @@ fn read_pid_file_returns_none_for_empty_file() {
 
 #[test]
 fn read_pid_file_errors_on_garbage() {
-    // Corrupted PID file (non-numeric content) MUST surface as an
-    // error rather than coercing to None — silent coercion would
-    // let the next `(true, Gone)` arm spawn a duplicate caffeinate
-    // over the unrecorded survivor, orphaning the prior process
-    // until reboot.
     let tmp = tempdir().unwrap();
     let path = tmp.path().join("p.pid");
     std::fs::write(&path, "not-a-pid").unwrap();
@@ -98,8 +90,6 @@ fn read_pid_file_errors_on_garbage() {
 
 #[test]
 fn is_caffeinate_alive_at_returns_gone_for_nonexistent_pid() {
-    // PID 1 always exists; pick a deliberately huge number unlikely
-    // to be allocated. `ps -p` returns nonzero for missing PIDs.
     assert_eq!(is_caffeinate_alive_at(2_000_000_000), Liveness::Gone);
 }
 
@@ -120,23 +110,16 @@ fn liveness_probe_exports_nonzero_without_pid_or_output() {
 
 #[test]
 fn is_caffeinate_alive_at_returns_gone_for_unrelated_process() {
-    // PID 1 is launchd on macOS / init on Linux — alive, but its
-    // comm is not "caffeinate". This is exactly the PID-reuse race
-    // the comm check guards against; the impostor must classify as
-    // `Gone`, not `Alive`, so the caller never SIGTERMs it.
     assert_eq!(is_caffeinate_alive_at(1), Liveness::Gone);
 }
 
 #[test]
 fn classify_ps_comm_output_returns_gone_on_nonzero_exit() {
-    // `ps -p <missing>` exits nonzero with empty stdout — that's
-    // the "no such process" signal.
     assert_eq!(classify_ps_comm_output(false, ""), Liveness::Gone);
 }
 
 #[test]
 fn classify_ps_comm_output_returns_alive_for_basename() {
-    // Linux-style: `ps -o comm=` reports just the basename.
     assert_eq!(
         classify_ps_comm_output(true, "caffeinate\n"),
         Liveness::Alive
@@ -145,7 +128,6 @@ fn classify_ps_comm_output_returns_alive_for_basename() {
 
 #[test]
 fn classify_ps_comm_output_returns_alive_for_absolute_path() {
-    // macOS-style: `ps -o comm=` reports the full executable path.
     assert_eq!(
         classify_ps_comm_output(true, "/usr/bin/caffeinate\n"),
         Liveness::Alive,
@@ -154,8 +136,6 @@ fn classify_ps_comm_output_returns_alive_for_absolute_path() {
 
 #[test]
 fn classify_ps_comm_output_returns_gone_for_other_process() {
-    // PID alive but comm doesn't match — same outcome as "no such
-    // PID": treat as gone, never act on it.
     assert_eq!(
         classify_ps_comm_output(true, "/sbin/launchd\n"),
         Liveness::Gone
@@ -165,8 +145,6 @@ fn classify_ps_comm_output_returns_gone_for_other_process() {
 
 #[test]
 fn classify_ps_comm_output_does_not_match_substring() {
-    // Guard against a future "simplification" to `contains` that
-    // would treat `caffeinated`, `xcaffeinate`, etc. as a match.
     assert_eq!(
         classify_ps_comm_output(true, "caffeinated\n"),
         Liveness::Gone
@@ -179,8 +157,6 @@ fn classify_ps_comm_output_does_not_match_substring() {
 
 #[test]
 fn classify_ps_comm_output_returns_gone_for_empty_stdout() {
-    // Defensive: success + empty output shouldn't be treated as a
-    // match (basename == "" != "caffeinate").
     assert_eq!(classify_ps_comm_output(true, ""), Liveness::Gone);
 }
 

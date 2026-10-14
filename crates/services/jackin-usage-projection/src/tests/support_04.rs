@@ -3,8 +3,6 @@
 
 use super::*;
 pub(super) fn parity_mega_screen(render_at: i64) -> UsageScreenState {
-    // The fixture and renderer share one explicit epoch. This keeps relative
-    // labels stable without mutating fixture timestamps to wall time.
     let providers = parity_mega_providers();
     let (projection, _) = parity_projection_at(
         render_at,

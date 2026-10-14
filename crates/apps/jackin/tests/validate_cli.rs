@@ -28,8 +28,6 @@ plugins = []
 
 const VERSIONED_FROM: &str = "FROM projectjackin/construct:0.1-trixie\n";
 
-// ── validate subcommand ──────────────────────────────────────────────────────
-
 #[test]
 fn validate_passes_for_valid_agent_repo() {
     let temp = tempdir().unwrap();
@@ -196,8 +194,6 @@ fn validate_with_no_args_shows_usage() {
         .stderr(predicate::str::contains("Usage"));
 }
 
-// ── migrate subcommand ───────────────────────────────────────────────────────
-
 #[test]
 fn migrate_is_noop_for_current_manifest() {
     let temp = tempdir().unwrap();
@@ -280,8 +276,6 @@ fn migrate_reports_malformed_manifest() {
         .stderr(predicate::str::contains("parsing"));
 }
 
-// ── construct-version subcommand ─────────────────────────────────────────────
-
 #[test]
 fn construct_version_prints_tag() {
     let temp = tempdir().unwrap();
@@ -329,8 +323,6 @@ fn construct_version_fails_for_invalid_repo() {
         .stderr(predicate::str::contains("floating tag"));
 }
 
-// ── published-image-repository subcommand ───────────────────────────────────
-
 #[test]
 fn published_image_repository_strips_tag() {
     let temp = tempdir().unwrap();
@@ -343,8 +335,6 @@ fn published_image_repository_strips_tag() {
         .success()
         .stdout("ghcr.io/example/jackin-sentinel\n");
 }
-
-// ── publish-labels subcommand ───────────────────────────────────────────────
 
 #[test]
 fn publish_labels_prints_canonical_contract() {

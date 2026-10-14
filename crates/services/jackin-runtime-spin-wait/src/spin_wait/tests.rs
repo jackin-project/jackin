@@ -1,5 +1,3 @@
-//! Tests for `spin_wait`.
-
 use super::*;
 
 use std::cell::Cell;

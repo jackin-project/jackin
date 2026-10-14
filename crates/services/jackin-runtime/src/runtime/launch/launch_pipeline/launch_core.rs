@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Core launch pipeline: typed `#[must_use]` phase chain over `LaunchCore`.
-//!
-//! `run_launch_core` is a thin entry that delegates to [`orchestrate`] where the
-//! ten phase tokens are produced and consumed by value.
-
 mod orchestrate;
 
 use jackin_config::AppConfig;
@@ -61,20 +56,10 @@ where
     pub admission_config: AppConfig,
 }
 
-/// Typed phase chain for the `jackin load` critical path.
-///
-/// # Teardown `?`-path audit (plan 016)
-/// Every fallible step between `LoadCleanup` arm and disarm either runs
-/// `cleanup.run(docker)` before returning `Err`, or is covered by suite-A /
-/// launch harness tests (grant, materialize, credential, role-state, trust,
-/// sidecar, workspace, launch, post-success finalization).
 pub(super) async fn run_launch_core<D, R>(ctx: LaunchCore<'_, D, R>) -> anyhow::Result<String>
 where
     D: DockerApi,
     R: CommandRunner,
 {
-    // Bound the phase state carried by callers. Embedding this concrete future
-    // through every launch adapter multiplies debug poll frames and can exhaust
-    // the default Linux test-thread stack during successful launches.
     Box::pin(orchestrate::run_launch_phases(ctx)).await
 }

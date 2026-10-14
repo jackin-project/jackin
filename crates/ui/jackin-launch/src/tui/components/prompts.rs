@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch prompt dialog rendering and geometry.
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -200,8 +198,7 @@ impl PromptConfirm {
         match key.code {
             KeyCode::Char('y' | 'Y') => Outcome::Activated(true),
             KeyCode::Char('n' | 'N') => Outcome::Activated(false),
-            // Head TermRock leaves Tab/BackTab to the host; pre-bump the
-            // choice dialog cycled its own actions on them.
+
             KeyCode::Tab => self.state.select_next(&confirm_actions()),
             KeyCode::BackTab => self.state.select_previous(&confirm_actions()),
             _ => self.state.handle_key(&confirm_actions(), key.into()),
@@ -385,8 +382,7 @@ pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &mut PromptText, skippable
         .emphasis(PanelChrome::Focused);
     let inner = panel.inner(area);
     frame.render_widget(&panel, area);
-    // Head `Panel::inner` already applies the design-system padding; a second
-    // host margin would zero the one-row content band.
+
     frame.render_stateful_widget(
         &TextInput::new(&input.label, &theme)
             .placeholder("")
@@ -457,9 +453,6 @@ pub fn draw_error_popup(frame: &mut Frame<'_>, state: &mut PromptError) {
 }
 
 fn picker_rect(area: Rect, picker: &PromptPicker, context: &[Line<'_>]) -> Rect {
-    // Structural exception: launch picker size depends on transient context lines before the shared select-list renderer runs.
-    // Interior: filter row + spacer + one row per item, plus two borders; a
-    // non-empty context block adds its line count plus a spacer.
     let context_rows = u16::try_from(context.len()).unwrap_or(u16::MAX);
     let context_extra = if context_rows > 0 {
         context_rows.saturating_add(1)
@@ -509,8 +502,6 @@ fn text_input_prompt_rect(area: Rect) -> Rect {
     exact_dialog_rect(area, width, 5)
 }
 
-/// Footer-hint keys for the launch text prompt. `skippable` adds the
-/// leave-empty-to-skip group; both share the rest of the vocabulary.
 const fn text_prompt_hint(skippable: bool) -> &'static [HintSpan<'static>] {
     if skippable {
         TEXT_PROMPT_SKIP_HINT
@@ -520,25 +511,20 @@ const fn text_prompt_hint(skippable: bool) -> &'static [HintSpan<'static>] {
 }
 
 const TEXT_PROMPT_HINT: &[HintSpan<'static>] = &[
-    // UNREGISTERABLE(text-prompt-no-keymap): Enter confirms the field inline; no TEXT_PROMPT_KEYMAP registered.
     HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
-    // UNREGISTERABLE(multi-key-display-group): combined Ctrl-C/Ctrl-Q/Esc cancel display.
     HintSpan::Key("Ctrl-C/Ctrl-Q/Esc"),
     HintSpan::Text("cancel"),
 ];
 
 const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
-    // UNREGISTERABLE(text-prompt-no-keymap): Enter confirms the field inline; no TEXT_PROMPT_KEYMAP registered.
     HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
-    // UNREGISTERABLE(dynamic-input-instruction): "empty" is a display label for the skip affordance, not a key.
     HintSpan::Key("empty"),
     HintSpan::Text("skip"),
     HintSpan::GroupSep,
-    // UNREGISTERABLE(multi-key-display-group): combined Ctrl-C/Ctrl-Q/Esc cancel display.
     HintSpan::Key("Ctrl-C/Ctrl-Q/Esc"),
     HintSpan::Text("cancel"),
 ];

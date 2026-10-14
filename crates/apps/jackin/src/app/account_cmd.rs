@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Account registry commands; printed output contains metadata only.
-
 use anyhow::{Context, Result, bail};
 use jackin_config::{AccountConfig, AccountCredential, AiProvider, AppConfig, ConfigEditor};
 use jackin_core::{EnvValue, JackinPaths, WorkspaceName};
@@ -80,20 +78,7 @@ fn set_enabled(config: &AppConfig, paths: &JackinPaths, id: &str, enabled: bool)
     Ok(())
 }
 
-/// Run `account scan`, returning the printed imported count.
-///
-/// `startup` is the bootstrap report from the process's config load: on a
-/// fresh config the load already imported default accounts, and the scan
-/// reports them as its own so the first scan prints the true imported
-/// count instead of `Imported 0`. Startup issues are deliberately not
-/// merged — `scan_for_accounts` re-discovers the same evidence issues, so
-/// merging would print each twice.
 fn scan(paths: &JackinPaths, startup: &jackin_config::BootstrapReport) -> Result<usize> {
-    // One shared scan helper for every surface (CLI, Settings worker):
-    // the open consumes any first-run marker, the scan imports default
-    // evidence + environment, and the zshrc path seeds shell overrides.
-    // Precedence on ID collision is open order — an operator
-    // registration always wins and is never overwritten.
     let (mut editor, open_report) = ConfigEditor::open_detailed(paths)?;
     let scan_report = editor.scan_for_accounts()?;
     let zshrc_report = import_zshrc_accounts(&mut editor, paths)?;
@@ -127,11 +112,6 @@ fn scan(paths: &JackinPaths, startup: &jackin_config::BootstrapReport) -> Result
     Ok(added_count)
 }
 
-/// `.zshrc`-import path of [`scan`]: parse the operator's shell env (if
-/// present), build the typed import plan, and seed accounts into the open
-/// editor. Unresolved entries the plan could not consume are reported for
-/// operator resolution; a missing `.zshrc` is a silent no-op, an
-/// unreadable one a warning (never a scan failure).
 fn import_zshrc_accounts(
     editor: &mut ConfigEditor,
     paths: &JackinPaths,
@@ -161,10 +141,6 @@ fn import_zshrc_accounts(
         .map(|candidate| (candidate.line, candidate.var.as_str()))
         .collect();
     for entry in &import.unresolved {
-        // Machine-consumed `op read` lines need no operator action (seeded,
-        // or skipped because the account already exists). Everything else
-        // stays visible. Line/name/kind only: the detail snippet can quote
-        // shell text, so it never reaches operator output.
         if entry.kind == jackin_config::UnresolvedKind::OpRead
             && consumed_op_reads.contains(&(entry.line, entry.name.as_str()))
         {
@@ -182,8 +158,6 @@ fn import_zshrc_accounts(
         );
     }
     for candidate in &plan.op_refs {
-        // Parsed but unseedable: no provider home for this variable.
-        // Mirrors the apply-side attribution (presence-only probe).
         let probe = std::collections::BTreeMap::from([(candidate.var.clone(), String::from("1"))]);
         let known = !jackin_config::discover_environment_accounts(&probe).is_empty()
             || !jackin_config::discover_environment_oauth_accounts(&probe).is_empty();
@@ -214,11 +188,6 @@ fn import_zshrc_accounts(
     Ok(report)
 }
 
-/// Extract the environment variable name from a scan-synthesized `$VAR` /
-/// `${VAR}` credential reference. Anything else (profiles, 1Password refs,
-/// unexpected shapes) yields `None` so the caller prints no suffix — and
-/// no secret material or 1Password item ID can ever reach operator output
-/// through this path.
 fn scan_reference_variable(account: &AccountConfig) -> Option<&str> {
     let persisted = match &account.credential {
         AccountCredential::ApiKey { value, .. } | AccountCredential::OAuthToken { value, .. } => {

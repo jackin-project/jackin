@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Durable, secret-free monitor state and local decision engine.
-
 mod evaluation;
 mod legacy;
 mod lifecycle;
@@ -65,11 +63,10 @@ use self::spend::{
 
 pub use statusline::parse_statusline;
 
-/// Maximum age of one independently supplied monitor field.
 pub(crate) const MONITOR_EVIDENCE_TTL_SECS: i64 = 300;
-/// Additional time allowed after a reported reset for a fresh statusline event.
+
 pub(crate) const MONITOR_RESET_GRACE_SECS: i64 = 60;
-/// Maximum time one watch operation can hold a broker worker.
+
 pub(crate) const MONITOR_WATCH_TIMEOUT_CAP_MS: u64 = 30_000;
 
 const MAX_MONITORS: usize = 128;
@@ -95,8 +92,7 @@ const DECISION_MAX_PARALLEL: u32 = 1;
 struct MonitorStoreInner {
     directory: File,
     state: Mutex<StoreState>,
-    /// Linearizes collector dispatch admission against Stop and source-binding
-    /// revocation so a stale observer snapshot cannot start work afterward.
+
     collector_admission: Mutex<()>,
     #[cfg(test)]
     collector_admission_waiters: AtomicUsize,
@@ -104,13 +100,11 @@ struct MonitorStoreInner {
     changed: Condvar,
 }
 
-/// Thread-safe durable store for local monitor evidence and decisions.
 #[derive(Debug, Clone)]
 pub(crate) struct MonitorStore {
     inner: std::sync::Arc<MonitorStoreInner>,
 }
 
-/// Persisted state schema owned by this broker implementation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoreState {
@@ -229,7 +223,6 @@ struct DurableMonitor {
     spend_state: Option<SpendState>,
 }
 
-/// Spend and selected policy are durable by operator goal, not monitor instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DurableGoalSpend {
@@ -264,7 +257,6 @@ struct ResetBarrier {
     pause_reason: MonitorIssueCode,
 }
 
-/// Account-wide quota pause that survives monitor stop/recreation and goal changes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AccountResetBarrier {
@@ -429,8 +421,6 @@ fn prepare_goal_activation(
             },
         );
     } else if let Some(goal) = state.goals.get_mut(goal_id) {
-        // A new binding revision is accepted only through an explicit
-        // confirmed binding; the original spend baseline is retained.
         goal.binding_revision = binding.revision;
         goal.policy_revision = policy.revision;
         goal.policy = policy.new_policy;
@@ -1279,8 +1269,6 @@ fn watch_snapshot(
         .ok_or_else(monitor_not_found)?;
     let next_sequence = monitor.next_event_sequence;
     let events = if after_sequence == 0 {
-        // Sequence zero is a fresh attach, not a request to replay history.
-        // The latest event was reconciled at the caller's clock above.
         monitor.events.last().cloned().into_iter().collect()
     } else {
         monitor
@@ -1307,8 +1295,6 @@ fn observe_projection_account(
         return Ok(false);
     }
 
-    // A whole-projection publication can advance because another account
-    // refreshed. Only current per-account evidence can update quota field age.
     let proposed_sequence = state.next_input_sequence.saturating_add(1);
     let windows = projection_windows(account, now_epoch, proposed_sequence);
     if windows.iter().all(Option::is_none) {
@@ -1336,9 +1322,6 @@ fn observe_projection_account(
     Ok(true)
 }
 
-/// Remove projection evidence tied to a source when its local binding is
-/// remapped or collector consent is revoked. Statusline observations remain
-/// attached to the operator's stable local partition.
 fn invalidate_local_source_projection(state: &mut StoreState, binding_id: &str, account_id: &str) {
     if let Some(account) = state.accounts.get_mut(account_id) {
         account.broker_windows = Default::default();
@@ -1558,8 +1541,6 @@ fn projection_windows(
     windows
 }
 
-/// `Some(None)` means typed window groups do not identify exactly one fresh
-/// unscoped group for this window label, period, and reset.
 fn metric_group_time(
     account: &UsageAccountV1,
     window_index: usize,
@@ -1583,8 +1564,7 @@ fn metric_group_time(
                             | jackin_protocol::usage_broker::UsageCalendarPeriodV1::Monthly
                     ))
         }
-        // Claude's session window has no published duration. Its typed group
-        // still identifies independent per-window freshness and is authoritative.
+
         UsageMetricPeriodV1::ProviderDefined => window_index == 0,
         UsageMetricPeriodV1::Unknown => false,
     };
@@ -1621,16 +1601,12 @@ fn metric_group_time(
             }
             let group_used = (*group_used)
                 .or_else(|| group_remaining.map(|remaining| 100i32.saturating_sub(remaining)));
-            // A missing used sample still matches any group used. A missing
-            // group reset does not: the reset must equal the sample.
+
             (used_raw_percent.is_none() || group_used == used_raw_percent)
                 && group.reset_at_epoch == reset_at_epoch
         })
         .collect::<Vec<_>>();
     if groups.len() != 1 {
-        // Typed provider evidence is authoritative for each window label.
-        // A same-valued sibling or ambiguous duplicate must not lend it a
-        // fresh timestamp.
         return Some(None);
     }
     let group = groups[0];

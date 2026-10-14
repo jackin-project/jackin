@@ -33,9 +33,6 @@ fn status_bar_label_uses_stale_cached_percentages() {
 
 #[test]
 fn status_bar_label_drops_tagged_bucket_that_failed() {
-    // A Session-tagged bucket whose own status is not Fresh/Stale (e.g. the
-    // window errored) must not surface its percentage as if it were live;
-    // the headline falls through to the snapshot-level status label.
     let buckets = vec![QuotaBucketView {
         used_money: None,
         limit_money: None,
@@ -95,7 +92,6 @@ fn status_bar_label_uses_amp_daily_only() {
         },
     ];
 
-    // Daily is the only glance; credits stay detail-only.
     assert_eq!(
         status_bar_label(
             UsageSurface::Amp,

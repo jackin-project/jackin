@@ -35,7 +35,7 @@ async fn hardline_marks_missing_manifest_restore_available() {
     let state_dir = paths.data_dir.join(container_name);
     manifest.write(&state_dir).unwrap();
     InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-    let docker = FakeDockerClient::default(); // NotFound
+    let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
 
     let err = hardline_agent(&paths, container_name, &docker, &mut runner)
@@ -85,9 +85,7 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
     manifest
         .write(&paths.data_dir.join(container_name))
         .unwrap();
-    // inspect: role container running, dind stopped
-    // exec_capture: jackin-capsule status returns two sessions
-    // inspect_network: network present
+
     let docker = FakeDockerClient {
             container_id_by_name: std::cell::RefCell::new(HashMap::from([
                 (container_name.to_owned(), "role-container-id".to_owned()),
@@ -181,8 +179,6 @@ async fn inspect_agent_sessions_returns_empty_when_no_sessions_running() {
 
 #[tokio::test]
 async fn inspect_agent_sessions_returns_unavailable_on_missing_header() {
-    // A daemon that crashed mid-call or a cosmetic change to the
-    // status print must surface as Unavailable, not as "zero sessions".
     let docker = FakeDockerClient {
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from([String::new()])),
         ..Default::default()
@@ -364,7 +360,7 @@ async fn hardline_refuses_oom_killed_container() {
 
 #[tokio::test]
 async fn wait_for_dind_times_out_when_all_attempts_fail() {
-    tokio::time::pause(); // make all sleeps instant
+    tokio::time::pause();
     let docker = FakeDockerClient {
         fail_with: vec![("docker exec".to_owned(), "connection refused".to_owned())],
         ..Default::default()

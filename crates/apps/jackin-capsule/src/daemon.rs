@@ -1,30 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! In-container multiplexer daemon: accepts attach connections, manages PTY
-//! sessions, dispatches input, and renders the status bar.
-//!
-//! Not responsible for: PTY I/O (see `session`), socket binding (see
-//! `socket`), or terminal rendering (see `tui`).
-//!
-//! Key invariant: at most one attach client is active at a time; a new
-//! `Hello` frame displaces the previous client.
-
 use chrono::{DateTime, Utc};
-/// The multiplexer daemon — runs as PID 1, manages sessions and clients.
-///
-/// Architecture:
-///   - One active attach client at a time. A new `Hello` from a second
-///     client sends `Shutdown` to the old one and aborts the old
-///     client's reader task (see `attached_task`).
-///   - Attach traffic uses the binary tag+length protocol in
-///     `protocol::attach`. The hot path forwards raw PTY bytes without
-///     base64 or JSON nesting.
-///   - The control channel still speaks length-prefixed JSON for one-shot
-///     `status` queries from the host CLI. Channel dispatch is by first
-///     byte: `0x00` → control (length prefix), anything else → attach.
-///   - Lifecycle: the daemon exits when the last session ends so the
-///     container reaps cleanly. SIGTERM also triggers shutdown.
+
 use std::path::PathBuf;
 #[cfg(test)]
 use std::process::Command;
@@ -147,8 +125,6 @@ use tokio::time::Duration;
 #[cfg(test)]
 use tokio::time::interval;
 
-// Presentation Multiplexer impls: daemon submodules so `impl Multiplexer`
-// and `pub(super)` stay valid, at canonical `daemon/` paths (no `#[path]`).
 mod attach_accept;
 mod boot;
 mod compositor;
@@ -193,45 +169,29 @@ pub struct Multiplexer {
     pub(crate) render: RenderState,
     pub(crate) launch_env: LaunchEnv,
     pub(crate) resource_metrics: resource_metrics::ResourceMetricsSampler,
-    /// Monotonic suffix for derived per-pane state roots. The first live
-    /// session of an instance uses its launch-config home; every further
-    /// concurrent session gets `{home}/panes/{seq}` so concurrent panes
-    /// never share one account's state root.
+
     pub(crate) pane_home_seq: u64,
     pub(crate) widget_focus: jackin_telemetry::ui::WidgetFocusTracker,
-    /// Wall/monotonic clock for lifecycle timestamps (plan 025). Tests inject
-    /// [`jackin_core::ManualClock`] via [`Multiplexer::with_clock`].
+
     pub(crate) clock: Arc<dyn Clock>,
 }
 
-/// In-memory record of one tab ever opened in this container lifetime.
-/// The history is append-only and never pruned; it is the authoritative
-/// data source for `jackin-capsule agents` and the tab hover tooltip.
 #[derive(Debug, Clone)]
 pub struct AgentRecord {
     pub session_id: u64,
     pub codename: String,
-    /// Instance config ID (`"claude-work"`), or `None` for shell sessions.
-    /// The admitted instance, not a runtime slug: several instances may
-    /// share one agent runtime.
+
     pub agent: Option<String>,
-    /// Owning account ID for this record's instance, or `None` for shells
-    /// and for records written before account stamping.
+
     pub account_id: Option<String>,
-    /// Provider label (e.g. `"Z.AI"`), or `None` when no provider selected.
+
     pub provider: Option<String>,
     pub started_at: DateTime<Utc>,
     pub exited_at: Option<DateTime<Utc>>,
 }
 
-/// Hard cap on simultaneous tabs. 32 is well past any operator
-/// workflow but small enough that an accidental loop of new-tab
-/// requests cannot drive the container OOM.
 const MAX_TABS: usize = 32;
 
-/// Hard cap on simultaneous sessions (panes). Splits within tabs
-/// can grow the session count past the tab count; cap separately
-/// for the same memory-bounding reason.
 const MAX_SESSIONS: usize = 64;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

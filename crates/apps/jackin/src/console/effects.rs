@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspace-manager effect executors and background polling.
-
 use crate::console::adapter::{
     ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
 };
@@ -852,8 +850,6 @@ pub fn apply_background_event(
 ) -> bool {
     match event {
         ManagerBackgroundEvent::Message(message) => {
-            // update_manager always requested a redraw under the retired facade
-            // contract, so the message path stays unconditionally dirty.
             update_manager(state, message);
             for effect in state.drain_effects() {
                 let _redraw = execute_manager_effect(state, config, paths, effect);
@@ -913,13 +909,7 @@ pub fn apply_background_event(
     }
 }
 
-/// Drained from the outer event loop every tick so picker results land without
 pub(crate) use jackin_console::tui::op_picker::poll_picker_loads;
-
-// ── Role-resolution error helpers ───────────────────────────────────────────
-//
-// These depend on `jackin_runtime::runtime::RepoError` and `jackin_manifest::repo` types that
-// are not accessible from `jackin-console`. All callers live in this file.
 
 pub(crate) fn open_role_resolution_error(
     editor: &mut EditorState<'_>,

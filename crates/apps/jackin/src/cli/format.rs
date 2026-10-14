@@ -3,7 +3,6 @@
 
 use serde::Serialize;
 
-/// Output format for list-style and status commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OutputFormat {
     #[default]
@@ -11,10 +10,6 @@ pub enum OutputFormat {
     Json,
 }
 
-/// Stable JSON envelope for all list-style subcommand output.
-///
-/// `schema_version` is versioned independently of `config.toml` so callers
-/// can detect schema changes without parsing the `data` contents.
 #[derive(Debug, Serialize)]
 pub struct OutputEnvelope<T>
 where
@@ -25,7 +20,6 @@ where
 }
 
 impl OutputFormat {
-    /// Parse a `--format` flag value. Anything other than `"json"` returns `Human`.
     pub fn parse(s: &str) -> Self {
         if s == "json" { Self::Json } else { Self::Human }
     }

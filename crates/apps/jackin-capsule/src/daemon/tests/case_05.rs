@@ -55,9 +55,6 @@ fn apply_dialog_action_switch_usage_provider_resolves_exact_account_id() {
     mux.session_supervisor.tabs[0] = Tab::new_single("Claude", 1, "test");
     mux.dialog_push(Dialog::new_usage(FocusedUsageView::unavailable("seed", 1)));
 
-    // Switch to the second same-provider account by exact id: the dialog
-    // focuses that account and the queued refresh targets its capability,
-    // even though both tabs share the provider head.
     let id_b = jackin_core::account_key_hash("Anthropic", "b@example.com");
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
         provider_label: "Anthropic · b@example.com".to_owned(),
@@ -84,8 +81,6 @@ fn apply_dialog_action_switch_usage_provider_resolves_exact_account_id() {
         })
     );
 
-    // Unknown id: honest unavailable, and the queued refresh is untouched
-    // rather than overwritten with a label-guessed sibling target.
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
         provider_label: "Anthropic · b@example.com".to_owned(),
         account_id: "sha256:unknown".to_owned(),
@@ -126,10 +121,7 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
         panic!("usage dialog expected");
     };
-    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
-    // below); the "refreshing" marker is applied by the dialog tick only when a
-    // refresh task is genuinely in flight. No task is spawned here, so the marker
-    // must NOT appear — it is no longer driven by the scheduling flag.
+
     assert!(
         !view.updated_label.contains("refreshing"),
         "{:?}",

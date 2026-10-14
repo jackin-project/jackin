@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage surface and footer-height helpers.
 
 use super::{
     ConsoleReservedFooterHeightPlan, ReservedFooterHeightFacts,
@@ -29,9 +28,6 @@ pub(crate) fn render_usage_surface(
     render_footer(frame, areas.footer, &hints);
 }
 
-/// Rows the current screen reserves for its footer — excluded from the modal
-/// backdrop so the hints stay visible. Editor/settings size theirs to the hint
-/// content; the workspace footer is fixed.
 pub(crate) fn reserved_footer_height(
     state: &crate::tui::state::ManagerState<'_>,
     config: &jackin_config::AppConfig,

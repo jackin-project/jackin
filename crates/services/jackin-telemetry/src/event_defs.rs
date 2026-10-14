@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-// GENERATED from registry/ — do not hand-edit. Regenerate: cargo xtask telemetry-registry --generate.
 
 pub const AGENT_STATE_CHANGED: EventDef =
     EventDef::generated(&schema::events::AGENT_STATE_CHANGED_DEF);

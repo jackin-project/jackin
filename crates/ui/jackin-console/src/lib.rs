@@ -1,8 +1,3 @@
-//! jackin-console: operator console state machine and screens.
-//!
-//! **Architecture Invariant:** T4.
-//! Entry point: [`ConsoleApp`] — operator console application shell.
-
 pub mod github_mounts;
 pub mod mount_diff;
 pub mod mount_info;

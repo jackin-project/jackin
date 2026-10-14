@@ -1,17 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Custom Ratatui backend that serializes frame diffs to the attach socket.
-//!
-//! Ratatui owns the buffer double-buffering and diff computation.
-//! This backend converts the per-cell diff stream produced by
-//! `Terminal::draw` into cursor-positioned SGR escape sequences and
-//! accumulates them in a `Vec<u8>`. The caller flushes the buffer to
-//! the attach socket via [`SocketBackend::take_output`].
-//!
-//! Chrome, dialogs, and pane bodies all render through this backend today.
-//! Ratatui's previous buffer is the only pane-body diff state.
-
 use std::io;
 
 use ratatui::{
@@ -21,36 +10,21 @@ use ratatui::{
     style::{Color, Modifier},
 };
 
-/// Ratatui backend that buffers output for delivery to the attach socket.
 #[derive(Debug)]
 pub struct SocketBackend {
-    /// Terminal size reported to Ratatui. Updated via `resize`.
     size: (u16, u16),
-    /// Accumulated ANSI escape sequences for the current frame.
+
     output: Vec<u8>,
-    /// Tracks the style applied at the cursor position so adjacent cells
-    /// with the same style don't re-emit SGR sequences.
+
     current_style: CellStyle,
     current_metadata: SgrMetadata,
-    /// Hyperlinked cell rects for the current frame: the encoder emits
-    /// `OSC 8` open/close brackets around exactly these cells during cell
-    /// emission (§3.4 — no raw overlay writes). Consumed by the next `draw`.
+
     hyperlink_regions: Vec<(ratatui::layout::Rect, String)>,
     sgr_regions: Vec<(ratatui::layout::Rect, SgrMetadata)>,
-    /// While armed, swallow every screen-erase escape from
-    /// `clear_region(ClearType::All)`. `Terminal::resize()` resets Ratatui's
-    /// diff baseline AND moves the buffers/`last_known_area` (whereas
-    /// `Terminal::clear()` only resets the baseline), routing through
-    /// `clear_region(All)` once — or twice on a width shrink. The resize
-    /// bookkeeping needs that baseline/geometry reset without blanking the
-    /// client screen or leaking a stray erase that would ride a later frame.
-    /// The single visible wipe is the compositor's `Resize` redraw, emitted
-    /// after suppression is lifted.
+
     suppress_clear_escapes: bool,
 }
 
-/// Compact style summary for change-tracking only — enough detail to
-/// decide whether a new SGR sequence is needed between cells.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct CellStyle {
     fg: Color,
@@ -82,7 +56,6 @@ impl SocketBackend {
         }
     }
 
-    /// Set the frame's hyperlinked cell rects; consumed by the next `draw`.
     pub fn set_hyperlink_regions(&mut self, regions: Vec<(ratatui::layout::Rect, String)>) {
         self.hyperlink_regions = regions;
     }
@@ -91,50 +64,36 @@ impl SocketBackend {
         self.sgr_regions = regions;
     }
 
-    /// Arm sustained erase suppression: every `clear_region(ClearType::All)`
-    /// resets style/baseline but emits no bytes until `end_clear_suppression`.
-    /// Wrap a `Terminal::resize()` (which clears once, or twice on a width
-    /// shrink) so the geometry/baseline reset stays byte-silent. See the field
-    /// doc for why the visible wipe must come from the compositor instead.
     pub fn begin_clear_suppression(&mut self) {
         self.suppress_clear_escapes = true;
     }
 
-    /// Lift sustained erase suppression. The next `clear_region(All)` — the
-    /// compositor's `Resize` wipe — erases the client screen normally.
     pub fn end_clear_suppression(&mut self) {
         self.suppress_clear_escapes = false;
     }
 
-    /// Update the terminal size. Called when the daemon receives a resize event.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         self.size = (cols, rows);
         self.current_style = CellStyle::default();
         self.current_metadata = SgrMetadata::default();
     }
 
-    /// Take the accumulated output, leaving the buffer empty.
     pub fn take_output(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.output)
     }
 
-    /// Drain the accumulated output into an existing buffer, preserving this
-    /// backend's allocation for the next frame.
     pub fn drain_output_into(&mut self, target: &mut Vec<u8>) {
         target.extend_from_slice(&self.output);
         self.output.clear();
     }
 
-    /// Write the SGR sequence for `style` if it differs from the last one emitted.
     fn apply_style(&mut self, style: CellStyle, metadata: SgrMetadata) {
         if style == self.current_style && metadata == self.current_metadata {
             return;
         }
-        // Full reset then re-apply rather than tracking incremental changes.
-        // Slightly verbose but simpler and correct across cell sequences.
+
         self.output.extend_from_slice(b"\x1b[0m");
 
-        // Modifiers
         if style.modifiers.contains(Modifier::BOLD) {
             self.output.extend_from_slice(b"\x1b[1m");
         }
@@ -163,10 +122,8 @@ impl SocketBackend {
             self.output.extend_from_slice(b"\x1b[9m");
         }
 
-        // Foreground
         write_color_sgr(&mut self.output, style.fg, false);
 
-        // Background
         write_color_sgr(&mut self.output, style.bg, true);
         write_sgr_metadata(&mut self.output, metadata);
 
@@ -182,11 +139,6 @@ impl Backend for SocketBackend {
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
     {
-        // Track the terminal cursor position so we can skip the `\x1b[row;colH`
-        // move for cells that immediately follow the previously written cell on
-        // the same row. This eliminates a large fraction of cursor-position
-        // escapes when Ratatui's diff sends runs of consecutive changed cells
-        // (e.g. the entire dialog backdrop on first open).
         let mut cursor_row: Option<u16> = None;
         let mut cursor_col: Option<u16> = None;
         let regions = std::mem::take(&mut self.hyperlink_regions);
@@ -194,12 +146,9 @@ impl Backend for SocketBackend {
         let mut open_link: Option<usize> = None;
 
         for (x, y, cell) in content {
-            let row = y + 1; // 1-based terminal row
-            let col = x + 1; // 1-based terminal column
+            let row = y + 1;
+            let col = x + 1;
 
-            // Frame hyperlink layer: bracket linked cells with OSC 8 during
-            // emission. Transitions only — adjacent cells in the same region
-            // share one open/close pair.
             let desired_link = regions
                 .iter()
                 .position(|(rect, _)| rect.contains(Position { x, y }));
@@ -217,10 +166,6 @@ impl Backend for SocketBackend {
                 .find_map(|(rect, metadata)| rect.contains(Position { x, y }).then_some(*metadata))
                 .unwrap_or_default();
 
-            // Emit cursor position only when we are not already there.
-            // After writing a single-column cell at (col, row) the terminal
-            // advances to (col + 1, row), so we can skip the next move when
-            // the next cell is exactly one column to the right on the same row.
             let already_positioned = cursor_row == Some(row) && cursor_col == Some(col);
             if !already_positioned {
                 self.output.extend_from_slice(b"\x1b[");
@@ -235,12 +180,6 @@ impl Backend for SocketBackend {
             let sym = cell.symbol();
             self.output.extend_from_slice(sym.as_bytes());
 
-            // The skip-the-CUP optimization applies only across runs of
-            // single printable ASCII cells (0x20–0x7E): their width-1 advance is
-            // unambiguous on every terminal. After any other glyph the next
-            // cell gets an explicit move — the outer terminal's
-            // ambiguous-width configuration may disagree with unicode-width
-            // about how far the cursor moved (D8).
             let is_single_ascii_printable =
                 sym.len() == 1 && matches!(sym.as_bytes()[0], 0x20..=0x7e);
             if is_single_ascii_printable {
@@ -282,12 +221,6 @@ impl Backend for SocketBackend {
     }
 
     fn clear(&mut self) -> Result<(), Self::Error> {
-        // Ratatui's Terminal::clear() does NOT call this method — with a
-        // Fullscreen viewport it calls clear_region(ClearType::All) and resets
-        // its back buffer itself (verified against the pinned ratatui-core
-        // 0.1.0 terminal.rs). Backend::clear is unreachable from the
-        // compositor today; reset style tracking and emit nothing so any
-        // future caller still cannot blank the client screen.
         self.current_style = CellStyle::default();
         self.current_metadata = SgrMetadata::default();
         Ok(())
@@ -299,14 +232,9 @@ impl Backend for SocketBackend {
                 self.current_style = CellStyle::default();
                 self.current_metadata = SgrMetadata::default();
                 if self.suppress_clear_escapes {
-                    // Sustained baseline/geometry-reset mode: Terminal::resize()
-                    // wants the diff baseline reset (possibly twice on a width
-                    // shrink) without any visible wipe.
                     return Ok(());
                 }
-                // ED uses the terminal's active SGR background on BCE-capable
-                // terminals. Reset before the clear so a previous green status
-                // cell cannot turn the full screen into green blank space.
+
                 b"\x1b[0m\x1b[2J\x1b[H"
             }
             ClearType::AfterCursor => b"\x1b[0J",
@@ -339,7 +267,6 @@ impl Backend for SocketBackend {
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
-        // The caller retrieves output via take_output(); nothing to do here.
         Ok(())
     }
 }

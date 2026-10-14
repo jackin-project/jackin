@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `UsageDialogTab` type and usage method family extracted from the dialog
-//! coordinator. Free type re-exported from parent. `usage_tab_index_at` and
-//! `usage_provider_tab_target` promoted per plan.
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageDialogTab {
     Overview,
@@ -14,9 +10,6 @@ pub enum UsageDialogTab {
 use super::Dialog;
 
 impl Dialog {
-    /// Accent colour for a usage bucket's meter by severity. `Normal` keeps the
-    /// default (no accent → phosphor green); `Warn`/`Danger` grade toward amber
-    /// and red so an account approaching its cap reads as such at a glance.
     fn usage_severity_accent(
         severity: jackin_protocol::control::UsageSeverity,
     ) -> Option<ratatui::style::Color> {
@@ -47,10 +40,7 @@ impl Dialog {
         if *selected == UsageDialogTab::Overview {
             return Some(Self::usage_overview_state(view, scroll.clone()));
         }
-        // Rust owns every provider-card field, string, and order so this dialog
-        // and the native Desktop Usage window stay parity-locked. The three
-        // machine-labelled identity rows let the TUI lay out the Rust projection
-        // without restoring the duplicate detail rows Plan 005 removed.
+
         let provider_title =
             jackin_usage_provider_core::provider_display_label(&view.account.provider_label);
         let identity =
@@ -117,11 +107,6 @@ impl Dialog {
             );
         } else {
             for tab in &view.tabs {
-                // One quota-focused line per provider, matching the Overview
-                // preview: "<provider>  <quota summary / lifecycle>". The
-                // account identity lives in the focused header above, not on
-                // every row. status_label is the daemon-enriched
-                // "Session 37% left · Resets in 1h 21m" (or a lifecycle word).
                 let quota = if tab.status_label.trim().is_empty() {
                     "status unavailable"
                 } else {
@@ -183,7 +168,6 @@ impl Dialog {
             return None;
         }
         if *selected == UsageDialogTab::Overview {
-            // tabs is non-empty (guarded above), so first/last are always Some.
             let target = if step >= 0 {
                 view.tabs.first()
             } else {

@@ -1,14 +1,7 @@
-//! jackin-capsule: in-container capsule daemon, sessions, and TUI.
-//!
-//! **Architecture Invariant:** T8.
-//! Entry point: [`daemon`] — capsule daemon module the binary runs.
-
 pub mod agent_status;
 pub(crate) mod alloc_telemetry;
 pub mod attach_context;
-/// Library target so integration tests under `tests/` can exercise
-/// the protocol, prefix-key parser, VT round-trips, and status bar
-/// without spawning a PTY.
+
 pub mod attach_protocol;
 pub mod client;
 pub(crate) mod client_writer;
@@ -23,7 +16,7 @@ pub mod firewall;
 pub mod git_context;
 pub mod mcp_server;
 pub mod output;
-/// Shrink-only dhat allocation ceilings for the `perf` ratchet family.
+
 pub mod perf_budgets;
 pub mod pid1;
 pub mod pr_context;
@@ -63,11 +56,9 @@ pub(crate) mod support {
     }
 }
 
-/// Terminal-rendering code — all UI paint/layout lives here.
 pub mod tui;
 pub mod wordlist;
 
-// Telemetry-level state lives in jackin-usage.
 pub mod logging {
     pub use jackin_usage::logging::*;
 }

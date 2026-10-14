@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Async spinner-wait helper for polling operations.
-//!
-//! Animates a braille spinner on stderr while polling an async function.
-//! Silences itself when the rich launch cockpit owns the terminal so the
-//! spinner never streams over the alternate screen.
-
 #![expect(
     clippy::print_stderr,
     reason = "spinner redraws intentional terminal control sequences on stderr"
@@ -17,10 +11,6 @@ use std::io::{self, Write as _};
 use jackin_brand::{PHOSPHOR_DIM, PHOSPHOR_GREEN, owo_rgb};
 use jackin_diagnostics::{is_debug_mode, rich_terminal_owned};
 
-/// Display a spinner while waiting, returning when `poll` returns `Ok(())`.
-///
-/// `poll` is called up to `max_attempts` times with `interval` between calls.
-/// The spinner animates smoothly independent of the poll interval.
 pub async fn spin_wait<F, Fut>(
     message: &str,
     max_attempts: u32,
@@ -82,9 +72,7 @@ where
     let mut frame_idx: usize = 0;
 
     let debug = is_debug_mode();
-    // A full-screen rich surface (the launch cockpit) owns the terminal —
-    // its own waiting animation conveys progress, so the spinner must stay
-    // silent or it streams over the alternate screen.
+
     let suppressed = rich_terminal_owned();
     for attempt in 0..max_attempts {
         if debug && !suppressed {

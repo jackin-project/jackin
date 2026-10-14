@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Pane splitting, spawn-into-split, and focused-pane close.
 
 use super::super::{
     Multiplexer, Result, Session, SplitDirection, SplitDirectionGeometry, SplitPosition,
@@ -8,12 +7,6 @@ use super::super::{
 };
 
 impl Multiplexer {
-    /// Split the focused pane and spawn a session of the operator's
-    /// choice inside it. `instance = None` opens a shell. Used by
-    /// the `AgentPicker` → Split flow so the operator picks the new
-    /// pane's identity instead of cloning the source pane's agent.
-    /// The target resolves exactly like a fresh spawn: unknown or
-    /// ambiguous agent slugs fail rather than substituting an instance.
     pub(crate) fn split_focused_into(
         &mut self,
         direction: SplitDirection,
@@ -31,8 +24,7 @@ impl Multiplexer {
                     .map_err(|reason| anyhow::anyhow!("rejected spawn target {raw:?}: {reason}"))
             })
             .transpose()?;
-        // Any selection / drag-resize is anchored to a specific pane
-        // rect that this reflow is about to invalidate.
+
         self.cancel_drag();
         let Some(tab) = self
             .session_supervisor
@@ -109,16 +101,10 @@ impl Multiplexer {
             SplitDirection::Below => tab.tree.split_v(from_id, new_id, SplitPosition::After),
         };
         if !placed {
-            // from_id vanished between split intent and dispatch
-            // (e.g. the source pane exited mid-action). Undo the
-            // session insert so the spawned PTY + child + tasks do
-            // not leak as an orphan that no tab tree references.
             if let Some(orphan) = self.session_supervisor.sessions.remove(new_id) {
                 orphan.terminate();
             }
-            // The history record was pushed at spawn (above), before placement
-            // could be confirmed. Stamp its exit now so the reaped orphan is not
-            // reported as a permanently "active" agent in the registry snapshot.
+
             self.mark_agent_session_exited(new_id);
             let _warning = jackin_telemetry::record_recovered_degradation();
             return Ok(());
@@ -129,10 +115,6 @@ impl Multiplexer {
         Ok(())
     }
 
-    /// Split the focused pane and clone the source pane's agent into
-    /// the new pane. Used by the `Ctrl+B %` / `Ctrl+B "` prefix
-    /// bindings so split-and-spawn skips the agent picker and inherits
-    /// the source pane's runtime.
     pub(crate) fn split_focused(&mut self, direction: SplitDirection) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
         let (instance, provider_env_overrides, provider_label) = self.focused_spawn_metadata();
@@ -184,8 +166,7 @@ impl Multiplexer {
         if let Some(session) = self.session_supervisor.sessions.remove(id) {
             session.terminate();
         }
-        // Drop the tab's zoom reference when the killed pane was the
-        // target so the next compose does not paint a stale zoom area.
+
         tab.zoomed = tab.zoomed.filter(|&zid| zid != id);
         if let Some(nf) = next_focus {
             tab.focused_id = nf;

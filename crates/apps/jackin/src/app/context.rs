@@ -1,16 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Target classification and context-aware resolution helpers for CLI commands.
-//!
-//! Resolves a raw target string (workspace name, directory path, or
-//! `<src>:<dst>` mount spec) into a `TargetKind`, then maps it to a running
-//! container, workspace config, or agent choice. Used by `app/mod.rs` to
-//! drive `jackin load`, `jackin console`, and related subcommands.
-//!
-//! Not responsible for: launch or attach mechanics (`runtime/`), or config
-//! persistence (`config/`).
-
 use anyhow::Result;
 use std::path::Path;
 
@@ -27,23 +17,11 @@ pub(crate) enum TargetKind {
     Name(String),
 }
 
-/// Classify a target string as either a path or a plain name.
-///
-/// Contains `/`, or starts with `.` or `~` => always a path.
-/// Otherwise => a plain name (workspace or directory name).
 pub(crate) fn classify_target(target: &str) -> TargetKind {
     if target.contains('/') || target.starts_with('.') || target.starts_with('~') {
-        // Parse optional :dst — but be careful with src:dst vs path-only.
-        // A target like ~/Projects/my-app:/app has the pattern host:container.
-        // We split on the LAST colon that is followed by a `/` at position 0
-        // (i.e., an absolute container path), to distinguish from :ro suffix.
-        //
-        // Strategy: if there's a colon where the right side starts with `/`,
-        // treat it as src:dst.
         let (src, dst) = if let Some(pos) = find_dst_separator(target) {
             (&target[..pos], &target[pos + 1..])
         } else {
-            // Same path for both src and dst — expand tilde for dst too.
             let expanded = expand_tilde(target);
             return TargetKind::Path {
                 src: target.to_owned(),
@@ -59,10 +37,7 @@ pub(crate) fn classify_target(target: &str) -> TargetKind {
     }
 }
 
-/// Find the colon that separates src:dst in a target spec.
-/// The dst part must start with `/` (absolute container path).
 fn find_dst_separator(target: &str) -> Option<usize> {
-    // Search for `:` followed by `/`
     for (i, _) in target.match_indices(':') {
         if target[i + 1..].starts_with('/') {
             return Some(i);
@@ -141,15 +116,6 @@ pub(crate) fn resolve_target_name_with_choice(
     }
 }
 
-/// Resolve the role and workspace from the current directory context.
-///
-/// Finds the saved workspace whose host workdir or mounted host path best
-/// matches `cwd`, then picks the role:
-/// 1. `last_role` (most recently used)
-/// 2. `default_role` (explicitly configured)
-/// 3. If multiple roles available — prompt
-/// 4. If exactly one role — use it
-/// 5. No match — error with guidance
 #[cfg(test)]
 pub(crate) fn resolve_agent_from_context(
     config: &AppConfig,
@@ -170,7 +136,6 @@ pub(crate) fn resolve_agent_from_context_with_choice(
         let eligible =
             jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), ws);
 
-        // Preferred-role shortcut: last_role, then default_role.
         if let Some(preferred_idx) = jackin_console::workspace::preferred_role_index(
             &eligible,
             ws.last_role.as_deref(),
@@ -204,16 +169,6 @@ pub(crate) fn resolve_agent_from_context_with_choice(
     );
 }
 
-/// Resolve a hardline target from the current directory context.
-///
-/// Finds the saved workspace whose host workdir or mounted host path best
-/// matches `cwd`, then picks an indexed or currently-running container whose
-/// class is permitted by the workspace:
-/// 1. If the workspace's `last_role` has a candidate — prefer it
-/// 2. If exactly one candidate — use it
-/// 3. If multiple — prompt
-/// 4. If zero — error with guidance to run `jackin load`
-/// 5. No workspace match — error with guidance to pass an explicit selector
 pub(crate) async fn resolve_running_container_from_context(
     paths: &JackinPaths,
     config: &AppConfig,
@@ -263,16 +218,13 @@ pub(crate) async fn resolve_running_container_from_context(
     if let Some(last) = ws.last_role.as_deref()
         && let Some(preferred) =
             preferred_indexed_container(paths, name, ws, last, &names).or_else(|| {
-                // Random instance IDs leave no deterministic primary
-                // name; match by the role component inside container_base.
                 let last_class = RoleSelector::parse(last).ok()?;
                 let role_slug = instance::naming::compact_component(&last_class.name, "role");
                 let mut family = names
                     .iter()
                     .filter(|n| instance::naming::class_family_matches_with_slug(&role_slug, n));
                 let first = family.next()?.clone();
-                // Commit only when unambiguous — multiple matches must
-                // still reach the prompt branch below.
+
                 if family.next().is_some() {
                     return None;
                 }
@@ -324,9 +276,6 @@ async fn resolve_ad_hoc_container_from_context(
     }
 }
 
-/// Hardline-prompt row: container name plus the docker-inspect state
-/// captured during candidate collection. Carrying state through avoids
-/// re-running `docker inspect` for every prompt row.
 #[derive(Debug, Clone)]
 struct HardlineCandidate {
     name: String,
@@ -346,8 +295,7 @@ fn hardline_candidate_prompt_options(
 
 fn hardline_candidate_prompt_label(paths: &JackinPaths, candidate: &HardlineCandidate) -> String {
     let container = candidate.name.as_str();
-    // Use state from candidate — session inventory not fetched here
-    // to avoid blocking async in a sync context
+
     let docker_state = format!("docker:{}", candidate.state.short_label());
     let session_summary = "sessions:unknown".to_owned();
 
@@ -488,21 +436,6 @@ fn preferred_indexed_container(
         .find(|container| candidates.contains(container))
 }
 
-/// Resolve which agent to launch when the operator hasn't explicitly
-/// chosen one (no `--agent` flag, no workspace `default_agent`).
-///
-/// Reads the role's cached `jackin.role.toml` to discover its
-/// `supported_agents` list. When the role allows multiple agents and
-/// stdin is interactive, prompts the operator with a `dialoguer::Select`
-/// menu. Single-agent roles, headless invocations, or a missing/invalid
-/// cached manifest all return `Ok(None)` so the caller falls back to
-/// the workspace `default_agent` → `Agent::Claude` resolution chain in
-/// `runtime::launch::resolve_agent`.
-///
-/// Loading the manifest from the local cache (no git fetch) keeps this
-/// fast and TUI-tear-down-safe: the prompt fires after `run_console`
-/// has already restored the terminal but before the heavy `load_role`
-/// pipeline begins.
 pub(crate) fn prompt_agent_choice_if_needed(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -532,11 +465,6 @@ pub(crate) fn prompt_agent_choice_if_needed(
     Ok(Some(supported[selection]))
 }
 
-/// Returns `Some(supported)` when the operator should be asked to pick
-/// an agent, `None` when the choice is already determined (workspace
-/// default set, single-agent role, or unreadable manifest). Split from
-/// the prompting wrapper so the gating logic is unit-testable without
-/// stdin / dialoguer scaffolding.
 pub(crate) fn supported_agents_requiring_prompt(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -569,11 +497,7 @@ pub(crate) fn remember_last_agent(
     if !config.workspaces.contains_key(workspace_name) {
         return;
     }
-    // Production callers always reach this point with the config already
-    // persisted on disk (it was loaded from disk at startup, and every
-    // mutation flows through ConfigEditor). Tests that construct an
-    // AppConfig purely in memory must persist it before calling this
-    // function — see `remember_last_agent_persists_successful_loads`.
+
     let mut editor = match jackin_config::ConfigEditor::open(paths) {
         Ok(editor) => editor,
         Err(error) => {

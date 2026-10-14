@@ -1,11 +1,11 @@
-// ---------------------------------------------------------------------------
-// docker-bake.hcl — declarative build graph for the construct image
-// ---------------------------------------------------------------------------
-// Usage:
-//   docker buildx bake --file docker-bake.hcl construct-local
-//   docker buildx bake --file docker-bake.hcl --set 'construct-publish.output=type=image,name=user/app,push=true' construct-publish
-//   docker buildx bake --file docker-bake.hcl --print   (inspect resolved config)
-// ---------------------------------------------------------------------------
+
+
+
+
+
+
+
+
 
 variable "REGISTRY_IMAGE" {
   default = "projectjackin/construct"
@@ -51,16 +51,16 @@ variable "STARSHIP_VERSION" {
   default = ""
 }
 
-// ---------------------------------------------------------------------------
-// Default group — all construct targets
-// ---------------------------------------------------------------------------
+
+
+
 group "default" {
   targets = ["construct-local"]
 }
 
-// ---------------------------------------------------------------------------
-// Base target — shared context, args, and OCI labels
-// ---------------------------------------------------------------------------
+
+
+
 target "_construct-common" {
   context    = "docker/construct"
   dockerfile = "Dockerfile"
@@ -79,9 +79,9 @@ target "_construct-common" {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Local build — single platform, loaded into the Docker daemon
-// ---------------------------------------------------------------------------
+
+
+
 target "construct-local" {
   inherits = ["_construct-common"]
   tags = [
@@ -91,9 +91,9 @@ target "construct-local" {
   platforms = [LOCAL_PLATFORM]
 }
 
-// ---------------------------------------------------------------------------
-// Publish build — multi-platform, intended for digest pushes and manifest assembly
-// ---------------------------------------------------------------------------
+
+
+
 target "construct-publish" {
   inherits = ["_construct-common"]
   attest = [

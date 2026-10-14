@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console keymaps — single source of truth coupling key dispatch and hint-bar
-//! advertisement for all host-console surfaces.
-//!
-//! Every keyboard-driven surface (editor, settings tabs, inline picker) defines
-//! its keymap here. `Keymap::dispatch(chord)` replaces plan-function calls in
-//! `input/*.rs`; `Keymap::hint_spans()` derives footer hints.
 mod bridge;
 mod editor;
 mod micros;

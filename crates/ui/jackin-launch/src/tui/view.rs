@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch cockpit top-level frame composition.
-
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::Clear;
@@ -34,12 +32,6 @@ pub fn render_launch_frame(
     let area = frame.area();
     frame.render_widget(Clear, area);
 
-    // Quit confirmation supersedes every other surface (matching the console),
-    // owning the screen behind its own backdrop until the operator answers.
-    // `draw_confirm` lays out the dimmed backdrop, the centered dialog, and the
-    // hint row. In debug mode, keep the status footer underneath so the bottom
-    // chrome stays intact — hint row, blank spacer, then the status bar at the
-    // very bottom. Non-debug dialogs do not show a status footer.
     if let Some(confirm) = &view.quit_confirm {
         draw_confirm(frame, &mut confirm.clone());
         if debug_mode {
@@ -48,12 +40,6 @@ pub fn render_launch_frame(
         return;
     }
 
-    // The build-log overlay owns the whole screen behind an opaque backdrop,
-    // matching the capsule modal convention (hide everything, don't dim). It
-    // must never win over a failure popup: a stale `build_log_open` flag (or a
-    // failure arriving while the log is open) would otherwise hide the
-    // actionable failure dialog behind the opaque log backdrop. `StageFailed`
-    // also clears the flag, so this guard is defense in depth.
     if view.build_log_open && view.failure.is_none() {
         render_build_log_dialog(frame, area, view, run_id, debug_mode);
         return;
@@ -62,14 +48,12 @@ pub fn render_launch_frame(
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // brand header (pill + spacer) — shared chrome
-            Constraint::Min(8),    // launch body
-            Constraint::Length(BOTTOM_CHROME_ROWS), // hint bar + spacer + status footer
+            Constraint::Length(2),
+            Constraint::Min(8),
+            Constraint::Length(BOTTOM_CHROME_ROWS),
         ])
         .split(area);
 
-    // Freeze animated accents while a failure popup owns the screen so no
-    // live cue keeps moving behind the modal.
     let frozen = no_motion || view.failure.is_some();
     let chrome = bottom_chrome_areas(rows[2]);
 
@@ -97,20 +81,17 @@ fn render_body(
     frozen: bool,
     rain: Option<&RainState>,
 ) {
-    // No border — the rain fills the whole body; a one-cell side margin keeps
-    // glyphs off the screen edge.
     let inner = area.inner(ratatui::layout::Margin {
         horizontal: 1,
         vertical: 0,
     });
-    // Digital rain fills the space; the block progress + stage words sit above
-    // a blank gap so the bar does not stick to the status bar.
+
     let parts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(0),    // rain
-            Constraint::Length(3), // stage blocks + labels + TermRock Progress
-            Constraint::Length(2), // gap above the status bar
+            Constraint::Min(0),
+            Constraint::Length(3),
+            Constraint::Length(2),
         ])
         .split(inner);
     render_rain(frame, parts[0], rain);
@@ -156,8 +137,6 @@ fn failure_popup_hyperlink_overlay_bytes(
     run_id: &str,
     debug_mode: bool,
 ) -> Vec<u8> {
-    // The build-log dialog owns the whole screen; its overlay takes over, so
-    // the failure popup must not paint hyperlinks underneath it.
     if view.build_log_open {
         return Vec::new();
     }

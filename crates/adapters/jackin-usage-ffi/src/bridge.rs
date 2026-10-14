@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Coarse synchronous facade over broker-owned usage projections.
-
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -25,7 +23,6 @@ use crate::dto::{
 };
 use crate::error::{UsageBridgeError, catch_entry};
 
-/// Process-scoped `boltffi` facade over broker-owned canonical publications.
 pub struct UsageMenuBarBridge {
     inner: Arc<Mutex<Option<BridgeState>>>,
     lifecycle: Arc<Mutex<()>>,
@@ -53,7 +50,6 @@ struct BridgeState {
 
 #[boltffi::export]
 impl UsageMenuBarBridge {
-    /// Construct a closed bridge.
     #[must_use]
     pub fn create() -> Self {
         Self {
@@ -62,8 +58,6 @@ impl UsageMenuBarBridge {
         }
     }
 
-    /// Open the projection consumer. Live mode may activate the standard
-    /// broker process; this client never discovers credentials or providers.
     pub fn open_runtime(&self, config: OpenConfig) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let host_config = to_projection_config(config).map_err(map_open_err)?;
@@ -72,7 +66,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// List host surfaces and their current enable flags.
     pub fn list_surfaces(&self) -> Result<Vec<SurfaceDescriptorDto>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
@@ -85,7 +78,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Sanitized broker projection issues for the current publication.
     pub fn discovery_diagnostics(&self) -> Result<Vec<DiscoveryDiagnosticDto>, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
@@ -98,7 +90,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Enable or disable one native surface.
     pub fn set_enabled(&self, surface_id: String, enabled: bool) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
@@ -130,9 +121,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Read the latest projection or explicitly request a broker-owned refresh.
-    /// Non-forced calls are cache reads; force refresh is account-wide because
-    /// the broker owns a single canonical projection generation.
     pub fn refresh(&self, surface_id: Option<String>, force: bool) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
@@ -175,7 +163,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// True while the broker marks its current publication as refreshing.
     pub fn refresh_in_progress(&self) -> Result<bool, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
@@ -187,7 +174,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Set the local display refresh floor (clamped to at least 60 seconds).
     pub fn set_refresh_floor_secs(&self, secs: u64) -> Result<(), UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
@@ -204,8 +190,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Whether the local display floor elapsed since the last explicit refresh.
-    /// This query never dispatches provider work.
     pub fn refresh_due(&self) -> Result<bool, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
@@ -217,7 +201,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Snapshot for one enabled surface and its exact selected account.
     pub fn snapshot(&self, surface_id: String) -> Result<UsageViewDto, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
@@ -258,7 +241,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// List broker-canonical accounts. `account_key` carries the canonical id.
     pub fn list_accounts(
         &self,
         surface_id: Option<String>,
@@ -288,7 +270,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Atomic provider/account inventory from one broker publication.
     pub fn desktop_inventory(&self) -> Result<DesktopInventoryDto, UsageBridgeError> {
         catch_entry(|| {
             let _lifecycle = self.lifecycle_lock()?;
@@ -304,7 +285,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Complete native Desktop state from one broker publication.
     pub fn desktop_projection(
         &self,
         status_bar_max: u32,
@@ -327,7 +307,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Select one exact broker-canonical account id for the surface.
     pub fn set_selected_account(
         &self,
         surface_id: String,
@@ -582,7 +561,6 @@ impl UsageMenuBarBridge {
         })
     }
 
-    /// Intentional panic probe for containment tests.
     #[expect(
         clippy::panic,
         reason = "this exported test probe verifies panic containment at the FFI boundary"

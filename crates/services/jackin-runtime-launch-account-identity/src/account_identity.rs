@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Account admission identity for a container's immutable environment.
 #![expect(
     clippy::disallowed_methods,
     reason = "credential directory durability runs inside the launch blocking task"
@@ -33,8 +32,6 @@ impl std::fmt::Display for GenerationLeaseViolation {
 
 impl std::error::Error for GenerationLeaseViolation {}
 
-/// Immutable persisted-config revision held from launch account resolution
-/// through credential publication and admission recording.
 #[derive(Debug)]
 pub struct AccountConfigRevision {
     generation: ConfigGeneration,
@@ -42,16 +39,10 @@ pub struct AccountConfigRevision {
 }
 
 impl AccountConfigRevision {
-    /// Acquire a strict immutable lease over the persisted config generation.
-    ///
-    /// The required lock makes absence of the writer lock an admission failure;
-    /// the generation check detects writers that bypass the advisory protocol.
     pub fn acquire(paths: &jackin_core::JackinPaths) -> anyhow::Result<Self> {
         Self::acquire_inner(paths, None).map_err(mark_generation_lease_error)
     }
 
-    /// Acquire a lease only when the caller's in-memory config is the same
-    /// snapshot that was admitted from disk.
     pub fn acquire_bound(
         paths: &jackin_core::JackinPaths,
         caller_config: &AppConfig,
@@ -102,10 +93,6 @@ impl AccountConfigRevision {
     }
 }
 
-/// Validate a generation after an awaited container start/run. A direct writer
-/// can bypass the advisory read lock while Docker is in flight, so a mismatch
-/// after the operation means the container already holds stale credentials and
-/// must be force-removed before the error escapes.
 pub async fn ensure_current_or_remove_stale_container(
     revision: &AccountConfigRevision,
     paths: &jackin_core::JackinPaths,
@@ -261,9 +248,6 @@ fn is_valid_credential_stage_name(name: &str) -> bool {
     !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_alphanumeric())
 }
 
-/// Remove only private, daemon-created staging directories left without a
-/// transaction. Symlinks, non-directories, and malformed names are
-/// deliberately left alone; the active staged directory is preserved.
 fn sweep_orphan_credential_staging(root: &Path, active: Option<&str>) -> anyhow::Result<()> {
     let mut removed = false;
     for entry in std::fs::read_dir(root)? {
@@ -614,20 +598,12 @@ struct AdmittedIdentity<'a> {
     account_id: &'a str,
 }
 
-/// Hash account admission, selected bindings, and credential declarations.
-/// Values are hashed in memory; only the digest is stored with an instance.
-///
-/// # Errors
-/// Rejects unknown workspaces and account references or serialization failures.
 pub fn account_configuration_fingerprint(
     config: &AppConfig,
     workspace: Option<&WorkspaceName>,
     role: &str,
     admitted: &[AdmittedInstance],
 ) -> anyhow::Result<String> {
-    // Role defaults are not hashed after admission. The binding for an
-    // admitted agent remains a relevant capability revision: changing it can
-    // change which credential a reconnect would authorize.
     let _ = role;
     let ws = configured_workspace(config, workspace)?;
     let mut admitted = admitted.to_vec();
@@ -707,11 +683,6 @@ pub fn account_configuration_fingerprint(
     Ok(encoded)
 }
 
-/// Whether an existing instance was provisioned under current account admission.
-/// An absent identity belongs to an unverified pre-account container.
-///
-/// # Errors
-/// Propagates configuration and non-absence filesystem errors.
 pub fn account_configuration_matches(
     root: &Path,
     config: &AppConfig,
@@ -834,11 +805,6 @@ fn restore_marker(path: &Path, previous: Option<&[u8]>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Whether persisted account policy still permits reconnecting an instance.
-/// The baseline precedes any ephemeral per-launch selection.
-///
-/// # Errors
-/// Propagates configuration and non-absence filesystem errors.
 pub fn account_admission_matches(
     root: &Path,
     config: &AppConfig,
@@ -890,10 +856,6 @@ pub fn write_account_credentials(
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    // The caller holds the role/container lock while this runs. Build a fully
-    // private replacement beside the live directory, then swap directory
-    // names. Readers therefore observe either the old complete set or the new
-    // complete set; they never observe delete-then-write intermediates.
     let staged_directory = tempfile::Builder::new()
         .prefix(".credentials-stage-")
         .tempdir_in(root)?;

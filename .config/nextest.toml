@@ -15,7 +15,7 @@ final-status-level = "flaky"
 [profile.docker-e2e.junit]
 path = "junit.xml"
 
-# Detect flakes: a pass-on-retry is reported as FLAKY, never silently absorbed.
+
 [profile.ci]
 retries = { backoff = "fixed", count = 2, delay = "1s" }
 failure-output = "immediate-final"
@@ -31,8 +31,8 @@ failure-output = "immediate-final"
 
 [test-groups]
 docker-e2e = { max-threads = 1 }
-# load_role paths can spend ~50s each (op/env resolution edges); serialise so
-# parallel suite load does not push them past the default 180s terminate budget.
+
+
 load-agent = { max-threads = 2 }
 
 [[profile.default.overrides]]
@@ -47,9 +47,9 @@ test-group = 'load-agent'
 slow-timeout = { period = "90s", terminate-after = 3, grace-period = "5s" }
 
 [[profile.default.overrides]]
-# png_baselines_screens_match renders PNG baselines for every console screen;
-# on the shared Velnor runners it can exceed the default 180s terminate budget
-# under parallel suite load (the same shape as the load-agent budget below).
+
+
+
 filter = 'test(/png_baselines_screens_match/)'
 slow-timeout = { period = "120s", terminate-after = 3, grace-period = "5s" }
 

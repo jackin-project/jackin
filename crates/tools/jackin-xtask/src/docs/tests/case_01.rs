@@ -41,7 +41,7 @@ fn append_page_is_idempotent() {
 fn validate_tree_passes_clean_and_flags_broken_and_orphan() {
     let root = tempfile::tempdir().unwrap();
     let r = root.path();
-    // Clean tree: meta lists index + alpha, both present.
+
     write(&r.join("index.mdx"), "---\ntitle: I\n---\n");
     write(&r.join("alpha.mdx"), "---\ntitle: A\n---\n");
     write_meta(
@@ -51,7 +51,6 @@ fn validate_tree_passes_clean_and_flags_broken_and_orphan() {
     .unwrap();
     validate_tree(r, "test").expect("clean tree should pass");
 
-    // Broken reference: page `ghost` has no file.
     write_meta(
         &r.join("meta.json"),
         &json!({ "pages": ["index", "alpha", "ghost"] }),
@@ -60,7 +59,6 @@ fn validate_tree_passes_clean_and_flags_broken_and_orphan() {
     let err = validate_tree(r, "test").unwrap_err().to_string();
     assert!(err.contains("ghost"), "should flag broken ref: {err}");
 
-    // Orphan: drop `alpha` from pages while the file remains.
     write_meta(&r.join("meta.json"), &json!({ "pages": ["index"] })).unwrap();
     let err = validate_tree(r, "test").unwrap_err().to_string();
     assert!(err.contains("alpha.mdx"), "should flag orphan: {err}");
@@ -68,8 +66,6 @@ fn validate_tree_passes_clean_and_flags_broken_and_orphan() {
 
 #[test]
 fn validate_tree_resolves_group_and_parent_cross_refs() {
-    // Mirror the roadmap shape: a `(group)/` whose pages reference a sibling
-    // item one level up as `../item`.
     let root = tempfile::tempdir().unwrap();
     let r = root.path();
     write(&r.join("index.mdx"), "---\ntitle: I\n---\n");
@@ -82,7 +78,6 @@ fn validate_tree_resolves_group_and_parent_cross_refs() {
     write_meta_mk(&r.join("(grp)/meta.json"), &json!({ "pages": ["../item"] }));
     validate_tree(r, "test").expect("(group) + ../item should resolve");
 
-    // Break the cross-ref: point at a missing sibling.
     write_meta_mk(
         &r.join("(grp)/meta.json"),
         &json!({ "pages": ["../ghost"] }),

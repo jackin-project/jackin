@@ -16,8 +16,7 @@ async fn stopped_matching_instance_with_missing_network_recreates_current_role()
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // When the network is missing, the captured role identity is retained for
-    // ID-bound teardown before recreation.
+
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
@@ -165,16 +164,13 @@ async fn related_restore_candidate_requires_rich_dialog_for_fresh_load() {
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // inspect -> NotFound -> matching but different role, but no rich
-    // progress dialog is available in this direct unit-test call.
+
     let docker = jackin_test_support::FakeDockerClient::default();
 
     let error = resolve_workspace_restore(&paths, "agent-smith", &docker)
         .await
         .unwrap_err();
 
-    // The related-only case flows through the unified rich restore dialog
-    // instead of silently starting fresh.
     let message = error.to_string();
     assert!(
         message.contains("rich launch dialog"),
@@ -196,7 +192,7 @@ async fn running_related_instance_does_not_block_fresh_load() {
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // Related container is Running → skip → StartFresh
+
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -222,7 +218,7 @@ async fn stopped_related_instance_does_not_block_fresh_load() {
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // Related container stopped non-cleanly → skip → StartFresh
+
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
@@ -252,7 +248,7 @@ async fn related_restore_candidates_ignore_finished_instances() {
     );
     manifest.mark_status(InstanceStatus::CleanExited);
     write_indexed_manifest(&paths, &manifest);
-    // Manifest is CleanExited → not a restore candidate, no docker call
+
     let docker = jackin_test_support::FakeDockerClient::default();
 
     let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)

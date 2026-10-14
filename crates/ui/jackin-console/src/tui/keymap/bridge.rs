@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Bridged keymap dispatch helper.
 
 use termrock::input::KeyEvent;
 use termrock::interaction::{
@@ -9,15 +8,6 @@ use termrock::interaction::{
 };
 use termrock::keymap::Keymap;
 
-/// Dispatch a key through the upstream keymap bridge.
-///
-/// Chord resolution comes from `map` exactly as the retired direct
-/// `Keymap::dispatch` calls did; the transient single-element scene
-/// advertises every action the keymap carries, so the bridge's availability
-/// gate passes precisely what the keymap resolves, and context folding
-/// stays at the call sites unchanged. `UiIntent` is not bridged: no console
-/// keymap matches the intent granularity 1:1 (research ch04), so the
-/// product action enums stay the bridge payload everywhere.
 pub(crate) fn bridged_keymap_action<A>(map: &Keymap<A>, key: KeyEvent) -> Option<A>
 where
     A: Clone + Copy + PartialEq + 'static,
@@ -49,5 +39,3 @@ where
         _ => None,
     }
 }
-
-// ── Editor global (fired in both tab-bar and content modes) ──────────────────

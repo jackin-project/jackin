@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage view composition.
 
 use super::super::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
@@ -64,8 +63,7 @@ pub fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         tabs: Vec::new(),
         last_error: input.last_error,
     };
-    // A freshly built view tabs its own account; the cache enriches the strip
-    // to every admitted account before display.
+
     view.tabs = provider_tabs(&[&view]);
     view
 }

@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Modal picker for "open in GitHub" when a workspace has multiple
-//! GitHub-hosted mounts.
-//!
-//! Mirrors `WorkdirPickState`'s shape — one `Vec`-driven list +
-//! `termrock::widgets::ListState` — so the rest of the launch TUI can
-//! dispatch it with the same Up/Down/Enter pattern.
-
 use crate::github_mounts::GithubChoice;
 use crossterm::event::{KeyCode, KeyEvent};
 use jackin_core::shorten_home;
@@ -24,7 +17,7 @@ pub struct GithubPickerState {
 pub enum GithubOpenPlan {
     Continue,
     OpenUrl(String),
-    // Head ListState is large; box to keep the plan enum small.
+
     Pick(Box<GithubPickerState>),
 }
 
@@ -95,10 +88,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // top padding
-            Constraint::Min(1),    // list
-        ])
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(inner);
 
     if state.choices.is_empty() {
@@ -112,8 +102,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         );
         return;
     }
-    // Pre-compute shortened src + width so the `· github · <branch>` suffix
-    // lines up across rows.
+
     let displays: Vec<String> = state.choices.iter().map(|c| shorten_home(&c.src)).collect();
     let path_w = displays
         .iter()

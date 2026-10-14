@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace list body rendering.
 
 use super::{
     render_current_dir_details_pane, render_details_pane, render_instance_details_pane,
@@ -23,13 +22,6 @@ pub fn render_list_body(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
-    // See ManagerListRow docs for row layout.
-    // Split driven by `state.list_split_pct` (default 30), adjustable via
-    // mouse-drag on the seam column. Keeps the right pane visible on every
-    // row. Row-specific right-pane renderers:
-    //   CurrentDirectory  → current-dir details
-    //   SavedWorkspace(i) → saved-workspace details
-    //   NewWorkspace      → description-of-what-a-workspace-is pane
     let columns = crate::tui::list_geometry::split_list_columns(area, state.list_split_pct);
     let list_area = columns.names;
 

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Validated catalog types and accumulators.
 
 use crate::{UsageDiscoveryDiagnostic, UsageSourceCandidateDescriptor};
 use jackin_usage_host_accounts::{AccountMembershipDescriptor, CanonicalAccountIdentity};
@@ -14,30 +13,26 @@ use std::path::PathBuf;
 use jackin_core::Agent;
 use jackin_usage_host_presentation::HostSurfaceId;
 
-/// One complete source discovery generation.
 #[derive(Clone, PartialEq, Eq)]
 pub struct UsageDiscoveryCatalog {
-    /// SHA-256 config generation; absent for capability-only Capsule discovery.
     pub config_generation: Option<String>,
-    /// Deduplicated sanitized source descriptors.
+
     pub candidates: Vec<UsageSourceCandidateDescriptor>,
-    /// Isolated config/credential diagnostics.
+
     pub diagnostics: Vec<UsageDiscoveryDiagnostic>,
     pub(crate) sources: Vec<DiscoveredCredentialSource>,
 }
 
-/// One post-auth canonical account discovered from current config membership.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredAccountDescriptor {
-    /// Exact provider surface.
     pub surface_id: String,
-    /// Stable canonical account key.
+
     pub account_key: String,
-    /// Authenticated provider label.
+
     pub account_label: String,
-    /// Every effective config scope contributing this account.
+
     pub provenance: Vec<String>,
-    /// Opaque source ids merged into this account.
+
     pub source_ids: Vec<String>,
     pub identity: CanonicalAccountIdentity,
 }
@@ -64,16 +59,14 @@ impl AccountMembershipDescriptor for DiscoveredAccountDescriptor {
     }
 }
 
-/// Validated, post-auth discovery generation.
 #[derive(Clone)]
 pub struct ValidatedUsageDiscovery {
-    /// Content-derived config generation.
     pub config_generation: Option<String>,
-    /// Canonical current accounts only; anonymous/failed sources never become rows.
+
     pub accounts: Vec<DiscoveredAccountDescriptor>,
-    /// Sanitized config and source failures.
+
     pub diagnostics: Vec<UsageDiscoveryDiagnostic>,
-    /// Deduplicated source inventory used for refresh routing.
+
     pub candidates: Vec<UsageSourceCandidateDescriptor>,
     pub bindings: Vec<ValidatedCredentialBinding>,
 }
@@ -126,20 +119,15 @@ pub enum ValidatedCredentialSource {
     Profile(ProfileCredentialMaterial),
     Env {
         handle: OpaqueCredentialHandle,
-        /// Canonical provider usage identity used for account/capability
-        /// attribution and source-material lookup.
+
         key: String,
-        /// Exact governed route key used for provider refresh dispatch.
+
         dispatch_key: String,
         launch_keys: BTreeSet<String>,
         material: Option<ProviderCredentialSourceMaterial>,
     },
     Capability,
-    /// Locally identified profile with no pollable usage fetch by design
-    /// (Muse identity, omp/hermes attribution adapters). Refresh yields an
-    /// honest `Unsupported` snapshot, never a probe failure — unlike
-    /// [`Self::Capability`], which is a forwarded trust-domain token whose
-    /// refresh attempt is genuinely malformed here.
+
     Unpollable,
 }
 
@@ -169,8 +157,7 @@ pub enum ProfileCredentialMaterial {
     Gemini {
         creds_path: PathBuf,
     },
-    /// Antigravity CLI grant (Keychain singleton): presence-only, no secret
-    /// material — refresh shells out to `agy`, which owns the grant.
+
     Antigravity,
 }
 
@@ -227,9 +214,9 @@ pub(crate) enum CredentialSourceKey {
     Env {
         surface: HostSurfaceId,
         handle: OpaqueCredentialHandle,
-        /// Canonical provider usage key, never a launch alias.
+
         key: String,
-        /// Exact governed route key whose provider semantics must be kept.
+
         dispatch_key: String,
     },
     Capability {

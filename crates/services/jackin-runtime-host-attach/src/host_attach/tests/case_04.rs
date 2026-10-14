@@ -156,9 +156,6 @@ async fn host_notice_writer_bounds_overlong_message() {
 async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
     let (mut client, mut server) = duplex(MAX_CLIPBOARD_IMAGE_ERROR_BYTES + 64);
     let message = format!("{}{}", "b".repeat(MAX_CLIPBOARD_IMAGE_ERROR_BYTES), "é");
-    // The bounded peer must drain while the writer is active: production peers
-    // read concurrently, and a sequential test peer deadlocks on the second
-    // frame when contextual attach telemetry fills the duplex buffer.
 
     let writer = async {
         let mut operations = HashMap::new();

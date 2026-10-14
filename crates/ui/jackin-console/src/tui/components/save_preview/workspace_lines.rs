@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace save preview line rendering.
 
 use super::{
     WorkspaceAuthChange, WorkspaceMountDiff, WorkspaceSaveMode, WorkspaceSavePreview,

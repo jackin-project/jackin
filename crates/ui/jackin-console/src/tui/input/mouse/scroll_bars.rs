@@ -1,16 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Scroll-bar drag handlers: drag the horizontal scrollbar of the
-//! long-content body and the vertical scrollbar of the focused panel.
-//!
-//! Mouse parity matrix rows 10-11 carve-out: the drag lane stays
-//! consumer code — upstream `ScrollAreaState::handle_mouse` drops
-//! Down/Drag (no drag carrier), and the drag also sets scroll focus
-//! (row 11), which upstream has no analogue for. The computed absolute
-//! offset is written through `apply_scrollbar_drag`'s dims-plumb +
-//! `set_offset_*`.
-
 use super::{
     EditorTab, LIST_FOOTER_HEIGHT, ManagerStage, ManagerState, MountScrollFocus, MouseEvent, Rect,
     SCREEN_HEADER_HEIGHT, ScrollbarAxis, SettingsTab, TAB_STRIP_HEIGHT, apply_scrollbar_drag,

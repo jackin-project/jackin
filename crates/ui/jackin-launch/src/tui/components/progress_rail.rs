@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch stage progress rail and label animation.
-
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -36,8 +34,6 @@ pub fn render_progress(frame: &mut Frame<'_>, area: Rect, view: &LaunchView, fro
     ];
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), rail);
 
-    // Overall completion uses TermRock's determinate Progress so the fraction
-    // and non-color percentage cue stay on the shared widget contract.
     if area.height >= 3 {
         let fraction = overall_stage_fraction(view);
         let theme = termrock::style::DesignSystem::default();
@@ -98,8 +94,6 @@ pub fn display_stage_statuses(view: &LaunchView) -> Vec<StageStatus> {
         .collect()
 }
 
-/// One block per stage, filling gray (queued) -> green (done) so a glance
-/// reads as a percent-complete bar; all green means loaded.
 fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
     let pulse = !frozen && (view.frame / STAGE_PULSE_PERIOD).is_multiple_of(2);
     let display_statuses = display_stage_statuses(view);
@@ -108,8 +102,7 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
         if i > 0 {
             spans.push(Span::raw(" ".repeat(BLOCK_GAP)));
         }
-        // Thin horizontal segments (a slim progress bar), not tall full
-        // blocks: heavy `━` for reached/active stages, light `─` for queued.
+
         let (glyph, color) = match status {
             StageStatus::Done | StageStatus::Skipped => (
                 '━',
@@ -267,7 +260,6 @@ pub fn label_edge_fade_factor(index: usize, width: usize) -> f32 {
 
 #[must_use]
 pub fn faded_color(color: Color, factor: f32) -> Color {
-    // TermRock owns the phosphor fade math used across the ecosystem.
     termrock::style::faded(color, factor)
 }
 

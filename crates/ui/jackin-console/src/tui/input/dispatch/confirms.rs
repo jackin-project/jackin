@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Confirm and keyboard-help key handling.
 
 use crossterm::event::KeyEvent;
 
@@ -80,9 +79,6 @@ pub(crate) fn handle_confirm_delete_key(
     }
 }
 
-/// Route a key to the open keyboard-help overlay. Closing (Esc, per the
-/// upstream modal state) clears the overlay slot so the next key falls
-/// through to the stage underneath — focus restore is automatic.
 pub(crate) fn handle_keyboard_help(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     if state.keyboard_help.is_none() {
         return InputOutcome::Continue;

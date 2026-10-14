@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `PreparedRuntimeBinaries` and agent binary preparation.
 
 use anyhow::Context as _;
 use futures_util::future::try_join_all;
@@ -33,14 +32,6 @@ pub async fn prepare_runtime_binaries_for_agents(
 
     let agents = agents.to_vec();
 
-    // Resolve + download the selected agent binary and jackin-capsule concurrently.
-    // Each ensure_available call is network-bound (HTTP resolve + optional download),
-    // so running them in parallel cuts wall-clock time to the slowest single binary
-    // rather than the sum of all.
-    //
-    // Derived image ENTRYPOINT is `/jackin/runtime/jackin-capsule`, so a missing
-    // capsule binary would produce an opaque "exec: file not found" at `docker run`.
-    // Failing fast here gives an actionable error message.
     let capsule_future = async {
         jackin_diagnostics::active_timing_started(
             jackin_diagnostics::DiagnosticStage::AgentBinaries,
@@ -71,8 +62,7 @@ pub async fn prepare_runtime_binaries_for_agents(
         ),
         capsule_future
     )?;
-    // Each agent appears once (one pass over supported_agents()); the map keys
-    // that uniqueness so it cannot drift downstream.
+
     let mut prefetched_agent_versions = BTreeMap::new();
     let agent_installs: BTreeMap<_, _> = agent_install_pairs
         .into_iter()

@@ -1,25 +1,13 @@
-//! Backend lifecycle dispatch for persisted runtime instances.
-//!
-//! Backend selection lives in `jackin_runtime_backend_selection` (S7 split 98),
-//! re-exported below.
-
 use anyhow::Result;
 use jackin_core::CommandRunner;
 use jackin_core::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
 
 use crate::apple_container_client::{AppleContainerApi, AppleContainerClient};
-// Test-only scope restoration: the hub suite below names
-// `BackendResources` / `InstanceManifest` through `use super::*`; prod
-// moved them into the leaf with the selection fns (S7 split 98).
+
 #[cfg(test)]
 use crate::instance::{BackendResources, InstanceManifest};
 
-/// Common lifecycle operations every persisted container backend must expose.
-///
-/// Launch remains backend-specific today because Docker and Apple Container
-/// carry different launch inputs. Instance management is unified here so
-/// teardown and reconnect paths cannot silently remain Docker-only.
 pub trait ContainerBackend {
     async fn eject(&self, paths: &JackinPaths, container_name: &str) -> Result<()>;
 
@@ -216,9 +204,6 @@ where
     }
 }
 
-// Moved to jackin_runtime_backend_selection::backend_selection (S7 split 98);
-// the item re-exports keep every `backend::InstanceBackend` /
-// `backend_for_manifest` / `backend_for_state` path stable.
 pub use jackin_runtime_backend_selection::backend_selection::{
     InstanceBackend, backend_for_manifest, backend_for_state,
 };

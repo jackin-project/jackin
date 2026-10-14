@@ -283,15 +283,11 @@ fn take_exit_claim_has_exactly_one_winner_under_contention() {
     paths.ensure_base_dirs().unwrap();
 
     let threads = 8;
-    // A single 8-thread round catches a non-atomic claim only ~half the
-    // time (the threads often don't interleave tightly enough to double-read
-    // the marker), so one round is a coin-flip guard. Many rounds drive the
-    // miss probability to effectively zero.
+
     for round in 0..64 {
         seed_marker(&paths, StartKind::FreshConstruct);
         let barrier = Arc::new(Barrier::new(threads));
-        // Spawn every thread before joining any; joining in the loop would
-        // serialize the race away.
+
         let mut handles = Vec::with_capacity(threads);
         for _ in 0..threads {
             let paths = Arc::clone(&paths);
@@ -361,7 +357,7 @@ fn mark_non_fresh_preserves_existing_start() {
     paths.ensure_base_dirs().unwrap();
 
     state_write(&authority(&paths), "universe-since", b"1000").unwrap();
-    seed_marker(&paths, StartKind::ResumeExisting); // must not overwrite
+    seed_marker(&paths, StartKind::ResumeExisting);
     let kept = std::fs::read_to_string(marker_path(&authority(&paths))).unwrap();
     assert_eq!(kept, "1000", "ongoing session keeps its original start");
 }

@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspace list screen update logic: handle keyboard events and produce
-//! effects for launch, reconnect, stop, purge, and navigation actions.
-//!
-//! Not responsible for: rendering (see `view`) or state definitions (see
-//! `model`).
 mod apply;
 mod confirms;
 mod destructive;

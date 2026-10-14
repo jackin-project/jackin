@@ -1,24 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Binary adapter for the jackin❯ interactive console (`jackin console`).
-//!
-//! Phase 5 adapter-shell end state. Entry point is `run_console`. All
-//! console product state, update, view, input planning, and business rules
-//! live in `jackin-console` or lower crates. This module only binds that
-//! surface to the binary crate's concrete config, Docker, runtime, terminal,
-//! and CLI services.
-//!
-//! * `terminal` — inline host-terminal adapter (debug-buffering globals).
-//! * `adapter` — concrete runtime/config/terminal bindings for `jackin-console`.
-//! * `services` — root IO adapters (config, instances, role load, workspace save).
-//! * `effects` — interpreter for typed `ManagerEffect` values.
-
-// `ConsoleStage` collapsed to a single variant in PR #171's Modal::RolePicker
-// cleanup. The module is kept as-is (with `if let ConsoleStage::Manager(_)`
-// patterns) so a future stage can be added without rewriting every match
-// site. The irrefutable-pattern lint is allowed at the module level rather
-// than peppering individual sites.
 #![expect(
     irrefutable_let_patterns,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -27,11 +9,6 @@
 pub mod effects;
 mod services;
 pub mod terminal {
-    //! Host adapter for console terminal ownership.
-    //!
-    //! Terminal lifecycle lives in `jackin-console`'s TUI boundary. This root
-    //! module only binds that generic terminal code to the root crate's host
-    //! debug-buffering globals.
 
     pub use jackin_console::tui::terminal::TerminalSession;
     pub(crate) use jackin_console::tui::terminal::{
@@ -66,9 +43,6 @@ pub mod terminal {
 }
 pub mod adapter;
 
-/// Validate a picked source folder against the agent an auth form targets.
-/// Returns `Ok(())` for non-agent auth kinds. Runtime validation stays in the
-/// binary adapter because `jackin-console` cannot depend on runtime.
 pub(super) fn validate_auth_source_folder(
     kind: Option<jackin_console::tui::auth::AuthKind>,
     path: &std::path::Path,

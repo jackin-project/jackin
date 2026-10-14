@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch terminal capability checks.
-
 use std::io::IsTerminal;
 
 use ratatui::layout::Rect;
@@ -12,8 +10,6 @@ pub fn rich_terminal_supported() -> bool {
     terminal_supports_rich_surface(true)
 }
 
-/// Bail with the canonical rich-terminal requirement message unless the
-/// current terminal can host the launch surface.
 pub fn require_rich_terminal() -> anyhow::Result<()> {
     if !rich_terminal_supported() {
         anyhow::bail!(

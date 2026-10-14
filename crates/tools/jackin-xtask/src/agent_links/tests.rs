@@ -38,7 +38,6 @@ fn path_mention_detects_other_agents_files() {
     assert!(!has_agents_path_mention("CLAUDE.md = symlink to AGENTS.md"));
 }
 
-/// A README linking to an AGENTS.md is a violation.
 #[test]
 fn flags_readme_linking_agents() {
     let temp = tempfile::tempdir().unwrap();
@@ -54,7 +53,6 @@ fn flags_readme_linking_agents() {
     );
 }
 
-/// An AGENTS.md that *mentions* another AGENTS.md (no link) is a violation.
 #[test]
 fn flags_agents_mentioning_another_agents() {
     let temp = tempfile::tempdir().unwrap();
@@ -71,7 +69,6 @@ fn flags_agents_mentioning_another_agents() {
     );
 }
 
-/// The convention doc AGENTS.md (repo root) is exempt from the mention check.
 #[test]
 fn exempts_convention_doc_from_mention_check() {
     let temp = tempfile::tempdir().unwrap();
@@ -86,7 +83,6 @@ fn exempts_convention_doc_from_mention_check() {
     assert!(problems.is_empty(), "{problems:?}");
 }
 
-/// A fenced code block (template example) is not flagged.
 #[test]
 fn ignores_links_inside_code_fence() {
     let temp = tempfile::tempdir().unwrap();
@@ -102,7 +98,6 @@ fn ignores_links_inside_code_fence() {
     assert!(problems.is_empty(), "{problems:?}");
 }
 
-/// A plain prose mention of AGENTS.md with no path (self/convention) is allowed.
 #[test]
 fn allows_bare_agents_mention() {
     let targets = link_targets("the nearest AGENTS.md file wins");

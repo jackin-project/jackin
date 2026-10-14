@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Auth tab lines, geometry, widths, `EditorAuthLineRow` and render helpers extracted
-//! from the view coordinator. Items re-exported from parent to preserve `super::*`
-//! call sites in tests and qualified calls from frame.rs (via `render_auth_tab` etc).
-
 use ratatui::text::Line;
 
 use crate::tui::components::editor_rows::{AuthLineRow, auth_line_width, auth_lines};
@@ -12,9 +8,6 @@ use crate::tui::screens::editor::model::{AuthRow, FieldFocus};
 
 use super::WorkspaceEditorState;
 
-// Structural exception: editor rows are form/table rows with labels, values,
-// disclosures, masked secrets, and action sentinels, so they cannot use the
-// flat picker renderer even though they share its focus-gated cursor contract.
 pub(crate) type EditorAuthLineRow = AuthLineRow;
 
 #[must_use]

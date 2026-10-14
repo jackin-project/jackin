@@ -35,8 +35,6 @@ fn disc_scope_capsule_uses_only_forwarded_capabilities() {
     )
     .unwrap();
 
-    // Duplicate claude capabilities dedup; every known surface (not just the
-    // Desktop glance order) is admitted; unknown ids still skip.
     assert_eq!(catalog.candidates.len(), 2);
     assert_eq!(catalog.candidates[0].surface_id, "claude");
     assert_eq!(
@@ -68,7 +66,6 @@ fn disc_scope_capsule_admits_newly_wired_surfaces() {
                     capability_id: "cap-openrouter".to_owned(),
                     account_label: None,
                 },
-                // No collector, registry, or discovery entry exists.
                 ForwardedUsageAccount {
                     surface_id: "copilot".to_owned(),
                     capability_id: "skipped".to_owned(),

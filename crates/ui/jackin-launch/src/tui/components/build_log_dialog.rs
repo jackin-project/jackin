@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch docker-build log overlay helpers.
-
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
@@ -44,7 +42,6 @@ const fn vertical_scrollbar_area(area: Rect) -> Rect {
 
 #[must_use]
 pub fn build_log_box_area(area: Rect) -> Rect {
-    // Structural exception: build-log geometry is the shared bottom-chrome body, not an independent modal rect.
     bottom_chrome_areas(area).body
 }
 
@@ -177,22 +174,10 @@ pub fn build_log_scrollbar_top_offset_for_row_cached(
     ))
 }
 
-/// Footer-hint keys for the build-log overlay.
-///
-/// Delegates to [`crate::tui::keymap::build_log_hint_spans`] so hints and
-/// dispatch stay coupled in the same module.
 fn build_log_hint(vertical: bool) -> Vec<HintSpan<'static>> {
     crate::tui::keymap::build_log_hint_spans(vertical)
 }
 
-/// Full-screen opaque overlay over the live docker-build output, scrollable.
-/// Opened by clicking the footer activity; dismissed by `Esc`.
-/// Plain body clicks are swallowed; scrollbar hits remain interactive.
-/// Long lines wrap inside the modal instead of requiring horizontal scroll;
-/// continuation rows carry a visible prefix so wrapped Docker output remains
-/// easy to distinguish from separate log lines. The key hint renders in the
-/// bottom chrome area with the standard hint → blank separator → status footer
-/// spacing, never inside the box (TUI design rule).
 pub fn render_build_log_dialog(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -214,18 +199,13 @@ pub fn render_build_log_dialog(
     };
     let lines: Vec<Line<'_>> = view.build_log_wrapped_lines.clone();
 
-    // Live build output is tail-relative (0 = follow newest), unlike ordinary
-    // top-offset panels that can use `apply_scroll_delta` directly. Keep the
-    // state in the shared `TailScroll` adapter, then convert to the top-offset
-    // consumed by the top-offset viewport.
     let viewport_h = viewport_height(box_area);
     let lines_len = lines.len();
     let mut scroll = termrock::scroll::DialogScroll::default();
     scroll.scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
         .unwrap_or(u16::MAX);
     let theme = termrock::style::DesignSystem::default();
-    // Revision tracks wrap width + line count so TermRock reuses measurement
-    // across cursor-only repaints while still invalidating on wrap changes.
+
     let content_revision = (view.build_log_wrapped_width as u64)
         .wrapping_mul(1_000_003)
         .wrapping_add(lines_len as u64);
@@ -262,7 +242,7 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
     }
 
     let default_style = Style::default().fg(Color::Gray).bg(Color::Reset);
-    // Migration 0019: parse ANSI once at ingestion into an owned line.
+
     let parsed = termrock::ansi_text::line_from_ansi(line.trim_end(), default_style);
     wrap_build_log_spans(parsed.spans, width)
 }

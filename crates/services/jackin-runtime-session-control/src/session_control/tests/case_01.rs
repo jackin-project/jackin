@@ -5,8 +5,6 @@ use super::*;
 
 #[test]
 fn single_quote_survives_every_prompt_byte() {
-    // The payload crosses a `sh -lc` boundary on the docker-exec transport; a
-    // space, a newline, a `$`, or a quote must reach the PTY unchanged.
     assert_eq!(single_quote("go"), "'go'");
     assert_eq!(single_quote("ship it\r"), "'ship it\r'");
     assert_eq!(single_quote("cost is $5"), "'cost is $5'");
@@ -90,8 +88,6 @@ fn wait_for_state_matches_the_working_transition() {
 
 #[test]
 fn wait_for_state_accepts_a_baseline_that_already_reports_the_state() {
-    // The agent may already be working by the time the subscription lands.
-    // Only accepting transitions would hang on that race.
     let (mut events, _open) = events_from(vec![Ok(record(
         1,
         AgentState::Working,
@@ -212,8 +208,6 @@ fn a_decode_failure_on_the_stream_surfaces_to_the_caller() {
 
 #[test]
 fn ndjson_reader_decodes_the_records_the_capsule_cli_prints() {
-    // Exactly the shape `jackin-capsule events` writes: one
-    // `SessionEventRecord` per line, blank lines tolerated.
     let payload = format!(
         "{}\n\n{}\n",
         serde_json::to_string(&record(1, AgentState::Idle, SessionEventKind::Subscribed)).unwrap(),

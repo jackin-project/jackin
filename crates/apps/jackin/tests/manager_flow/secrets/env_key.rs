@@ -9,9 +9,6 @@ fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Rows: 0 WorkspaceKeyRow("EXISTING"), 1 WorkspaceAddSentinel.
-    // Navigate to the sentinel; Enter opens the ScopePicker, then a
-    // second Enter (default focus = AllAgents) opens the EnvKey modal.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
@@ -27,14 +24,12 @@ fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
         editor(&state).modal
     );
 
-    // Type the colliding key.
     for ch in "EXISTING".chars() {
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
     }
     let env_size_before = editor(&state).pending.env.len();
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
-    // Modal must still be the EnvKey TextInput (Enter was swallowed).
     assert!(
         matches!(
             editor(&state).modal,
@@ -63,9 +58,6 @@ fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
     Ok(())
 }
 
-/// Same guard, role-override scope. Seed a workspace with one role
-/// override `LOG_LEVEL`, expand the section, navigate to its `+ Add`
-/// sentinel, and type the colliding key.
 #[test]
 fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     let temp = tempdir()?;
@@ -106,26 +98,13 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Rows on this fixture (no workspace keys, one collapsed role section):
-    //   0 WorkspaceAddSentinel
-    //   1 SectionSpacer  (skipped by ↑/↓)
-    //   2 AgentHeader { role: "agent-smith", expanded: false }
-    // Expand the role section so the AgentAddSentinel row exists.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
     assert!(editor(&state).secrets_expanded.contains("agent-smith"));
 
-    // After expansion:
-    //   0 WorkspaceAddSentinel
-    //   1 SectionSpacer
-    //   2 AgentHeader (expanded)
-    //   3 AgentKeyRow { role: "agent-smith", key: "LOG_LEVEL" }
-    //   4 AgentAddSentinel("agent-smith")
-    // Navigate to row 4.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
 
-    // Enter to open the EnvKey modal for the role scope.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(matches!(
         editor(&state).modal,
@@ -140,7 +119,6 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     }
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
-    // The modal must still be open, and the role's env unchanged.
     assert!(
         matches!(
             editor(&state).modal,
@@ -169,10 +147,6 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     Ok(())
 }
 
-/// Regression: the duplicate guard does not block a unique name. Type
-/// `NEW_KEY` at a workspace whose `pending.env` already contains
-/// `EXISTING` and confirm the `EnvKey` modal commits (transitions to
-/// `SourcePicker`, the next stage in the unified add flow).
 #[test]
 fn env_key_modal_allows_unique_name() -> Result<()> {
     let temp = tempdir()?;
@@ -181,9 +155,6 @@ fn env_key_modal_allows_unique_name() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Sentinel is row 1 here (row 0 is the existing key row). The
-    // first Enter opens the ScopePicker; the second commits AllAgents
-    // and opens the EnvKey modal.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
@@ -193,7 +164,6 @@ fn env_key_modal_allows_unique_name() -> Result<()> {
     }
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
-    // Unique name commits — flow advances to the SourcePicker.
     assert!(
         matches!(editor(&state).modal, Some(Modal::SourcePicker { .. })),
         "unique key must commit and open the SourcePicker; got {:?}",

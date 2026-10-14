@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Claude` spend buckets and OAuth fetch.
 
 use jackin_protocol::control::{
     Money, QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus,
@@ -17,11 +16,6 @@ use super::{
     ClaudeOAuthUsageWindow,
 };
 
-/// Surface rotating-codename dollar-budget windows (`amber_ladder` etc.) that a
-/// fixed-field struct would drop. Each captured key is parsed as a window; only
-/// those carrying a positive `limit_dollars` are real allocations and become a
-/// (non-headline) dollar bucket labelled by the title-cased codename (the API
-/// supplies no human name for these windows).
 pub fn push_claude_dollar_windows(
     buckets: &mut Vec<QuotaBucketView>,
     other: BTreeMap<String, serde_json::Value>,
@@ -34,11 +28,11 @@ pub fn push_claude_dollar_windows(
         let Some(limit) = window.limit_dollars.filter(|limit| *limit > 0.0) else {
             continue;
         };
-        // `*_dollars` are major-unit dollars; scale to minor for Money.
+
         let used = window.used_dollars.unwrap_or(0.0).max(0.0);
         let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
         let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
-        // `limit > 0.0` holds (filtered above), so the fraction is well-defined.
+
         #[expect(
             clippy::cast_sign_loss,
             reason = "fraction clamped to 0.0..=1.0; percent is rounded f64→u8"
@@ -64,28 +58,17 @@ pub fn push_claude_dollar_windows(
     }
 }
 
-/// The normalized inputs for the monetary "Extra usage" bucket, derived from
-/// whichever source the API provided.
 #[derive(Debug)]
 pub struct ClaudeSpend {
     pub used: Money,
     pub limit: Option<Money>,
-    /// Percent of the cap already spent (0..=100).
+
     pub used_percent: Option<u8>,
     pub enabled: bool,
     pub disabled_reason: Option<String>,
     pub severity: UsageSeverity,
 }
 
-/// Build the monetary spend bucket from the API response.
-///
-/// Prefers the self-describing `spend{}` object (it carries `amount_minor` +
-/// `exponent`, so the scale is unambiguous); falls back to `extra_usage`,
-/// scaling `used_credits`/`monthly_limit` by `decimal_places`. Both paths feed
-/// one [`Money`]-typed builder, so spend can never be rendered 100× too large
-/// regardless of source. A disabled (e.g. out-of-credits) bucket is still
-/// surfaced — with its reason — rather than silently dropped, so the cap stays
-/// visible the way the web console shows it.
 pub fn claude_spend_bucket(
     spend: Option<ClaudeOAuthSpend>,
     extra: Option<ClaudeOAuthExtraUsage>,
@@ -167,8 +150,6 @@ pub fn fetch_claude_oauth_usage(
                 reqwest::header::HeaderName::from_static("anthropic-beta"),
                 "oauth-2025-04-20",
             ),
-            // The OAuth usage endpoint is gated to the Claude Code client UA;
-            // a generic UA is rejected.
             (reqwest::header::USER_AGENT, CLAUDE_CODE_USER_AGENT_FALLBACK),
         ],
     )

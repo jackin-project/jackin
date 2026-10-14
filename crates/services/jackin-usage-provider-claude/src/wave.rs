@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Claude provider refresh policy and resolved views.
 
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
@@ -14,8 +13,6 @@ use super::{
     ClaudeOAuthUsageResponse, ClaudeResolved, ClaudeWaveResolution, fetch_claude_oauth_usage,
 };
 
-/// Classify the typed cache/coordination policy for a resolved wave. Denied,
-/// Missing, and anonymous-credential resolutions are local-only.
 pub fn claude_wave_policy(resolution: &ClaudeWaveResolution) -> ClaudeWavePolicy {
     match resolution {
         ClaudeWaveResolution::Denied => ClaudeWavePolicy::LocalDenied,
@@ -27,8 +24,6 @@ pub fn claude_wave_policy(resolution: &ClaudeWaveResolution) -> ClaudeWavePolicy
     }
 }
 
-/// Typed policy outcome for a Claude wave — the source of the cache/coordination
-/// policy so downstream code never inspects error text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaudeWavePolicy {
     Shared,
@@ -56,9 +51,6 @@ pub fn claude_view_from_wave(
     }
 }
 
-/// Terminal denial view: `NeedsLogin` with no bucket/account/plan/origin and the
-/// exact non-secret error. Cached quota is never restored onto this (the typed
-/// local-only policy blocks preservation in the refresh cache).
 fn claude_denied_view(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     usage_view(UsageViewInput {
         agent,
@@ -115,14 +107,10 @@ fn claude_missing_view(agent: &str, provider: Option<&str>, now: i64) -> Focused
     })
 }
 
-/// True when the OAuth usage fetch failed because the token lacks the quota
-/// scope (an inference-only grant): only a typed HTTP 403.
 pub fn claude_error_is_scope_restriction(error: &ProviderError) -> bool {
     error.status() == Some(403)
 }
 
-/// Render a provider failure without discarding typed HTTP status information.
-/// A 403 also explains the known inference-only OAuth scope restriction.
 pub fn claude_provider_error_label(error: Option<&ProviderError>) -> Option<String> {
     let error = error?;
     if claude_error_is_scope_restriction(error) {
@@ -147,9 +135,6 @@ fn claude_resolved_view(
     claude_resolved_view_with_fetch(agent, provider, now, resolved, fetch_claude_oauth_usage)
 }
 
-/// One OAuth request with an injected fetch for offline typed-error tests.
-/// There is deliberately no CLI fallback or retry here: `ClaudeResolved` does
-/// not retain a source handle that could prove a same-source reread is safe.
 pub(crate) fn claude_resolved_view_with_fetch<F>(
     agent: &str,
     provider: Option<&str>,
@@ -227,9 +212,6 @@ pub(crate) fn claude_resolved_view_from_result(
     (view, rate_limit, failure_metadata)
 }
 
-/// The normalized provider error remains available on both stale and login
-/// views so 401, 403, 429, timeout, and transport failures stay distinguishable
-/// at the broker boundary.
 pub(crate) fn claude_resolved_last_error(
     status: UsageSnapshotStatus,
     provider_error: Option<String>,

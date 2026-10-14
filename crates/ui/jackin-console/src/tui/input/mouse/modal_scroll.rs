@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Per-modal scroll helpers: dispatch mouse wheel events into the
-//! currently-open modal's body (file browser, picker, settings env/auth
-//! tabs).
-//!
-//! Wheel classification uses [`termrock::scroll`] so modal surfaces share
-//! the same axis/modifier rules as panels and capsule scroll regions.
-
 use termrock::scroll::{ScrollAxes, ScrollAxis, ScrollDelta, mouse_scroll_delta};
 
 use super::{
@@ -16,7 +9,6 @@ use super::{
     SharedModalScrollTarget, modal_overlay, point_in_rect, scroll_selection_at_position,
 };
 
-/// Vertical modal wheel delta via the shared classifier (vertical-only axes).
 fn modal_vertical_scroll_delta(mouse: MouseEvent) -> Option<i16> {
     let ScrollDelta { axis, amount } = mouse_scroll_delta(
         mouse.kind.into(),

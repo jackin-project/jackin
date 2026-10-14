@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! List key and scope resolvers.
 
 use super::{
     WorkspaceInstanceAction, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
@@ -94,8 +93,7 @@ pub fn workspace_list_key_plan(key: KeyCode, list_scroll_focused: bool) -> Works
         A::ConfirmPurge => WorkspaceListKeyPlan::ConfirmPurge,
         A::Settings => WorkspaceListKeyPlan::Settings,
         A::Prewarm => WorkspaceListKeyPlan::Prewarm,
-        // Tab/preview entry is resolved upstream in `workspace_list_top_level_key_plan`;
-        // Ctrl-Q never reaches here (intercepted by `should_open_quit_confirm`).
+
         A::EnterPreview | A::Quit => WorkspaceListKeyPlan::Continue,
     }
 }

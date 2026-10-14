@@ -1,24 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspaces screen view helpers.
-//!
-//! Composition copy-adapted from the upstream `patterns/project_launcher.rs`
-//! and `patterns/session_picker.rs` recipes (composition reference, never a
-//! type dependency — no `termrock::patterns` import):
-//!
-//! - workspace/instance sidebar list = the recipe's master list pane
-//!   (`ProjectLauncherPane::Projects`),
-//! - detail/preview pane = the recipe's preview region
-//!   (`ProjectLauncherPane::Preview`),
-//! - inline pickers (role/agent/provider) = the recipe's popover selectors
-//!   (`QuickOpen`),
-//! - footer action hints = the recipe's action/status strip (chrome-only).
-//!
-//! The focus cycle follows the recipe's `focus_order()` pattern: one ordered
-//! owner chain (`workspace_list_focus_order` in `update.rs`) that enter/exit
-//! transitions walk. Domain types, wording, and effects stay jackin❯-owned
-//! per the copy-adapt law.
 mod display_rows;
 pub mod footer;
 mod instance_lines;

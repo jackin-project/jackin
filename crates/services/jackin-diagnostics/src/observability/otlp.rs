@@ -39,11 +39,6 @@ use metric_governance::{
 
 const EXPORT_ATTEMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
 
-/// The three SDK providers for one run, flushed together at shutdown.
-/// Named (not a positional tuple) so the flush sequence can't transpose
-/// tracer/logger/meter — all three expose identical `force_flush`/`shutdown`
-/// signatures, so a tuple destructure in the wrong order would compile
-/// silently. All three providers are required and activated atomically.
 struct OtlpProviders {
     tracer: SdkTracerProvider,
     logger: SdkLoggerProvider,
@@ -55,17 +50,6 @@ struct OtlpProviders {
 type MeterInstallationLease = std::sync::Arc<std::sync::Mutex<jackin_telemetry::MeterInstallation>>;
 
 impl OtlpProviders {
-    /// Flush buffered telemetry, then shut the exporters down. Called once,
-    /// from `ActiveRunGuard::drop`, on every run exit path.
-    ///
-    /// A `force_flush` failure is the authoritative "the backend did not
-    /// receive this run" signal — the SDK surfaces a failed export through
-    /// this `Result`, not (reliably) through a `tracing` event. So a flush
-    /// error emits one compact operator notice (stderr / deferred under a
-    /// rich TUI) rather than being dropped; otherwise an unreachable or
-    /// wrong-protocol backend would fail completely silently. `shutdown`
-    /// errors stay quiet — by then the data is already flushed-or-lost and a
-    /// second notice adds only noise.
     fn flush_and_shutdown(
         &mut self,
         deadline: std::time::Instant,
@@ -137,10 +121,6 @@ impl OtlpProviders {
         let flushed = !failed;
         health::record_flush(self.generation, flushed);
         if failed {
-            // Direct to stderr, not the deferred buffer: this fires at final
-            // teardown where the run guard may outlive the terminal session,
-            // so a buffered notice could never be drained. The TUI is already
-            // gone by now, so stderr can't corrupt it.
             crate::logging::emit_teardown_notice(
                 "telemetry export failed to reach the backend (run telemetry may be incomplete)",
             );
@@ -187,10 +167,6 @@ struct FlushTask {
 }
 
 impl FlushTask {
-    // Keep the provider-bound meter lease inside the worker. If the
-    // deadline expires, `finish_before` retains only the JoinHandle; the
-    // worker must therefore own the lease until its provider operation
-    // really returns.
     fn spawn(
         operation: impl FnOnce() -> opentelemetry_sdk::error::OTelSdkResult + Send + 'static,
         meter_installation: Option<MeterInstallationLease>,
@@ -307,29 +283,17 @@ static ACTIVATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 static PROVIDERS: std::sync::Mutex<Option<OtlpProviders>> = std::sync::Mutex::new(None);
 static PENDING_FLUSH_WORKERS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
     std::sync::Mutex::new(Vec::new());
-// A shutdown budget can expire after the last worker has been detached
-// from its task but before the provider shutdown call can start. Retain
-// the detached lease permanently in that terminal case so a later
-// provider can never overlap the retired generation.
+
 static TERMINAL_METER_LEASES: std::sync::Mutex<Vec<MeterInstallationLease>> =
     std::sync::Mutex::new(Vec::new());
 #[cfg(test)]
 static SHUTDOWN_ORDER: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
 
-/// Dedicated multi-thread tokio runtime that drives OTLP export. Held for the
-/// process lifetime so the async-runtime batch processors (and tonic's h2
-/// connection driver) have a reactor decoupled from jackin❯'s current-thread
-/// main: the `futures_executor::block_on` flush parks the main thread, and
-/// these worker threads keep exporting regardless. One worker is plenty for
-/// a single run's telemetry volume.
 static OTEL_RUNTIME: std::sync::Mutex<Option<tokio::runtime::Runtime>> =
     std::sync::Mutex::new(None);
 #[cfg(any(test, feature = "test-support"))]
 static OTEL_RUNTIME_CREATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Build-or-get the dedicated telemetry runtime. Providers must be built
-/// inside its [`tokio::runtime::Runtime::enter`] guard so their workers spawn
-/// onto it rather than the ambient (current-thread) app runtime.
 fn otel_runtime() -> anyhow::Result<std::sync::MutexGuard<'static, Option<tokio::runtime::Runtime>>>
 {
     let mut runtime = OTEL_RUNTIME
@@ -403,18 +367,10 @@ impl OtlpEndpoints {
         }
     }
 
-    /// The per-signal endpoints a single base produces. OTLP/gRPC sends every
-    /// signal to the same endpoint verbatim and routes by gRPC service name,
-    /// so — unlike OTLP/HTTP — no `/v1/<signal>` path is appended and all
-    /// three share `base`.
     fn from_base(base: &str) -> Self {
         Self::new(base, base, base)
     }
 
-    /// The one construction choke point. Every field is run through
-    /// [`grpc_endpoint`] here so the "normalized gRPC channel target"
-    /// invariant has a single enforcement site rather than being re-asserted
-    /// at each caller (where one could silently drift).
     pub(super) fn new(traces: &str, logs: &str, metrics: &str) -> Self {
         Self {
             traces: grpc_endpoint(traces),
@@ -430,9 +386,6 @@ impl OtlpEndpoints {
     }
 }
 
-/// Host OTLP endpoints, when configured via the standard OTLP env vars.
-/// `OTEL_EXPORTER_OTLP_ENDPOINT` provides a base for every signal; the
-/// per-signal endpoint vars wrappers commonly inject override it per signal.
 pub(super) fn endpoints() -> Option<OtlpEndpoints> {
     let env = |key: &str| std::env::var(key).ok();
     super::config::resolve_otlp_config(&env)
@@ -477,9 +430,6 @@ fn validate_standard_env() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The endpoint handed to a launched container. The base var wins; absent it,
-/// the resolved traces endpoint stands in so a per-signal-only host config
-/// still reaches the capsule. Both are already `grpc_endpoint`-normalized.
 pub(super) fn container_endpoint() -> Option<String> {
     base_endpoint().or_else(|| endpoints().map(|endpoints| endpoints.traces))
 }
@@ -491,8 +441,7 @@ pub(super) fn base_endpoint() -> Option<String> {
 
 pub(super) fn endpoint_summary() -> Option<String> {
     let endpoints = endpoints()?;
-    // A single configured base drives all three signal URLs, so collapse to
-    // it; per-signal overrides break the match and are spelled out in full.
+
     if let Some(base) = base_endpoint()
         && endpoints == OtlpEndpoints::from_base(&base)
     {
@@ -520,32 +469,19 @@ fn sanitized_authority(endpoint: &str) -> Option<String> {
     Some(format!("{}://{host}{port}", endpoint.scheme()))
 }
 
-/// The configured base endpoint, if any. An exported-but-empty var must not
-/// produce a blank endpoint, so an empty value resolves to `None` and no
-/// OTLP layer is installed.
 fn resolve_endpoint(otel: Option<String>) -> Option<String> {
     otel.filter(|s| !s.is_empty())
 }
 
-/// Normalize a gRPC endpoint: strip trailing slashes. The OTLP/gRPC exporter
-/// uses the endpoint as the channel target (`http://host:4317`) and routes by
-/// gRPC service name, so — unlike OTLP/HTTP — no signal path is appended.
 fn grpc_endpoint(endpoint: &str) -> String {
     endpoint.trim_end_matches('/').to_owned()
 }
 
-/// Whether an explicit `OTEL_EXPORTER_OTLP_*_PROTOCOL` value names something
-/// jackin cannot send. jackin exports OTLP over gRPC only; an empty value or
-/// `grpc` is fine, anything else (`http/protobuf`, `http/json`, …) is not.
 fn unsupported_protocol(value: &str) -> bool {
     let value = value.trim();
     !value.is_empty() && value != "grpc"
 }
 
-/// The standard OTLP protocol-selection env vars (generic + per-signal). The
-/// protocol guard and the fatal startup check both scan this one list so they
-/// can never drift — a new per-signal var missed by one but not the other
-/// would silently re-open the wrong-protocol no-deliver hole.
 const PROTOCOL_VARS: [&str; 4] = [
     "OTEL_EXPORTER_OTLP_PROTOCOL",
     "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
@@ -553,10 +489,6 @@ const PROTOCOL_VARS: [&str; 4] = [
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
 ];
 
-/// jackin exports OTLP over gRPC only. If a non-grpc protocol is explicitly
-/// requested via the standard env vars, fail loudly here rather than build a
-/// gRPC exporter against an endpoint meant for HTTP — a silent no-deliver is
-/// exactly the failure mode this guards against.
 fn ensure_grpc_protocol() -> Result<(), String> {
     for var in PROTOCOL_VARS {
         if let Ok(value) = std::env::var(var)
@@ -571,13 +503,6 @@ fn ensure_grpc_protocol() -> Result<(), String> {
     Ok(())
 }
 
-/// Shared OTLP tracer/logger provider construction for host and capsule.
-///
-/// Owns the protocol check, the dedicated telemetry runtime enter-guard, and
-/// both exporters + batch-processor providers so host/`init_capsule` cannot
-/// drift. Callers differ only in resource, endpoints, layer composition, and
-/// metrics handling. Returns the app runtime handle captured *before*
-/// entering the telemetry runtime (for tokio gauges).
 fn build_otlp_providers(
     resource: Resource,
     endpoints: &OtlpEndpoints,
@@ -590,14 +515,9 @@ fn build_otlp_providers(
     ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
     validate_standard_env()?;
     let runtime = otel_runtime()?;
-    // The tokio runtime gauges must report jackin❯'s app runtime, not the
-    // dedicated telemetry runtime — capture its handle before entering ours.
+
     let app_handle = tokio::runtime::Handle::try_current().ok();
-    // Build every exporter, processor, and reader inside the dedicated
-    // runtime: the async-runtime processors spawn their worker tasks (and
-    // tonic spawns its h2 connection driver) onto whichever runtime is
-    // entered here, and they must land on the multi-thread telemetry runtime
-    // — not jackin❯'s current-thread main, where flush would deadlock.
+
     let runtime = runtime
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
@@ -643,8 +563,6 @@ fn build_otlp_providers(
         .build()
         .map_err(|_| anyhow::anyhow!("OTLP log exporter init failed"))?;
 
-    // Attribute limits: generous but finite (observed max attrs + headroom).
-    // Prevents unbounded dimension growth; DroppedAttributesCount must stay 0.
     let span_batch = SpanBatchConfigBuilder::default()
         .with_max_queue_size(2_048)
         .with_max_export_batch_size(512)
@@ -843,9 +761,6 @@ pub(super) fn init(
         .with_error_fields_to_exceptions(false);
     let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-    // Scope the export to jackin❯'s own telemetry. Dependency-internal
-    // spans/logs stay out of OTLP unless the operator asks for them with
-    // `JACKIN_OTEL_INTERNAL=1`.
     let span_directive =
         export_filter_directive(export_level_for(crate::TelemetrySink::OtlpSpans, debug));
     let log_directive =
@@ -894,9 +809,6 @@ pub(super) fn init(
     installed
 }
 
-/// Install OTLP export for the capsule. Mirrors `init` but composes no
-/// direct OTLP layers and stamps the
-/// capsule resource; providers come from [`build_otlp_providers`].
 pub(super) fn init_capsule(
     _traceparent: Option<&str>,
     config: &super::config::OtlpConfig,
@@ -1025,8 +937,6 @@ fn cleanup_partial(
     }
 }
 
-/// Capsule OTLP filter debug gate — uses the shared telemetry resolver
-/// rather than parsing telemetry controls privately.
 fn capsule_debug() -> bool {
     matches!(
         crate::telemetry_level(false),
@@ -1034,9 +944,6 @@ fn capsule_debug() -> bool {
     )
 }
 
-/// Tracing targets exported over OTLP. Global default is `off`: a
-/// dependency that starts emitting `tracing` data must be added here
-/// deliberately instead of leaking into the backend.
 const EXPORT_TARGETS: &[&str] = &[
     "jackin",
     "jackin_build_meta",
@@ -1087,8 +994,6 @@ fn export_filter_directive_with_internal(level: &str, internal: bool) -> String 
         directive.push_str(&format!(",{target}={level}"));
     }
     if internal {
-        // Operator explicitly asked for dependency internals: restore the
-        // global default level while still blocking exporter feedback loops.
         directive.push_str(&format!(
             ",{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
                  opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
@@ -1184,7 +1089,6 @@ pub(crate) fn test_layers_at(
     )
 }
 
-/// Capsule-side in-memory bootstrap for layer conformance tests.
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber) {
     use opentelemetry::trace::TracerProvider as _;
@@ -1251,7 +1155,6 @@ pub fn test_capsule_layers(debug: bool) -> (TestExport, impl tracing::Subscriber
     )
 }
 
-/// Test-only entry for the governed session-start event.
 #[cfg(test)]
 pub(crate) fn emit_session_start_for_test(
     session_id: &str,
@@ -1277,11 +1180,7 @@ struct ProcessSnapshot {
 
 fn start_process_sampler(pid: sysinfo::Pid, cpu_count: f64) -> std::sync::Arc<ProcessSnapshot> {
     let snapshot = std::sync::Arc::new(ProcessSnapshot::default());
-    // Miri implements none of the sysconf(3) names probed by sysinfo
-    // ("unimplemented sysconf name: 2"), so the sampler thread would
-    // abort the whole test binary. Process sampling is real-OS work
-    // outside what Miri models; under Miri skip the thread entirely and
-    // leave the snapshot permanently invalid.
+
     #[cfg(not(miri))]
     {
         let weak = std::sync::Arc::downgrade(&snapshot);
@@ -1295,9 +1194,6 @@ fn start_process_sampler(pid: sysinfo::Pid, cpu_count: f64) -> std::sync::Arc<Pr
     snapshot
 }
 
-/// Refresh one process's CPU and memory into `snapshot` until the last
-/// strong reference is dropped; real-OS work Miri cannot model, so the
-/// whole sampler is compiled out under Miri.
 #[cfg(not(miri))]
 fn sample_until_dropped(pid: sysinfo::Pid, cpu_count: f64, weak: std::sync::Weak<ProcessSnapshot>) {
     use std::sync::atomic::Ordering;
@@ -1326,13 +1222,6 @@ fn sample_until_dropped(pid: sysinfo::Pid, cpu_count: f64, weak: std::sync::Weak
     }
 }
 
-/// Process and runtime metrics: CPU utilization and
-/// memory via `sysinfo`, plus the stable tokio runtime counters (workers,
-/// alive tasks, global queue depth) read from `app_handle` — jackin❯'s *app*
-/// runtime handle, captured by the caller before entering the dedicated
-/// telemetry runtime. Capturing it here would instead read the telemetry
-/// runtime; reading it from the collect thread (no ambient runtime) would
-/// yield `None`.
 fn init_metrics(
     resource: &Resource,
     endpoints: &OtlpEndpoints,
@@ -1401,8 +1290,6 @@ fn install_observable_metrics(
         let snapshot = start_process_sampler(pid, cpu_count);
         let cpu_snapshot = std::sync::Arc::clone(&snapshot);
         let _cpu_gauge = meter
-            // semconv: process.cpu.utilization, unit "1", 0..1 fraction
-            // of the CPUs available to the process.
             .f64_observable_gauge(
                 opentelemetry_semantic_conventions::metric::PROCESS_CPU_UTILIZATION,
             )
@@ -1418,8 +1305,6 @@ fn install_observable_metrics(
             })
             .build();
         let _memory_counter = meter
-            // semconv: process.memory.usage is an UpDownCounter (rises
-            // and falls), not a gauge.
             .i64_observable_up_down_counter(
                 opentelemetry_semantic_conventions::metric::PROCESS_MEMORY_USAGE,
             )
@@ -1480,11 +1365,6 @@ pub(super) fn shutdown() {
     let succeeded = match shutdown_result {
         Ok(succeeded) => succeeded,
         Err(error) => {
-            // A metric writer still owns the facade read lock. Keep both
-            // provider and runtime ownership published so the next
-            // shutdown call can retry; dropping either here would turn a
-            // bounded fence timeout into a lifecycle overlap with the
-            // retiring provider.
             *PROVIDERS
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = providers.take();
@@ -1503,9 +1383,6 @@ pub(super) fn shutdown() {
     };
     drop(providers);
     if let Some(runtime) = runtime {
-        // Providers have already flushed and shut down under the deadline.
-        // Waiting for retired tonic driver tasks can deadlock process exit;
-        // the runtime owns no product work after provider shutdown.
         runtime.shutdown_background();
     }
     let timed_out = std::time::Instant::now() >= deadline;

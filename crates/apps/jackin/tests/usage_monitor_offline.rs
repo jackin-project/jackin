@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Offline subprocess checks for the Claude usage monitor command boundary.
-
 #![cfg(unix)]
 
 use std::ffi::OsString;
@@ -300,9 +298,6 @@ impl OfflineFixture {
     }
 
     fn bind_fixture_account(&self, account_id: &str) -> Result<MonitorAccountBinding> {
-        // This is a private test-only same-UID broker DTO path. It supplies
-        // fake operator attestation to this isolated fixture; the CLI's live
-        // operator command remains TTY-gated.
         let client = UsageBrokerConfig::for_data_dir(self.data_dir.clone()).client();
         let reply = client
             .monitor(
@@ -330,8 +325,6 @@ impl OfflineFixture {
         goal_id: &str,
         budget: Money,
     ) -> Result<MonitorPolicyRecord> {
-        // Keep all policy seeding local to the throwaway broker and test
-        // identity; never route fake operator approval through the CLI.
         let client = UsageBrokerConfig::for_data_dir(self.data_dir.clone()).client();
         let reply = client
             .monitor(
@@ -663,9 +656,6 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
         }
     }
 
-    // Captured pipes are deliberately non-TTY. Auth preparation must return
-    // a typed interaction-required error before it can spawn the broker's
-    // terminal helper, keychain reader, or any UI prompt.
     let auth_prepare = fixture.run(&["auth", "prepare", "--provider", "claude"], None)?;
     expect_exit(&auth_prepare, 2)?;
     ensure!(json_output(&auth_prepare)?["error"]["code"] == "interaction_required");
@@ -676,8 +666,6 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     );
     let run_dir = fixture.data_dir.join("usage-broker/run");
 
-    // Binding and policy approval are operator actions. Captured stdio is
-    // non-TTY, so both must reject before creating or contacting a broker.
     for args in [
         vec![
             "binding",
@@ -728,8 +716,7 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
 
     for _ in 0..2 {
         let doctor = fixture.run(&["doctor", "--provider", "claude", "--unattended"], None)?;
-        // Unknown optional OAuth state is informational; broker and ingress
-        // readiness remain healthy without claiming provider authentication.
+
         expect_exit(&doctor, 0)?;
         let doctor_json = json_output(&doctor)?;
         ensure!(doctor_json["result"] == "doctor");
@@ -912,9 +899,6 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     ensure!(!runnable(refreshed_status)?);
     ensure!(refreshed_status["readiness"]["dispatch"] == "not_authorized");
 
-    // A session-only callback remains in its unbound partition. Bind the
-    // account through the private fixture DTO and ingest separately before
-    // exercising an account-scoped dispatch guard.
     let account_binding = fixture.bind_fixture_account("fixture-account")?;
     let account_ingest = fixture.run_owned(
         OfflineFixture::bound_ingest_args(&account_binding),
@@ -1100,9 +1084,6 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     expect_exit(&due_account_receipt, 0)?;
     ensure!(json_output(&due_account_receipt)?["record"]["verification"] == "verified");
 
-    // Retrying the exact failed activation after a compatible receipt uses
-    // the same idempotency key and succeeds, proving the failed request did
-    // not reserve the key or persist a partial goal.
     let strict_start = fixture.run_owned(strict_start_args.clone(), None)?;
     expect_exit(&strict_start, 0)?;
     let strict_start_json = json_output(&strict_start)?;
@@ -1151,9 +1132,6 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
         "verified spend receipt did not establish the new goal baseline"
     );
 
-    // High utilization latches an account-wide barrier while the goal was
-    // runnable. Reattach after restart must show only the current blocked
-    // state, not a retained runnable event.
     let guarded_statusline = serde_json::to_vec(&serde_json::json!({
         "session_id": "offline-session",
         "model": {"id": "claude-sonnet-4-5"},
@@ -1276,8 +1254,6 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
     ensure!(!runnable(advanced_status_object)?);
     ensure_issue(advanced_status_object, "limit_guard_reached")?;
 
-    // Exercise reset-grace timeout with a new account whose first reset is
-    // already past the grace period, without changing the system clock.
     let due_reset_epoch = i64::try_from(receipt_epoch)
         .context("spend receipt time is outside the accepted epoch range")?
         .saturating_sub(120);

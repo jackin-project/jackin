@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared footer hint fragments for modal pickers and confirmations.
-//!
-//! Coordinator — declares the sibling modules and re-exports every public
-//! type and builder so external callers keep their existing `use` paths.
-//! Sibling layout follows the worklist split: workspace / editor /
-//! settings / modals / common.
-
 use std::borrow::Cow;
 
 use termrock::widgets::HintSpan;
@@ -28,7 +21,6 @@ mod workspace;
 #[cfg(test)]
 mod tests;
 
-// Workspace-list footer types + builders.
 pub use self::workspace::{
     WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterFacts,
     WorkspaceListFooterInputFacts, WorkspaceListFooterMode, WorkspaceListFooterRowFacts,
@@ -42,14 +34,12 @@ pub use self::workspace::{
     workspace_picker_footer_items, workspace_screen_footer_items, workspace_screen_footer_plan,
 };
 
-// Editor-screen footer types + builders.
 pub use self::editor::{
     AuthRowFooterMode, EditorContextFooterMode, EditorScreenFooterFacts, auth_row_footer_items,
     editor_contextual_row_footer_items, editor_footer_items, editor_general_row_footer_items,
     editor_role_row_footer_items, editor_screen_footer_items,
 };
 
-// Settings-screen footer types + builders.
 pub use self::settings::{
     SettingsContextFooterMode, add_row_footer_items, append_generate_token_footer_item,
     filtered_picker_footer_items, global_mount_row_footer_items, mount_destination_footer_items,
@@ -60,11 +50,8 @@ pub use self::settings::{
     workspace_mount_row_footer_items,
 };
 
-// `SettingsScreenFooterFacts` lives next to the editor's
-// `EditorScreenFooterFacts` because both screen orchestrators consume it.
 pub use self::editor::{SettingsScreenFooterFacts, settings_screen_footer_items};
 
-// Modal footer types + dispatch.
 pub use self::modals::{
     ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalContainerInfoFooterState,
     ModalFileBrowserFooterState, ModalFooterMode, ModalOpPickerFooterState, auth_form_footer_items,
@@ -73,5 +60,4 @@ pub use self::modals::{
     save_discard_cancel_footer_items, status_popup_footer_items,
 };
 
-// Common fragments used by tab-bar / content / save-and-escape footers.
 pub use self::common::{content_footer_items, tab_bar_footer_items};

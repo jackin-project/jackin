@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capsule-local visual components.
-//!
-//! Capsule components source colors from `TermRock` theme constants so
-//! capsule and host-console surfaces cannot drift; no ad-hoc inline RGB
-//! literals in component render code.
-
 pub mod branch_context_bar;
 pub mod chrome;
 pub mod container_info_dialog;

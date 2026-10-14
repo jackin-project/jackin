@@ -1,9 +1,3 @@
-//! `run_launch_core` boundary harness (plan 016).
-//!
-//! Builds a fully-populated [`LaunchCore`] over `FakeDockerClient` /
-//! `FakeRunner` + real grant/profile/config fixtures and drives the real
-//! pipeline boundary (not helper-only substitutes).
-
 use super::super::Backend;
 use super::super::StepCounter;
 use super::super::account_identity;

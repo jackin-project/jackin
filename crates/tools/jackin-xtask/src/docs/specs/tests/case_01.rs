@@ -121,7 +121,7 @@ fn verify_commented_out_test_is_not_coverage() {
     )
     .unwrap();
     fs::create_dir_all(tests.parent().unwrap()).unwrap();
-    // Line-text matching would see `fn ghost_test` in a comment; syn must not.
+
     fs::write(
         &tests,
         "// #[test]\n// fn ghost_test() {}\n#[test]\nfn other() {}\n",

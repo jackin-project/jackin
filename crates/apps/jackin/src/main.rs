@@ -1,8 +1,3 @@
-//! jackin: host CLI binary and top-level dispatch.
-//!
-//! **Architecture Invariant:** T9.
-//! Entry point: [`main`] — host CLI binary entry.
-
 #![expect(
 
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
@@ -25,9 +20,6 @@ async fn main() {
     let lifecycle = jackin::ProductLifecycle::begin(jackin::BinaryKind::Host);
     jackin::install_default_tls_provider();
 
-    // `try_parse` instead of `parse` so we can render the frozen-rain banner
-    // for the root `--help`/`--version` ourselves before clap prints the help
-    // body — clap reflows multi-line ANSI art passed through `before_help`.
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => handle_parse_error(err, lifecycle),
@@ -56,8 +48,6 @@ async fn main() {
             }
         }
         Action::PrintHelpAndExit => {
-            // Bare `jackin` on a non-interactive stdout: one-line pill (the
-            // root command no longer carries clap's `before_help`), then help.
             print!("{}", jackin::brand_output::BRAND_BANNER);
             let mut cmd = Cli::command();
             drop(cmd.print_help());
@@ -77,13 +67,6 @@ async fn main() {
     }
 }
 
-/// Handle a clap parse outcome that is not a successful `Cli`.
-///
-/// `--help`/`--version` surface as `Err(DisplayHelp|DisplayVersion)`. For the
-/// root `--help` we print the frozen-rain banner (or the one-line pill on a
-/// narrow/piped terminal) before clap renders the help body; subcommand help
-/// keeps clap's own `before_help` pill. Real usage errors fall through to
-/// clap's default rendering (stderr, exit 2).
 #[expect(
     clippy::exit,
     reason = "binary entrypoint — exit after rendering the version splash"
@@ -97,8 +80,6 @@ fn handle_parse_error(err: clap::Error, lifecycle: jackin::ProductLifecycle) -> 
             print_root_help_banner();
         }
         ErrorKind::DisplayVersion if std::io::stdout().is_terminal() => {
-            // Interactive `--version`: brand splash instead of clap's plain
-            // `jackin <version>` line. Piped output falls through to clap.
             let version = Cli::command().get_version().unwrap_or_default().to_owned();
             print!("{}", jackin::brand_output::version_splash(&version));
             std::process::exit(0);
@@ -108,12 +89,6 @@ fn handle_parse_error(err: clap::Error, lifecycle: jackin::ProductLifecycle) -> 
     err.exit();
 }
 
-/// Print the brand banner above the root `jackin --help` output.
-///
-/// No-op for subcommand help (clap's `before_help` pill covers those). On an
-/// interactive terminal wide enough for the art, prints the frozen-rain
-/// banner; otherwise the one-line pill, which survives piping and narrow
-/// widths.
 fn print_root_help_banner() {
     let cmd = Cli::command();
     let is_subcommand_help = {
@@ -124,11 +99,9 @@ fn print_root_help_banner() {
         std::env::args().skip(1).any(|arg| names.contains(&arg))
     };
     if is_subcommand_help {
-        return; // clap's `before_help` pill covers subcommand help
+        return;
     }
-    // The root command no longer carries clap's pill, so the binary always
-    // prints a brand mark here: the big frozen-rain banner with the centered
-    // lockup on a roomy interactive terminal, otherwise the one-line pill.
+
     let interactive = std::io::stdout().is_terminal();
     match crossterm::terminal::size() {
         Ok((cols, rows))
@@ -140,12 +113,6 @@ fn print_root_help_banner() {
     }
 }
 
-/// Terminate after a failed `jackin::run`, distinguishing a deliberate
-/// operator cancel from a real failure.
-///
-/// Operator cancel (Ctrl+C / Ctrl+Q / a Cancel modal) is an intent, not an
-/// error: exit cleanly with status 0 and render nothing — the launch surface
-/// has already restored the terminal. Every other error renders and exits 1.
 #[expect(
     clippy::exit,
     reason = "binary entrypoint — exit is the correct mechanism"
@@ -170,10 +137,6 @@ fn usage_cli_error(error: &anyhow::Error) -> Option<(i32, &str)> {
         .map(|error| (error.exit_code(), error.json()))
 }
 
-/// Render an error at the binary entry point.
-///
-/// Downcasts to `JackinError` for a structured friendly block; falls back to
-/// the existing `{error:#}` chain rendering for unrecognized errors.
 fn render_error(error: &anyhow::Error, debug: bool) {
     use owo_colors::OwoColorize;
     if let Some(jackin_err) = error.downcast_ref::<jackin::error::JackinError>() {

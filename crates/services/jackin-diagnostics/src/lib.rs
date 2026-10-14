@@ -1,8 +1,3 @@
-//! jackin-diagnostics: governed telemetry and observability plumbing.
-//!
-//! **Architecture Invariant:** T2.
-//! Entry point: [`init_tracing`] — installs the governed providers and subscriber.
-
 pub mod build_log;
 pub mod logging;
 pub mod metrics;

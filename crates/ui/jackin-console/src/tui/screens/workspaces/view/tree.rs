@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace tree line builders.
 
 use super::{WorkspaceListDisplayRow, row_fg};
 use crate::tui::components::editor_rows::{action_row_style, cursor_gutter};

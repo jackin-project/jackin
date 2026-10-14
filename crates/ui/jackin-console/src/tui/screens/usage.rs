@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Simple Console Usage route.
-//!
-//! Rust supplies already ordered account/window/group values. This module owns
-//! only the Console split, focus, and Capsule-shaped meter adaptation.
 mod body;
 mod detail;
 mod labels_metric;

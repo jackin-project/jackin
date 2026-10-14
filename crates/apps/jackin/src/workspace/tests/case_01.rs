@@ -115,8 +115,6 @@ enabled = true
         "expected serialized form to contain [keep_awake] enabled = true, got:\n{serialized}"
     );
 
-    // Default (disabled) variant must round-trip back to "no section emitted"
-    // so existing configs don't grow noise after a load/save cycle.
     let mut default_ws = ws;
     default_ws.keep_awake.enabled = false;
     let serialized_default = toml::to_string(&default_ws).unwrap();
@@ -193,7 +191,6 @@ fn validate_rejects_workdir_sibling_of_mount_dst() {
 
 #[test]
 fn validate_rejects_workdir_with_prefix_overlap_but_not_parent() {
-    // /workspace/project-v2 is NOT inside /workspace/project
     let ws = workspace_with_workdir_and_dst("/workspace/project-v2", "/workspace/project");
     let err = validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap_err();
     assert!(err.to_string().contains(
@@ -203,7 +200,6 @@ fn validate_rejects_workdir_with_prefix_overlap_but_not_parent() {
 
 #[test]
 fn validate_rejects_mount_dst_with_prefix_overlap_but_not_child() {
-    // /workspace/project is NOT a parent of /workspace/project-v2
     let ws = workspace_with_workdir_and_dst("/workspace/project", "/workspace/project-v2");
     let err = validate_workspace_config(&WorkspaceName::parse("test").unwrap(), &ws).unwrap_err();
     assert!(err.to_string().contains(
@@ -275,10 +271,6 @@ isolation = "clone"
 
 #[test]
 fn mount_config_writes_isolation_field_even_when_shared_on_serialize() {
-    // Old configs without `isolation` deserialize to Shared (the default);
-    // on save we re-emit the field explicitly so the stored TOML always
-    // names the isolation level. No surprises for operators reading the
-    // config — every mount shows what it is.
     let mount = MountConfig {
         src: "/tmp/src".into(),
         dst: "/workspace/x".into(),
@@ -357,10 +349,6 @@ fn isolation_layout_rejects_nested_worktrees_grandparent() {
 
 #[test]
 fn isolation_layout_rejects_two_worktree_mounts_on_same_repo() {
-    // V1 limitation: two isolated mounts in one workspace cannot
-    // share the same host repository (literal `src` equality is
-    // sufficient when the path can't be canonicalized — the case
-    // exercised by this test).
     let mounts = vec![
         worktree_mount("/host/jackin", "/workspace/jackin"),
         worktree_mount("/host/jackin", "/workspace/jackin-copy"),
@@ -377,9 +365,6 @@ fn isolation_layout_rejects_two_worktree_mounts_on_same_repo() {
 
 #[test]
 fn isolation_layout_allows_different_host_repos_in_one_workspace() {
-    // The common multi-mount case: role works on two different
-    // host repos, each isolated. Distinct `src` paths → no
-    // collision in host's `.git/worktrees/` namespace.
     let mounts = vec![
         worktree_mount("/host/jackin", "/workspace/jackin"),
         worktree_mount("/host/jackin-docs", "/workspace/jackin-docs"),

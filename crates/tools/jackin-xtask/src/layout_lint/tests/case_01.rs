@@ -63,8 +63,6 @@ fn another_helper() {}
 
 #[test]
 fn ungated_helper_modules_are_not_suites_but_test_gated_ones_are() {
-    // Shared fixtures use ungated decls with the gate inside the file
-    // (`#![cfg(test)]`); only test-gated or suite-named mods must be canonical.
     assert!(non_tests_rs_violation("pub mod fixtures;\n").is_none());
     assert!(non_tests_rs_violation("mod support;\n").is_none());
     assert!(non_tests_rs_violation("#[cfg(test)]\nmod helpers;\n").is_some());

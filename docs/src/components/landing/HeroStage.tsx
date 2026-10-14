@@ -1,4 +1,4 @@
-// docs/components/landing/HeroStage.tsx
+
 import { DigitalRain } from './DigitalRain';
 import { HeroContent } from './HeroContent';
 import { ThemeToggle } from './ThemeToggle';

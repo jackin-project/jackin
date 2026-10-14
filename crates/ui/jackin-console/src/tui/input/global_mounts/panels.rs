@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings general and trust key handling.
 
 use super::{confirm_modal, dispatch_manager, open_settings_save_preview};
 use crossterm::event::KeyEvent;

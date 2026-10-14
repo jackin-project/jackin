@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capsule config and socket dir helpers extracted from launch coordinator.
-
 use std::io::Write as _;
 use std::path::{Component, Path};
 
@@ -10,11 +8,6 @@ use jackin_protocol;
 
 const CAPSULE_LITERAL_SOURCE: &str = "literal";
 
-/// Auth transport per admitted instance, keyed by config id.
-///
-/// Instances are already authorized by [`jackin_config::resolve_launch`};
-/// each entry carries its account's forward mode plus the profile source
-/// directory for `sync` transports.
 pub fn account_auth_selections(
     config: &jackin_config::AppConfig,
     instances: &[jackin_config::ResolvedInstance],
@@ -42,9 +35,6 @@ pub fn account_auth_selections(
         .collect()
 }
 
-/// One [`InstanceAuthBinding`](jackin_instance::InstanceAuthBinding)
-/// per admitted instance, keyed by config ID in launch order. Fails on
-/// the first unknown account; every returned binding resolves.
 pub fn instance_auth_bindings(
     config: &jackin_config::AppConfig,
     instances: &[jackin_config::ResolvedInstance],
@@ -76,8 +66,6 @@ pub fn instance_auth_bindings(
         .collect()
 }
 
-/// Per-instance auth modes for [`jackin_protocol::CapsuleConfig`], keyed by
-/// instance config ID in launch order.
 pub fn capsule_auth_modes(
     config: &jackin_config::AppConfig,
     instances: &[jackin_config::ResolvedInstance],
@@ -89,10 +77,6 @@ pub fn capsule_auth_modes(
         .collect())
 }
 
-/// Account models must override role defaults: a role's native-provider model
-/// may be invalid for the selected account's provider. Explicit launch options
-/// are applied afterwards by the coordinator. The effective instance model
-/// (configuration override, else account default) wins per instance.
 pub fn apply_account_models(
     launch: &mut jackin_protocol::CapsuleConfig,
     config: &jackin_config::AppConfig,
@@ -119,10 +103,6 @@ pub fn apply_account_models(
     Ok(())
 }
 
-/// Resolve the exact model map used by both account materialization and the
-/// Capsule. The role model is the base, the selected account model replaces it
-/// when present, and a launch model override fans out to every admitted slot
-/// for the selected runtime.
 pub fn resolved_instance_models(
     config: &jackin_config::AppConfig,
     manifest: &jackin_manifest::RoleManifest,
@@ -139,7 +119,6 @@ pub fn resolved_instance_models(
     )
 }
 
-/// Role model defaults as a stable per-agent map for dry-run projection.
 pub fn role_model_defaults(
     manifest: &jackin_manifest::RoleManifest,
 ) -> std::collections::BTreeMap<jackin_core::Agent, String> {
@@ -153,8 +132,6 @@ pub fn role_model_defaults(
         .collect()
 }
 
-/// Resolve role, account, and task-scoped model choices through the one
-/// projection used by launch and `--dry-run`.
 pub fn resolved_instance_models_from_role_models(
     config: &jackin_config::AppConfig,
     role_models: &std::collections::BTreeMap<jackin_core::Agent, String>,
@@ -207,9 +184,6 @@ pub fn resolved_instance_models_from_role_models(
     Ok(launch.models)
 }
 
-/// Fan out one requested effort to the same runtime's admitted slots. The
-/// Capsule owns this map so no process-wide env value can make two slots
-/// disagree.
 pub fn resolved_instance_efforts(
     instances: &[jackin_config::ResolvedInstance],
     selected_agent: jackin_core::Agent,
@@ -253,11 +227,6 @@ fn forwarded_credential_mount_paths(
         .collect()
 }
 
-/// Fill the per-instance container dirs from prepared role-state
-/// slots, keyed by instance config ID. The folder-var target comes
-/// straight from the slot; the forwarded dir joins `/jackin` with the
-/// slot's store rel. A missing slot fails the launch closed: the
-/// daemon cannot spawn an instance it cannot place.
 pub fn apply_instance_dirs(
     launch: &mut jackin_protocol::CapsuleConfig,
     instances: &[jackin_config::ResolvedInstance],
@@ -335,9 +304,6 @@ pub fn apply_instance_dirs(
     Ok(())
 }
 
-/// Comma-join the on-demand credential binding names for the
-/// `JACKIN_EXEC_BINDINGS` env var. Shared by the Docker and apple-container
-/// launch paths so the two cannot format the list differently.
 #[must_use]
 pub fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> String {
     bindings
@@ -347,8 +313,6 @@ pub fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> String {
         .join(",")
 }
 
-/// Serialize the container-visible launch config without host-owned literal
-/// credential values.
 pub fn capsule_config_contents(config: &jackin_protocol::CapsuleConfig) -> anyhow::Result<String> {
     validate_capsule_workdir(config)?;
     let mut projected = config.clone();
@@ -363,10 +327,6 @@ pub fn capsule_config_contents(config: &jackin_protocol::CapsuleConfig) -> anyho
     Ok(toml::to_string(&projected)?)
 }
 
-/// Keep the host-to-capsule handoff fail-closed even when a caller constructs
-/// a `CapsuleConfig` without going through workspace validation. A recursive
-/// workspace Landlock grant must not overlap capsule roots or any private
-/// instance mount destination.
 fn validate_capsule_workdir(config: &jackin_protocol::CapsuleConfig) -> anyhow::Result<()> {
     let workdir = Path::new(config.workdir.trim());
     anyhow::ensure!(
@@ -444,8 +404,7 @@ pub fn capsule_config(
         usage_capabilities: std::collections::BTreeMap::new(),
         credential_provider_surfaces: std::collections::BTreeMap::new(),
         labels,
-        // Populated by `apply_instance_dirs` once role state is
-        // prepared; the manifest alone does not carry slot layout.
+
         instance_home_dirs: std::collections::BTreeMap::new(),
         instance_cache_dirs: std::collections::BTreeMap::new(),
         instance_forwarded_dirs: std::collections::BTreeMap::new(),
@@ -455,8 +414,7 @@ pub fn capsule_config(
         shell_identity: None,
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
-        // Populated by the launch pipeline once the operator env is known; the
-        // manifest alone does not carry on-demand workspace credentials.
+
         exec_bindings: Vec::new(),
         dirty_exit_policy: Some(dirty_exit_policy.to_owned()),
         isolated_worktrees,
@@ -465,14 +423,6 @@ pub fn capsule_config(
     }
 }
 
-/// Create the per-container socket dir and write Capsule's launch config
-/// (`agent.toml`) into it. Docker bind-mounts the directory to `/jackin/run`;
-/// Apple Container mounts the config and any host sockets as individual files.
-/// Shared by both launch paths: the apple-container path
-/// (`apple_container::launch`) and the Docker path (`launch_role_runtime`,
-/// which calls it inside its socket-dir `spawn_blocking` alongside the
-/// extrausers passwd write). The directory is private before the config write,
-/// including when no host credential listener will be started.
 pub fn prepare_socket_dir(socket_dir: &Path, capsule_config_contents: &str) -> std::io::Result<()> {
     create_private_dir(socket_dir)?;
     std::fs::write(
@@ -496,7 +446,6 @@ fn create_private_dir(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// A short-lived host-only env file removed when the runtime invocation ends.
 pub struct HostEnvFile {
     file: tempfile::NamedTempFile,
 }
@@ -514,7 +463,6 @@ impl std::fmt::Debug for HostEnvFile {
     }
 }
 
-/// Owns a temporary env file and the runtime arguments that reference it.
 pub struct HostEnvTransport {
     _file: Option<HostEnvFile>,
     arguments: Vec<String>,
@@ -537,11 +485,6 @@ impl std::fmt::Debug for HostEnvTransport {
     }
 }
 
-/// Write runtime environment values to a private host-only file.
-///
-/// The directory is a sibling of `sockets/`, never its child, so it is not part
-/// of the `/jackin/run` bind mount. Values that cannot be represented exactly by
-/// the runtime env-file grammar fail closed instead of falling back to argv.
 pub fn create_host_env_file(
     jackin_home: &Path,
     container_name: &str,
@@ -581,7 +524,6 @@ pub fn create_host_env_file(
     Ok(Some(HostEnvFile { file }))
 }
 
-/// Split non-metadata env values from argv and prepare their private file.
 pub fn prepare_host_env_transport(
     jackin_home: &Path,
     container_name: &str,
@@ -674,8 +616,6 @@ impl SafeMetadataEnv {
     }
 }
 
-/// Retain exact safe launch metadata inline and route every other env value
-/// through host-only env-file transport.
 pub fn extract_host_env_entries(args: &mut Vec<&str>) -> std::io::Result<Vec<(String, String)>> {
     let mut inline = Vec::with_capacity(args.len());
     let mut host_only = Vec::new();

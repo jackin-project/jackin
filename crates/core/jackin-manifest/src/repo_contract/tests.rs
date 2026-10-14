@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `repo_contract`.
 use super::*;
 use tempfile::tempdir;
 
@@ -50,7 +49,6 @@ fn accepts_digest_pinned_versioned_construct() {
 
     let validated = validate_agent_dockerfile(&dockerfile).unwrap();
 
-    // construct_version carries only the version tag, not the digest
     assert_eq!(validated.construct_version, "0.1-trixie");
 }
 

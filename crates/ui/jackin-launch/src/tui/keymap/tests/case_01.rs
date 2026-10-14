@@ -17,8 +17,7 @@ fn cockpit_global_keys_dispatch() {
         COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(KeyCode::Char('q'))),
         Some(CockpitAction::OpenQuitConfirm)
     );
-    // Ctrl+C is intercepted before dispatch, but is registered so its hint
-    // derives from the same table as Ctrl+Q.
+
     assert_eq!(
         COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(KeyCode::Char('c'))),
         Some(CockpitAction::HardExit)

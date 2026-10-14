@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential snapshots and provider outcomes.
 
 use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
 
@@ -48,17 +47,12 @@ pub fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
         "kimi" => UsageSurface::Kimi,
         "opencode" => UsageSurface::OpenCode,
         "cursor" => UsageSurface::Cursor,
-        // `antigravity` shares the Google surface (`HostSurfaceId::from_agent`);
-        // `muse`, `omp`, and `hermes` stay explicitly unwired (no pollable
-        // fetch), as before.
+
         "antigravity" | "gemini" => UsageSurface::Google,
         _ => UsageSurface::Unsupported,
     }
 }
 
-/// A session capability is an authority for exactly one provider surface. A
-/// presentation-tab override must not reuse it under another surface because
-/// that would route the refresh and cache entry under the wrong provider.
 pub fn capability_matches_surface(
     agent: &str,
     provider: Option<&str>,
@@ -67,10 +61,6 @@ pub fn capability_matches_surface(
     resolve_surface(agent, provider).id() == Some(capability.surface_id.as_str())
 }
 
-/// Split an optional provider fetch into its `(data, error)` pair: `None` token
-/// → no attempt, `Some(Ok)` → data, `Some(Err)` → error. Replaces the
-/// `match token { Some => match fetch { … }, None => (None, None) }` boilerplate
-/// at every provider fetch site (`token.map(fetch)` feeds this).
 pub fn split_fetch<U>(result: Option<Result<U, String>>) -> (Option<U>, Option<String>) {
     match result {
         Some(Ok(value)) => (Some(value), None),
@@ -79,18 +69,12 @@ pub fn split_fetch<U>(result: Option<Result<U, String>>) -> (Option<U>, Option<S
     }
 }
 
-/// Inputs to [`provider_outcome`]. Named fields so the two booleans can't be
-/// silently swapped at a call site.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderPresence {
     pub has_data: bool,
     pub has_secret: bool,
 }
 
-/// Lifecycle triad for the simple "API key or nothing" providers: data present →
-/// fresh/authoritative; a secret present but no data → unsupported/presence-only;
-/// neither → needs-secret. Providers with login/CLI/error nuances (Claude, Codex,
-/// Amp, Grok) keep their bespoke logic.
 pub fn provider_outcome(
     presence: ProviderPresence,
 ) -> (UsageSnapshotStatus, UsageSource, UsageConfidence) {

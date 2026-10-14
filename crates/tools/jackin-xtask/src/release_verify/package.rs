@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Verification of the immutable six-payload preview package handoff.
-
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
@@ -328,10 +326,7 @@ fn verify_source_checkout(source_checkout: &Path, manifest: &PackageManifest) ->
         repository == SOURCE_REPOSITORY,
         "source checkout origin is not {SOURCE_REPOSITORY}: {remote}"
     );
-    // Admission is pinned to the push event's source SHA. `main` can advance
-    // while a queued producer waits; re-querying its current tip here would
-    // reject the admitted commit and destroy retry stability. The immutable
-    // checkout/manifest identity and repository origin are the authority.
+
     for name in ["EXPECTED_SOURCE_COMMIT", "VELNOR_SOURCE_COMMIT"] {
         if let Some(expected) = env::var_os(name) {
             let expected = expected
@@ -696,9 +691,6 @@ fn verify_binary(package_dir: &Path, payload: PreviewPayload, version: &str) -> 
     )
 }
 
-/// Validate all archive members against one target's executable contract.
-/// Exact-name matching rejects traversal paths, links, directories, duplicates,
-/// and unexpected files before any binary is trusted.
 pub(crate) fn verify_release_archive_members(
     archive_path: &Path,
     target: &str,

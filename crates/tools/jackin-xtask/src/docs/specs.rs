@@ -1,10 +1,3 @@
-//! Spec↔test linkage gate: `cargo xtask docs specs`.
-//!
-//! Every INV row in `docs/content/reference/developer-reference/specs/*.mdx`
-//! must carry a `Tests` cell. Cited test paths use the greppable form
-//! `crate::module::tests::fn_name`. Broken citations fail; `MISSING` cells fail
-//! (no warning-only escape hatch — add a real test or drop the row).
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -115,7 +108,6 @@ struct InvRow {
     tests: Option<String>,
 }
 
-/// Parse markdown table rows that start with `| INV-`.
 fn parse_inv_rows(text: &str) -> Vec<InvRow> {
     let mut rows = Vec::new();
     for line in text.lines() {
@@ -172,9 +164,6 @@ fn split_citations(cell: &str) -> Vec<String> {
     out
 }
 
-/// Map `crate_name::module::path::tests::fn_name` to a source file, require a
-/// recognized test attribute via `syn`, and return the crate name for runner
-/// reconciliation.
 fn verify_citation(root: &Path, citation: &str) -> Result<String, String> {
     let parts: Vec<&str> = citation.split("::").collect();
     if parts.len() < 3 {
@@ -205,8 +194,7 @@ fn verify_citation(root: &Path, citation: &str) -> Result<String, String> {
         path.push("tests.rs");
         candidates.push(path);
     }
-    // Canonical case splits: the cited fn may live in `tests/<case>.rs`
-    // while the citation keeps the stable `::tests::fn` form.
+
     if let Some(suite) = candidates.first()
         && let Some(suite_dir) = suite.parent()
     {
@@ -344,11 +332,6 @@ fn cfg_attr_adds_test(attr: &Attribute) -> bool {
     metas.iter().skip(1).any(|meta| is_test_path(meta.path()))
 }
 
-/// Reconcile cited test function names against `cargo nextest list` for the
-/// packages that appear in citations.
-///
-/// Opt-in: package listing is ~30–60s, so the default gate is syn-only. Enable
-/// with `JACKIN_SPECS_RECONCILE=1` or when `CI=true` (docs CI sets `CI`).
 fn reconcile_with_nextest(
     root: &Path,
     crates: &BTreeSet<String>,
@@ -381,8 +364,7 @@ fn reconcile_with_nextest(
             ));
             continue;
         };
-        // nextest binary IDs look like `jackin_console::tui::state::manager::tests::fn`
-        // or `jackin_console::path::tests::fn` — match on trailing `::fn_name`.
+
         let suffix = format!("::{fn_name}");
         let hit = names
             .iter()
@@ -424,7 +406,7 @@ fn load_nextest_tests(
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut names = BTreeSet::new();
-        // nextest JSON lines or single object — accept either.
+
         for line in stdout.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -453,8 +435,7 @@ fn collect_test_ids(value: &serde_json::Value, out: &mut BTreeSet<String>) {
             if let Some(id) = map.get("id").and_then(|v| v.as_str()) {
                 out.insert(id.to_owned());
             }
-            // nextest list JSON carries case names under `testcases` / `tests`
-            // maps or arrays; also recurse all values so suite nesting is covered.
+
             for (k, v) in map {
                 if matches!(k.as_str(), "testcases" | "tests") {
                     collect_testcase_entries(v, out);

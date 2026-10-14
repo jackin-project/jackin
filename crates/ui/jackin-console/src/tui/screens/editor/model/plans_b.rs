@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor action and save-mode plans.
 
 use super::{EditorEnterKeyPlan, EditorNavigationKeyPlan, SecretsScopeTag};
 
@@ -15,13 +14,6 @@ pub enum EditorTopLevelKeyPlan {
     CheckImmediateAction,
     ContinueToTabActions,
 }
-
-// Editor top-level key dispatch lives in `input/editor.rs`
-// (`dispatch_editor_top_level`), which resolves keys through the
-// `EDITOR_GLOBAL` / `EDITOR_TAB_BAR` / `EDITOR_CONTENT` keymaps in
-// `tui::keymap`. There is deliberately no parallel `match` encoding here: the
-// keymap registry is the single source of truth, and its precedence is covered
-// by `input::editor::tests::dispatch_editor_top_level_preserves_precedence`.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorImmediateActionKeyPlan {

@@ -4,11 +4,6 @@
 use clap::Args;
 use std::collections::HashMap;
 
-/// Poll futures sequentially and collect results.
-///
-/// Sequential is adequate for small fleet sizes (< ~20 containers); each Docker
-/// inspect round-trip is fast on localhost. Replace with `tokio::task::JoinSet`
-/// if fleet size grows large enough to make serial inspects a bottleneck.
 async fn poll_sequential<F, T>(futs: impl IntoIterator<Item = F>) -> Vec<T>
 where
     F: Future<Output = T>,
@@ -26,7 +21,6 @@ use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_docker::docker_client::{BollardDockerClient, ContainerState, DockerApi};
 use jackin_runtime::instance::manifest::InstanceIndex;
 
-/// Build the agent registry query with the caller's required Capsule protocol major.
 fn jackin_agents_command() -> String {
     format!(
         "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule protocol-check --expected-major {} && /jackin/runtime/jackin-capsule agents --format json",
@@ -34,18 +28,11 @@ fn jackin_agents_command() -> String {
     )
 }
 
-/// Command for getting the current git branch inside the container workdir.
 const GIT_BRANCH_CMD: &str =
     "git -C \"$JACKIN_WORKDIR\" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown";
 
-/// Command for getting PR info including CI status. Requires `gh` and `GH_TOKEN`.
 const GH_PR_CMD: &str = "gh pr view --json number,title,url,statusCheckRollup 2>/dev/null";
 
-/// `jackin status` — three-level fleet overview.
-///
-/// - `jackin status`                     workspace summary
-/// - `jackin status <workspace>`         instances in that workspace
-/// - `jackin status <workspace> <id>`    full instance detail
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     about = "Show fleet status — workspaces, instances, and agents",
@@ -56,20 +43,19 @@ const GH_PR_CMD: &str = "gh pr view --json number,title,url,statusCheckRollup 2>
         branch, PR, CI, and per-agent codename table."
 )]
 pub struct StatusArgs {
-    /// Workspace name to drill into (optional)
     pub workspace: Option<String>,
-    /// Instance ID to show full detail for (requires workspace)
+
     pub instance_id: Option<String>,
-    /// Show agent counts at Level 0 (requires in-container queries per instance)
+
     #[arg(long)]
     pub detail: bool,
-    /// Filter by instance state
+
     #[arg(long, value_name = "STATE")]
     pub state: Option<String>,
-    /// Filter by agent type (e.g. `--filter agent=claude`)
+
     #[arg(long, value_name = "KEY=VALUE")]
     pub filter: Option<String>,
-    /// Output format
+
     #[arg(long, value_name = "FORMAT", default_value = "human")]
     pub format: String,
 }
@@ -91,8 +77,6 @@ pub async fn run(args: &StatusArgs, paths: &JackinPaths) -> anyhow::Result<()> {
     }
 }
 
-// ── Level 0 — workspace summary ─────────────────────────────────────────────
-
 async fn run_level0(
     args: &StatusArgs,
     paths: &JackinPaths,
@@ -101,7 +85,6 @@ async fn run_level0(
 ) -> anyhow::Result<()> {
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
 
-    // Group by workspace name/label.
     let mut workspaces: HashMap<
         String,
         Vec<&jackin_runtime::instance::manifest::InstanceIndexEntry>,
@@ -115,7 +98,6 @@ async fn run_level0(
     }
 
     if format == OutputFormat::Json {
-        // Full JSON always has complete data — gather running state per instance.
         let mut workspace_data = Vec::new();
         for (name, entries) in &workspaces {
             let mut instances = Vec::new();
@@ -144,7 +126,6 @@ async fn run_level0(
         return Ok(());
     }
 
-    // Human output.
     let mut sorted_ws: Vec<(
         String,
         Vec<&jackin_runtime::instance::manifest::InstanceIndexEntry>,
@@ -154,8 +135,7 @@ async fn run_level0(
     print!("{BANNER}");
     println!("fleet status\n");
 
-    // Query container states for each workspace (sequential; fast enough for small fleets).
-    let mut workspace_rows: Vec<(String, usize, usize, usize)> = Vec::new(); // (name, total, running, stopped)
+    let mut workspace_rows: Vec<(String, usize, usize, usize)> = Vec::new();
     for (ws_name, entries) in &sorted_ws {
         let states = poll_sequential(entries.iter().map(|e| async {
             docker
@@ -172,7 +152,6 @@ async fn run_level0(
         workspace_rows.push((ws_name.clone(), entries.len(), running, stopped));
     }
 
-    // Apply --state filter.
     let state_filter = args.state.as_deref();
     let filtered: Vec<_> = workspace_rows
         .iter()
@@ -188,7 +167,6 @@ async fn run_level0(
         return Ok(());
     }
 
-    // Column widths.
     let ws_width = filtered
         .iter()
         .map(|(n, _, _, _)| n.len())
@@ -233,8 +211,6 @@ async fn run_level0(
     Ok(())
 }
 
-// ── Level 1 — instance list for a workspace ──────────────────────────────────
-
 async fn run_level1(
     workspace: &str,
     args: &StatusArgs,
@@ -255,7 +231,6 @@ async fn run_level1(
         anyhow::bail!("no instances found for workspace {workspace:?}");
     }
 
-    // Gather state for each instance.
     let states = poll_sequential(instances.iter().map(|e| async {
         docker
             .inspect_container_by_name(&e.container_base)
@@ -264,7 +239,6 @@ async fn run_level1(
     }))
     .await;
 
-    // Apply state filter.
     let state_filter = args.state.as_deref();
     let rows: Vec<_> = instances
         .iter()
@@ -330,7 +304,6 @@ async fn run_level1(
     );
 
     for (entry, state) in &rows {
-        // "—" for pr: Level 2 detail query needed for that
         println!(
             "  {:<id_width$}  {:<role_width$}  {:<8}  —",
             entry.instance_id,
@@ -344,8 +317,6 @@ async fn run_level1(
 
     Ok(())
 }
-
-// ── Level 2 — full instance detail ───────────────────────────────────────────
 
 async fn run_level2(
     workspace: &str,
@@ -370,7 +341,6 @@ async fn run_level2(
     let container = inspection.handle;
     let is_running = matches!(state, ContainerState::Running);
 
-    // Fetch agents registry (only when running).
     #[expect(
         clippy::option_if_let_else,
         reason = "documented residual allow; prefer expect when site is lint-true"
@@ -383,11 +353,10 @@ async fn run_level2(
             .exec_capture_by_id(container, &["sh", "-c", &jackin_agents_command()])
             .await
         {
-            Err(_) => None, // socket not yet up or container exec failed — expected transient
+            Err(_) => None,
             Ok(s) => match serde_json::from_str(&s) {
                 Ok(v) => Some(v),
                 Err(e) => {
-                    // Exec succeeded but output is not valid JSON — protocol or version mismatch.
                     eprintln!("warning: agents registry parse error for {container_name}: {e:#}");
                     None
                 }
@@ -397,9 +366,6 @@ async fn run_level2(
         None
     };
 
-    // Fetch git branch (only when running). .ok() is intentional: exec failure
-    // is a transient or expected case (container just confirmed up but git not
-    // available), and GIT_BRANCH_CMD already suppresses git errors with `2>/dev/null`.
     let branch: Option<String> = if is_running {
         let Some(container) = container.as_ref() else {
             return Ok(());
@@ -414,7 +380,6 @@ async fn run_level2(
         None
     };
 
-    // Fetch PR info via gh (only when running and branch is known).
     let pr_info: Option<PrInfo> = if is_running && branch.is_some() {
         match container.as_ref() {
             Some(container) => fetch_pr_info(docker, container).await,
@@ -454,7 +419,6 @@ async fn run_level2(
         return Ok(());
     }
 
-    // Human output.
     println!(
         "\n{}   {} / {}   {}",
         entry.instance_id,
@@ -464,7 +428,6 @@ async fn run_level2(
     );
     println!();
 
-    // Branch / PR / CI block.
     println!("  branch   {}", branch.as_deref().unwrap_or("—"));
     if let Some(pr) = &pr_info {
         println!("  pr       #{}  {}", pr.number, pr.title);
@@ -477,7 +440,6 @@ async fn run_level2(
     }
     println!();
 
-    // Agent table.
     if let Some(agents) = &agents_json {
         println!(
             "  {:<12}  {:<10}  {:<14}  {:<20}  {:<20}  status",
@@ -513,8 +475,6 @@ async fn run_level2(
     Ok(())
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 #[derive(Debug)]
 struct PrInfo {
     number: u64,
@@ -539,8 +499,6 @@ impl PrInfo {
 }
 
 async fn fetch_pr_info(docker: &impl DockerApi, container: &ContainerHandle) -> Option<PrInfo> {
-    // Both exec failure (gh absent / no token) and parse failure mean "no PR info available";
-    // .ok()? is intentional — these are expected, not bugs.
     let output = docker
         .exec_capture_by_id(container, &["sh", "-c", GH_PR_CMD])
         .await
@@ -550,7 +508,6 @@ async fn fetch_pr_info(docker: &impl DockerApi, container: &ContainerHandle) -> 
     let title = value["title"].as_str()?.to_owned();
     let url = value["url"].as_str()?.to_owned();
 
-    // Aggregate statusCheckRollup into a single ci_status.
     let (ci_status, ci_failing_check) = aggregate_ci_status(&value["statusCheckRollup"]);
 
     Some(PrInfo {
@@ -607,7 +564,6 @@ fn aggregate_ci_status(rollup: &serde_json::Value) -> (String, Option<String>) {
     }
 }
 
-/// Compact ISO 8601 timestamp for table display: `2026-06-04 10:15:02`.
 fn compact_ts(ts: &str) -> String {
     ts.trim_end_matches('Z').replace('T', " ")
 }

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Env layer resolution, merge, and launch diagnostics.
-
 use crate::env_layer::EnvLayer;
 use crate::op_cli::OpCli;
 use crate::op_runner::{OpRunner, resolve_env_value};
@@ -13,151 +11,100 @@ use jackin_core::OpItem;
 use jackin_core::parse_op_reference;
 use jackin_core::{EnvValue, OpRef, WorkspaceName};
 
-/// Typed failures for operator-env validation and `op://` URI resolution.
-///
-/// Constructed at the resolve boundary and either returned directly (pure
-/// validation paths) or attached as an `anyhow` source so classification
-/// survives `?` and is recovered by `downcast_ref` (mixed port-error paths).
-///
-/// Security note: releases before this redaction could echo rejected credential
-/// values. Credentials observed in historical error logs should be rotated.
 #[derive(Debug, thiserror::Error)]
 pub enum OperatorEnvError {
-    /// Operator env declares reserved runtime names that cannot be overridden.
     #[error(
         "operator env map contains {count} reserved runtime name(s):\n{details}\n\
          These names are fixed by jackin and cannot be overridden. Remove them \
          from your config.toml."
     )]
-    ReservedNames {
-        /// Number of reserved-name offenses.
-        count: usize,
-        /// Multi-line detail listing each reserved key and layer.
-        details: String,
-    },
-    /// Value is not an `op://` reference.
+    ReservedNames { count: usize, details: String },
+
     #[error("not an op:// reference")]
     NotOpRef,
-    /// Shell variable substitution inside an `op://` URI is unsupported.
+
     #[error(
         "jackin does not support shell variable substitution inside `op://` URIs. \
          Use a plain string value, or substitute before passing."
     )]
     ShellVarInRef,
-    /// `op://` URI path segment count is not 3 or 4.
+
     #[error("malformed op:// URI (expected 3 or 4 path segments, received {segment_count})")]
-    MalformedRef {
-        /// Non-secret path shape used for diagnostics.
-        segment_count: usize,
-    },
-    /// Named or id vault could not be found.
+    MalformedRef { segment_count: usize },
+
     #[error("vault not found: {vault:?}")]
-    VaultNotFound {
-        /// Vault name or id that was not found.
-        vault: String,
-    },
-    /// Multiple vaults share the requested display name.
+    VaultNotFound { vault: String },
+
     #[error("{count} vaults named {vault:?}; disambiguate with a vault ID")]
-    AmbiguousVault {
-        /// Number of vaults with the requested name.
-        count: usize,
-        /// Ambiguous vault name.
-        vault: String,
-    },
-    /// Item name/id missing from the given vault.
+    AmbiguousVault { count: usize, vault: String },
+
     #[error("item {item:?} not found in vault {vault:?}")]
-    ItemNotFound {
-        /// Item name or id that was not found.
-        item: String,
-        /// Vault that was searched.
-        vault: String,
-    },
-    /// Multiple items share the same name; disambiguation required.
+    ItemNotFound { item: String, vault: String },
+
     #[error("{count} items named {item:?} in vault {vault:?}. Disambiguate with:\n{suggestions}")]
     AmbiguousItem {
-        /// Number of matching items.
         count: usize,
-        /// Ambiguous item name.
+
         item: String,
-        /// Vault containing the matches.
+
         vault: String,
-        /// Human-readable disambiguation hints.
+
         suggestions: String,
     },
-    /// Multiple sections share the requested display label.
+
     #[error("{count} sections named {section:?} in item {item:?}; disambiguate with a section ID")]
     AmbiguousSection {
-        /// Number of sections with the requested label.
         count: usize,
-        /// Ambiguous section label.
+
         section: String,
-        /// Item that was searched.
+
         item: String,
     },
-    /// A sectioned field's reference could not be mapped to a known section ID.
+
     #[error("section {section:?} for field {field:?} in item {item:?} has no matching section ID")]
     SectionIdentityUnavailable {
-        /// Section segment returned by 1Password.
         section: String,
-        /// Field whose section could not be identified.
+
         field: String,
-        /// Item that was searched.
+
         item: String,
     },
-    /// Multiple fields share the requested display label.
+
     #[error("{count} fields match {field:?} in item {item:?}; disambiguate with a field ID")]
     AmbiguousField {
-        /// Number of fields matching the request.
         count: usize,
-        /// Ambiguous field label or id.
+
         field: String,
-        /// Item that was searched.
+
         item: String,
     },
-    /// Field label/id missing from the item.
+
     #[error("field {field:?} not found in item {item:?}")]
-    FieldNotFound {
-        /// Field that was not found.
-        field: String,
-        /// Item that was searched.
-        item: String,
-    },
-    /// Resolution aborted due to an underlying port/runner error.
+    FieldNotFound { field: String, item: String },
+
     #[error("operator env resolution aborted: {source}")]
     Aborted {
-        /// Underlying error that caused the abort.
         #[source]
         source: anyhow::Error,
     },
-    /// Multiple env keys failed resolution; details are aggregated.
+
     #[error("operator env resolution failed for {count} var(s):\n{summary}")]
-    Aggregated {
-        /// Number of failed variables.
-        count: usize,
-        /// Multi-line summary of failures.
-        summary: String,
-    },
+    Aggregated { count: usize, summary: String },
 }
 
-/// Secret-free result category for one attributed operator-env key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatorEnvKeyStatus {
-    /// Value resolved successfully; access it only through
-    /// [`OperatorEnvKeyResolution::resolved_value`].
     Resolved,
-    /// Referenced host environment value is absent.
+
     Missing,
-    /// 1Password or another protected source denied access or was unavailable.
+
     DeniedOrUnavailable,
-    /// Declared value could not be interpreted.
+
     Malformed,
-    /// Credential is explicitly deferred to an operator-approved exec action.
+
     InteractionRequired,
 }
 
-/// One independently resolved operator-env key.
-///
-/// `Debug` is intentionally omitted: the optional resolved value is secret.
 pub struct OperatorEnvKeyResolution {
     key: String,
     status: OperatorEnvKeyStatus,
@@ -177,29 +124,22 @@ impl std::fmt::Debug for OperatorEnvKeyResolution {
 }
 
 impl OperatorEnvKeyResolution {
-    /// Exact governed key name.
     #[must_use]
     pub fn key(&self) -> &str {
         &self.key
     }
 
-    /// Secret-free result category.
     #[must_use]
     pub const fn status(&self) -> OperatorEnvKeyStatus {
         self.status
     }
 
-    /// Resolved secret value for Rust composition code only.
-    ///
-    /// Callers must not log, persist, or project this value into a DTO.
     #[must_use]
     pub fn resolved_value(&self) -> Option<&str> {
         self.value.as_deref()
     }
 }
 
-/// Resolve one explicitly selected account declaration without operator-layer filtering.
-/// Failures are categorized without retaining credential values in diagnostics.
 #[must_use]
 pub fn resolve_account_declaration(key: &str, declaration: &EnvValue) -> OperatorEnvKeyResolution {
     resolve_account_declaration_with(key, declaration, &OpCli::new_launch_env(), |name| {
@@ -207,7 +147,6 @@ pub fn resolve_account_declaration(key: &str, declaration: &EnvValue) -> Operato
     })
 }
 
-/// Injected account-declaration resolution for protected sources and host references.
 #[must_use]
 pub fn resolve_account_declaration_with<R, H>(
     key: &str,
@@ -245,9 +184,6 @@ struct OperatorEnvResolutionBatch {
     probe_error: Option<anyhow::Error>,
 }
 
-/// Reject operator env maps that declare any reserved runtime name.
-/// Runs at config-load time so misconfigurations fail before launch.
-/// Conflicts across every layer are aggregated into one error.
 pub fn validate_reserved_names(config: &AppConfig) -> Result<(), OperatorEnvError> {
     let mut offenses: Vec<String> = Vec::new();
     let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, EnvValue>| {
@@ -287,24 +223,6 @@ pub fn validate_reserved_names(config: &AppConfig) -> Result<(), OperatorEnvErro
     })
 }
 
-/// Resolve a user-supplied `op://...` URI into a canonical [`OpRef`].
-///
-/// Accepts all official 1Password URI forms: names, UUIDs, mixed, with
-/// optional subtitle filter `Item[subtitle]`, optional 4th section segment,
-/// and optional query suffix (`?attribute=otp` etc.). Errors on ambiguity,
-/// missing items or fields, or unsupported `${VAR}` substitution syntax.
-///
-/// The caller must probe `op` CLI availability before calling this
-/// (e.g. via [`OpRunner::probe`]).
-///
-/// `account` pins every underlying `op` query (`vault list`, `item
-/// list`, `item get`) to a specific 1Password account. Required when
-/// the operator runs more than one signed-in account: a name-based
-/// `op://...` reference can otherwise resolve a coincidentally-named
-/// item from the default account instead of the intended one. Pass
-/// `None` when the call has no account context (e.g. ambient
-/// `op://...` resolution where the operator has not pinned an
-/// account).
 pub fn resolve_op_uri_to_ref(
     input: &str,
     op: &dyn OpStructRunner,
@@ -531,8 +449,6 @@ fn resolve_field<'a>(
     }
 }
 
-/// Resolve a requested section ID or human label against authoritative item
-/// metadata. Exact IDs win over labels, even when an ID equals another label.
 fn resolve_section_id(
     segment: &str,
     detail: &jackin_core::OpItemDetail<jackin_core::OpField>,
@@ -563,8 +479,6 @@ fn resolve_section_id(
     }
 }
 
-/// Return a field's opaque section identity. If the CLI omitted `section.id`,
-/// map its reference segment through the item's authoritative section list.
 fn resolve_field_section_id(
     field: &jackin_core::OpField,
     detail: &jackin_core::OpItemDetail<jackin_core::OpField>,
@@ -677,11 +591,6 @@ fn record_layer(
     }
 }
 
-/// Build the (key → (layer, value)) attribution map by walking the
-/// four config layers in precedence order — global, role, workspace,
-/// workspace-role — for the given `(role, workspace)` selection.
-/// Later layers overwrite earlier ones, so the final layer attached
-/// to each key is the one that wins resolution.
 fn build_attributed_layers(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -719,13 +628,10 @@ fn build_attributed_layers(
         }
     }
 
-    // Account credentials are admitted only by the selected account resolver.
     attributed.retain(|key, _| !crate::is_account_env(key));
     attributed
 }
 
-/// Return whether any operator-env declaration applies to the given
-/// `(role, workspace)` pair, without resolving the values.
 pub fn has_operator_env(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -734,8 +640,6 @@ pub fn has_operator_env(
     !build_attributed_layers(config, role_selector, workspace_name).is_empty()
 }
 
-/// Return whether any operator-env declaration that matches `include_key`
-/// applies to the given `(role, workspace)` pair, without resolving values.
 pub fn has_operator_env_matching<F>(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -750,9 +654,6 @@ where
         .any(|key| include_key(key))
 }
 
-/// Look up the raw (unresolved) declaration value for `key` in the
-/// operator env config layers, using the same precedence as
-/// `resolve_operator_env` (global < role < workspace < workspace-role).
 pub fn lookup_operator_env_raw(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -764,11 +665,6 @@ pub fn lookup_operator_env_raw(
         .map(|(_, value)| value.as_display_str().clone())
 }
 
-/// Look up the winning typed declaration for one operator-env key.
-///
-/// This is a Rust-only composition seam for source-equality caching before a
-/// protected read. The returned value can contain credential material and must
-/// never be logged, persisted, or projected across FFI.
 pub fn lookup_operator_env_declaration(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -780,33 +676,19 @@ pub fn lookup_operator_env_declaration(
         .map(|(_, value)| value)
 }
 
-/// Env var Claude Code reads for the long-lived OAuth token.
-///
-/// Centralised so token-setup, launch diagnostics, and agent
-/// `required_env_var` stay in sync. See
-/// <https://code.claude.com/docs/en/iam> for upstream precedence
-/// semantics.
 pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 
-/// Walk the env layers for the given `(role, workspace)` pair and
-/// resolve every value. Resolution failures across layers are
-/// aggregated into one error.
 pub fn resolve_operator_env(
     config: &AppConfig,
     role_selector: Option<&str>,
     workspace_name: Option<&WorkspaceName>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
-    // Each `op://` ref pins its own account at read time
-    // (`OpRef::account`), so the runner carries no instance-level account.
     let runner = OpCli::new_launch_env();
     resolve_operator_env_with(config, role_selector, workspace_name, &runner, |name| {
         std::env::var(name)
     })
 }
 
-/// Walk the env layers for the given `(role, workspace)` pair and resolve only
-/// keys accepted by `include_key`. Resolution failures across included keys are
-/// aggregated into one error.
 pub fn resolve_operator_env_matching<F>(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -827,22 +709,12 @@ where
     )
 }
 
-/// Collect the on-demand credential bindings for a `(role, workspace)`
-/// selection — every env entry flagged `on_demand`, with the `(name, kind,
-/// source)` triple the host credential resolver needs. `kind` is `"op"`
-/// (resolve via `op read <source>`), `"env"` (read host env named by the
-/// `$VAR` source), or `"literal"` (return the source verbatim).
-///
-/// These are exactly the values [`resolve_operator_env_with_matching`] drops
-/// from launch-time injection: they are resolved later, at `jackin-exec` time,
-/// after the operator approves them in the picker. Returned sorted by name.
 #[must_use]
 pub fn collect_on_demand_bindings(
     config: &AppConfig,
     role_selector: Option<&str>,
     workspace_name: Option<&WorkspaceName>,
 ) -> Vec<jackin_protocol::ExecBinding> {
-    // BTreeMap iteration is already ordered by key, so the result is sorted.
     build_attributed_layers(config, role_selector, workspace_name)
         .into_iter()
         .filter(|(_, (_, v))| v.is_on_demand())
@@ -857,8 +729,7 @@ pub fn collect_on_demand_bindings(
                         (ExecKind::Literal, e.value)
                     }
                 }
-                // Plain is never on_demand, so the filter excludes it; map
-                // defensively as a literal rather than panicking.
+
                 EnvValue::Plain(s) => (ExecKind::Literal, s),
             };
             jackin_protocol::ExecBinding { name, kind, source }
@@ -866,8 +737,6 @@ pub fn collect_on_demand_bindings(
         .collect()
 }
 
-/// `?Sized` so callers can pass `&dyn OpRunner` (used by
-/// `LoadOptions::op_runner` in `src/runtime/launch.rs`).
 pub fn resolve_operator_env_with<R, H>(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -889,8 +758,6 @@ where
     )
 }
 
-/// `?Sized` so callers can pass `&dyn OpRunner` (used by
-/// `LoadOptions::op_runner` in `src/runtime/launch.rs`).
 pub fn resolve_operator_env_with_matching<R, H, F>(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -924,7 +791,7 @@ where
                     resolved.insert(resolution.key, value);
                 }
             }
-            // Preserve launch behavior: on-demand entries are omitted, not errors.
+
             OperatorEnvKeyStatus::InteractionRequired => {}
             OperatorEnvKeyStatus::Missing
             | OperatorEnvKeyStatus::DeniedOrUnavailable
@@ -946,12 +813,6 @@ where
     }))
 }
 
-/// Resolve selected operator-env keys independently using production host and
-/// 1Password adapters.
-///
-/// Successful values remain accessible only to Rust composition code. Failure
-/// categories are isolated per key so one denied source does not discard other
-/// resolved provider credentials.
 pub fn resolve_operator_env_per_key_matching<F>(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -972,8 +833,6 @@ where
     )
 }
 
-/// Injected variant of [`resolve_operator_env_per_key_matching`] for composition
-/// tests and non-default protected-source runners.
 pub fn resolve_operator_env_per_key_with_matching<R, H, F>(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -1088,9 +947,6 @@ where
     }
 }
 
-/// Print a launch diagnostic to stderr. Values are NEVER printed —
-/// normal mode is counts only, debug mode is reference strings or the
-/// `literal` placeholder; the layer that supplied each key is shown.
 pub fn print_launch_diagnostic(
     config: &AppConfig,
     role_selector: Option<&str>,
@@ -1162,7 +1018,7 @@ fn write_launch_diagnostic<W: std::io::Write>(
     debug: bool,
 ) -> std::io::Result<()> {
     let mut attributed = build_attributed_layers(config, role_selector, workspace_name);
-    // Drop keys not in `resolved` — those failed to dispatch.
+
     attributed.retain(|k, _| resolved.contains_key(k));
 
     if debug {
@@ -1216,8 +1072,7 @@ impl ValueKind {
     fn of_env_value(value: &EnvValue) -> Self {
         match value {
             EnvValue::OpRef(_) => Self::Op,
-            // An Extended value carries a literal or `$VAR` string, same as
-            // Plain — classify it by whether it is a host ref.
+
             EnvValue::Plain(s) => Self::of_str(s),
             EnvValue::Extended(e) => Self::of_str(&e.value),
         }
@@ -1240,9 +1095,6 @@ impl ValueKind {
     }
 }
 
-/// Value-free label: `OpRef` emits the canonical `op://` URI; `$NAME`
-/// host refs are returned verbatim; literals collapse to `"literal"` so
-/// the value never reaches stderr.
 fn classify_env_value(value: &EnvValue) -> String {
     match value {
         EnvValue::OpRef(r) => r.op.clone(),
@@ -1251,8 +1103,6 @@ fn classify_env_value(value: &EnvValue) -> String {
     }
 }
 
-/// `$NAME` host refs are returned verbatim; literals collapse to `"literal"`
-/// so the value never reaches stderr.
 fn classify_str(s: &str) -> String {
     if parse_host_ref(s).is_some() {
         s.to_owned()

@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Runtime setup that is better expressed as deterministic Rust than
-//! entrypoint shell. The shell entrypoint remains responsible for
-//! sourcing role hooks and `exec`-ing the selected agent.
-
 use jackin_core::container_paths;
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;

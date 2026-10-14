@@ -8,8 +8,8 @@ runner_label = "ubuntu-26.04"
 generator_validation = "bootstrap"
 max_parallel_jobs = 4
 
-# Source-qualified native tasks are preserved in docs/integration/unpublished-workflow-tasks.toml.
-# velnor-actions 0.1.8 rejects those source fields and a root mise min_version beside verification tasks.
+
+
 
 [resources]
 compiler_process_budget = 4

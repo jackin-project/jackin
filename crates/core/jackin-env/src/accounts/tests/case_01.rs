@@ -195,9 +195,6 @@ fn routed_opencode_cli_model_can_be_applied_after_credential_resolution() {
         configuration_with_endpoint(Agent::Opencode, "work", None, "https://route.example/v1"),
     );
 
-    // The CLI model is not part of ResolvedInstance; it is fanned out later
-    // into the private OpenCode configuration. Credential resolution must not
-    // reject the launch before that model reaches its consumer.
     let instances = launch(&cfg, &["opencode-work"]);
     assert!(instances[0].model.is_none());
     let env = resolve_instance_env_with(&cfg, &instances, None, "role", &NoSecrets, |_| {

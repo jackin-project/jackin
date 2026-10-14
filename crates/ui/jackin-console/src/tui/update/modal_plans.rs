@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Inline and browser modal plans.
 
 use super::{
     AuthSourceFolderPickerPlan, FileBrowserModalPlan, InlineAccountFollowupPlan, InlinePickerPlan,
@@ -15,9 +14,6 @@ pub fn inline_account_followup_plan<C, A, P>(
     agent: A,
     providers: Vec<P>,
 ) -> InlineAccountFollowupPlan<C, A, P> {
-    // Open the picker only when the operator has a real choice. A list of 0
-    // or 1 means the caller collapsed out the agent's native auth (or never
-    // passed any) — dispatch directly instead of presenting a one-item modal.
     if providers.len() >= 2 {
         InlineAccountFollowupPlan::OpenAccountPicker(AccountPickerState::new(
             context, agent, providers,

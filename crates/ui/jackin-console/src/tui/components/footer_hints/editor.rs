@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Editor-screen footer facts + hint-span builders for the editor's
-//! per-row contextual footer (general / mount / role / secret / auth).
-
 use ratatui::layout::Rect;
 use termrock::{keymap::glyph, widgets::HintSpan};
 
@@ -121,15 +118,12 @@ pub fn editor_general_row_footer_items(row: usize, has_mounts: bool) -> Vec<Hint
 pub fn editor_role_row_footer_items(is_existing_role: bool) -> Vec<HintSpan<'static>> {
     if is_existing_role {
         vec![
-            // UNREGISTERABLE(editor-role-existing-no-keymap): Space toggles allow/disallow inline; no EDITOR_ROLE_EXISTING_KEYMAP.
             super::key_span("␣"),
             HintSpan::Text("allow/disallow"),
             HintSpan::Sep,
-            // UNREGISTERABLE(editor-role-existing-no-keymap): asterisk sets default role inline; no EDITOR_ROLE_EXISTING_KEYMAP.
             super::key_span("*"),
             HintSpan::Text("set/unset default"),
             HintSpan::Sep,
-            // UNREGISTERABLE(editor-role-existing-no-keymap): A loads role inline; no EDITOR_ROLE_EXISTING_KEYMAP.
             super::key_span("A"),
             HintSpan::Text("load role"),
         ]
@@ -220,24 +214,19 @@ pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> 
     match mode {
         AuthRowFooterMode::ManageAuth => AUTH_MANAGE_KEYMAP.hint_spans(),
         AuthRowFooterMode::EditMode => vec![
-            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             super::key_span("↵"),
             HintSpan::Text("edit mode"),
             HintSpan::Sep,
-            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             super::key_span("D"),
             HintSpan::Text("reset"),
         ],
         AuthRowFooterMode::RoleHeader => vec![
-            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             super::key_span("↵"),
             HintSpan::Text("expand"),
             HintSpan::Sep,
-            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             super::key_span(glyph::LEFT_RIGHT),
             HintSpan::Text("collapse/expand"),
             HintSpan::Sep,
-            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             super::key_span("D"),
             HintSpan::Text("reset"),
         ],

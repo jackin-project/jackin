@@ -1,16 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Muse` (Meta) usage observation logic via MSP `usage/read` + `usage/changed`
-//! (see `lib.rs`).
-//!
-//! The response may omit `usage` when no observation exists, and re-reading
-//! cached data must not reset its freshness timestamp.
-//!
-//! omp's `POST https://api.meta.ai/muse-code/key` is a *documented
-//! conditional* only: the response can mint/return an API key, so it must never
-//! be enabled as a read-only polling fallback. See [`MuseKeyExchangePolicy`].
-
 use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
     UsageSnapshotStatus, UsageSource,
@@ -20,8 +10,6 @@ use jackin_usage_provider_core::{
 };
 use serde::Deserialize;
 
-/// Raw MSP window: rolling window or weekly. Field names follow the pinned
-/// MSP schema (`usedPercent`, `resetsAtMs`, `windowDurationMins`).
 #[derive(Debug, Clone, Deserialize)]
 struct MuseWindowRaw {
     #[serde(rename = "usedPercent")]
@@ -32,8 +20,6 @@ struct MuseWindowRaw {
     window_duration_mins: Option<i64>,
 }
 
-/// Raw MSP subscription usage: `observedAtMs` freshness marker, tier label,
-/// rolling window and weekly window.
 #[derive(Debug, Clone, Deserialize)]
 struct MuseUsageRaw {
     #[serde(rename = "observedAtMs")]
@@ -46,14 +32,12 @@ struct MuseUsageRaw {
     weekly: Option<MuseWindowRaw>,
 }
 
-/// Raw MSP `usage/read` response. `usage` is absent when no observation exists.
 #[derive(Debug, Clone, Deserialize)]
 struct MuseUsageReadRaw {
     #[serde(default)]
     usage: Option<MuseUsageRaw>,
 }
 
-/// Parsed Muse window with the reset normalized to epoch seconds.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MuseWindow {
     pub used_percent: f64,
@@ -61,7 +45,6 @@ pub struct MuseWindow {
     pub window_duration_mins: Option<i64>,
 }
 
-/// Parsed Muse cached observation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MuseObservation {
     pub observed_at_ms: i64,
@@ -70,9 +53,6 @@ pub struct MuseObservation {
     pub weekly: Option<MuseWindow>,
 }
 
-/// Muse login identity from `~/.config/muse/auth.json`
-/// (`providers.meta.user_email` / `user_full_name`). The secret itself lives in
-/// the platform credential store, never in this file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MuseIdentity {
     pub email: Option<String>,
@@ -96,8 +76,6 @@ pub fn muse_identity_from_value(value: &serde_json::Value) -> Option<MuseIdentit
     (identity.email.is_some() || identity.full_name.is_some()).then_some(identity)
 }
 
-/// Parse one MSP `usage/read` response. `Ok(None)` is the honest
-/// no-observation state (usage omitted), never an error.
 pub fn parse_muse_usage_read(value: serde_json::Value) -> Result<Option<MuseObservation>, String> {
     let raw: MuseUsageReadRaw = serde_json::from_value(value)
         .map_err(|_| "Muse usage/read response is malformed".to_owned())?;
@@ -139,9 +117,6 @@ fn parse_muse_window(raw: MuseWindowRaw, label: &str) -> Result<MuseWindow, Stri
     })
 }
 
-/// Used-side label preserving the raw provider figure, including over-cap
-/// readings (`142.5% used`). MSP `usedPercent` is already a percent — never
-/// run through the fraction/percent heuristic.
 fn muse_used_label(used_percent: f64) -> String {
     if used_percent.fract() == 0.0 {
         format!("{used_percent:.0}% used")
@@ -150,8 +125,6 @@ fn muse_used_label(used_percent: f64) -> String {
     }
 }
 
-/// Remaining side for the meter: over-cap windows clamp remaining to 0
-/// (nothing left / bar full) while the used label carries the raw overage.
 fn muse_remaining_percent(used_percent: f64) -> Option<u8> {
     if used_percent > 100.0 {
         return Some(0);
@@ -201,10 +174,6 @@ pub fn muse_buckets(observation: &MuseObservation, now: i64) -> Vec<QuotaBucketV
     buckets
 }
 
-/// Freshness for a re-read of the cached observation: when the re-read carries
-/// the same `observedAtMs` as the cached one, the cached `fetched_at_epoch` is
-/// kept — a re-read must not advance freshness. Only a new observation stamps
-/// `now`.
 pub fn muse_freshness_epoch(
     cached_fetched: i64,
     cached_observed_ms: i64,
@@ -282,29 +251,16 @@ pub fn muse_view(
     }
 }
 
-/// omp's `POST https://api.meta.ai/muse-code/key`: documented conditional,
-/// never a poller.
-///
-/// The exchange returns identity + quota in one call, but the response can
-/// also mint/return an API key — until proven safe for passive monitoring it
-/// must never back a refresh loop. No fetch function exists on this type by
-/// design; a future conditional one-shot must whitelist only non-secret usage
-/// fields, never send onboarding flags, and respect 429/backoff.
 #[derive(Debug, Clone, Copy)]
 pub struct MuseKeyExchangePolicy;
 
 impl MuseKeyExchangePolicy {
-    /// Key-exchange endpoint. Request shape: `POST` with
-    /// `Authorization: Bearer <Meta OAuth access>`, `x-api-version: 1.0.0`,
-    /// body `{}`.
     pub const URL: &str = "https://api.meta.ai/muse-code/key";
 
-    /// Always `false`: the key exchange must never be enabled as a poller.
     pub fn polling_enabled() -> bool {
         false
     }
 
-    /// Non-secret fields a conditional one-shot read may retain (whitelist).
     pub const ALLOWED_FIELDS: &[&str] = &[
         "user_email",
         "user_id",
@@ -315,9 +271,6 @@ impl MuseKeyExchangePolicy {
         "require_payment",
     ];
 
-    /// Fields that must never be persisted, logged, or rendered. Payment
-    /// action URLs are likewise dropped (absent from the whitelist) — a
-    /// monitor never needs them.
     pub const SECRET_FIELDS: &[&str] = &[
         "api_key",
         "apiKey",

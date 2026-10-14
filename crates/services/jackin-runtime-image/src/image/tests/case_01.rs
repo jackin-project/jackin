@@ -25,8 +25,6 @@ fn build_output_is_suppressed_for_debug_or_rich_surface() {
 
 #[test]
 fn docker_build_env_always_enables_buildkit_with_plain_progress() {
-    // BuildKit must be forced on for every build: the generated Dockerfiles
-    // use `COPY --link --chmod=`, which the legacy builder rejects.
     assert_eq!(
         docker_build_env(),
         vec![

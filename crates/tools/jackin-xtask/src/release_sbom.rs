@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `CycloneDX` SBOM generation and archive binding checks.
-
 use std::{fs, io::Read, path::Path};
 
 use anyhow::{Context, Result, ensure};

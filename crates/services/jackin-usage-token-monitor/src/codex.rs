@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! JSONL reader for Codex token usage.
-//!
-//! Reads `~/.codex/sessions/**/*.jsonl` (date-nested rollouts). Recomputes
-//! totals from scratch each poll, so re-reads never double-count.
-
 use std::path::PathBuf;
 
 use super::TokenSession;
@@ -40,13 +35,10 @@ fn parse_raw_usage(obj: &serde_json::Value) -> (u64, u64, u64) {
     (input, output, cached)
 }
 
-/// Accumulator for one recompute pass over the session files.
 #[derive(Default)]
 struct Acc {
-    /// Latest cumulative `total_token_usage` (session format — monotonic, so we
-    /// take the last value, never a sum).
     cumulative: Option<(u64, u64, u64)>,
-    /// Summed per-call usage (headless format — each line is one call's usage).
+
     headless: (u64, u64, u64),
     cost: f64,
     has_cost: bool,
@@ -59,7 +51,6 @@ fn apply_line(line: &str, acc: &mut Acc) {
         return;
     };
 
-    // Session format: type = "event_msg" with a cumulative token_count payload.
     if val.get("type").and_then(|v| v.as_str()) == Some("event_msg") {
         let Some(payload) = val.get("payload") else {
             return;
@@ -77,7 +68,6 @@ fn apply_line(line: &str, acc: &mut Acc) {
         return;
     }
 
-    // Headless format: per-call usage at top level.
     if let Some(usage) = val.get("usage") {
         let (inp, out, cached) = parse_raw_usage(usage);
         acc.headless.0 += inp;
@@ -95,12 +85,7 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> super::PollStatus {
     let Ok(files) = find_jsonl_files() else {
         return super::PollStatus::Degraded;
     };
-    // Aggregate ACROSS files (one rollout per session; codex retains several).
-    // Each session file is monotonic-cumulative XOR headless-per-call, so take
-    // that file's own total — last cumulative, or its headless sum — and add it
-    // to the running aggregate. A single `Acc` across all files would instead let
-    // the last-walked file's cumulative overwrite the rest. Codex carries no
-    // cache-write dimension, so `SpendAcc.cache_write` stays 0.
+
     match super::recompute_spend(&files, |text, total| {
         let mut acc = Acc::default();
         for line in text.lines() {
@@ -112,7 +97,7 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> super::PollStatus {
             return;
         }
         total.seen = true;
-        // The file's cumulative counter wins when present; otherwise its headless sum.
+
         let (i, o, c) = acc.cumulative.unwrap_or(acc.headless);
         total.input += i;
         total.output += o;

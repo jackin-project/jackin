@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Preview pane key plans.
 
 use super::{
     PreviewFocusPlan, PreviewPaneActionPlan, PreviewPaneKeyPlan, WorkspaceListFocusOwner,
@@ -33,7 +32,6 @@ pub fn workspace_list_top_level_key_plan(
 
 #[must_use]
 pub const fn enter_preview_focus_plan() -> PreviewFocusPlan {
-    // Entering the preview walks the focus chain one step past its head.
     PreviewFocusPlan {
         focused: matches!(
             workspace_list_focus_next(workspace_list_focus_head()),
@@ -44,7 +42,6 @@ pub const fn enter_preview_focus_plan() -> PreviewFocusPlan {
 
 #[must_use]
 pub const fn exit_preview_focus_plan() -> PreviewFocusPlan {
-    // Exiting the preview returns focus to the chain head.
     PreviewFocusPlan {
         focused: matches!(
             workspace_list_focus_head(),
@@ -53,8 +50,6 @@ pub const fn exit_preview_focus_plan() -> PreviewFocusPlan {
     }
 }
 
-/// Preview-pane navigation mode: Esc / Left / `BackTab` exits, Up/Down
-/// move inside the snapshot, and Enter reconnects to the selected pane.
 #[must_use]
 pub fn preview_pane_key_plan(key: KeyCode, pane_count: usize) -> PreviewPaneKeyPlan {
     use crate::tui::keymap::{PREVIEW_PANE_KEYMAP, PreviewPaneAction as A, bridged_keymap_action};

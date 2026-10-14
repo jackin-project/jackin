@@ -63,8 +63,6 @@ fn prefix_clear_pane_uses_diff_frame_without_screen_erase() {
 
 #[test]
 fn prefix_redraw_repaints_in_place_without_screen_erase() {
-    // The explicit-redraw chord must not clear the full terminal; under the
-    // wipe policy (I4) only FirstAttach/Resize erase.
     let mut mux = single_pane_tab_mux();
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
@@ -208,7 +206,6 @@ fn apply_action_dialog_consume_keeps_dialog_open() {
     assert!(mux.dialog_open());
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    // Consume should leave the dialog open (key was absorbed, no state change).
     let frame = apply_action_frame(&mut mux, Action::Dialog(DialogAction::Consume))
         .expect("dialog consume should redraw");
 

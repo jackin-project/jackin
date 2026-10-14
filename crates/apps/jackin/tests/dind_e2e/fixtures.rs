@@ -1,8 +1,3 @@
-//! Fixture seeders + `Dockerfile` + fake-claude scripts that build the
-//! three role repos the e2e harness runs against (`agent-smith`,
-//! `sentinel`, `slow-exit`), plus the agent-binary stub installers used in
-//! place of the real CLIs so the `DinD` lane runs hermetically.
-
 #![expect(
     clippy::unwrap_used,
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
@@ -46,10 +41,7 @@ sparse = ["plugins"]
 
     run("git", &["init"], Some(path));
     run("git", &["add", "."], Some(path));
-    // `commit.gpgsign=false` defends against developers with global
-    // gpgsign enabled but no signing key configured for this repo —
-    // otherwise the seed commit fails and the test bails before exercising
-    // anything jackin-related.
+
     run(
         "git",
         &[
@@ -67,14 +59,12 @@ sparse = ["plugins"]
     );
 }
 
-// Fake agents exercise credential selection without using host credentials.
 fn synthetic_accounts() -> String {
     let mut config = String::from("[account_bindings]\n");
     for agent in jackin_core::Agent::ALL {
         writeln!(config, "{agent} = \"e2e-{agent}\"").unwrap();
     }
     for agent in jackin_core::Agent::ALL {
-        // Omp/Hermes have no native billing; OpenRouter is routable by both.
         let provider = jackin_config::AiProvider::for_agent(*agent)
             .unwrap_or(jackin_config::AiProvider::OpenRouter);
         write!(config,
@@ -239,13 +229,6 @@ USER agent
 }
 
 pub(super) const fn role_dockerfile() -> &'static str {
-    // The baked Claude seed propagates into /jackin/default-home/.claude/backups
-    // via the derived default-home snapshot. runtime-setup copies default-home
-    // into the agent's home on first launch; when the container runs as an
-    // arbitrary host UID/GID with supplementary group 0, the seed is readable
-    // only if role-baked files are born group-0 + group-readable. Keep the file
-    // non-world-readable so the test still exercises the group-0 contract after
-    // the recursive derived chmod pass was removed.
     r"FROM projectjackin/construct:0.1-trixie
 USER root
 RUN apt-get update && \
@@ -339,13 +322,6 @@ fn chmod_executable(path: &Path) {
 #[cfg(not(unix))]
 fn chmod_executable(_path: &Path) {}
 
-/// The agent emits its env + `docker ps` snapshot after a sentinel marker on
-/// stdout. The test parses that block from the PTY-captured stdout, so the
-/// report channel works identically whether the daemon shares the test
-/// process's filesystem or runs in `DinD`. `REPORT_BEGIN`/`REPORT_END` are
-/// interpolated via `format!` so the Rust consts remain the single source of
-/// truth; `${{...}}` in the body escapes the format string back to `${...}` for
-/// the embedded shell.
 pub(super) fn fake_claude_installer() -> String {
     let runtime = fake_claude_runtime_script();
     format!(

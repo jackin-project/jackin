@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Create-prelude modal baselines.
+
 #![cfg(test)]
 
 use super::*;
@@ -52,5 +52,3 @@ pub(crate) fn create_prelude_name_input() -> (ManagerState<'static>, AppConfig, 
         state: crate::tui::components::TextInputState::new("Workspace name", "alpha"),
     })
 }
-
-// ── Account constructors ───────────────────────────────────────────────────

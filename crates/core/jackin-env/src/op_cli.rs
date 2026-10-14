@@ -17,27 +17,15 @@ pub(crate) const OP_STDERR_MAX: usize = 4 * 1024;
 const OP_SPAWN_RETRIES: usize = 5;
 const TEXT_FILE_BUSY_OS_ERROR: i32 = 26;
 
-/// Production `OpRunner` that shells out to the 1Password CLI.
-///
-/// Tests inject a different runner (e.g. `TestOpRunner`) rather than
-/// using an env-var seam — keeps the crate `unsafe_code = "forbid"`
-/// lint intact and tests free of process-env mutation.
 #[derive(Debug, Clone)]
 pub struct OpCli {
     pub(super) binary: String,
     pub(super) timeout: std::time::Duration,
-    /// Pinned 1P account forwarded as `op --account <id>` on every
-    /// invocation. `None` lets `op` fall back to its default-account
-    /// context. Write paths set this so the minted ref records the
-    /// account it was created under (`OpRef::account`); reads rebind to
-    /// the ref's own account via `read_with_account` so multi-account
-    /// vaults resolve regardless of which account was last
-    /// `op signin`-ed.
+
     pub(super) account: Option<String>,
 }
 
 impl OpCli {
-    /// Default runner: `op` binary, 30s timeout, default-account context.
     pub fn new() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_owned(),
@@ -46,10 +34,6 @@ impl OpCli {
         }
     }
 
-    /// Launch-time operator-env reads run on the foreground path, but real
-    /// 1Password app/daemon wake-up delays can exceed the default 30s budget while
-    /// still completing successfully. Keep this finite and below the fully
-    /// interactive SSO budget so a wedged `op` still fails with a bounded error.
     pub fn new_launch_env() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_owned(),
@@ -58,11 +42,6 @@ impl OpCli {
         }
     }
 
-    /// Short-timeout variant for startup availability checks. A 3-second
-    /// ceiling prevents `jackin console` from hanging when `op` is installed
-    /// but biometric-blocked or network-stalled at launch time. A false
-    /// negative here is acceptable — the picker shows an error panel if `op`
-    /// later fails.
     pub fn new_probe() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_owned(),
@@ -71,9 +50,6 @@ impl OpCli {
         }
     }
 
-    /// Long-timeout variant for interactive TUI flows where the operator may
-    /// need to complete SSO (Okta, SAML, etc.) in a browser before `op`
-    /// returns. Five minutes covers typical SSO redirect + approval round-trips.
     pub fn new_interactive() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_owned(),
@@ -82,7 +58,6 @@ impl OpCli {
         }
     }
 
-    /// Runner pinned to a custom `op` binary path (default timeout).
     pub const fn with_binary(binary: String) -> Self {
         Self {
             binary,
@@ -91,8 +66,6 @@ impl OpCli {
         }
     }
 
-    /// Pin every `op` invocation to a specific account. UUID, label,
-    /// or email — `op` accepts all three. Pass `None` to clear.
     #[must_use]
     pub fn with_account(mut self, account: Option<String>) -> Self {
         self.account = account;
@@ -131,9 +104,6 @@ fn format_exit_status(status: std::process::ExitStatus) -> String {
         .map_or_else(|| "signal".to_owned(), |c| c.to_string())
 }
 
-/// Truncate stderr to ~`OP_STDERR_MAX` bytes, rounding down to a UTF-8
-/// char boundary so a multi-byte codepoint at the cut point cannot
-/// panic on the error path.
 pub(crate) fn truncate_stderr(stderr: &str) -> String {
     if stderr.len() <= OP_STDERR_MAX {
         return stderr.to_owned();
@@ -145,8 +115,6 @@ pub(crate) fn truncate_stderr(stderr: &str) -> String {
     format!("{}… [truncated]", &stderr[..end])
 }
 
-/// Drain stderr capped at `OP_STDERR_MAX + 1` bytes; further output is
-/// sunk so the child exits cleanly.
 fn drain_bounded_stderr(mut stderr: std::process::ChildStderr) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
 
@@ -168,9 +136,6 @@ fn drain_bounded_stderr(mut stderr: std::process::ChildStderr) -> std::io::Resul
     Ok(buf)
 }
 
-/// Poll `try_wait` and forward the exit status, releasing the mutex
-/// between attempts so the timeout branch can `take` and `kill` the
-/// child without contending on a blocking `wait()`.
 fn spawn_wait_thread(
     child: std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>,
     tx: std::sync::mpsc::Sender<std::io::Result<std::process::ExitStatus>>,
@@ -271,8 +236,6 @@ where
 }
 
 fn op_spawn_error(binary: &str, error: &std::io::Error) -> anyhow::Error {
-    // Typed source for cross-crate classification; context keeps the
-    // operator-visible wording identical to the pre-typed path.
     let detail = error.to_string();
     let message = format!(
         "failed to spawn 1Password CLI {binary:?}: {error} \
@@ -304,8 +267,6 @@ fn op_read_args<'a>(reference: &'a str, account: Option<&'a str>) -> Vec<&'a str
 
 impl OpRunner for OpCli {
     fn read_with_account(&self, reference: &str, account: Option<&str>) -> anyhow::Result<String> {
-        // A per-ref account overrides the instance default so a workspace
-        // holding refs from several accounts resolves each against its own.
         match account {
             Some(_) => Self {
                 binary: self.binary.clone(),
@@ -337,9 +298,6 @@ impl OpRunner for OpCli {
             op_spawn_error(&self.binary, &error)
         })?;
 
-        // Channel-and-thread wait pattern so we avoid a new async dep,
-        // and the wait thread never holds the mutex across a blocking
-        // wait — see spawn_wait_thread.
         let (tx, rx) = std::sync::mpsc::channel();
         let Some(mut stdout) = child.stdout.take() else {
             drop(child.kill());
@@ -374,10 +332,6 @@ impl OpRunner for OpCli {
                 anyhow::bail!("1Password CLI wait failed for {reference:?}: {e}");
             }
             Err(_) => {
-                // Child may have exited between recv_timeout expiring
-                // and the take below (yielding Err(InvalidInput) on
-                // kill), which is not a real failure. Reap so pipes
-                // close and reader threads exit.
                 kill_and_reap(&child);
                 operation.timed_out();
                 anyhow::bail!(
@@ -400,9 +354,7 @@ impl OpRunner for OpCli {
 
         if status.success() {
             operation.complete_status(status);
-            // `op read` appends a trailing newline as CLI convention;
-            // strip exactly one so a secret ending in a real newline
-            // (e.g. PEM block) survives.
+
             let mut stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
             if stdout.ends_with('\n') {
                 stdout.pop();
@@ -424,10 +376,7 @@ impl OpRunner for OpCli {
     }
 
     fn probe(&self) -> anyhow::Result<()> {
-        // Route through the timeout helper so a wedged `op` (network
-        // stall, biometric prompt held open) cannot freeze the caller.
         run_op_with_timeout(&self.binary, &["--version"], self.timeout).map_err(|e| {
-            // Preserve the install-link hint on spawn-error paths.
             let msg = e.to_string();
             if msg.contains("developer.1password.com") {
                 e
@@ -443,9 +392,6 @@ impl OpRunner for OpCli {
     }
 }
 
-/// Shared timeout primitive used by [`OpCli::probe`] and
-/// [`run_op_json`]. Returns stdout bytes on success; failure stderr is
-/// untouched so callers can pattern-match (see [`run_op_json`]).
 fn run_op_with_timeout(
     binary: &str,
     args: &[&str],
@@ -595,8 +541,7 @@ fn run_op_with_timeout_inner(
         "1Password CLI exited with status {} running `{cmd_label}`: {stderr_msg}",
         format_exit_status(status),
     );
-    // Single place that inspects op's stderr wording for the not-signed-in
-    // class; consumers classify via downcast, not substring re-parse.
+
     if message.contains("not currently signed") || message.contains("no accounts") {
         return Err(anyhow::Error::new(jackin_core::OpProbeError::NotSignedIn {
             detail: message.clone(),
@@ -612,9 +557,6 @@ fn run_op_with_timeout_inner(
     .context(message))
 }
 
-/// Wraps [`run_op_with_timeout`]. Not-signed-in classification is applied
-/// at the origin inside that helper; this remains the shared JSON probe
-/// entry so call sites stay identical.
 fn run_op_json(
     binary: &str,
     args: &[&str],
@@ -623,8 +565,6 @@ fn run_op_json(
     run_op_with_timeout(binary, args, timeout)
 }
 
-/// Append `--account <id>` to an `op` argument vector when an account is
-/// pinned, so every subcommand builder emits the flag identically.
 fn push_account_arg<'a>(args: &mut Vec<&'a str>, account: Option<&'a str>) {
     if let Some(id) = account {
         args.push("--account");
@@ -683,8 +623,6 @@ impl OpStructRunner for OpCli {
     }
 }
 
-/// JSON shape returned by `op item create --format json`. Only the
-/// fields jackin needs to construct an [`OpRef`] are deserialized.
 #[derive(serde::Deserialize)]
 struct RawCreatedItem {
     id: String,
@@ -767,9 +705,6 @@ fn created_item_reference(
         _ => anyhow::bail!("`op item create` section label and submitted section id do not agree"),
     };
 
-    // Labels are presentation metadata and may repeat. Use the exact section
-    // identity submitted in the template, then require one matching field; a
-    // duplicate or missing response must never select an arbitrary ID.
     let matching_fields: Vec<&RawCreatedItemField> = raw
         .fields
         .iter()
@@ -882,21 +817,13 @@ impl OpWriteRunner for OpCli {
             "vault id {vault_id:?} cannot be represented as one `op://` path component"
         );
 
-        // Build the JSON template. `op item create -` reads it from
-        // stdin so the secret value never crosses argv. Tags and
-        // notesPlain ride along inside the same template — neither
-        // is sensitive but consolidating into one stdin payload
-        // keeps the argv invocation deterministic and free of
-        // operator-supplied content.
         let template_section_id = params.section.map(op_section_id);
         let template_section_id = template_section_id.as_deref();
         anyhow::ensure!(
             template_section_id.is_none_or(jackin_core::is_valid_op_reference_path_component),
             "generated section ID cannot be represented as one `op://` path component"
         );
-        // `op` assigns the new item's and field's IDs. Preflight the complete
-        // path with the resolved vault and exact submitted section ID; validate
-        // the CLI-returned generated IDs against the same builder below.
+
         anyhow::ensure!(
             jackin_core::build_op_reference(
                 &vault_id,
@@ -908,8 +835,8 @@ impl OpWriteRunner for OpCli {
             "cannot build a valid `op://` reference from the item template"
         );
         let mut field = serde_json::json!({
-            // Ask `op` for a unique stable field ID; the label stays display
-            // metadata and never serves as canonical URI identity.
+
+
             "id": "",
             "label": params.field_label,
             "type": "CONCEALED",
@@ -957,12 +884,6 @@ impl OpWriteRunner for OpCli {
             );
         }
 
-        // SAFETY: `op item create --format json` echoes the created
-        // item's fields back, including the secret `value` for
-        // CONCEALED fields. We deserialize via `RawCreatedItem`
-        // (which intentionally omits `value`) and never embed the
-        // raw stdout bytes in any error message — the
-        // field-not-found arm below lists labels and ids only.
         let raw: RawCreatedItem = serde_json::from_slice(&out.stdout).map_err(|e| {
             anyhow::anyhow!(
                 "failed to parse `op item create` JSON: {e} \
@@ -985,12 +906,6 @@ impl OpWriteRunner for OpCli {
         vault_id: &str,
         account: Option<&str>,
     ) -> anyhow::Result<()> {
-        // Per-call account override beats the OpCli's pinned account
-        // so a caller can target a specific 1P account even when the
-        // workspace is unscoped. Read-side `OpStructRunner::item_get`
-        // does NOT consult `self.account` — that asymmetry is
-        // deliberate: the read path is driven by the picker, which
-        // sets the account on the call itself.
         let effective_account = account.or(self.account.as_deref());
         let mut args: Vec<&str> = Vec::new();
         push_account_arg(&mut args, effective_account);
@@ -1043,8 +958,6 @@ impl OpWriteRunner for OpCli {
             "item id {item_id:?} cannot be represented as one `op://` path component"
         );
 
-        // Step 1: fetch the full item JSON so we can modify one field
-        // while preserving all other fields and metadata.
         let mut get_args: Vec<&str> = Vec::new();
         push_account_arg(&mut get_args, self.account.as_deref());
         get_args.extend_from_slice(&[
@@ -1053,8 +966,6 @@ impl OpWriteRunner for OpCli {
         let raw_bytes = run_op_with_timeout(&self.binary, &get_args, self.timeout)
             .map_err(|e| anyhow::anyhow!("`op item get` failed: {e}"))?;
 
-        // Step 2: parse as a generic JSON value so we can manipulate the
-        // `fields` array without discarding unrecognised properties.
         let mut item: serde_json::Value = serde_json::from_slice(&raw_bytes)
             .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
 
@@ -1086,14 +997,6 @@ impl OpWriteRunner for OpCli {
         let body = serde_json::to_vec(&item)
             .map_err(|e| anyhow::anyhow!("failed to re-encode item JSON: {e}"))?;
 
-        // Step 3: pipe the modified item JSON to `op item edit <id>`.
-        // `op item edit` takes the item as a positional and reads a JSON
-        // template from stdin (the documented `cat updated.json | op item
-        // edit <id>` form), so the secret value rides in stdin, never on
-        // argv. The item id must be the positional — `-` would be parsed
-        // as the item name, not a stdin sentinel (that is the create-only
-        // convention). `--template` is mutually exclusive with piped
-        // input, so it is intentionally not passed.
         let mut args = Vec::new();
         push_account_arg(&mut args, self.account.as_deref());
         args.extend_from_slice(&[
@@ -1116,7 +1019,6 @@ impl OpWriteRunner for OpCli {
             );
         }
 
-        // Step 4: parse the returned item JSON and build the ref.
         let updated: serde_json::Value = serde_json::from_slice(&out.stdout)
             .map_err(|e| anyhow::anyhow!("failed to parse `op item edit` JSON: {e}"))?;
 

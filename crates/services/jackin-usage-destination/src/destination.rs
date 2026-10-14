@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage destinations.
 
 use jackin_protocol::usage_broker::UsageProjectionV1;
 
@@ -14,28 +13,26 @@ pub struct ProjectionMetadata<'a> {
     pub locale: &'a str,
 }
 
-/// Typed interactive destination outside the canonical JSON projection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UsageDestination {
-    /// All current canonical accounts.
     Overview,
-    /// Provider destination allowed only when it owns exactly one account.
-    Provider { provider_id: String },
-    /// Exact account destination for a multi-account provider.
+
+    Provider {
+        provider_id: String,
+    },
+
     Account {
         provider_id: String,
         canonical_account_id: String,
     },
 }
 
-/// Result of reconciling adapter selection against one immutable publication.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedUsageDestination {
     pub destination: UsageDestination,
     pub notice: Option<String>,
 }
 
-/// Preserve a stable destination or return honestly to Overview when removed.
 #[must_use]
 pub fn normalize_destination(
     projection: &UsageProjectionV1,

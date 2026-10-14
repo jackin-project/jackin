@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `ConsoleManagerStage` and the input-dispatch plan types.
 mod dispatch;
 mod manager;
 mod presence;

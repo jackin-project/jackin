@@ -1,10 +1,3 @@
-//! Shared modal size and placement registry.
-//!
-//! Surfaces pass the area that is allowed to be covered by the modal. The
-//! registry centers within that area unless a spec explicitly says otherwise,
-//! so callers keep owning footer/status reservation while modal sizing stays in
-//! one place.
-
 use ratatui::layout::Rect;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -239,7 +232,6 @@ pub fn role_picker_rect_for_count(outer: Rect, filtered_len: usize) -> Rect {
 
 #[must_use]
 pub fn mount_choice_rect(outer: Rect) -> Rect {
-    // 2 borders + 1 leading + 1 question + 1 path + 1 spacer + 1 buttons + 1 trailing = 8
     let w = outer.width.min(80);
     let h = 8u16.min(outer.height);
     Rect {
@@ -255,8 +247,6 @@ pub fn auth_form_rect_for_height(outer: Rect, required_height: u16) -> Rect {
     centered_rect_fixed(outer, 80, required_height)
 }
 
-/// Center a dialog at a stable preferred width derived from `pct_w` of a
-/// 160-column reference terminal.
 #[must_use]
 pub fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
     const REFERENCE_COLS: u16 = 160;
@@ -264,8 +254,6 @@ pub fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
     centered_rect_preferred(outer, preferred, rows)
 }
 
-/// Center a dialog at `preferred_w` columns, shrinking only when the outer area
-/// is too narrow to fit `preferred_w` with a four-column side margin.
 #[must_use]
 pub fn centered_rect_preferred(outer: Rect, preferred_w: u16, rows: u16) -> Rect {
     let w = preferred_w.min(outer.width.saturating_sub(4));

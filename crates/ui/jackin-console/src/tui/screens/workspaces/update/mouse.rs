@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace list mouse plans.
 
 use super::workspace_list_hover_row_at_position;
 
@@ -18,10 +17,6 @@ pub enum WorkspaceListMousePlan {
     Continue,
 }
 
-// Mouse parity matrix row 14 carve-out: seam drag (hit slack,
-// anchor-relative pct delta, 20-80% clamp, narrow-terminal gate) stays
-// consumer code — upstream `ResizablePanelGroup` is exact-handle,
-// absolute-position, ungated. Its adoption decision belongs to plan 011.
 #[must_use]
 pub fn workspace_list_mouse_plan(
     mouse: MouseEvent,

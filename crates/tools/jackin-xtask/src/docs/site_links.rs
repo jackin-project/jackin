@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Generated documentation-site link validation.
-
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -26,11 +24,11 @@ fn command(site_url: &str, workspace: &Path, blob_url: &str, edit_url: &str) -> 
         .env("MISE_CONFIG_FILE", workspace.join("docs/mise.toml"))
         .arg("--config")
         .arg("docs/lychee.toml")
-        // The response cache is a local-development optimization; in CI a
-        // restored cache path can arrive as a directory, which makes lychee
-        // fail fatally on save ("Is a directory", os error 21). CI reuse is
-        // already gated by the semantic link-result contract, so run the
-        // site check uncached, exactly like the README link check below.
+
+
+
+
+
         .arg("--cache=false")
         .arg("--verbose")
         .arg("--include-fragments")

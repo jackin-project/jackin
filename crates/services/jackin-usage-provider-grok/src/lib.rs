@@ -1,8 +1,3 @@
-//! jackin-usage-provider-grok: `Grok` / `xAI` usage snapshot collection.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`grok_snapshot`] — `Grok` usage snapshot.
-
 mod billing;
 mod rpc;
 mod snapshot;

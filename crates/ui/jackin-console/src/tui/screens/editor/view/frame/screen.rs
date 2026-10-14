@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor frame areas and top-level screen render.
 
 use super::{
     render_auth_tab, render_general_tab, render_mounts_tab, render_roles_tab, render_secrets_tab,

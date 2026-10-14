@@ -37,7 +37,7 @@ fn auth_lines_render_kind_mode_source_and_sentinel() {
         "unset  (CLAUDE_API_KEY for api-key)"
     );
     assert_eq!(lines[3].spans[1].content.as_ref(), " Role: alpha");
-    // AddSentinel row: cursor + action label only (no suffix, per action-row style rule).
+
     assert_eq!(lines[4].spans[1].content.as_ref(), "+ Override for a role");
     assert_eq!(editor_auth_line_width(&rows[0]), padded_width("  Claude"));
     assert_eq!(
@@ -139,12 +139,10 @@ fn auth_source_folder_rows_render_display_kinds_without_env_suffix() {
 
 #[test]
 fn in_all_mode_all_rows_render_as_checked() {
-    // Empty `allowed_roles` ⇒ "all" mode ⇒ every row is `[x]`.
     let cfg = config_with_agents(&["alpha", "beta", "gamma"]);
     let ws = ws_with_allowed(&[]);
     let dump = render_roles_to_dump(ws, &cfg);
 
-    // Every role name should appear on a line that also carries `[x]`.
     for name in ["alpha", "beta", "gamma"] {
         let line = dump
             .lines()
@@ -216,7 +214,6 @@ fn default_agent_row_carries_star_marker() {
 
 #[test]
 fn in_custom_mode_only_listed_agents_show_checked() {
-    // Non-empty list ⇒ "custom" mode ⇒ only listed rows are `[x]`.
     let cfg = config_with_agents(&["alpha", "beta", "gamma"]);
     let ws = ws_with_allowed(&["beta"]);
     let dump = render_roles_to_dump(ws, &cfg);

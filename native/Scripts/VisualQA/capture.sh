@@ -1,5 +1,5 @@
 #!/bin/sh
-# Atomic kill-launch-reactivate-resolve-capture loop for jackin❯ desktop.
+
 set -eu
 
 APP=${1:?app bundle path required}
@@ -120,7 +120,7 @@ if [ -n "${CAPTURE_STATUS_ITEM_INDEX:-}" ]; then
   fi
   sleep 1
 else
-  # The product owns activation. Reopening here can replace a transient popover.
+
   sleep 1
 fi
 
@@ -151,8 +151,8 @@ drive_activation() {
       >/dev/null 2>&1 || true
   else
     if [ -n "$WINDOW_NAME" ]; then
-      # AppKit's default activation can report success while a window remains on another Space.
-      # activateAllWindows moves the existing Usage window onto the active Space.
+
+
       "$FOCUS_TOOL" "$pid" 0 >/dev/null
     else
       osascript -e \
@@ -186,9 +186,9 @@ done
   exit 1
 }
 
-# WindowServer can mark a native host onscreen before SwiftUI has restored its
-# independently hosted chrome and scroll position. Accessibility appearance
-# changes need the longer convergence window before pixels are evidence.
+
+
+
 sleep "${CAPTURE_SETTLE_DELAY_SECONDS:-3}"
 
 if [ -n "${CAPTURE_TOOLBAR_BUTTON_DESCRIPTION:-}" ]; then

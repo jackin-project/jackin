@@ -5,9 +5,6 @@ pub(super) fn run_telemetry_shutdown_scenario() {
     use opentelemetry::metrics::MeterProvider as _;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 
-    // The diagnostics conformance suite keeps a process-global meter installed.
-    // Exercise provider ownership in a fresh test process so this scenario can
-    // prove replacement behavior without racing that shared test rig.
     let first_provider = SdkMeterProvider::builder().build();
     let first_installation = jackin_telemetry::install(&first_provider.meter("pending-lease"))
         .expect("first provider-bound meter installation");

@@ -5,7 +5,6 @@ use super::*;
 
 #[test]
 fn claude_account_email_reads_oauth_account_metadata() {
-    // the email identity comes from `oauthAccount.emailAddress`.
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("claude.json");
     fs::write(
@@ -29,9 +28,6 @@ fn claude_account_email_reads_oauth_account_metadata() {
 
 #[test]
 fn claude_oauth_usage_decodes_live_api_body() {
-    // Mirrors the live api.anthropic.com/api/oauth/usage 200 body: `seven_day`
-    // and `seven_day_oauth_apps` are SEPARATE keys (they must not collide on
-    // one field), plus new codename windows the model must tolerate.
     let body = r#"{
             "five_hour": {"utilization": 12, "resets_at": "2026-06-25T19:00:00Z"},
             "seven_day": {"utilization": 34, "resets_at": "2026-06-26T14:00:00Z"},
@@ -63,9 +59,9 @@ fn claude_oauth_response_maps_windows_to_buckets() {
         "seven_day": { "utilization": 0.78, "resets_at": "2026-06-12T14:26:00Z" },
         "seven_day_sonnet": { "utilization": 0.02, "resets_at": "2026-06-12T14:26:00Z" },
         "seven_day_routines": { "utilization": 0.0 },
-        // Real API shape: credits are MINOR units (cents) with `decimal_places`,
-        // and `utilization` is a percent (0..100). No `spend` object here, so this
-        // exercises the `extra_usage` fallback path.
+
+
+
         "extra_usage": {
             "is_enabled": true,
             "monthly_limit": 26000.0,
@@ -95,7 +91,7 @@ fn claude_oauth_response_maps_windows_to_buckets() {
     assert_eq!(buckets[1].label, "Weekly");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
     assert_eq!(buckets[1].remaining_percent, Some(22));
-    // Sonnet / Daily Routines fill no headline slot.
+
     assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
     assert!(
         buckets
@@ -103,9 +99,7 @@ fn claude_oauth_response_maps_windows_to_buckets() {
             .find(|bucket| bucket.label == "Sonnet")
             .is_some_and(|bucket| bucket.status_slot.is_none())
     );
-    // Sonnet is a weekly window, so the unified model paces it the same way a
-    // `limits`-sourced Fable window is paced (it has both a reset and a 7-day
-    // duration). Daily Routines carries no `resets_at`, so it still has none.
+
     assert!(
         buckets
             .iter()
@@ -116,16 +110,13 @@ fn claude_oauth_response_maps_windows_to_buckets() {
         && bucket.remaining_percent == Some(100)
         && bucket.pace_label.is_none()
         && bucket.status_slot.is_none()));
-    // `seven_day_opus` was absent from the response — it must be omitted
-    // entirely, never fabricated into a (full-meter) row.
+
     assert!(!buckets.iter().any(|bucket| bucket.label == "Opus"));
     let extra = buckets
         .iter()
         .find(|bucket| bucket.label == "Extra usage")
         .expect("extra usage bucket");
-    // spent vs cap — `<currency> <spent> spent` + `NN% used`. Minor units are
-    // scaled by `decimal_places` (7849 → 78.49), and the bucket fills the Spend
-    // slot carrying structured Money for the status-bar chunk.
+
     assert_eq!(extra.status_slot, Some(StatusSlot::Spend));
     assert_eq!(extra.remaining_percent, Some(70));
     assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49 spent"));
@@ -148,10 +139,10 @@ fn claude_oauth_response_maps_windows_to_buckets() {
 #[test]
 fn claude_spend_object_preferred_and_scaled() {
     let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
-        // Enterprise responses carry no rolling windows, only spend.
+
         "five_hour": null,
         "seven_day": null,
-        // A stale/raw extra_usage is also present; spend{} must win.
+
         "extra_usage": {
             "is_enabled": true,
             "monthly_limit": 30000.0,
@@ -181,7 +172,6 @@ fn claude_spend_object_preferred_and_scaled() {
     assert_eq!(spend.remaining_percent, Some(82));
     assert_eq!(spend.severity, UsageSeverity::Normal);
 
-    // The headline renders compact money as `<used> of <limit>`, currency once.
     assert_eq!(
         spend_headline_label(&buckets).as_deref(),
         Some("$53 of 300")
@@ -191,8 +181,8 @@ fn claude_spend_object_preferred_and_scaled() {
 #[test]
 fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
     let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
-        // Legacy named windows are still present but null on current accounts;
-        // they must contribute nothing because `limits` takes precedence.
+
+
         "five_hour": null,
         "seven_day": null,
         "seven_day_sonnet": null,
@@ -224,8 +214,6 @@ fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
     assert_eq!(session.remaining_percent, Some(93));
     assert_eq!(session.used_label.as_deref(), Some("7% used"));
 
-    // "All models" fills the Weekly headline slot (status bar still reads
-    // "Weekly" via the slot), label matches the web console row.
     let all_models = buckets
         .iter()
         .find(|b| b.status_slot == Some(StatusSlot::Weekly))
@@ -233,8 +221,6 @@ fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
     assert_eq!(all_models.label, "All models");
     assert_eq!(all_models.remaining_percent, Some(72));
 
-    // Fable — the model-scoped window the legacy parser dropped. Non-headline
-    // (no status slot), severity mirrored from the API for meter color.
     let fable = buckets
         .iter()
         .find(|b| b.label == "Fable")
@@ -243,11 +229,9 @@ fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
     assert_eq!(fable.used_label.as_deref(), Some("35% used"));
     assert_eq!(fable.status_slot, None);
     assert_eq!(fable.severity, UsageSeverity::Warn);
-    // Reset epoch is carried (RC2) so the CLI report can emit `resets_at`.
+
     assert!(fable.resets_at.is_some());
 
-    // No legacy fabricated rows leaked through: the null `seven_day*` windows
-    // produce nothing once `limits` is authoritative.
     assert!(buckets.iter().all(|b| b.label != "Weekly"));
     assert!(buckets.iter().all(|b| b.label != "Sonnet"));
     assert!(buckets.iter().all(|b| b.label != "Opus"));
@@ -339,8 +323,8 @@ fn claude_legacy_and_limits_sources_share_one_builder() {
     let reset_at = "2026-07-03T06:59:59Z";
     let now = 1_781_300_000;
     let legacy: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
-        // `utilization` is percent-form here (35.0 > 1.0), matching the limits
-        // `percent` field so both resolve to 35% used through the same helpers.
+
+
         "seven_day_sonnet": { "utilization": 35.0, "resets_at": reset_at }
     }))
     .expect("legacy response");
@@ -364,8 +348,6 @@ fn claude_legacy_and_limits_sources_share_one_builder() {
         .find(|b| b.label == "Fable")
         .expect("limits Fable bucket");
 
-    // Same builder ⇒ identical meter, pace, reset, and severity. Only the label
-    // (the model the window is scoped to) differs.
     assert_eq!(sonnet.used_label, fable.used_label);
     assert_eq!(sonnet.remaining_percent, fable.remaining_percent);
     assert_eq!(sonnet.reset_label, fable.reset_label);

@@ -1,27 +1,23 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! View-derived account keys.
 
 use jackin_protocol::control::FocusedUsageView;
 
 use super::CanonicalAccountIdentity;
 use jackin_usage_host_presentation::HostSurfaceId;
 
-/// Stable key for a focused usage view after exact provider canonicalization.
 #[must_use]
 pub fn account_key_for_view(view: &FocusedUsageView) -> Option<String> {
     let surface = surface_for_view(view)?;
     CanonicalAccountIdentity::from_view(surface, view).map(|identity| identity.account_key())
 }
 
-/// Canonical V1 identity for a focused usage view.
 #[must_use]
 pub fn canonical_account_id_for_view(view: &FocusedUsageView) -> Option<String> {
     let surface = surface_for_view(view)?;
     CanonicalAccountIdentity::from_view(surface, view).map(|identity| identity.canonical_id_v1())
 }
 
-/// Compact identity for status chips (email local-part when possible).
 #[must_use]
 pub fn short_account_identity(account_label: &str) -> String {
     let Some(trimmed) = stable_account_label(account_label) else {
@@ -52,7 +48,6 @@ pub(crate) fn stable_account_label(account_label: &str) -> Option<&str> {
     }
 }
 
-/// Min remaining across numeric buckets.
 #[must_use]
 pub fn min_remaining(view: &FocusedUsageView) -> Option<u8> {
     view.buckets
@@ -61,7 +56,6 @@ pub fn min_remaining(view: &FocusedUsageView) -> Option<u8> {
         .min()
 }
 
-/// Closed provider-alias parser. It never performs containment matching.
 #[must_use]
 pub(crate) fn surface_for_view(view: &FocusedUsageView) -> Option<HostSurfaceId> {
     HostSurfaceId::from_provider_alias(&view.account.provider_label)

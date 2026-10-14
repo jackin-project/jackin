@@ -1,9 +1,3 @@
-//! Feature-gated host-daemon spike.
-//!
-//! This is intentionally not a production daemon. It captures the proposed
-//! host-side control-socket shape and proves the smallest first adapter:
-//! consuming the existing runtime status authority for attention notifications.
-
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};

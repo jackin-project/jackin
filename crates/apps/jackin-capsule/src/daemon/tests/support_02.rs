@@ -104,7 +104,7 @@ pub(super) fn osc52_payloads(rx: &mut mpsc::UnboundedReceiver<Vec<u8>>) -> Vec<V
 
 pub(super) fn expected_osc52_payload(text: &str) -> Vec<u8> {
     let encoded = crate::tui::view::encode_osc52_clipboard_write(text);
-    // strip "\x1b]52;c;" prefix and trailing BEL
+
     encoded[7..encoded.len() - 1].to_vec()
 }
 

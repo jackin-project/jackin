@@ -1,17 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pure workspace planning: create, edit, and mount-set collapse.
-//!
-//! No I/O. Callers apply the plan by calling `AppConfig::create_workspace` /
-//! `edit_workspace` with the plan's outputs.
-
 use crate::ConfigError;
 use jackin_core::MountIsolation;
 
 use crate::{MountConfig, WorkspaceConfig};
 
-/// Returns `true` iff `parent` strictly covers `child` under rule C.
 fn covers(parent: &MountConfig, child: &MountConfig) -> bool {
     let parent_src = parent.src.trim_end_matches('/');
     let parent_dst = parent.dst.trim_end_matches('/');
@@ -32,27 +26,22 @@ fn covers(parent: &MountConfig, child: &MountConfig) -> bool {
     src_suffix == dst_suffix
 }
 
-/// Plan for `jackin workspace create`.
 #[derive(Debug)]
 pub struct WorkspaceCreatePlan {
-    /// Mounts remaining after rule-C collapse.
     pub final_mounts: Vec<MountConfig>,
-    /// Mounts removed because a parent already covers them.
+
     pub collapsed: Vec<Removal>,
 }
 
-/// Plan for `jackin workspace edit`.
 #[derive(Debug)]
 pub struct WorkspaceEditPlan {
-    /// Destinations to remove (explicit removals plus collapsed children).
     pub effective_removals: Vec<String>,
-    /// Collapses involving at least one mount touched by this edit.
+
     pub edit_driven_collapses: Vec<Removal>,
-    /// Collapses among mounts that already existed before the edit.
+
     pub pre_existing_collapses: Vec<Removal>,
 }
 
-/// Plan a `workspace create`.
 pub fn plan_create(mounts: &[MountConfig]) -> Result<WorkspaceCreatePlan, CollapseError> {
     let all_indexes: Vec<usize> = (0..mounts.len()).collect();
     let plan = plan_collapse(mounts, &all_indexes)?;
@@ -62,7 +51,6 @@ pub fn plan_create(mounts: &[MountConfig]) -> Result<WorkspaceCreatePlan, Collap
     })
 }
 
-/// Plan a `workspace edit`.
 pub fn plan_edit(
     current: &WorkspaceConfig,
     upserts: &[MountConfig],
@@ -129,10 +117,6 @@ pub fn plan_edit(
     })
 }
 
-/// Apply per-destination isolation overrides to the supplied mount list.
-///
-/// # Errors
-/// Returns an error if any override destination is not in the mount list.
 pub fn apply_isolation_overrides(
     mounts: &mut [MountConfig],
     overrides: &[(String, MountIsolation)],
@@ -149,29 +133,23 @@ pub fn apply_isolation_overrides(
     Ok(())
 }
 
-/// A proposed mount-set change produced by [`plan_collapse`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollapsePlan {
-    /// Mounts that are not covered by any other mount.
     pub kept: Vec<MountConfig>,
-    /// Covered mounts proposed for removal.
+
     pub removed: Vec<Removal>,
 }
 
-/// Records that `child` was collapsed because it is covered by `covered_by`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removal {
-    /// Mount that is strictly covered and can be dropped.
     pub child: MountConfig,
-    /// Parent mount that already exposes the child's subtree.
+
     pub covered_by: MountConfig,
 }
 
-/// Conditions that prevent a silent collapse.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum CollapseError {
-    /// Parent covers child but `readonly` flags disagree.
     #[error(
         "mount {parent_src} ({parent_mode}) would subsume {child_src} ({child_mode}), \
          but the readonly flag differs. Match the flag or remove the child first.",
@@ -181,12 +159,11 @@ pub enum CollapseError {
         child_mode = if child.readonly { "ro" } else { "rw" },
     )]
     ReadonlyMismatch {
-        /// Covering parent mount.
         parent: MountConfig,
-        /// Covered child mount.
+
         child: MountConfig,
     },
-    /// New child is already covered by an existing parent (nothing to add).
+
     #[error(
         "mount {child_src} is already covered by existing mount {parent_src}. \
          Nothing to add.",
@@ -194,23 +171,15 @@ pub enum CollapseError {
         parent_src = parent.src,
     )]
     ChildUnderExistingParent {
-        /// Existing parent that covers the new child.
         parent: MountConfig,
-        /// New child that cannot be added.
+
         child: MountConfig,
     },
-    /// Internal planner bookkeeping failure.
+
     #[error("workspace mount planner invariant failed: {message}")]
-    PlannerInvariant {
-        /// Static description of the broken invariant.
-        message: &'static str,
-    },
+    PlannerInvariant { message: &'static str },
 }
 
-/// Compute a [`CollapsePlan`] for `mounts`.
-///
-/// # Errors
-/// Returns an error if mounts have readonly flag mismatches or child-under-existing-parent.
 pub fn plan_collapse(
     mounts: &[MountConfig],
     new_indexes: &[usize],

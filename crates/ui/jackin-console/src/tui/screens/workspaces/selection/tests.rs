@@ -7,9 +7,6 @@ use super::WorkspaceSelection;
 use crate::tui::screens::workspaces::model::ManagerListRow;
 use crate::tui::screens::workspaces::update::WorkspaceRowLayout;
 
-/// Mixed expansion fixture: current directory expanded with two
-/// instances, two saved workspaces (first expanded with one instance),
-/// and the `NewWorkspace` tail row.
 fn mixed_projection() -> Vec<ManagerListRow> {
     WorkspaceSelection::projection(WorkspaceRowLayout {
         current_dir_expanded: true,
@@ -64,11 +61,6 @@ fn wrapper_projection_round_trips_collapsed_workspaces() {
     }
 }
 
-/// Wrap-parity gate, corrected against observed pre-cutover behavior: the
-/// retired helper SATURATED at both ends (planning text claimed wrap —
-/// falsified by the code and by
-/// `update::tests::selection_move_plan_clamps_to_rows`), so parity means
-/// saturating here.
 #[test]
 fn wrapper_move_saturates_at_both_ends_like_pre_cutover() {
     let rows = mixed_projection();

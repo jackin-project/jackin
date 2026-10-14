@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Absent-for-purge guards.
-//!
-//! [`ensure_role_resources_absent_for_purge`] refuses local-state purge
-//! while the role container (or its `DinD` sidecar) still exists in Docker,
-//! directing the operator to `jackin eject --purge` instead. A container
-//! whose state cannot even be inspected also refuses: purging blind
-//! would orphan Docker resources. Bulk prune and filesystem teardown
-//! stay in the `jackin-runtime` hub.
-
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use jackin_instance::DockerResources;
 

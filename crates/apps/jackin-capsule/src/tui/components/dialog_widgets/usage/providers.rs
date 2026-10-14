@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Identity header and overview-provider section line builders.
 
 use super::{
     USAGE_CONTENT_PAD_LEFT, USAGE_CONTENT_PAD_RIGHT, usage_content_indent, usage_separator_line,
@@ -15,8 +14,6 @@ pub(crate) fn is_overview_provider_row(value: &str) -> bool {
 }
 
 pub(crate) fn is_overview_provider_label(label: &str) -> bool {
-    // Tab labels carry a ` · {account}` suffix so same-provider accounts stay
-    // individually visible; match on the provider head.
     let head = label.split(" · ").next().unwrap_or(label);
     matches!(
         head,
@@ -176,9 +173,6 @@ pub(crate) fn usage_identity_lines(
     lines.push(usage_separator_line(width));
 }
 
-/// Build a header line with `left` flush-left and `right` flush-right to
-/// `width`. Falls back to a fixed three-space gap when `width` is 0 (the
-/// measurement path) or too narrow to right-align without overlap.
 pub(crate) fn usage_header_two_column(
     left: &str,
     left_style: Style,

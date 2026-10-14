@@ -1,8 +1,3 @@
-//! jackin-usage-provider-codex: `Codex` / `OpenAI` usage snapshot collection.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`codex_snapshot`] — `Codex` usage snapshot.
-
 mod credentials;
 mod endpoints;
 mod oauth;

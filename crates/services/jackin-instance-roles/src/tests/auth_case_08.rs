@@ -11,7 +11,6 @@ fn rejects_symlink_at_credentials_json() {
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 
-    // First run: create the state directory with credentials
     let (state, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -26,7 +25,6 @@ fn rejects_symlink_at_credentials_json() {
     )
     .unwrap();
 
-    // Replace .credentials.json with a symlink
     let decoy = temp.path().join("decoy-creds.txt");
     std::fs::write(&decoy, "secret").unwrap();
     let creds_path = state.claude_credentials_json().unwrap();
@@ -34,7 +32,6 @@ fn rejects_symlink_at_credentials_json() {
     std::os::unix::fs::symlink(&decoy, creds_path).unwrap();
     drop(state);
 
-    // Sync should refuse to write through the symlink
     let err = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -53,7 +50,6 @@ fn rejects_symlink_at_credentials_json() {
         "expected symlink error, got: {err}"
     );
 
-    // Decoy file must be untouched
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "secret");
 }
 
@@ -165,11 +161,6 @@ fn ignore_mode_wipes_role_secrets_json() {
 
 #[test]
 fn oauth_token_defensive_arm_wipes_role_state() {
-    // OAuthToken is parser-rejected for Amp; the defensive arm in
-    // provision_amp_auth wipes any prior Sync's role-state file so a
-    // config bypass cannot leak forwarded credentials into the
-    // container. The arm should never run in production, but if it
-    // does the bypass must be loud and safe.
     let temp = tempdir().unwrap();
     let secrets_json = temp.path().join("secrets.json");
     std::fs::write(&secrets_json, "{\"prior_sync\":true}").unwrap();
@@ -192,11 +183,6 @@ fn oauth_token_defensive_arm_wipes_role_state() {
 #[cfg(unix)]
 #[test]
 fn rejects_symlink_at_secrets_json_under_every_mode() {
-    // Loop every mode. The symlink check is hoisted above the mode
-    // match, so the defense holds for all four arms today — but a
-    // future refactor that pushes the check inside specific arms
-    // could silently regress Sync (highest blast radius — it would
-    // otherwise read through the symlink).
     for mode in [
         AuthForwardMode::Sync,
         AuthForwardMode::ApiKey,
@@ -226,11 +212,6 @@ fn rejects_symlink_at_secrets_json_under_every_mode() {
 #[cfg(unix)]
 #[test]
 fn surfaces_unreadable_host_secrets_json_as_error() {
-    // Sync arm with an unreadable host secrets.json must surface
-    // the io::Error rather than misdiagnosing as HostMissing —
-    // otherwise the operator gets trapped in a re-login loop they
-    // cannot escape until they spot the bad permissions on the
-    // host file.
     use std::os::unix::fs::PermissionsExt;
     let temp = tempdir().unwrap();
     let secrets_json = temp.path().join("secrets.json");
@@ -250,8 +231,6 @@ fn surfaces_unreadable_host_secrets_json_as_error() {
 
     let result = provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home);
 
-    // Restore perms so tempdir cleanup succeeds regardless of test
-    // outcome.
     drop(std::fs::set_permissions(
         &host_secrets,
         std::fs::Permissions::from_mode(0o600),
@@ -272,8 +251,6 @@ fn surfaces_unreadable_host_secrets_json_as_error() {
 #[cfg(unix)]
 #[test]
 fn synced_secrets_json_has_restricted_permissions() {
-    // Bypassing `write_private_file` would land at 0o644 and leak
-    // the token. Pin 0o600 explicitly.
     use std::os::unix::fs::PermissionsExt;
     let temp = tempdir().unwrap();
     let secrets_json = temp.path().join("secrets.json");
@@ -298,8 +275,6 @@ fn synced_secrets_json_has_restricted_permissions() {
 #[cfg(unix)]
 #[test]
 fn sync_repairs_permissions_when_host_secrets_missing() {
-    // HostMissing is the only path that carries a prior file
-    // across launches; the arm must tighten its perms.
     use std::os::unix::fs::PermissionsExt;
     let temp = tempdir().unwrap();
     let secrets_json = temp.path().join("secrets.json");
@@ -324,14 +299,10 @@ fn sync_repairs_permissions_when_host_secrets_missing() {
 
 #[test]
 fn sync_ignores_xdg_config_settings_json_decoy() {
-    // Catches a regression that swapped the Sync source from
-    // XDG_DATA `secrets.json` to XDG_CONFIG `settings.json`.
     let temp = tempdir().unwrap();
     let secrets_json = temp.path().join("secrets.json");
     let host_home = temp.path().join("host_home");
 
-    // Only the XDG_CONFIG decoy exists; the canonical XDG_DATA
-    // path is empty.
     let xdg_config = host_home.join(".config/amp");
     std::fs::create_dir_all(&xdg_config).unwrap();
     std::fs::write(xdg_config.join("settings.json"), "WRONG").unwrap();
@@ -353,8 +324,6 @@ fn sync_ignores_xdg_config_settings_json_decoy() {
 
 #[test]
 fn sync_treats_empty_host_secrets_as_host_missing() {
-    // Without this guard, an empty host file would be Synced and
-    // the agent would fail to auth with no breadcrumb.
     let temp = tempdir().unwrap();
     let secrets_json = temp.path().join("secrets.json");
     let host_home = stage_host_secrets(&temp, "   \n\t  \n");

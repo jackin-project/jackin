@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! OTLP export and bounded lifecycle telemetry for the in-container Capsule.
-
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -25,9 +23,6 @@ pub fn session_context() -> Option<(String, Option<String>)> {
         .map(|ctx| (ctx.session_id.clone(), ctx.traceparent.clone()))
 }
 
-/// Claim Capsule identity before any fallible daemon startup, install export,
-/// and start a bounded startup operation. The caller marks listener readiness
-/// through [`FlushGuard::listener_ready`].
 pub fn init() -> Result<FlushGuard, jackin_telemetry::identity::SessionOwnershipError> {
     let invocation_id = std::env::var("JACKIN_INVOCATION_ID").ok();
     if let Some(value) = invocation_id.as_deref()
@@ -111,7 +106,6 @@ impl Carrier for LaunchCarrier<'_> {
     }
 }
 
-/// Owns paired Capsule session/startup lifecycle and exporter shutdown.
 #[derive(Debug)]
 #[must_use = "hold the guard for the daemon's lifetime"]
 pub struct FlushGuard {
@@ -121,18 +115,12 @@ pub struct FlushGuard {
 }
 
 impl FlushGuard {
-    /// Complete bounded startup only once the Capsule listener is ready.
     pub fn listener_ready(&mut self) {
         if let Some(startup) = self.startup.take() {
             startup.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
         }
     }
 
-    /// Record a terminal daemon failure only when startup already completed.
-    ///
-    /// Before listener readiness, the startup operation owns the failure in
-    /// `Drop`; afterwards that bounded operation is gone, so the process owner
-    /// emits one body-free typed error instead.
     pub fn daemon_failed(&self) {
         if self.daemon_failure_needs_terminal_event() {
             let _error = jackin_telemetry::record_error(
@@ -167,7 +155,6 @@ pub fn otlp_active() -> bool {
     OTLP_ACTIVE.load(Ordering::Relaxed)
 }
 
-/// Best-effort emergency exporter shutdown used by the panic hook.
 pub fn shutdown() {
     if otlp_active() {
         jackin_diagnostics::shutdown_capsule_tracing();

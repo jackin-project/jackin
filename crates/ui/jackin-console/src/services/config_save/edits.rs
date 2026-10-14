@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace save diff plans and edit building.
 
 use super::{push_auth_forward_diff, push_env_diff, validate_settings_env_keys};
 use jackin_config::{EnvScope, EnvValue, GithubAuthMode, WorkspaceConfig, WorkspaceEdit};
@@ -68,7 +67,6 @@ pub fn validate_settings_env<V>(
     Ok(())
 }
 
-/// Build the config-editor patch for a workspace edit from original/pending UI state.
 #[must_use]
 pub fn build_workspace_edit(
     original: &WorkspaceConfig,

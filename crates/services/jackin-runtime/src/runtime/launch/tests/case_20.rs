@@ -74,9 +74,7 @@ plugins = []
             .lines()
             .any(|line| line == "HTTPS_PROXY=http://proxy.internal:8305")
     );
-    // Both casings carry the merged list — operator's localhost,127.0.0.1
-    // must survive into the lowercase synthesized variant for tools that
-    // only read `no_proxy`.
+
     assert!(
         observed
             .contents
@@ -152,9 +150,6 @@ async fn load_agent_mirrors_lower_no_proxy_to_missing_upper_casing() {
 
 #[tokio::test]
 async fn load_agent_synthesizes_both_casings_when_only_no_proxy_declared() {
-    // Operator may have proxy injected by /etc/environment, transparent
-    // proxy, or container-injected vars; jackin only sees NO_PROXY.
-    // Both casings must still receive the DinD bypass.
     let (run_cmd, env_file, _temp) = run_load_with_env(&[("NO_PROXY", "internal.corp")]).await;
     let dind = dind_env_from_run_cmd(&run_cmd);
     assert!(
@@ -349,7 +344,7 @@ plugins = []
     )
     .unwrap();
 
-    let workspace = repo_workspace(&repo_dir); // keep_awake_enabled defaults false
+    let workspace = repo_workspace(&repo_dir);
     let docker = jackin_test_support::FakeDockerClient::default();
     load_role(
         &paths,

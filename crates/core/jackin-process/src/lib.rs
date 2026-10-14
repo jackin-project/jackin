@@ -1,8 +1,3 @@
-//! jackin-process: shared subprocess transport (capture, timeout, retry, status).
-//!
-//! **Architecture Invariant:** T0.
-//! Entry point: [`RetryPolicy`] — capture/timeout helpers without redaction or telemetry.
-
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
@@ -13,31 +8,25 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-/// Default maximum bytes retained per stream by `exec_async` and `exec_sync`.
 pub const DEFAULT_CAPTURE_LIMIT: usize = 16 * 1024 * 1024;
 
-/// How many times to re-run a failed command (excluding the first attempt).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RetryPolicy {
-    /// Extra attempts after the first failure. `0` = no retry.
     pub max_retries: u32,
-    /// Delay between attempts.
+
     pub delay: Duration,
 }
 
-/// Child standard-stream routing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StdioMode {
-    /// Connect a pipe and return the emitted bytes from `exec_*`.
     Capture,
-    /// Inherit the caller's corresponding stream.
+
     Inherit,
-    /// Connect the stream to the null device.
+
     Null,
 }
 
 impl RetryPolicy {
-    /// No retries.
     #[must_use]
     pub const fn none() -> Self {
         Self {
@@ -47,42 +36,38 @@ impl RetryPolicy {
     }
 }
 
-/// Subprocess request (ordinary bytes + timing knobs only).
 #[derive(Debug, Clone)]
 pub struct ExecRequest {
-    /// Program path or name on `PATH`.
     pub program: PathBuf,
-    /// Arguments (not including the program).
+
     pub args: Vec<std::ffi::OsString>,
-    /// Optional working directory.
+
     pub cwd: Option<PathBuf>,
-    /// Optional stdin bytes.
+
     pub stdin: Option<Vec<u8>>,
-    /// Optional extra environment entries (pass-through only — no filtering).
+
     pub env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
-    /// Environment keys removed after applying inheritance/clear policy.
+
     pub env_remove: Vec<std::ffi::OsString>,
-    /// Start with an empty environment rather than inheriting the parent.
+
     pub env_clear: bool,
-    /// Stdin routing when `stdin` bytes are absent.
+
     pub stdin_mode: StdioMode,
-    /// Stdout routing.
+
     pub stdout_mode: StdioMode,
-    /// Stderr routing.
+
     pub stderr_mode: StdioMode,
-    /// Kill after this duration. `None` = wait indefinitely (capsule probe
-    /// semantic: no read timeout).
+
     pub timeout: Option<Duration>,
-    /// Maximum captured stdout bytes. `None` uses [`DEFAULT_CAPTURE_LIMIT`].
+
     pub stdout_limit: Option<usize>,
-    /// Maximum captured stderr bytes. `None` uses [`DEFAULT_CAPTURE_LIMIT`].
+
     pub stderr_limit: Option<usize>,
-    /// Retry policy on non-success exit (not applied on timeout).
+
     pub retry: RetryPolicy,
 }
 
 impl ExecRequest {
-    /// Build a request for `program` with the given args.
     #[must_use]
     pub fn new(
         program: impl Into<PathBuf>,
@@ -109,7 +94,6 @@ impl ExecRequest {
         }
     }
 
-    /// Append pass-through environment entries.
     #[must_use]
     pub fn envs(
         mut self,
@@ -122,7 +106,6 @@ impl ExecRequest {
         self
     }
 
-    /// Remove inherited environment keys.
     #[must_use]
     pub fn env_remove(mut self, keys: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self {
         self.env_remove
@@ -130,49 +113,42 @@ impl ExecRequest {
         self
     }
 
-    /// Start the child with an empty environment.
     #[must_use]
     pub fn env_clear(mut self) -> Self {
         self.env_clear = true;
         self
     }
 
-    /// Route stdin when no explicit bytes are supplied.
     #[must_use]
     pub fn stdin_mode(mut self, mode: StdioMode) -> Self {
         self.stdin_mode = mode;
         self
     }
 
-    /// Route stdout.
     #[must_use]
     pub fn stdout_mode(mut self, mode: StdioMode) -> Self {
         self.stdout_mode = mode;
         self
     }
 
-    /// Route stderr.
     #[must_use]
     pub fn stderr_mode(mut self, mode: StdioMode) -> Self {
         self.stderr_mode = mode;
         self
     }
 
-    /// Set working directory.
     #[must_use]
     pub fn cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
         self.cwd = Some(cwd.into());
         self
     }
 
-    /// Set wall-clock timeout.
     #[must_use]
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
 
-    /// Bound each captured output stream independently.
     #[must_use]
     pub fn output_limits(mut self, stdout: usize, stderr: usize) -> Self {
         self.stdout_limit = Some(stdout);
@@ -180,14 +156,12 @@ impl ExecRequest {
         self
     }
 
-    /// Clear timeout (wait forever).
     #[must_use]
     pub fn no_timeout(mut self) -> Self {
         self.timeout = None;
         self
     }
 
-    /// Set retry policy.
     #[must_use]
     pub fn retry(mut self, retry: RetryPolicy) -> Self {
         self.retry = retry;
@@ -195,28 +169,21 @@ impl ExecRequest {
     }
 }
 
-/// Subprocess result.
 #[derive(Debug, Clone)]
 pub struct ExecResult {
-    /// Process exit status code (`None` if killed by signal / unavailable).
     pub code: Option<i32>,
-    /// Whether the process reported success (`ExitStatus::success`).
+
     pub success: bool,
-    /// Captured stdout.
+
     pub stdout: Vec<u8>,
-    /// Captured stderr.
+
     pub stderr: Vec<u8>,
-    /// Wall time of the final attempt.
+
     pub duration: Duration,
-    /// True when the run ended because `timeout` elapsed.
+
     pub timed_out: bool,
 }
 
-/// Async execution with optional timeout and retry.
-///
-/// # Errors
-/// Returns on invalid routing/limits, spawn or stream failure, output overflow,
-/// or failure to kill/reap a child. Timeout results contain empty output.
 pub async fn exec_async(request: &ExecRequest) -> Result<ExecResult> {
     let attempts = request.retry.max_retries.saturating_add(1);
     let mut last: Option<ExecResult> = None;
@@ -233,12 +200,6 @@ pub async fn exec_async(request: &ExecRequest) -> Result<ExecResult> {
     last.ok_or_else(|| anyhow::anyhow!("jackin-process: zero attempts scheduled"))
 }
 
-/// Spawn an async child using the same request model without waiting for it.
-///
-/// Retry and timeout apply only to `exec_*`; lifecycle callers own waiting,
-/// cancellation, and retries after this function returns. Pipe readers and
-/// their byte limits belong to the caller; explicit capture limits are rejected
-/// because this function cannot enforce them. Default exec limits do not apply.
 pub fn spawn_async(request: &ExecRequest) -> Result<tokio::process::Child> {
     validate_request(request, true)?;
     if request.stdin.is_some() {
@@ -251,10 +212,6 @@ pub fn spawn_async(request: &ExecRequest) -> Result<tokio::process::Child> {
         .with_context(|| format!("spawning {}", display_request(request)))
 }
 
-/// Spawn a synchronous child using the same request model without waiting.
-///
-/// The caller owns pipe limits and the entire child lifecycle, as in
-/// [`spawn_async`]. Explicit capture limits are rejected.
 pub fn spawn_sync(request: &ExecRequest) -> Result<std::process::Child> {
     validate_request(request, true)?;
     if request.stdin.is_some() {
@@ -267,13 +224,7 @@ pub fn spawn_sync(request: &ExecRequest) -> Result<std::process::Child> {
         .with_context(|| format!("spawning {}", display_request(request)))
 }
 
-/// Sync facade over [`exec_async`] using a current-thread runtime when needed.
-///
-/// # Errors
-/// Propagates spawn / runtime build failures.
 pub fn exec_sync(request: &ExecRequest) -> Result<ExecResult> {
-    // Prefer calling from outside an existing runtime; if one exists, use
-    // a nested current-thread runtime in a blocking section.
     if tokio::runtime::Handle::try_current().is_ok() {
         std::thread::scope(|s| {
             s.spawn(|| {
@@ -313,9 +264,6 @@ fn validate_request(request: &ExecRequest, spawning: bool) -> Result<()> {
     Ok(())
 }
 
-/// Keep the child and its private process group owned until every pipe closes.
-/// Dropping an externally cancelled future still kills its process group;
-/// Tokio's kill-on-drop fallback reaps the direct child.
 #[derive(Debug)]
 struct OwnedChild {
     child: tokio::process::Child,
@@ -349,8 +297,7 @@ impl OwnedChild {
     async fn kill_and_reap(&mut self) -> Result<()> {
         let group_result = self.kill_group();
         let kill_result = self.child.start_kill().context("killing child");
-        // Cleanup is bounded even when the operating system cannot reap a
-        // killed process promptly. Report failure rather than claim cleanup.
+
         tokio::time::timeout(Duration::from_secs(1), self.child.wait())
             .await
             .context("child did not reap within cleanup deadline")?
@@ -446,8 +393,7 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
             }
             Ok::<_, anyhow::Error>(())
         };
-        // Keep the direct child unreaped while descendants can retain pipes.
-        // Its reserved PID prevents the process-group ID from being reused.
+
         let ((), stdout, stderr) = tokio::try_join!(
             write,
             read_captured(
@@ -553,10 +499,6 @@ fn display_request(request: &ExecRequest) -> String {
     }
 }
 
-/// Convenience: run and require success; return stdout.
-///
-/// # Errors
-/// Non-success exit or spawn failure.
 pub async fn capture_stdout_async(request: &ExecRequest) -> Result<Vec<u8>> {
     let result = exec_async(request).await?;
     if result.timed_out {
@@ -578,10 +520,6 @@ pub async fn capture_stdout_async(request: &ExecRequest) -> Result<Vec<u8>> {
     Ok(result.stdout)
 }
 
-/// Sync [`capture_stdout_async`].
-///
-/// # Errors
-/// Non-success exit or spawn failure.
 pub fn capture_stdout_sync(request: &ExecRequest) -> Result<Vec<u8>> {
     let result = exec_sync(request)?;
     if result.timed_out {

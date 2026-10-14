@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Container name slot management: claim, lock, and credential verification.
-
 use fs4::FileExt;
 
 use jackin_core::JackinPaths;
@@ -12,16 +10,8 @@ use jackin_docker::docker_client::ContainerState;
 use jackin_docker::docker_client::DockerApi;
 use jackin_runtime_attach_sessions::sessions::docker_unavailable_msg;
 
-/// Cap retries so a filesystem without working flock (NFS without
-/// lockd, exotic mount) surfaces as an actionable error instead of an
-/// unbounded spin. 64 attempts at 40 bits of ID entropy is enough that
-/// a genuine collision-space exhaustion is astronomically unlikely;
-/// hitting the cap signals an environmental fault, not bad luck.
 const CLAIM_MAX_ATTEMPTS: u32 = 64;
 
-/// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
-/// Random IDs avoid deterministic role slots; the lock still protects the
-/// vanishingly small random-collision window and concurrent launch races.
 pub async fn claim_container_name(
     paths: &JackinPaths,
     workspace_name: Option<&WorkspaceName>,
@@ -141,8 +131,6 @@ async fn acquire_name_lock(paths: &JackinPaths, name: &str) -> std::io::Result<s
         .map_err(std::io::Error::other)?
 }
 
-/// Acquire a persistent name inode outside every prunable runtime root.
-/// Closing the handle releases ownership; maintenance never removes its inode.
 pub fn try_acquire_name_lock(paths: &JackinPaths, name: &str) -> std::io::Result<std::fs::File> {
     let lock_file =
         jackin_runtime_coordination::coordination::open_lock(paths, &format!("name-{name}"))?;
@@ -150,13 +138,6 @@ pub fn try_acquire_name_lock(paths: &JackinPaths, name: &str) -> std::io::Result
     Ok(lock_file)
 }
 
-/// Token-mode pre-flight for the `[github]` axis: `GH_TOKEN` must
-/// resolve to a non-empty value before launch proceeds. The other
-/// modes (`Sync` / `Ignore`) have nothing to verify here.
-///
-/// Extracted from `load_role_with` so the bail-message shape and
-/// trigger condition can be unit-pinned without orchestrating the
-/// full launch flow.
 pub fn verify_github_token_present(
     github_mode: jackin_config::GithubAuthMode,
     resolved_token: Option<&str>,
@@ -179,10 +160,6 @@ pub fn verify_github_token_present(
     );
 }
 
-/// Resolve the `[…github.env]` declarations through the same
-/// `op://` + host-env dispatch as regular operator env. Honors the
-/// caller-supplied `op_runner` / `host_env` test seams (the hub
-/// forwards its `LoadOptions` seams) so tests stay hermetic.
 pub fn resolve_github_env_map(
     declarations: &std::collections::BTreeMap<String, jackin_core::EnvValue>,
     op_runner: Option<&dyn jackin_env::OpRunner>,

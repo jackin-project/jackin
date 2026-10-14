@@ -56,8 +56,6 @@ fn detect_explicit_flag_wins() {
 
 #[test]
 fn detect_defaults_to_human_when_actions_unset() {
-    // Env mutation is forbidden (`unsafe_code = forbid`); cover the
-    // non-Actions path only when the runner has not set GITHUB_ACTIONS.
     if env::var_os("GITHUB_ACTIONS").is_none() {
         assert_eq!(Format::detect(None), Format::Human);
     }

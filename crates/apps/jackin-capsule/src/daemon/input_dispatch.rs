@@ -1,5 +1,3 @@
-//! TUI input dispatch methods for the daemon-owned `Multiplexer`.
-
 mod actions;
 mod dialog_actions;
 mod input_events;

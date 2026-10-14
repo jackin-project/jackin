@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings panel capability traits and general state.
 
 pub trait SettingsPanelDirty {
     fn panel_is_dirty(&self) -> bool;

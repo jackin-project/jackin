@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker coordination errors.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,9 +9,6 @@ use crate::{capability_for_binding, publish};
 use jackin_usage_discovery::ValidatedUsageDiscovery;
 use jackin_usage_host_accounts::CanonicalAccountSubject;
 
-/// Preserve the canonical identity evidence that host discovery already
-/// merged before the broker publisher turns generation views into the
-/// Capsule-facing projection. Labels are deliberately not consulted.
 pub(crate) fn publication_identity_metadata(
     discovery: &ValidatedUsageDiscovery,
 ) -> BTreeMap<UsageAccountCapability, publish::AccountIdentityMetadata> {
@@ -33,8 +29,7 @@ pub(crate) fn publication_identity_metadata(
         let entry = evidence
             .entry(capability)
             .or_insert_with(|| (identity_kind, BTreeSet::new()));
-        // A provider-issued id is stronger evidence than a stable display
-        // handle if malformed input ever aliases them to one capability.
+
         if identity_kind == UsageIdentityKindV1::ProviderAccountId {
             entry.0 = UsageIdentityKindV1::ProviderAccountId;
         }

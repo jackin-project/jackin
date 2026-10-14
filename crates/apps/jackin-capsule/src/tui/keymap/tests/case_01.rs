@@ -63,7 +63,7 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
             _ => None,
         })
         .collect();
-    // h advertises all four directions with a grouped glyph; j/k/l are HiddenAlias.
+
     assert!(
         keys.contains(&"h/j/k/l"),
         "must show grouped nav glyph: {keys:?}"
@@ -84,7 +84,7 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
         !keys.contains(&"l"),
         "l is HiddenAlias and must not appear in hints: {keys:?}"
     );
-    // chord_glyph derives uppercase from Char('c') / Char('x') when glyph: None
+
     assert!(keys.contains(&"C"), "must show C (new tab): {keys:?}");
     assert!(
         keys.contains(&"X"),
@@ -94,7 +94,6 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
 
 #[test]
 fn capsule_global_keymap_dispatches_ctrl_q() {
-    // Acceptance criterion for roadmap item A.
     let chord = raw_bytes_to_chord(&[0x11]).expect("0x11 → Ctrl-Q chord");
     assert_eq!(chord, KeyChord::ctrl(KeyCode::Char('q')));
     assert_eq!(
@@ -149,8 +148,7 @@ fn filter_list_keymap_dispatches_every_advertised_chord() {
             "wrong action for {raw:?}"
         );
     }
-    // Printable input is not in the table — it falls through to the
-    // caller's filter-building path.
+
     for raw in [&b"q"[..], b"a", b" ", b":"] {
         let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
         assert_eq!(
@@ -192,15 +190,7 @@ fn rename_keymap_dispatches_every_advertised_chord() {
 
 #[test]
 fn read_only_dismiss_keymap_accepts_historical_dismiss_set() {
-    for raw in [
-        &b"\x1b"[..], // Esc
-        b"q",
-        b"Q",
-        b"\x03", // Ctrl+C
-        b"\x11", // Ctrl+Q
-        b"\x7f", // Backspace (DEL)
-        b"\x08", // Ctrl+H / older Backspace
-    ] {
+    for raw in [&b"\x1b"[..], b"q", b"Q", b"\x03", b"\x11", b"\x7f", b"\x08"] {
         let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
         assert_eq!(
             READ_ONLY_DISMISS_KEYMAP.dispatch(chord),
@@ -208,7 +198,7 @@ fn read_only_dismiss_keymap_accepts_historical_dismiss_set() {
             "{raw:?} must dismiss read-only dialog"
         );
     }
-    // Non-dismiss keys must not resolve.
+
     for raw in [&b"a"[..], b"\r", b"\x1b[A"] {
         let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
         assert_eq!(

@@ -36,7 +36,7 @@ fn claude_plugins_render_one_readable_run_layer() {
     );
     assert!(dockerfile.contains("    claude plugin install 'caveman'"));
     assert!(dockerfile.contains("    claude plugin install 'rtk'"));
-    // Official + configured marketplace are readable, with --sparse passed.
+
     assert!(
         dockerfile
             .contains("(claude plugin marketplace add anthropics/claude-plugins-official || true)")
@@ -133,9 +133,6 @@ fn entrypoint_setup_once_marker_is_private_per_session() {
 
 #[test]
 fn entrypoint_exports_hook_state_dir_before_hooks_run() {
-    // Landlock-confined sessions cannot write capsule-wide /jackin/state, so
-    // hooks must write under JACKIN_HOOK_STATE_DIR. The export must precede
-    // ALL hook execution (setup-once, source, preflight) so hooks inherit it.
     assert!(ENTRYPOINT_SH.contains(
         "export JACKIN_HOOK_STATE_DIR=\"${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hook-state\""
     ));
@@ -164,7 +161,6 @@ fn entrypoint_delegates_deterministic_setup_to_jackin_capsule() {
 
 #[test]
 fn entrypoint_marker_touched_only_after_setup_once_succeeds() {
-    // Reordering would write the marker on hook failure and break first-launch retries.
     let run_pos = ENTRYPOINT_SH.find("run_hook setup-once").unwrap();
     let touch_pos = ENTRYPOINT_SH.find("touch \"$setup_once_marker\"").unwrap();
     assert!(run_pos < touch_pos);
@@ -172,9 +168,6 @@ fn entrypoint_marker_touched_only_after_setup_once_succeeds() {
 
 #[test]
 fn entrypoint_run_hook_helper_captures_rc_before_failure() {
-    // `$?` after `if ! cmd; then` is 0 — capture before the test.
-    // Pin the pattern so a regression to `if ! "$path"` (which
-    // silently makes failure exit 0) is caught.
     let helper = extract_block(ENTRYPOINT_SH, "run_hook() {", "\n}\n");
     assert!(helper.contains("local rc=0"));
     assert!(helper.contains("( cd \"$hook_cwd\" && \"$path\" ) || rc=$?"));
@@ -197,14 +190,6 @@ fn entrypoint_runs_preflight_from_agent_home() {
 
 #[test]
 fn entrypoint_source_hook_block_clears_trap_and_restores_pwd_and_xtrace() {
-    // The source block must:
-    //   - save PWD before sourcing
-    //   - suspend xtrace via `case $- in *x*)` to avoid leaking
-    //     expanded secrets when the shell was started with tracing
-    //   - capture rc BEFORE testing (same `$?`-after-`!cmd` trap as run_hook)
-    //   - restore xtrace
-    //   - clear the ERR trap before the cd so a vanished pwd
-    //     doesn't fire a hook-installed trap
     let block = extract_block(
         ENTRYPOINT_SH,
         "if [ -x /jackin/runtime/hooks/source.sh ]; then",
@@ -230,8 +215,6 @@ fn entrypoint_source_hook_block_clears_trap_and_restores_pwd_and_xtrace() {
 
 #[test]
 fn renders_derived_dockerfile_with_only_source_hook() {
-    // Mixed-presence: only `source` set. Header block + exactly
-    // one COPY line; absent hook filenames must not appear.
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
         Some(&HooksConfig {
@@ -293,10 +276,6 @@ fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
 
 #[test]
 fn build_context_dockerignore_allowlists_only_declared_hooks() {
-    // ensure_runtime_assets_are_included must allowlist exactly the
-    // hook source paths in the manifest. A regression that dropped
-    // the per-hook loop would silently filter scripts out of the
-    // build context and fail at docker build time only.
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("hooks")).unwrap();
     std::fs::write(repo.path().join("hooks/source.sh"), "#!/bin/bash\n").unwrap();

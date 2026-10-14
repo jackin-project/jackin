@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker projection loading.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
@@ -45,8 +44,7 @@ pub(crate) fn load_projection(
     let store = FileProjectionStateStore::under_data_dir(&config.data_dir);
     let loaded = match store.load_for_broker_migration() {
         Ok(loaded) => loaded,
-        // v1 and invalid envelopes are quarantined by the store. The broker
-        // deliberately rebuilds an empty projection from current discovery.
+
         Err(jackin_usage_coordinator::StateStoreError::Corrupt) => None,
         Err(
             jackin_usage_coordinator::StateStoreError::Unavailable
@@ -84,10 +82,6 @@ pub(crate) fn load_projection(
     })
 }
 
-/// Normalize the previous publication schema before its contents are exposed.
-/// Old surface IDs are converted to canonical provider IDs, while every old
-/// identity label is downgraded to unverified because schema v2 cannot prove
-/// which values came from discovery versus a display-label fallback.
 fn migrate_legacy_projection(projection: &mut UsageProjectionV1) -> Result<(), String> {
     let mut provider_ids = BTreeSet::new();
     for provider in &mut projection.providers {

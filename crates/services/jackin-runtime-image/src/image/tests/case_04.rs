@@ -129,8 +129,7 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let branch = "feat/instant-launch";
-    // The runner returns HEAD SHA `abc123`, so the reuse lookup keys on the
-    // commit-tagged branch image (`jk_agent-smith_feat-instant-launch:abc123`).
+
     let image = image_name_for_branch(&selector, branch, Some("abc123"));
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let local_base = role_base_image_name(&selector, Some(branch), Some("abc123"));

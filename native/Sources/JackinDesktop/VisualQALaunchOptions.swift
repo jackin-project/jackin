@@ -4,7 +4,7 @@
 import CoreGraphics
 import Foundation
 
-/// Explicit process-local controls for deterministic native visual-QA runs.
+
 struct VisualQALaunchOptions: Equatable {
     enum Selection: Equatable {
         case fixtureDefault

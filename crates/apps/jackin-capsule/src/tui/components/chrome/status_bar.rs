@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Status/tab-bar widget: brand pill, tab cells, menu button, underline.
 
 use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
 use ratatui::{
@@ -11,22 +10,13 @@ use ratatui::{
 };
 use termrock::style::DesignSystem;
 
-// ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
-
-/// Brand pill + tab cells (row 0) and the active-tab underline (row 1),
-/// painted into the Ratatui `Buffer` so the `SocketBackend` diff tracks every
-/// chrome cell. The `plan` is computed once per frame by the compositor and
-/// shared with `StatusBar::set_click_regions_from_plan`, so the painted cells
-/// and the click regions derive from the same layout and cannot drift.
 #[derive(Debug)]
 pub struct StatusBarWidget<'a> {
     pub plan: &'a StatusBarPlan,
     pub prefix_mode: PrefixMode,
     pub hovered_tab: Option<usize>,
     pub menu_hovered: bool,
-    /// P5: whether the tab bar itself holds focus. The active-tab underline is
-    /// the single focus indicator — bright phosphor-green when the bar is
-    /// focused, neutral (white) when focus is in the agent content below.
+
     pub focused: bool,
 }
 
@@ -36,7 +26,7 @@ impl StatusBarWidget<'_> {
         let style = tab_cell_style(cell.active, hovered);
         let bg = style.bg.unwrap_or(Color::Reset);
         let glyph_char = tab_glyph_char(cell.glyph);
-        // Cell layout: ` <name> <sep> <glyph> ` — matches emit_tab_row0.
+
         let content = format!(" {} {} ", cell.name, glyph_char);
         let x = area.x.saturating_add(cell.start_col0);
         buf.set_string(x, area.y, &content, style);
@@ -132,9 +122,6 @@ impl Widget for StatusBarWidget<'_> {
             }
         }
 
-        // Row 0: brand pill — green block, black word, white chevron. The
-        // chevron pins the brand constant: head recolored the Role::Text it
-        // used to read, and the brand look is an invariant across the bump.
         let pill = Style::default()
             .bg(jackin_tui::tokens::BRAND_BLOCK)
             .add_modifier(Modifier::BOLD);
@@ -147,12 +134,10 @@ impl Widget for StatusBarWidget<'_> {
         );
         buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
-        // Row 0: tab cells.
         for (idx, cell) in plan.cells.iter().enumerate() {
             self.paint_tab(cell, idx, area, buf);
         }
 
-        // Row 0: right-side menu button.
         if let Some(start_1based) = plan.hint_start {
             let (bg, fg) = match (self.prefix_mode, self.menu_hovered) {
                 (PrefixMode::Idle, false) => (
@@ -184,7 +169,6 @@ impl Widget for StatusBarWidget<'_> {
             );
         }
 
-        // Row 0: overflow indicator when a tab was clipped.
         if let Some(pos_1based) = plan.overflow_col {
             buf.set_string(
                 area.x.saturating_add(pos_1based.saturating_sub(1)),
@@ -197,8 +181,6 @@ impl Widget for StatusBarWidget<'_> {
             );
         }
 
-        // Row 1: underline beneath the active tab cell only (blank elsewhere),
-        // matching the shared capsule/console focus signal.
         if area.height > 1
             && let Some(active) = plan.cells.iter().find(|c| c.active)
         {

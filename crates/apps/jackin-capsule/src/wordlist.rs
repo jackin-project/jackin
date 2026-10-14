@@ -1,19 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-/// Curated wordlist for assigning unique, human-memorable codenames to tabs.
-///
-/// Three semantic families — animals, landforms, weather/celestial — chosen
-/// for short length, unambiguous pronunciation, and easy orientation. A total
-/// of ~150 words gives a pool far larger than any realistic tab fleet.
-///
-/// Assignment cycles from a random offset seeded once at daemon start.
-/// Codenames are **never reused** within a container lifetime: once a word is
-/// assigned to any tab (even a now-closed one), it moves to the retired set and
-/// is not picked again. When the pool is exhausted the fallback appends `-2`,
-/// `-3`, … to previously-used bare words until a unique name is found.
 pub static WORDLIST: &[&str] = &[
-    // Animals
     "badger",
     "crane",
     "falcon",
@@ -75,7 +63,6 @@ pub static WORDLIST: &[&str] = &[
     "nutria",
     "osprey",
     "petrel",
-    // Landforms
     "arch",
     "bay",
     "bluff",
@@ -128,7 +115,6 @@ pub static WORDLIST: &[&str] = &[
     "wash",
     "xenolith",
     "yardang",
-    // Weather and celestial
     "aurora",
     "cirrus",
     "frost",
@@ -163,11 +149,6 @@ pub static WORDLIST: &[&str] = &[
     "sleet",
 ];
 
-/// Pick the next codename that appears in neither `live` nor `retired`.
-///
-/// Cycles through `WORDLIST` starting at `offset % WORDLIST.len()`.
-/// Falls back to `<word>-N` (N ≥ 2) appended to retired words when the
-/// entire bare-word pool is exhausted — ensures uniqueness without panic.
 #[must_use]
 pub fn pick_codename(
     live: &std::collections::HashSet<String>,
@@ -175,14 +156,14 @@ pub fn pick_codename(
     offset: usize,
 ) -> String {
     let len = WORDLIST.len();
-    // First pass: find an unused bare word.
+
     for i in 0..len {
         let word = WORDLIST[(offset + i) % len];
         if !live.contains(word) && !retired.contains(word) {
             return word.to_owned();
         }
     }
-    // Fallback: extend a retired word with a numeric suffix until unique.
+
     let base = WORDLIST[offset % len];
     for n in 2u32.. {
         let candidate = format!("{base}-{n}");

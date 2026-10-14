@@ -375,9 +375,6 @@ fn discovery_executor_rejects_catalog_that_does_not_match_current_scope() {
 
 #[test]
 fn discovery_provider_failures_carry_each_gap_reason() {
-    // Every gap kind keeps its failure category but renders the collector's
-    // specific message instead of the generic fallback. Payloads below are
-    // the collectors' real gap strings.
     for (status, kind, gap) in [
         (
             UsageSnapshotStatus::Error,

@@ -1,18 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Role-source resolution helpers for console role loading.
-
 use std::collections::BTreeMap;
 
 use jackin_config::{AppConfig, RoleSource};
 use jackin_core::RoleSelector;
 
-/// Resolve a configured role source, or derive the default GitHub source for a
-/// bare built-in role name.
-///
-/// Namespaced selectors are delegated to `AppConfig::resolve_role_source` so
-/// config-owned selector rules stay authoritative.
 pub fn candidate_role_source(
     config: &AppConfig,
     selector: &RoleSelector,

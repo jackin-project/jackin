@@ -49,7 +49,6 @@ fn amp_tier_line_maps_agent_dollars_orb_hours_and_renewal() {
     assert_eq!(orb.remaining_percent, Some(75));
     assert_eq!(orb.resets_at, Some(now + 12 * 86_400));
 
-    // Daily headline is untouched by subscription pools.
     assert_eq!(
         status_bar_headline_for_surface(UsageSurface::Amp, &buckets).as_deref(),
         Some("Free 61%")
@@ -113,7 +112,6 @@ fn amp_legacy_subscription_line_maps_percent_pools() {
         .expect("orb bucket");
     assert_eq!(orb.remaining_percent, Some(55));
 
-    // The `Amp <plan> Subscription:` variant parses identically.
     let variant = parse_amp_usage_output(
         "Amp Business Subscription: 30% other usage and 55% orb usage remaining - resets upon renewal in 5 days",
     )

@@ -1,20 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded host-side budgets for synchronous provider probes.
-//!
-//! The coordinator only classifies elapsed time *after* a probe returns, so an
-//! unbounded adapter call (a hung child process or RPC) would hold a
-//! coordinator worker forever and stall every account behind it. This module
-//! bounds the wait: the blocking probe runs on a worker thread and the broker
-//! reclaims its generation when the budget expires.
-//!
-//! Budget expiry returns a typed [`ProviderProbeOutcome::Failure`]; it never
-//! cancels broker state. The coordinator completes the generation through its
-//! normal failure path, which preserves last-good quota and keeps generation
-//! ownership intact for the next request. A late worker result is dropped:
-//! its channel send fails once the broker has moved on.
-
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -22,16 +8,9 @@ use jackin_protocol::usage_broker::UsageCoordinationErrorKind;
 
 use jackin_usage_coordinator::ProviderProbeOutcome;
 
-/// Budget expiry marker for [`run_probe_with_budget`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProbeBudgetExpired;
 
-/// Per-probe authorization fence shared with a detached task. A budget
-/// timeout closes it before the coordinator terminalizes the generation, so
-/// late Claude work can finish an already admitted operation but cannot begin
-/// another request or commit refreshed credential material.
-///
-/// This is an in-process gate, not a protocol field and not a schema version.
 #[derive(Clone, Debug)]
 pub struct ProbeLiveness {
     active: Arc<Mutex<bool>>,
@@ -44,7 +23,6 @@ impl ProbeLiveness {
         }
     }
 
-    /// Whether this probe may still begin or commit an operation.
     fn is_current(&self) -> bool {
         *self
             .active
@@ -52,17 +30,10 @@ impl ProbeLiveness {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Atomically admit one operation unless this probe has timed out or
-    /// completed. The check holds the same mutex as [`Self::commit_if_current`].
-    /// The caller runs an admitted operation without the mutex and must admit
-    /// again before a later operation. Returns `false` once the fence is closed.
     pub fn admit_operation(&self) -> bool {
         self.is_current()
     }
 
-    /// Run one short commit while holding the cancellation gate. If timeout
-    /// wins the gate first, the commit is `None` and `operation` does not run.
-    /// If the commit wins first, timeout waits until it returns before closing.
     pub fn commit_if_current(&self, operation: &mut dyn FnMut() -> bool) -> Option<bool> {
         let active = self
             .active
@@ -79,12 +50,6 @@ impl ProbeLiveness {
     }
 }
 
-/// Run a blocking provider probe to completion or budget expiry.
-///
-/// A worker panic propagates to the caller (the coordinator classifies it as
-/// `OwnerLost`, exactly as if the probe had run inline). On expiry the worker
-/// is detached; adapter-level timeouts bound its remaining lifetime and its
-/// late result is dropped instead of being merged.
 pub fn run_probe_with_budget<R, F>(budget: Duration, task: F) -> Result<R, ProbeBudgetExpired>
 where
     F: FnOnce() -> R + Send + 'static,
@@ -93,8 +58,6 @@ where
     run_probe_with_liveness(budget, move |_| task())
 }
 
-/// Variant of [`run_probe_with_budget`] that gives the worker its revocable
-/// admission fence. Non-Claude probes keep the simpler no-argument API.
 pub fn run_probe_with_liveness<R, F>(budget: Duration, task: F) -> Result<R, ProbeBudgetExpired>
 where
     F: FnOnce(ProbeLiveness) -> R + Send + 'static,
@@ -114,7 +77,7 @@ where
     let Ok(_worker) = worker else {
         return Err(ProbeBudgetExpired);
     };
-    // Dropping the handle detaches the worker; a late send fails silently.
+
     match receiver.recv_timeout(budget) {
         Ok(Ok(result)) => Ok(result),
         Ok(Err(payload)) => std::panic::resume_unwind(payload),
@@ -125,10 +88,6 @@ where
     }
 }
 
-/// Typed probe failure produced when a provider probe exceeds its budget.
-///
-/// The coordinator maps this to a `Failed` generation that keeps last-good
-/// quota and its normal retry lifecycle; broker ownership is unaffected.
 pub fn probe_timeout_outcome() -> ProviderProbeOutcome {
     ProviderProbeOutcome::Failure {
         kind: UsageCoordinationErrorKind::ProviderTimeout,

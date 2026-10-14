@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage body line builders.
 
 use super::{
     UsageAccount, UsageMetricGroup, UsageWindow, credential_expiry_label, freshness_age_label,
@@ -16,8 +15,6 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-/// Full account body (`detail`): every window with quota/raw/pace extras,
-/// every metric group as a full block, and every issue line.
 pub(crate) fn append_account_full_body(
     lines: &mut Vec<Line<'static>>,
     account: &UsageAccount,
@@ -64,8 +61,6 @@ pub(crate) fn append_account_full_body(
     lines.push(Line::from(""));
 }
 
-/// Summary account body: one row per window, compact group rows, and an
-/// issue count. Full extras stay behind `Enter`.
 pub(crate) fn append_account_summary_body(
     lines: &mut Vec<Line<'static>>,
     account: &UsageAccount,
@@ -100,9 +95,6 @@ pub(crate) fn refreshing_line() -> Line<'static> {
     ))
 }
 
-/// Quota state, raw-percent, and pace detail shared by the detail view and
-/// the overview panel. The `Available` state is silent: it is the default and
-/// the meter already shows it.
 pub(crate) fn append_window_extra(lines: &mut Vec<Line<'static>>, window: &UsageWindow) {
     if window.quota_state != UsageQuotaStateV1::Available {
         lines.push(Line::from(format!(
@@ -118,8 +110,6 @@ pub(crate) fn append_window_extra(lines: &mut Vec<Line<'static>>, window: &Usage
     }
 }
 
-/// Account- and provider-scoped issue lines shared by the detail view and
-/// the overview panel.
 pub(crate) fn append_account_issue_lines(
     lines: &mut Vec<Line<'static>>,
     account: &UsageAccount,
@@ -139,8 +129,6 @@ pub(crate) fn append_account_issue_lines(
     }
 }
 
-/// One window as an account-summary row: label, meter, and value/reset.
-/// Quota/raw/pace extras stay in the full view (`detail`).
 pub(crate) fn append_summary_window(
     lines: &mut Vec<Line<'static>>,
     window: &UsageWindow,
@@ -192,8 +180,6 @@ pub(crate) fn append_overview_window(
     append_window_extra(lines, window);
 }
 
-/// One metric group as a compact overview row: label plus typed value, with
-/// reset/renewal facts and group issues on following lines.
 pub(crate) fn append_overview_group(
     lines: &mut Vec<Line<'static>>,
     group: &UsageMetricGroup,
@@ -217,9 +203,6 @@ pub(crate) fn append_overview_group(
     }
 }
 
-/// Reset, renewal, and balance-expiry facts for one group. Each timestamp
-/// renders under its own word — reset is never shown as renewal or expiry —
-/// and absent timestamps render nothing at all.
 pub(crate) fn append_group_schedule_lines(
     lines: &mut Vec<Line<'static>>,
     group: &UsageMetricGroup,
@@ -249,9 +232,6 @@ pub(crate) fn append_group_schedule_lines(
     }
 }
 
-/// One metric group as a full detail block: kind, quota state, and per-group
-/// freshness in the header, then scope, typed value, schedule, provenance,
-/// and group-scoped issues.
 pub(crate) fn append_metric_group(
     lines: &mut Vec<Line<'static>>,
     group: &UsageMetricGroup,
@@ -363,8 +343,6 @@ pub(crate) fn row_style(selected: bool) -> Style {
     }
 }
 
-/// Meter bar for a known percent. `None` renders no bar: unknown quota
-/// must never show an empty (fabricated) meter.
 pub(crate) fn meter_line(width: usize, percent: Option<u8>) -> Option<String> {
     let percent = usize::from(percent?.min(100));
     let filled = width.saturating_mul(percent) / 100;
@@ -375,13 +353,6 @@ pub(crate) fn meter_line(width: usize, percent: Option<u8>) -> Option<String> {
     ))
 }
 
-/// Meter color from the canonical quota state, never from a local percent
-/// threshold. Severity is Rust-owned quota semantics: the projection maps
-/// API `Danger`→`Exhausted` and `Warn`→`Warning`, and the Capsule accent
-/// reads that same severity — so a renderer-inferred 15/35 split would
-/// color the same bucket differently on the two surfaces (S4/S5 parity).
-/// Unknown and permission states keep the neutral default: without usable
-/// quota the bar usually does not render at all.
 pub(crate) fn meter_style(quota_state: UsageQuotaStateV1) -> Style {
     match quota_state {
         UsageQuotaStateV1::Exhausted | UsageQuotaStateV1::Error => Style::default().fg(Color::Red),

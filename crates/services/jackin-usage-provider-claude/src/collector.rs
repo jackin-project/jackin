@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Consent-fenced Claude OAuth collection for one foreground source lease.
 
 use zeroize::Zeroizing;
 
@@ -18,19 +17,11 @@ use super::{
 };
 use super::{spend::fetch_claude_oauth_usage, wave::claude_resolved_view_from_result};
 
-/// A consent race can suppress collection while retaining an observed HTTP
-/// failure status for safe broker diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaudeCollectionError {
     ConsentRevoked { provider_http_status: Option<u16> },
 }
 
-/// Collect from the exact source captured by an active foreground lease.
-/// Every network and Keychain boundary rechecks current monitor consent.
-/// Admission is checked before the first fetch and before a 401 Keychain
-/// reread; an admitted operation is not cancelled. The refreshed payload is
-/// replaced only inside `commit_if_current` (`None` skips the write). Fence
-/// rejection returns [`ClaudeCollectionError::ConsentRevoked`].
 #[expect(
     clippy::type_complexity,
     reason = "the lease snapshot keeps the focused view beside optional rate-limit and failure metadata"

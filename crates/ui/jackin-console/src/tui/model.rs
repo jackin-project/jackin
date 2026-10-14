@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Top-level console TUI app model.
-
 mod create_prelude;
 mod launch_prompt;
 mod modal;
@@ -16,8 +14,6 @@ pub use self::stage::*;
 #[cfg(test)]
 mod tests;
 
-/// Single-variant today; kept as `enum` so future stages can land without
-/// churning every match site.
 #[derive(Debug)]
 pub enum ConsoleAppStage<Manager> {
     Manager(Manager),
@@ -26,15 +22,14 @@ pub enum ConsoleAppStage<Manager> {
 #[derive(Debug)]
 pub struct ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache> {
     pub stage: ConsoleAppStage<Manager>,
-    /// Launch input is stored as a value, not as a selected row index, so each
-    /// dispatch can rebuild its current workspace choice from current config.
+
     pub pending_launch: Option<LaunchInput>,
     pub pending_launch_role: Option<RoleSelector>,
-    /// Process-lifetime op metadata cache shared by picker instances.
+
     pub op_cache: OpCache,
-    /// Probed once at startup; mid-session installs require restart.
+
     pub op_available: bool,
-    /// Overlay above any sub-stage.
+
     pub quit_confirm: Option<crate::tui::components::ConfirmState>,
 }
 

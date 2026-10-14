@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage view sanitization.
 
 use jackin_protocol::control::FocusedUsageView;
 

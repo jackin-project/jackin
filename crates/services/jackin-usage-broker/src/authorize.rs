@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential binding authorization proofs.
 
 use std::collections::BTreeSet;
 
@@ -16,7 +15,7 @@ pub(crate) enum ForwardingRequirement {
     Profile(String),
     Env {
         surface: String,
-        /// Exact launch keys synthesized for this binding's provider source.
+
         launch_keys: BTreeSet<String>,
         account_ids: BTreeSet<String>,
         material: Option<ProviderCredentialSourceMaterial>,
@@ -24,12 +23,6 @@ pub(crate) enum ForwardingRequirement {
     Capability,
 }
 
-/// Match the staged consumer key to the broker's canonical discovery key.
-///
-/// The key is an agent/provider contract alias, not the protected source
-/// identity. The source declaration, account, surface, and material
-/// fingerprint remain exact; only the closed provider alias sets below may
-/// bridge a launch-native key to the canonical discovery label.
 pub(crate) fn credential_keys_match(surface: &str, canonical: &str, staged: &str) -> bool {
     if canonical == staged {
         return true;
@@ -167,11 +160,6 @@ pub(crate) fn record_key_binding(
     source == &material.source && fingerprint == &material.material_fingerprint
 }
 
-/// Authorize a capability against every relevant launch proof and return the
-/// exact binding whose source may be refreshed. Multiple route bindings may
-/// share one canonical capability, but each proof must resolve to exactly one
-/// compatible binding. Unrelated account/surface proofs are ignored;
-/// conflicts and unexpected keys fail closed.
 pub(crate) fn authorize_credential_binding_group(
     bindings: &[ValidatedCredentialBinding],
     surface: &str,
@@ -188,9 +176,6 @@ pub(crate) fn authorize_credential_binding_group(
         })
         .collect::<Vec<_>>();
 
-    // A capability group must never let env proof select a profile or let a
-    // profile's mere presence authorize an env route. Pure-profile behavior
-    // remains the baseline path.
     if has_profile && !env_bindings.is_empty() {
         return None;
     }
@@ -203,9 +188,7 @@ pub(crate) fn authorize_credential_binding_group(
     if env_bindings.is_empty() {
         return None;
     }
-    // A duplicated account/surface/launch-key binding is ambiguous when its
-    // source or material differs. Reject that conflict before proof matching;
-    // a valid proof for one side must never authorize the other side.
+
     let mut key_bindings = Vec::<(String, String, UsageCredentialSourceIdentity, String)>::new();
     for binding in &env_bindings {
         let ValidatedCredentialSource::Env {

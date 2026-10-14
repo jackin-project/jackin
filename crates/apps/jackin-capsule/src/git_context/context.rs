@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Branch/head context readers.
 
 use super::{git_capture_at_workdir, read_git_ref_oid};
 
@@ -9,22 +8,8 @@ use std::path::{Path, PathBuf};
 use crate::session::{BranchName, GitContext, Oid};
 
 pub(crate) fn git_current_context(workdir: &Path) -> GitContext {
-    // Try the cheap path first: read `.git/HEAD` and parse the symref.
-    // For a normal checkout on a branch the file is one line of
-    // `ref: refs/heads/<name>\n` (no subprocess fork, ~50µs vs ~3-15ms
-    // for `git branch --show-current`). Detached HEAD writes the raw
-    // SHA which we treat as "no branch" — the bar slot stays hidden,
-    // matching `git branch --show-current` which prints empty.
-    //
-    // Falls back to the subprocess path for worktrees (where `.git`
-    // is a file, not a directory) and for any other unusual layout
-    // the file-read approach cannot handle.
     if let Some(context) = read_context_from_git_metadata(workdir) {
         return match context {
-            // `Branch` with no head means the loose+packed lookup
-            // missed (unborn, race with `pack-refs`, etc.). Try the
-            // subprocess as a last-resort recovery for that single
-            // case rather than ship a head-less context.
             GitContext::Branch { name, head: None } => {
                 let head = git_capture_at_workdir(workdir, &["rev-parse", "--verify", "HEAD"])
                     .as_deref()
@@ -71,9 +56,6 @@ pub(crate) fn read_context_from_git_metadata(workdir: &Path) -> Option<GitContex
             ref_name,
         );
         return Some(match BranchName::parse(ref_name) {
-            // `ref:` pointing outside `refs/heads/` (e.g. refs/remotes/origin/HEAD)
-            // is treated as detached for our chrome purposes — we have no branch
-            // to show and the resolved tip (if any) is the head OID.
             Some(name) => GitContext::Branch { name, head: oid },
             None => oid.map_or(GitContext::Absent, |head| GitContext::Detached { head }),
         });

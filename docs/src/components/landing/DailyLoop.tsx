@@ -1,4 +1,4 @@
-// docs/components/landing/DailyLoop.tsx
+
 import { loopFrames } from './loopData';
 
 export function DailyLoop() {

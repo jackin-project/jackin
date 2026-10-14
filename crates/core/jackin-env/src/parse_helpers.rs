@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Parse helpers shared across operator-env modules.
-
-/// Extract a host env var name from `$NAME` or `${NAME}` forms.
-///
-/// Returns `None` when the string is not a host ref or the name is invalid.
 pub fn parse_host_ref(value: &str) -> Option<&str> {
     if let Some(rest) = value.strip_prefix("${")
         && let Some(name) = rest.strip_suffix('}')

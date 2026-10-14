@@ -77,41 +77,41 @@ pub(super) fn elf64_x86_64_version_binary(binary: &str, version: &str) -> Vec<u8
         0x1a,
         0x00,
         0x00,
-        0x00, // lea message(%rip), %rsi
+        0x00,
         0xba,
         message_len,
         0x00,
         0x00,
-        0x00, // mov message length, %edx
+        0x00,
         0xbf,
         0x01,
         0x00,
         0x00,
-        0x00, // mov 1, %edi
+        0x00,
         0xb8,
         0x01,
         0x00,
         0x00,
-        0x00, // mov write syscall, %eax
+        0x00,
         0x0f,
-        0x05, // syscall
+        0x05,
         0xb8,
         0x3c,
         0x00,
         0x00,
-        0x00, // mov exit syscall, %eax
+        0x00,
         0x31,
-        0xff, // xor %edi, %edi
+        0xff,
         0x0f,
-        0x05, // syscall
+        0x05,
     ];
     let mut bytes = vec![0_u8; CODE_OFFSET];
     bytes[..4].copy_from_slice(b"\x7fELF");
-    bytes[4] = 2; // ELFCLASS64
-    bytes[5] = 1; // little-endian
-    bytes[6] = 1; // current ELF version
-    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes()); // ET_EXEC
-    bytes[18..20].copy_from_slice(&62_u16.to_le_bytes()); // EM_X86_64
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    bytes[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    bytes[18..20].copy_from_slice(&62_u16.to_le_bytes());
     bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
     bytes[24..32].copy_from_slice(&(0x400000_u64 + CODE_OFFSET as u64).to_le_bytes());
     bytes[32..40].copy_from_slice(&(ELF_HEADER_SIZE as u64).to_le_bytes());
@@ -121,8 +121,8 @@ pub(super) fn elf64_x86_64_version_binary(binary: &str, version: &str) -> Vec<u8
     bytes[58..60].copy_from_slice(&64_u16.to_le_bytes());
 
     let program_header = ELF_HEADER_SIZE;
-    bytes[program_header..program_header + 4].copy_from_slice(&1_u32.to_le_bytes()); // PT_LOAD
-    bytes[program_header + 4..program_header + 8].copy_from_slice(&5_u32.to_le_bytes()); // R|X
+    bytes[program_header..program_header + 4].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[program_header + 4..program_header + 8].copy_from_slice(&5_u32.to_le_bytes());
     bytes[program_header + 16..program_header + 24].copy_from_slice(&0x400000_u64.to_le_bytes());
     bytes[program_header + 24..program_header + 32].copy_from_slice(&0x400000_u64.to_le_bytes());
     let file_size = CODE_OFFSET + code.len() + message.len();

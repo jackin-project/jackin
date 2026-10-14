@@ -35,8 +35,7 @@ fn account_credentials_are_scoped_to_selected_instance_and_mode() {
         Some("work-secret")
     );
     assert!(cmd.get_env("OPENAI_API_KEY").is_none());
-    // Same agent, sibling instance: only its own env lands, never the other
-    // claude instance's secret.
+
     let mut cmd = build_agent_command(&spawn_spec(
         "claude",
         "claude-work",

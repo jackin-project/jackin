@@ -3,9 +3,9 @@
 
 import Foundation
 
-/// Thin homogeneous adapter required by SwiftUI's hierarchical `Table` API.
-///
-/// Every display string is copied verbatim from the atomic Rust projection.
+
+
+
 public struct OverviewTreeRow: Identifiable, Equatable, Sendable {
     public let id: String
     public let surfaceId: String

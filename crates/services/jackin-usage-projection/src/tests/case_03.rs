@@ -13,7 +13,7 @@ fn parity_stale_partial_windows_issues_and_retry() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
-    // Stale but Available: the status override names staleness honestly.
+
     assert_eq!(account.status, "stale");
     assert!(account.is_stale);
     assert_eq!(account.freshness_phase, UsageFreshnessPhaseV1::Stale);
@@ -21,30 +21,29 @@ fn parity_stale_partial_windows_issues_and_retry() {
         freshness_age_label(PARITY_NOW, account),
         "stale · updated 25m ago"
     );
-    // Retained last-good windows survive the partial failure.
+
     assert_eq!(account.windows.len(), 3);
     assert_eq!(account.windows[0].meter_percent(), Some(54));
     assert_eq!(account.windows[0].reset_at_epoch, Some(PARITY_NOW + 70_000));
-    // Limit-only balance: usable quantity, but no percent means no bar.
+
     assert_eq!(account.windows[1].quota_state, UsageQuotaStateV1::Available);
     assert_eq!(account.windows[1].meter_percent(), None);
-    // Quantity-less window: unknown, never a fabricated 0% bar.
+
     assert_eq!(account.windows[2].quota_state, UsageQuotaStateV1::Unknown);
     assert_eq!(account.windows[2].meter_percent(), None);
-    // Freshness is per group: every group is stale with the same age.
+
     for group in &account.metric_groups {
         assert_eq!(
             group_freshness_label(PARITY_NOW, group),
             "stale · updated 25m ago"
         );
     }
-    // The rate-limit issue keeps its code and broker retry.
+
     assert_eq!(account.issues.len(), 1);
     assert_eq!(account.issues[0].code, "rate_limited");
     assert_eq!(account.issues[0].retry_at_epoch, Some(PARITY_NOW + 330));
     assert_eq!(account.issue_count(), 1);
 
-    // Capsule side: same windows, same staleness, degraded gracefully.
     let enriched = parity_tabs(&views);
     let view = &enriched[0];
     assert_eq!(view.tabs[0].status_label, "stale");
@@ -105,7 +104,7 @@ fn parity_unsupported_lifecycle_words() {
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
     assert_eq!(account.lifecycle, UsageLifecycleV1::Unsupported);
-    // Projection-owned status word (capitalized — see the wording delta).
+
     assert_eq!(account.status, "Unsupported");
     assert_eq!(account.freshness_phase, UsageFreshnessPhaseV1::Failed);
     assert_eq!(freshness_age_label(PARITY_NOW, account), "never updated");
@@ -162,7 +161,7 @@ fn parity_auth_expired_login_state() {
     );
     assert_eq!(account.issues.len(), 1);
     assert_eq!(account.issues[0].code, "auth_required");
-    // A local source capability is not provider-issued identity evidence.
+
     assert_eq!(
         account.identity_kind,
         Some(UsageIdentityKindV1::LocalSourceHandle)
@@ -175,7 +174,7 @@ fn parity_auth_expired_login_state() {
         view.tabs[0].source_label.as_deref(),
         Some("needs login · no source")
     );
-    // No buckets, no identity extras: only the error detail row remains.
+
     let detail = usage_detail_presentation(view);
     assert_eq!(detail.rows.len(), 1);
     assert_eq!(detail.rows[0].label, "Detail");
@@ -237,13 +236,13 @@ fn parity_legit_zero_spend_and_missing_fields() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
-    // The empty display label is preserved, never replaced.
+
     assert_eq!(account.account, "");
     assert_eq!(account.plan_label, None);
     assert_eq!(account.windows.len(), 1);
     assert_eq!(account.windows[0].meter_percent(), Some(100));
     assert_eq!(account.windows[0].value, "100% left");
-    // Zero spend is tracked data: cap, spent, and remaining all survive.
+
     assert_eq!(account.metric_groups.len(), 2);
     match &account.metric_groups[1].value {
         UsageMetricValueV1::SpendCap {
@@ -260,7 +259,7 @@ fn parity_legit_zero_spend_and_missing_fields() {
 
     let enriched = parity_tabs(&views);
     let view = &enriched[0];
-    // Empty identity degrades honestly: bare provider tab, no invented name.
+
     assert_eq!(view.tabs[0].label, "OpenCode");
     assert_eq!(view.tabs[0].account_label, "account unavailable");
     assert!(view.tabs[0].active);
@@ -280,7 +279,7 @@ fn parity_legit_zero_spend_and_missing_fields() {
         "{}",
         spend.display_label
     );
-    // No username/plan/auth/error: a single bucket row, nothing fabricated.
+
     let detail = usage_detail_presentation(view);
     assert_eq!(detail.rows.len(), 1);
     assert_eq!(detail.rows[0].kind, UsageDetailRowKind::Bucket);
@@ -304,7 +303,6 @@ fn parity_s4_empty_inventory() {
     assert_eq!(screen.generated_at_epoch, Some(PARITY_NOW));
     assert!(screen.projection_issues.is_empty());
 
-    // Empty scope stays empty: no tabs, no rows, no invented providers.
     assert!(provider_tabs(&[]).is_empty());
     assert!(parity_tabs(&[]).is_empty());
 
@@ -329,8 +327,7 @@ fn parity_s5_stale_and_partial_failure() {
     );
     let screen = UsageScreenState::from_projection(&projection);
     assert_eq!(screen.accounts.len(), 2);
-    // Fresh and stale siblings keep independent freshness: neither clears
-    // the other, and the projection issue does not rewrite either status.
+
     let fresh = &screen.accounts[0];
     assert_eq!(fresh.status, "Available");
     assert!(!fresh.is_stale);

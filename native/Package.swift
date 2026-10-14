@@ -1,8 +1,8 @@
-// swift-tools-version: 6.4
+
 import PackageDescription
 
-// Static XCFramework produced by `mise exec -- mbx +1.99.0 xtask desktop xcframework` (boltffi pack apple).
-// Binary target name must match the boltffi FFI module JackinUsageFFI.
+
+
 let package = Package(
     name: "JackinDesktop",
     platforms: [
@@ -22,8 +22,8 @@ let package = Package(
             name: "JackinUsageFFI",
             path: "../target/xcframework/JackinUsage.xcframework"
         ),
-        // Generated boltffi Swift only. Nothing handwritten lands here; only
-        // JackinUsageBridge may depend on this target.
+
+
         .target(
             name: "JackinUsageBindings",
             dependencies: ["JackinUsageFFI"],
@@ -34,14 +34,14 @@ let package = Package(
             dependencies: ["JackinUsageBindings"],
             path: "Sources/JackinUsageBridge"
         ),
-        // Hostable UI library (status/popover/Usage) for app + deterministic fixtures.
+
         .target(
             name: "JackinDesktopUI",
             dependencies: ["JackinUsageBindings", "JackinUsageBridge"],
             path: "Sources/JackinDesktop",
             resources: [
                 .copy("Resources/Brand"),
-                // Official provider logomarks (template PDF) — see ProviderMarks/PROVENANCE.md
+
                 .copy("Resources/ProviderMarks"),
             ]
         ),

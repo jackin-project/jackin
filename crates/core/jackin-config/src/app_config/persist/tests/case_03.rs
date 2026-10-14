@@ -63,9 +63,6 @@ fn config_needs_split_migration_returns_false_for_legacy_without_workspaces() {
 
 #[test]
 fn config_needs_split_migration_returns_true_for_versioned_with_workspaces() {
-    // Versioned config with a leftover `[workspaces.X]` table still needs the
-    // in-memory split path, so a later split conflict cannot leave the global
-    // file partially migrated.
     let raw = "version = \"v1alpha1\"\n\n[workspaces.prod]\nworkdir = \"/workspace/prod\"\n";
     assert!(config_needs_split_migration(raw).unwrap());
 }
@@ -101,7 +98,6 @@ fn atomic_write_overwrites_existing_file() {
 
 #[test]
 fn atomic_write_cleans_staged_file_on_rename_failure() {
-    // Force rename to fail by placing a directory at the destination.
     let temp = tempdir().unwrap();
     let target = temp.path().join("target.toml");
     std::fs::create_dir(&target).unwrap();
@@ -109,7 +105,6 @@ fn atomic_write_cleans_staged_file_on_rename_failure() {
     let err = atomic_write(&target, "k = 1\n").unwrap_err();
     assert!(format!("{err:#}").contains("renaming"), "{err}");
 
-    // No `.tmp.<pid>.<n>` leftovers in the parent directory.
     let leaks: Vec<_> = std::fs::read_dir(temp.path())
         .unwrap()
         .filter_map(Result::ok)
@@ -124,13 +119,6 @@ fn atomic_write_cleans_staged_file_on_rename_failure() {
 
 #[test]
 fn load_or_init_dual_migrates_legacy_config_with_legacy_workspaces() {
-    // Pin the dual-migration contract: a legacy `config.toml` (no
-    // `version`) carrying `[workspaces.X]` tables ends up with
-    // the current version on the global file AND on each split
-    // workspace file after one load. The bootstrap migration is
-    // content-changing, so this test guards the ordering that the
-    // version migration runs alongside the split rather than getting
-    // silently skipped.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -183,7 +171,6 @@ dst = "/workspace/prod"
         CURRENT_WORKSPACE_VERSION
     );
 
-    // Re-running is a no-op: file content stays byte-identical.
     let global_before = std::fs::read(&paths.config_file).unwrap();
     let prod_before = std::fs::read(paths.workspaces_dir.join("prod.toml")).unwrap();
     AppConfig::load_or_init(&paths).unwrap();
@@ -195,10 +182,6 @@ dst = "/workspace/prod"
 
 #[test]
 fn load_workspace_files_migrates_legacy_split_file_in_place() {
-    // Pin the contract that legacy `workspaces/<name>.toml` files (no
-    // `version` key) get rewritten on first load. Without this test the
-    // migrate-on-scan call in `load_workspace_files` is unreachable in
-    // tests — every other workspace fixture uses the current version.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -223,8 +206,6 @@ fn load_workspace_files_migrates_legacy_split_file_in_place() {
 
 #[test]
 fn load_workspace_files_ignores_leftover_staged_files() {
-    // A `.tmp.<pid>.<n>` file in workspaces/ must not be treated as a
-    // workspace file (extension filter is `.toml`).
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();

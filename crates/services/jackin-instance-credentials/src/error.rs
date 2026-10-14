@@ -1,11 +1,5 @@
-//! Typed errors for jackin-instance fallible surfaces.
-//!
-//! Library code returns these via `thiserror`; binary boundaries may
-//! still absorb them into `anyhow::Error` with `?`.
-
 use std::path::PathBuf;
 
-/// Failures produced by instance identity, index, and auth provisioning.
 #[derive(Debug, thiserror::Error)]
 pub enum InstanceError {
     #[error(
@@ -33,9 +27,6 @@ pub enum InstanceError {
     BackgroundAuthTaskPanicked,
 }
 
-/// Sync-source folder failed agent-specific credential structure checks.
-///
-/// Display text is operator-facing (console auth form validation).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct SyncSourceValidationError(pub String);

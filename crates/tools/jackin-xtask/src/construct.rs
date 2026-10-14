@@ -1,10 +1,3 @@
-//! Construct base-image build and publish tasks.
-//!
-//! Config resolution (registry, tags, git SHA, pinned tool versions) and
-//! orchestration of `docker buildx bake` / `imagetools`. The declarative build
-//! graph lives in `docker-bake.hcl`; these functions resolve its inputs and
-//! invoke it.
-
 use std::fs;
 use std::process::{Command, Stdio};
 
@@ -18,23 +11,22 @@ const BAKE_FILE: &str = "docker-bake.hcl";
 
 #[derive(Subcommand)]
 pub(crate) enum ConstructCommand {
-    /// Create and bootstrap the named Buildx builder.
     InitBuildx,
-    /// Inspect the configured Buildx builder and list available builders.
+
     DoctorBuildx,
-    /// Recreate the configured Buildx builder from scratch.
+
     ResetBuildx,
-    /// Build the construct image for the host platform and load it locally.
+
     BuildLocal,
-    /// Build for a specific platform and load it locally.
+
     BuildPlatform { platform: Platform },
-    /// Push a single-platform image by digest (CI-only for the canonical registry).
+
     PushPlatform { platform: Platform },
-    /// Fail when `docker/construct/VERSION` already exists in the registry.
+
     AssertVersionUnpublished,
-    /// Combine per-platform digest pushes into a multi-platform manifest.
+
     PublishManifest,
-    /// Print the resolved Bake configuration (dry-run inspection).
+
     Inspect,
 }
 
@@ -75,8 +67,6 @@ pub(crate) fn run(command: ConstructCommand) -> Result<()> {
     }
 }
 
-/// Resolved build variables. Env-var overrides take priority over computed
-/// defaults.
 struct Config {
     registry_image: String,
     local_registry_image: String,
@@ -131,8 +121,6 @@ impl Config {
         })
     }
 
-    /// Export exactly the variables `docker-bake.hcl` declares into the bake
-    /// child process.
     fn apply_bake_env(&self, cmd: &mut Command) {
         cmd.env("REGISTRY_IMAGE", &self.registry_image)
             .env("LOCAL_REGISTRY_IMAGE", &self.local_registry_image)
@@ -150,7 +138,6 @@ impl Config {
         format!("{}:{}", self.registry_image, tag)
     }
 
-    /// Refuse to publish to the canonical registry from a local (non-CI) shell.
     fn guard_local_publish(&self) -> Result<()> {
         let no_ci = std::env::var("CI").map_or(true, |v| v.is_empty());
         if no_ci && self.registry_image == CANONICAL_REGISTRY_IMAGE {
@@ -199,7 +186,6 @@ fn doctor_buildx(cfg: &Config) -> Result<()> {
 }
 
 fn reset_buildx(cfg: &Config) -> Result<()> {
-    // A missing builder is fine to "remove"; ignore that failure only.
     let mut remove = docker(["buildx", "rm", "--force", &cfg.buildx_builder]);
     remove.stdout(Stdio::null()).stderr(Stdio::null());
     drop(crate::cmd::run(&mut remove));
@@ -297,10 +283,6 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
     Ok(())
 }
 
-/// Apply `CACHE_FROM` and `CACHE_TO` env vars as `--set` overrides on a `docker buildx bake`
-/// command. `CACHE_FROM` may contain multiple newline-separated sources; each becomes its own
-/// `--set target.cache-from=<source>` flag so `docker buildx bake` appends them to the
-/// `cache-from` list rather than replacing it.
 fn apply_cache_args(cmd: &mut Command, target: &str) {
     if let Some(cache_from) = env_present("CACHE_FROM") {
         for source in cache_from.lines().map(str::trim).filter(|s| !s.is_empty()) {
@@ -324,9 +306,6 @@ fn assert_version_unpublished(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Probe the registry for the immutable per-version tag. An indeterminate
-/// probe (auth/network failure) is an error so an outage is never mistaken
-/// for a published or unpublished version.
 fn version_published(cfg: &Config) -> Result<bool> {
     if cfg.version_tag.is_empty() || cfg.version_tag == "unknown" {
         bail!(
@@ -352,14 +331,6 @@ fn version_published(cfg: &Config) -> Result<bool> {
 fn publish_manifest(cfg: &Config) -> Result<()> {
     cfg.guard_local_publish()?;
 
-    // Same version-bump invariant the PR rehearsal enforces, with one
-    // difference: at publish time an existing tag is a successful no-op, not
-    // an error. The per-version tag is immutable, so re-running the publish
-    // workflow against an unchanged docker/construct/VERSION (e.g. a manual
-    // dispatch from main) has nothing left to publish. Image changes that
-    // forget the VERSION bump still fail before merge, because the PR-time
-    // rehearsal runs assert-version-unpublished, which keeps treating the
-    // collision as an error.
     match manifest_action(version_published(cfg)?) {
         ManifestAction::SkipAlreadyPublished => {
             #[expect(
@@ -434,16 +405,10 @@ enum VersionStatus {
     UnknownError,
 }
 
-/// What `publish-manifest` does after probing the registry for the immutable
-/// version tag.
 #[derive(Debug, PartialEq, Eq)]
 enum ManifestAction {
-    /// Tag absent: assemble and push the multi-platform manifest.
     Publish,
-    /// Tag present: succeed without publishing. The tag is immutable and this
-    /// run could only recreate it, so the re-run is an idempotent no-op rather
-    /// than a failure. Forgotten VERSION bumps still fail at PR time via
-    /// `assert-version-unpublished`, which errors on the same condition.
+
     SkipAlreadyPublished,
 }
 
@@ -455,10 +420,6 @@ fn manifest_action(version_published: bool) -> ManifestAction {
     }
 }
 
-/// Classify a `docker buildx imagetools inspect` result. A success means the
-/// tag exists; a failure is the tag being absent only when stderr names a
-/// known "not found" shape — any other failure is an auth/network error that
-/// must not be mistaken for an unpublished version.
 fn classify_inspect(success: bool, stderr: &str) -> VersionStatus {
     if success {
         return VersionStatus::AlreadyPublished;
@@ -517,15 +478,10 @@ fn run_buildkit(mut cmd: Command) -> Result<()> {
     crate::cmd::run_streaming(&mut cmd)
 }
 
-/// Env value if the variable is set, else the computed default. A set-but-empty
-/// variable returns empty so explicit overrides are honored verbatim.
 fn env_or(key: &str, default: impl Into<String>) -> String {
     std::env::var(key).unwrap_or_else(|_| default.into())
 }
 
-/// Env value only when set and non-empty — for variables whose empty value
-/// should fall through to a computed default (or be treated as absent) rather
-/// than be honored.
 fn env_present(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|value| !value.is_empty())
 }

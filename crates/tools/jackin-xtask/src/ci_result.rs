@@ -20,9 +20,8 @@ mod tests;
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiResultCommand {
-    /// Find an input-identical successful crate result.
     Find(FindArgs),
-    /// Stage the runner-independent successful-result marker.
+
     Stage(StageArgs),
 }
 
@@ -62,7 +61,7 @@ pub(crate) struct FindArgs {
     source_sha: String,
     #[arg(long)]
     repository: String,
-    /// Current workflow run whose newly published artifacts should be checked.
+
     #[arg(long, default_value_t = 0)]
     run_id: u64,
     #[arg(long, default_value = "")]

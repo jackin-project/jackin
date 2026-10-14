@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `RoleState` preparation for agents and bindings.
 
 use crate::{PrepareResolvers, RoleState};
 use jackin_instance_agents::{
@@ -19,18 +18,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 impl RoleState {
-    /// Provision auth state for every agent in `manifest.supported_agents()` by
-    /// delegating to [`Self::prepare_for_agents`] with the full supported set.
-    ///
-    /// `resolvers.auth_modes` is invoked once per agent — pass
-    /// `jackin_config::resolve_mode(config, a, ws, role)` so each agent gets
-    /// its own configured forward mode. Reusing the *selected* agent's mode for
-    /// sibling agents silently wipes their durable state when modes diverge
-    /// (e.g. `claude.auth_forward = sync` next to `codex.auth_forward =
-    /// api_key`).
-    ///
-    /// `resolvers.sync_source_dirs` returns an optional override source
-    /// directory for each agent's auth sync, overriding `host_home`.
     pub fn prepare(
         paths: &JackinPaths,
         container_name: &str,
@@ -52,17 +39,6 @@ impl RoleState {
         )
     }
 
-    /// Provision auth state only for the provided agents.
-    ///
-    /// Accepts an explicit `provision_agents` list so callers that intentionally
-    /// need only a subset (such as tests) can pass a narrower slice. The
-    /// foreground launch path passes the full `manifest.supported_agents()` set;
-    /// [`Self::prepare`] is a convenience wrapper that does the same.
-    ///
-    /// Each agent resolves to one [`InstanceAuthBinding`] with a
-    /// placeholder account id; multi-instance callers use
-    /// [`Self::prepare_for_bindings`] directly so two instances of the
-    /// same agent provision independently.
     #[expect(
         clippy::too_many_arguments,
         reason = "Per-agent prepare carries every per-agent + per-container input \
@@ -105,12 +81,6 @@ impl RoleState {
         )
     }
 
-    /// Provision auth state for one explicit instance binding each.
-    ///
-    /// Unlike [`Self::prepare_for_agents`], bindings carry their own
-    /// account/mode/key, so two bindings for the same agent provision
-    /// independently and merge as separate [`ProvisionedAuth::slots`]
-    /// entries. Binding keys must be unique within `bindings`.
     pub fn prepare_for_bindings(
         paths: &JackinPaths,
         container_name: &str,
@@ -126,9 +96,7 @@ impl RoleState {
         let jackin_state_dir = root.join("state");
 
         std::fs::create_dir_all(&home_dir)?;
-        // Owned by the host operator; the container runs as that same UID
-        // (`--user` on docker run), so `agent` can write state files here
-        // with no special directory mode.
+
         std::fs::create_dir_all(&jackin_state_dir)?;
 
         let hosts_yml = gh_config_dir.join("hosts.yml");
@@ -232,7 +200,6 @@ impl RoleState {
         let (auth_mount_paths, auth_mount_leases) =
             jackin_instance_agents::admit_auth_mounts(&auth)?;
 
-        // Single struct construction — no per-variant dispatch needed.
         let agent_runtime = AgentRuntimeState {
             agent,
             model: manifest.agent_model(agent).map(str::to_owned),

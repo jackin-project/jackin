@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Peer and supervisor identity for the usage relay proxy.
 
 use anyhow::{Context as _, Result};
 use jackin_protocol::SessionIdentity;
@@ -16,16 +15,6 @@ pub(crate) struct PeerIdentity {
     pub(crate) gid: u32,
 }
 
-/// Supervisor binding pinned at relay startup.
-///
-/// PID alone is forgeable through PID reuse: if the supervisor exits, another
-/// root process can inherit its PID number and pass a `peer.pid ==
-/// supervisor_pid` check. The kernel process start time cannot be recycled
-/// the same way, so the supervisor peer must match `(pid, start_time)`.
-/// A token cannot replace this: any root process can read another process's
-/// environment or root-only files, while `SO_PEERCRED` pid + `/proc` start
-/// time are kernel-supplied and unforgeable by the peer. Matching fails
-/// closed: an unknown start time on either side denies the supervisor path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SupervisorIdentity {
     pub(crate) pid: u32,
@@ -42,10 +31,6 @@ impl SupervisorIdentity {
     }
 }
 
-/// Kernel process start time (`/proc/<pid>/stat` field 22, clock ticks since
-/// boot) used to disambiguate PID reuse. Returns `None` when the start time
-/// cannot be verified (missing process, unreadable `/proc`, non-Linux
-/// platform); callers must treat `None` as "not the supervisor".
 pub(crate) fn process_start_time(pid: u32) -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
@@ -61,11 +46,9 @@ pub(crate) fn process_start_time(pid: u32) -> Option<u64> {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn parse_proc_stat_start_time(stat: &str) -> Option<u64> {
-    // `comm` (field 2) may contain spaces and ')', so split after its
-    // closing paren; remaining fields start at field 3 (state).
     let after_comm = stat.rsplit_once(')')?.1;
     let mut fields = after_comm.split_ascii_whitespace();
-    // Field 22 (starttime) is the 20th field after `comm`.
+
     fields.nth(19)?.parse::<u64>().ok()
 }
 
@@ -82,10 +65,7 @@ impl From<SessionIdentity> for PeerIdentity {
 
 pub(crate) fn load_supervisor_identity() -> Result<SupervisorIdentity> {
     let pid = parse_supervisor_pid(std::env::var(jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV))?;
-    // Pin (pid, start_time) now: a later root process reusing this PID gets a
-    // different start time and fails `matches`. If the start time is
-    // unverifiable the binding carries `None` and the supervisor path denies
-    // while session peers keep working.
+
     Ok(SupervisorIdentity {
         pid,
         start_time: process_start_time(pid),

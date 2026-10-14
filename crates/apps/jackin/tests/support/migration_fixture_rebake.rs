@@ -1,12 +1,3 @@
-//! Explicit migration fixture writer for source-derived golden output.
-//!
-//! The ignored test writes only to a new task-owned output directory. It never
-//! updates committed inputs or existing golden files.
-//!
-//! Run it with `JACKIN_MIGRATION_FIXTURE_OUTPUT_DIR=/absolute/new/path mise
-//! exec --locked -- mbx test --locked --offline -p jackin --test
-//! migration_fixtures rebake_migration_fixtures_to_output_dir -- --ignored`.
-
 use super::{FixtureMeta, MigrateFn, filename_for, fixture_root, parse_fixture};
 use std::env;
 use std::fs;
@@ -16,10 +7,6 @@ const OUTPUT_ENV: &str = "JACKIN_MIGRATION_FIXTURE_OUTPUT_DIR";
 const MAX_FIXTURES_PER_KIND: usize = 128;
 const MAX_FIXTURE_FILE_BYTES: u64 = 1024 * 1024;
 
-/// Generate current config/workspace golden files into a separate directory.
-///
-/// Set `JACKIN_MIGRATION_FIXTURE_OUTPUT_DIR` to an absent absolute path, then
-/// run this ignored test explicitly. The committed fixture tree remains intact.
 #[test]
 #[ignore = "explicit fixture rebake; writes only to JACKIN_MIGRATION_FIXTURE_OUTPUT_DIR"]
 fn rebake_migration_fixtures_to_output_dir() {
@@ -304,8 +291,7 @@ fn fixture_rebake_rejects_group_accessible_output_parent() {
     use std::os::unix::fs::PermissionsExt as _;
 
     let parent = tempfile::tempdir().unwrap();
-    // `tempfile` creates dirs with default (umask) permissions; the private
-    // case needs an explicit 0700 so the test is umask-independent.
+
     fs::set_permissions(parent.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let staging = tempfile::tempdir_in(parent.path()).unwrap();
     validate_private_output_parent(parent.path(), staging.path()).unwrap();

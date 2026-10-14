@@ -1,8 +1,3 @@
-//! jackin-otlp-testbed: deterministic, test-only OTLP/gRPC receiver.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`Testbed`] — scripted three-signal wire receiver and assertions.
-
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
@@ -38,23 +33,20 @@ use tonic::transport::{
 };
 use tonic::{Request, Response, Status};
 
-/// Scripted response applied independently to every export request.
 #[derive(Clone, Debug, Default)]
 pub enum Behavior {
-    /// Accept and record the request.
     #[default]
     Ok,
-    /// Reject with the supplied gRPC status code.
+
     Reject(tonic::Code),
-    /// Accept while reporting one rejected item through OTLP partial success.
+
     PartialSuccess,
-    /// Hold a response to exercise exporter deadline behavior.
+
     Delay(std::time::Duration),
-    /// Accept only requests carrying the exact ASCII gRPC metadata entry.
+
     RequireHeader {
-        /// Metadata key required on every signal request.
         name: &'static str,
-        /// Exact metadata value required on every signal request.
+
         value: &'static str,
     },
 }
@@ -95,9 +87,6 @@ struct ConnectionRegistryState {
     sockets: HashMap<usize, std::net::TcpStream>,
 }
 
-/// Tonic detaches one task per accepted connection. Keep an independently
-/// closable socket handle for every such task so forced shutdown can make the
-/// task finish, then wait for this wrapper's drop as the task-lifecycle proof.
 #[derive(Debug)]
 struct TrackedIo {
     stream: TcpStream,
@@ -456,7 +445,6 @@ impl MetricsService for Services {
     }
 }
 
-/// Running receiver and its typed captured-request accessors.
 #[derive(Debug)]
 pub struct Testbed {
     addr: SocketAddr,
@@ -466,14 +454,12 @@ pub struct Testbed {
     receiver_task: Option<JoinHandle<Result<(), tonic::transport::Error>>>,
 }
 
-/// Failure while stopping the receiver after requesting graceful shutdown.
 #[derive(Debug)]
 pub enum ShutdownError {
-    /// The gRPC server returned an error while shutting down.
     Server(tonic::transport::Error),
-    /// The receiver task was cancelled or panicked before it could finish.
+
     Join(tokio::task::JoinError),
-    /// Graceful shutdown exceeded its bounded wait and the receiver was aborted.
+
     Timeout,
 }
 
@@ -505,7 +491,6 @@ impl std::error::Error for ShutdownError {
 const RECEIVER_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl Testbed {
-    /// Start all three OTLP services on a random localhost port.
     pub fn start() -> io::Result<Self> {
         let incoming = TcpIncoming::bind(SocketAddr::from(([127, 0, 0, 1], 0)))?;
         let addr = incoming.local_addr()?;
@@ -546,13 +531,11 @@ impl Testbed {
         })
     }
 
-    /// Endpoint accepted by the OTLP exporter.
     #[must_use]
     pub fn endpoint(&self) -> String {
         format!("http://{}", self.addr)
     }
 
-    /// Replace the deterministic response behavior.
     pub fn set_behavior(&self, behavior: Behavior) {
         *self
             .state
@@ -561,7 +544,6 @@ impl Testbed {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = behavior;
     }
 
-    /// Captured trace requests.
     #[must_use]
     pub fn traces(&self) -> Vec<ExportTraceServiceRequest> {
         self.state
@@ -571,7 +553,6 @@ impl Testbed {
             .clone()
     }
 
-    /// Decoded spans across all captured trace requests.
     #[must_use]
     pub fn spans(&self) -> Vec<opentelemetry_proto::tonic::trace::v1::Span> {
         self.traces()
@@ -582,7 +563,6 @@ impl Testbed {
             .collect()
     }
 
-    /// Captured log requests.
     #[must_use]
     pub fn logs(&self) -> Vec<ExportLogsServiceRequest> {
         self.state
@@ -592,7 +572,6 @@ impl Testbed {
             .clone()
     }
 
-    /// Decoded log records across all captured log requests.
     #[must_use]
     pub fn log_records(&self) -> Vec<opentelemetry_proto::tonic::logs::v1::LogRecord> {
         self.logs()
@@ -603,7 +582,6 @@ impl Testbed {
             .collect()
     }
 
-    /// Find a native OTLP event by its governed `EventName`.
     #[must_use]
     pub fn find_event(
         &self,
@@ -614,7 +592,6 @@ impl Testbed {
             .find(|record| record.event_name == name)
     }
 
-    /// Captured metric requests.
     #[must_use]
     pub fn metrics(&self) -> Vec<ExportMetricsServiceRequest> {
         self.state
@@ -624,7 +601,6 @@ impl Testbed {
             .clone()
     }
 
-    /// Decoded metric names across all captured metric requests.
     #[must_use]
     pub fn metric_names(&self) -> Vec<String> {
         self.metrics()
@@ -636,7 +612,6 @@ impl Testbed {
             .collect()
     }
 
-    /// Decoded attribute keys across every metric datapoint and exemplar.
     #[must_use]
     pub fn metric_dimension_keys(&self) -> Vec<String> {
         let mut keys = Vec::new();
@@ -660,7 +635,6 @@ impl Testbed {
         keys
     }
 
-    /// Report forbidden backend/product namespaces anywhere in decoded OTLP.
     #[must_use]
     pub fn legacy_namespace_violations(&self) -> Vec<String> {
         let mut violations = Vec::new();
@@ -728,7 +702,6 @@ impl Testbed {
         violations
     }
 
-    /// Report captured string fields containing any prohibited fixture value.
     #[must_use]
     pub fn prohibited_value_violations(&self, prohibited: &[&str]) -> Vec<String> {
         let mut violations = Vec::new();
@@ -820,7 +793,6 @@ impl Testbed {
         violations
     }
 
-    /// Gracefully stop the receiver and join its task.
     pub async fn shutdown(&mut self) -> Result<(), ShutdownError> {
         if let Some(shutdown) = self.shutdown.take()
             && shutdown.send(()).is_err()
@@ -872,7 +844,6 @@ impl Testbed {
         .is_ok()
     }
 
-    /// Wait until at least one request for every signal has been acknowledged.
     pub async fn wait_for_all_signals(&self, timeout: std::time::Duration) -> bool {
         tokio::time::timeout(timeout, async {
             loop {
@@ -889,11 +860,6 @@ impl Testbed {
         .is_ok()
     }
 
-    /// Wait until at least `count` spans with the exact wire name have arrived.
-    ///
-    /// Signal-level readiness is insufficient when one flush produces multiple
-    /// trace export requests: an earlier child-span batch can arrive before the
-    /// later root-span batch. This also waits for every captured request's ACK.
     pub async fn wait_for_span_count(
         &self,
         name: &str,

@@ -78,8 +78,6 @@ fn prepares_persisted_claude_state() {
     )
     .unwrap();
 
-    // Fresh ignore-mode launches are lazy: no jackin-owned auth files
-    // are created unless stale forwarded state must be wiped.
     assert!(!state.claude_account_json().unwrap().exists());
     assert!(!state.claude_credentials_json().unwrap().exists());
     assert!(
@@ -89,12 +87,6 @@ fn prepares_persisted_claude_state() {
     assert!(state.claude_model().is_none());
     assert!(state.codex_model().is_none());
 
-    // Pin the host-side grouped layout: a regression to the legacy
-    // flat shape (`.claude/state/.credentials.json` at the data-dir
-    // root) would still satisfy the accessor checks
-    // above, since they only look up paths through the slots map. These
-    // assertions verify the actual host paths under
-    // `<container>/claude/`.
     let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
     assert_eq!(
         state.claude_account_json().unwrap(),
@@ -169,8 +161,7 @@ model = "gpt-5"
             .join("home/.codex")
             .exists()
     );
-    // Codex state carries no Claude auth paths — the slots map
-    // holds no Claude entry rather than a runtime nil.
+
     assert!(state.claude_account_json().is_none());
     assert!(state.claude_credentials_json().is_none());
     assert!(!state.claude_forwards_auth());
@@ -202,8 +193,6 @@ plugins = []
 
     let manifest = load_role_manifest(temp.path()).unwrap();
 
-    // Claude → Sync (host missing → HostMissing, forward_auth = true)
-    // Codex → ApiKey (would wipe Claude state if applied cross-agent)
     let auth_modes = |agent: Agent| match agent {
         Agent::Claude => AuthForwardMode::Sync,
         Agent::Codex => AuthForwardMode::ApiKey,
@@ -233,12 +222,8 @@ plugins = []
     )
     .unwrap();
 
-    // Selected agent is Codex with ApiKey → TokenMode (env-driven).
-    // The selected-outcome attribution must follow the *selected*
-    // agent, not the last-iterated one.
     assert_eq!(selected_outcome, AuthProvisionOutcome::TokenMode);
 
-    // Both agents provisioned.
     assert!(
         state.auth.for_agent(Agent::Claude).is_some(),
         "claude home dirs should be provisioned"
@@ -248,9 +233,6 @@ plugins = []
         "codex home dirs should be provisioned"
     );
 
-    // Critical assertion: Claude's mode (Sync) is honored, not
-    // Codex's (ApiKey). A regression to applying Codex's mode to
-    // Claude would wipe state and set forward_auth = false.
     assert!(
         state.claude_forwards_auth(),
         "claude.auth_forward = Sync must produce forward_auth = true even when Codex is the selected agent",

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Restore-container reconnect with container-handle leases.
 
 use anyhow::Context as _;
 

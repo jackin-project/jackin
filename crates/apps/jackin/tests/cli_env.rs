@@ -3,8 +3,6 @@
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
 #![cfg(unix)]
-//! Integration coverage for the `jackin config env` /
-//! `jackin workspace env` CLI verbs against a temp `$HOME`.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -58,8 +56,6 @@ fn read_workspace_config(env: &Env, name: &str) -> String {
     .unwrap()
 }
 
-/// `[roles.<name>]` needs the required `git` field for serde to
-/// accept the table.
 fn seed_agent(env: &Env, name: &str) {
     let path = config_path(env);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -147,7 +143,7 @@ fn config_env_set_with_comment() {
         .assert()
         .success();
     let contents = read_config(&env);
-    // The comment line must appear above the key within the file.
+
     let comment_pos = contents
         .find("# rotate quarterly")
         .unwrap_or_else(|| panic!("missing comment line:\n{contents}"));
@@ -284,8 +280,6 @@ fn workspace_env_list_unknown_workspace_exits_nonzero() {
         .stderr(predicate::str::contains("no-such-ws"));
 }
 
-// ── brick-the-CLI regressions ───────────────────────────────────
-
 #[test]
 fn config_env_set_reserved_name_rejected_with_clear_error() {
     let env = setup_env();
@@ -331,7 +325,6 @@ fn config_env_set_unknown_agent_rejected() {
     }
 }
 
-/// Same protection for `workspace env set` reserved-name writes.
 #[test]
 fn workspace_env_set_reserved_name_rejected() {
     let env = setup_env();
@@ -356,7 +349,6 @@ fn workspace_env_set_reserved_name_rejected() {
     );
 }
 
-/// Same protection for `workspace env set --role <unknown>`.
 #[test]
 fn workspace_env_set_unknown_agent_rejected() {
     let env = setup_env();

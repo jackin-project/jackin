@@ -4,7 +4,7 @@
 import AppKit
 import SwiftUI
 
-/// Canonical generated jackin❯ identity assets for native surfaces.
+
 @MainActor
 public enum JackinBrandIdentity {
     public static func wordmark(for colorScheme: ColorScheme) -> NSImage? {
@@ -43,7 +43,7 @@ public enum JackinBrandIdentity {
     }
 }
 
-/// Quiet product signature inside the sidebar's system-owned structural plane.
+
 public struct JackinBrandSignature: View {
     @Environment(\.colorScheme) private var colorScheme
     private let width: CGFloat

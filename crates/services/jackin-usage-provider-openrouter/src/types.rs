@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `OpenRouter` key/credit response types and fetch outcomes.
 
 use serde::Deserialize;
 
@@ -14,7 +13,7 @@ pub struct OpenRouterKeyData {
     pub(crate) usage_weekly: Option<f64>,
     #[serde(default)]
     pub(crate) usage_monthly: Option<f64>,
-    /// Null = no configured key cap (never infinite credit).
+
     #[serde(default)]
     pub(crate) limit: Option<f64>,
     #[serde(default)]
@@ -39,8 +38,6 @@ pub struct OpenRouterCreditsResponse {
     pub(crate) data: OpenRouterCreditsData,
 }
 
-/// Typed `/credits` outcome. A 403 means the ordinary key lacks the Management
-/// scope — the `/key` rows still render.
 #[derive(Debug, Clone, PartialEq)]
 pub enum OpenRouterCreditsOutcome {
     Available {
@@ -52,9 +49,6 @@ pub enum OpenRouterCreditsOutcome {
 }
 
 impl OpenRouterCreditsOutcome {
-    /// Classify a `/credits` HTTP failure without string sniffing at the call
-    /// site: 403 is the management-scope mismatch, anything else stays an
-    /// opaque unavailable state.
     pub(crate) fn from_http_status(status: u16) -> Self {
         if status == 403 {
             Self::ManagementScopeDenied
@@ -64,8 +58,6 @@ impl OpenRouterCreditsOutcome {
     }
 }
 
-/// Model-ID check against a catalog snapshot. Stale omission is `Unverified`,
-/// never a rejection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpenRouterModelCheck {
     Verified { model_id: String },

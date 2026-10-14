@@ -1,14 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Claude usage diagnostics and freshness labels.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jackin_protocol::control::{FocusedUsageView, UsageSnapshotStatus};
 
-/// `Auth:` origin label for an OAuth credential resolved from `path`, with the
-/// home dir collapsed to `~` (so it reads `~/.codex/auth.json`, not an absolute
-/// container path). Shared by the Claude and Codex snapshots.
 pub fn now_epoch() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

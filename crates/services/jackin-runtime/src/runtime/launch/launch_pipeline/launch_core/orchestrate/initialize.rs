@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Launch initialization inputs and outputs.
 
 use crate::runtime::launch::launch_pipeline::launch_phases::{
     GrantsValidated, ImagePhaseClassified,

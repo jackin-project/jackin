@@ -1,29 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host-side fetch of the in-container `jackin-capsule` daemon's
-//! tab/pane snapshot.
-//!
-//! The daemon's socket is bind-mounted from
-//! `paths.jackin_home/sockets/<container_name>/jackin.sock` so same-
-//! kernel Docker hosts can talk to it directly via a `UnixStream`.
-//! Docker Desktop for macOS exposes the socket inode through the bind
-//! mount but cannot bridge the live Unix socket across the Linux VM
-//! boundary, so the host falls back to `docker exec ... snapshot`
-//! when the direct connection is absent or refused.
-//!
-//! Schema sharing: the protocol types live in `jackin_protocol`, a
-//! small shared crate. The host CLI and in-container Capsule both
-//! depend on it, so request and reply structs are imported verbatim.
-//! Drift between the two surfaces is a compile error, not a
-//! wire-format bug.
-//!
-//! Sync API by design: the only caller today is
-//! `ManagerState::refresh_instances`, which runs inside the host
-//! TUI's render loop. A blocking std `UnixStream` round-trip or
-//! bounded `docker exec` fallback is kept behind the existing 500 ms
-//! refresh throttle.
-
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -38,8 +15,6 @@ use serde::Deserialize;
 
 use jackin_core::{ContainerHandle, JackinPaths};
 
-// `InstanceSnapshot` lives in `jackin-protocol` so the console can use it
-// without depending on `jackin-runtime`.
 pub use jackin_protocol::InstanceSnapshot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,17 +23,8 @@ pub enum SnapshotTransport {
     DockerExecFallback,
 }
 
-/// Cap on the JSON reply read from the daemon. Must be ≥ the daemon's
-/// frame cap so legitimate Status / Snapshot replies fit; oversized
-/// replies are rejected to bound host memory.
 const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
 
-/// Per-call socket timeout. The whole round-trip is "open socket,
-/// write 5 + json bytes, read 4 + json bytes" — anything beyond a
-/// couple seconds means the daemon is wedged or the bind-mount
-/// points at a stale dir. The console's preview pane re-polls on a
-/// cadence, so a short timeout here keeps a dead container from
-/// stalling the UI.
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Deserialize)]
@@ -67,8 +33,6 @@ struct SnapshotPayload {
     active_tab: u32,
 }
 
-/// Build the host-side path of a container's daemon socket. Matches
-/// the bind-mount source set up in `runtime/launch.rs`.
 pub fn socket_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
     paths
         .jackin_home
@@ -77,13 +41,6 @@ pub fn socket_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
         .join("jackin.sock")
 }
 
-/// Connect to the container's daemon socket and fetch its tab/pane
-/// snapshot.
-///
-/// Same-kernel Docker hosts can read the bind-mounted socket directly.
-/// Docker Desktop for macOS cannot; in that case, or when the socket
-/// is absent because the container predates the bind mount, this falls
-/// back to the in-container client via `docker exec`.
 pub fn fetch_snapshot(
     paths: &JackinPaths,
     container: &ContainerHandle,
@@ -192,7 +149,7 @@ pub fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<ServerM
 fn snapshot_from_msg(msg: ServerMsg) -> Result<InstanceSnapshot> {
     match msg {
         ServerMsg::Snapshot { tabs, active_tab } => Ok(InstanceSnapshot { tabs, active_tab }),
-        // `Unknown` is the `#[serde(other)]` sink for variants from a newer daemon.
+
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
         other => bail!("daemon replied with {}; expected Snapshot", other.kind()),
     }
@@ -264,8 +221,6 @@ pub fn run_docker_exec_capsule(
     run_docker_exec_capsule_raw(container, script)
 }
 
-/// Require the container's installed Capsule client to negotiate with the
-/// daemon before a Docker-exec fallback can issue its actual command.
 pub fn ensure_capsule_protocol_via_docker_exec(container: &ContainerHandle) -> Result<()> {
     let protocol_check = protocol_check_exec_script();
     let output = run_docker_exec_capsule_raw(container, &protocol_check)?;
@@ -309,11 +264,7 @@ fn run_docker_exec_capsule_raw(
         }
         if Instant::now() >= deadline {
             drop(child.kill());
-            // SIGKILL is async — bound the post-kill drain so an
-            // unresponsive docker daemon does not leave us blocked
-            // in `wait_with_output` while the pipe stays open. The
-            // 500 ms ceiling caps how fast docker-exec children can
-            // accumulate when the daemon is consistently wedged.
+
             let drain_deadline = Instant::now() + Duration::from_millis(500);
             while Instant::now() < drain_deadline {
                 if child.try_wait().ok().flatten().is_some() {
@@ -338,9 +289,6 @@ fn run_docker_exec_capsule_raw(
 }
 
 fn docker_exec_capsule_args(container: &ContainerHandle, script: &str) -> Vec<String> {
-    // Capsule state is root-supervisor-owned. Fallback exec must use the same
-    // identity as PID 1, not the image's baked agent UID. The daemon ID is
-    // immutable; the display name is deliberately never placed in argv.
     vec![
         "exec".to_owned(),
         "--user".to_owned(),

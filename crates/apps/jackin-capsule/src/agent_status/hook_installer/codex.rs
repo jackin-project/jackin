@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Codex hook installer (`CodexHookInstaller`).
 
 use super::{HookInstaller, read_existing_json_object, upsert_into_json_array, write_json_file};
 use jackin_core::container_paths;
@@ -10,7 +9,6 @@ use std::path::Path;
 
 use anyhow::Context as _;
 
-/// Installer for Codex hook reporter.
 #[derive(Debug)]
 pub struct CodexHookInstaller {
     pub hook_script_path: String,
@@ -24,10 +22,6 @@ impl Default for CodexHookInstaller {
     }
 }
 
-/// Codex reporter events written under `hooks.<Event>`. `Stop` carries
-/// turn-complete (Codex's separate `notify` program is a `config.toml` setting,
-/// not a `hooks.json` field — and current Codex rejects any top-level key other
-/// than `hooks`, discarding the whole file, so we never write one).
 pub(crate) const CODEX_HOOK_EVENTS: &[&str] = &[
     "UserPromptSubmit",
     "PreToolUse",
@@ -41,10 +35,7 @@ pub(crate) const CODEX_HOOK_EVENTS: &[&str] = &[
 impl HookInstaller for CodexHookInstaller {
     fn install(&self, _agent_home: &Path, config_dir: &Path) -> anyhow::Result<()> {
         let hooks_path = config_dir.join("hooks.json");
-        // Merge into any existing hooks.json rather than overwriting it: the
-        // operator or role may own Codex hooks, and a drift-repair launch must
-        // not destroy them. `read_existing_json_object` bails on a corrupt file
-        // instead of clobbering it.
+
         let mut root = read_existing_json_object(&hooks_path)?;
         let hooks = root
             .entry("hooks".to_owned())

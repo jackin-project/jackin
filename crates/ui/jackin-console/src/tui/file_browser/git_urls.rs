@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! File-browser git-URL resolution and polling.
 
 use crate::tui::state::{ManagerStage, ManagerState, Modal, SettingsModal};
 

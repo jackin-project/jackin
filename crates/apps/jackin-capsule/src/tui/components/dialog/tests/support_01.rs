@@ -3,10 +3,6 @@
 
 use super::*;
 pub(super) fn picker(agents: Vec<&str>) -> Dialog {
-    // Mirror the daemon's construction site: `Dialog::new_agent_picker`
-    // computes the initial `selected` past the leading `"agents"`
-    // section row. Tests that explicitly want a different starting
-    // selection construct `Dialog::AgentPicker { … }` inline.
     Dialog::new_agent_picker(
         agents.into_iter().map(String::from).collect(),
         PickerIntent::NewTab,
@@ -365,8 +361,6 @@ pub(super) fn anthropic_usage_view_fixture() -> jackin_protocol::control::Focuse
                 Some("Resets in 2h 12m (Jun 17, 19:19)"),
                 Some("34% in reserve"),
             ),
-            // limits-array shape: weekly_all is labelled "All models", and a
-            // model-scoped window (Fable) renders as its own non-headline row.
             quota_bucket(
                 "All models",
                 55,

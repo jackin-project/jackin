@@ -1,7 +1,3 @@
-//! Typed errors for image build, agent binary, and capsule binary paths.
-
-/// Failures from derived-image context, binary artifact fetch, and capsule
-/// provenance verification.
 #[derive(Debug, thiserror::Error)]
 pub enum ImageError {
     #[error("{0}")]

@@ -1,8 +1,3 @@
-//! jackin-usage-output: plain stdout/stderr writers for capsule CLI output.
-//!
-//! **Architecture Invariant:** T0.
-//! Entry point: [`stdout_line`] — locked stdout line writer.
-
 use std::fmt::Arguments;
 use std::io::Write as _;
 

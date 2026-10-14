@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared credential form and safe environment display helpers.
 use crate::tui::auth::AuthKind;
 use crate::tui::components::auth_panel::{AuthCredential, AuthForm};
 use jackin_config::EnvValue;

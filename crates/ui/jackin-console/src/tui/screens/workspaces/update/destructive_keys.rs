@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Destructive confirm key plans.
 
 use super::{
     DestructiveConfirmPlan, InstancePurgeKeyPlan, SelectedInstanceActionPlan,
@@ -63,9 +62,6 @@ pub fn selected_instance_purge_confirm_plan(
     SelectedInstancePurgeConfirmPlan::OpenConfirm { container, label }
 }
 
-/// Action x status acceptance grid. Each arm enumerates the exact set
-/// of statuses the action runs against. Positive matching keeps future
-/// status variants from becoming accepted by accident.
 #[must_use]
 pub const fn instance_action_accepts_status(
     action: WorkspaceInstanceAction,
@@ -74,7 +70,6 @@ pub const fn instance_action_accepts_status(
     use WorkspaceInstanceAction as A;
     use WorkspaceInstanceStatus as S;
     match (action, status) {
-        // Reconnect / Inspect: anything that still has on-disk state to read.
         (A::Reconnect | A::Inspect, status) => match status {
             S::Active
             | S::Running
@@ -87,7 +82,7 @@ pub const fn instance_action_accepts_status(
             | S::FailedSetup => true,
             S::Purged => false,
         },
-        // NewSession / Shell / Stop: live container required.
+
         (A::NewSession | A::Shell | A::Stop, status) => match status {
             S::Active | S::Running => true,
             S::CleanExited
@@ -99,9 +94,7 @@ pub const fn instance_action_accepts_status(
             | S::Purged
             | S::FailedSetup => false,
         },
-        // Purge: anything that has not already been purged. Crashed /
-        // CleanExited / Preserved* rows have local state worth deleting
-        // even though their containers are gone.
+
         (A::Purge, status) => match status {
             S::Active
             | S::Running

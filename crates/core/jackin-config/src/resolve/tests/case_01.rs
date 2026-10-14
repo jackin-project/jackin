@@ -112,10 +112,6 @@ fn saved_workspace_match_depth_still_matches_nested_path_under_mount_root() {
 
 #[test]
 fn saved_workspace_match_depth_rejects_workdir_prefix_only_match() {
-    // Broad workdir that is a parent of cwd but not equal to it.
-    // The mount source exists and is canonicalized so it is a real
-    // candidate — the test confirms the exact-workdir rule rejects the
-    // match rather than a silent canonicalize failure on a missing path.
     let temp = tempdir().unwrap();
     let broad_workdir = temp.path().join("Projects");
     let agent_repo = broad_workdir.join("role-repo");
@@ -278,8 +274,6 @@ fn resolves_same_path_relative_target_to_absolute_workdir() {
     let project_dir = temp.path().join("project");
     std::fs::create_dir_all(&project_dir).unwrap();
 
-    // The cwd parameter is used to resolve relative paths — no need
-    // to mutate the global process CWD.
     let resolved = resolve_load_workspace(
         &AppConfig::default(),
         &RoleSelector::new(None, "agent-smith"),

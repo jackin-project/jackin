@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Discovery capability mapping.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -8,7 +7,6 @@ use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCatalogEntry};
 
 use crate::{ValidatedCredentialBinding, ValidatedUsageDiscovery};
 
-/// Canonical broker capability for one validated credential binding.
 pub fn capability_for_binding(
     binding: &ValidatedCredentialBinding,
     catalog_revision: Option<&str>,
@@ -34,7 +32,6 @@ pub fn capability_for_binding(
     }
 }
 
-/// Every canonical capability in one validated host discovery generation.
 #[must_use]
 pub fn usage_broker_capabilities(
     discovery: &ValidatedUsageDiscovery,
@@ -48,7 +45,6 @@ pub fn usage_broker_capabilities(
         .collect()
 }
 
-/// Catalog entries with source revisions for one validated generation.
 pub fn usage_catalog_entries(discovery: &ValidatedUsageDiscovery) -> Vec<UsageCatalogEntry> {
     let mut source_revisions = BTreeMap::<UsageAccountCapability, BTreeSet<String>>::new();
     for binding in &discovery.bindings {

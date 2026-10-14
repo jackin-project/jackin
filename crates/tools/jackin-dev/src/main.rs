@@ -1,8 +1,3 @@
-//! jackin-dev: local development helper binary.
-//!
-//! **Architecture Invariant:** T0.
-//! Entry point: [`main`] — binary entry for local dev helpers.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -22,16 +17,7 @@ const CAPSULE_PATH_DEPS: [(&str, &str); 5] = [
     ("crates/core/jackin-protocol/", "jackin-protocol"),
     ("crates/core/jackin-build-meta/", "jackin-build-meta"),
 ];
-// Local construct image registry + stable tag — must match the
-// `LOCAL_REGISTRY_IMAGE`/`STABLE_TAG` defaults in `jackin-xtask/src/construct.rs`.
-// The exported `JACKIN_CONSTRUCT_IMAGE` pins to the commit-suffixed tag
-// (`<registry>:<stable>-<short12 sha>`) that `construct build-local` also
-// produces, NOT the moving `<registry>:<stable>` tag. Pinning to the commit
-// makes every custom build's tag unique, so a construct change invalidates the
-// cached role base (`local_role_base_labels_match` compares the construct
-// label) instead of silently reusing a stale base built from a different
-// construct. The role git SHA used here is `git rev-parse --short=12 HEAD`,
-// identical to `git_sha()` in the xtask.
+
 const LOCAL_CONSTRUCT_REGISTRY: &str = "jackin-local/construct";
 const CONSTRUCT_STABLE_TAG: &str = "trixie";
 
@@ -44,36 +30,32 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum TopCommand {
-    /// Pull request verification helpers.
     #[command(subcommand)]
     Pr(PrCommand),
 }
 
 #[derive(Subcommand)]
 enum PrCommand {
-    /// Clone or refresh a PR checkout and prepare its isolated environment.
     Sync(SyncArgs),
-    /// Remove a PR verification bundle.
+
     Clean(PrPathArgs),
-    /// Print the shell commands for entering a PR verification bundle.
+
     Env(PrPathArgs),
-    /// Print the PR verification bundle path.
+
     Path(PrPathArgs),
-    /// Show local checkout/env freshness for a PR verification bundle.
+
     Status(PrRepoArgs),
-    /// Preview sync auto-prep decisions and explain the changed files behind them.
+
     Explain(PrRepoArgs),
 }
 
-/// Fields shared by every command that resolves a PR against a remote repo.
 #[derive(Args)]
 struct PrRepoArgs {
-    /// GitHub pull request number.
     pr: u64,
-    /// Repository in owner/name form.
+
     #[arg(long, default_value = DEFAULT_REPO)]
     repo: String,
-    /// PR test root. Defaults to ~/Projects/jackin-project/test/pr-\<number\>.
+
     #[arg(long)]
     test_dir: Option<PathBuf>,
 }
@@ -82,29 +64,26 @@ struct PrRepoArgs {
 struct SyncArgs {
     #[command(flatten)]
     common: PrRepoArgs,
-    /// Isolated config source for `JACKIN_CONFIG_DIR`.
+
     #[arg(long, value_enum, default_value_t = ConfigSource::Copy)]
     config: ConfigSource,
-    /// Reset the checkout even when local work would otherwise block sync.
+
     #[arg(long)]
     force: bool,
 }
 
-/// Fields for local-only commands; these never touch the remote, so no `--repo`.
 #[derive(Args)]
 struct PrPathArgs {
-    /// GitHub pull request number.
     pr: u64,
-    /// PR test root. Defaults to ~/Projects/jackin-project/test/pr-\<number\>.
+
     #[arg(long)]
     test_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ConfigSource {
-    /// Start with an empty PR-scoped config directory.
     Blank,
-    /// Copy ~/.config/jackin into the PR-scoped config directory.
+
     Copy,
 }
 
@@ -284,7 +263,6 @@ fn print_env(args: PrPathArgs) -> Result<()> {
     Ok(())
 }
 
-/// Shell commands an operator runs to enter a synced PR bundle.
 fn enter_lines(paths: &PrPaths) -> [String; 3] {
     [
         format!("cd {}", shell_quote(paths.repo.as_os_str())),
@@ -357,23 +335,6 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
     })
 }
 
-/// The changed-file list for a PR, uncapped on both file count and diff size.
-///
-/// Two GitHub ceilings stand between us and the file list:
-///
-/// 1. `gh pr view --json files` caps at 100 paths, silently dropping the rest.
-///    A large PR (e.g. #528 with 113) then degrades every `auto_prep` build
-///    decision to "not needed" and launches against a stale image.
-/// 2. `gh pr diff --name-only` dodges that file cap, but GitHub rejects the
-///    diff resource entirely once it exceeds 20000 lines (HTTP 406
-///    `PullRequest.diff too_large`) — and the `--name-only` form routes
-///    through the same resource, so it dies on the same threshold. #713
-///    (~28k diff lines) was the first PR here to clear it.
-///
-/// Try the diff endpoint first (one call for normal PRs), then fall back to
-/// the paginated REST files endpoint — uncapped on both axes — only when the
-/// diff is too large. Any other failure is a real error, not a fallback
-/// trigger.
 fn changed_files(pr: u64, repo: &str) -> Result<Vec<String>> {
     let mut diff_cmd = command(
         "gh",
@@ -410,10 +371,6 @@ fn changed_files(pr: u64, repo: &str) -> Result<Vec<String>> {
     }
 }
 
-/// True when an error from `gh pr diff` is GitHub's "diff exceeds 20000 lines"
-/// rejection (HTTP 406 / `PullRequest.diff too_large`) — the one case we route
-/// around via the files endpoint. Detects all three phrasings gh has emitted
-/// across versions.
 fn is_diff_too_large(err: &anyhow::Error) -> bool {
     let msg = format!("{err:#}");
     msg.contains("HTTP 406")
@@ -421,12 +378,6 @@ fn is_diff_too_large(err: &anyhow::Error) -> bool {
         || msg.contains("exceeded the maximum number of lines")
 }
 
-/// The commit-pinned local construct image ref that `construct build-local`
-/// produces (`jackin-local/construct:trixie-<short12 HEAD sha>`).
-///
-/// Pinning to the commit keeps each custom build's tag unique, so switching
-/// jackin❯ onto it invalidates a role base built from a different construct
-/// instead of reusing it under the moving `:trixie` tag.
 fn local_construct_image_ref(repo: &Path) -> Result<String> {
     let sha = git_output(repo, ["rev-parse", "--short=12", "HEAD"])?;
     if sha.is_empty() {
@@ -447,9 +398,6 @@ fn parse_pr_refs(json: &Value) -> Result<(String, String)> {
     ))
 }
 
-// An empty file list is a contract break, not a zero-file PR: silently
-// collapsing it to empty would downgrade every `auto_prep` build decision to
-// "not needed" and launch the operator against a stale binary/image.
 fn parse_changed_files(diff_name_only: &str) -> Result<Vec<String>> {
     let changed_files: Vec<String> = diff_name_only
         .lines()
@@ -857,9 +805,6 @@ fn local_dependency_closure(packages: &[WorkspacePackage], root: &str) -> Result
     Ok(closure)
 }
 
-// Couples to the `build-jackin-capsule --export` contract: it prints exactly
-// one `export JACKIN_CAPSULE_BIN=<path>` line to stdout (build chatter goes to
-// stderr). If that output format changes, this match must change with it.
 fn build_capsule_export(repo_dir: &Path) -> Result<String> {
     let output = run_output(
         mise_exec_command(

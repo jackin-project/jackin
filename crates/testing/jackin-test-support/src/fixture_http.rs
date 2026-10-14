@@ -1,34 +1,3 @@
-//! Tiny instrumented HTTP fixture server for provider-adapter tests.
-//!
-//! [`FixtureHttpServer`] binds `127.0.0.1` on an ephemeral port and replays a
-//! script of [`ScriptedResponse`] values, one per connection, while recording
-//! every [`RecordedRequest`] it receives. Standard library only: no TCP/HTTP
-//! framework dependencies, so provider crates can use it without new deps.
-//!
-//! # Secrets
-//!
-//! Fixture scripts must never contain real credentials. Use obviously fake
-//! placeholder tokens (e.g. `test-token-123`) and assert captured traffic is
-//! clean with [`RecordedRequest::assert_no_secrets`]. Use [`redact_secrets`]
-//! before embedding recorded traffic in failure messages or snapshots.
-//!
-//! # Example
-//!
-//! ```no_run
-//! use jackin_test_support::fixture_http::{FixtureHttpServer, ScriptedResponse};
-//! use std::time::Duration;
-//!
-//! let server = FixtureHttpServer::start(vec![
-//!     ScriptedResponse::new(429, "slow down").with_retry_after_secs(2),
-//!     ScriptedResponse::new(200, r#"{"ok":true}"#)
-//!         .with_header("Content-Type", "application/json"),
-//! ])?;
-//! // ... drive the provider adapter against server.url() ...
-//! assert_eq!(server.request_count(), 2);
-//! assert_eq!(server.requests()[0].path, "/v1/models");
-//! # Ok::<(), std::io::Error>(())
-//! ```
-
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -37,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-/// One scripted HTTP response, replayed for a single connection.
 #[derive(Debug, Clone)]
 pub struct ScriptedResponse {
     status: u16,
@@ -47,8 +15,6 @@ pub struct ScriptedResponse {
 }
 
 impl ScriptedResponse {
-    /// Response with `status` and `body`. `Content-Length` and
-    /// `Connection: close` are added automatically at send time.
     #[must_use]
     pub fn new(status: u16, body: impl Into<Vec<u8>>) -> Self {
         Self {
@@ -59,20 +25,17 @@ impl ScriptedResponse {
         }
     }
 
-    /// Add a response header (e.g. `Content-Type`, `Retry-After`).
     #[must_use]
     pub fn with_header(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.to_owned(), value.to_owned()));
         self
     }
 
-    /// Add a `Retry-After` header with a delay-seconds value.
     #[must_use]
     pub fn with_retry_after_secs(self, secs: u64) -> Self {
         self.with_header("Retry-After", &secs.to_string())
     }
 
-    /// Sleep this long before sending the response (latency injection).
     #[must_use]
     pub fn with_latency(mut self, latency: Duration) -> Self {
         self.latency = latency;
@@ -97,21 +60,18 @@ impl ScriptedResponse {
     }
 }
 
-/// One HTTP request captured by [`FixtureHttpServer`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordedRequest {
-    /// Request method (`GET`, `POST`, ...), uppercased as received.
     pub method: String,
-    /// Request target exactly as received (`/v1/models?x=1`).
+
     pub path: String,
-    /// Request headers in received order.
+
     pub headers: Vec<(String, String)>,
-    /// Raw request body bytes.
+
     pub body: Vec<u8>,
 }
 
 impl RecordedRequest {
-    /// First header value for `name` (ASCII case-insensitive), if present.
     #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers
@@ -120,20 +80,11 @@ impl RecordedRequest {
             .map(|(_, value)| value.as_str())
     }
 
-    /// Request body lossily decoded as UTF-8.
     #[must_use]
     pub fn body_text(&self) -> String {
         String::from_utf8_lossy(&self.body).into_owned()
     }
 
-    /// Panic if any `forbidden` value appears in the path, headers, or body.
-    ///
-    /// The panic message is redacted via [`redact_secrets`]: it names which
-    /// index matched, never the secret itself.
-    ///
-    /// # Panics
-    ///
-    /// Panics when a non-empty `forbidden` value is found in the request.
     pub fn assert_no_secrets(&self, forbidden: &[&str]) {
         let mut haystacks = Vec::with_capacity(self.headers.len() * 2 + 2);
         haystacks.push(self.path.as_str());
@@ -157,8 +108,6 @@ impl RecordedRequest {
     }
 }
 
-/// Replace every occurrence of each non-empty `secret` in `text` with
-/// `<redacted>`. Use before logging recorded traffic.
 #[must_use]
 pub fn redact_secrets(text: &str, secrets: &[&str]) -> String {
     let mut out = text.to_owned();
@@ -171,13 +120,6 @@ pub fn redact_secrets(text: &str, secrets: &[&str]) -> String {
     out
 }
 
-/// Instrumented single-threaded HTTP/1.0-style fixture server.
-///
-/// Connections are served sequentially in accept order, so each connection
-/// consumes the next [`ScriptedResponse`] deterministically. When the script
-/// is exhausted the last response repeats; an empty script yields
-/// `500` with an empty body until [`FixtureHttpServer::push_response`]
-/// extends it.
 #[derive(Debug)]
 pub struct FixtureHttpServer {
     addr: SocketAddr,
@@ -188,11 +130,6 @@ pub struct FixtureHttpServer {
 }
 
 impl FixtureHttpServer {
-    /// Bind `127.0.0.1:0` and start serving `script` in a background thread.
-    ///
-    /// # Errors
-    ///
-    /// Returns the socket error when binding or spawning the server thread fails.
     pub fn start(script: Vec<ScriptedResponse>) -> std::io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let addr = listener.local_addr()?;
@@ -219,19 +156,16 @@ impl FixtureHttpServer {
         })
     }
 
-    /// Local address the server is bound to.
     #[must_use]
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
 
-    /// Base URL for the server, e.g. `http://127.0.0.1:41233`.
     #[must_use]
     pub fn url(&self) -> String {
         format!("http://{}", self.addr)
     }
 
-    /// Number of requests recorded so far.
     #[must_use]
     pub fn request_count(&self) -> usize {
         self.recorded
@@ -240,7 +174,6 @@ impl FixtureHttpServer {
             .unwrap_or_default()
     }
 
-    /// Snapshot of all recorded requests in arrival order.
     #[must_use]
     pub fn requests(&self) -> Vec<RecordedRequest> {
         self.recorded
@@ -249,14 +182,12 @@ impl FixtureHttpServer {
             .unwrap_or_default()
     }
 
-    /// Append a response to the live script (for multi-phase tests).
     pub fn push_response(&self, response: ScriptedResponse) {
         if let Ok(mut script) = self.script.lock() {
             script.push_back(response);
         }
     }
 
-    /// Number of scripted responses still queued (excludes the sticky last).
     #[must_use]
     pub fn script_remaining(&self) -> usize {
         self.script
@@ -310,11 +241,6 @@ impl Worker {
         reason = "fixture server runs on its own owned OS thread; scripted latency is the test product"
     )]
     fn serve_one(&self, stream: TcpStream) {
-        // Accepted sockets inherit the listener's nonblocking mode on
-        // BSD/macOS, and read timeouts do not apply to nonblocking reads:
-        // without this, `read_request` fails with WouldBlock whenever the
-        // server thread outruns the client write. Restore blocking mode so
-        // the timeouts below actually bound the reads.
         drop(stream.set_nonblocking(false));
         drop(stream.set_read_timeout(Some(Duration::from_secs(5))));
         drop(stream.set_write_timeout(Some(Duration::from_secs(5))));
@@ -340,7 +266,6 @@ impl Worker {
             .and_then(|mut script| {
                 let response = script.pop_front()?;
                 if script.is_empty() {
-                    // Last scripted response sticks: keep serving it.
                     script.push_back(response.clone());
                 }
                 Some(response)

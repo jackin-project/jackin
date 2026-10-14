@@ -66,10 +66,7 @@ fn assert_wire_requests(testbed: &jackin_otlp_testbed::Testbed, expected_request
     let counts_match = traces.len() == expected_requests
         && logs.len() == expected_requests
         && metrics.len() == expected_requests;
-    // Per-request distribution, not just the flattened total: retries re-send
-    // the identical batch, so every captured log request must carry exactly
-    // one matching record. A 0/1/2 split across three requests with total 3
-    // is retry-payload corruption and must fail (PR #1014 Codex P2).
+
     let records_match = log_records.len() == expected_requests
         && logs.len() == expected_requests
         && logs.iter().all(|request| {
@@ -127,7 +124,7 @@ fn assert_wire_requests(testbed: &jackin_otlp_testbed::Testbed, expected_request
         .map(|record| record.event_name.clone())
         .collect();
     let health = jackin_diagnostics::telemetry_health_snapshot();
-    // NOTE: assert!, not panic! — clippy::panic is denied (-D warnings).
+
     assert!(
         counts_match && records_match,
         "wire request mismatch: expected {expected_requests} requests per signal \

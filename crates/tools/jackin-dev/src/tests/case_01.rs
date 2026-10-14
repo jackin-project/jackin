@@ -20,8 +20,6 @@ fn env_points_at_bundle_state() {
     let paths = PrPaths::from_root(root);
     let env = env_lines(&paths).join("\n");
 
-    // Assert against the derived paths, not re-typed literals, so a layout
-    // rename propagates here instead of silently passing.
     assert!(env.contains(&paths.config.display().to_string()));
     assert!(env.contains(&paths.home.display().to_string()));
     assert!(!env.contains(".config/jackin-pr-"));
@@ -177,7 +175,6 @@ fn shell_quote_leaves_path_safe_chars_unquoted() {
 
 #[test]
 fn shell_quote_escapes_single_quotes() {
-    // Closes the quote, emits a literal ', reopens — the POSIX idiom.
     assert_eq!(shell_quote(OsStr::new("it's")), r#"'it'"'"'s'"#);
 }
 
@@ -260,7 +257,6 @@ fn parse_pr_refs_reads_head_name_and_oid() {
 
 #[test]
 fn parse_changed_files_trims_and_drops_blank_lines() {
-    // Mimics `gh pr diff --name-only`, including a path past the old 100-file cap.
     let out = "a.rs\n  docker/construct/Dockerfile  \n\n\nb.rs\n";
     let files = parse_changed_files(out).unwrap();
     assert_eq!(files, vec!["a.rs", "docker/construct/Dockerfile", "b.rs"]);
@@ -268,8 +264,6 @@ fn parse_changed_files_trims_and_drops_blank_lines() {
 
 #[test]
 fn parse_changed_files_accepts_files_api_output() {
-    // The too-large-diff fallback uses `gh api .../files --jq '.[].filename'`,
-    // which is also newline-separated filenames, so the same parser applies.
     let out = "a.rs\ndocker/construct/Dockerfile\nb.rs\n";
     let files = parse_changed_files(out).unwrap();
     assert_eq!(files, vec!["a.rs", "docker/construct/Dockerfile", "b.rs"]);
@@ -282,7 +276,6 @@ fn parse_changed_files_rejects_empty() {
 
 #[test]
 fn is_diff_too_large_matches_github_406_phrasings() {
-    // Reproduced from gh against #713 (the first PR here to clear 20k diff lines).
     let live = anyhow::anyhow!(
         "`gh pr diff 713 --repo jackin-project/jackin --name-only` failed with \
          exit status: 1\n\
@@ -293,7 +286,6 @@ fn is_diff_too_large_matches_github_406_phrasings() {
     );
     assert!(is_diff_too_large(&live));
 
-    // Each detection phrasing on its own, in case gh rewords these later.
     assert!(is_diff_too_large(&anyhow::anyhow!("HTTP 406: nope")));
     assert!(is_diff_too_large(&anyhow::anyhow!(
         "PullRequest.diff too_large"
@@ -305,8 +297,6 @@ fn is_diff_too_large_matches_github_406_phrasings() {
 
 #[test]
 fn is_diff_too_large_rejects_unrelated_errors() {
-    // A real failure (auth, network, missing PR) must stay a hard error, not
-    // trigger a misleading fallback to the files endpoint.
     assert!(!is_diff_too_large(&anyhow::anyhow!("HTTP 404: Not Found")));
     assert!(!is_diff_too_large(&anyhow::anyhow!(
         "could not find pull request: HTTP 404"

@@ -10,11 +10,9 @@ use clap::{Args, ValueEnum};
 
 #[derive(Debug, Args)]
 pub(crate) struct ProfileMatrixArgs {
-    /// Matrix to run. Only the standard default-flip gate is currently defined.
     #[arg(value_enum)]
     matrix: Matrix,
-    /// Print the matrix without requiring Docker. Useful for docs review on
-    /// hosts where Docker is intentionally unavailable.
+
     #[arg(long)]
     dry_run: bool,
 }
@@ -209,7 +207,7 @@ fn docker_rm(name: &str) {
     cmd.args(["rm", "-f", name])
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    // Best-effort cleanup; ignore failure.
+
     let _unused = crate::cmd::run(&mut cmd);
 }
 

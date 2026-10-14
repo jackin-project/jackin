@@ -128,17 +128,11 @@ fn client_socket(client: &jackin_usage::host::UsageBrokerClient) -> PathBuf {
     workspace_state_dir().join("data/usage-broker/run/usage-broker.sock")
 }
 
-/// The broker must leave its activating client's session so the
-/// client's terminal death cannot HUP it. A broker that dies there
-/// orphans a fresh leader lease, and a relaunch inside the lease window
-/// fails closed ("starting scoped usage relay") instead of reusing it.
 #[cfg(unix)]
 #[test]
 fn broker_detaches_from_activating_session() {
     use nix::unistd::{Pid, getsid};
 
-    // Sibling of (never a child of) the parallel lifecycle test's root:
-    // its start/end `remove_dir_all` would otherwise reap our socket.
     let root = PathBuf::from("target/ubt").join(format!("{}-hup", std::process::id()));
     let _ignored = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("workspace test state");
@@ -157,9 +151,6 @@ fn broker_detaches_from_activating_session() {
 
     let pid = fixture_broker_pid(&cleanup.0).expect("fixture broker pid");
 
-    // A detached broker leads its own session: session id == pid, and
-    // never the activator's session, so the activator's terminal HUP
-    // cannot reach it.
     let broker_sid = getsid(Some(Pid::from_raw(pid))).expect("broker session");
     assert_eq!(
         broker_sid,
@@ -172,8 +163,7 @@ fn broker_detaches_from_activating_session() {
         "broker must leave the activating session"
     );
     client.current_projection().expect("detached broker serves");
-    // The restore path re-activates against the same data dir; it must
-    // reuse the surviving broker, not fail closed on its lease.
+
     let revived = ensure_usage_monitor_process(config, &scope)
         .expect("reactivation reuses local-only broker");
     revived
@@ -187,7 +177,6 @@ fn workspace_state_dir() -> PathBuf {
     PathBuf::from("target/ubt").join(std::process::id().to_string())
 }
 
-/// Own cleanup before activation so startup failures cannot leave a service.
 struct FixtureBrokerCleanup(PathBuf);
 
 impl Drop for FixtureBrokerCleanup {
@@ -201,7 +190,6 @@ impl Drop for FixtureBrokerCleanup {
     }
 }
 
-/// Read authority only from this test's isolated data directory.
 fn fixture_broker_pid(data_dir: &std::path::Path) -> Option<i32> {
     let lease_bytes = fs::read(data_dir.join("usage-broker/run/leader.pid")).ok()?;
     let lease: serde_json::Value = serde_json::from_slice(&lease_bytes).ok()?;

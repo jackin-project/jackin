@@ -5,9 +5,6 @@ use super::*;
 
 #[test]
 fn agent_synchronized_output_toggles_are_absorbed() {
-    // The capsule's own frame brackets supersede the agent's BSU/ESU; a
-    // forwarded `?2026h` whose matching `l` is dropped froze the outer
-    // terminal (D6), so the grid absorbs both toggles.
     for toggle in [&b"\x1b[?2026h"[..], &b"\x1b[?2026l"[..]] {
         let drained = drained(toggle);
         assert!(
@@ -19,8 +16,6 @@ fn agent_synchronized_output_toggles_are_absorbed() {
 
 #[test]
 fn known_csi_does_not_double_emit() {
-    // Cursor positioning `\x1b[5;3H` is handled by the grid; it must not be
-    // re-emitted as passthrough (which would duplicate the cursor move).
     let drained = drained(b"\x1b[5;3H");
     assert!(
         drained.iter().all(|f| !f.ends_with(b"H")),
@@ -75,8 +70,6 @@ fn osc_8_hyperlink_dropped_when_policy_denies() {
 
 #[test]
 fn osc_8_unsafe_scheme_dropped_even_when_policy_allows() {
-    // A `javascript:` URI must never reach the host terminal regardless of
-    // the operator's hyperlink policy.
     let drained = drained(b"\x1b]8;;javascript:alert(1)\x07");
     assert!(
         drained
@@ -321,9 +314,6 @@ fn build_shell_command_restores_container_home_and_rejects_foreign_home() {
 
 #[test]
 fn pty_output_does_not_change_state() {
-    // The old flap engine flipped state on every PTY byte (Idle→Working) and
-    // could not hold a blocked dialog through its own repaint. After Phase 2,
-    // PTY output updates recency only and never authors state.
     let mut session = test_session_with_policy(OscPolicy::default());
     session.state = AgentState::Blocked;
     let before = session.last_output_at;
@@ -341,9 +331,6 @@ fn pty_output_does_not_change_state() {
 
 #[test]
 fn operator_input_does_not_change_state() {
-    // A keystroke inside a blocked dialog used to flip Blocked→Working and
-    // re-notify. After Phase 2 it updates the input timestamp and reports
-    // whether it cleared a latched blocker, but never authors state.
     let mut session = test_session_with_policy(OscPolicy::default());
 
     session.state = AgentState::Blocked;
@@ -365,11 +352,6 @@ fn operator_input_does_not_change_state() {
 
 #[test]
 fn redraw_soak_produces_zero_state_transitions() {
-    // The flap engine produced a Blocked↔Working flip on every redraw frame.
-    // Replaying a permission-dialog repaint many times must now yield zero
-    // state changes at the session level. (The real single Blocked transition
-    // arrives with the Phase 3/8 evidence pipeline; this guards that redraws
-    // alone never author state — the regression that motivated this work.)
     let mut session = test_session_with_policy(OscPolicy::default());
     let start = session.state;
     let frame =

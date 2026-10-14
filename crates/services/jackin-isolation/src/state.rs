@@ -1,17 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `IsolationRecord` persistence: write/read `isolation.json` inside the container state directory.
-//!
-//! Not responsible for worktree or branch lifecycle — those are in
-//! `cleanup.rs`. The file is the sole authority on whether a container has
-//! active isolation that must be preserved before purge.
-//!
-//! Pure data types `IsolationRecord`, `CleanupStatus`, and `DriftDetection`
-//! now live in `jackin-core` so that `jackin-console` can reference them
-//! without depending on `jackin-runtime`. Re-exported here for existing call
-//! sites in this crate and downstream consumers.
-
 mod state_io;
 use state_io::{FileSnapshot, StateDirectory};
 
@@ -21,10 +10,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use std::path::{Path, PathBuf};
 
-// Re-export so test code using `use super::*` still finds it.
 pub use crate::MountIsolation;
 
-// Pure data types — now in jackin-core.
 pub use jackin_core::{CleanupStatus, IsolationRecord};
 
 const ISOLATION_FILE: &str = "isolation.json";
@@ -70,10 +57,6 @@ struct HistoricalIsolationRecord {
     cleanup_status: CleanupStatus,
 }
 
-/// Identity fields present in the v3 instance manifest. Keep this separate
-/// from `InstanceManifest`: v4 deliberately rejects old manifests globally,
-/// while isolation v1 needs this narrow, versioned witness to recover the
-/// workspace identity it did not store itself.
 #[derive(Deserialize)]
 struct HistoricalInstanceManifestV3 {
     version: u32,
@@ -119,7 +102,6 @@ where
     Option::<String>::deserialize(deserializer)
 }
 
-/// Path to `isolation.json` for a given container's state directory.
 pub fn isolation_file_path(container_state_dir: &Path) -> PathBuf {
     container_state_dir.join(STATE_DIR).join(ISOLATION_FILE)
 }
@@ -130,7 +112,6 @@ pub(crate) fn worktree_cleanup_journal_name(mount_dst: &str) -> String {
     format!("{WORKTREE_CLEANUP_PREFIX}{digest}.json")
 }
 
-/// Snapshot counts of a container's mount records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MountSummary {
     pub total: usize,
@@ -154,22 +135,16 @@ impl MountSummary {
         }
     }
 
-    /// `Err` propagates the `isolation.json` read/parse error; callers
-    /// that want the "unknown" rendering should map it themselves.
     pub fn for_state_dir(container_state_dir: &Path) -> anyhow::Result<Self> {
         Ok(Self::from_records(&read_records(container_state_dir)?))
     }
 
-    /// Prompt-style mount summary for a container's state dir. Returns
-    /// `"mounts:unknown"` when the isolation manifest can't be read.
     #[must_use]
     pub fn prompt_label_for_state_dir(state_dir: &Path) -> String {
         Self::for_state_dir(state_dir)
             .map_or_else(|_| "mounts:unknown".to_owned(), Self::prompt_label)
     }
 
-    /// `"mounts:N dirty:N unpushed:N"`. Returns `"mounts:none"` for the
-    /// empty case and `"mounts:N"` when no records are dirty/unpushed.
     #[must_use]
     pub fn prompt_label(self) -> String {
         if self.total == 0 {
@@ -184,7 +159,6 @@ impl MountSummary {
         format!("mounts:{}", self.total)
     }
 
-    /// `"N total, N dirty, N unpushed"`.
     #[must_use]
     pub fn inspect_label(self) -> String {
         if self.total == 0 {
@@ -200,9 +174,6 @@ impl MountSummary {
     }
 }
 
-/// Read admitted records without publishing a migration or changing filesystem state.
-/// Historical identity requires an independently bound instance manifest.
-/// Returns empty when the file is missing.
 pub fn read_records(container_state_dir: &Path) -> anyhow::Result<Vec<IsolationRecord>> {
     let Some(directory) = StateDirectory::open(container_state_dir, false)? else {
         return Ok(Vec::new());
@@ -268,8 +239,6 @@ fn validate_admission(
     directory.validate_files_unchanged(&witnesses)
 }
 
-/// Explicitly publish one fully admitted historical record set as current schema.
-/// No publication occurs until every row and independent identity witness validates.
 pub fn migrate_records(container_state_dir: &Path) -> anyhow::Result<Vec<IsolationRecord>> {
     let Some(directory) = StateDirectory::open(container_state_dir, false)? else {
         return Ok(Vec::new());
@@ -294,7 +263,6 @@ pub fn migrate_records(container_state_dir: &Path) -> anyhow::Result<Vec<Isolati
     Ok(admission.records)
 }
 
-// Admission never turns display labels into identities or publishes recovered bytes.
 fn admit_historical_identity(
     state_dir: &Path,
     directory: &StateDirectory,
@@ -420,8 +388,6 @@ fn instance_identity_witness(bytes: &[u8]) -> anyhow::Result<InstanceIdentityWit
     }
 }
 
-/// Atomically replace `isolation.json` with the supplied record set.
-/// Creates the parent `.jackin/` directory if needed.
 pub fn write_records(
     container_state_dir: &Path,
     records: &[IsolationRecord],
@@ -437,7 +403,6 @@ pub fn write_records(
     Ok(())
 }
 
-/// Lookup a single record by mount destination.
 pub fn read_record(
     container_state_dir: &Path,
     mount_dst: &str,
@@ -447,7 +412,6 @@ pub fn read_record(
         .find(|r| r.mount_dst == mount_dst))
 }
 
-/// Replace one record (by `mount_dst`) or insert if missing.
 pub fn upsert_record(container_state_dir: &Path, record: IsolationRecord) -> anyhow::Result<()> {
     mutate_records(container_state_dir, true, |records| {
         if let Some(existing) = records.iter_mut().find(|r| r.mount_dst == record.mount_dst) {
@@ -459,7 +423,6 @@ pub fn upsert_record(container_state_dir: &Path, record: IsolationRecord) -> any
     })
 }
 
-/// Remove the record with the matching `mount_dst`. No-op if missing.
 pub fn remove_record(container_state_dir: &Path, mount_dst: &str) -> anyhow::Result<()> {
     mutate_records(container_state_dir, false, |records| {
         let before = records.len();
@@ -538,7 +501,6 @@ pub(crate) fn remove_worktree_cleanup(
     directory.remove_file(journal_name)
 }
 
-// Keep the directory lock across the complete read-modify-write operation.
 fn mutate_records(
     state_dir: &Path,
     create: bool,
@@ -577,10 +539,6 @@ fn mutate_records(
     Ok(())
 }
 
-/// Walk every `<data_dir>/jk-*/` directory and collect records whose
-/// `workspace_name` matches the given config stem. Ad-hoc records are excluded.
-/// Missing data dir → empty result.
-/// Per-container parse failures bubble up.
 pub fn list_records_for_workspace(
     data_dir: &Path,
     workspace: &WorkspaceName,

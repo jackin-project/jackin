@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Formatted prune/cleanup terminal output shared by runtime and diagnostics.
-
 use owo_colors::OwoColorize;
 use std::fmt::Arguments;
 use std::io::Write;
@@ -34,12 +32,6 @@ pub fn section(label: &str, detail: impl std::fmt::Display) {
     flush_stdout();
 }
 
-/// A pending row that started but has not yet rendered its terminal status.
-///
-/// Drop without calling [`PendingRow::ok`], [`PendingRow::skip`],
-/// [`PendingRow::failed`], or [`PendingRow::complete`] is a programming
-/// error: it would leave the dotted prefix without a status word. The Drop
-/// guard catches the leak by closing the row with `FAILED row not finalized`.
 #[must_use = "PendingRow leaves the dotted prefix open until finalized"]
 #[derive(Debug)]
 pub struct PendingRow {
@@ -112,7 +104,6 @@ impl PendingRow {
         stdout_line(format_args!("      {reason}"));
     }
 
-    /// Finalize the row from a `Result`: print `OK` on success, `FAILED` on error.
     pub fn complete<T, E, F>(self, result: Result<T, E>, message: F) -> Result<T, E>
     where
         F: FnOnce(&E) -> String,

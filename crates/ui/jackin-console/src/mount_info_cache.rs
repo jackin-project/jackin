@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cache mount metadata (path existence and kind) so repeated TUI renders
-//! do not stat the filesystem on every frame.
-//!
-//! Not responsible for: filesystem inspection logic (see `mount_info`) or
-//! rendering mount rows.
-
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -66,14 +60,12 @@ impl MountInfoCache {
     }
 }
 
-/// `MountSource` impl for `jackin_config::MountConfig`.
 impl MountSource for jackin_config::MountConfig {
     fn mount_src(&self) -> &str {
         &self.src
     }
 }
 
-/// `MountSource` impl for `jackin_config::GlobalMountRow`.
 impl MountSource for jackin_config::GlobalMountRow {
     fn mount_src(&self) -> &str {
         &self.mount.src

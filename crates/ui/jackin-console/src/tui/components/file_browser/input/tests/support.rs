@@ -70,9 +70,6 @@ pub(super) fn commit_with_services(
 }
 
 pub(super) fn manufactured_modal_area() -> Rect {
-    // Mirrors the shared file-browser modal rect for a term of 120x40:
-    //   w = 120 * 70 / 100 = 84; h = 22.
-    //   x = 0 + (120 - 84)/2 = 18; y = 0 + (40 - 22)/2 = 9.
     Rect {
         x: 18,
         y: 9,

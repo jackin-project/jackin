@@ -1,16 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Git repo context inside the container: branch, ahead/behind counts, dirty
-//! state, and PR metadata for the status bar.
-//!
-//! Not responsible for: rendering the status bar (see `tui`) or host-side git
-//! operations.
-//!
-//! Key invariant: all `git` and `gh` calls are bounded by
-//! `GIT_CONTEXT_COMMAND_TIMEOUT` / `GH_PULL_REQUEST_COMMAND_TIMEOUT` so a
-//! slow repo cannot stall the daemon tick.
-
 mod context;
 mod packed_refs;
 mod refs;

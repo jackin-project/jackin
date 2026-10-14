@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings selection and scroll plans.
 
 use super::{step_cursor_down_by, step_cursor_up_by};
 

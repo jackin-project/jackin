@@ -1,8 +1,3 @@
-//! jackin-manifest: role-repo validation and manifest parsing.
-//!
-//! **Architecture Invariant:** T2.
-//! Entry point: [`ValidatedRoleRepo`] — validated role repository handle.
-
 #![deny(
     clippy::string_slice,
     clippy::indexing_slicing,
@@ -11,7 +6,6 @@
     clippy::panic_in_result_fn,
     clippy::unchecked_time_subtraction
 )]
-#![deny(missing_docs)]
 
 pub mod manifest;
 pub mod migrations;

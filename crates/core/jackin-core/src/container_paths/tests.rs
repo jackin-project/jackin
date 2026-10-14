@@ -1,8 +1,6 @@
 use super::*;
 use std::path::Path;
 
-/// Extending `container_paths` means extending this list — the xtask
-/// container-paths gate makes forgetting expensive.
 const ALL_PUB_CONSTS: &[(&str, &str)] = &[
     ("JACKIN_ROOT", JACKIN_ROOT),
     ("RUNTIME_DIR", RUNTIME_DIR),
@@ -63,9 +61,6 @@ fn no_const_has_dotdot_double_slash_or_trailing_slash() {
     for (name, value) in ALL_PUB_CONSTS {
         assert!(!value.contains(".."), "{name} contains ..");
         assert!(!value.contains("//"), "{name} contains //");
-        if *name != "JACKIN_ROOT" {
-            // JACKIN_ROOT is "/jackin" without trailing slash already.
-        }
         assert!(!value.ends_with('/'), "{name} has trailing slash");
     }
 }

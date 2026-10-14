@@ -142,8 +142,7 @@ RUN set -euxo pipefail && \\
 fn fallback_install_blocks_use_official_installers() {
     let curl_flags =
         "--connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-connrefused";
-    // (agent, installer command, smoke-check binary): the binary differs from
-    // the slug where the CLI name differs (`agy`, `cursor-agent`).
+
     let cases = [
         (
             Agent::Claude,
@@ -347,7 +346,6 @@ fn required_env_var_table() {
         Some(env_model::META_API_KEY_ENV_NAME)
     );
 
-    // Multi-provider clients have no single agent-level variable.
     for agent in [Agent::Omp, Agent::Hermes] {
         for mode in [
             AuthForwardMode::Sync,

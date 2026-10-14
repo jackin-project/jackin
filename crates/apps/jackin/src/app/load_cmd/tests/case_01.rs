@@ -27,8 +27,7 @@ fn no_op_console_skips_disk_reload_for_post_console_config() {
         "JACKIN_TEST_NOOP".to_owned(),
         jackin_core::EnvValue::Plain("from-console".to_owned()),
     );
-    // Persist the "console-owned" snapshot, then poison disk with a different
-    // value that a reload would pick up.
+
     std::fs::write(
         &paths.config_file,
         toml::to_string(&on_disk).expect("serialize console snapshot"),
@@ -54,7 +53,6 @@ fn no_op_console_skips_disk_reload_for_post_console_config() {
     )
     .unwrap();
 
-    // Shipped path: use the returned console config, not load_or_init.
     let post = take_post_console_config(console_owned);
     assert_eq!(
         post.env
@@ -82,11 +80,9 @@ fn saved_console_config_feeds_post_console_launch_path() {
     std::fs::create_dir_all(&workspace_root).unwrap();
     let canonical = workspace_root.canonicalize().unwrap();
 
-    // Disk starts without the saved workspace.
     let disk_before = AppConfig::load_or_init(&paths).unwrap();
     assert!(!disk_before.workspaces.contains_key("saved-ws"));
 
-    // Console save path updates the in-memory model (mirrors *config = saved).
     let mut console_owned = disk_before;
     console_owned.workspaces.insert(
         "saved-ws".to_owned(),
@@ -115,8 +111,6 @@ fn saved_console_config_feeds_post_console_launch_path() {
         Some(Agent::Codex)
     );
 
-    // Disk still lacks the workspace (save may write asynchronously / tests
-    // prove in-memory handoff, not the background writer).
     let still_disk = AppConfig::load_or_init(&paths).unwrap();
     assert!(
         !still_disk.workspaces.contains_key("saved-ws"),

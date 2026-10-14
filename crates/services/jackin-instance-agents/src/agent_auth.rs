@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Agent auth bindings and provision records.
 
 use crate::{SlotLayout, xdg_cache_rel};
 use jackin_instance_credentials::AuthProvisionOutcome;
@@ -11,53 +10,13 @@ use std::collections::BTreeMap;
 
 use std::path::{Path, PathBuf};
 
-/// Runtime state for the selected agent (identity + model override).
-///
-/// Collapsed from a 5-variant enum to a single struct.
-/// Auth paths for provisioned agents are tracked separately on
-/// [`ProvisionedAuth`]. The launch path provisions auth state for every agent
-/// in `manifest.supported_agents()` so each agent's home directory is
-/// bind-mounted at `docker run` and sibling tabs can authenticate without
-/// re-launching.
 #[derive(Debug, Clone)]
 pub struct AgentRuntimeState {
-    /// The selected agent for this session.
     pub agent: jackin_core::Agent,
-    /// Optional model override from the role manifest (`None` = agent default).
+
     pub model: Option<String>,
 }
 
-/// Auth state provisioned for a single launch instance.
-///
-/// One entry per instance binding (agent + account + mode): two
-/// instances of the same agent provision independently and merge as
-/// separate entries in [`ProvisionedAuth::slots`].
-///
-/// `credential_paths` carries the host paths the launcher may
-/// bind-mount into the container. Its shape is fixed per agent:
-/// - Claude: `[account.json, credentials.json]`, always present —
-///   pair with `forward_auth` plus an existence check at mount time.
-///   `forward_auth` is `true` only for modes that mount real
-///   credential files (`Sync` / `OAuthToken`); `ApiKey` and `Ignore`
-///   wipe the role-state credential files and do not mount them.
-/// - Kimi / Hermes: `[<role-state dir>]`, always present — pair with
-///   `forward_auth`, which is `true` only when the directory holds
-///   synced credentials worth mounting.
-/// - Every other agent: the single credential file iff provisioning
-///   decided it should mount (empty after a wipe, or after a
-///   host-missing run with no prior file). For these agents
-///   `forward_auth` is exactly `!credential_paths.is_empty()`.
-///
-/// `home_dir` is the agent home provisioned under the instance root
-/// (`<container>/home/...`); it is `None` when the lazy ignore path
-/// skipped all filesystem work.
-///
-/// Same-agent slots are disambiguated by `slot_suffix`: the first
-/// binding per agent in a provision call keeps the legacy layout
-/// (`None`), later bindings get suffixed store/home dirs. Container
-/// relative paths (`container_home_rel`, `container_store_rel`) and the
-/// folder-var target (`folder_target`) are computed once here so mounts
-/// and the Capsule launch config cannot derive them differently.
 #[derive(Debug, Clone)]
 pub struct ProvisionedInstanceAuth {
     pub agent: jackin_core::Agent,
@@ -70,10 +29,9 @@ pub struct ProvisionedInstanceAuth {
     pub container_home_rel: String,
     pub container_store_rel: String,
     pub folder_target: String,
-    /// Host-side XDG cache root mounted into this slot, when its agent uses
-    /// XDG roots.
+
     pub cache_source_dir: Option<PathBuf>,
-    /// Per-instance container-relative XDG cache root.
+
     pub container_cache_rel: Option<String>,
 }
 
@@ -121,64 +79,40 @@ impl ProvisionedInstanceAuth {
     }
 }
 
-/// Auth state provisioned for a launch, keyed by instance key.
-///
-/// An entry exists iff its instance binding was included in the
-/// caller's provision list and the corresponding preparation step ran.
 #[derive(Debug, Clone, Default)]
 pub struct ProvisionedAuth {
-    pub slots: BTreeMap<String /*instance key*/, ProvisionedInstanceAuth>,
+    pub slots: BTreeMap<String, ProvisionedInstanceAuth>,
 }
 
 impl ProvisionedAuth {
-    /// Synthesize the [`ProvisionedAuth::slots`] key for one
-    /// account/agent pair: `{account-id}@{agent-slug}`. Shares the
-    /// convention with `ResolvedInstance::config_id` in
-    /// `jackin-config`; explicit config ids replace the synthesized
-    /// key once threaded through the pipeline.
     #[must_use]
     pub fn instance_key(account_id: &str, agent: jackin_core::Agent) -> String {
         format!("{account_id}@{}", agent.slug())
     }
 
-    /// First slot provisioned for `agent` in key order, if any.
-    /// Single-instance launches hold at most one slot per agent, so
-    /// this is the whole story there; multi-instance callers iterate
-    /// [`ProvisionedAuth::slots`] and filter by [`ProvisionedInstanceAuth::agent`]
-    /// instead.
     #[must_use]
     pub fn for_agent(&self, agent: jackin_core::Agent) -> Option<&ProvisionedInstanceAuth> {
         self.slots.values().find(|slot| slot.agent == agent)
     }
 }
 
-/// One instance's auth-provisioning request: which agent, which
-/// account, which forward mode, and where sync-mode credentials come
-/// from.
 #[derive(Debug, Clone)]
 pub struct InstanceAuthBinding {
-    /// [`ProvisionedAuth::slots`] key: an explicit config id, or the
-    /// `{account-id}@{agent-slug}` synthesis from
-    /// [`ProvisionedAuth::instance_key`].
     pub key: String,
     pub agent: jackin_core::Agent,
     pub account_id: String,
     pub mode: AuthForwardMode,
     pub sync_source_dir: Option<PathBuf>,
-    /// Provider key selected from a multi-provider source store. This is
-    /// required to filter `OpenCode` auth.json before it enters role state.
+
     pub source_provider: Option<jackin_config::AiProvider>,
-    /// Immutable entry/profile identity selected from an Omp or Hermes store.
+
     pub source_selector: Option<ProfileSelector>,
-    /// Explicit XDG roots from the selected profile, if any. These are
-    /// selected-instance data, never ambient process-environment state.
+
     pub xdg_roots: Option<jackin_config::XdgRoots>,
     pub selected_source: Option<crate::SelectedAuthSourceSnapshot>,
 }
 
 impl InstanceAuthBinding {
-    /// Bind one account/agent pair with a synthesized instance key.
-    /// Overwrite `.key` afterwards when an explicit config id exists.
     #[must_use]
     pub fn new(
         account_id: impl Into<String>,
@@ -201,7 +135,6 @@ impl InstanceAuthBinding {
         }
     }
 
-    /// Opaque revision of the selected source captured for this launch.
     #[must_use]
     pub fn selected_source_revision(&self) -> Option<&str> {
         self.selected_source
@@ -232,9 +165,6 @@ impl InstanceAuthBinding {
     }
 }
 
-/// Placeholder account id used until config ids are threaded through
-/// the provisioning pipeline (a later pass wires `ResolvedInstance`
-/// through [`RoleState::prepare_for_bindings`]).
 pub const DEFAULT_ACCOUNT_ID: &str = "default";
 
 #[derive(Debug)]

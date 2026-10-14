@@ -3,18 +3,18 @@
 
 import AppKit
 
-/// AppKit rendering for one per-provider `NSStatusItem`.
-///
-/// **Liquid Glass / product law:** menu-bar items stay
-/// **template mono** — no glass chips, no severity tint on the bar. Dual stack
-/// shows compact reset countdown (top) + Rust `barLabel` glance % (bottom).
-/// Every usage value is Rust-owned; Swift only layouts and templates icons.
+
+
+
+
+
+
 @MainActor
 public enum StatusItemRendering {
-    /// Template icon for a provider icon key.
-    ///
-    /// Prefers **official** bundled PDF logomarks from `ProviderMarks`.
-    /// Falls back to the jackin❯ monogram for unknown keys.
+
+
+
+
     public static func icon(forIconKey iconKey: String) -> NSImage {
         if let official = ProviderMarks.templateImage(forIconKey: iconKey) {
             return official
@@ -22,8 +22,8 @@ public enum StatusItemRendering {
         return fallbackIcon()
     }
 
-    /// The static jackin❯ logomark used by the empty-set fallback status item
-    /// and for any non-provider icon key.
+
+
     public static func fallbackIcon() -> NSImage {
         if let image = JackinBrandIdentity.templateMonogram() {
             return image
@@ -34,9 +34,9 @@ public enum StatusItemRendering {
         return image
     }
 
-    /// Dual-stack title: compact reset (top) + `barLabel` (bottom).
-    ///
-    /// When no reset is available, falls back to a single-line `barLabel`.
+
+
+
     public static func title(
         barLabel: String,
         compactResetLabel: String?

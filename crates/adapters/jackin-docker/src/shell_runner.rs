@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `ShellRunner`: concrete subprocess implementation of `CommandRunner`.
-//!
-//! The `CommandRunner` trait and `RunOptions` are re-exported from
-//! `jackin-core` so consumer crates depend on the trait, not this
-//! tokio-based implementation.
-//!
-//! Not responsible for: the async Docker daemon API (`docker_client.rs`), or
-//! parsing Docker output formats (those live in the callers).
-
 use crate::DockerError;
 use std::path::Path;
 use std::process::ExitStatus;
@@ -38,22 +29,12 @@ impl ShellRunner {
         if let Some(dir) = cwd {
             command.current_dir(dir);
         }
-        // Kill the child if its awaiting future is dropped. The launch cancel
-        // path (`while_waiting` losing the `select!` on Ctrl+C) drops the run
-        // future mid-flight; without this the spawned process — notably a slow
-        // `docker build` — keeps running detached, holding the daemon, so the
-        // cancel-driven `LoadCleanup` then blocks on that same busy daemon and
-        // the terminal appears frozen. `kill_on_drop` only fires when the
-        // future is dropped before the child exits, so normal awaited runs are
-        // unaffected.
+
         command.kill_on_drop(true);
         command
     }
 
     fn apply_run_opts(cmd: &mut Command, opts: &RunOptions) -> anyhow::Result<()> {
-        // Destructure so a new RunOptions field forces a maintainer to
-        // decide whether it belongs here (applied to every `run` arm)
-        // or stays the responsibility of an arm-specific branch.
         let RunOptions {
             capture_stderr: _,
             capture_stdout: _,
@@ -116,7 +97,6 @@ fn record_subprocess_done(
     );
 }
 
-/// Mask the value portion of env/build args and token-shaped freeform args.
 pub fn redact_env_args(args: &[&str]) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(args.len());
     let mut i = 0;
@@ -186,8 +166,7 @@ where
 {
     let mut captured = Vec::new();
     let mut buf = [0u8; 8192];
-    // Each pipe owns its own redactor state. A key or PEM block split across
-    // reads (or stdout/stderr) must not reach the sink before it is complete.
+
     let mut log_redactor = sink.map(|_| jackin_diagnostics::redact::StreamRedactor::default());
     loop {
         let n = pipe.read(&mut buf).await?;
@@ -232,10 +211,6 @@ fn summarize_stderr(stderr: &[u8]) -> Option<String> {
     Some(summary)
 }
 
-/// Summarize a failed build's stderr for the CLI error: the LAST non-empty
-/// lines (`BuildKit` reports the cause at the end, unlike the preamble
-/// `summarize_stderr` takes from the front), with local temp paths
-/// redacted so launch errors stay free of machine-specific paths.
 fn summarize_build_stderr(stderr: &[u8]) -> String {
     const MAX_CHARS: usize = 500;
     let mut redactor = jackin_diagnostics::redact::StreamRedactor::default();
@@ -266,11 +241,6 @@ fn summarize_build_stderr(stderr: &[u8]) -> String {
     summary
 }
 
-/// Scrub whitespace-delimited tokens that are local temp paths
-/// (`/tmp`, macOS `/private/tmp` + `/var/folders`, `~/...`). Docker
-/// build errors routinely name the ephemeral context directory; the
-/// operator's terminal may show the failure, but the error value itself
-/// must not carry machine-specific paths.
 fn redact_local_paths(summary: &str) -> String {
     summary
         .split_whitespace()
@@ -297,10 +267,6 @@ enum CaptureMode {
     Secret,
 }
 
-/// Merge stdout+stderr with `2>&1` semantics: each stream trimmed, joined
-/// with a newline when both are non-empty. `wait_with_output` cannot
-/// recover chronological interleaving, so stdout leads; empty streams
-/// contribute nothing (no stray blank line).
 fn merge_combined_output(stdout: &[u8], stderr: &[u8]) -> String {
     let stdout = String::from_utf8_lossy(stdout);
     let stderr = String::from_utf8_lossy(stderr);
@@ -445,20 +411,12 @@ impl CommandRunner for ShellRunner {
     ) -> anyhow::Result<()> {
         let op_guard = enter_process_execute(program);
         let result = async {
-            // `interactive` must own the real terminal, so the arms below resolve it
-            // before any capture arm — meaning interactive + capture silently drops
-            // the capture. Catch that illegal combination in tests/debug builds.
             debug_assert!(
                 !(opts.interactive && (opts.capture_stdout || opts.capture_stderr)),
                 "RunOptions::interactive is mutually exclusive with capture_stdout/stderr"
             );
 
             if opts.interactive {
-                // Interactive commands (the `docker exec -it` multiplexer / shell
-                // client) must inherit the real terminal. The --debug and
-                // rich-surface arms below would otherwise capture this output,
-                // denying the client its TTY and blocking forever on the
-                // long-lived session — so inherit stdio directly and never capture.
                 let mut cmd = Self::build_command(program, args, cwd);
                 Self::apply_run_opts(&mut cmd, opts)?;
                 let started = Instant::now();
@@ -483,10 +441,6 @@ impl CommandRunner for ShellRunner {
             } else if opts.capture_stderr || opts.capture_stdout {
                 Box::pin(self.run_captured(&op_guard, program, args, cwd, opts)).await?;
             } else if self.debug || jackin_diagnostics::rich_terminal_owned() {
-                // This arm would otherwise inherit the terminal and stream raw
-                // command output straight to the screen — which floods a rich TUI
-                // and a --debug run. Capture both streams instead so raw output
-                // never corrupts the screen or enters telemetry.
                 let captured = RunOptions {
                     capture_stdout: true,
                     capture_stderr: true,
@@ -601,10 +555,7 @@ impl ShellRunner {
         };
         let stdout_pipe = child.stdout.take();
         let stderr_pipe = child.stderr.take();
-        // Never stream child output while debug handling or a rich full-screen
-        // TUI owns the terminal because it would corrupt the frame. Captured
-        // output is deliberately not emitted as telemetry:
-        // command output and arguments may contain user or provider data.
+
         let stream = opts.stream_captured_output
             && !self.debug
             && !jackin_diagnostics::rich_terminal_owned();
@@ -659,10 +610,6 @@ impl ShellRunner {
         record_subprocess_done(op_guard, program, started, status);
         if !status.success() {
             if opts.tee_to_build_log {
-                // The full output went to the in-memory build log (visible
-                // in the cockpit while it lives), but a fatal error must be
-                // self-describing: the cockpit is gone by the time the
-                // operator reads it. Carry the redacted tail.
                 let stderr = summarize_build_stderr(&stderr_buf);
                 return Err(DockerError::DockerBuildFailed { stderr }.into());
             }

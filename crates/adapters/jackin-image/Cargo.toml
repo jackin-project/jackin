@@ -36,11 +36,11 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 reqwest = { workspace = true }
-# Sigstore Rust client for cosign bundle verification of capsule-manifest.json.
-# Pre-1.0 (0.14.x) but the only canonical option for in-process keyless bundle
-# verification without a `cosign` system dep. Alternatives evaluated: shell out
-# to `cosign` CLI (requires system install), GitHub Attestations API via `gh`
-# (requires `gh` on PATH). Selected for hermetic operation with no system dep.
+
+
+
+
+
 sigstore = { version = "0.14", default-features = false, features = ["cosign"] }
 base64 = { workspace = true }
 x509-cert = { workspace = true, features = ["pem"] }

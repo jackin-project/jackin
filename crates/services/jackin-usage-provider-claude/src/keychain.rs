@@ -1,28 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Claude` macOS Keychain reads with an unattended default and an explicit
-//! foreground lease bootstrap.
 
 #[cfg(any(target_os = "macos", test))]
 use zeroize::Zeroize as _;
 use zeroize::Zeroizing;
 
-/// Safe failure while establishing a process-wide unattended Keychain scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaudeKeychainPolicyError {
-    /// Security.framework could not report the current interaction setting.
     StateUnavailable,
-    /// Security.framework could not disable Keychain UI.
+
     DisableFailed,
-    /// A different foreground Claude source already owns the process cache.
+
     ScopeConflict,
-    /// The selected Keychain service is invalid or too long.
+
     InvalidService,
 }
 
-/// Process-wide RAII scope that prevents Keychain operations from displaying
-/// UI. Hold this for the unattended broker lifetime, before discovery starts.
-/// Drop restores the previous setting when this scope disabled it.
 #[expect(
     missing_debug_implementations,
     reason = "RAII guard owns process-wide Security.framework state"
@@ -94,11 +87,6 @@ fn release_unattended_keychain_scope<Guard>(state: &mut UnattendedKeychainGuardS
     }
 }
 
-/// Disable Keychain UI for an unattended process scope.
-///
-/// On non-macOS platforms the guard is a no-op because Claude Keychain access
-/// is unavailable. If macOS cannot report or disable UI, callers must fail
-/// closed and avoid credential discovery.
 pub fn unattended_keychain_guard()
 -> Result<ClaudeUnattendedKeychainGuard, ClaudeKeychainPolicyError> {
     #[cfg(target_os = "macos")]
@@ -136,34 +124,23 @@ impl Drop for ClaudeUnattendedKeychainGuard {
         let mut state = unattended_keychain_guard_state()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // Drop under the read/transition lock so an in-flight search never
-        // sees interaction re-enabled midway through its lookup.
+
         release_unattended_keychain_scope(&mut state);
     }
 }
 
-/// Keychain lookup outcome. Payloads are zeroizing and the type is never
-/// formatted or logged.
 #[expect(
     missing_debug_implementations,
     reason = "credential type: the keychain payload must never be formatted into a log or error"
 )]
 pub enum ClaudeKeychainRead {
-    Payload {
-        json: Zeroizing<String>,
-    },
+    Payload { json: Zeroizing<String> },
     Denied,
     Missing,
-    /// A matching item requires operator consent before its payload can be read.
+
     ConsentRequired,
 }
 
-/// Classify a macOS `OSStatus` from a Keychain lookup. Only an explicit user
-/// cancel (`errSecUserCanceled` = -128) or auth failure (`errSecAuthFailed` =
-/// -25293) is a terminal `Denied`; headless interaction-not-allowed (-25308)
-/// is `ConsentRequired`; item-not-found (-25300) and any other failure are
-/// `Missing` (absence). Pure and cross-platform so tests never touch the real
-/// Keychain.
 #[cfg(any(target_os = "macos", test))]
 pub fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     match code {
@@ -173,11 +150,6 @@ pub fn classify_claude_keychain_status(code: i32) -> ClaudeKeychainRead {
     }
 }
 
-/// Read a Claude Keychain item without allowing Keychain UI.
-///
-/// The process-wide interaction setting is serialized and restored through an
-/// RAII guard. If Security.framework cannot establish that no-UI scope, the
-/// result is `ConsentRequired` and the item is not searched.
 #[cfg(target_os = "macos")]
 pub fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
     if let Some(selected_service) = crate::lease::bootstrapped_claude_service() {
@@ -193,8 +165,6 @@ pub fn read_claude_keychain_item(service: &str) -> ClaudeKeychainRead {
     read_claude_keychain_item_uncached(service)
 }
 
-/// Exact-service no-UI reread used only after a typed HTTP 401 while the
-/// selected foreground lease is active.
 pub(crate) fn read_claude_keychain_item_uncached(service: &str) -> ClaudeKeychainRead {
     #[cfg(target_os = "macos")]
     {
@@ -214,8 +184,6 @@ pub(crate) fn read_claude_keychain_item_uncached(service: &str) -> ClaudeKeychai
     }
 }
 
-/// Read credentials from an attached operator terminal. The public API only
-/// exposes the lease bootstrap, which retains this payload in process memory.
 pub(crate) fn read_claude_keychain_item_for_foreground(service: &str) -> ClaudeKeychainRead {
     read_claude_keychain_item_for_foreground_with(all_stdio_are_terminal(), || {
         #[cfg(target_os = "macos")]
@@ -294,9 +262,6 @@ fn with_keychain_interaction_permission<T, Guard>(
         return Ok(search());
     }
 
-    // Preserve a pre-existing process setting: the RAII guard always
-    // re-enables interaction, so do not acquire it if another owner already
-    // disabled UI.
     if user_interaction_allowed()? {
         let _interaction_guard = disable_user_interaction()?;
         Ok(search())
@@ -326,8 +291,6 @@ fn read_claude_keychain_item_with<Guard>(
     .unwrap_or(ClaudeKeychainRead::ConsentRequired)
 }
 
-// Private injection seam: production callers cannot supply or bypass the
-// terminal check performed by foreground lease bootstrap.
 fn read_claude_keychain_item_for_foreground_with(
     all_stdio_are_terminal: bool,
     read_item: impl FnOnce() -> ClaudeKeychainRead,

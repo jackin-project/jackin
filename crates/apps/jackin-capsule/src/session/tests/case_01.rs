@@ -174,9 +174,6 @@ fn advance_status_publishes_unknown_when_no_evidence_matches() {
 
 #[test]
 fn resize_floors_pty_winsize_to_at_least_one() {
-    // A collapsed pane can hand `Session::resize` a 0-row (or 0-col) geometry.
-    // The agent PTY must never receive a 0×0 `TIOCSWINSZ` — programs expect
-    // ≥1 — and each axis must floor independently, not collapse to 1×1.
     let last_size = Arc::new(Mutex::new(None));
     let (input_tx, _input_rx) = mpsc::unbounded_channel();
     let mut session = Session::new_for_test(
@@ -220,24 +217,18 @@ fn resize_floors_pty_winsize_to_at_least_one() {
 
 #[test]
 fn feed_pty_does_not_accumulate_scroll_ops() {
-    // feed_pty clears recorded scroll ops each chunk so they cannot grow
-    // unbounded while the scroll-region optimizer that would consume them is
-    // deferred.
     let mut burst = Vec::new();
     for i in 0..200 {
         burst.extend_from_slice(format!("line {i}\r\n").as_bytes());
     }
-    // Guard against a vacuous pass: confirm the burst genuinely records scroll
-    // ops, so the clear assertion below would fail if recording ever stopped or
-    // the clear ran before process().
+
     let mut probe = termpane::DamageGrid::new(24, 80, 100);
     probe.process(&burst);
     assert!(
         !probe.drain_scroll_ops().is_empty(),
         "burst must record scroll ops for the clear assertion to be meaningful"
     );
-    // feed_pty runs the same process() then clear_scroll_ops(); after it
-    // returns the buffer must already be empty.
+
     let mut session = test_session_with_policy(OscPolicy::default());
     session.feed_pty(&burst);
     assert!(
@@ -308,7 +299,7 @@ fn osc_7_cwd_is_captured_and_percent_decoded() {
         Some("/Users/alice/My Code"),
         "OSC 7 must percent-decode and strip the host"
     );
-    // OSC 7 must NEVER be forwarded to the outer terminal.
+
     assert!(
         session.drain_passthrough().is_empty(),
         "OSC 7 must not reach the outer terminal"
@@ -329,7 +320,7 @@ fn kitty_kb_stack_tracks_push_and_pop() {
     assert_eq!(session.shadow_grid.kitty_kb_flags(), 3);
     session.feed_pty(b"\x1b[<1u");
     assert_eq!(session.shadow_grid.kitty_kb_flags(), 1);
-    session.feed_pty(b"\x1b[<5u"); // over-pop bounded by stack length
+    session.feed_pty(b"\x1b[<5u");
     assert_eq!(session.shadow_grid.kitty_kb_flags(), 0);
 }
 
@@ -344,8 +335,6 @@ fn focus_events_flag_tracks_dec_1004() {
 
 #[test]
 fn title_and_cwd_updates_track_latest_values() {
-    // Derived rendering: chrome state is read fresh every frame, so the
-    // session only retains the latest title/cwd — no dirty flag.
     let mut session = test_session_with_policy(OscPolicy::default());
     assert!(session.title().is_none());
 
@@ -358,8 +347,6 @@ fn title_and_cwd_updates_track_latest_values() {
 
 #[test]
 fn unhandled_csi_kitty_keyboard_push_is_forwarded() {
-    // The grid emits the canonical push bytes; the session forwards them
-    // verbatim while tracking the stack for focus-swap restore.
     let drained = drained(b"\x1b[>1u");
     assert!(
         drained.iter().any(|f| f == b"\x1b[>1u"),
@@ -369,8 +356,6 @@ fn unhandled_csi_kitty_keyboard_push_is_forwarded() {
 
 #[test]
 fn unhandled_csi_xterm_window_reports_are_suppressed() {
-    // `CSI ... t` is xterm's window manipulation / reporting family;
-    // forwarding it lets the host terminal's reply land in a shell pane.
     let drained = drained(b"\x1b[18t\x1b[14t\x1b[16t\x1b[8;40;135t");
     assert!(
         drained.iter().all(|f| !f.ends_with(b"t")),

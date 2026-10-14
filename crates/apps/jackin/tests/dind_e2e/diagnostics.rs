@@ -1,5 +1,3 @@
-//! Failure-context helpers for captured process output.
-
 use std::path::Path;
 
 pub(super) fn e2e_failure_context(home: &Path, stdout: &str, stderr: &str) -> String {
@@ -21,9 +19,6 @@ pub(super) fn diagnostics_snapshot(home: &Path) -> String {
     )
 }
 
-/// Keep startup context, the first explicit error, and the final output.
-/// Terminal animations may produce megabytes without a newline, so line
-/// counts cannot bound this diagnostic. Slice only at UTF-8 boundaries.
 pub(super) fn transcript_excerpt(contents: &str) -> String {
     const SECTION_BYTES: usize = 16 * 1024;
     if contents.len() <= SECTION_BYTES * 2 {

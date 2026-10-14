@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Daemon entry points, boot tabs, and startup helpers.
 
 use std::path::Path;
 
@@ -67,12 +66,6 @@ pub(crate) async fn reject_invalid_attach_handshake(stream: &mut UnixStream) {
     drop(write_result);
 }
 
-/// Run the multiplexer daemon. Called from `main` when PID == 1.
-///
-/// # Errors
-///
-/// Returns an error when daemon initialization, socket setup, session
-/// management, or the event loop fails.
 pub async fn run_daemon(
     initial_agent: String,
     launch_config: CapsuleConfig,
@@ -88,9 +81,6 @@ pub async fn run_daemon(
     .await
 }
 
-/// Test-only daemon entry point. Installing the PID1 reaper would race the
-/// session's child-wait task on hosts whose fallback reaper cannot distinguish
-/// managed children.
 #[cfg(test)]
 pub(crate) async fn run_daemon_for_test(
     initial_agent: String,
@@ -101,9 +91,6 @@ pub(crate) async fn run_daemon_for_test(
     run_daemon_loop(initial_agent, launch_config, telemetry, socket_path).await
 }
 
-/// Drain the deferred boot tabs into fresh sessions, stopping at the
-/// first spawn failure. Returns the failure so the attach handshake can
-/// report it; a partial boot never silently drops a `default_launch` tab.
 pub(crate) fn spawn_boot_tabs(
     mux: &mut Multiplexer,
     pending: &mut Vec<SpawnRequest>,

@@ -1,14 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Terminal animation primitives: warp intro/out and duration formatting.
-//!
-//! Implements the starfield hyperspace entry/exit sequences and closing brand
-//! screen. Functions that need raw-mode coordination accept a `host_screen_owned`
-//! closure so the caller controls whether this module or the caller owns the
-//! terminal's raw mode — avoiding a circular dependency on `jackin-diagnostics`.
-//!
-//! Not responsible for: full-screen ratatui renders or debug-output lines.
 use owo_colors::OwoColorize as _;
 use std::io::{self, Write};
 
@@ -30,16 +22,9 @@ fn flush_stderr() {
     drop(io::stderr().flush());
 }
 
-// ── Skippable sleep ─────────────────────────────────────────────────────
-
-/// Sleep for `duration`, but return `true` immediately if Enter or Esc is pressed.
-/// `host_screen_owned` reports whether the host already holds raw mode; when
-/// `true` this function does not toggle raw mode.
 fn skippable_sleep(duration: std::time::Duration, host_screen_owned: bool) -> bool {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
-    // Under the host guard raw mode is already on for the whole flow; toggling
-    // it here would hand control back to the cooked terminal mid-animation.
     let owns_raw = !host_screen_owned;
     if owns_raw {
         drop(crossterm::terminal::enable_raw_mode());
@@ -59,18 +44,14 @@ fn skippable_sleep(duration: std::time::Duration, host_screen_owned: bool) -> bo
     skipped
 }
 
-/// Outcome of a resize-aware wait.
 enum WaitOutcome {
-    /// The full duration elapsed with no interruption.
     Elapsed,
-    /// The operator pressed Enter/Esc to skip.
+
     Skipped,
-    /// The terminal was resized; the caller should redraw at the new size.
+
     Resized,
 }
 
-/// Wait up to `duration`, returning early on a skip key (Enter/Esc) or a
-/// terminal resize. Same raw-mode handling as `skippable_sleep`.
 fn wait_or_event(duration: std::time::Duration, host_screen_owned: bool) -> WaitOutcome {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
     let owns_raw = !host_screen_owned;
@@ -105,9 +86,6 @@ fn wait_or_event(duration: std::time::Duration, host_screen_owned: bool) -> Wait
     outcome
 }
 
-/// Show a static screen for `total`, calling `draw` once up front and again
-/// (after a clear) on every terminal resize so the surface always fills and
-/// centers to the current size. Returns `true` if the operator skipped.
 fn hold_resizable(
     total: std::time::Duration,
     host_screen_owned: bool,
@@ -163,15 +141,12 @@ pub const fn rain_age_to_color(age: u16) -> Option<Rgb> {
     }
 }
 
-// ── Session warp (hyperspace intro / outro) ───────────────────────────────
-
 struct WarpStar {
     angle: f32,
     radius: f32,
     speed: f32,
 }
 
-/// 1-based column where a centered line of `width` chars starts.
 fn center_col(cols: u16, width: usize) -> u16 {
     let margin = (cols as usize).saturating_sub(width) / 2;
     u16::try_from(margin + 1).unwrap_or(1)
@@ -183,7 +158,7 @@ fn draw_brand_pill_bottom() {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let row = rows.saturating_sub(2).max(1);
     let col = center_col(cols, BRAND_PILL.chars().count());
-    // Green block, black word, white chevron — split so the chevron stays white.
+
     stderr_fragment(format_args!(
         "\x1b[{row};{col}H{}{}{}",
         " jackin"
@@ -302,32 +277,23 @@ fn drain_pending_input(host_screen_owned: bool) {
     }
 }
 
-/// Entry ritual — opening phrases then a hyperspace jump into the Construct.
-///
-/// `host_screen_owned` comes from the product terminal-ownership policy.
 pub fn warp_intro(host_screen_owned: bool) {
     drain_pending_input(host_screen_owned);
     intro_phrases(host_screen_owned);
     warp(true, host_screen_owned);
 }
 
-/// Exit ritual — drop out of hyperspace.
-///
-/// `host_screen_owned` comes from the product terminal-ownership policy.
 pub fn warp_out(host_screen_owned: bool) {
     warp(false, host_screen_owned);
 }
 
-/// Closing screen shown when the last container leaves.
-///
-/// `host_screen_owned` comes from the product terminal-ownership policy.
 pub fn warp_end_caption(elapsed: Option<std::time::Duration>, host_screen_owned: bool) {
     if let Some(d) = elapsed {
         let line = format!(
             "You were in the Construct for {}",
             format_universe_duration(d)
         );
-        // Same glitch-in reveal as the intro phrases (e.g. "Knock, knock, operator.").
+
         let _ = glitch_centered(&line, WHITE, 2400, host_screen_owned);
     }
     clear_screen();
@@ -500,10 +466,7 @@ fn warp_edge_radius(angle: f32, cx: f32, cy: f32) -> f32 {
     rx.min(ry).max(1.0)
 }
 
-/// Format a session duration compactly: `2h 14m`, `7m 30s`, or `45s`.
 #[must_use]
-/// Human-readable session length: the two largest non-zero units, worded and
-/// pluralized — e.g. `1 day 3 hours`, `28 minutes 17 seconds`, `45 seconds`.
 pub fn format_universe_duration(d: std::time::Duration) -> String {
     fn unit(n: u64, name: &str) -> String {
         format!("{n} {name}{}", if n == 1 { "" } else { "s" })

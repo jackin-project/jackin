@@ -1,35 +1,16 @@
-//! Typed failure classes for probing the 1Password `op` CLI. Constructed at
-//! the process boundary (jackin-env); consumed by pickers/UI without
-//! substring matching. Attached as an anyhow source so it survives `?`
-//! propagation and is recovered by `downcast_ref`.
-
-/// Why an `op` CLI probe failed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum OpProbeError {
-    /// The `op` binary could not be spawned (not installed / not on PATH).
     #[error("failed to spawn op: {detail}")]
-    NotInstalled {
-        /// Spawn/IO detail from the process boundary.
-        detail: String,
-    },
-    /// The CLI ran but reports no signed-in account.
+    NotInstalled { detail: String },
+
     #[error("1Password CLI is not signed in: {detail}")]
-    NotSignedIn {
-        /// Operator-facing detail from `op` (no secrets).
-        detail: String,
-    },
-    /// The probe timed out.
+    NotSignedIn { detail: String },
+
     #[error("op timed out after {seconds}s")]
-    Timeout {
-        /// Timeout budget in whole seconds.
-        seconds: u64,
-    },
-    /// Any other failure; carries the raw message.
+    Timeout { seconds: u64 },
+
     #[error("{message}")]
-    Other {
-        /// Raw failure text (no secret material).
-        message: String,
-    },
+    Other { message: String },
 }
 
 #[cfg(test)]

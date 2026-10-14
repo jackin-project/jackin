@@ -5,13 +5,6 @@ use super::*;
 
 #[test]
 fn wire_path_rejects_isolation_on_global_mount() {
-    // Production wire path: AppConfig → DockerMounts → MountEntry
-    // (untagged enum) → GlobalMountConfig. Setting `isolation` on
-    // a top-level `[docker.mounts]` entry must fail to deserialize.
-    // Because `MountEntry` is `#[serde(untagged)]`, the message is
-    // the generic "data did not match any variant" rather than
-    // the cleaner "unknown field `isolation`" — see the doc
-    // comment on `GlobalMountConfig` for the rationale.
     let toml = r#"
 [docker.mounts]
 gradle-cache = { src = "/tmp/x", dst = "/workspace/x", isolation = "worktree" }

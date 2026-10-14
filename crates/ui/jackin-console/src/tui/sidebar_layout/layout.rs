@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Sidebar rectangle allocation.
 
 use super::{
     COMPACT_INSTANCES_HEIGHT, ConfigSidebarInputs, SidebarLayout, SidebarLayoutMetrics,
@@ -59,9 +58,6 @@ pub fn focused_scroll_area_axes(
 
 #[must_use]
 pub fn compute_sidebar_layout(area: Rect, metrics: SidebarLayoutMetrics) -> SidebarLayout {
-    // ShrinkPolicy::Equal keeps the previous ratatui `Constraint::Length`
-    // solver semantics byte-identical under overflow (equal-strength
-    // relaxation), unlike panel_stack's default tail-first shrink.
     let block = |height: u16, visible: bool| PanelStackBlock {
         content_rows: height,
         chrome_rows: 0,

@@ -1,13 +1,3 @@
-//! jackin-usage-coordinator: per-account single-flight refresh generations.
-//!
-//! **Architecture Invariant:** T2.
-//! Entry point: [`UsageCoordinator`] — single-flight refresh generations.
-//!
-//! Per-account single-flight refresh generations owned by the host broker.
-//! Probe execution stays behind [`UsageProviderExecutor`], implemented by
-//! the T4 host broker; file-backed generation and projection state lives
-//! behind [`AccountStateStore`].
-
 pub mod policy;
 mod state;
 

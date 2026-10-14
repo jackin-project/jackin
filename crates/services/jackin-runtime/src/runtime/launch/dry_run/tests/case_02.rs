@@ -5,8 +5,6 @@ use super::*;
 
 #[test]
 fn single_account_plan_carries_the_exact_pinned_model() {
-    // F7 plan leg: an `account add --model <exact-id>` pin must reach the
-    // plan byte-exact.
     const MODEL: &str = "openrouter/anthropic/claude-sonnet-4";
     let mut config = AppConfig::default();
     config.accounts.insert(
@@ -44,8 +42,6 @@ fn single_account_plan_carries_the_exact_pinned_model() {
     assert_eq!(plan.model.as_deref(), Some(MODEL));
     assert!(plan.instances.is_empty());
 
-    // The instances shape carries the same bytes per instance, with a
-    // configuration override winning over the account pin.
     config.agent_configurations.insert(
         "oc-pinned".to_owned(),
         AgentConfiguration {
@@ -61,8 +57,7 @@ fn single_account_plan_carries_the_exact_pinned_model() {
         "oc-plain".to_owned(),
         configuration(Agent::Opencode, "or-model"),
     );
-    // Opencode admits one instance per container, so each list entry
-    // resolves on its own.
+
     set_role_list(&mut config, &["oc-pinned"]);
     let plan =
         resolve_dry_run_identity(&config, Agent::Opencode, Some(&workspace), ROLE, false).unwrap();

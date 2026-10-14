@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Nous Hermes multi-provider client (`hermes`) adapter.
-
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
@@ -10,18 +8,11 @@ use crate::agent::runtime::{
     looks_like_version, render_fallback_install_block,
 };
 
-// Official installer (verified 2026-09-17: script header documents this
-// exact curl-pipe-bash invocation; uses uv, falls back to venv+pip).
-// NOTE: the Hermes TUI needs Node >= 20 plus the Python agent runtime
-// and a PTY (`HERMES_TUI=1` or `--tui`); `HERMES_TUI_DIR` selects a
-// prebuilt frontend. The base image must provide node + python or the
-// smoke check below fails the build loudly.
 const FALLBACK_INSTALL_COMMAND: &str = bounded_fallback_curl!(
     "https://hermes-agent.nousresearch.com/install.sh",
     " | bash"
 );
 
-/// [`crate::agent::runtime::AgentRuntime`] adapter for Hermes.
 #[derive(Debug)]
 pub(crate) struct HermesRuntime;
 
@@ -65,9 +56,6 @@ RUN set -euxo pipefail && \\
     }
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
-        // Pure multi-provider client with no native billing: even ApiKey
-        // mode has no single agent-level variable; the account layer
-        // selects the provider's variable per account.
         let _ = mode;
         None
     }
@@ -83,8 +71,8 @@ RUN set -euxo pipefail && \\
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".hermes",
-            config_dir: None,      // config.yaml + profiles both under ~/.hermes
-            credential_file: None, // multi-file profiles dir, not one file
+            config_dir: None,
+            credential_file: None,
             folder_env_var: Some(FolderVar {
                 name: "HERMES_HOME",
                 kind: FolderVarKind::Dir,

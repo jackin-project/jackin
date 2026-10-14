@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run native UI tests and reject missing, corrupt, zero-test, or partial results.
+
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd -P)

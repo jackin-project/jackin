@@ -1,17 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! PNG baselines over the complete console screen inventory: 16 stage and
-//! overlay views, five account-management cases, four create-prelude wizard
-//! steps, and all 18 `ConsoleModal` variants — 43 full frames total.
-//! The inventory guard requires that exact count. Brand-header crops derive
-//! their separate non-modal inventory from the same cases.
-//!
-//! Compare mode (default) is zero-tolerance on decoded pixels and NEVER
-//! writes; bless mode (`JACKIN_BLESS_PNGS=1`) rewrites every baseline from an
-//! actual render and is the only write path. Plans 006–013 run compare only;
-//! re-bless is sanctioned in plan 005 (initial) and plan 014 (reviewed).
-
 #![cfg(test)]
 
 mod accounts;

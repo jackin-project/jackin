@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Fallback capture, snapshot hashing, and bounded reads without file locks.
 
 use std::path::Path;
 

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Cursor` sand usage fetch and buckets.
 
 use super::cursor_dashboard_post;
 use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
@@ -8,8 +7,6 @@ use jackin_usage_provider_core::{
     epoch_seconds_from_maybe_ms, json_number, parse_iso_epoch, timed_bucket,
 };
 
-/// Grok Bot weekly meter. Pooled enterprise allowance or zero allowance means
-/// no meter (`None`) — never a 0% row.
 #[derive(Debug, Clone)]
 pub struct CursorSandUsage {
     pub(crate) usage_percent: f64,
@@ -80,7 +77,3 @@ pub fn cursor_sand_bucket(sand: &CursorSandUsage, now: i64) -> QuotaBucketView {
         UsageSnapshotStatus::Fresh,
     )
 }
-
-// ---------------------------------------------------------------------------
-// Personal: cursor.com session REST
-// ---------------------------------------------------------------------------

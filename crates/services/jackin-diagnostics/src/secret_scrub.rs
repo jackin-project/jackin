@@ -1,5 +1,3 @@
-//! Best-effort token-shape scrubbing for diagnostic command output.
-
 use std::borrow::Cow;
 
 const VALUE_MARKER: &str = "<secret redacted>";

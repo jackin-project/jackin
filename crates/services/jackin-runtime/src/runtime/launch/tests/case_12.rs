@@ -5,10 +5,6 @@ use super::*;
 
 #[tokio::test]
 async fn load_agent_builds_local_role_base_then_derives_overlay_from_it() {
-    // The workspace build is two-stage: first a role *base* image
-    // (jk_<role>__base, the role Dockerfile, no overlay), then the derived image
-    // (FROM that base + jackin overlay). The base carries the role-sha + construct
-    // labels so it can be reused across overlay rebuilds.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
@@ -48,7 +44,6 @@ plugins = []
     .await
     .unwrap();
 
-    // Stage 1: the role base build.
     let base_build = runner
         .recorded
         .iter()
@@ -75,7 +70,6 @@ plugins = []
         "base build must not include the jackin overlay; got: {base_build}"
     );
 
-    // Stage 2: the derived overlay build, FROM the local base (not the construct).
     let derived_build = runner
         .recorded
         .iter()
@@ -155,8 +149,7 @@ plugins = []
         build_cmd.contains("--label jackin.image.recipe.hash="),
         "workspace build must stamp recipe hash label; got: {build_cmd}"
     );
-    // Agent-independence is now captured inside the recipe hash (the
-    // supported-agent set is a recipe input) rather than a standalone label.
+
     assert!(
         build_cmd.contains("--label jackin.manifest.version="),
         "workspace build must stamp the manifest version label; got: {build_cmd}"

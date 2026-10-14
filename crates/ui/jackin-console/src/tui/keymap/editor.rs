@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor global, tab-bar, and content keymaps.
 
 use termrock::input::KeyCode;
 
@@ -33,8 +32,6 @@ pub(crate) static EDITOR_GLOBAL_KEYMAP_BINDINGS: &[KeyBinding<EditorGlobalAction
 ];
 pub(crate) static EDITOR_GLOBAL_KEYMAP: Keymap<EditorGlobalAction> =
     Keymap::from_static(EDITOR_GLOBAL_KEYMAP_BINDINGS);
-
-// ── Editor tab-bar mode ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorTabBarAction {
@@ -85,13 +82,6 @@ pub(crate) static EDITOR_TAB_BAR_KEYMAP_BINDINGS: &[KeyBinding<EditorTabBarActio
 pub(crate) static EDITOR_TAB_BAR_KEYMAP: Keymap<EditorTabBarAction> =
     Keymap::from_static(EDITOR_TAB_BAR_KEYMAP_BINDINGS);
 
-// ── Editor content mode ───────────────────────────────────────────────────────
-
-/// Actions for the editor when content (not the tab bar) has focus.
-///
-/// `Char(_)` wildcard is unrepresentable in a static keymap; the dispatch site
-/// in `input/editor.rs` falls through to `CheckImmediateAction` for any `Char`
-/// chord not matched here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorContentAction {
     MoveUp,
@@ -198,5 +188,3 @@ pub(crate) static EDITOR_CONTENT_KEYMAP_BINDINGS: &[KeyBinding<EditorContentActi
 ];
 pub(crate) static EDITOR_CONTENT_KEYMAP: Keymap<EditorContentAction> =
     Keymap::from_static(EDITOR_CONTENT_KEYMAP_BINDINGS);
-
-// ── Settings tab-bar mode ─────────────────────────────────────────────────────

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Fixed-allowlist OpenTelemetry Resource construction.
-
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::Resource;
 
@@ -54,9 +52,7 @@ pub(super) fn build_resource_for_sources(
         std_attrs::PROCESS_RUNTIME_VERSION,
         env!("RUSTC_VERSION"),
     ));
-    // `/etc/hostname` is intentionally not consulted: project container paths
-    // exclude `/etc`, and the environment is operator-controlled. The kernel
-    // cgroup record is the sole trusted best-effort provenance for this field.
+
     if identity == ServiceIdentity::CAPSULE
         && let Some(cgroup) = cgroup()
         && let Some(container_id) = container_id_from_cgroup(&cgroup)

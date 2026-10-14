@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Reconnect admission types and current-account/instance admission checks.
 
 use anyhow::Context as _;
 use jackin_instance::{InstanceIndex, InstanceManifest, RegistrationState};
@@ -25,8 +24,6 @@ pub fn mark_reconnect_admission_failure(error: anyhow::Error) -> anyhow::Error {
     error.context(ReconnectAdmissionFailure(summary))
 }
 
-/// A fresh inspection proves liveness, never ownership. Only the launch-recorded
-/// immutable ID authorizes use of an existing role's retained state/credentials.
 pub fn validate_recorded_role_handle(
     paths: &JackinPaths,
     container_name: &str,
@@ -53,8 +50,6 @@ pub fn validate_recorded_role_handle(
     Ok(())
 }
 
-/// Existing containers retain credential material: every attach route must
-/// recheck their recorded admission against current host policy before use.
 pub fn require_current_account_admission(
     paths: &JackinPaths,
     container_name: &str,
@@ -174,11 +169,6 @@ pub fn current_account_admission(
     Ok((snapshot.config, workspace))
 }
 
-/// Revalidate a requested new-session target against the manifest captured by
-/// the live container and the current host account policy. Every v3 manifest
-/// must carry an explicit admission set; the function never resolves an
-/// account by provider/name and never silently substitutes an unqualified
-/// same-agent row.
 pub fn require_current_instance_admission(
     paths: &JackinPaths,
     container_name: &str,
@@ -270,8 +260,6 @@ pub fn require_current_instance_admission(
         );
     }
 
-    // The capsule receives the same exact ID and performs the final immutable
-    // launch-config admission check before creating the PTY.
     admission_lease.ensure_current(paths)?;
     Ok((manifest, Some(target_id)))
 }

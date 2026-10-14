@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Mount construction helpers extracted from the launch coordinator.
-//! All items re-exported from the parent to preserve `super::` call sites
-//! in `launch_role_runtime` and `launch_pipeline.rs`.
-
 use std::path::{Component, Path, PathBuf};
 
 use jackin_config::AppConfig;
@@ -20,12 +16,6 @@ pub enum AppleContainerMountError {
     WorktreeFileOverlays { destination: String },
 }
 
-/// Emit the durable-home bind mounts for one provisioned slot. The
-/// data home comes from the slot's kind-aware container rel
-/// (`/home/agent/.claude-<suffix>`, or a unique parent child for
-/// parent-scoped folder vars); paired config roots come from the
-/// agent's [`AgentStatePaths`](jackin_core::AgentStatePaths) with the
-/// slot suffix applied. Primary slots keep the legacy destinations.
 fn push_slot_home_mounts(
     mounts: &mut Vec<String>,
     root: &Path,
@@ -51,14 +41,6 @@ fn push_slot_home_mounts(
     }
 }
 
-/// Emit the auth-handoff mounts for one provisioned slot under its
-/// container store dir (`/jackin/<agent>` for primary slots,
-/// `/jackin/<agent>-<suffix>` for secondary same-agent slots).
-///
-/// File-credential agents mount each admitted file by file name;
-/// Kimi/Hermes mount their admitted credential directory. Claude keeps
-/// its optional per-file behavior: a missing admitted file is omitted,
-/// while every other forwarded path fails closed.
 fn push_slot_auth_mounts(
     mounts: &mut Vec<String>,
     root: &Path,
@@ -120,10 +102,6 @@ fn contains_parent_dir(path: &Path) -> bool {
         .any(|component| matches!(component, Component::ParentDir))
 }
 
-/// Resolve a host mount path for overlap checks, including aliases through an
-/// existing symlinked ancestor while retaining lexical components that do not
-/// exist yet. Docker interprets the source path at launch time, so comparing
-/// only the original strings would let an alias escape the authority audit.
 fn canonical_mount_path(path: &Path) -> anyhow::Result<PathBuf> {
     use std::collections::VecDeque;
     use std::ffi::OsString;
@@ -174,8 +152,6 @@ fn canonical_mount_path(path: &Path) -> anyhow::Result<PathBuf> {
             }
             Ok(_) => resolved = candidate,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                // Retain a future suffix; keep following any existing symlinks
-                // after .. returns resolution to an existing ancestor.
                 resolved = candidate;
             }
             Err(error) => {
@@ -253,9 +229,6 @@ fn instance_data_parent(state: &jackin_instance::RoleState) -> anyhow::Result<Pa
     }
 }
 
-/// Return the authority directory for the instance child containing `source`.
-/// The sibling child need not exist yet: the path schema itself is enough to
-/// protect a future instance's provider-config authority.
 fn sibling_authority_for_source(
     data_parent: &Path,
     source: &Path,
@@ -365,8 +338,6 @@ fn ensure_source_parents_outside_writable_roots(
     Ok(())
 }
 
-/// Host coordinator files must never enter a container, even read-only:
-/// an exclusive flock needs no write access to the lock file.
 fn ensure_protected_host_roots_not_exposed(
     raw_source: &Path,
     protected_host_roots: &[PathBuf],
@@ -389,8 +360,7 @@ fn ensure_protected_host_roots_not_exposed(
             raw_source.display(),
             root.display()
         );
-        // A source reached through a symlink inside the protected namespace
-        // still exposes its directory entry, even if the final target escapes.
+
         let mut ancestor = raw_source.parent();
         while let Some(parent) = ancestor {
             let lexical_parent = jackin_core::container_paths::normalize_path(parent);
@@ -413,12 +383,6 @@ fn ensure_protected_host_roots_not_exposed(
     Ok(())
 }
 
-/// Audit every Docker bind against the host-only provider configuration
-/// authority. The generated files are the only authority paths allowed to
-/// cross the container boundary, and each must be an exact read-only file
-/// bind. Directory ancestors (including read-only ones) would expose staging,
-/// locks, or another account's generated state; writable source overlap also
-/// defeats the overlay's read-only guarantee.
 pub fn ensure_provider_authority_not_writable(
     state: &jackin_instance::RoleState,
     mounts: &[String],
@@ -514,10 +478,6 @@ pub fn ensure_provider_authority_not_writable(
     Ok(())
 }
 
-/// Audit Apple Container's complete typed bind list. Apple receives no
-/// provider file overlays, so every host source that overlaps the current or
-/// a sibling instance authority is rejected, including a source that targets
-/// a future sibling directory which does not exist yet.
 pub fn ensure_apple_provider_authority_not_exposed(
     state: &jackin_instance::RoleState,
     mounts: &[AppleContainerMount],
@@ -576,15 +536,6 @@ fn append_provider_config_mounts(
     Ok(())
 }
 
-/// Returns the per-slot mount strings in jackin❯'s `src:dst[:ro]` idiom for
-/// `docker run -v`.
-///
-/// Every provisioned slot is represented on `state.auth`, so the mount
-/// block iterates slots rather than matching the selected-agent
-/// variant. The foreground launch path provisions all admitted
-/// instances so sibling tabs find their homes bind-mounted from the
-/// start. Agents keep a fixed order; each agent's primary slot (legacy
-/// destinations) mounts before its secondary slots in key order.
 pub fn agent_mounts(state: &jackin_instance::RoleState) -> anyhow::Result<Vec<String>> {
     use jackin_core::Agent;
     let state_dir = state.root.join("state");
@@ -627,11 +578,6 @@ pub fn agent_mounts(state: &jackin_instance::RoleState) -> anyhow::Result<Vec<St
     Ok(mounts)
 }
 
-/// Build the directory-only equivalent of [`agent_mounts`] for
-/// apple/container. That backend rejects single-file bind sources, so each
-/// slot's already-unique auth store is mounted read-only as a directory. The
-/// credentials transport is likewise a root-only directory mount; session
-/// Landlock rules contain no access rule for it.
 pub fn apple_agent_mounts(
     state: &jackin_instance::RoleState,
 ) -> anyhow::Result<Vec<AppleContainerMount>> {
@@ -731,28 +677,6 @@ pub fn github_config_mount(state: &jackin_instance::RoleState) -> anyhow::Result
     }
 }
 
-/// Translate a [`MaterializedWorkspace`] into the `-v` argument values
-/// for `docker run`. Pulled out of `load_role_with` so the mount-flag
-/// shape — including the `:ro` placement on worktree-mode override
-/// files — can be unit-tested without docker mocks.
-///
-/// For each mount, the worktree dir / shared bind goes first; when the
-/// mount is worktree-mode, three auxiliary entries follow:
-///
-/// 1. Host's `.git/` at `/jackin/host/<dst-stripped>/.git` (rw).
-///    Includes the per-worktree admin dir at `worktrees/<container>/`
-///    natively (no separate admin mount).
-/// 2. `.git` pointer override at `<dst>/.git` (`:ro`). Redirects gitdir
-///    to the admin entry inside the host `.git/` mount.
-/// 3. `gitdir` back-pointer override at
-///    `/jackin/host/<dst-stripped>/.git/worktrees/<container>/gitdir`
-///    (`:ro`). Matches the worktree's `<dst>/.git` location so git's
-///    verification check passes inside the container.
-///
-/// `:ro` on the override files is defensive hardening: git only reads
-/// them during normal role work, and a misbehaving role could
-/// otherwise rewrite the gitdir pointer to redirect operations at a
-/// different repo entirely.
 pub fn build_workspace_mount_strings(workspace: &MaterializedWorkspace) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for mount in jackin_isolation::materialize::mount_order_for_docker(workspace) {
@@ -773,21 +697,12 @@ pub fn build_workspace_mount_strings(workspace: &MaterializedWorkspace) -> Vec<S
     out
 }
 
-/// The container backend selected for a launch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Backend {
     Docker,
     AppleContainer,
 }
 
-/// Resolve the container backend for a launch. A per-workspace
-/// `[runtime].backend` overrides the host-wide `[runtime].default_backend`,
-/// which defaults to Docker when unset.
-///
-/// The backend fields are free-text strings in the config schema, so an
-/// unrecognised value is rejected here rather than silently falling through to
-/// Docker — a typo must fail closed, not launch the wrong (weaker-isolation)
-/// backend behind the operator's back.
 pub fn resolve_backend(
     config: &AppConfig,
     workspace_name: Option<&str>,
@@ -812,11 +727,6 @@ pub fn resolve_backend(
     }
 }
 
-/// Translate a [`MaterializedWorkspace`] into typed apple-container mounts.
-/// Apple `container` v0.11.0+ accepts Docker-compatible `:ro` options on `-v`
-/// directory mounts but rejects single-file bind sources. Shared mounts retain
-/// their configured permissions; worktree isolation fails closed because its
-/// two read-only pointer-file overlays cannot be represented safely.
 pub fn build_workspace_mounts(
     workspace: &MaterializedWorkspace,
 ) -> Result<Vec<AppleContainerMount>, AppleContainerMountError> {

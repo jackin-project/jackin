@@ -126,10 +126,7 @@ fn contained_rejects_symlinked_suffix() {
     assert!(target.is_dir());
 
     let error = safe_remove_dir_contained(&root, &target).unwrap_err();
-    // The intermediate `mid` symlink is refused during fd-pinned
-    // traversal, which reports the OS errno (ENOTDIR on macOS, ELOOP
-    // on Linux) rather than a reason string, so pin the stable
-    // refusal prefix and kind instead of errno text.
+
     assert!(
         error.to_string().starts_with("refusing to remove"),
         "{error}"

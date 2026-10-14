@@ -5,9 +5,6 @@ use super::*;
 
 #[test]
 fn wipe_policy_erases_only_on_first_attach_and_resize() {
-    // I4: no screen erase outside FirstAttach/Resize. Every other
-    // invalidation relies on Ratatui's previous buffer instead of blanking
-    // the screen.
     let erase = b"\x1b[2J";
     let contains = |frame: &[u8]| frame.windows(erase.len()).any(|w| w == erase);
 
@@ -58,22 +55,20 @@ fn pending_status_change_uses_no_clear_diff_frame() {
 
 #[test]
 fn resize_shrink_then_grow_does_not_panic() {
-    // Defect 614/634 regression: rapid resize including shrink-to-floor and grow
-    // must not panic.
     let mut mux = single_pane_tab_mux_with_size(24, 80);
-    // Shrink to a small size (above normalize_size floor which is ~5 rows, 3 cols).
+
     mux.resize(6, 4);
     assert_eq!((mux.render.term_rows, mux.render.term_cols), (6, 4));
-    // Shrink to zero (normalized to defaults).
+
     mux.resize(0, 0);
     assert_eq!(
         (mux.render.term_rows, mux.render.term_cols),
         (DEFAULT_ROWS, DEFAULT_COLS)
     );
-    // Grow back.
+
     mux.resize(50, 200);
     assert_eq!((mux.render.term_rows, mux.render.term_cols), (50, 200));
-    // Full repaint after growth must not be empty.
+
     let frame = mux.compose_pending_frame();
     assert!(!frame.is_empty(), "grow must produce repaint");
 }
@@ -130,10 +125,6 @@ fn dialog_backdrop_preserves_product_status_brand() {
             String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::DialogChange))
                 .to_string();
 
-        // The brand pill renders as a green block with a black word and a white
-        // chevron, so the cursor-diff stream splits `jackin` and `❯` with escape
-        // codes. Assert the word plus the block colour rather than a contiguous
-        // `jackin❯` substring.
         assert!(
             frame.contains("jackin") && frame.contains("48;2;0;255;65"),
             "{context} should preserve the top status brand (green block) while a dialog is open: {frame:?}"
@@ -202,7 +193,7 @@ fn palette_close_split_tab_opens_target_picker() {
 fn branch_context_visibility_keeps_content_area_reserved() {
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
-    // 24 rows - status(2) - top spacer(1) - hint(1) - bottom spacer(1) - branch(1) = 18
+
     assert_eq!(mux.render.content_rows, 18);
 
     mux.pr_watch.pull_request_context_cache.insert(
@@ -247,7 +238,7 @@ fn git_branch_context_updates_status_before_github_lookup() {
     mux.pr_watch.pull_request_context_branch = Some(branch("old/pr"));
     mux.pr_watch.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
     mux.reconcile_content_rows();
-    // 24 rows - status(2) - top spacer(1) - hint(1) - bottom spacer(1) - branch(1) = 18
+
     assert_eq!(mux.render.content_rows, 18);
 
     mux.pr_watch.pull_request_context_cache.insert(

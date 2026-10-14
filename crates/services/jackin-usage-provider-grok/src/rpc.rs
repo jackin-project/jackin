@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Grok` RPC transport and protobuf scan.
 
 use jackin_usage_provider_core::{
     Fixed32Field, ProtobufScan, VarintField, complete_external_rpc, external_rpc_operation,
@@ -23,9 +22,6 @@ pub fn grok_binary_path() -> PathBuf {
     }
 }
 
-/// Subscription Bearer [REDACTED] the stored auth file only. This never consults
-/// `XAI_API_KEY` / `GROK_DEPLOYMENT_KEY`: ambient inference keys are not
-/// consumer-billing auth (see [`resolve_grok_billing_auth`]).
 pub fn grok_bearer_token(auth_path: &Path, now: i64) -> Result<String, String> {
     let text = fs::read_to_string(auth_path).map_err(|err| format!("auth read failed: {err}"))?;
     let value: serde_json::Value =

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace row labels and titles.
 
 use super::{
     Disclosure, WorkspaceListDisplayRow, WorkspaceListDisplayRowFacts,
@@ -35,8 +34,6 @@ pub fn new_workspace_display_row(selected: bool, hovered: bool) -> WorkspaceList
     }
 }
 
-/// Backing data a tree instance row needs to render its label: the id, role,
-/// and status (status drives the compact `[state]` tag for failed instances).
 #[derive(Debug, Clone)]
 pub struct InstanceRowLabel {
     pub instance_id: String,
@@ -52,8 +49,6 @@ pub fn workspace_instance_list_label(
 ) -> String {
     use jackin_core::InstanceStatus as S;
     match status {
-        // Live instances read as today; failed/stopped ones carry a compact
-        // state tag so the operator can tell them apart in the tree (D15).
         S::Active | S::Running => format!("{instance_id}  {role_key}"),
         other => format!("{instance_id}  {role_key}  [{}]", other.short_label()),
     }

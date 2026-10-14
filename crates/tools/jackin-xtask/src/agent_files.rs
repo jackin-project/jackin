@@ -1,13 +1,3 @@
-//! Root agent-file gate.
-//!
-//! The repo carries a single consolidated `AGENTS.md` at the root plus a
-//! `CLAUDE.md` symlink pointing at it. This gate enforces both halves:
-//! presence of `AGENTS.md`, and that `CLAUDE.md` is a symlink (not a regular
-//! file) whose target is exactly `AGENTS.md`.
-//!
-//! Only the repo root is checked. Per-directory and per-crate `AGENTS.md`
-//! files were removed in #956 (consolidated into root `AGENTS.md`).
-
 use std::fs;
 use std::path::Path;
 
@@ -22,8 +12,6 @@ const RERUN: &str = "cargo xtask lint agents";
 
 #[derive(Args, Debug)]
 pub(crate) struct LintAgentFilesArgs {
-    /// Output format (`human`, `json`, `github`). Defaults to human; under
-    /// GitHub Actions selects `github` unless overridden.
     #[arg(long, value_enum)]
     format: Option<Format>,
 }

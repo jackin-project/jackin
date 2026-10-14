@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential-source shape validation for locked and unlocked sources.
 
 use jackin_instance_credentials::SyncSourceValidationError;
 
@@ -161,15 +160,10 @@ pub(crate) fn validate_locked_store_source_dir(
             SyncSourceValidationError::new(format!("OMP source snapshot failed: {error:#}"))
         });
     }
-    // The source lock remains held while discovery reads the descriptor. The
-    // launch admission path performs the stronger protected-root snapshot and
-    // revalidates its bytes before any worker starts.
+
     validate_store_source_dir(agent, provider, selector, source_dir, host_home)
 }
 
-/// Validate a stores-backed source through the same single-entry discovery
-/// boundary used for account registration. This keeps a source that changes
-/// after scan from silently selecting a different account at launch.
 pub fn validate_store_source_dir(
     agent: Agent,
     provider: Option<AiProvider>,
@@ -235,10 +229,6 @@ pub(crate) fn validate_hermes_source_shape(
     Ok(())
 }
 
-/// Validate the exact `OpenCode` credential that will be staged. A single
-/// usable `auth.json` entry is the source-bound materialization. A sibling
-/// database may coexist in a normal `OpenCode` data directory, but database-only
-/// profiles fail because there is no launchable source to stage.
 #[cfg(not(unix))]
 pub fn validate_opencode_source_dir(
     source_dir: &Path,
@@ -278,11 +268,6 @@ pub fn validate_opencode_source_dir(
         })
 }
 
-/// Return the one provider entry that may cross the role-state boundary.
-/// Values remain borrowed so validation does not copy secrets. Multi-entry
-/// files are rejected even when one entry could be filtered: the persisted
-/// account model has no raw store-key field, so filtering would still permit
-/// same-directory identities to collapse during later scans.
 pub fn select_opencode_auth_entry(
     value: &serde_json::Value,
     provider: Option<AiProvider>,

@@ -111,9 +111,6 @@ fn failure_popup_hides_status_footer_when_debug_disabled() {
 
 #[test]
 fn failure_popup_renders_over_stale_build_log_overlay() {
-    // Defense-in-depth render guard: even if `build_log_open` is stale-true when
-    // a failure arrives, the failure popup must own the screen and the opaque
-    // build-log backdrop must not paint over it.
     let area = Rect::new(0, 0, 90, 18);
     let mut view = initial_view();
     view.status = "docker build failed".to_owned();
@@ -154,11 +151,8 @@ fn failure_popup_renders_over_stale_build_log_overlay() {
 
 #[test]
 fn long_failure_body_is_reachable_by_scrolling() {
-    // Long diagnostics/next-step rows must not be silently clipped: the body
-    // scrolls, so the tail is reachable by advancing `failure_scroll`.
     let area = Rect::new(0, 0, 90, 18);
-    // ~150 "filler " words wrap well past the viewport-safe popup body height,
-    // with distinct first/last markers so the scrolled viewport is observable.
+
     let long_body = format!("FIRST {}", "filler ".repeat(150)) + "LAST";
     let mut view = initial_view();
     view.failure = Some(LaunchFailure {
@@ -169,7 +163,6 @@ fn long_failure_body_is_reachable_by_scrolling() {
         stage: LaunchStage::DerivedImage,
     });
 
-    // Top of the body: FIRST marker visible, tail marker clipped out.
     let mut terminal = Terminal::new(TestBackend::new(area.width, area.height))
         .expect("test backend should initialize");
     terminal
@@ -195,7 +188,6 @@ fn long_failure_body_is_reachable_by_scrolling() {
         "tail of long body must not render at scroll 0: {top:?}"
     );
 
-    // Scroll to the tail: render clamps the offset, exposing LAST.
     view.failure_scroll.scroll_y = u16::MAX;
     terminal
         .draw(|frame| {

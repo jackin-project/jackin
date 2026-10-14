@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Secure source capture and SQLite-only-private-copy materialization.
-
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -23,10 +21,6 @@ const MAX_SECRET_VALUE_BYTES: i32 = 64 * 1024;
 const MAX_SQL_BYTES: i32 = 64 * 1024;
 const MAX_SQLITE_VIRTUAL_OPS: i32 = 100_000;
 
-/// One stable, strictly validated OMP credential-store capture.
-///
-/// This type has no serialization implementation and its `Debug` output
-/// exposes no credential values: only the captured account count.
 pub struct OmpSnapshot {
     scratch: TempDir,
     connection: Option<Connection>,
@@ -42,10 +36,6 @@ impl std::fmt::Debug for OmpSnapshot {
     }
 }
 
-/// A unique exact selection borrowed from one [`OmpSnapshot`].
-///
-/// The account identity is safe to inspect; the underlying secret is not
-/// exposed. Consuming this value can only materialize the selected snapshot.
 pub struct OmpSelectedAccount<'a> {
     snapshot: &'a mut OmpSnapshot,
     account: OmpAccount,
@@ -60,9 +50,6 @@ impl std::fmt::Debug for OmpSelectedAccount<'_> {
     }
 }
 
-/// Removes the private materialized image and `SQLite` sidecars at scope exit.
-/// The source capture remains owned by `OmpSnapshot`, but backup output is
-/// temporary and must not outlive the attempt that created it.
 struct PrivateDatabaseCleanup {
     database_path: PathBuf,
     active: bool,
@@ -111,15 +98,11 @@ impl Drop for PrivateDatabaseCleanup {
 
 impl Drop for OmpSnapshot {
     fn drop(&mut self) {
-        // Close SQLite before TempDir removes the private database and any
-        // SQLite-created sidecars from the scratch directory.
         drop(self.connection.take());
     }
 }
 
 impl OmpSnapshot {
-    /// Capture `.omp/agent/agent.db` and its optional WAL from a directory
-    /// opened by the caller with its own source lock and path policy.
     #[cfg(unix)]
     pub fn capture_from_root(root: &File) -> Result<Option<Self>, OmpError> {
         let deadline = Instant::now() + OPERATION_BUDGET;
@@ -145,9 +128,6 @@ impl OmpSnapshot {
         }
     }
 
-    /// Capture a store beneath `source_directory`. Every path component is
-    /// opened relative to a directory descriptor with symlink following
-    /// disabled; missing source directories return `Ok(None)`.
     pub fn capture_from_directory(
         source_directory: impl AsRef<Path>,
     ) -> Result<Option<Self>, OmpError> {
@@ -166,13 +146,10 @@ impl OmpSnapshot {
         }
     }
 
-    /// Secret-free account identities from this exact captured image.
     pub fn accounts(&self) -> &[OmpAccount] {
         &self.accounts
     }
 
-    /// Select one exact source row. A selector never falls back to a sibling;
-    /// when it is absent, the provider must have exactly one active row.
     pub fn select(
         &mut self,
         provider: Option<&str>,
@@ -230,8 +207,7 @@ impl OmpSnapshot {
             .prefix("jackin-omp-private-")
             .tempdir()
             .map_err(|_| OmpError::Unavailable)?;
-        // Scratch tempdirs inherit the process umask; force owner-only access
-        // before validation so private material cannot leak through 0755.
+
         #[cfg(unix)]
         std::fs::set_permissions(
             scratch.path(),
@@ -269,14 +245,10 @@ impl OmpSnapshot {
 }
 
 impl OmpSelectedAccount<'_> {
-    /// Non-secret provider/profile identity validated against this snapshot.
     pub fn account(&self) -> &OmpAccount {
         &self.account
     }
 
-    /// Write a fresh OMP v7 role database containing only this selected row.
-    /// No source database page, schema object, sidecar or sibling credential
-    /// crosses into the role-owned output.
     pub fn write_standalone_database(self, destination: &mut impl Write) -> Result<(), OmpError> {
         let bytes = self.snapshot.materialize_selected(&self.credential)?;
         check_deadline(self.snapshot.deadline)?;
@@ -797,9 +769,6 @@ fn open_source_directory(path: &Path, deadline: Instant) -> Result<Option<File>,
     use nix::fcntl::{OFlag, open, openat};
     use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
 
-    // Resolve parent symlinks (e.g. macOS /var -> /private/var) before the
-    // symlink-rejecting walk; the walk still verifies every resolved
-    // component without following anything further.
     let path = match std::fs::canonicalize(path) {
         Ok(resolved) => resolved,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),

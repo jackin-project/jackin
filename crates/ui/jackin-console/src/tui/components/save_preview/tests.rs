@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `save_preview`.
-
 use super::{
     MountPreviewRow, SettingsEnvPreview, SettingsGeneralPreview, SettingsGeneralToggles,
     SettingsSavePreview, TrustPreviewRow, WorkspaceAuthChange, WorkspaceMountDiff,

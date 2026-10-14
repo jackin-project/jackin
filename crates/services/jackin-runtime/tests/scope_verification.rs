@@ -1,16 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! S2/S6 scenario proof through the public relay/coordinator boundary.
-//!
-//! S2 (relay layer): a W1 container allowlist admits exactly A/B/C. Forged
-//! IDs (unknown account, same-surface sibling), stale catalog capabilities,
-//! and empty scopes are all denied without provider work.
-//! S6: refresh ownership races resolve deterministically — simultaneous
-//! refreshes single-flight onto one generation, rotation fences in-flight
-//! work, removal mid-request revokes it, and stale compare-and-swap observes
-//! adopt the winner instead of queueing duplicate probes.
-
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
     UsageSource,
@@ -126,8 +116,6 @@ impl AccountStateStore for MemoryStore {
     }
 }
 
-/// Deterministic provider gate: probes block until the test releases them,
-/// so every race below synchronizes on condvars instead of sleeps.
 struct GateExecutor {
     calls: AtomicUsize,
     active: AtomicUsize,
@@ -261,7 +249,6 @@ fn coordinator_with_store(
 const NOW: i64 = 1_800_000_000;
 const WAIT: Duration = Duration::from_secs(5);
 
-/// S2: the W1 relay allowlist admits exactly A/B/C and nothing else.
 #[test]
 fn s2_relay_allowlist_admits_exactly_abc() {
     use jackin_usage::coordinator::UsageCapabilitySet;
@@ -278,25 +265,23 @@ fn s2_relay_allowlist_admits_exactly_abc() {
             "{id} must be admitted"
         );
     }
-    // Forged D: same shape, same surface, never launched here.
+
     let err = allowlist.authorize(&capability("acc-d")).unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::Unauthorized);
-    // Forged surface sibling: same account id, different surface.
+
     let sibling = UsageAccountCapability {
         account_id: "acc-a".into(),
         surface_id: "codex".into(),
     };
     let err = allowlist.authorize(&sibling).unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::Unauthorized);
-    // Surface resolution is exact: the shared surface is ambiguous across
-    // three accounts, so it denies rather than guessing.
+
     let err = allowlist.resolve_surface("claude").unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::Unauthorized);
     let err = allowlist.resolve_surface("no-such-surface").unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::Unauthorized);
 }
 
-/// S2: an empty scope denies every capability, including well-formed ones.
 #[test]
 fn s2_empty_scope_denies_everything() {
     use jackin_usage::coordinator::UsageCapabilitySet;
@@ -315,8 +300,6 @@ fn s2_empty_scope_denies_everything() {
     assert_eq!(err.kind, UsageCoordinationErrorKind::Unauthorized);
 }
 
-/// S2: a capability removed from the broker catalog is stale: direct backend
-/// refresh and join requests fail with `CatalogRevoked`, never state.
 #[test]
 fn s2_stale_catalog_capability_is_revoked_for_direct_requests() {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
@@ -327,15 +310,12 @@ fn s2_stale_catalog_capability_is_revoked_for_direct_requests() {
         .reconcile_catalog([entry("acc-a", "rev-1"), entry("acc-d", "rev-1")], NOW)
         .unwrap();
 
-    // D is live before removal; wait until its probe is in flight so the
-    // revocation below lands strictly mid-request.
     let live = coordinator
         .request_refresh(&capability("acc-d"), 0, true, NOW)
         .unwrap();
     assert_eq!(live.phase, UsageRefreshPhase::Queued);
     gate.wait_started(1);
 
-    // Removal mid-request revokes D immediately.
     coordinator
         .reconcile_catalog([entry("acc-a", "rev-1")], NOW)
         .unwrap();
@@ -347,11 +327,10 @@ fn s2_stale_catalog_capability_is_revoked_for_direct_requests() {
         .request_refresh(&capability("acc-d"), 0, true, NOW)
         .unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::CatalogRevoked);
-    // The revoked probe's late result is discarded, not materialized.
+
     gate.release(1);
     gate.wait_idle();
 
-    // A still-catalogued sibling is unaffected and completes normally.
     let sibling = coordinator
         .request_refresh(&capability("acc-a"), 0, true, NOW)
         .unwrap();
@@ -364,7 +343,6 @@ fn s2_stale_catalog_capability_is_revoked_for_direct_requests() {
     assert_eq!(done.phase, UsageRefreshPhase::Completed);
 }
 
-/// S6: simultaneous refreshes single-flight onto one generation; one probe serves all joiners.
 #[test]
 fn s6_simultaneous_refreshes_share_one_generation() {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
@@ -374,7 +352,6 @@ fn s6_simultaneous_refreshes_share_one_generation() {
     let coordinator = Arc::new(coordinator);
     let cap = capability("acc-a");
 
-    // Eight racing refreshes against a closed gate: all must observe the same winner.
     let mut handles = Vec::new();
     for _ in 0..8 {
         let coordinator = Arc::clone(&coordinator);
@@ -401,21 +378,18 @@ fn s6_simultaneous_refreshes_share_one_generation() {
     assert_eq!(gate.calls.load(Ordering::SeqCst), 1, "duplicate probes ran");
 }
 
-/// S6: a stale compare-and-swap observe adopts the in-flight winner and never
-/// queues a second force refresh.
 #[test]
 fn s6_stale_cas_adopts_the_winner() {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(),
     )));
     let (coordinator, gate) = coordinator_with(gate);
-    // This generic coordinator race must not invoke Claude's five-minute
-    // provider-attempt floor between the two deliberately immediate probes.
+
     let cap = capability_for_surface("acc-a", "codex");
 
     let winner = coordinator.request_refresh(&cap, 0, true, NOW).unwrap();
     assert_eq!(winner.phase, UsageRefreshPhase::Queued);
-    // A second force refresh with a stale observed generation joins, not forks.
+
     let joiner = coordinator.request_refresh(&cap, 0, true, NOW).unwrap();
     assert_eq!(joiner.generation, winner.generation);
     gate.wait_started(1);
@@ -426,8 +400,6 @@ fn s6_stale_cas_adopts_the_winner() {
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
     assert_eq!(gate.calls.load(Ordering::SeqCst), 1);
 
-    // Generations stay CAS-addressed after completion: joining the old
-    // generation returns its own terminal view, never the newer one.
     let next = coordinator
         .request_refresh(&cap, winner.generation, true, NOW)
         .unwrap();
@@ -445,16 +417,13 @@ fn s6_stale_cas_adopts_the_winner() {
     assert_eq!(replay.phase, UsageRefreshPhase::Completed);
 }
 
-/// S6: catalog rotation fences the in-flight generation immediately; its late
-/// result is discarded and the next refresh starts clean under the new revision.
 #[test]
 fn s6_rotation_fences_in_flight_and_discards_late_results() {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(),
     )));
     let (coordinator, gate, store) = coordinator_with_store(gate);
-    // Keep this generic fencing scenario independent of Claude's provider
-    // attempt spacing; the fake executor is the only provider involved.
+
     let cap = capability_for_surface("acc-a", "codex");
     coordinator
         .reconcile_catalog([entry_for_capability(cap.clone(), "rev-1")], NOW)
@@ -466,20 +435,16 @@ fn s6_rotation_fences_in_flight_and_discards_late_results() {
         .reconcile_catalog([entry_for_capability(cap.clone(), "rev-2")], NOW)
         .unwrap();
 
-    // The join fails immediately even though the probe is still running.
     let err = coordinator
         .join_generation(&cap, stale.generation, WAIT, NOW)
         .unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::CatalogRevoked);
 
-    // The late probe result lands on a fenced generation and is discarded.
     gate.release(1);
-    // The executor callback returns before the coordinator persists its
-    // fenced completion. Wait for that durable transition before retrying.
+
     let completed = store.wait_for_fenced_probe_completion(&cap, stale.generation + 1);
     assert_eq!(completed.phase, UsageRefreshPhase::Idle);
-    // Rotation reset the cursor to Idle; observing the stale generation would
-    // adopt, not fork — so a correct CAS observes the current generation.
+
     let cursor = coordinator.current(&cap, NOW).unwrap();
     assert_eq!(cursor.phase, UsageRefreshPhase::Idle);
     assert!(cursor.snapshot.is_none(), "rotation must drop last-good");
@@ -501,8 +466,6 @@ fn s6_rotation_fences_in_flight_and_discards_late_results() {
     assert_eq!(gate.calls.load(Ordering::SeqCst), 2);
 }
 
-/// S6: distinct accounts refresh concurrently within the bound; one account's
-/// gate never blocks another's completion.
 #[test]
 fn s6_distinct_accounts_refresh_independently() {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker wire error constructors.
 
 use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
 

@@ -5,7 +5,7 @@ import XCTest
 
 @testable import JackinUsageBridge
 
-/// Shipped ``StatusPopoverFocus`` rules — left-click status → focused provider.
+
 final class StatusPopoverFocusTests: XCTestCase {
     func testProviderClickSelectsSurface() {
         let outcome = StatusPopoverFocus.outcome(surfaceId: "claude", isFallbackItem: false)
@@ -25,7 +25,7 @@ final class StatusPopoverFocusTests: XCTestCase {
     }
 
     func testSurfaceIdMapLookup() {
-        // Retain NSObject for ObjectIdentifier lifetime (avoids free/reuse alias flake).
+
         let buttonA = NSObject()
         let buttonB = NSObject()
         let identityA = ObjectIdentifier(buttonA)

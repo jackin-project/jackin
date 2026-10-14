@@ -1,25 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Docker lifecycle gate shared by the attach spawn paths.
-//!
-//! [`require_container_running`] inspects the container and returns
-//! the prevalidated handle when the lifecycle state is reachable
-//! (running, paused, or restarting). Every other state bails with
-//! the spawn-facing message: the restore hint for a missing
-//! container, the transport reason when inspection is unavailable,
-//! and the hardline hint for a stopped container. Admission
-//! (account revision, instance policy) stays with the callers.
-
 use jackin_core::{ContainerHandle, JackinPaths};
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use jackin_runtime_attach_admission::admission::validate_recorded_role_handle;
 use jackin_runtime_attach_inspect::inspect::missing_restore_message;
 use jackin_runtime_attach_sessions::sessions::inspect_unavailable_message;
 
-/// Verify only the Docker lifecycle state. New-agent sessions call this
-/// before their single fresh manifest/policy admission gate so that target
-/// selection and revalidation remain one pre-exec decision.
 pub async fn require_container_running(
     paths: &JackinPaths,
     container_name: &str,

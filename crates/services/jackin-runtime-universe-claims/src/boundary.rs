@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared file machinery behind the construct-boundary claims.
-//!
-//! Lock, generation counter, state files, and pending-claim files
-//! under the universe coordination authority. Split out of
-//! `jackin-runtime-universe` with the claim types (S7 split 83);
-//! the observation side (`universe`) keeps using these helpers.
-
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,7 +10,6 @@ use jackin_core::JackinPaths;
 
 static CLAIM_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-// Never unlink this file: replacing its inode would split concurrent locks.
 pub fn boundary_lock(authority: &Path) -> std::io::Result<std::fs::File> {
     let file =
         jackin_runtime_coordination::coordination::open_in_namespace(authority, "universe-lock")?;
@@ -82,8 +74,7 @@ pub fn state_read(directory: &Path, key: &str) -> std::io::Result<Option<Vec<u8>
 pub fn state_write(directory: &Path, key: &str, value: &[u8]) -> std::io::Result<()> {
     let mut file =
         jackin_runtime_coordination::coordination::open_state_in_namespace(directory, key, true)?;
-    // The shared opener validates the owned private regular inode before
-    // truncation; an existing symlink/nonregular file cannot redirect writes.
+
     file.set_len(0)?;
     file.write_all(value)
 }

@@ -1,14 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Agent session spawning, codenames, and agent history.
 
 use crate::tui::view::{spawn_failure_agent_label, spawn_failure_message};
 
 use super::super::{AgentRecord, Multiplexer, PickerIntent, Result, Session, Tab};
 
 impl Multiplexer {
-    /// Pick the next available codename and record it as live.
-    /// Increments `wordlist_offset` so consecutive tabs get different words.
     pub(crate) fn pick_next_codename(&mut self) -> String {
         let codename = crate::wordlist::pick_codename(
             &self.session_supervisor.codename_live,
@@ -20,8 +17,6 @@ impl Multiplexer {
         codename
     }
 
-    /// Move a closed tab's codename from `live` to `retired` (so it is never
-    /// reused this container lifetime) and stamp the matching history record.
     pub(crate) fn retire_codename(&mut self, codename: &str) {
         let now = self.wall_now_utc();
         self.session_supervisor.retire_codename(codename, now);
@@ -40,11 +35,6 @@ impl Multiplexer {
         }
     }
 
-    /// Single dispatch point for `DialogAction::SpawnAgent`. Spawn
-    /// failures (PTY allocation, missing agent binary, cap hit) are
-    /// exported once as a typed error without a body; operator detail stays
-    /// local to the dialog. The dialog dismisses regardless so the
-    /// operator can retry.
     pub(crate) fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
         let result: Result<()> = match intent {
             PickerIntent::NewTab => self.spawn_session(agent.clone(), &[], None).map(|_| ()),
@@ -67,18 +57,8 @@ impl Multiplexer {
         env_overrides: &[(String, String)],
         provider_label: Option<&str>,
     ) -> Result<u64> {
-        // Bound the per-container surface so a runaway client (or an
-        // operator mis-click loop) cannot allocate unbounded PTYs.
-        // Each session retains ~SCROLLBACK_LEN lines of scrollback,
-        // a master+slave PTY pair, and a child process — at MAX_TABS
-        // sessions the container memory footprint is still well
-        // under typical limits, but well past the size any operator
-        // can usefully navigate.
         self.ensure_capacity_for_new_session(true)?;
-        // Authoritative spawn gate: resolve the slug-or-ID target to its
-        // admitted instance. Ambiguity and unknown targets fail here so
-        // neither the TUI picker path nor a wire client can silently
-        // substitute another account's instance.
+
         let agent = agent
             .map(|raw| {
                 self.launch_env
@@ -89,11 +69,7 @@ impl Multiplexer {
             })
             .transpose()?;
         let codename = self.pick_next_codename();
-        // Mirror split_focused_into: resize_panes below reflows every
-        // pane's interior rect, and the new tab swaps the visible
-        // content. Drop any in-flight gesture anchored to a now-stale
-        // pane rect so the next mouse-motion does not paint selection
-        // or splitter feedback against geometry that has moved.
+
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
@@ -157,22 +133,12 @@ impl Multiplexer {
             .codename_live
             .insert(codename.clone());
         self.record_agent_history(id, codename, agent.clone(), provider_label);
-        // Reflow so the new pane's PTY gets the correct interior
-        // dimensions (outer rect minus border rows/cols). Without
-        // this, the session keeps its initial `content_rows ×
-        // term_cols` guess and the agent draws its bottom rows
-        // past the pane's bottom border.
+
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, Some(id));
         Ok(id)
     }
 
-    /// Append a session to the agent registry. Uses the explicit provider label
-    /// when given; otherwise infers the default provider from the agent slug so
-    /// the registry always shows a meaningful value. The owning account is
-    /// resolved from the launch config's instance map (not from the
-    /// credential envelope, which `sync` instances never populate), so both
-    /// fresh spawns and splits stamp the same identity for one instance.
     pub(crate) fn record_agent_history(
         &mut self,
         session_id: u64,
@@ -180,9 +146,6 @@ impl Multiplexer {
         agent: Option<String>,
         provider_label: Option<&str>,
     ) {
-        // `agent` carries an instance config ID, not a slug: resolve the slug
-        // for default-provider inference. Unknown IDs (hand-built test
-        // sessions) match verbatim, mirroring `tab_display_label`.
         let slug = agent.as_deref().map(|stored| {
             self.launch_env
                 .launch_config

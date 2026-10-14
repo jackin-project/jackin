@@ -19,7 +19,6 @@ fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
     })
     .unwrap();
 
-    // Locate the first printable char on the beta row (y=4).
     let buf = term.backend().buffer();
     let inner = panel_inner(buf.area);
     let name_col = (inner.x..inner.right())
@@ -34,10 +33,8 @@ fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
         "non-default role name should start at col {SUBPANEL_CONTENT_INDENT}, got {name_col}"
     );
 
-    // And there must be no trailing star on the non-default row.
     let last_col = last_printable_indent(&term, 4).expect("beta row has content");
-    // `beta` is 4 chars starting at col 2 ⇒ last printable at col 5.
-    // A trailing star would push last_col to col 7 (space + star).
+
     assert_eq!(
         last_col,
         SUBPANEL_CONTENT_INDENT + "beta".len() - 1,
@@ -82,7 +79,6 @@ fn agents_subpanel_default_agent_name_starts_at_col_2_regardless_of_star() {
     })
     .unwrap();
 
-    // Locate the first printable char on the alpha row (y=3).
     let buf = term.backend().buffer();
     let inner = panel_inner(buf.area);
     let name_col = (inner.x..inner.right())
@@ -213,8 +209,7 @@ fn preview_agents_block_no_longer_lists_overrides() {
         }
         joined.push('\n');
     }
-    // Per-role override keys must NOT appear in the Roles block —
-    // they live in the Environments block now.
+
     assert!(
         !joined.contains("API_KEY"),
         "override key API_KEY must NOT appear in the Roles block; got {joined}"
@@ -231,7 +226,7 @@ fn preview_agents_block_no_longer_lists_overrides() {
         !joined.contains("(no overrides)"),
         "`(no overrides)` placeholder must NOT appear in the Roles block; got {joined}"
     );
-    // Default + role name still render.
+
     assert!(
         joined.contains("Default") && joined.contains("alpha"),
         "Roles block must still show default + role name; got {joined}"
@@ -300,13 +295,12 @@ fn preview_includes_environments_block_with_workspace_env_keys() {
         joined.contains("DB_URL"),
         "DB_URL env key must appear; got {joined}"
     );
-    // Sub-section header from the previous layout must NOT appear in
-    // the flat list.
+
     assert!(
         !joined.contains("All roles:"),
         "flat layout must not render the `All roles:` sub-header; got {joined}"
     );
-    // Values must never appear in the preview.
+
     assert!(
         !joined.contains("postgres://"),
         "plain env values must not render; got {joined}"

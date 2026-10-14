@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Download and cache agent CLI binaries (Kimi, etc.) for injection into derived images.
-//!
-//! Fetches from upstream CDN, verifies SHA-256, caches under `~/.jackin/cache/`
-//! with a 1-hour TTL. Not responsible for injecting binaries into the Docker
-//! build context — callers in `runtime::image` handle that step.
-
 use crate::ImageError;
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, hash_file_sha512,
@@ -108,9 +102,6 @@ async fn ensure_available_impl(
         });
     }
 
-    // Metadata cache hit (TTL: 1hr): skip the network resolve. The governed
-    // cache-decision event below records this path without exposing the cache
-    // location.
     if let Some(cached_release) = read_cached_release_async(paths, agent).await {
         crate::telemetry_boundary::cache_decision(
             jackin_telemetry::schema::enums::CacheName::AgentBinary,
@@ -225,9 +216,6 @@ fn spawn_release_metadata_refresh(paths: JackinPaths, agent: Agent) {
     );
 }
 
-/// Build `release` into `cached`; on failure, fall back to the newest cached
-/// executable for `agent` when one exists, else surface the original error.
-/// `failure` labels the primary failure in the diagnostics warning.
 async fn ensure_binary_or_cached_fallback(
     paths: &JackinPaths,
     agent: Agent,
@@ -268,9 +256,6 @@ async fn cached_executable_after_failure_async(
     Some((fallback_release, fallback_path))
 }
 
-/// Return the cached binary if present, otherwise download `release` to
-/// `cached` and return it. Shared by the metadata-cache-hit and post-resolve
-/// paths so both emit the same breadcrumbs and run the same download sequence.
 async fn ensure_binary_for_release(
     agent: Agent,
     release: &AgentRelease,
@@ -374,9 +359,6 @@ pub fn cached_binary_path(paths: &JackinPaths, release: &AgentRelease) -> PathBu
 }
 
 async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
-    // Central resolver exception: each upstream publishes releases through a
-    // different mechanism, so this match is the single dispatch point instead
-    // of scattering agent-specific release lookup across launch/image code.
     match agent {
         Agent::Claude => resolve_claude().await,
         Agent::Codex => resolve_codex().await,
@@ -386,10 +368,7 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
         Agent::Grok => resolve_grok().await,
         Agent::Antigravity => resolve_antigravity().await,
         Agent::Gemini => resolve_npm_only(Agent::Gemini, "@google/gemini-cli"),
-        // Cursor ships a versioned install tree (node bundle + shell wrapper),
-        // not a relocatable single binary: host prefetch cannot reproduce that
-        // layout, so resolution fails closed and the launch falls through to
-        // the official installer block.
+
         Agent::Cursor => resolve_no_binary(
             Agent::Cursor,
             "the official installer lays down a versioned directory plus wrapper, not a relocatable binary",
@@ -403,7 +382,6 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
     }
 }
 
-/// Antigravity manifest shape (`{base}/manifests/{platform}.json`).
 #[derive(Debug, Deserialize)]
 struct AntigravityManifest {
     version: String,
@@ -412,14 +390,6 @@ struct AntigravityManifest {
 }
 
 async fn resolve_antigravity() -> Result<AgentRelease> {
-    // Version pointer and binary layout extracted from the official installer
-    // https://antigravity.google/cli/install.sh (verified 2026-09-17):
-    //
-    // - Platform manifest (JSON): ${BASE}/manifests/${platform}.json with
-    //   {version, url, sha512}, where platform is linux_amd64 / linux_arm64
-    //   (glibc; a linux_${arch}_musl flavor exists but role images are glibc).
-    // - The payload is a .tar.gz carrying a single `antigravity` member
-    //   (renamed to `agy` at install time), verified with SHA-512.
     const BASE: &str = "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app";
     let platform = match container_arch() {
         "arm64" => "linux_arm64",
@@ -446,8 +416,6 @@ async fn resolve_antigravity() -> Result<AgentRelease> {
     })
 }
 
-/// npm-distributed CLIs have no standalone binary artifact to prefetch: the
-/// launch falls through to `npm install -g` in the fallback install block.
 fn resolve_npm_only(agent: Agent, package: &str) -> Result<AgentRelease> {
     Err(ImageError::msg(format!(
         "{} is distributed via npm ({package}); host binary prefetch is not applicable",
@@ -456,8 +424,6 @@ fn resolve_npm_only(agent: Agent, package: &str) -> Result<AgentRelease> {
     .into())
 }
 
-/// Agents with no verified standalone installer cannot be prefetched; the
-/// launch falls through to the (fail-closed) fallback install block.
 fn resolve_no_installer(agent: Agent) -> Result<AgentRelease> {
     Err(ImageError::msg(format!(
         "{} has no verified standalone installer; install it on the host",
@@ -466,7 +432,6 @@ fn resolve_no_installer(agent: Agent) -> Result<AgentRelease> {
     .into())
 }
 
-/// Agents whose installer produces no relocatable single binary.
 fn resolve_no_binary(agent: Agent, reason: &str) -> Result<AgentRelease> {
     Err(ImageError::msg(format!(
         "{} host binary prefetch is not applicable: {reason}",
@@ -525,11 +490,7 @@ async fn resolve_kimi() -> Result<AgentRelease> {
         .trim()
         .to_owned();
     let platform = platform_x64_arm64();
-    // URL layout extracted from the official installer at
-    // https://code.kimi.com/kimi-code/install.sh:
-    //   latest pointer: ${KIMI_DOWNLOAD_BASE}/latest
-    //   manifest:       ${KIMI_BINARY_BASE}/${version}/manifest.json
-    //   binary:         ${KIMI_BINARY_BASE}/${version}/${filename}
+
     let manifest: KimiManifest = serde_json::from_str(
         &fetch_text_with_retry(&format!("{KIMI_BINARY_BASE_URL}/{version}/manifest.json")).await?,
     )?;
@@ -568,24 +529,6 @@ async fn resolve_codex() -> Result<AgentRelease> {
 }
 
 async fn resolve_grok() -> Result<AgentRelease> {
-    // Version pointer and binary layout extracted from the official installer
-    // https://x.ai/cli/install.sh :
-    //
-    // - Channel pointer (plain text): ${BASE}/stable  (or alpha/enterprise via
-    //   GROK_CHANNEL, but we pre-bake "stable" for role images).
-    // - Primary base: https://x.ai/cli
-    // - Fallback base: https://storage.googleapis.com/grok-build-public-artifacts/cli
-    //   (selected if primary probe of the channel pointer fails).
-    // - Linux artifact (direct executable, no tarball):
-    //     ${BASE}/grok-${VERSION}-linux-x86_64
-    //     ${BASE}/grok-${VERSION}-linux-aarch64
-    // - No published per-artifact SHA-256 sidecar (unlike Claude/Kimi/Amp or
-    //   GitHub digests for Codex/OpenCode). We verify by running `--version`
-    //   after download (matching the non-Windows path in the installer).
-    // - The binary is also made available as "agent" via symlink by the
-    //   install_block in the derived image.
-    //
-    // Platform/arch mapping matches the installer (os-arch with os=linux).
     let primary = GROK_BASE_PRIMARY;
     let fallback = GROK_BASE_FALLBACK;
 
@@ -659,9 +602,6 @@ async fn fetch_text(url: &str) -> Result<String> {
     .await
 }
 
-/// Returns true when `error` is a TCP connect-phase timeout. Unlike a slow
-/// response or a server-side error, a connect timeout means the endpoint is
-/// unreachable and retrying immediately will not help.
 fn is_connect_timeout(error: &anyhow::Error) -> bool {
     error.chain().any(|e| {
         e.downcast_ref::<reqwest::Error>()
@@ -669,9 +609,6 @@ fn is_connect_timeout(error: &anyhow::Error) -> bool {
     })
 }
 
-/// Like `fetch_text` but retries transient HTTP/network errors up to 2 times
-/// with exponential back-off. Connect timeouts are not retried: on a warm cache,
-/// this lets the caller fall back immediately to the cached executable.
 async fn fetch_text_with_retry(url: &str) -> Result<String> {
     let url = url.to_owned();
     retry_metadata_with_backoff(2, Duration::from_millis(500), || {
@@ -689,8 +626,6 @@ async fn github_auth_token() -> Option<String> {
 }
 
 async fn github_auth_token_uncached() -> Option<String> {
-    // Degrade to unauthenticated (60 req/hr) on any failure. Do not emit the
-    // subprocess error or stderr: either may contain host or account data.
     let request =
         jackin_process::ExecRequest::new("gh", ["auth", "token", "--hostname", "github.com"])
             .timeout(Duration::from_secs(15));
@@ -710,7 +645,7 @@ async fn github_auth_token_uncached() -> Option<String> {
 
 async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubReleaseAssetMatch> {
     let api_url = format!("https://api.github.com/repos/{repo}/releases/latest");
-    // Authenticated requests have 5 000 req/hr vs 60 req/hr unauthenticated.
+
     let token = github_auth_token().await;
     let mut headers = HeaderMap::new();
     if let Some(ref t) = token {
@@ -861,20 +796,8 @@ async fn download_and_cache_inner(
     })
     .await
     .with_context(|| format!("downloading {}", release.url))?;
-    // A dropped chunk leaves a zeroed hole in the pre-sized file rather than a
-    // short file, so the SHA-256 (when published) is the integrity guard.
-    //
-    // Claude/Kimi/Amp publish checksums in their manifests.
-    // Codex/OpenCode get them from GitHub release asset digests.
-    // Antigravity publishes SHA-512 in its platform manifest.
-    //
-    // Grok (per analysis of https://x.ai/cli/install.sh) does not publish a
-    // per-artifact SHA sidecar for the direct linux binary. We fall back to a
-    // `--version` smoke test after download (exactly as the official installer
-    // does on non-Windows) to verify we got a runnable binary for that version.
+
     if let Some(expected) = release.checksum.as_deref() {
-        // The digest length selects the algorithm: resolvers store validated
-        // 64-hex SHA-256 or 128-hex SHA-512, nothing else.
         let use_sha512 = match expected.len() {
             64 => false,
             128 => true,
@@ -910,8 +833,6 @@ async fn download_and_cache_inner(
             .into());
         }
     } else if release.agent != Agent::Grok {
-        // Future agents without checksums should be explicitly handled (or
-        // provide one). Only Grok is currently allowed to skip SHA.
         return Err(ImageError::msg(format!(
             "{} release {} has no published checksum; refusing to install an unverified binary",
             release.agent.slug(),
@@ -937,15 +858,6 @@ async fn download_and_cache_inner(
         .await
         .context("chmod worker join")??;
 
-    // Smoke test for agents without a published checksum (Grok today).
-    // This mirrors the `if ! "$binary_tmp" --version ...` check in the official
-    // https://x.ai/cli/install.sh (non-Windows path) and gives us the
-    // "verifying the new version" guarantee before we trust the cached binary.
-    //
-    // Only performed on Linux hosts: the cached artifacts are always Linux
-    // binaries (for injection into role containers). On macOS/Windows dev
-    // machines we cannot natively exec them; Grok remains the one prefetched
-    // install block that keeps a Docker-build `grok --version` smoke check.
     if release.checksum.is_none() && cfg!(target_os = "linux") {
         let request = jackin_process::ExecRequest::new(tmp_binary, ["--version"])
             .stdin_mode(jackin_process::StdioMode::Null)
@@ -1019,7 +931,6 @@ fn read_cached_release_with_clock(
     read_cached_release_at(paths, agent, clock.now_system())
 }
 
-/// TTL check against an injected wall-clock instant (plan 025).
 fn read_cached_release_at(
     paths: &JackinPaths,
     agent: Agent,
@@ -1098,10 +1009,6 @@ fn write_version_release(paths: &JackinPaths, release: &AgentRelease) -> Result<
     Ok(())
 }
 
-/// Best-effort write of the resolved release to the TTL metadata cache and the
-/// per-version sidecar. A failure only costs an extra network resolve next
-/// launch, so it's logged (to explain a re-resolve loop under `--debug`) rather
-/// than propagated.
 async fn persist_release_cache_async(paths: &JackinPaths, release: &AgentRelease) {
     let paths = paths.clone();
     let release = release.clone();

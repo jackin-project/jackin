@@ -1,5 +1,3 @@
-//! Tests for `OpProbeError` display + equality.
-
 use super::OpProbeError;
 
 #[test]

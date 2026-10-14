@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Hermes credential provisioning.
 
 #![expect(
     clippy::print_stderr,
@@ -46,10 +45,6 @@ pub(crate) fn create_hermes_source_snapshot(
     })
 }
 
-/// Provision Hermes's host-side `~/.hermes/` dir per the chosen mode.
-///
-/// Best-effort layout (unverified upstream): forwards `config.yaml`,
-/// `.env`, `auth.json` when present plus a `profiles/` subtree.
 pub fn provision_hermes_auth(
     hermes_dir: &Path,
     mode: AuthForwardMode,
@@ -81,10 +76,7 @@ pub fn provision_hermes_auth_from_source_dir(
                 hermes_dir, source_dir, mode, None,
             );
         };
-        // A selected source already lives beneath the protected
-        // `source-snapshots` parent captured for this launch. Reuse that
-        // parent for the validation copy; legacy callers fall back to a
-        // private sidecar beneath the role target instead of ambient /tmp.
+
         let snapshot = create_hermes_source_snapshot(hermes_dir, source_dir)?;
         let snapshot_root = auth_directory::open_directory_path(snapshot.path())?;
         auth_directory::snapshot_source(&source.root, &snapshot_root)?;
@@ -96,10 +88,7 @@ pub fn provision_hermes_auth_from_source_dir(
             snapshot.path(),
         )?;
         auth_directory::run_hermes_snapshot_hook();
-        // Keep the source lock held until the snapshot has been
-        // validated and the descriptor-safe destination swap has
-        // completed. The staged copy reads only the immutable
-        // snapshot, not the live source.
+
         return provision_hermes_dir_credential_with_locked_source(
             hermes_dir,
             snapshot.path(),
@@ -112,12 +101,6 @@ pub fn provision_hermes_auth_from_source_dir(
     provision_hermes_dir_credential(hermes_dir, source_dir, mode)
 }
 
-/// Directory credential provisioner for Hermes's multi-file store, mirroring
-/// [`provision_kimi_dir_credential`] semantics (OAuthToken/ApiKey/Ignore wipe
-/// the dir; Sync copies known files + a `profiles/` subtree).
-///
-/// Returns `(outcome, forward_auth)` where `forward_auth` is `true` when the
-/// role-state directory should be bind-mounted into the container.
 pub(crate) fn provision_hermes_dir_credential(
     target_dir: &Path,
     host_dir: &Path,
@@ -141,7 +124,6 @@ pub(crate) fn provision_hermes_dir_credential_with_locked_source(
     #[cfg(unix)] source: Option<auth_directory::LockedSource>,
     #[cfg(not(unix))] _source: (),
 ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
-    // Best-effort file set; the layout is unverified upstream.
     const SYNC_FILES: &[&str] = &["config.yaml", ".env", "auth.json"];
 
     let outcome = match mode {
@@ -226,8 +208,6 @@ pub(crate) fn provision_hermes_dir_credential_with_locked_source(
     Ok((outcome, forward_auth))
 }
 
-/// Remove role-state Hermes auth files so a prior Sync run cannot leak
-/// credentials under env-driven modes.
 pub(crate) fn wipe_hermes_state(hermes_dir: &Path) -> anyhow::Result<()> {
     auth_directory::wipe_auth_directory(hermes_dir).map_err(|error| {
         anyhow::anyhow!(format!(

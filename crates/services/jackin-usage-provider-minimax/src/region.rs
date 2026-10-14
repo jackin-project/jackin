@@ -1,14 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `MiniMax` key products and region selection.
 
 use jackin_usage_provider_core::env_value;
 
-/// Key product selected by key shape: secret `sk-api-*` keys are PAYG
-/// balance keys; anything else is a Token Plan subscription key. Evidence:
-/// `ref-contracts-B.md` §3 — `GET {base}/account/query_balance` serves
-/// secret `sk-api-*` keys only, selected by `selectUsageEndpoint` on the
-/// `sk-api-` prefix (`minimax-cli` `src/client/endpoints.ts:50-84`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MiniMaxKeyProduct {
     TokenPlan,
@@ -23,9 +17,6 @@ pub fn minimax_key_product(token: &str) -> MiniMaxKeyProduct {
     }
 }
 
-/// Billing region: global (`api.minimax.io`, USD) vs CN (`api.minimaxi.com`,
-/// CNY). Region and currency travel together so a balance is never shown
-/// without both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MiniMaxRegion {
     Global,
@@ -63,8 +54,6 @@ pub fn minimax_region_from_value(value: &str) -> MiniMaxRegion {
     }
 }
 
-/// Region selection: explicit `MINIMAX_REGION` (`cn`/`china`/`minimaxi` →
-/// CN) wins, else a CN host override implies CN, else global.
 pub(crate) fn resolve_minimax_region() -> MiniMaxRegion {
     let host = env_value("MINIMAX_API_HOST").or_else(|| env_value("MINIMAX_HOST"));
     resolve_minimax_region_from(env_value("MINIMAX_REGION").as_deref(), host.as_deref())
@@ -82,8 +71,7 @@ pub fn resolve_minimax_region_from(
         {
             return MiniMaxRegion::China;
         }
-        // Any other explicit value (or none) means global: the safe default
-        // never routes a credential at the CN hosts.
+
         return MiniMaxRegion::Global;
     }
     host_override.map_or(MiniMaxRegion::Global, minimax_region_from_value)

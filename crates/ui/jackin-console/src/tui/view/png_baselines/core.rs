@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `BaselineCase` rendering and base states.
+
 #![cfg(test)]
 
 use crate::tui::{
@@ -12,8 +12,6 @@ use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 use std::path::{Path, PathBuf};
 use termrock::style::RolePalette;
 
-/// One baselined screen: stable kebab-case id plus a headless constructor for
-/// its canonical state.
 pub(crate) struct BaselineCase {
     pub(crate) id: &'static str,
     pub(crate) width: u16,
@@ -48,8 +46,6 @@ pub(crate) fn render_manager_buffer(
         .unwrap();
     terminal.backend().buffer().clone()
 }
-
-// ── Stage-view constructors ────────────────────────────────────────────────
 
 pub(crate) fn plain() -> (ManagerState<'static>, AppConfig, PathBuf) {
     let config = AppConfig::default();

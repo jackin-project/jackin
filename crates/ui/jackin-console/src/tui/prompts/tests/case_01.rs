@@ -147,8 +147,6 @@ fn zero_eligible_candidates_without_workspace_errors() {
 
 #[test]
 fn unauthorized_global_binding_hard_errors_without_fallback() {
-    // The saved workspace authorizes a different account. The global
-    // selection is explicit and must not be filtered into a fallback.
     let (mut config, ws) = test_config();
     config.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["z-claude".into()];
     config
@@ -169,9 +167,6 @@ fn unauthorized_global_binding_hard_errors_without_fallback() {
 
 #[test]
 fn missing_workspace_falls_back_to_global_accounts() {
-    // Missing selection: ad-hoc launches have no allowlist, so the
-    // global binding applies unfiltered and bare candidates stay
-    // eligible.
     let (mut config, _) = test_config();
     config
         .account_bindings
@@ -244,8 +239,6 @@ fn unauthorized_workspace_binding_hard_errors_without_fallback() {
 
 #[test]
 fn unauthorized_global_binding_is_not_filtered_into_fallback() {
-    // Global defaults can never widen workspace access: an unauthorized
-    // global binding is an error, not a reason to choose another account.
     let (mut config, ws) = test_config();
     config
         .account_bindings
@@ -270,8 +263,7 @@ fn binding_to_unknown_account_errors_at_every_scope() {
         resolve_agent_default(&config, Some(&ws), ROLE, Agent::Claude),
         AgentDefaultResolution::Invalid(_)
     ));
-    // Role scope wins, so the error below pins the role binding; clear
-    // it to exercise the workspace scope, then the global scope.
+
     config
         .workspaces
         .get_mut(ws.as_str())
@@ -284,9 +276,7 @@ fn binding_to_unknown_account_errors_at_every_scope() {
         .unwrap()
         .account_bindings
         .insert(Agent::Claude, "ghost".into());
-    // The workspace binding names an id outside the allowlist, so the
-    // authorization check fires before the unknown-id check — either way
-    // the selection fails atomically.
+
     select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible.clone()).unwrap_err();
     config
         .workspaces
@@ -300,15 +290,12 @@ fn binding_to_unknown_account_errors_at_every_scope() {
         .unwrap()
         .accounts
         .push("ghost".into());
-    // The allowlist now references the ghost id, so the dangling-id
-    // check fires even without any binding.
+
     select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap_err();
 }
 
 #[test]
 fn global_binding_to_unknown_id_errors_without_fallback() {
-    // A global binding remains an explicit selection when inherited by a
-    // workspace, so an unknown ID is an atomic configuration error.
     let (mut config, ws) = test_config();
     config
         .account_bindings
@@ -348,8 +335,6 @@ fn binding_to_disabled_account_errors() {
 
 #[test]
 fn empty_string_binding_fails_atomically() {
-    // An explicit empty selection is invalid (unknown id), never a
-    // trigger to fall back to the eligible candidates.
     let (mut config, ws) = test_config();
     set_role_binding(&mut config, ws.as_str(), ROLE, Agent::Claude, "");
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
@@ -378,8 +363,7 @@ fn binding_for_other_agent_does_not_leak() {
 fn role_default_launch_honored_with_several_accounts() {
     let (mut config, ws) = launch_config();
     set_role_default(&mut config, ws.as_str(), ROLE, &["claude-z"]);
-    // The passed eligible list is ignored in the defaults regime: the
-    // admitted set resolves through `resolve_launch` instead.
+
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
     assert!(eligible.len() > 1);
 

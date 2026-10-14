@@ -236,7 +236,7 @@ fn capsule_config_carries_instance_accounts_and_labels() {
     );
     assert_eq!(config.account_for_instance("claude-work"), Some("work"));
     assert_eq!(config.account_for_instance("unknown"), None);
-    // Operator label overrides pass through verbatim; names only, never secrets.
+
     assert_eq!(
         config.labels,
         std::collections::BTreeMap::from([
@@ -300,7 +300,7 @@ fn instance_bindings_keep_launch_order_and_config_id_keys() {
             },
         },
     );
-    // Launch order deliberately differs from key sort order.
+
     let instances = vec![
         instance("codex-personal", Agent::Codex, "personal"),
         instance("claude-work", Agent::Claude, "work"),

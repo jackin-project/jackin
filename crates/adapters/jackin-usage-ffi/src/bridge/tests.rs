@@ -292,8 +292,6 @@ fn passive_bridge_reads_only_cached_broker_projection() {
         .apply_publication(fixture_projection())
         .expect("fixture publication");
 
-    // Force is ignored in no-live-probe mode. This only attempts an attach-only
-    // current-projection read and cannot start a provider executor.
     bridge
         .refresh(Some("codex".to_owned()), true)
         .expect("passive refresh");
@@ -503,9 +501,7 @@ fn live_ffi_explicit_refresh_does_not_probe_in_the_client_process() {
     bridge
         .refresh(Some("codex".to_owned()), true)
         .expect("explicit operator refresh");
-    // This fake broker has no broker-owned catalog refresher. Explicit
-    // refresh intent stays inside the broker process; the FFI client never
-    // falls back to a provider call.
+
     assert_eq!(executor.0.load(Ordering::SeqCst), 0);
     bridge.shutdown().expect("shutdown");
 }

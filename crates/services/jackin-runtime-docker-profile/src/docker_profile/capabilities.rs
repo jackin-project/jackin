@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Valid/minimum Linux capability name tables.
 
-/// All recognized Linux capability names (without the `CAP_` prefix,
-/// uppercase). Used to validate `capabilities_add` entries at launch time.
 pub const VALID_CAPABILITIES: &[&str] = &[
     "AUDIT_CONTROL",
     "AUDIT_READ",
@@ -47,13 +44,6 @@ pub const VALID_CAPABILITIES: &[&str] = &[
     "WAKE_ALARM",
 ];
 
-/// The 8-cap minimum set applied under `hardened` and `locked`.
-///
-/// Applied regardless of `DinD` status (with `DinD` active the caps can be
-/// circumvented via `docker run --privileged` against the sidecar, but they are
-/// still emitted for defense in depth). Derived from common role workflows
-/// (package managers, build tools, process supervisors). Everything else is
-/// dropped from Docker's 14-cap default.
 pub const MINIMUM_CAPABILITIES: &[&str] = &[
     "CHOWN",
     "DAC_OVERRIDE",

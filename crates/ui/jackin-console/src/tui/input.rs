@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console manager input handlers — key dispatch, modal routing,
-//! and two-phase save flow.
-
 pub mod auth;
 pub mod dispatch;
 pub mod editor;
@@ -17,7 +14,6 @@ pub use global_mounts::{
     apply_op_picker_to_settings_auth_form_committed, apply_plain_text_to_settings_auth_form,
 };
 
-/// Return type for all input handlers: continue processing or consume the event.
 pub type InputOutcome = crate::tui::message::ConsoleInputOutcome<
     jackin_core::RoleSelector,
     jackin_core::Agent,

@@ -1,37 +1,30 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Format preferences, time labels, and text helpers.
 
 use chrono::{Local, TimeZone};
 
 use super::titlecase_ascii;
 
-/// Percent display preference for presentation-time labels (not persisted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PercentStyle {
-    /// Remaining percent with a `left` suffix where full phrases are used.
     #[default]
     Left,
-    /// Used percent with a `used` suffix where full phrases are used.
+
     Used,
 }
 
-/// Reset-time display preference for presentation-time labels (not persisted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResetStyle {
-    /// `Resets in {countdown} ({local clock})` — shipped default.
     #[default]
     Countdown,
-    /// `Resets {local clock}` — clock-led form.
+
     ExactClock,
 }
 
-/// Presentation-time format prefs. Defaults are byte-identical to shipped labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct UsageFormatPrefs {
-    /// How percent-bearing quota headlines render.
     pub percent_style: PercentStyle,
-    /// How reset lines render.
+
     pub reset_style: ResetStyle,
 }
 
@@ -39,7 +32,6 @@ pub fn reset_label(reset_at: i64, now: i64) -> String {
     reset_label_with_prefs(reset_at, now, UsageFormatPrefs::default())
 }
 
-/// Reset label shaped by presentation prefs (Countdown is the shipped form).
 pub fn reset_label_with_prefs(reset_at: i64, now: i64, prefs: UsageFormatPrefs) -> String {
     if reset_at <= now {
         return "Resets now".to_owned();
@@ -61,12 +53,10 @@ pub fn reset_label_with_prefs(reset_at: i64, now: i64, prefs: UsageFormatPrefs) 
     }
 }
 
-/// Exact-clock fragment for overview rows, e.g. `(Jul 28, 17:02)`.
 pub fn exact_reset_parenthetical(reset_at: i64) -> String {
     format!("({})", local_timestamp_label(reset_at))
 }
 
-/// Compact percent headline from remaining: default `97% left`, or `3% used`.
 pub fn percent_headline(remaining: u8, prefs: UsageFormatPrefs) -> String {
     match prefs.percent_style {
         PercentStyle::Left => format!("{remaining}% left"),
@@ -109,12 +99,7 @@ pub fn quota_pace_label(
         return None;
     }
     let time_left_percent = reset_in as f64 / window_seconds as f64 * 100.0;
-    // CodexBar pace model: compare remaining quota against the fraction of the
-    // window still left. `delta > 0` means more quota than time remains (ahead
-    // of pace = reserve); `delta < 0` means burning faster than the clock
-    // (behind = deficit); within 2 points is "On pace". The reset countdown is
-    // carried separately in the bucket's reset label, so the pace token stays a
-    // bare phrase exactly as the previews show.
+
     let delta = remaining_percent - time_left_percent;
     let pace = if delta.abs() <= 2.0 {
         "On pace".to_owned()
@@ -123,10 +108,7 @@ pub fn quota_pace_label(
     } else {
         format!("{}% in deficit", (-delta).round() as i64)
     };
-    // Variant A run-out: append `· Runs out in <duration>` only when the linear
-    // projection from window start runs out before the reset. Compare exact
-    // integer cross-products (float delta is display math and can round a
-    // clock-equality case slightly negative).
+
     let used = 100_i128 - i128::from(remaining_percent_raw);
     let elapsed = window_seconds - reset_in;
     let behind_clock = i128::from(remaining_percent_raw) * i128::from(window_seconds)
@@ -143,12 +125,6 @@ pub fn quota_pace_label(
     Some(pace)
 }
 
-/// Compact time ladder (48-hour threshold):
-/// - **&lt; 1 hour** → compact minutes (`45m`)
-/// - **&lt; 48 hours** → compact hours (`36h`, optional `36h 30m`) — never days
-/// - **≥ 48 hours** → compact days (`2d`, optional `2d 1h`)
-///
-/// Prefer hours until the 48h line; do not emit a day form for 24–47h windows.
 pub fn compact_duration_label(seconds: i64) -> String {
     let seconds = seconds.max(0);
     if seconds < 60 {
@@ -203,9 +179,6 @@ pub fn window_minutes_label(minutes: i64) -> Option<String> {
     Some(format!("{minutes} minute window"))
 }
 
-/// Split a machine-style identifier on `_`/`-`/whitespace and join the per-word
-/// transform with spaces. Shared by `humanize_plan_label` (plain title-case) and
-/// `codex_plan_display_name` (acronym-aware words).
 pub fn humanize_words_with(value: &str, word: impl Fn(&str) -> String) -> String {
     value
         .split(|c: char| c == '_' || c == '-' || c.is_whitespace())

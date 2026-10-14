@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Launch finish phase.
 
 use super::runtime_dispatch::RuntimeDispatch;
 use crate::runtime::launch::launch_pipeline::launch_phases::{CleanupClassified, RuntimeLaunched};

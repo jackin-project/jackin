@@ -1,4 +1,4 @@
-// docs/components/landing/PillCards.tsx
+
 export function PillCards() {
   return (
     <section className="landing-section">

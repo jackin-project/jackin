@@ -246,8 +246,6 @@ fn hook_entries_yield_runtime_contract_order() {
 
 #[test]
 fn hook_entries_skip_absent_and_preserve_order() {
-    // Mixed presence: only source + preflight. Order must follow
-    // the canonical sequence, not the order fields are populated.
     let hooks = HooksConfig {
         setup_once: None,
         source: Some("b.sh".to_owned()),

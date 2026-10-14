@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
@@ -17,7 +17,7 @@ Prices are list $/MTok (override in PRICES). Output: token volume by class, doll
 """
 import json, sys, glob, os
 
-PRICES = {  # $/MTok: input, cache-read(0.1x), cache-write-5m(1.25x), cache-write-1h(2x), output
+PRICES = {
     "claude-opus-4-8":   dict(inp=5.0,  cr=0.5,  cw5=6.25, cw1=10.0, out=25.0),
     "claude-sonnet-4-6": dict(inp=3.0,  cr=0.3,  cw5=3.75, cw1=6.0,  out=15.0),
     "claude-haiku-4-5":  dict(inp=1.0,  cr=0.1,  cw5=1.25, cw1=2.0,  out=5.0),
@@ -33,7 +33,7 @@ def main():
     path = sys.argv[1] if len(sys.argv) > 1 else newest_transcript()
     model = sys.argv[2] if len(sys.argv) > 2 else "claude-opus-4-8"
     P = PRICES[model]
-    seen = {}  # message.id -> usage (dedup; identical usage repeats across a response's lines)
+    seen = {}
     for line in open(path):
         line = line.strip()
         if not line:

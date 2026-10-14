@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Grok Build adapter.
-
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
@@ -13,7 +11,6 @@ use crate::agent::runtime::{
 const FALLBACK_INSTALL_COMMAND: &str =
     bounded_fallback_curl!("https://x.ai/cli/install.sh", " | bash");
 
-/// [`crate::agent::runtime::AgentRuntime`] adapter for Grok Build.
 #[derive(Debug)]
 pub(crate) struct GrokRuntime;
 
@@ -77,7 +74,7 @@ RUN set -euxo pipefail && \\
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".grok",
-            config_dir: None, // all durable state under ~/.grok
+            config_dir: None,
             credential_file: Some(".grok/auth.json"),
             folder_env_var: None,
         }

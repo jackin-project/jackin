@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Per-container allowlisted relay to the host-only usage broker.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -53,34 +51,24 @@ pub fn apple_runtime_mount(
     )
 }
 
-/// Host launch facts needed to construct one scoped usage relay.
 #[derive(Debug)]
 pub struct UsageRelayLaunch<'a> {
-    /// Host paths for config, data, and private socket directories.
     pub paths: &'a JackinPaths,
-    /// Effective workspace, if this is not an ad-hoc launch.
+
     pub workspace_name: Option<&'a str>,
-    /// Effective role key.
+
     pub role_key: &'a str,
-    /// Host-validated launch config carrying per-session Unix identities.
+
     pub launch_config: &'a CapsuleConfig,
-    /// Exact credential sources proven to enter this Capsule.
+
     pub forwarded_sources: ForwardedUsageSources,
 }
 
-/// Resolved Capsule launch membership used by usage presentation.
-///
-/// This is derived only from the host-validated Capsule configuration. It is
-/// intentionally a closed, deduplicated agent list: usage discovery may enrich
-/// an agent with a forwarded canonical account, but global host discovery or a
-/// capability alone cannot create a Capsule row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedLaunchUsageInventory {
-    /// Instance config IDs in deterministic launch-config order.
     pub instances: Vec<String>,
 }
 
-/// Project the resolved launch configuration into the Capsule usage boundary.
 #[must_use]
 pub fn resolved_launch_usage_inventory(config: &CapsuleConfig) -> ResolvedLaunchUsageInventory {
     let mut instances = config.instances.clone();
@@ -89,7 +77,6 @@ pub fn resolved_launch_usage_inventory(config: &CapsuleConfig) -> ResolvedLaunch
     ResolvedLaunchUsageInventory { instances }
 }
 
-/// Session-lifetime relay ownership. Drop revokes the socket task.
 pub struct UsageRelayGuard {
     task: Option<tokio::task::JoinHandle<()>>,
     shutdown: Option<oneshot::Sender<()>>,
@@ -127,7 +114,6 @@ impl Drop for UsageRelayGuard {
     }
 }
 
-/// Host broker and exact launch-derived capabilities awaiting a backend transport.
 #[derive(Debug)]
 pub struct PreparedUsageRelay {
     broker: UsageBrokerClient,
@@ -136,10 +122,6 @@ pub struct PreparedUsageRelay {
     credential_scope: UsageCredentialScope,
 }
 
-/// Canonical host capabilities resolved for the configured account selections
-/// in one Capsule launch. The launch config starts with config-account aliases
-/// so discovery can select the right binding; this map replaces those aliases
-/// with the exact opaque authorities accepted by the relay.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CanonicalLaunchUsageCapabilities {
     by_account_surface: BTreeMap<(String, String), UsageAccountCapability>,
@@ -167,8 +149,6 @@ impl CanonicalLaunchUsageCapabilities {
                     .usage_capabilities
                     .insert(instance_id, capability.clone());
             } else {
-                // Never leave a pre-discovery config alias in the Capsule when
-                // host discovery did not prove that exact identity.
                 launch_config.usage_capabilities.remove(&instance_id);
             }
         }
@@ -176,10 +156,6 @@ impl CanonicalLaunchUsageCapabilities {
     }
 }
 
-/// Fail the launch closed when two instances carrying usage capabilities
-/// share one Unix identity. The Capsule proxy authorizes peers by
-/// `(uid, gid)`, so a collision would make two instances'
-/// capabilities indistinguishable.
 fn ensure_distinct_usage_unix_identities(launch_config: &CapsuleConfig) -> Result<()> {
     let mut seen = BTreeSet::new();
     for instance_id in &launch_config.instances {
@@ -197,7 +173,6 @@ fn ensure_distinct_usage_unix_identities(launch_config: &CapsuleConfig) -> Resul
     Ok(())
 }
 
-/// Derive source proof from credentials actually provisioned for this launch.
 #[must_use]
 pub fn forwarded_sources_from_launch(
     state: &jackin_instance::RoleState,
@@ -228,9 +203,6 @@ pub fn forwarded_sources_from_launch(
     }
 }
 
-/// Build the immutable, secret-free source fence immediately after launch
-/// staging. The fingerprint is computed from the exact value written to the
-/// per-instance credential file; no later config/env/op lookup participates.
 pub fn usage_credential_scope_for_staged_launch(
     config: &AppConfig,
     instances: &[jackin_config::ResolvedInstance],
@@ -281,9 +253,6 @@ pub fn usage_credential_scope_for_staged_launch(
     Ok(UsageCredentialScope { sources })
 }
 
-/// Source proof for the serialized launch config. The account ids are the
-/// exact configured selections and are used to filter host bindings before a
-/// relay capability allowlist is created.
 #[must_use]
 pub fn forwarded_sources_from_launch_config(
     state: &jackin_instance::RoleState,
@@ -305,10 +274,6 @@ pub fn forwarded_sources_from_launch_config(
     sources
 }
 
-/// Populate the Capsule launch contract with canonical usage authorities for
-/// every admitted instance. An unknown account or provider leaves that entry
-/// absent; the Capsule then fails closed for usage refresh instead of falling
-/// back to a same-surface account.
 pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mut CapsuleConfig) {
     for instance_id in &launch_config.instances {
         let Some(account_id) = launch_config.accounts.get(instance_id) else {
@@ -317,12 +282,7 @@ pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mu
         let Some(account) = config.accounts.get(account_id) else {
             continue;
         };
-        // The selected account's configured provider is the canonical usage
-        // surface. Do not rediscover profiles here: launch materialization is
-        // on the critical path, and profile identity readers may block on a
-        // protected keychain. Broker discovery still validates credentials
-        // when the relay starts; this contract only carries the already
-        // authorized account/provider identity into Capsule.
+
         let Some(surface) = HostSurfaceId::from_provider_alias(account.provider.slug()) else {
             continue;
         };
@@ -339,9 +299,6 @@ pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mu
     }
 }
 
-/// Ask the host broker to resolve one launch's forwarded source proofs.
-/// Broker activation failure is returned; a dead fallback client is not a
-/// valid production relay authority.
 pub async fn prepare_for_stdio_tunnel(launch: UsageRelayLaunch<'_>) -> Result<PreparedUsageRelay> {
     let paths = launch.paths.clone();
     let workspace_name = launch.workspace_name.map(str::to_owned);
@@ -374,7 +331,6 @@ impl PreparedUsageRelay {
     }
 }
 
-/// Start the production Docker stdio tunnel after the Capsule is running.
 pub fn start_docker_tunnel(
     container: &ContainerHandle,
     prepared: PreparedUsageRelay,
@@ -393,7 +349,6 @@ pub fn start_docker_tunnel(
 
 const CAPSULE_SUPERVISOR_USER: &str = "0:0";
 
-/// Start the Apple Container stdio tunnel after the Capsule is running.
 pub fn start_apple_tunnel(
     container_name: &str,
     prepared: PreparedUsageRelay,
@@ -419,7 +374,6 @@ fn apple_tunnel_args(container_name: &str) -> Vec<String> {
     ]
 }
 
-/// Test seam for a real container proxy command using production tunnel framing.
 #[doc(hidden)]
 pub fn start_docker_tunnel_with_command(
     container: &ContainerHandle,

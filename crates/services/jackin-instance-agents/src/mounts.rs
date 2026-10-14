@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Auth mount admission for provisioned credential paths.
 
 use jackin_core::Agent;
 use std::path::PathBuf;

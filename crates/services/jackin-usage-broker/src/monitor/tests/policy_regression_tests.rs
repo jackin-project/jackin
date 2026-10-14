@@ -339,9 +339,6 @@ fn wait_for_cursor(
         };
     }
 
-    // Signal while holding the store mutex. The caller's operation cannot
-    // acquire it until this cursor enters the same condition-variable wait
-    // used by MonitorStore::watch.
     ready.send(()).expect("signal cursor is ready to wait");
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -538,8 +535,6 @@ fn account_95_barrier_survives_stop_reopen_new_goals_and_requires_a_fresh_paired
     let triggered = observation("session-trigger", Some(9_500), Some(old_reset), None);
     let store = MonitorStore::open(directory.path()).expect("open monitor store");
 
-    // The account threshold arrives before any monitor exists and must still
-    // latch an account-wide barrier.
     ingest(&store, ACCOUNT, triggered, NOW);
     record_spend(&store, spend_input(ACCOUNT, NOW), NOW);
     let first_setup = prepare_start(&store, "goal-recreated", None, NOW);
@@ -562,8 +557,6 @@ fn account_95_barrier_survives_stop_reopen_new_goals_and_requires_a_fresh_paired
     assert!(matches!(stopped, MonitorReply::Stopped { .. }));
     drop(store);
 
-    // A fresh low value from another session in the old reset window, after
-    // the triggering statusline is stale, cannot erase the persisted barrier.
     let reopened = MonitorStore::open(directory.path()).expect("reopen monitor store");
     ingest(
         &reopened,
@@ -590,8 +583,6 @@ fn account_95_barrier_survives_stop_reopen_new_goals_and_requires_a_fresh_paired
         );
     }
 
-    // Crossing reset+60 only changes the barrier to its unverified-reset
-    // state. A reset-only update and a model-only update are not a quota pair.
     let deadline = old_reset + 60;
     reopened
         .tick(deadline)
@@ -639,8 +630,6 @@ fn account_95_barrier_survives_stop_reopen_new_goals_and_requires_a_fresh_paired
             .any(|issue| issue.code == MonitorIssueCode::ResetDueUnverified)
     );
 
-    // A full paired observation from a different session clears the account
-    // barrier. The lower utilization equals the old-window reading above.
     let recovery_at = deadline + 3;
     record_spend(&reopened, spend_input(ACCOUNT, recovery_at), recovery_at);
     for current in [&recreated, &different_goal] {

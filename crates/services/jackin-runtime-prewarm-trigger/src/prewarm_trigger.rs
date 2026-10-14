@@ -1,19 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Background image-prewarm trigger (D22).
-//!
-//! Off the operator attach path, this refreshes any stale baked role images for
-//! saved workspaces so a later launch reaches the `CreateFromValidImage` fast
-//! path instead of paying for a foreground build. It reuses a valid image (a
-//! cheap label read) and only rebuilds when the recipe or version labels are
-//! stale; launch never waits on it. The synchronous `jackin prewarm` command is
-//! the operator-invoked counterpart — this is the automatic background trigger.
-//!
-//! Split out of `jackin-runtime` (S7 split 94); the old
-//! `jackin_runtime::runtime::prewarm_trigger::*` paths keep working
-//! through the hub shim re-export.
-
 use jackin_config::AppConfig;
 use jackin_core::Agent;
 use jackin_core::JackinPaths;
@@ -28,9 +15,6 @@ use jackin_runtime_launch_dind::launch_dind::{
     try_lock_prewarmed_dind, write_prewarmed_dind_state,
 };
 
-/// One role image to keep warm: a role selector, its git source, and the agent
-/// runtimes whose derived images to refresh. An empty `agents` means the role's
-/// full supported set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackgroundPrewarmTarget {
     pub selector: RoleSelector,
@@ -38,11 +22,6 @@ pub struct BackgroundPrewarmTarget {
     pub agents: Vec<Agent>,
 }
 
-/// Resolve background-prewarm targets from saved configuration: every workspace
-/// with a default role whose git source is known. A workspace default agent
-/// narrows the refresh to that one runtime; a workspace without one (or two
-/// workspaces sharing a role that disagree) widens the target to the role's
-/// whole supported set so nothing a launch might pick is left stale.
 #[must_use]
 #[expect(
     clippy::excessive_nesting,
@@ -69,8 +48,6 @@ pub fn background_prewarm_targets(config: &AppConfig) -> Vec<BackgroundPrewarmTa
         targets
             .entry(selector.key())
             .and_modify(|existing| {
-                // An empty agent list on either side means "all supported" —
-                // that subsumes any narrowed list, so widen to all.
                 if existing.agents.is_empty() || agents.is_empty() {
                     existing.agents.clear();
                 } else {
@@ -90,11 +67,6 @@ pub fn background_prewarm_targets(config: &AppConfig) -> Vec<BackgroundPrewarmTa
     targets.into_values().collect()
 }
 
-/// Spawn a best-effort, non-blocking background sweep that refreshes any stale
-/// baked images for `targets`, off the operator attach path (D22). Returns
-/// immediately; a valid image is reused without a rebuild and failures are
-/// swallowed (best-effort). Each refreshed image emits the `PrewarmOnly` launch
-/// plan via the shared prewarm path.
 pub fn spawn_background_image_prewarm(
     paths: &JackinPaths,
     targets: Vec<BackgroundPrewarmTarget>,
@@ -159,10 +131,6 @@ fn classify_image_prewarm_attempt<T, E>(
     }
 }
 
-/// Spawn a best-effort, non-blocking background task that keeps one privileged
-/// `DinD` sidecar ready for a later launch to adopt. Returns immediately; the
-/// helper skips when another adoption/prewarm owns the shared lock or a live
-/// kept sidecar is already recorded.
 pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
     #[cfg(test)]
     {
@@ -188,22 +156,12 @@ pub fn spawn_background_sidecar_prewarm(paths: &JackinPaths, debug: bool) {
     }
 }
 
-/// Outcome of one background sidecar-prewarm attempt: the kept sidecar was
-/// refreshed (`Completed`) or the attempt stood down (`Skipped`).
-///
-/// `pub` (widened by S7 split 94): the hub suite kept in
-/// `jackin_runtime::runtime::prewarm_trigger::tests` names this type through
-/// the hub shim re-export.
 #[derive(Debug)]
 pub enum SidecarPrewarmOutcome {
     Completed,
     Skipped,
 }
 
-/// Map one sidecar-prewarm attempt onto a detached-job completion.
-///
-/// `pub` (widened by S7 split 94): named by the hub suite through the hub
-/// shim re-export.
 pub fn classify_sidecar_prewarm_attempt(
     result: &anyhow::Result<SidecarPrewarmOutcome>,
 ) -> jackin_telemetry::spawn::DetachedCompletion {

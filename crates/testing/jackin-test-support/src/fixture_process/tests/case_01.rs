@@ -180,7 +180,6 @@ fn assert_no_secrets_panics_on_env_leak() {
 #[test]
 #[should_panic(expected = "plain file name")]
 fn binary_name_with_separator_is_rejected() {
-    // If harness setup fails the expected panic never fires and this fails.
     if let Ok(harness) = FakeProcessHarness::new() {
         let _binary = harness.binary("../escape", &ProcessScript::new());
     }

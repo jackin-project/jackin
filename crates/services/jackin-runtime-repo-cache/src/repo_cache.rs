@@ -2,12 +2,6 @@
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-//! Role-repo resolution: clone or update from git, validate, cache under `~/.jackin/roles/`.
-//!
-//! Typed errors (`RepoError`) allow callers to downcast and produce
-//! operator-friendly messages without substring-matching free text. Not
-//! responsible for Dockerfile validation or manifest parsing — those are
-//! handled in `repo.rs` and `repo_contract.rs` after the cache is warm.
 
 use anyhow::Context;
 use fs4::FileExt;
@@ -23,45 +17,18 @@ use std::time::{Duration, SystemTime};
 
 use jackin_runtime_identity::identity::try_capture;
 
-/// Typed errors raised by role-repo resolution.
-///
-/// Surfaced through `anyhow::Error` chains so the editor can downcast and
-/// pick a friendly translation without substring-matching free text. Add
-/// new variants here together with their `friendly_role_resolution_error`
-/// arm in `console::tui::input::editor`.
 #[derive(Debug, thiserror::Error)]
 pub enum RepoError {
-    /// `git clone` failed for any reason — host unreachable, auth required,
-    /// repo missing, server-side error. The original anyhow chain is kept
-    /// as the `#[source]` so `--debug` still surfaces it.
     #[error("repository is not available or cannot be accessed")]
     CloneFailed(#[source] anyhow::Error),
 
-    /// Cached repo's `origin` remote points at a different URL than the
-    /// configured source and the operator declined removal.
     #[error("cached role repo remote mismatch — aborting")]
     RemoteMismatch,
 
-    /// `validate_role_repo` rejected the cloned repo. The inner typed
-    /// error carries the structural reason; `friendly_role_resolution_error`
-    /// matches on its variants for richer messages.
     #[error("invalid role repo: {0}")]
     InvalidRoleRepo(#[from] jackin_manifest::repo::RoleRepoValidationError),
 }
 
-/// Process-reentrant guard over the per-role repo `flock`.
-///
-/// `flock(2)` is owned by the open file description, not by the process, so a
-/// second `File::create` + `flock` in the *same* process blocks forever behind
-/// the first. The launch pipeline does exactly that: it holds this lock across
-/// `decide_role_image`, whose prewarm, sibling-prewarm and staleness-sentinel
-/// paths call `resolve_agent_repo_with` again. That self-deadlock presents as a
-/// silent hang at "Resolving role identity" with no diagnostic at all.
-///
-/// Sharing one open file description per lock path removes the deadlock class:
-/// a same-process re-acquire clones the live handle and never touches `flock`,
-/// so only genuine cross-process contention ever waits. The lock is released
-/// when the last clone is dropped.
 #[derive(Clone, Debug)]
 pub struct RepoLock(
     #[cfg_attr(
@@ -74,10 +41,6 @@ pub struct RepoLock(
     Arc<std::fs::File>,
 );
 
-/// Per-lock-path gates, so acquiring one role's lock never blocks another's.
-///
-/// The outer map is held only long enough to hand out a gate; the `flock`
-/// itself happens under that gate, where the `Weak` records the live handle.
 type RepoLockGate = std::sync::Mutex<std::sync::Weak<std::fs::File>>;
 
 static REPO_LOCK_GATES: std::sync::LazyLock<
@@ -88,9 +51,7 @@ fn repo_lock_gate(path: &std::path::Path) -> Arc<RepoLockGate> {
     let mut gates = REPO_LOCK_GATES
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // Drop gates whose handle is gone and which nobody else is holding, so a
-    // long-lived process does not accumulate one entry per role branch ever
-    // launched.
+
     gates.retain(|_, gate| {
         Arc::strong_count(gate) > 1
             || gate
@@ -117,10 +78,6 @@ fn acquire_repo_lock_blocking(path: &std::path::Path) -> anyhow::Result<RepoLock
     Ok(RepoLock(handle))
 }
 
-/// Acquire the repo lock at `path` without blocking an async worker thread.
-///
-/// The wait can be arbitrarily long (another process may be cloning), so the
-/// blocking `flock` runs on the blocking pool rather than on the runtime.
 async fn acquire_repo_lock(path: &std::path::Path) -> anyhow::Result<RepoLock> {
     let owned = path.to_path_buf();
     jackin_telemetry::spawn::joined_blocking(move || acquire_repo_lock_blocking(&owned))
@@ -128,18 +85,17 @@ async fn acquire_repo_lock(path: &std::path::Path) -> anyhow::Result<RepoLock> {
         .context("repo lock acquisition task failed")?
 }
 
-/// Extract `owner/repo` from a git remote URL.
 pub fn parse_repo_name(url: &str) -> Option<String> {
     let url = url.trim();
     let stripped = url.strip_suffix(".git").unwrap_or(url);
-    // HTTPS: https://github.com/owner/repo
+
     if let Some(rest) = stripped
         .strip_prefix("https://")
         .or_else(|| stripped.strip_prefix("http://"))
     {
         return rest.find('/').map(|i| rest[i + 1..].to_string());
     }
-    // SSH: git@github.com:owner/repo
+
     stripped.rsplit_once(':').map(|(_, p)| p.to_owned())
 }
 
@@ -226,7 +182,6 @@ fn role_root_has_unexpected_entries(root: &std::path::Path) -> anyhow::Result<bo
     Ok(false)
 }
 
-/// Get the current branch name for a git directory.
 pub async fn git_branch(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
     let dir_str = dir.display().to_string();
     try_capture(
@@ -237,10 +192,6 @@ pub async fn git_branch(dir: &std::path::Path, runner: &mut impl CommandRunner) 
     .await
 }
 
-/// Resolve the role repository: clone if missing, pull if already present.
-/// Returns the validated repo metadata and cached repo paths.
-/// Prompt the user to confirm cached-repo removal when running in an
-/// interactive terminal.  Returns `true` when the user accepts.
 #[cfg(test)]
 fn confirm_repo_removal_interactive() -> anyhow::Result<bool> {
     if !std::io::stdin().is_terminal() {
@@ -276,14 +227,6 @@ async fn resolve_agent_repo(
     .await
 }
 
-/// Resolve a role repo into the cache, registering it on success.
-///
-/// Two paths:
-/// 1. Cache hit (`.git` already exists): delegate to
-///    `resolve_agent_repo_with` which fetch+merges.
-/// 2. Cache miss: clone into a temp dir under `data_dir`, validate,
-///    `rename` into the cache, then return the validated repo so the
-///    caller can persist registration once the install succeeds.
 pub async fn register_agent_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -362,11 +305,7 @@ pub async fn register_agent_repo(
         .map_err(RepoError::CloneFailed)?;
 
     let validated_repo = validate_role_repo(&temp_repo).map_err(RepoError::InvalidRoleRepo)?;
-    // Install the repo into the cache before persisting registration: if
-    // rename fails the role stays unregistered and the user can retry from a
-    // clean state. Persisting first would leave config.toml referencing a
-    // role that has no on-disk repo, surfacing as "failed to install" once
-    // and then silently registered every load thereafter.
+
     std::fs::rename(&temp_repo, &cached_repo.repo_dir).with_context(|| {
         format!(
             "failed to install role repository at {}",
@@ -377,13 +316,6 @@ pub async fn register_agent_repo(
     Ok((cached_repo, validated_repo))
 }
 
-/// Normalize SSH-form GitHub URLs to HTTPS so containers without an
-/// SSH key can still clone a role repo when the operator's
-/// `[roles.<name>].git` is in the SCP/`ssh://` form.
-///
-/// Non-GitHub URLs (e.g. self-hosted gitlab) pass through unchanged —
-/// substituting their SSH form for HTTPS would risk hitting an
-/// HTTPS endpoint that doesn't exist on the operator's SCM.
 pub fn normalize_github_url(url: &str) -> String {
     if let Some(rest) = url.strip_prefix("git@github.com:") {
         return format!("https://github.com/{rest}");
@@ -394,9 +326,6 @@ pub fn normalize_github_url(url: &str) -> String {
     url.to_owned()
 }
 
-/// Build the argument list for `git clone`, optionally scoped to a single branch.
-/// `git clone -b <branch>` fetches only that branch, making the clone faster and
-/// leaving the working tree on the right branch without a separate checkout step.
 fn clone_args<'a>(git_url: &'a str, dest: &'a str, branch: Option<&'a str>) -> Vec<&'a str> {
     branch.map_or_else(
         || vec!["clone", git_url, dest],
@@ -404,11 +333,6 @@ fn clone_args<'a>(git_url: &'a str, dest: &'a str, branch: Option<&'a str>) -> V
     )
 }
 
-/// Whether the git subprocess may surface interactive prompts (SSH
-/// passphrase, credential helper, branch-divergence questions) on the
-/// caller's terminal. `NonInteractive` closes stdin and sets
-/// `GIT_TERMINAL_PROMPT=0` so a hanging credential helper cannot freeze
-/// the TUI under `jackin console`.
 #[derive(Clone, Copy, Debug)]
 enum GitInteractivity {
     Interactive,
@@ -435,9 +359,6 @@ impl RepoResolveOptions {
         }
     }
 
-    /// `debug` is intentionally absent — non-interactive callers run
-    /// from inside the TUI alt-screen, where streaming git output via
-    /// `--debug` would corrupt the render.
     pub fn non_interactive() -> Self {
         Self {
             debug: false,
@@ -468,7 +389,6 @@ impl RepoResolveOptions {
     }
 }
 
-/// Age of `.git/FETCH_HEAD` relative to an injected wall clock (plan 025).
 fn fetch_head_age_at(repo_dir: &std::path::Path, now: SystemTime) -> Option<Duration> {
     let modified = std::fs::metadata(repo_dir.join(".git").join("FETCH_HEAD"))
         .and_then(|metadata| metadata.modified())
@@ -522,22 +442,12 @@ pub async fn resolve_agent_repo_with(
     })?;
     std::fs::create_dir_all(repo_parent)?;
 
-    // Short-lived lock around git operations on the shared repo directory.
-    // Multiple `jackin load` commands may run in parallel for the same
-    // role class (spawning clones); the lock serializes only the git
-    // clone/fetch/merge so they don't race on the same working tree.
-    // The lock is released as soon as the git section completes.
-    //
-    // Lock path mirrors the repo_dir path under data_dir so that a branch
-    // named `feat/my-pr` and one named `feat-my-pr` (slug collision) always
-    // get distinct lock files. The roles_dir prefix is stripped to produce
-    // the relative path; `std::fs::create_dir_all` creates intermediate dirs.
     let selector_base = role_cache_root(paths, selector);
     let rel = cached_repo
         .repo_dir
         .strip_prefix(&selector_base)
         .unwrap_or_else(|_| std::path::Path::new(""));
-    // Build lock path: data_dir/<container>.locks/<rel>.repo.lock
+
     let lock_path = {
         let rel_str = rel.to_string_lossy();
         let file_name = if rel_str.is_empty() {
@@ -648,10 +558,6 @@ pub async fn resolve_agent_repo_with(
                 );
             }
         } else {
-            // Fetch + merge instead of pull to avoid "Cannot fast-forward to
-            // multiple branches" errors that occur with `git pull` when the
-            // remote has multiple branches. When a branch is pinned via
-            // `--branch`, use it directly; otherwise derive from HEAD.
             let branch = match opts.branch_override.as_deref() {
                 Some(branch) => branch.to_owned(),
                 None => git_branch(&cached_repo.repo_dir, runner)
@@ -710,10 +616,6 @@ pub async fn resolve_agent_repo_with(
     let validated_repo =
         validate_role_repo(&cached_repo.repo_dir).map_err(RepoError::InvalidRoleRepo)?;
 
-    // Return the repo lock so the caller can hold it until the build
-    // context (a snapshot copy of the repo) is created.  This prevents
-    // a parallel load from fast-forwarding the shared repo between
-    // validation and context creation.
     Ok((cached_repo, validated_repo, lock_file))
 }
 

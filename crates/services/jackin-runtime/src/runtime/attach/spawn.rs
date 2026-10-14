@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Shell and agent session spawning.
 
 #![expect(
     clippy::print_stderr,
@@ -20,10 +19,6 @@ use super::{
     require_container_running, require_current_instance_admission, set_role_terminal_title,
 };
 
-/// Open a one-shot interactive zsh shell in a running container.
-///
-/// Ephemeral one-shot — no persistent session, no reconnect on detach. Used
-/// by `jackin hardline --shell` and the console Shell action.
 pub async fn spawn_shell_session(
     paths: &JackinPaths,
     container_name: &str,
@@ -171,9 +166,6 @@ pub async fn spawn_agent_session(
         .as_deref()
         .unwrap_or_else(|| agent.slug());
 
-    // Instance selection travels as `jackin-capsule new <instance-id>` argv; the
-    // git policy toggles are session env consumed by the spawned entrypoint.
-    // Each transport encodes them only on the path that consumes it.
     set_role_terminal_title(paths, container_name);
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     if crate::runtime::host_attach::host_attach_enabled(paths) {
@@ -211,7 +203,7 @@ pub async fn spawn_agent_session(
     let run_as_user = Some(crate::runtime::identity::CAPSULE_SUPERVISOR_USER);
     let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
     insert_run_as_user(&mut exec_args, run_as_user);
-    // Git policy and non-account session environment outlive `exec_args`.
+
     let env_flags: Vec<String> = git_policy_env_pairs(git_coauthor_trailer, git_dco)
         .into_iter()
         .map(|(name, value)| format!("-e={name}={value}"))

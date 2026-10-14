@@ -28,7 +28,6 @@ fn s1_settings_account_draft_cancel_discards_apply_persists() {
         },
     );
 
-    // Cancel: discard the pending draft without saving; disk is untouched.
     settings.auth.pending.remove("drafted");
     let reloaded = jackin_config::ConfigEditor::open(&paths)
         .unwrap()
@@ -37,7 +36,6 @@ fn s1_settings_account_draft_cancel_discards_apply_persists() {
     assert!(!reloaded.accounts.contains_key("drafted"));
     assert_eq!(reloaded.accounts, config.accounts);
 
-    // Apply: the same pending draft persists through save_settings.
     settings.auth.pending.insert(
         "drafted".into(),
         jackin_config::AccountConfig {

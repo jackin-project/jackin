@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `ContainerInfo` dialog constructors and state helpers extracted from the
-//! main coordinator impl. `ContainerInfoDiagnostics` is re-exported at the
-//! parent level.
-
 use super::{ContainerInfoDiagnostics, Dialog};
 
 impl Dialog {
@@ -28,15 +24,6 @@ impl Dialog {
         }
     }
 
-    /// Build the shared [`ContainerInfoState`](crate::tui::components::container_info_surface::ContainerInfoState)
-    /// for the `ContainerInfo` ("Debug info") dialog from the accumulating
-    /// [`DebugInfo`](crate::tui::components::container_info_surface::DebugInfo) model — the single
-    /// source of rows/order/labels/copy-affordances shared with the host
-    /// console and launch cockpit. Returns `None` for other dialog variants.
-    ///
-    /// The invocation-id row is included only under `--debug`, matching the
-    /// host. Versions are the exact `jackin --version` / `jackin-capsule
-    /// --version` strings.
     pub(crate) fn container_info_state(
         &self,
     ) -> Option<crate::tui::components::container_info_surface::ContainerInfoState> {
@@ -85,10 +72,6 @@ impl Dialog {
         Some(state)
     }
 
-    /// Update the hovered copyable row of the `ContainerInfo` dialog from a
-    /// pointer hit at `(row, col)` (1-based). Returns true when the hovered
-    /// row changed (the caller redraws so the link hover colour updates).
-    /// No-op for other dialog variants.
     pub fn set_container_info_hover(
         &mut self,
         row: u16,

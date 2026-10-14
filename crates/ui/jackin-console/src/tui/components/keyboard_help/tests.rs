@@ -47,8 +47,6 @@ fn every_route_produces_keymap_sourced_entries() {
 
 #[test]
 fn remap_changes_advertised_chord() {
-    // Chord text must come from the live binding, never a hardcoded literal:
-    // the same action bound to a different chord yields a different entry.
     let system = DesignSystem::default();
     let static_entries = console_help_entries(&state(), &system);
     let help_entry = static_entries

@@ -1,28 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Ephemeral launch-identity selection on cloned configs.
-//!
-//! [`with_account_selection`] records a one-launch account pick and
-//! [`with_configuration_selection`] pins one exact registered configuration,
-//! both validated through `jackin_config::resolve_launch` — the same resolver
-//! the launch pipeline provisions from — so the caller and the runtime cannot
-//! admit different sets. The supplied configuration is never mutated.
-
 use jackin_config::{AgentConfiguration, AppConfig};
 use jackin_core::Agent;
 
-/// Free configuration id for a synthesized one-launch pick.
-///
-/// Persisted configuration ids are validated slugs and can never contain
-/// `@`, so `{account}@{agent}` cannot collide with them; the suffix loop
-/// only covers hand-built configs that skipped validation.
 fn free_ephemeral_config_id(selected: &AppConfig, agent: Agent, id: &str) -> String {
     let base = format!("{id}@{}", agent.slug());
     match selected.agent_configurations.get(&base) {
-        // A hand-built config may use the synthesized ID even though
-        // persisted IDs normally reject `@`. Reuse it intact: replacing it
-        // would silently discard its model, endpoint, label, and wrapper.
         Some(existing) if existing.agent == agent && existing.account == id => return base,
         None => return base,
         Some(_) => {}
@@ -106,9 +90,6 @@ fn write_default_launch(
     Ok(())
 }
 
-/// Replace only one agent's configurations in the effective launch list.
-/// Other-agent configurations remain admitted, while the selected agent gets
-/// the exact identities chosen by the caller.
 fn replace_agent_default_launch(
     selected: &mut AppConfig,
     workspace: Option<&jackin_core::WorkspaceName>,
@@ -117,8 +98,7 @@ fn replace_agent_default_launch(
     chosen_ids: &[String],
 ) -> anyhow::Result<()> {
     anyhow::ensure!(!chosen_ids.is_empty(), "launch selection cannot be empty");
-    // Resolve inherited admission before promoting it to an explicit role list.
-    // Global defaults may contain accounts the workspace does not authorize.
+
     let inherited = jackin_config::resolve_launch(selected, workspace, role, None, None)?;
     let mut replaced = false;
     let mut launch = Vec::with_capacity(inherited.len() + chosen_ids.len());
@@ -168,27 +148,6 @@ fn ensure_account_is_selected(
     Ok(())
 }
 
-/// Make an ephemeral account selection, preserving workspace admission checks.
-///
-/// Records a one-launch pick for (`agent`, `id`) on a cloned config and
-/// validates the result through `jackin_config::resolve_launch` — the same
-/// resolver the launch pipeline provisions from — so the console pre-check
-/// and the runtime cannot admit different sets.
-///
-/// Authorization (the workspace allowlist) and admission (the
-/// `default_launch` set) stay distinct: the allowlist check rejects foreign
-/// accounts up front, while the launch-set check rejects picks the
-/// configured defaults do not admit instead of silently substituting
-/// another account. When no default is configured at any scope, the pick is
-/// synthesized into an ephemeral configuration plus a one-entry role
-/// (saved workspace) or global (ad-hoc) default, so the multi-instance
-/// pipeline provisions exactly the picked account instead of failing with
-/// ambiguity. The supplied configuration is never mutated.
-///
-/// # Errors
-/// Rejects unknown accounts, incompatible agents, accounts outside the
-/// workspace allowlist, picks the configured defaults do not admit, and
-/// invalid `default_launch` sets.
 pub fn with_account_selection(
     config: &AppConfig,
     agent: Agent,
@@ -246,8 +205,6 @@ pub fn with_account_selection(
     Ok(selected)
 }
 
-/// Select one exact registered agent configuration on a cloned config and
-/// make that configuration the only selected identity for its agent.
 pub fn with_configuration_selection(
     config: &AppConfig,
     agent: Agent,

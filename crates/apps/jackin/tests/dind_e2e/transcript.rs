@@ -1,7 +1,3 @@
-//! PTY transcript helpers: spawn per-stream pipe collectors that drain into
-//! `Arc<Mutex<Vec<u8>>>` buffers, plus substring / deadline-based waiters
-//! used by the `pty_runner` family.
-
 #![expect(
     clippy::expect_used,
     clippy::disallowed_methods,
@@ -34,15 +30,8 @@ where
     collect_pipe(reader, Some(log))
 }
 
-/// Live session log BSD `script` writes on macOS (see `pty_command`).
 pub(super) const MACOS_TYPESCRIPT_NAME: &str = "e2e-typescript.log";
 
-/// Spawn the stdout collector for a `script(1)` child.
-///
-/// BSD `script` on macOS block-buffers its stdout when it is a pipe: zero
-/// bytes arrive while the child is alive and the whole transcript flushes
-/// only at exit, so live matching must follow the typescript file (written
-/// per-frame) instead. Elsewhere the pipe itself is live and used directly.
 pub(super) fn spawn_stdout_collector<R>(
     reader: R,
     cwd: &std::path::Path,
@@ -54,10 +43,7 @@ where
     #[cfg(target_os = "macos")]
     {
         let path = cwd.join(MACOS_TYPESCRIPT_NAME);
-        // Drain the buffered pipe so `script` never blocks on it; the bytes
-        // are discarded because the typescript is the transcript source.
-        // (Stale-file cleanup happens pre-spawn in `pty_command`: removing
-        // here could unlink the live file `script` already opened.)
+
         let pipe_handle = drain_pipe_to_sink(reader);
         let log = std::fs::File::create(cwd.join("e2e-launch-stdout.log"))
             .expect("create live launch transcript");
@@ -77,8 +63,6 @@ where
     }
 }
 
-/// Drain a pipe to nowhere (constant memory): for streams whose bytes are
-/// duplicated by another live source and must only keep the writer flowing.
 #[cfg(target_os = "macos")]
 fn drain_pipe_to_sink<R>(mut reader: R) -> std::thread::JoinHandle<()>
 where
@@ -107,8 +91,6 @@ fn spawn_typescript_follower(
         let mut offset = 0_u64;
         loop {
             if done.load(Ordering::Relaxed) {
-                // The child has exited, so the typescript is complete:
-                // replace any delta-appended prefix with the whole file.
                 if let Ok(full) = std::fs::read(&path) {
                     use std::io::Seek as _;
                     log.set_len(0).expect("truncate live launch transcript");
@@ -141,8 +123,7 @@ fn read_typescript_delta(path: &std::path::Path, offset: u64) -> Option<(Vec<u8>
     use std::io::Seek as _;
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
-    // The file only grows within one run; a shorter file means it was
-    // recreated, so restart from the beginning instead of wedging.
+
     let offset = if len < offset { 0 } else { offset };
     file.seek(std::io::SeekFrom::Start(offset)).ok()?;
     let mut bytes = Vec::new();

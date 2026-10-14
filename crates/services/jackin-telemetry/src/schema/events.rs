@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-// GENERATED from registry/ — do not hand-edit. Regenerate: cargo xtask telemetry-registry --generate.
 
-// registry: attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,agent.status.stuck:required,cli.invocation.id:recommended,gen_ai.agent.name:required,session.id:recommended
 pub const AGENT_STATE_CHANGED: &str = "agent.state.changed";
 pub const AGENT_STATE_CHANGED_DEF: super::EventMetadata = super::EventMetadata {
     name: AGENT_STATE_CHANGED,
@@ -72,7 +70,6 @@ pub const AGENT_STATE_CHANGED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=auth.mode:required,cli.invocation.id:recommended,credential.source.type:required,error.type:recommended,gen_ai.agent.name:required,outcome:required,session.id:recommended
 pub const AUTH_PROVISION: &str = "auth.provision";
 pub const AUTH_PROVISION_DEF: super::EventMetadata = super::EventMetadata {
     name: AUTH_PROVISION,
@@ -150,7 +147,6 @@ pub const AUTH_PROVISION_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cache.name:required,cache.result:required,cli.invocation.id:recommended,session.id:recommended
 pub const CACHE_DECISION: &str = "cache.decision";
 pub const CACHE_DECISION_DEF: super::EventMetadata = super::EventMetadata {
     name: CACHE_DECISION,
@@ -189,7 +185,6 @@ pub const CACHE_DECISION_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const CAPSULE_SESSION_CLEAN_SHUTDOWN: &str = "capsule.session.clean.shutdown";
 pub const CAPSULE_SESSION_CLEAN_SHUTDOWN_DEF: super::EventMetadata = super::EventMetadata {
     name: CAPSULE_SESSION_CLEAN_SHUTDOWN,
@@ -223,7 +218,6 @@ pub const CAPSULE_SESSION_CLEAN_SHUTDOWN_DEF: super::EventMetadata = super::Even
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const CAPSULE_SESSION_DETACH: &str = "capsule.session.detach";
 pub const CAPSULE_SESSION_DETACH_DEF: super::EventMetadata = super::EventMetadata {
     name: CAPSULE_SESSION_DETACH,
@@ -257,7 +251,6 @@ pub const CAPSULE_SESSION_DETACH_DEF: super::EventMetadata = super::EventMetadat
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,config.migration.step_count:recommended,config.operation:required,config.schema.version.from:recommended,config.schema.version.to:recommended,config.scope:required,error.type:recommended,outcome:required,session.id:recommended
 pub const CONFIG_OPERATION: &str = "config.operation";
 pub const CONFIG_OPERATION_DEF: super::EventMetadata = super::EventMetadata {
     name: CONFIG_OPERATION,
@@ -327,7 +320,6 @@ pub const CONFIG_OPERATION_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const DEBUG_LINE: &str = "debug.line";
 pub const DEBUG_LINE_DEF: super::EventMetadata = super::EventMetadata {
     name: DEBUG_LINE,
@@ -361,7 +353,6 @@ pub const DEBUG_LINE_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,error.type:required,outcome:required,session.id:recommended
 pub const ERROR_TYPED: &str = "error.typed";
 pub const ERROR_TYPED_DEF: super::EventMetadata = super::EventMetadata {
     name: ERROR_TYPED,
@@ -401,7 +392,6 @@ pub const ERROR_TYPED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,dind.mode:required,network.mode:required,outcome:required,session.id:recommended,workspace.isolation.mode:required
 pub const ISOLATION_DECISION: &str = "isolation.decision";
 pub const ISOLATION_DECISION_DEF: super::EventMetadata = super::EventMetadata {
     name: ISOLATION_DECISION,
@@ -453,7 +443,6 @@ pub const ISOLATION_DECISION_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,error.type:required,network.mode:required,outcome:required,session.id:recommended
 pub const ISOLATION_FIREWALL_FAILED: &str = "isolation.firewall.failed";
 pub const ISOLATION_FIREWALL_FAILED_DEF: super::EventMetadata = super::EventMetadata {
     name: ISOLATION_FIREWALL_FAILED,
@@ -499,7 +488,6 @@ pub const ISOLATION_FIREWALL_FAILED_DEF: super::EventMetadata = super::EventMeta
         },
     ],
 };
-// registry: attributes=app.build_id:conditionally_required,app.crash.id:recommended,cli.invocation.id:recommended,exception.message:recommended,exception.stacktrace:recommended,exception.type:recommended,os.name:conditionally_required,os.version:conditionally_required,service.version:conditionally_required,session.id:recommended
 pub const APP_CRASH: &str = "app.crash";
 pub const APP_CRASH_DEF: super::EventMetadata = super::EventMetadata {
     name: APP_CRASH,
@@ -568,7 +556,6 @@ pub const APP_CRASH_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.jank.frame_count:recommended,app.jank.period:recommended,app.jank.threshold:recommended,cli.invocation.id:recommended,session.id:recommended
 pub const APP_JANK: &str = "app.jank";
 pub const APP_JANK_DEF: super::EventMetadata = super::EventMetadata {
     name: APP_JANK,
@@ -607,7 +594,6 @@ pub const APP_JANK_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,launch.stage.name:required,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_DONE: &str = "launch.stage.done";
 pub const LAUNCH_STAGE_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_DONE,
@@ -659,7 +645,6 @@ pub const LAUNCH_STAGE_DONE_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,error.type:recommended,launch.stage.name:required,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_FAILED: &str = "launch.stage.failed";
 pub const LAUNCH_STAGE_FAILED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_FAILED,
@@ -717,7 +702,6 @@ pub const LAUNCH_STAGE_FAILED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,launch.stage.name:required,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_SKIPPED: &str = "launch.stage.skipped";
 pub const LAUNCH_STAGE_SKIPPED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_SKIPPED,
@@ -769,7 +753,6 @@ pub const LAUNCH_STAGE_SKIPPED_DEF: super::EventMetadata = super::EventMetadata 
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,launch.stage.name:required,outcome:required,session.id:recommended
 pub const LAUNCH_STAGE_STARTED: &str = "launch.stage.started";
 pub const LAUNCH_STAGE_STARTED_DEF: super::EventMetadata = super::EventMetadata {
     name: LAUNCH_STAGE_STARTED,
@@ -821,7 +804,6 @@ pub const LAUNCH_STAGE_STARTED_DEF: super::EventMetadata = super::EventMetadata 
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const OPERATION_LOG: &str = "operation.log";
 pub const OPERATION_LOG_DEF: super::EventMetadata = super::EventMetadata {
     name: OPERATION_LOG,
@@ -855,7 +837,6 @@ pub const OPERATION_LOG_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,error.type:required,outcome:required,session.id:recommended
 pub const OPERATION_WARN: &str = "operation.warn";
 pub const OPERATION_WARN_DEF: super::EventMetadata = super::EventMetadata {
     name: OPERATION_WARN,
@@ -895,7 +876,6 @@ pub const OPERATION_WARN_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const PERFORMANCE_SLOW_FOREGROUND_WAIT: &str = "performance.slow.foreground.wait";
 pub const PERFORMANCE_SLOW_FOREGROUND_WAIT_DEF: super::EventMetadata = super::EventMetadata {
     name: PERFORMANCE_SLOW_FOREGROUND_WAIT,
@@ -929,7 +909,6 @@ pub const PERFORMANCE_SLOW_FOREGROUND_WAIT_DEF: super::EventMetadata = super::Ev
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,error.type:recommended,outcome:required,session.id:recommended
 pub const PROCESS_SUBPROCESS_DONE: &str = "process.subprocess.done";
 pub const PROCESS_SUBPROCESS_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: PROCESS_SUBPROCESS_DONE,
@@ -969,7 +948,6 @@ pub const PROCESS_SUBPROCESS_DONE_DEF: super::EventMetadata = super::EventMetada
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,error.type:recommended,gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended,process.exit.code:recommended,pty.exit.reason:required,session.id:recommended
 pub const PTY_EXIT: &str = "pty.exit";
 pub const PTY_EXIT_DEF: super::EventMetadata = super::EventMetadata {
     name: PTY_EXIT,
@@ -1039,7 +1017,6 @@ pub const PTY_EXIT_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,gen_ai.agent.name:recommended,gen_ai.conversation.id:recommended,session.id:recommended
 pub const PTY_SPAWN: &str = "pty.spawn";
 pub const PTY_SPAWN_DEF: super::EventMetadata = super::EventMetadata {
     name: PTY_SPAWN,
@@ -1085,7 +1062,6 @@ pub const PTY_SPAWN_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,session.id:recommended
 pub const RETRY_SCHEDULED: &str = "retry.scheduled";
 pub const RETRY_SCHEDULED_DEF: super::EventMetadata = super::EventMetadata {
     name: RETRY_SCHEDULED,
@@ -1106,7 +1082,6 @@ pub const RETRY_SCHEDULED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const RUN_SUMMARY: &str = "run.summary";
 pub const RUN_SUMMARY_DEF: super::EventMetadata = super::EventMetadata {
     name: RUN_SUMMARY,
@@ -1140,7 +1115,6 @@ pub const RUN_SUMMARY_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,session.id:required,session.previous_id:recommended
 pub const SESSION_END: &str = "session.end";
 pub const SESSION_END_DEF: super::EventMetadata = super::EventMetadata {
     name: SESSION_END,
@@ -1167,7 +1141,6 @@ pub const SESSION_END_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,session.id:required,session.previous_id:recommended
 pub const SESSION_START: &str = "session.start";
 pub const SESSION_START_DEF: super::EventMetadata = super::EventMetadata {
     name: SESSION_START,
@@ -1194,7 +1167,6 @@ pub const SESSION_START_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,session.id:recommended
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 pub const TELEMETRY_VALIDATE_DEF: super::EventMetadata = super::EventMetadata {
     name: TELEMETRY_VALIDATE,
@@ -1215,7 +1187,6 @@ pub const TELEMETRY_VALIDATE_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const TIMING_DONE: &str = "timing.done";
 pub const TIMING_DONE_DEF: super::EventMetadata = super::EventMetadata {
     name: TIMING_DONE,
@@ -1249,7 +1220,6 @@ pub const TIMING_DONE_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,outcome:required,session.id:recommended
 pub const TIMING_STARTED: &str = "timing.started";
 pub const TIMING_STARTED_DEF: super::EventMetadata = super::EventMetadata {
     name: TIMING_STARTED,
@@ -1283,7 +1253,6 @@ pub const TIMING_STARTED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=cli.invocation.id:recommended,error.type:recommended,outcome:required,session.id:recommended,trust.decision:required,trust.source.type:required
 pub const TRUST_DECISION: &str = "trust.decision";
 pub const TRUST_DECISION_DEF: super::EventMetadata = super::EventMetadata {
     name: TRUST_DECISION,
@@ -1335,7 +1304,6 @@ pub const TRUST_DECISION_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.screen.id:required,app.screen.name:required,cli.invocation.id:recommended,session.id:recommended,ui.navigation.sequence:required,ui.screen.visit.id:required
 pub const UI_SCREEN_ENTERED: &str = "ui.screen.entered";
 pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_ENTERED,
@@ -1387,7 +1355,6 @@ pub const UI_SCREEN_ENTERED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.screen.id:required,app.screen.name:required,cli.invocation.id:recommended,session.id:recommended,ui.navigation.sequence:required,ui.screen.visit.id:required,ui.transition.reason:required
 pub const UI_SCREEN_EXITED: &str = "ui.screen.exited";
 pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_SCREEN_EXITED,
@@ -1455,7 +1422,6 @@ pub const UI_SCREEN_EXITED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.widget.id:required,app.widget.name:required,cli.invocation.id:recommended,session.id:recommended
 pub const UI_WIDGET_FOCUSED: &str = "ui.widget.focused";
 pub const UI_WIDGET_FOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_FOCUSED,
@@ -1488,7 +1454,6 @@ pub const UI_WIDGET_FOCUSED_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
-// registry: attributes=app.widget.id:required,app.widget.name:required,cli.invocation.id:recommended,session.id:recommended
 pub const UI_WIDGET_UNFOCUSED: &str = "ui.widget.unfocused";
 pub const UI_WIDGET_UNFOCUSED_DEF: super::EventMetadata = super::EventMetadata {
     name: UI_WIDGET_UNFOCUSED,

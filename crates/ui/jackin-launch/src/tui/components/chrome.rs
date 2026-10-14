@@ -1,5 +1,3 @@
-//! Launch-specific bottom chrome layout.
-
 use ratatui::layout::Rect;
 
 pub const BOTTOM_CHROME_ROWS: u16 = 3;

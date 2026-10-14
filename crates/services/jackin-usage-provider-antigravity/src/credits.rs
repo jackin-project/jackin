@@ -1,14 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Antigravity` credit parsing and buckets.
 
 use super::antigravity_remaining_from_entry;
 use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
 use jackin_usage_provider_core::{bucket, json_number};
 
-/// Parsed `/credits` output. Money attaches only when the response states an
-/// explicit minor-unit amount + exponent; plain numbers stay labels so an
-/// unknown scale can never render 100× off.
 #[derive(Debug, Clone, Default)]
 pub struct AntigravityCredits {
     pub(crate) used_money: Option<Money>,
@@ -102,8 +98,7 @@ pub fn antigravity_credits_bucket(credits: &AntigravityCredits) -> Option<QuotaB
         None,
         UsageSnapshotStatus::Fresh,
     );
-    // The Spend slot only when structured money backs it; a label-only credit
-    // balance is a detail row, never a headline figure.
+
     if credits.used_money.is_some() {
         view.status_slot = Some(StatusSlot::Spend);
         view.used_money = credits.used_money.clone();

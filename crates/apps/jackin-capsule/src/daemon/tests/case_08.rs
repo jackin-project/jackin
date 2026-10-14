@@ -155,7 +155,7 @@ fn purge_expired_pull_request_cache_entries_drops_old_entries() {
 fn pull_request_cache_fresh_at_strict_boundary() {
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
-    // Just-fresh: at the boundary minus 1 ms.
+
     mux.pr_watch.pull_request_context_cache.insert(
         branch("branch-a"),
         PullRequestContextCacheEntry {
@@ -167,7 +167,7 @@ fn pull_request_cache_fresh_at_strict_boundary() {
             pull_request: None,
         },
     );
-    // Just-stale: at the boundary plus 1 ms.
+
     mux.pr_watch.pull_request_context_cache.insert(
         branch("branch-b"),
         PullRequestContextCacheEntry {
@@ -263,9 +263,7 @@ fn cached_pull_request_stays_visible_during_forced_dialog_refresh() {
     mux.pr_watch.pull_request_context_branch = Some(branch("feature/current"));
     mux.pr_watch.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
     mux.pr_watch.pull_request_lookup.in_flight = true;
-    // Exercise the real dialog-open path so a future refactor that
-    // skips force_spawn (or routes through a different dispatcher)
-    // is caught here instead of by silent UX regression.
+
     mux.launch_env.workdir_context.gh_available = false;
     mux.open_github_context_dialog(Instant::now());
 

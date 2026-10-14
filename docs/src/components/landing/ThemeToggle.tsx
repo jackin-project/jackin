@@ -1,8 +1,8 @@
-// docs/components/landing/ThemeToggle.tsx
-// Landing-page theme toggle. The landing has its own topnav and needs a
-// matching toggle so a user can switch modes without leaving the home
-// page. Reuses the legacy 'starlight-theme' localStorage key so existing
-// visitors keep their saved theme.
+
+
+
+
+
 import { useEffect, useState } from 'react';
 
 type Theme = 'dark' | 'light';
@@ -20,8 +20,8 @@ function readStoredTheme(): Theme | null {
 }
 
 function readRenderedTheme(): Theme {
-  // The pre-paint script in the root route has already set data-theme on
-  // <html> — treat that as source of truth for the initial active button.
+
+
   if (typeof document === 'undefined') return 'dark';
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }
@@ -30,7 +30,7 @@ function storeTheme(theme: Theme): void {
   try {
     if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, theme);
   } catch {
-    // Private mode / storage-restricted; leave DOM state as-is.
+
   }
 }
 
@@ -61,24 +61,24 @@ function onThemePick(theme: Theme): void {
 }
 
 export function ThemeToggle() {
-  // SSR: return 'dark' so the server-rendered markup doesn't flip after
-  // hydration; the effect below syncs to the actual resolved theme.
-  // Important: this component can render on the server; without this
-  // guard the React tree would render with window/document references.
+
+
+
+
   const [theme, setTheme] = useState<Theme>('dark');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Prefer stored > rendered so the toggle reflects the same choice
-    // the pre-paint script resolved. Stored-null means the user is
-    // running on OS pref — read rendered as the current display.
+
+
+
     setTheme(readStoredTheme() ?? readRenderedTheme());
     setMounted(true);
 
-    // Cross-page sync: if the user toggles on the docs and this
-    // component is still mounted (unlikely, but cheap to support), keep
-    // aria-pressed accurate by listening to storage events from other
-    // tabs too.
+
+
+
+
     function onStorage(e: StorageEvent) {
       if (e.key === STORAGE_KEY && (e.newValue === 'light' || e.newValue === 'dark')) {
         setTheme(e.newValue);
@@ -101,8 +101,8 @@ export function ThemeToggle() {
         aria-pressed={mounted && theme === 'dark'}
         onClick={() => handlePick('dark')}
       >
-        {/* Moon — matches docs ThemeSelect so the icon set reads as one
-            product even with different mount points. */}
+        {
+}
         <svg
           width="16"
           height="16"
@@ -123,7 +123,7 @@ export function ThemeToggle() {
         aria-pressed={mounted && theme === 'light'}
         onClick={() => handlePick('light')}
       >
-        {/* Sun */}
+        {}
         <svg
           width="16"
           height="16"

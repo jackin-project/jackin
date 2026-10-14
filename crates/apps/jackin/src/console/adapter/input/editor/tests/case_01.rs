@@ -5,10 +5,6 @@ use super::*;
 
 #[test]
 fn create_mode_enter_on_name_row_opens_rename_modal() {
-    // In Create mode, pressing Enter on row 0 (Name) must open the
-    // rename TextInput modal pre-filled with the current pending_name
-    // — the same flow Edit mode uses. This is the operator's escape
-    // hatch from a prelude-captured name they mistyped.
     let (tmp, paths, mut config) = {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
@@ -47,9 +43,6 @@ fn create_mode_enter_on_name_row_opens_rename_modal() {
 
 #[test]
 fn create_mode_rename_commit_updates_pending_name() {
-    // After the TextInput commits a new value, pending_name should
-    // reflect the operator's edit. Same code path as Edit mode —
-    // apply_text_input_to_pending doesn't distinguish modes.
     let mut editor = EditorState::new_create();
     editor.pending_name = Some("old-name".into());
 
@@ -60,8 +53,6 @@ fn create_mode_rename_commit_updates_pending_name() {
 
 #[test]
 fn edit_mode_enter_on_name_row_still_opens_rename_modal() {
-    // Regression guard: the Create-mode extension to row 0 Enter must
-    // not break the Edit-mode path that already worked.
     let ws = WorkspaceConfig {
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
@@ -180,9 +171,6 @@ fn account_editor_assignment_revokes_dependent_bindings() {
 
 #[test]
 fn filebrowser_commit_opens_mount_dst_choice_not_text_input() {
-    // Pin: the FileBrowser→TextInput chain is replaced by
-    // FileBrowser→MountDstChoice. No mount should be pushed yet — the
-    // push is deferred to the choice modal's commit handler.
     let editor = editor_with_browser_committed("/host/path");
     assert!(
         matches!(editor.modal, Some(Modal::MountDstChoice { .. })),
@@ -279,8 +267,6 @@ fn mounts_add_starts_file_browser_listing_worker() {
 
 #[test]
 fn o_on_folder_mount_opens_error_popup() {
-    // A plain folder mount has no GitHub URL — O must open an ErrorPopup
-    // explaining why, not silently do nothing.
     let ws = WorkspaceConfig {
         mounts: vec![MountConfig {
             src: "/host/plain-dir".into(),
@@ -326,8 +312,6 @@ fn added_mount_defaults_to_shared_isolation() {
 
 #[test]
 fn editor_mount_same_path_commits_mount_with_dst_equal_src() {
-    // Mount-at-same-path shortcut on the choice modal → push MountConfig with dst = src
-    // and close the modal. No TextInput should appear.
     let mut editor = editor_with_browser_committed("/host/path");
     handle_modal(&mut editor, key(KeyCode::Char('m')));
     assert!(
@@ -347,9 +331,6 @@ fn editor_mount_same_path_commits_mount_with_dst_equal_src() {
 
 #[test]
 fn editor_edit_opens_textinput_and_pushes_provisional() {
-    // Edit destination → push provisional mount (dst = src) + open
-    // the TextInput pre-filled with src. Mirrors today's flow so the
-    // operator can edit dst in place.
     let mut editor = editor_with_browser_committed("/host/path");
     handle_modal(&mut editor, key(KeyCode::Char('e')));
     match &editor.modal {

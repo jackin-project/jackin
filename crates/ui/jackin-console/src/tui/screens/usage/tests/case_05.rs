@@ -5,9 +5,6 @@ use super::*;
 
 #[test]
 fn labels_align_with_capsule_tab_vocabulary() {
-    // Lifecycle words shared with Capsule `usage_tab_status_label` match
-    // exactly; `available`/`not started` are console-owned (Capsule's healthy
-    // word `fresh` belongs to the freshness axis, a different concept).
     for (lifecycle, expected) in [
         (UsageLifecycleV1::Available, "available"),
         (UsageLifecycleV1::AgentUninitialized, "not started"),
@@ -20,8 +17,6 @@ fn labels_align_with_capsule_tab_vocabulary() {
         assert_eq!(lifecycle_label(lifecycle), expected);
     }
 
-    // Capsule tabs carry no quota axis, so the full quota table is pinned
-    // here to catch drift against the console's own render contract.
     for (state, expected) in [
         (UsageQuotaStateV1::Available, "available"),
         (UsageQuotaStateV1::NotStarted, "not started"),
@@ -37,7 +32,6 @@ fn labels_align_with_capsule_tab_vocabulary() {
         assert_eq!(quota_state_label(state), expected);
     }
 
-    // Provider display names mirror Capsule `provider_display_label`.
     for (provider_id, expected) in [
         ("anthropic", "Anthropic"),
         ("claude", "Anthropic"),
@@ -56,9 +50,6 @@ fn labels_align_with_capsule_tab_vocabulary() {
         assert_eq!(well_known_provider_name(provider_id), expected);
     }
 
-    // Freshness ages: sub-minute matches Capsule `relative_updated_label`
-    // modulo the console's lowercase row style; stale keeps the tab `stale`
-    // prefix with the same ` · ` separator.
     let now = 1_800_000_000;
     let mut account = test_account("openai", "a", "work");
     account.freshness_phase = UsageFreshnessPhaseV1::Refreshing;
@@ -144,27 +135,22 @@ fn s8_sort_filter_constrained_keys_reanchor_by_stable_id() {
         ..UsageScreenState::default()
     });
 
-    // `c` jumps to the most constrained visible account (10% left).
     s8_press(&mut manager, KeyCode::Char('c'));
     let screen = manager.usage.screen.as_ref().unwrap();
     assert_eq!(screen.selected, 2);
     assert_eq!(screen.selected_id, Some("anthropic:b".to_owned()));
 
-    // `s` sorts by remaining; the selected row follows its stable id.
     s8_press(&mut manager, KeyCode::Char('s'));
     let screen = manager.usage.screen.as_ref().unwrap();
     assert_eq!(screen.sort, UsageSort::Remaining);
     assert_eq!(screen.selected, 1);
     assert_eq!(screen.selected_id, Some("anthropic:b".to_owned()));
 
-    // `f` filters to issues; the selected row (which has one) stays put.
     s8_press(&mut manager, KeyCode::Char('f'));
     let screen = manager.usage.screen.as_ref().unwrap();
     assert_eq!(screen.filter, UsageFilter::Issues);
     assert_eq!(screen.selected, 1);
 
-    // Move to Overview, then filter to a set hiding nothing selected: the
-    // parked id restores once the filter clears.
     s8_press(&mut manager, KeyCode::Char('k'));
     s8_press(&mut manager, KeyCode::Char('f'));
     let screen = manager.usage.screen.as_ref().unwrap();
@@ -295,20 +281,17 @@ fn s8_removal_while_detail_open_returns_to_overview() {
     let manager = s8_manager(state);
     let text = s8_render_full(&manager, 80, 24);
     assert!(text.contains("Overview"), "{text}");
-    // The notice wraps across rows at 80 columns; the head stays contiguous.
+
     assert!(
         text.contains("Previously selected account unavailable"),
         "{text}"
     );
-    // The detail flag is a sticky view-mode preference: removal parks on
-    // Overview without flipping it, so the next selected account still
-    // opens in the operator's preferred mode.
+
     assert!(manager.usage.screen.as_ref().unwrap().detail);
 }
 
 #[test]
 fn s8_empty_loading_renders_refreshing_not_unconfigured() {
-    // Open path: refresh due but worker not started yet.
     let manager = s8_manager(UsageScreenState::open_with_snapshot(snapshot(
         Vec::new(),
         None,
@@ -318,7 +301,6 @@ fn s8_empty_loading_renders_refreshing_not_unconfigured() {
     assert!(text.contains("Refreshing usage…"), "{text}");
     assert!(!text.contains("No providers configured"), "{text}");
 
-    // In-flight refresh over an empty cache: same loading line.
     let mut manager = s8_manager(UsageScreenState::open_with_snapshot(snapshot(
         Vec::new(),
         None,
@@ -335,7 +317,6 @@ fn s8_empty_loading_renders_refreshing_not_unconfigured() {
     assert!(text.contains("Refreshing usage…"), "{text}");
     assert!(!text.contains("No providers configured"), "{text}");
 
-    // Completed empty refresh: genuinely nothing configured.
     let mut done = UsageScreenState::open_with_snapshot(snapshot(Vec::new(), None));
     done.apply_refresh(snapshot(Vec::new(), None), Instant::now());
     assert!(!done.loading());
@@ -385,8 +366,7 @@ fn s8_long_unicode_labels_render() {
     assert!(text.contains("Anthropic / Claude"), "{text}");
     assert!(text.contains("🚀"), "{text}");
     assert!(text.contains("73% left"), "{text}");
-    // Wide CJK cells dump with spacer cells in the symbol-per-cell harness;
-    // squeeze whitespace before asserting the underlying content survived.
+
     let squeezed: String = text.chars().filter(|c| !c.is_whitespace()).collect();
     assert!(squeezed.contains("巴黎"), "{text}");
     assert!(squeezed.contains("每周配额"), "{text}");

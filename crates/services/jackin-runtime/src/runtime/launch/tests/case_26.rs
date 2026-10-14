@@ -124,9 +124,6 @@ fn assigned_account_resolves_mode_and_profile_together() {
 
 #[tokio::test]
 async fn inspect_attach_outcome_capture_failure_returns_still_running() {
-    // Docker unavailable or container removed mid-inspect must NOT route
-    // through finalize_clean_exit's auto-cleanup path — still_running
-    // keeps records preserved for `jackin hardline` to recover.
     use crate::isolation::finalize::AttachOutcome;
     use jackin_docker::docker_client::ContainerState;
     for state in [
@@ -250,8 +247,6 @@ async fn verify_github_token_present_ok_when_token_resolves() {
 
 #[tokio::test]
 async fn verify_github_token_present_ok_for_sync_and_ignore_regardless_of_token() {
-    // Sync / Ignore have no pre-flight invariant on GH_TOKEN —
-    // Sync sources its token from the host, Ignore exports nothing.
     let r = verify_github_token_present(
         jackin_config::GithubAuthMode::Sync,
         None,
@@ -282,7 +277,7 @@ async fn verify_github_token_present_errors_when_token_missing() {
     assert!(s.contains("workspace 'customer-acme'"), "got: {s}");
     assert!(s.contains("role 'release-bot'"), "got: {s}");
     assert!(s.contains("GH_TOKEN"), "got: {s}");
-    // Operator-actionable remediation suggestions.
+
     assert!(s.contains("[github.env]"), "got: {s}");
     assert!(
         s.contains("[workspaces.customer-acme.github.env]"),
@@ -298,9 +293,6 @@ async fn verify_github_token_present_errors_when_token_missing() {
 
 #[tokio::test]
 async fn verify_github_token_present_errors_when_token_empty_string() {
-    // Empty string must be rejected the same as missing — `gh`
-    // reads `GH_TOKEN=""` as no token, and we don't want to
-    // launch DinD just for the agent to fail at first push.
     let err = verify_github_token_present(
         jackin_config::GithubAuthMode::Token,
         Some(""),
@@ -345,8 +337,7 @@ async fn resolve_github_env_map_resolves_plain_values() {
 #[tokio::test]
 async fn resolve_github_env_map_aggregates_failures() {
     use std::collections::BTreeMap;
-    // Two host-env references, both unset → both reported in
-    // one structured error rather than aborting on the first.
+
     let mut decls: BTreeMap<String, jackin_core::EnvValue> = BTreeMap::new();
     decls.insert(
         "GH_TOKEN".into(),
@@ -356,7 +347,7 @@ async fn resolve_github_env_map_aggregates_failures() {
         "GH_HOST".into(),
         jackin_core::EnvValue::Plain("$JACKIN_TEST_MISSING_HOST".into()),
     );
-    // Empty host-env map so `$NAME` references fail to resolve.
+
     let host_env = BTreeMap::new();
     let err = resolve_github_env_map(&decls, None, Some(&host_env)).unwrap_err();
     let s = err.to_string();

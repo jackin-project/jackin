@@ -50,8 +50,6 @@ async fn cancellation_wakes_a_backpressured_forwarding_socket() {
         let _sent = finished_tx.send(result);
     });
 
-    // Inspect kernel write readiness, proving the forwarding socket really
-    // became backpressured rather than relying on a scheduling delay.
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let mut ready = [PollFd::new(observer.as_fd(), PollFlags::POLLOUT)];
@@ -68,7 +66,6 @@ async fn cancellation_wakes_a_backpressured_forwarding_socket() {
     .await
     .expect("forwarding socket should fill");
 
-    // Cancel the writer endpoint, matching TerminalInput ownership.
     observer.shutdown(Shutdown::Both).unwrap();
     let result = tokio::time::timeout(Duration::from_secs(2), finished_rx)
         .await

@@ -8,23 +8,23 @@
 @import '../components/landing/styles.css';
 @import '../components/landing/hero-nav.css';
 
-@source '../../content/**/*.{md,mdx}';
-@source '../**/*.{ts,tsx}';
-@source '../../node_modules/fumadocs-ui/dist/**/*.{js,mjs}';
+@source '../../content*.{md,mdx}';
+@source '..*.{ts,tsx}';
+@source '../../node_modules/fumadocs-ui/dist*.{js,mjs}';
 
-/* Square corners only. Terminals cannot round corners, so no jackin❯ surface
-   does either — the wordmark block, buttons, cards, inputs, and Fumadocs chrome
-   all stay rectangular. Hard reset so third-party UI inherits the CLI aesthetic.
-   Imported last, so it wins over Tailwind/Fumadocs radius utilities. */
+
+
+
+
 *,
 *::before,
 *::after {
   border-radius: 0 !important;
 }
 
-/* Exception: the terminal-window mockups and the red/blue pill capsules keep
-   their rounded corners (they depict product UI / physical pills, not the square
-   brand chrome). Values match the live site. Re-applied after the square reset. */
+
+
+
 .landing-code-panel,
 .landing-install {
   border-radius: 10px !important;

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Long-lived event sources that drive the host console TUI loop.
-
 use crate::tui::runtime::BlockingSubscription;
 
 pub const INSTANCE_REFRESH_SOCKET_INTERVAL: std::time::Duration =
@@ -22,9 +20,8 @@ pub const fn instance_refresh_interval(exec_fallback_seen: bool) -> std::time::D
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Subscription {
-    /// Keyboard, mouse, resize, focus, and paste events from crossterm.
     TerminalEvents,
-    /// Periodic redraw tick for spinners and animated picker surfaces.
+
     AnimationTick,
 }
 
@@ -151,11 +148,9 @@ pub enum ConfigSaveResult<AppConfig, RoleSource> {
     },
 }
 
-/// In-flight 1Password read triggered by an op picker commit from an auth form.
 pub struct PendingOpCommit<OpRef> {
-    /// The op reference preserved so completion can commit it into the form.
     pub op_ref: OpRef,
-    /// Oneshot receiver for the `spawn_blocking` result.
+
     pub rx: BlockingSubscription<anyhow::Result<()>>,
 }
 
@@ -174,7 +169,6 @@ impl<OpRef: std::fmt::Debug> std::fmt::Debug for PendingOpCommit<OpRef> {
     }
 }
 
-/// In-flight isolation-drift check for a save operation.
 pub struct PendingDriftCheck<DriftDetection, SavePlan> {
     pub rx: BlockingSubscription<anyhow::Result<DriftDetection>>,
     pub plan: SavePlan,
@@ -208,7 +202,6 @@ impl<DriftDetection, SavePlan> std::fmt::Debug for PendingDriftCheck<DriftDetect
     }
 }
 
-/// In-flight isolated-state cleanup for a save operation.
 pub struct PendingIsolationCleanup<SavePlan> {
     pub rx: BlockingSubscription<anyhow::Result<()>>,
     pub plan: SavePlan,
@@ -238,7 +231,6 @@ impl<SavePlan> std::fmt::Debug for PendingIsolationCleanup<SavePlan> {
     }
 }
 
-/// In-flight role repository registration.
 pub struct PendingRoleLoad<RoleSource> {
     pub raw: String,
     pub key: String,

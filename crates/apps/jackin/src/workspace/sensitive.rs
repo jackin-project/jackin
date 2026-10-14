@@ -1,17 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Sensitive mount detection and operator confirmation prompt.
-//!
-//! Pure detection helpers (`SensitiveMount`, `find_sensitive_mounts`) are
-//! implemented in `jackin-config` and re-exported here. `confirm_sensitive_mounts`
-//! lives here because it depends on `crate::tui` and `dialoguer`.
-
 pub use jackin_config::{
     MountConfig, SensitiveMount, find_sensitive_mounts, normalize_sensitive_mount_sources,
 };
 
-/// Normalize and canonicalize mount sources before sensitive classification.
 #[must_use]
 pub fn resolved_sensitive_mounts(mounts: &[MountConfig]) -> Vec<SensitiveMount> {
     let resolved =
@@ -19,9 +12,6 @@ pub fn resolved_sensitive_mounts(mounts: &[MountConfig]) -> Vec<SensitiveMount> 
     find_sensitive_mounts(&resolved)
 }
 
-/// Display a warning for sensitive mounts and ask the operator to confirm.
-/// Returns `Ok(true)` when the operator confirms, `Ok(false)` when they
-/// decline, and `Err` on I/O errors.
 pub fn confirm_sensitive_mounts(sensitive: &[SensitiveMount]) -> anyhow::Result<bool> {
     use owo_colors::OwoColorize;
 

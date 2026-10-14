@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential binding refresh.
 
 use crate::{
     ProfileCredentialMaterial, ProfileCredentialReader, ProfileReadOutcome, ProfileValidation,
@@ -65,9 +64,7 @@ pub fn refresh_credential_binding(
         ValidatedCredentialSource::Capability => {
             return ProviderCredentialRefreshOutcome::Malformed;
         }
-        // Deliberate no-poll, never a provider outage: the honest
-        // `Unsupported` view flows through the success path, outside
-        // retry/backoff.
+
         ValidatedCredentialSource::Unpollable => (
             jackin_usage_provider_core::unpollable_snapshot(
                 binding.surface.agent_slug(),
@@ -150,8 +147,6 @@ pub fn refresh_credential_binding(
             None,
         ),
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Gemini { creds_path }) => {
-            // Re-prove OAuth presence at refresh: a file deleted after
-            // discovery is NeedsSecret, never a stale Unsupported.
             let has_oauth = creds_path.is_file();
             (
                 jackin_usage_provider_gemini::gemini_snapshot_with_presence(
@@ -165,8 +160,7 @@ pub fn refresh_credential_binding(
                 None,
             )
         }
-        // The Keychain grant needs no secret material here: `agy` owns the
-        // grant and the collector shells out to it.
+
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity) => (
             jackin_usage_provider_antigravity::antigravity_snapshot(
                 binding.surface.agent_slug(),

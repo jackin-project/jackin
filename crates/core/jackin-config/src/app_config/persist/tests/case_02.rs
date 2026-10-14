@@ -8,8 +8,7 @@ fn load_preserves_legacy_workspace_op_account_onto_refs() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-    // A pre-split config.toml with an embedded workspace carrying the
-    // old root-level `op_account` and an op ref that relied on it.
+
     std::fs::write(
         &paths.config_file,
         r#"[workspaces.prod]
@@ -29,8 +28,7 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
     AppConfig::load_or_init(&paths).unwrap();
 
     let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
-    // The account must land on the op ref, and the root key must be gone
-    // (v1alpha7 shape) — not silently dropped during the typed split.
+
     assert!(
         workspace.contains(r#"account = "WORKACCT""#),
         "legacy op_account must be stamped onto the ref:\n{workspace}"
@@ -103,8 +101,6 @@ fn split_embedded_workspace_migration_preserves_global_fields_and_is_idempotent(
 
 #[test]
 fn legacy_non_string_op_account_bails_loudly() {
-    // A present-but-non-string op_account is operator data; it must
-    // surface, not be silently dropped (mirrors the v1alpha7 migration).
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -131,11 +127,6 @@ dst = "/workspace/prod"
 
 #[test]
 fn legacy_op_account_split_is_idempotent_on_reentry() {
-    // Simulates crash recovery: the per-workspace split file was written
-    // (account stamped onto the ref) but the global rewrite that removes
-    // [workspaces.*] did not commit, so the legacy tables reappear on the
-    // next startup and migrate_legacy_workspaces re-runs. It must treat
-    // the already-stamped file as identical and continue, not bail.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -152,18 +143,14 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
 "#;
     std::fs::write(&paths.config_file, legacy).unwrap();
 
-    // First migration writes prod.toml (stamped) and rewrites the global.
     AppConfig::load_or_init(&paths).unwrap();
     let stamped = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
     assert!(stamped.contains(r#"account = "WORKACCT""#), "{stamped}");
 
-    // Re-introduce the legacy tables (the rewrite "didn't commit") and
-    // re-run: must succeed idempotently against the stamped split file.
     std::fs::write(&paths.config_file, legacy).unwrap();
     AppConfig::load_or_init(&paths)
         .expect("re-entry with an already-stamped split file must be idempotent");
 
-    // The split file is unchanged by the second pass.
     let after = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
     assert_eq!(stamped, after);
 }

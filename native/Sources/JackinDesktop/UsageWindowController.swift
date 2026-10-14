@@ -10,15 +10,15 @@ enum UsageWindowMetrics {
     static let minimumContentSize = NSSize(width: 800, height: 520)
 }
 
-/// Lazily creates and retains the AppKit Usage window and its native split controller.
-///
-/// SwiftUI owns pane content. AppKit owns split geometry, the full-height sidebar,
-/// its standard toolbar toggle, and the detail top accessory.
-///
-/// Showing the window promotes the process to `.regular` so the **system menu
-/// bar** ( + AppMainMenu) is available; closing the last titled window returns
-/// to `.accessory` status-item mode.
-///
+
+
+
+
+
+
+
+
+
 @MainActor
 public final class UsageWindowController: NSObject, NSWindowDelegate {
     private let store: PresentationStore
@@ -44,18 +44,18 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
-    /// Show the retained Usage window without changing its valid destination.
+
     public func show(size: CGSize? = nil) {
         present(size: size)
     }
 
-    /// Show the Usage window at an explicit provider surface id (`nil` = Overview).
+
     public func show(focusOn surfaceId: String?, size: CGSize? = nil) {
         store.selectUsageSurface(surfaceId)
         present(size: size)
     }
 
-    /// Show at an exact provider/account handoff captured by the popover.
+
     public func show(context: UsageNavigationContext?, size: CGSize? = nil) {
         store.selectUsageContext(
             surfaceId: context?.surfaceId,
@@ -78,10 +78,10 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
             centerFixtureWindowOnPrimaryScreen(window)
         }
         if elevatesFixtureWindow {
-            // UI-test fixtures are launched as a regular application, but the runner can
-            // leave the newly-created process inactive before the first accessibility query.
-            // Activate the owner once at presentation; the visibility lease below only keeps
-            // the window ordered front and does not steal focus during gestures.
+
+
+
+
             NSApp.unhide(nil)
             NSApp.activate()
             NSApp.activate(ignoringOtherApps: true)
@@ -132,8 +132,8 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         window.hidesOnDeactivate = false
         window.delegate = self
         if store.usesFixture {
-            // Deterministic UI/visual QA must stay observable when WindowServer assigns rapid
-            // fixture launches and the test runner to different or full-screen Spaces.
+
+
             window.canHide = false
             window.collectionBehavior.formUnion([
                 .canJoinAllSpaces,
@@ -158,7 +158,7 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
             window.setFrameAutosaveName("jackin.desktop.usage-window")
         }
 
-        // Unified titlebar + standard AppKit split toolbar; no app-painted chrome.
+
         window.toolbarStyle = .unified
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -197,10 +197,10 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         guard let titlebar = window.standardWindowButton(.closeButton)?.superview else { return }
         centeredBrandContainer?.removeFromSuperview()
         centeredBrandContainer = nil
-        // AppKit may replace the titlebar container while the unified toolbar is
-        // installed or the sidebar collapses. Remove the old host anywhere in
-        // the frame hierarchy before adding the replacement, otherwise stale
-        // hosts remain in the accessibility tree and duplicate the brand.
+
+
+
+
         if let frameView = window.contentView?.superview {
             removeCenteredBrandHosts(from: frameView)
         }
@@ -244,7 +244,7 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         if let window = notification.object as? NSWindow {
             retainedFrame = window.frame
         }
-        // Window is still visible during willClose; resign on next run-loop turn.
+
         DispatchQueue.main.async {
             AppActivation.resignToAccessoryIfNeeded()
         }
@@ -268,7 +268,7 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         window = nil
     }
 
-    /// Visual QA: the live `NSWindow` after `show` (nil if never shown).
+
     public var qiWindow: NSWindow? { window }
     public var qiVisibilityDesired: Bool { visibilityDesired }
     public func qiToggleSidebar() {

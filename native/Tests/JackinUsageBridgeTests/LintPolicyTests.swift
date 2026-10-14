@@ -3,16 +3,16 @@
 
 import XCTest
 
-/// SwiftLint policy as code: the root config keeps force operations at error
-/// for application sources, the formatter-conflict disables stay the only
-/// global disables, and every nested policy file declares its parent plus a
-/// reason, owner, and deletion condition.
+
+
+
+
 final class LintPolicyTests: XCTestCase {
     private var nativeRoot: URL {
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // Tests/JackinUsageBridgeTests
-            .deletingLastPathComponent()  // Tests
-            .deletingLastPathComponent()  // native
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 
     private func configText(_ relative: String) throws -> String {
@@ -20,7 +20,7 @@ final class LintPolicyTests: XCTestCase {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    /// Rule identifiers listed under `disabled_rules:` (comments stripped).
+
     private func disabledRules(
         _ text: String, file: StaticString = #filePath, line: UInt = #line
     ) -> [String] {

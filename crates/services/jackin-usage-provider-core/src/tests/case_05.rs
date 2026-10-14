@@ -6,15 +6,11 @@ use super::*;
 #[cfg(unix)]
 #[test]
 fn usage_cli_owner_exports_outcomes_without_process_material() {
-    // A fresh executable in a temporary directory can be held by macOS
-    // Gatekeeper longer than the process timeout under parallel test load.
     let command = "/bin/sh";
 
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
 
-    // Success/error paths must outlive heavy parallel nextest load; 1s races
-    // under full `ci --fast` when the host is saturated (poll loop is 50ms).
     let settle = Duration::from_secs(10);
     run_cli_with_timeout_full(command, &["-c", "printf usage-secret-output"], settle).unwrap();
     run_cli_with_timeout_full(
@@ -292,16 +288,12 @@ fn usage_bucket_presentation_orders_spend_cap() {
         presentation.display_segments,
         vec!["30% used", "Monthly cap: SGD 78.49 / SGD 260.00"]
     );
-    // Spend text reads used, but meter geometry fills by remaining — the same
-    // rule as every other slot and the console windows.
+
     assert_eq!(presentation.meter_percent, Some(70));
 }
 
 #[test]
 fn usage_bucket_presentation_recovers_spend_overage_from_money() {
-    // $150 against a $100 cap with a saturated 0% remaining: the money ratio
-    // recovers the raw "150% used" text (matching the console window value)
-    // and the meter reads empty (nothing left), matching the console meter.
     let mut bucket = presentation_bucket(
         "Extra usage",
         Some(0),
@@ -316,8 +308,6 @@ fn usage_bucket_presentation_recovers_spend_overage_from_money() {
     assert_eq!(presentation.remaining_label.as_deref(), Some("150% used"));
     assert_eq!(presentation.meter_percent, Some(0));
 
-    // A non-overage money ratio agrees with the remaining percent; the text
-    // still reads used and the meter still fills by remaining.
     let mut bucket = presentation_bucket(
         "Extra usage",
         Some(55),

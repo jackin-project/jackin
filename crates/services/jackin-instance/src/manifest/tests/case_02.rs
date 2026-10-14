@@ -54,10 +54,6 @@ fn remove_many_with_duplicate_names_removes_once() {
 
 #[test]
 fn instance_manifest_write_replaces_partial_file() {
-    // Simulate a previous crash that left a half-written JSON.
-    // Atomic write must replace it cleanly; a regression to a
-    // direct `std::fs::write` would either preserve the truncated
-    // content on a short write or interleave bytes.
     let temp = tempdir().unwrap();
     let state_dir = temp.path();
     std::fs::create_dir_all(state_dir.join(".jackin")).unwrap();
@@ -70,10 +66,6 @@ fn instance_manifest_write_replaces_partial_file() {
 
 #[test]
 fn index_write_leaves_no_temp_file_on_success() {
-    // Atomic write is `tempfile + rename`; on success the temp must
-    // be gone. A regression that wrote in-place would leave the
-    // temp behind (or worse, never rename) — assert the data dir
-    // contains exactly the canonical file.
     let temp = tempdir().unwrap();
     let data_dir = temp.path();
     InstanceIndex::update_manifest(data_dir, &sample_manifest()).unwrap();
@@ -94,9 +86,6 @@ fn index_write_leaves_no_temp_file_on_success() {
 
 #[test]
 fn update_manifest_concurrent_writes_serialize_via_lock() {
-    // Two threads racing `update_manifest` for *different* manifests
-    // must both end up in the index. A regression that drops the
-    // index flock would lose one of the two entries.
     let temp = tempdir().unwrap();
     let data_dir = temp.path().to_path_buf();
     let a = sample_manifest();
@@ -117,9 +106,6 @@ fn update_manifest_concurrent_writes_serialize_via_lock() {
 
 #[test]
 fn host_path_fingerprint_differs_for_distinct_canonical_paths() {
-    // Two existing dirs with distinct canonical paths must yield
-    // distinct fingerprints (catches a regression that hashes the
-    // raw input even when canonicalize succeeds).
     let temp = tempdir().unwrap();
     let a = temp.path().join("a");
     let b = temp.path().join("b");

@@ -1,10 +1,3 @@
-//! jackin-env: environment resolution, secrets probes, and auth wiring.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`resolve_operator_env`] — layered operator env resolution.
-
-#![deny(missing_docs)]
-
 mod accounts;
 mod env_layer;
 mod env_resolver;

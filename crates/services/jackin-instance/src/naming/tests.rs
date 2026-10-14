@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `naming`.
 use super::*;
 use jackin_core::RoleSelector;
 use jackin_core::WorkspaceName;
@@ -63,9 +62,6 @@ fn class_family_matches_new_unique_names_by_visible_role_component() {
 
 #[test]
 fn class_family_matches_distinguishes_role_substrings() {
-    // A role named `brown` must not match a container whose role
-    // component is `agentbrown` (the longer name happens to end
-    // in `brown`). Important for `purge_class_data` blast radius.
     let brown = RoleSelector::new(None, "brown");
     assert!(!class_family_matches(&brown, "jk-k7p9m2xq-agentbrown",));
     let agentbrown = RoleSelector::new(None, "agentbrown");
@@ -89,14 +85,11 @@ fn instance_id_from_container_base_extracts_second_component() {
 
 #[test]
 fn class_family_matches_workspace_and_adhoc_for_same_selector() {
-    // A single role selector must match both a workspace-scoped container
-    // (jk-<id>-<ws>-<role>) and an ad-hoc container (jk-<id>-<role>).
-    // The rsplit_once fallback path handles the no-workspace case.
     let selector = RoleSelector::new(None, "agent-smith");
-    assert!(class_family_matches(&selector, "jk-k7p9m2xq-agentsmith")); // ad-hoc
+    assert!(class_family_matches(&selector, "jk-k7p9m2xq-agentsmith"));
     assert!(class_family_matches(
         &selector,
-        "jk-k7p9m2xq-myproject-agentsmith" // workspace-scoped
+        "jk-k7p9m2xq-myproject-agentsmith"
     ));
     assert!(!class_family_matches(&selector, "jk-k7p9m2xq-agentbrown"));
 }

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-/// CLT-safe proof that the status-item consumes finished Rust DTO fields.
+
 
 import Foundation
 import JackinUsageBindings

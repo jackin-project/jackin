@@ -103,8 +103,6 @@ fn xdg_cache_overlap_rejects_parent_traversal_and_symlink_aliases() {
 
 #[test]
 fn colliding_sanitized_suffixes_get_numeric_tails() {
-    // `a@b` and `a-b` sanitize identically; secondary slots must still
-    // land in distinct dirs.
     let binding_for = |key: &str| {
         let mut binding =
             InstanceAuthBinding::new("work", Agent::Claude, AuthForwardMode::Ignore, None);
@@ -120,9 +118,7 @@ fn colliding_sanitized_suffixes_get_numeric_tails() {
     assert_eq!(suffixes[0], None);
     assert_eq!(suffixes[1].as_deref(), Some("a-b"));
     assert_eq!(suffixes[2].as_deref(), Some("a-b-2"));
-    // Dedupe is per agent: a codex secondary keeps `a-b` even
-    // though a claude secondary already owns it; store dirs are per
-    // agent so they cannot collide.
+
     let mut codex_primary = binding_for("codex-primary");
     codex_primary.agent = Agent::Codex;
     let mut codex_secondary = binding_for("a@b");
@@ -168,7 +164,7 @@ fn prepare_for_bindings_honors_explicit_config_id_keys() {
         .get("work-claude")
         .expect("explicit key lost");
     assert_eq!(slot.account_id, "work");
-    // Agent-scoped lookups still resolve through the explicit key.
+
     assert!(state.claude_account_json().is_some());
     assert!(state.claude_credentials_json().is_some());
 }

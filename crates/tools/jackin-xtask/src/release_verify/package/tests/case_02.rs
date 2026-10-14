@@ -136,9 +136,6 @@ fn source_checkout_accepts_admitted_old_sha_after_origin_main_advances() {
         &["checkout", "--quiet", "--detach", &commit],
     );
 
-    // A queued preview remains bound to its admitted source commit after main
-    // advances. The producer's identity check must not substitute the latest
-    // branch tip for the event SHA.
     verify_source_checkout(directory.path(), &source_manifest(commit.clone())).unwrap();
     let error = verify_source_checkout(directory.path(), &source_manifest(advanced))
         .expect_err("a manifest for another commit must still fail closed");

@@ -16,8 +16,8 @@ fn read_evidence(
         .with_context(|| format!("parsing {}", path.display()))?;
     let stored_schema = raw.get("schema").and_then(serde_json::Value::as_u64);
     if stored_schema != Some(u64::from(SCHEMA)) {
-        // Schema 5 is a hard migration boundary: discard stale ledgers before
-        // deserialization so old rows can never enter the hardened merge.
+
+
         return Ok(empty_evidence(repository, window, runtime));
     }
     let existing: EvidenceFile = serde_json::from_value(raw).context("parsing CI evidence")?;
@@ -143,9 +143,9 @@ fn merge_evidence(mut existing: EvidenceFile, update: EvidenceUpdate) -> Result<
             by_key.insert(key, attempt);
         }
     }
-    // The collector recomputes a rolling window. Retain only attempts bound
-    // to this run's denominator; otherwise a later rollup rejects stale rows
-    // from a prior window as foreign obligations.
+
+
+
     by_key.retain(|_, attempt| expected_keys.contains(&(attempt.head_sha.clone(), attempt.cohort)));
     let mut attempts = by_key.into_values().collect::<Vec<_>>();
     attempts.sort_by_key(|attempt| (attempt.created_at.clone(), attempt.run_id, attempt.attempt));

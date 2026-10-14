@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Account-level spend receipt validation and per-goal budget policy.
-//!
-//! Spend receipts describe an account's total for one billing period. A goal
-//! captures that total as its baseline when the monitor starts, then counts
-//! later increases against the goal. Session usage is deliberately not an
-//! input to this module.
-
 use jackin_protocol::{
     control::Money,
     usage_monitor::{
@@ -22,48 +15,34 @@ const SPEND_FRESHNESS_SECONDS: i64 = 300;
 const SGD_CURRENCY: &str = "SGD";
 const SGD_EXPONENT: u8 = 2;
 
-/// Account-wide spend observations. The account is selected by the caller and
-/// stored under its canonical account ID.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct SpendAccountState {
-    /// Most recently accepted receipt, including stale or unverified receipts.
     pub latest_record: Option<SpendRecord>,
-    /// Latest verified receipt for the current billing period.
+
     pub current_period_record: Option<SpendRecord>,
-    /// Latest verified receipt for the immediately preceding billing period.
+
     pub previous_period_record: Option<SpendRecord>,
-    /// Latest period boundary after which goal spend history cannot be
-    /// asserted complete. A retained horizon records uncertainty, not proof
-    /// that a correction was received.
+
     #[serde(default)]
     pub historical_correction_horizon_epoch: Option<i64>,
 }
 
-/// Per-monitor spend state. `baseline` is the account total captured at Start;
-/// cumulative spend counts only increases after that baseline.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct SpendState {
-    /// Fresh verified account total captured when this monitor started.
     pub baseline: Option<SpendRecord>,
-    /// Latest account total already folded into cumulative goal spend.
+
     pub period_anchor: Option<SpendRecord>,
-    /// Latest verified total for the immediately preceding period already
-    /// folded into cumulative spend. This lets later corrections be applied
-    /// exactly once after the period anchor has advanced.
+
     #[serde(default)]
     pub closed_period_anchor: Option<SpendRecord>,
-    /// Cumulative goal spend across billing periods, when known.
+
     pub cumulative_goal_spend: Option<Money>,
-    /// A closed-period transition could not yet be proven.
+
     pub rollover_unknown: bool,
-    /// False when any billing-period amount may be missing from the total.
+
     pub cumulative_complete: bool,
 }
 
-/// Check that persisted account receipts retain their syntactic shape and
-/// account binding. Unverified receipts and unsupported currencies are valid
-/// account history: they remain available for audit but cannot authorize a
-/// budget comparison.
 pub(super) fn validate_account_spend_state(state: &SpendAccountState) -> bool {
     let records = [
         state.latest_record.as_ref(),
@@ -92,10 +71,6 @@ pub(super) fn validate_account_spend_state(state: &SpendAccountState) -> bool {
         .is_none_or(|epoch| epoch >= 0)
 }
 
-/// Check spend history before it is trusted by the budget guard or accepted in
-/// persisted goal state. A missing baseline is retained for historical V1
-/// state, but an asserted baseline must be paired with a coherent verified
-/// anchor and cumulative total.
 pub(super) fn validate_spend_state(state: &SpendState) -> bool {
     let baseline = state.baseline.as_ref();
     let anchor = state.period_anchor.as_ref();
@@ -110,8 +85,6 @@ pub(super) fn validate_spend_state(state: &SpendState) -> bool {
         return false;
     }
 
-    // Legacy history can have no original baseline. Preserve it when the
-    // anchor and cumulative amount travel together, but reject partial pairs.
     if anchor.is_some() != cumulative.is_some() {
         return false;
     }
@@ -145,9 +118,6 @@ pub(super) fn validate_spend_state(state: &SpendState) -> bool {
         let expected_cumulative = anchor.amount.amount_minor - baseline.amount.amount_minor;
         cumulative.amount_minor == expected_cumulative
     } else {
-        // The anchor may advance across any number of periods. Gaps are
-        // represented by rollover_unknown/cumulative_complete and remain
-        // fail-closed at evaluation time.
         anchor.billing_period_start_epoch >= baseline.billing_period_end_epoch
             && cumulative.amount_minor >= anchor.amount.amount_minor
     }
@@ -171,26 +141,23 @@ fn verified_evidence_is_coherent(record: &SpendRecord) -> bool {
         })
 }
 
-/// Result of evaluating account spend against one monitor's budget.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpendDecision {
-    /// Current account-record verification as of this evaluation.
     pub verification: SpendVerification,
-    /// Whether budget enforcement lacks a safe spend comparison.
+
     pub budget_unverifiable: bool,
-    /// Whether cumulative goal spend reached the final capped threshold.
+
     pub budget_cap_reached: bool,
-    /// Whether a billing-period rollover still needs verified evidence.
+
     pub rollover_unknown: bool,
-    /// Issues selected by spend policy, in stable order.
+
     pub issues: Vec<MonitorIssueCode>,
-    /// Ordered actions selected by spend policy.
+
     pub actions: Vec<MonitorAction>,
-    /// Stable idempotency fingerprint aligned with each action.
+
     pub action_fingerprints: Vec<String>,
 }
 
-/// A malformed spend operation that must not be persisted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SpendRecordReject {
     EmptyAccount,
@@ -200,10 +167,6 @@ pub(crate) enum SpendRecordReject {
     UnsupportedSource,
 }
 
-/// Accept a syntactically valid account spend receipt and update the account's
-/// verified period records. Currency, explicit attestation, and freshness are
-/// safety-verification inputs: unsupported currency is persisted as
-/// `Unverified` so budget policy can fail closed.
 pub(crate) fn record_account_spend(
     account: &SpendAccountState,
     monitored_account_id: &str,
@@ -274,8 +237,6 @@ pub(crate) fn record_account_spend(
                 }
                 Some(current) if same_period(current, &record) => {
                     if record.amount.amount_minor < current.amount.amount_minor {
-                        // Account totals cannot fall within one billing period;
-                        // do not let a correction reduce cumulative spend.
                         record.verification = SpendVerification::Unverified;
                     } else {
                         next.current_period_record = Some(record.clone());
@@ -301,8 +262,6 @@ pub(crate) fn record_account_spend(
                             applied = true;
                         }
                         PeriodTransition::Invalid => {
-                            // Overlapping or out-of-order periods cannot replace
-                            // the current account total safely.
                             record.verification = SpendVerification::Unverified;
                         }
                     }
@@ -326,8 +285,6 @@ pub(crate) fn record_account_spend(
     Ok((next, record))
 }
 
-/// Reconcile a post-close total without replacing the current account total
-/// when the evidence belongs to the preceding period.
 fn apply_closed_period_record(
     state: &mut SpendAccountState,
     record: &mut SpendRecord,
@@ -369,8 +326,6 @@ enum PeriodTransition {
     Invalid,
 }
 
-/// Classify a current-period receipt against the current and immediately
-/// previous period totals before changing either anchor.
 fn classify_period_transition(
     record: &SpendRecord,
     current: &SpendRecord,
@@ -388,10 +343,6 @@ fn classify_period_transition(
     }
 }
 
-/// Capture a per-monitor baseline from the account's latest current-period
-/// total. If no fresh, verified, compatible record exists, the returned state
-/// has no baseline and spend remains unverifiable; it is never initialized to
-/// zero implicitly.
 pub(crate) fn capture_goal_baseline(
     account: &SpendAccountState,
     budget: Option<&Money>,
@@ -432,10 +383,6 @@ pub(crate) fn capture_goal_baseline(
     }
 }
 
-/// Fold the latest verified account total into one monitor's cumulative spend.
-/// Call after recording an account receipt and during reconciliation so a
-/// closed period can be recognized. Repeated calls over the same evidence are
-/// idempotent.
 pub(crate) fn advance_goal_spend(
     state: &mut SpendState,
     account: &SpendAccountState,
@@ -465,18 +412,11 @@ pub(crate) fn advance_goal_spend(
         .historical_correction_horizon_epoch
         .is_some_and(|period_end| period_end > baseline.billing_period_start_epoch)
     {
-        // An unretained correction may change spend accumulated after this
-        // goal's baseline. Keep the known estimate, but never restore
-        // completeness from newer receipts.
         state.rollover_unknown = true;
         state.cumulative_complete = false;
         return;
     }
     if !same_period(baseline, &anchor) && state.closed_period_anchor.is_none() {
-        // Historical state may have already folded one or more periods but
-        // cannot say which closing total its cumulative amount includes. Do
-        // not infer a correction baseline or restore completeness from newer
-        // evidence.
         state.rollover_unknown = true;
         state.cumulative_complete = false;
         return;
@@ -541,7 +481,6 @@ pub(crate) fn advance_goal_spend(
             return;
         }
         if now_epoch >= current.billing_period_end_epoch {
-            // A closed current period still needs a verified next-period total.
             state.rollover_unknown = true;
         }
         return;
@@ -586,8 +525,6 @@ pub(crate) fn advance_goal_spend(
     state.cumulative_complete = true;
 }
 
-/// Evaluate spend thresholds for one goal and produce stable action
-/// fingerprints. The caller should call `advance_goal_spend` first.
 pub(crate) fn evaluate_spend_policy(
     account_id: &str,
     goal_id: &str,

@@ -84,9 +84,7 @@ fn workspace_mount_strings_order_by_depth_and_harden_gitdir_overrides() {
     };
 
     let mounts = build_workspace_mount_strings(&workspace);
-    // Ordered by destination length so deeper mounts shadow correctly; the
-    // `:ro` placement on the worktree pointer files keeps a misbehaving role
-    // from rewriting the gitdir redirect.
+
     assert_eq!(
         mounts,
         vec![
@@ -187,8 +185,7 @@ fn agent_mounts_skips_auth_without_forwarding_or_missing_claude_file() {
     missing.slot_suffix = Some("second".to_owned());
     missing.container_home_rel = ".claude-second".to_owned();
     missing.container_store_rel = "claude-second".to_owned();
-    // Guard: a missing Claude credential file (e.g. silently-removed
-    // OAuthToken skeleton) must not mount a stale host path.
+
     missing.credential_paths = vec![root.join("auth").join("absent.json")];
     let state = role_state(
         &root,

@@ -79,8 +79,6 @@ plugins = []
 
 #[tokio::test]
 async fn load_agent_uses_prebuilt_when_construct_version_matches() {
-    // When the published image's jackin.role.git.sha label matches the role
-    // checkout, the pre-built image is used.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
@@ -147,16 +145,13 @@ plugins = []
 
 #[tokio::test]
 async fn load_agent_falls_back_to_workspace_when_role_sha_label_missing() {
-    // When the published image cannot prove it was built for the current role
-    // SHA, jackin falls back to workspace mode.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    // The published image does not carry the current role SHA, triggering
-    // workspace fallback.
+
     let mut runner = FakeRunner::for_load_agent(["abc123".to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -200,9 +195,7 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker build "))
         .unwrap();
-    // A stale published image falls back to a workspace role-base build, but it
-    // is not an operator-requested rebuild: keep Docker's layer cache and do
-    // not use the stale published image as base.
+
     assert!(
         !build_cmd.contains("--pull"),
         "published-stale fallback should preserve layer cache; got: {build_cmd}"
@@ -215,8 +208,6 @@ plugins = []
 
 #[tokio::test]
 async fn load_agent_uses_prebuilt_when_role_sha_matches_without_construct_version() {
-    // The role SHA label is authoritative for current published images. A
-    // matching SHA is enough even when construct-version is absent.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
@@ -272,8 +263,7 @@ plugins = []
             .any(|call| call.contains("docker tag docker.io/myorg/my-role:latest")),
         "prebuilt mode must tag the verified image as the local base"
     );
-    // In prebuilt mode rebuild=false, so the construct-mismatch guard calls
-    // inspect_image_labels on the derived image (bollard). Workspace-rebuild mode skips it.
+
     assert!(
         docker
             .recorded
@@ -329,8 +319,6 @@ plugins = []
     .await
     .unwrap();
 
-    // With --rebuild the workspace Dockerfile is used even when published_image is set.
-    // The DerivedDockerfile must contain the workspace FROM, not the published image.
     let recorded = runner.recorded.join("\n");
     assert!(
         !recorded.contains("docker.io/myorg/my-role:latest"),

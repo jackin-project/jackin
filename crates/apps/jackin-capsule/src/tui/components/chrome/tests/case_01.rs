@@ -23,7 +23,7 @@ fn status_bar_renders_without_tabs() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    // Brand pill should appear in row 0
+
     let row0: String = (0..9).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
     assert!(row0.contains("jackin❯"), "brand pill missing: {row0:?}");
 }
@@ -215,14 +215,13 @@ fn row0_tabs_follow_the_upstream_theme_without_compensation() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    // First glyph of the inactive "Codex" tab label.
+
     let (tab_x, _) = (9..100)
         .map(|x| (x, buf[(x, 0)].symbol()))
         .find(|(x, s)| *s == "C" && buf[(*x + 1, 0)].symbol() == "o")
         .expect("Codex tab label on row 0");
     let cell = &buf[(tab_x, 0)];
-    // Head clears the non-hovered tab fills (Color::Reset), and no
-    // compensation pins product chrome to the pre-bump white.
+
     assert_eq!(cell.bg, Color::Reset);
     assert_ne!(cell.fg, Color::Rgb(255, 255, 255));
 }

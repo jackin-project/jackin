@@ -1,12 +1,3 @@
-//! jackin-usage-discovery: host account-source discovery and validation.
-//!
-//! **Architecture Invariant:** T4.
-//! Entry point: [`discover_usage_sources`] — scan authorized sources.
-//!
-//! Rust-owned host account-source discovery: account-registry authority,
-//! path roots, provider ownership, deduplication, validation, and the
-//! binding-to-capability mapping the host broker serves.
-
 mod accumulate;
 mod capabilities;
 mod catalog;

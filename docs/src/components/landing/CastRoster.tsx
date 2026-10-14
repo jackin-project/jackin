@@ -1,4 +1,4 @@
-// docs/components/landing/CastRoster.tsx
+
 interface Character {
   avatar: string;
   role: string;

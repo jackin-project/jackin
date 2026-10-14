@@ -1,19 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pane-body rendering benchmark: custom cell widget vs raw-ANSI baseline.
-//!
-//! **Background for ADR-004:** The custom cell widget blits `DamageGrid` cells
-//! directly into the Ratatui `Buffer` with no per-cell allocation beyond what
-//! Ratatui's double-buffer diff already handles. The raw-ANSI baseline is
-//! benchmarked for comparison. The ADR records this evidence and chooses the
-//! custom widget path.
-//!
-//! Run with:
-//! ```sh
-//! cargo bench -p jackin-capsule --bench pane_body
-//! ```
-
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -23,10 +10,9 @@ use termpane::{Color as TermColor, DamageGrid};
 const BENCH_COLS: u16 = 200;
 const BENCH_ROWS: u16 = 50;
 
-/// Build a `DamageGrid` filled with representative content.
 fn make_test_grid() -> DamageGrid {
     let mut grid = DamageGrid::new(BENCH_ROWS, BENCH_COLS, 1000);
-    // Emit 50 lines of realistic shell output: line counter + wide text.
+
     for row in 0..BENCH_ROWS {
         let line = format!(
             "{:04}: {}\r\n",
@@ -41,9 +27,6 @@ fn make_test_grid() -> DamageGrid {
     }
     grid
 }
-
-// ── Custom cell widget ────────────────────────────────────────────────────────
-// A minimal Widget that blits `DamageGrid` cells into the Ratatui Buffer.
 
 struct CustomPaneBlit<'a> {
     grid: &'a DamageGrid,
@@ -88,10 +71,6 @@ fn term_color_to_ratatui(color: TermColor) -> ratatui::style::Color {
     }
 }
 
-// ── Raw-ANSI baseline ─────────────────────────────────────────────────────────
-// A reference point measuring the cost of a hand-rolled ANSI diff approach that
-// the Ratatui custom widget replaces.
-
 fn render_raw_ansi_baseline(grid: &DamageGrid, output: &mut Vec<u8>) {
     output.clear();
     let (rows, cols) = grid.size();
@@ -120,8 +99,6 @@ fn render_raw_ansi_baseline(grid: &DamageGrid, output: &mut Vec<u8>) {
         }
     }
 }
-
-// ── Benchmarks ────────────────────────────────────────────────────────────────
 
 fn bench_pane_body(c: &mut Criterion) {
     let grid = make_test_grid();
@@ -192,7 +169,7 @@ fn bench_socket_backend_output(c: &mut Criterion) {
                         frame.render_widget(CustomPaneBlit { grid: &grid }, area);
                     })
                     .unwrap();
-                // Drain output (simulates sending to attach socket)
+
                 let output = terminal.backend_mut().take_output();
                 black_box(output.len());
             });

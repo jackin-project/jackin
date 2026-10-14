@@ -33,27 +33,27 @@ regex = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
-# OTLP/gRPC is a baseline runtime capability. Provider construction remains
-# runtime-gated by standard OTEL environment configuration.
+
+
 opentelemetry = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true, features = ["semconv_experimental"] }
-# gRPC/tonic is the ONLY transport. It is the reference backend's (Parallax)
-# default and what `parallax run` injects (`OTEL_EXPORTER_OTLP_ENDPOINT` ->
-# :4317, `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`). One transport keeps the export
-# path single and matches the highest-throughput OTLP wire protocol (protobuf
-# over multiplexed HTTP/2). A non-grpc `OTEL_EXPORTER_OTLP_PROTOCOL` is rejected
-# loudly rather than mis-sent (see `ensure_grpc_protocol`).
+
+
+
+
+
+
 opentelemetry-otlp = { workspace = true }
-# gRPC/tonic export is async and cannot run on the stable dedicated-thread batch
-# processors (they `block_on` the export off any reactor -> panic). It needs the
-# async-runtime processors driven by a tokio runtime. jackin❯'s host and capsule
-# both use a *current-thread* tokio main, where neither off-the-shelf runtime
-# fits: plain `rt-tokio` spawns the worker on the app runtime and the
-# `futures_executor::block_on` flush then parks the only thread -> deadlock;
-# `rt-tokio-current-thread`'s isolated per-spawn runtime cannot drive tonic's h2
-# connection -> the export hangs. So jackin owns a dedicated *multi-thread*
-# runtime for telemetry and builds the providers inside its `enter()` guard with
-# the `rt-tokio` (`Tokio`) runtime — see `observability::otlp::otel_runtime`.
+
+
+
+
+
+
+
+
+
+
 opentelemetry_sdk = { workspace = true, features = [
     "metrics",
     "rt-tokio",
@@ -63,14 +63,14 @@ opentelemetry_sdk = { workspace = true, features = [
 ] }
 opentelemetry-appender-tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-# Process metrics (CPU, memory) for the OTLP gauge callbacks.
+
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 rustls = { workspace = true, features = ["ring", "std"] }
 rustls-native-certs = { workspace = true }
 rustls-pki-types = { workspace = true }
-# `rt-multi-thread` powers the dedicated telemetry runtime (see
-# `observability::otlp::otel_runtime`); `Handle::metrics()` feeds the tokio
-# runtime gauges from the app's handle, captured at subscriber init.
+
+
+
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "process"] }
 tokio-rustls = { workspace = true }
 tonic = { workspace = true }

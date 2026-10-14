@@ -12,8 +12,8 @@ async fn purge_container_state_refuses_when_dind_sidecar_exists() {
     std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
-            ContainerState::NotFound, // role container not found
-            ContainerState::Running,  // dind running
+            ContainerState::NotFound,
+            ContainerState::Running,
         ])),
         ..Default::default()
     };
@@ -167,7 +167,6 @@ async fn eject_agent_ignores_missing_runtime_resources() {
 
 #[tokio::test]
 async fn eject_role_phase1_failure_prevents_phase2_calls() {
-    // When remove_container fails, remove_volume and remove_network must not be called.
     let docker = FakeDockerClient {
         inspect_state_by_name: std::cell::RefCell::new(HashMap::from([
             ("jk-agent-smith".to_owned(), ContainerState::Running),
@@ -350,16 +349,14 @@ async fn gc_removes_orphaned_dind_and_network() {
     labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-agent-smith".to_owned());
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([
-            // collect_labeled_dind: DinD sidecar with jackin.role label
             vec![ContainerRow {
                 name: "jk-agent-smith-dind".to_owned(),
                 id: "container-id".to_owned(),
                 labels: labels.clone(),
             }],
-            // list_role_names (running): no running role containers
             vec![],
         ])),
-        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // gc_orphaned_networks: no networks
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         ..Default::default()
     };
 

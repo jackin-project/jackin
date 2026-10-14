@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Paired launch-stage telemetry shared by rich and headless launch paths.
-
 use std::time::Instant;
 
 use crate::schema::enums::{ErrorType, LaunchStageName, LaunchTargetKind, OutcomeValue};

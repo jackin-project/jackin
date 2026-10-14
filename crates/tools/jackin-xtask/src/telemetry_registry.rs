@@ -1,5 +1,3 @@
-//! Closed telemetry-registry validation and generation gate.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
@@ -18,7 +16,6 @@ mod ownership_census;
 mod source_policy;
 use source_policy::{SourcePolicyScanner, WorkspaceSpawnTypesBuilder};
 
-// Shrink-only: new files must use governed facades and helpers immediately.
 const RAW_SPAWN_ALLOWLIST: &[&str] = &[];
 
 const RAW_SCOPED_THREAD_ALLOWLIST: &[(&str, &str)] = &[(
@@ -43,7 +40,6 @@ const PROHIBITED_TELEMETRY_MACROS: &[&str] = &[
 
 #[derive(Args, Debug)]
 pub(crate) struct TelemetryRegistryArgs {
-    /// Regenerate Rust sources from the registry before validating.
     #[arg(long)]
     pub(crate) generate: bool,
 }
@@ -122,9 +118,6 @@ fn validate_source_policy(root: &Path) -> Result<()> {
         .map(|(relative, source)| (relative.to_string_lossy().into_owned(), source))
         .collect::<Vec<_>>();
 
-    // Build the cross-file alias index with one AST alive at a time. Keeping
-    // every parsed syn::File and cloning the resulting workspace index into
-    // each resolver multiplied memory by source count.
     let mut builder =
         WorkspaceSpawnTypesBuilder::new(sources.iter().map(|(path, _)| path.as_str()));
     for (path, source) in &sources {
@@ -413,16 +406,7 @@ fn generate_attributes(
     for attribute in attributes {
         let id = yaml_string(attribute, "name")?;
         let constant = rust_constant(id);
-        let kind = if yaml_sequence(yaml_required(attribute, "type")?, "members").is_some() {
-            "enum"
-        } else {
-            yaml_required(attribute, "type")?
-                .as_str()
-                .unwrap_or("structured")
-        };
-        output.push_str(&format!(
-            "// registry-type: {kind}\npub const {constant}: &str = \"{id}\";\n"
-        ));
+        output.push_str(&format!("pub const {constant}: &str = \"{id}\";\n"));
         output.push_str(&format!(
             "pub const {constant}_DEF: super::AttributeMetadata = super::AttributeMetadata {{ name: {constant}, description: {:?}, value_type: super::ValueType::{}, allowed_values: {} }};\n",
             yaml_string(attribute, "brief")?,
@@ -589,30 +573,7 @@ fn generate_signal_constants(
         };
         let constant = rust_constant(name);
         let group_attributes = yaml_sequence(group, "attributes").unwrap_or_default();
-        let attributes = group_attributes
-            .iter()
-            .map(|attribute| {
-                let reference = yaml_string(attribute, "name")?;
-                let requirement = requirement_level_name(attribute);
-                Ok(format!("{reference}:{requirement}"))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .join(",");
-        let metadata = match kind {
-            SignalKind::Event => format!("attributes={attributes}"),
-            SignalKind::Span => format!(
-                "kind={}; attributes={attributes}",
-                yaml_string(group, "span_kind")?
-            ),
-            SignalKind::Metric => format!(
-                "instrument={}; unit={}; attributes={attributes}",
-                yaml_string(group, "instrument")?,
-                yaml_string(group, "unit")?
-            ),
-        };
-        output.push_str(&format!(
-            "// registry: {metadata}\npub const {constant}: &str = \"{name}\";\n"
-        ));
+        output.push_str(&format!("pub const {constant}: &str = \"{name}\";\n"));
         let description = yaml_string(group, "brief")?;
         output.push_str(&format!(
             "pub const {constant}_DEF: super::{} = super::{} {{\n",
@@ -755,8 +716,7 @@ fn generate_event_emitters(header: &str, groups: &[YamlValue]) -> Result<String>
             "Integer" => "$fields.integer($key)",
             "Double" => "$fields.double($key)",
             "Boolean" => "$fields.boolean($key)",
-            // `tracing` has no array Value variant. The governed processor adds
-            // the registered typed value through `take_pending_event_arrays`.
+
             "StringArray" => "tracing::field::Empty",
             _ => unreachable!("validated registry value type"),
         };

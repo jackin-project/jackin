@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Antigravity` identity, plan, and quota buckets.
 
 use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
 use jackin_usage_provider_core::{bucket, humanize_plan_label, quota_pace_label, timed_bucket};
@@ -10,8 +9,6 @@ use super::{AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityWin
 pub(crate) const ANTIGRAVITY_SESSION_WINDOW_SECONDS: i64 = 5 * 60 * 60;
 pub(crate) const ANTIGRAVITY_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
 
-/// Identity from a `/usage` response, if present. The command may omit it; the
-/// caller must then bind the observation to its runtime, not to an account.
 pub fn antigravity_identity_from_value(value: &serde_json::Value) -> Option<String> {
     for key in ["email", "emailAddress", "accountEmail", "userEmail", "user"] {
         if let Some(node) = value.get(key) {
@@ -33,8 +30,6 @@ pub fn antigravity_identity_from_value(value: &serde_json::Value) -> Option<Stri
     None
 }
 
-/// Plan label: prefer the Google tier name over the Windsurf-inherited plan
-/// name (always "Pro" when paid, so it carries no tier signal).
 pub fn antigravity_plan_from_value(value: &serde_json::Value) -> Option<String> {
     for key in ["userTier", "currentTier", "paidTier", "tier"] {
         if let Some(name) = value
@@ -61,8 +56,7 @@ pub fn antigravity_buckets(usage: &AntigravityUsage, now: i64) -> Vec<QuotaBucke
     for pool in &usage.pools {
         buckets.push(antigravity_pool_bucket(pool, now));
     }
-    // Legacy per-model rows are 5h-only: weekly reads "No data" for families
-    // with a session pool but no weekly pool.
+
     if usage.legacy_fallback {
         for family in [AntigravityFamily::Gemini, AntigravityFamily::Other] {
             let has_session = usage.pools.iter().any(|pool| {
@@ -101,8 +95,7 @@ fn antigravity_pool_bucket(pool: &AntigravityPool, now: i64) -> QuotaBucketView 
         None => None,
     };
     let pace = quota_pace_label(remaining, pool.reset_at, window_seconds, now);
-    // No quota signal: an honest "No data" detail row (the legacy path's
-    // convention), never a fabricated 0% or 100%.
+
     let pace = pace.or_else(|| remaining.is_none().then(|| "No data".to_owned()));
     let mut view = timed_bucket(
         &label,
@@ -114,8 +107,7 @@ fn antigravity_pool_bucket(pool: &AntigravityPool, now: i64) -> QuotaBucketView 
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     );
-    // The Gemini family fills the headline slots; the non-Gemini pools are
-    // detail rows the headline ignores.
+
     view.status_slot = match (pool.family, pool.window) {
         (AntigravityFamily::Gemini, Some(AntigravityWindow::Session)) => Some(StatusSlot::Session),
         (AntigravityFamily::Gemini, Some(AntigravityWindow::Weekly)) => Some(StatusSlot::Weekly),

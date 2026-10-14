@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Secrets tab lines, geometry, and width helpers extracted from the view
-//! coordinator. Items re-exported from parent to preserve `super::` call
-//! sites in tests and frame.
-
 use ratatui::text::Line;
 
 use crate::tui::components::editor_rows::{

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pure, pre-provider validation of standard OTLP environment configuration.
-
 use std::fmt;
 use std::time::Duration;
 
@@ -177,8 +175,6 @@ fn build_otlp_config(
     logs: Option<String>,
     metrics: Option<String>,
 ) -> Result<OtlpConfig, OtlpConfigError> {
-    // The pinned tonic exporter consumes the standard generic/per-signal header
-    // variables directly. Validate them here before any provider is built.
     parse_headers(env, "OTEL_EXPORTER_OTLP_TRACES_HEADERS")?;
     parse_headers(env, "OTEL_EXPORTER_OTLP_LOGS_HEADERS")?;
     parse_headers(env, "OTEL_EXPORTER_OTLP_METRICS_HEADERS")?;

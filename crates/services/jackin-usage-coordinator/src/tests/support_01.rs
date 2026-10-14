@@ -324,8 +324,7 @@ impl AccountStateStore for UpdatingFailureStore {
 
 pub(super) fn assert_updating_store_failure_terminates(persistent: bool) {
     let (completed, completion) = mpsc::channel();
-    // Own the coordinator inside this thread: a broken worker's Drop must not
-    // keep the test harness waiting beyond the regression's bounded deadline.
+
     let fixture = std::thread::spawn(move || {
         let temp = tempfile::tempdir().unwrap();
         let accounts = temp.path().join("accounts");

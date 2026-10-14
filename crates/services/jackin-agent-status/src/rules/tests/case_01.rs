@@ -18,14 +18,13 @@ fn line_regex_matches_per_line_not_joined_blob() {
     )
     .unwrap();
     pack.validate().unwrap();
-    // A line that *starts* with "N. " -> match.
+
     let rows = vec!["Choose one:".to_owned(), "  1. yes".to_owned()];
     assert_eq!(
         pack.evaluate(&rows).unwrap().state,
         Some(RawAgentState::Blocked)
     );
-    // The same token mid-line -> no match. A whole-region regex anchored at
-    // ^ could not distinguish this; line_regex can.
+
     let rows2 = vec!["see item 1. here".to_owned()];
     assert!(pack.evaluate(&rows2).is_none());
 }
@@ -51,30 +50,25 @@ fn forbids_regex_blocks_anchored_pattern() {
         pack.evaluate(&blocked).unwrap().state,
         Some(RawAgentState::Blocked)
     );
-    // A bare caret line means it is actually an idle prompt, not a dialog ->
-    // the anchored forbid suppresses the blocked match.
+
     let idle = vec!["Do you want to proceed?".to_owned(), ">".to_owned()];
     assert!(pack.evaluate(&idle).is_none());
 }
 
 #[test]
 fn validated_versions_must_be_bounded() {
-    // Bounded ranges are accepted.
     pack_with_versions(">=2.1.0, <2.3.0").unwrap();
     pack_with_versions("=0.14.0").unwrap();
-    // Wildcard and lower-only ranges are rejected — they could never gate a
-    // future CLI whose TUI changed under the pack.
+
     pack_with_versions("*").unwrap_err();
     pack_with_versions(">=2.1.0").unwrap_err();
 }
 
 #[test]
 fn min_engine_version_defaults_and_gates_future_engines() {
-    // Absent field defaults to 1 and validates.
     let pack = pack_with_versions(">=1.0.0, <2").unwrap();
     assert_eq!(pack.min_engine_version, 1);
 
-    // A pack needing a future engine is rejected (the load path logs + skips it).
     let future: RulePack = toml::from_str(&format!(
         "schema_version = 1\nagent = \"test\"\nvalidated_versions = \">=1.0.0, <2\"\nmin_engine_version = {}\n",
         RULE_ENGINE_VERSION + 1
@@ -85,7 +79,6 @@ fn min_engine_version_defaults_and_gates_future_engines() {
         .validate()
         .expect_err("a pack requiring a newer engine must be rejected");
 
-    // The current engine version is accepted.
     let current: RulePack = toml::from_str(&format!(
         "schema_version = 1\nagent = \"test\"\nvalidated_versions = \">=1.0.0, <2\"\nmin_engine_version = {RULE_ENGINE_VERSION}\n"
     ))
@@ -125,8 +118,6 @@ requires_all = ["ok"]
 
 #[test]
 fn agent_screen_detector_coverage_is_exhaustive_or_reviewed() {
-    // Reviewed S1 opt-outs: screen-detector packs need live per-agent TUI
-    // capture and belong to the agent-status lane, not catalog expansion.
     const NO_SCREEN_DETECTOR: &[&str] =
         &["antigravity", "gemini", "cursor", "muse", "omp", "hermes"];
     let registry = RulePackRegistry::bundled().unwrap();
@@ -162,14 +153,14 @@ fn prompt_caret_regions_isolate_live_prompt() {
     )
     .unwrap();
     pack.validate().unwrap();
-    // The question scrolled ABOVE the live caret -> not matched.
+
     let stale = vec![
         "Approve?".to_owned(),
         "› ".to_owned(),
         "ok thanks".to_owned(),
     ];
     assert!(pack.evaluate(&stale).is_none());
-    // The question is below the caret (the live prompt) -> matched.
+
     let live = vec!["›".to_owned(), "Approve?".to_owned()];
     assert_eq!(
         pack.evaluate(&live).unwrap().state,
@@ -192,14 +183,14 @@ fn whole_recent_without_caret_self_disables() {
     )
     .unwrap();
     pack.validate().unwrap();
-    // No caret -> whole screen -> matches.
+
     assert_eq!(
         pack.evaluate(&[String::from("task running")])
             .unwrap()
             .state,
         Some(RawAgentState::Working)
     );
-    // Live caret present -> region self-disables -> no match (idle at prompt).
+
     assert!(
         pack.evaluate(&[String::from("task running"), String::from("› ")])
             .is_none()

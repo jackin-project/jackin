@@ -1,24 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Two-button confirmation modal shown before committing an editor save.
-//!
-//! Replaces the old inline "bare S → save immediately" flow with a
-//! preview dialog: operator reviews a list of changes (pre-built by the
-//! caller in [`ConfirmSaveState`]), then picks `Save` or `Cancel`.
-//! Mount-collapse warnings fold into the same dialog as an extra
-//! section so the operator sees ONE confirm for the full plan.
-//!
-//! Plan 010 step 5 (C11) reviewed the `diff`-widget pairing at rev
-//! `29a16b5b` and recorded a behavior-preserving non-adoption
-//! (commit-message carve-out): `paint_unified_line` (diff.rs:1437)
-//! paints a one-column kind prefix with hunk gutters, full-row
-//! Added/Removed backgrounds, optional line-number columns, and
-//! prefix-stripped/escaped body text, while the preview rows are
-//! host-composed semantic lines ("  + ", "  ~ ", section headers) with
-//! product span styles — no byte-identical mapping exists. Semantic diff
-//! computation (`save_preview.rs`) is untouched either way.
-
 use crossterm::event::KeyEvent;
 use ratatui::{
     Frame,
@@ -161,33 +143,22 @@ impl ConfirmSaveFocus {
     }
 }
 
-/// State for the `ConfirmSave` modal. The caller pre-builds the content
-/// `lines` from the editor state so the widget itself stays dumb.
-///
-/// `effective_removals` and `final_mounts` carry the planner's output
-/// through the confirm step — `input.rs::save_editor` consumes them when
-/// the operator commits, and no second `plan_edit`/`plan_create` call is
-/// needed after confirmation.
 #[derive(Debug, Clone)]
 pub struct ConfirmSaveState<M: Clone = ()> {
     pub lines: Vec<Line<'static>>,
     pub focus: ConfirmSaveFocus,
-    /// Vertical scroll offset — how many lines are hidden above the visible window.
+
     pub scroll_offset: u16,
     preview_rows: u16,
-    /// `plan_edit`'s `effective_removals`, forwarded into
-    /// `edit_workspace`. Empty for Create flows.
+
     pub effective_removals: Vec<String>,
-    /// `plan_create`'s collapsed mount set. Empty (meaning "no override
-    /// needed") for Edit flows.
+
     pub final_mounts: Option<Vec<M>>,
-    /// `true` when the plan carries mount-collapses.
+
     pub has_collapses: bool,
 }
 
 impl<M: Clone> ConfirmSaveState<M> {
-    /// Build a new `ConfirmSave` modal. Default focus = Cancel so that Enter
-    /// on a freshly-opened confirm never fires the destructive arm (RULE 7).
     #[must_use]
     pub const fn new(lines: Vec<Line<'static>>) -> Self {
         Self {
@@ -266,18 +237,15 @@ pub fn confirm_save_hint_spans_for_axes(scroll_axes: ScrollAxes) -> Vec<HintSpan
     items
 }
 
-/// Total rows the `ConfirmSave` modal wants given its current line count.
-/// Layout: top border + blank + N content lines + blank + buttons + bottom border = N + 5.
 #[must_use]
 pub fn required_height<M: Clone>(state: &ConfirmSaveState<M>) -> u16 {
-    // 2 borders + 1 leading + content + 1 spacer + 1 buttons + 1 trailing = lines + 6
     let lines = u16::try_from(state.lines.len()).unwrap_or(u16::MAX);
     lines.saturating_add(6)
 }
 
 pub fn prepare_for_render<M: Clone>(area: Rect, state: &mut ConfirmSaveState<M>) {
     let inner = Block::default().borders(Borders::ALL).inner(area);
-    // Subtract 4 fixed rows (leading + spacer + buttons + trailing).
+
     let content_rows = inner.height.saturating_sub(4);
     state.preview_rows = content_rows;
     clamp_scroll_offset(
@@ -296,9 +264,6 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
         &termrock::style::DesignSystem::default(),
     );
 
-    // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
-    // responsible for any deeper indentation; we just add a uniform
-    // left gutter so lines don't butt up against the border.
     let indented: Vec<Line<'_>> = state
         .lines
         .iter()

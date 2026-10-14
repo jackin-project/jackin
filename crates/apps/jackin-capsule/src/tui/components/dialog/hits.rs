@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Dialog hit-testing and overlay box geometry.
 
 use super::github_context::GithubContextView;
 use super::input::{
@@ -16,9 +15,6 @@ use crate::tui::components::modal_rects::{ModalRectSpec, modal_rect};
 use crate::tui::components::palette::palette_filtered_indices;
 
 impl Dialog {
-    /// Return true when `(row, col)` is a dialog hit target that will
-    /// perform an action on click. The daemon uses this to drive OSC 22
-    /// pointer-shape feedback without duplicating dialog layout maths.
     #[must_use]
     pub fn clickable_at(
         &self,
@@ -115,28 +111,12 @@ impl Dialog {
                     PickerRow::Agent(_) | PickerRow::Shell
                 )
             }
-            // Keyboard-only modals — no click targets.
+
             Self::ExitDirty { .. } | Self::ExitInspect { .. } => false,
         }
     }
 
-    /// Box geometry the dialog will render with for `term_rows` /
-    /// `term_cols`. Returned as `(row, col, height, width)`. Kept
-    /// next to the render functions so any layout change updates
-    /// both surfaces at once.
-    ///
-    /// Height clamps to the area below the status bar so a very small
-    /// terminal does not paint past the bottom edge (which would
-    /// scroll the host terminal and destroy the operator's pane
-    /// content) and does not overlap row 0 (the brand pill / tab
-    /// strip). The dialog can render unusable when the terminal is
-    /// pathologically small; the trade-off is that the host terminal
-    /// stays in a recoverable state regardless.
     pub(crate) fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
-        // Filterable dialogs reserve 2 extra rows: one for the filter
-        // input and one for the separator above the items list. Item
-        // count tracks the *filtered* set so the box shrinks as the
-        // operator narrows the matches.
         let natural_height = match self {
             Self::CommandPalette {
                 filter,
@@ -145,7 +125,7 @@ impl Dialog {
             } => {
                 let items = u16::try_from(palette_filtered_indices(filter, *close_label).len())
                     .unwrap_or(u16::MAX);
-                items.saturating_add(4) // top + filter + pad + items + bottom
+                items.saturating_add(4)
             }
             Self::SplitDirectionPicker { filter, .. } => {
                 let items = u16::try_from(split_direction_filtered_indices(filter).len())
@@ -185,17 +165,12 @@ impl Dialog {
                     .sum::<usize>();
                 u16::try_from(rows.saturating_add(2)).unwrap_or(u16::MAX)
             }
-            // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
-            // Matches the canonical symmetric dialog layout (Defect 5).
-            // Exit shows the shared data-loss variant (extra warning notes), so
-            // size it from that state rather than the fixed single-line height.
+
             Self::ConfirmAction { kind, .. } => match kind {
                 ConfirmKind::Exit => 10,
                 ConfirmKind::ClosePane | ConfirmKind::CloseTab => 9,
             },
-            // No filter row: top border + items + bottom border.
-            // Top border + command line + separator + one row per credential +
-            // hint + bottom border.
+
             Self::ExecPicker(state) => u16::try_from(state.items.len())
                 .unwrap_or(u16::MAX)
                 .saturating_add(5),
@@ -238,8 +213,7 @@ impl Dialog {
                 side_margin: 4,
                 height,
             },
-            // Exit data-loss confirm has two warning notes wider than PALETTE_WIDTH.
-            // Use the shared Details width percentage (70%) so the notes don't truncate.
+
             Self::ConfirmAction {
                 kind: ConfirmKind::Exit,
                 ..

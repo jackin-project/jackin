@@ -1,39 +1,9 @@
-//! Per-session process and filesystem isolation.
-//!
-//! The capsule supervisor is trusted. Agent sessions are not: they receive a
-//! unique numeric identity, retain only the two DAC capabilities needed to
-//! work in host bind mounts, and are confined with Landlock before `exec`.
-//! Landlock is required rather than best-effort because DAC override would
-//! otherwise let one slot walk into another slot's bind mount.
-//!
-//! The session boundary is intentionally layered. On Landlock ABI 9 and
-//! newer, pathname Unix-socket resolution is denied outside explicitly
-//! writable session roots. Older kernels only get the ABI-3 filesystem rules;
-//! the daemon's kernel peer-UID plus per-session bearer capability then gates
-//! the control socket. Mutable setup, temporary files, and git metadata live
-//! below one root allocated for the exact PTY session. There is no agent-child
-//! grant for capsule-wide state, `/tmp`, or shared GitHub CLI credentials.
-
-// Landlock/capability syscalls are the fail-closed isolation boundary; unsafe
-// is confined to per-site `#[expect]`s inside the Linux-only code below and
-// reviewed as a security API. No unsafe code remains on other targets.
-
 #[cfg(target_os = "linux")]
 use anyhow::Context;
 use anyhow::{Result, bail};
 #[cfg(target_os = "linux")]
 use jackin_protocol::SessionIdentity;
 
-/// Dispatch the internal session wrapper.
-///
-/// Arguments are: `<instance-or-> <uid> <gid> <program> [args...]`.
-/// The wrapper is intentionally not a public user-facing command.
-///
-/// # Errors
-///
-/// Returns an error when the session identity is not admitted, the required
-/// Linux isolation boundary cannot be installed, or the target cannot be
-/// executed.
 pub fn run_isolated_command(args: &[String]) -> Result<()> {
     #[cfg(not(target_os = "linux"))]
     {

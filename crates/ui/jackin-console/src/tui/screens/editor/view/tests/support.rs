@@ -31,8 +31,7 @@ pub(super) fn render_roles_to_dump(ws: WorkspaceConfig, config: &AppConfig) -> S
     })
     .unwrap();
     let buf = term.backend().buffer();
-    // Collapse the buffer to newline-delimited rows so the test
-    // assertion can match per-row semantics ("row N contains `[x]`").
+
     let mut out = String::new();
     for y in 0..buf.area.height {
         for x in 0..buf.area.width {

@@ -10,13 +10,6 @@ const MAX_STRUCTURED_DEPTH: usize = 256;
 const MAX_ACTIVE_ENVELOPES: usize = 64;
 const MAX_PEM_LABEL_BYTES: usize = 128;
 
-/// Incremental redactor for one output stream.
-///
-/// The caller must use a distinct instance for stdout and stderr. Lines are
-/// held until their newline arrives, and incomplete sensitive values are
-/// tracked separately by verified `BuildKit` step envelope. Unframed records
-/// cannot continue an open `BuildKit` value. Malformed values fail closed for
-/// their envelope; an overlong or invalid-UTF-8 record closes the whole stream.
 #[derive(Debug, Default)]
 pub struct StreamRedactor {
     line: Vec<u8>,
@@ -96,8 +89,6 @@ struct Assignment {
     is_authorization: bool,
 }
 
-/// Pending stream mode for an incomplete structured value: malformed input
-/// fails closed, otherwise the structured state carries to the next line.
 fn structured_pending_mode(structured: StructuredState) -> StreamMode {
     if structured.malformed {
         StreamMode::FailedClosed
@@ -106,8 +97,6 @@ fn structured_pending_mode(structured: StructuredState) -> StreamMode {
     }
 }
 
-/// Fail closed unless the bytes after a complete secret value are a safe suffix.
-/// Returns true when the caller must return the redacted output immediately.
 fn reject_unsafe_secret_suffix(
     output: &mut String,
     mode: &mut StreamMode,
@@ -124,8 +113,6 @@ fn reject_unsafe_secret_suffix(
 }
 
 impl StreamRedactor {
-    /// Feed arbitrary byte chunks and return only complete, safe log lines.
-    /// CRLF is normalized by trimming the carriage return before redaction.
     pub fn push_bytes(&mut self, bytes: &[u8]) -> Vec<String> {
         let mut output = Vec::new();
         for &byte in bytes {
@@ -143,9 +130,6 @@ impl StreamRedactor {
             } else if self.line.len() < MAX_STREAM_LINE_BYTES {
                 self.line.push(byte);
             } else {
-                // Once a physical line is too large to inspect in bounded
-                // memory, suppress it and the rest of this stream. It may be
-                // the continuation of a sensitive value.
                 self.line.clear();
                 self.fail_closed();
                 output.push(REDACTED.to_owned());
@@ -154,9 +138,6 @@ impl StreamRedactor {
         output
     }
 
-    /// Process complete records while retaining secret contexts between
-    /// calls. This is for line-oriented sinks whose caller already knows the
-    /// physical record boundary; byte-stream callers should use `push_bytes`.
     pub fn push_complete_text(&mut self, text: &str) -> String {
         if text.len() > MAX_STREAM_LINE_BYTES {
             self.fail_closed();
@@ -178,8 +159,6 @@ impl StreamRedactor {
         output
     }
 
-    /// Finish the stream. An unterminated line is redacted as a complete
-    /// final line, then pending secret contexts are discarded at EOF.
     pub fn finish(&mut self) -> Vec<String> {
         let mut output = Vec::new();
         if !self.line.is_empty() && !self.failed_closed {
@@ -194,7 +173,6 @@ impl StreamRedactor {
         output
     }
 
-    /// Drop pending bytes and secret contexts at an explicit stream boundary.
     pub fn reset(&mut self) {
         self.line.clear();
         self.states.clear();
@@ -212,15 +190,9 @@ impl StreamRedactor {
 
         let buildkit = split_buildkit_line(line);
         if buildkit.step.is_none() && self.states.keys().any(Option::is_some) {
-            // An unframed record cannot be assigned to any active BuildKit
-            // step. Keep it suppressed until its owner emits a verified
-            // envelope record again.
             return Vec::new();
         }
         if buildkit.step.is_some() && self.states.contains_key(&None) {
-            // An unframed secret context has no verified owner to which a
-            // BuildKit record can be attached. Suppress the record and leave
-            // the unframed context open.
             return Vec::new();
         }
         let key = buildkit.step;
@@ -264,10 +236,6 @@ impl StreamRedactor {
                             Vec::new()
                         }
                         Some(_) if indent > block.header_indent => {
-                            // A line that is indented under the secret key but
-                            // falls short of the scalar's inferred or explicit
-                            // body indentation is malformed or ambiguous. Do
-                            // not treat it as a safe sibling record.
                             *mode = StreamMode::FailedClosed;
                             Vec::new()
                         }
@@ -313,11 +281,6 @@ impl StreamRedactor {
             }
             StreamMode::Quoted(mut quoted) => {
                 if secret_assignment(line).is_some() {
-                    // A second secret opener inside an unfinished quote is
-                    // ambiguous: it may be a repeated BuildKit step id from
-                    // another producer sharing this pipe. Never let it close
-                    // the existing value by treating its opening quote as a
-                    // delimiter.
                     *mode = StreamMode::FailedClosed;
                     return Vec::new();
                 }
@@ -522,7 +485,6 @@ impl StreamRedactor {
     }
 }
 
-/// Redact credentials and key material in a complete text value.
 pub fn redact_text(input: &str) -> Cow<'_, str> {
     let mut redactor = StreamRedactor::default();
     let mut redacted = redactor.push_complete_text(input);
@@ -752,9 +714,6 @@ fn safe_secret_suffix(suffix: &str, allow_json_separators: bool) -> bool {
     false
 }
 
-/// Return the explicit YAML block indentation increment, or `None` when the
-/// scalar uses the first content line to infer indentation. An outer `None`
-/// means the indicator is malformed and must fail closed.
 fn yaml_block_indent(bytes: &[u8], start: usize) -> Option<Option<usize>> {
     let mut index = start + 1;
     let mut has_chomping = false;
@@ -840,7 +799,6 @@ fn quoted_value_end(bytes: &[u8], start: usize, state: &mut QuotedState) -> Opti
                 .take_while(|quote| **quote == state.quote)
                 .count();
             if state.delimiter_len == 1 && state.quote == b'\'' && quote_count >= 2 {
-                // YAML single-quoted scalars escape a quote by doubling it.
                 index += 2;
                 continue;
             }
@@ -850,8 +808,7 @@ fn quoted_value_end(bytes: &[u8], start: usize, state: &mut QuotedState) -> Opti
         }
         index += 1;
     }
-    // A physical newline is part of a multiline quoted scalar; retain a
-    // trailing escape so a following quote cannot accidentally end the span.
+
     None
 }
 

@@ -1,33 +1,3 @@
-//! jackin-usage-provider-antigravity: `Antigravity` (`agy`) usage snapshot collection.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`antigravity_snapshot`] — `Antigravity` usage snapshot.
-//!
-//! Official read-only commands (changelog-verified, no model turn):
-//! `agy -p /usage --output-format json` and `agy -p /credits --output-format json`.
-//! Version-gated at >= 1.1.11: older binaries interpret an unknown slash
-//! command as a prompt, so the gate is a correctness boundary, not a nicety.
-//! At >= 1.2.2 the official commands are preferred over the local
-//! `LanguageServerService` loopback API (tokenless break per `CodexBar`); this
-//! module implements the official commands only.
-//!
-//! Response families (see `ref-contracts-C.md` §1):
-//!
-//! * Quota summary (`groups[].buckets[]`, bare, `{response: {groups}}`
-//!   loopback-wrapped, or `{command: {data: {groups}}}` as the live CLI
-//!   emits; `pools[]`/`buckets[]` aliases): exact `bucketId` match
-//!   `gemini-5h` / `gemini-weekly` / `3p-5h` / `3p-weekly`. A parsed summary
-//!   (even empty) wins over legacy shapes.
-//! * Legacy per-model quota (`models{}` map with `quotaInfo`): collapses to
-//!   the worst (lowest) remaining fraction per family and is 5h-only; weekly
-//!   reads "No data". Internal (`isInternal`) and empty-label models are
-//!   dropped, as are availability-only rows: model availability fractions are
-//!   not quota, so an all-available response never becomes fabricated 100%.
-//!
-//! The command response may omit identity: the account label is then empty and
-//!! the credential origin says so, so the broker binds the observation to the
-//! runtime that produced it instead of attaching it to an arbitrary account.
-
 mod buckets;
 mod cli;
 mod credits;

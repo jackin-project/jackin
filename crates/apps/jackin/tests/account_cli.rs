@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Real executable coverage for account onboarding and workspace authorization.
-
 use std::{fs, path::Path, time::Duration};
 
 use assert_cmd::Command;
@@ -45,7 +43,7 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         home.join(".codex/auth.json"),
         r#"{"tokens":{"access_token":"synthetic-default-token"}}"#,
     )?;
-    // A synthetic Claude file prevents querying the real user's macOS Keychain.
+
     fs::create_dir(home.join(".claude"))?;
     fs::write(
         home.join(".claude/.credentials.json"),
@@ -149,8 +147,7 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         .success()
         .stdout(predicate::str::contains("default-codex").not());
     command(home)?.args(["account", "scan"]).assert().success();
-    // Explicit scans honor the tombstone created by `account remove`; a
-    // deliberately removed discovered profile must not be resurrected.
+
     assert!(!registry(home)?.accounts.contains_key("default-codex"));
     Ok(())
 }

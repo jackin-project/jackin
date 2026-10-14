@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console auth-tab UI vocabulary.
-
-/// Which auth section the operator is currently editing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AuthKind {
     Claude,
@@ -19,10 +16,9 @@ pub enum AuthKind {
     Omp,
     Hermes,
     Github,
-    /// Z.AI / GLM Coding Plan: env-only auth kind.
+
     Zai,
-    /// `MiniMax` Token Plan: env-only provider credential. Distinct from agent
-    /// runtimes; credential lives as `MINIMAX_API_KEY` in `[env]`.
+
     Minimax,
 }
 
@@ -120,7 +116,7 @@ impl AuthKind {
             }
             (Self::Cursor, AuthMode::ApiKey) => Some(jackin_core::CURSOR_API_KEY_ENV_NAME),
             (Self::Muse, AuthMode::ApiKey) => Some(jackin_core::META_API_KEY_ENV_NAME),
-            // Omp/Hermes route per-provider keys; no single variable exists.
+
             (Self::Github, AuthMode::Token) => Some(jackin_core::GH_TOKEN_ENV_NAME),
             (Self::Zai, AuthMode::ApiKey) => Some(jackin_core::ZAI_API_KEY_ENV_NAME),
             (Self::Minimax, AuthMode::ApiKey) => Some(jackin_core::MINIMAX_API_KEY_ENV_NAME),
@@ -129,7 +125,6 @@ impl AuthKind {
     }
 }
 
-/// Unified mode enum for the auth-form modal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AuthMode {
     Sync,

@@ -1,64 +1,64 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-// Pre-commit hooks for jackin (hk pinned in mise.toml and mise.lock).
-//
-// Install once per checkout (idempotent):
-//   scripts/hooks-install         # install the repo-owned hook boundary
-// The launcher runs steps through `mise x`, so no shell activation is needed —
-// but Git must find `mise` on Git's runtime PATH. The launcher fails closed
-// when `mise` is unavailable. See CONTRIBUTING.md ("Git hooks") for the
-// full contract.
-//
-// Hook mode is REVIEW: the repo-owned launcher materializes the exact index
-// in a private repository and hk validates that staged tree. Isolated fixes
-// fail the commit and produce a private review patch; the live checkout and
-// compiler artifacts remain untouched. `hk fix` applies fixes explicitly.
-// Temporary source/build paths are owned and cleaned by the launcher.
-//
-// Rust steps use hk's builtins (`cargo_fmt`, `cargo_clippy`); the remaining
-// steps are direct tool invocations (never `mise run`) because `mise` itself
-// is not on PATH inside hook steps launched for GUI git. Keep each command
-// in sync with CI and contributor docs:
-//   - fmt: builtin `cargo_fmt` (CI format gate: `cargo fmt --check`)
-//   - clippy: builtin `cargo_clippy` — workspace-wide `cargo clippy`, the
-//     same scope CI lints (`cargo xtask ci --only lint`)
-//   - actionlint: `cargo xtask ci --only lint` actionlint step (*.yml only)
-//   - swiftlint: `swiftlint lint --strict` (no --config; preserve nested discovery)
-//   - swift-format: `mise -C native run format-check` / `mise -C native run format`
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 amends "package://github.com/jdx/hk/releases/download/v2.5.0/hk@2.5.0#/Config.pkl"
 import "package://github.com/jdx/hk/releases/download/v2.5.0/hk@2.5.0#/Builtins.pkl"
 
 steps {
   ["cargo_fmt"] = Builtins.cargo_fmt
   ["cargo_clippy"] = Builtins.cargo_clippy
-  // NOTE: no `cargo xtask lint` step by design (parent review 2026-09-21).
-  // The umbrella is red on main (container-paths + telemetry-registry +
-  // ratchet, both strict and non-strict) and is enforced by zero CI jobs
-  // (no generated unit, desktop graph, or mise aggregate invokes it), so
-  // a hook step would block every commit on debt no pipeline requires.
-  // Re-add only after the debt is green AND a CI job enforces it.
+
+
+
+
+
+
   ["actionlint"] {
-    // Tightened to *.yml: CI (crates/tools/jackin-xtask/src/ci.rs) lints *.yml
-    // only, while the hk builtin also matches *.yaml.
+
+
     glob = ".github/workflows/*.yml"
     check = "actionlint {{files}}"
   }
   ["swiftlint"] {
-    // Uses the native command directly (do not pass files: an explicit
-    // path list would disable SwiftLint's nested-config discovery).
-    // Skipped where swiftlint is unavailable (non-macOS). The `|| true`
-    // matters: hk's exec() throws on nonzero exit, so a bare
-    // `command -v` would fail the step instead of skipping it.
+
+
+
+
+
     glob = "native/**/*.swift"
     condition = "exec('command -v swiftlint || true') != ''"
     check = "cd native && swiftlint lint --strict"
   }
   ["swift-format"] {
-    // Mirrors `mise -C native run format-check` / `mise -C native run format`
-    // (excludes generated JackinUsageBindings, like the tasks). Skipped
-    // where xcrun is unavailable (non-macOS); nothing here assumes macOS
-    // unconditionally.
+
+
+
+
     glob = "native/**/*.swift"
     condition = "exec('command -v xcrun || true') != ''"
     check = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
@@ -69,8 +69,8 @@ steps {
 hooks {
   ["pre-commit"] {
     fix = true
-    // Snapshot ownership lives in scripts/pre-commit-snapshot. Keeping hk's
-    // own stash disabled keeps the exact isolated staged view intact.
+
+
     stash = "none"
     stage = false
     fail_on_fix = true

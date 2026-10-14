@@ -273,7 +273,7 @@ fn entrypoint_kimi_branch_forwards_model_args() {
         .unwrap();
     assert!(kimi_section.contains("LAUNCH=(kimi --yolo)"));
     assert!(kimi_section.contains("LAUNCH+=(\"$@\")"));
-    // Guard against re-adding incompatible flags (--yolo and --auto are mutually exclusive).
+
     assert!(!kimi_section.contains("--auto"));
 }
 
@@ -321,9 +321,6 @@ fn derived_image_snapshots_agent_home_defaults() {
         None,
     );
 
-    // The snapshot roots (data + paired config) are the `for dir in …` list,
-    // sorted, moved by one templated mv. Targets are NOT pre-created (so the mv
-    // renames onto them instead of nesting `.claude/.claude`).
     assert!(dockerfile.contains(
         "for dir in '.claude' '.codex' '.config/amp' '.config/opencode' '.grok' '.kimi-code' '.local/share/amp' '.local/share/opencode'; do"
     ));
@@ -349,7 +346,6 @@ fn derived_image_snapshots_only_selected_agent_home_defaults() {
         None,
     );
 
-    // Only Claude's root is in the snapshot loop; sibling roots are absent.
     assert!(dockerfile.contains("for dir in '.claude'; do"));
     for name in ["'.codex'", "'.local/share/amp'", "'.kimi-code'", "'.grok'"] {
         assert!(

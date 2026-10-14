@@ -5,11 +5,7 @@ use super::*;
 
 #[test]
 fn spend_acc_commit_sets_totals_and_is_idempotent() {
-    // Recompute writes by assignment, never `+=`, so re-applying the same pass
-    // does not double-count — the regression guard for the prior shared-offset
-    // double-count bug in the sum-per-message adapters.
     let mut totals = TokenTotals {
-        // Pre-existing (larger) totals must be REPLACED, not added to.
         input_tokens: 999,
         output_tokens: 999,
         ..TokenTotals::default()
@@ -30,7 +26,6 @@ fn spend_acc_commit_sets_totals_and_is_idempotent() {
     assert_eq!(totals.cost_usd, Some(0.5));
     assert_eq!(totals.model.as_deref(), Some("claude-sonnet-4-6"));
 
-    // Same pass again -> no change, totals stay put (idempotent).
     assert!(!acc().commit(&mut totals));
     assert_eq!(totals.input_tokens, 100);
 }
@@ -42,7 +37,7 @@ fn spend_acc_commit_never_clobbers_model_with_none() {
         model: Some("kimi".to_owned()),
         ..TokenTotals::default()
     };
-    // A later pass resolves tokens but no model -> model must survive.
+
     SpendAcc {
         input: 20,
         seen: true,
@@ -57,7 +52,7 @@ fn spend_acc_commit_never_clobbers_model_with_none() {
 fn find_provider_files_walks_nested_dirs_and_filters_extension() {
     let dir = TempDir::new().unwrap();
     let base = dir.path();
-    // Codex-style YYYY/MM/DD nesting (3 levels deep) plus a top-level file.
+
     let nested = base.join("2026").join("06").join("26");
     std::fs::create_dir_all(&nested).unwrap();
     std::fs::write(nested.join("rollout-1.jsonl"), "{}").unwrap();
@@ -75,8 +70,6 @@ fn find_provider_files_walks_nested_dirs_and_filters_extension() {
     assert!(found.iter().any(|p| p.ends_with("rollout-1.jsonl")));
     assert!(found.iter().any(|p| p.ends_with("top.jsonl")));
 
-    // max_depth 0 reads only the top level (Amp's flat layout): the nested
-    // rollout is excluded, the top-level file is kept.
     let flat = find_provider_files(&[base.to_str().unwrap()], "jsonl", 0).unwrap();
     assert_eq!(flat.len(), 1, "flat walk keeps only the top-level jsonl");
     assert!(flat[0].ends_with("top.jsonl"));
@@ -220,7 +213,6 @@ fn reconcile_registers_new_and_drops_exited_sessions() {
     assert!(monitor.contains_session(1));
     assert!(monitor.contains_session(2));
 
-    // Session 2 exits, session 3 appears.
     monitor.reconcile_sessions(&[(1, Agent::Claude), (3, Agent::Amp)]);
     assert!(monitor.contains_session(1));
     assert!(

@@ -12,12 +12,8 @@ fn git_entries_render_with_git_suffix() {
     std::fs::create_dir_all(repo.join(".git")).unwrap();
     std::fs::create_dir(tmp.path().join("plain")).unwrap();
 
-    // Use a state where the selection is NOT on the git row, so the
-    // suffix renders as a separate span rather than getting absorbed
-    // into the highlight style.
     let mut state = make_state_at(tmp.path().to_path_buf());
-    // Sort order is alphabetical lowercase: plain < repo. Select plain
-    // (index 0) so repo's ` (git)` suffix renders unhighlighted.
+
     state.list_state.select(Some(0));
 
     let backend = TestBackend::new(40, 10);
@@ -62,9 +58,7 @@ fn non_git_entry_renders_its_product_name() {
         .unwrap();
 
     let buffer = terminal.backend().buffer();
-    // Locate the first cell of the name "plain" — rows start at y=0
-    // with the block's top border, so the first entry sits at y=1
-    // and the name begins at x = 1 (border) + 2 (indent) = 3.
+
     let cell = &buffer[(3, 1)];
     assert_eq!(
         cell.symbol(),
@@ -197,7 +191,7 @@ fn git_entry_renders_product_name_and_marker() {
     std::fs::create_dir_all(repo.join(".git")).unwrap();
 
     let mut state = make_state_at(tmp.path().to_path_buf());
-    // Clear selection so the highlight style doesn't mask the spans.
+
     state.list_state.select(None);
 
     let backend = TestBackend::new(40, 10);
@@ -209,8 +203,7 @@ fn git_entry_renders_product_name_and_marker() {
         .unwrap();
 
     let buffer = terminal.backend().buffer();
-    // First entry row is at y=1 (below the block's top border).
-    // Name starts at x = 1 (border) + 2 (indent) = 3.
+
     let name_cell = &buffer[(3, 1)];
     assert_eq!(
         name_cell.symbol(),
@@ -218,8 +211,7 @@ fn git_entry_renders_product_name_and_marker() {
         "expected 'r' at name's first char, got {:?}",
         name_cell.symbol()
     );
-    // Suffix: "  repo/ (git)" — the '(' of "(git)" sits at
-    // x = 3 (name start) + 5 (len of "repo/") + 1 (space) = 9.
+
     let paren_cell = &buffer[(9, 1)];
     assert_eq!(
         paren_cell.symbol(),

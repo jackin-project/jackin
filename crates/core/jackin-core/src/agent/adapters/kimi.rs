@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Kimi Code adapter.
-
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
@@ -13,7 +11,6 @@ use crate::agent::runtime::{
 const FALLBACK_INSTALL_COMMAND: &str =
     bounded_fallback_curl!("https://code.kimi.com/kimi-code/install.sh", " | bash");
 
-/// [`crate::agent::runtime::AgentRuntime`] adapter for Kimi Code.
 #[derive(Debug)]
 pub(crate) struct KimiRuntime;
 
@@ -73,16 +70,14 @@ RUN set -euxo pipefail && \\
 
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
-            // Kimi stores credentials in ~/.kimi-code/ as a directory.
             credential_dir: ".kimi-code",
-            config_dir: None,      // all durable state under ~/.kimi-code
-            credential_file: None, // directory-based provisioning
-            folder_env_var: None,  // no standard folder env var
+            config_dir: None,
+            credential_file: None,
+            folder_env_var: None,
         }
     }
 
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
-        // `kimi --version` returns e.g. "kimi 1.2.3"; try first token, then second.
         let mut tokens = raw.split_whitespace();
         let first = tokens.next()?;
         if looks_like_version(first) {

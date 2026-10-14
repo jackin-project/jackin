@@ -99,20 +99,20 @@ fn unsupported_version_errors_clearly() {
 #[test]
 fn list_records_for_workspace_walks_all_container_dirs() {
     let data = TempDir::new().unwrap();
-    // Container A: workspace=jackin
+
     let a = data.path().join("jk-a1b2c3d4-thearchitect");
     std::fs::create_dir_all(&a).unwrap();
     let mut rec_a = sample_record();
     rec_a.container_name = "jk-a1b2c3d4-thearchitect".into();
     write_records(&a, std::slice::from_ref(&rec_a)).unwrap();
-    // Container B: workspace=jackin
+
     let b = data.path().join("jk-k7p9m2xq-thebuilder");
     std::fs::create_dir_all(&b).unwrap();
     let mut rec_b = sample_record();
     rec_b.container_name = "jk-k7p9m2xq-thebuilder".into();
     rec_b.scratch_branch = "jackin/scratch/the-builder".into();
     write_records(&b, std::slice::from_ref(&rec_b)).unwrap();
-    // Container C: workspace=docs (must be skipped when filtering by jackin)
+
     let c = data.path().join("jk-b2c3d4e5-docwriter");
     std::fs::create_dir_all(&c).unwrap();
     let mut rec_c = sample_record();

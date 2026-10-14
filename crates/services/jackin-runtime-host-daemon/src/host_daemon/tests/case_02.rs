@@ -7,13 +7,9 @@ use super::*;
 fn telemetry_health_round_trip_is_typed_and_sanitized() {
     let (_temp, _paths, layout) = layout();
     let mut attention = AttentionAdapter::new(RecordingNotifier::default());
-    // The diagnostics lifecycle is process-global and other tests exercise
-    // its flush/shutdown transitions. Capture the pre-request state instead
-    // of assuming this test owns a fresh process.
+
     let health_before = jackin_diagnostics::telemetry_health_snapshot();
-    // Scope spans privately: without a thread-local subscriber they reach
-    // the process-global wire exporter owned by the concurrently running
-    // wire conformance test.
+
     let (_export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
     let request = DaemonRequest {
@@ -62,9 +58,7 @@ fn telemetry_health_round_trip_is_typed_and_sanitized() {
 fn protocol_and_build_mismatch_fail_closed() {
     let (_temp, _paths, layout) = layout();
     let mut attention = AttentionAdapter::new(RecordingNotifier::default());
-    // Scope spans privately: without a thread-local subscriber they reach
-    // the process-global wire exporter owned by the concurrently running
-    // wire conformance test.
+
     let (_export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
     let protocol = DaemonRequest {
@@ -162,9 +156,7 @@ fn attention_snapshot_request_reports_muted_without_dispatch_count() {
         muted: true,
         ..RecordingNotifier::default()
     });
-    // Scope spans privately: without a thread-local subscriber they reach
-    // the process-global wire exporter owned by the concurrently running
-    // wire conformance test.
+
     let (_export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
     let request = DaemonRequest {

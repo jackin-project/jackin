@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Cursor` period usage fetch and buckets.
 
 use super::cursor_dashboard_url_with_base;
 use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
@@ -8,7 +7,6 @@ use jackin_usage_provider_core::{
     bucket, format_currency, json_number, provider_http_client, timed_bucket, with_status_slot,
 };
 
-/// Connect-protocol POST: JSON body `{}`, bearer auth, protocol version 1.
 pub fn cursor_dashboard_post(
     base: &str,
     token: &str,
@@ -35,9 +33,6 @@ pub fn cursor_dashboard_post(
         .map_err(|error| format!("Cursor {method} decode failed: {error}"))
 }
 
-/// Current-period allowance/spend. `total_spend`/`limit` are display-scale
-/// numbers (major units); the scale is unverified, so they stay labels and
-/// never become structured [`Money`].
 #[derive(Debug, Clone)]
 pub struct CursorPeriodUsage {
     pub(crate) enabled: bool,
@@ -54,8 +49,6 @@ pub fn fetch_cursor_period_usage(base: &str, token: &str) -> Result<CursorPeriod
 }
 
 pub fn parse_cursor_period_usage(value: &serde_json::Value) -> Option<CursorPeriodUsage> {
-    // Live `GetCurrentPeriodUsage` returns `planUsage` at the top level; older
-    // captures nested it under `usage`. Accept both, preferring nested.
     let usage = value.get("usage").unwrap_or(value);
     let plan = usage.get("planUsage")?;
     let total_percent_used = ["totalPercentUsed", "total_percent_used", "percentUsed"]
@@ -91,8 +84,6 @@ pub fn parse_cursor_period_usage(value: &serde_json::Value) -> Option<CursorPeri
     })
 }
 
-/// `planUsage` present but limit-less: fall back to request-based/REST meters
-/// instead of rendering a limit the server never stated.
 pub fn cursor_needs_request_fallback(usage: &CursorPeriodUsage) -> bool {
     usage.limit.is_none()
 }
@@ -120,8 +111,6 @@ pub fn cursor_period_buckets(
                 None,
                 UsageSnapshotStatus::Fresh,
             ),
-            // The billing-cycle meter is the primary quota (a cycle meter, so
-            // the Weekly slot per the Grok precedent for cycle meters).
             Some(StatusSlot::Weekly),
         ));
     }
@@ -147,8 +136,6 @@ pub fn cursor_period_buckets(
                 None,
                 UsageSnapshotStatus::Fresh,
             ),
-            // Labels only (unverified scale): a detail Spend row without
-            // structured money, so no headline figure is derived from it.
             Some(StatusSlot::Spend),
         ));
     }

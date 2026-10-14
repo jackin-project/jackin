@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Periodic state tick: metrics, token probes, and agent-state refresh.
 
 use std::time::Instant;
 
@@ -25,13 +24,7 @@ pub(crate) async fn handle_state_tick(
 ) {
     mux.record_resource_metrics().await;
     mux.maybe_spawn_pull_request_context_lookup(Instant::now());
-    // Reap idle clipboard-image transfers and surface a notice. Must NOT
-    // short-circuit the tick: agent-state advancement below is the 1 Hz floor —
-    // every session re-evaluates each tick — and a clipboard reap is an
-    // orthogonal concern that must not freeze it. The `invalidate` guarantees
-    // the notice repaints even if no agent state changed this tick (otherwise
-    // the no-change return below would leave the frame clean and the notice
-    // never painted).
+
     let stale_image_transfer_ids = mux
         .clipboard
         .clipboard_image_transfers
@@ -55,15 +48,9 @@ pub(crate) async fn handle_state_tick(
         ));
         mux.invalidate(status_change_redraw_reason());
     }
-    // Evidence arbitration is the ONLY path that authors agent state. Each
-    // session assembles an EvidenceSnapshot (authority, process, OSC, screen)
-    // in `advance_status`, arbitrates to a raw state + confidence, and
-    // publishes through SessionStatus (which derives the public `effective`
-    // state, incl. done-from-seen).
+
     let now = Instant::now();
-    // Token-spend monitor: keep it synced to the live agent sessions and poll
-    // any due providers. `poll_due_sessions` self-throttles to the 30s/60s
-    // cadence, so calling it each state tick is cheap.
+
     let token_sessions: Vec<(u64, Agent)> = mux
         .session_supervisor
         .sessions
@@ -71,9 +58,7 @@ pub(crate) async fn handle_state_tick(
         .filter_map(|(id, s)| Some((id, Agent::from_slug(s.agent.as_deref()?)?)))
         .collect();
     mux.usage.token_monitor.reconcile_sessions(&token_sessions);
-    // Returned changed-id list is unused for now (no live event stream yet);
-    // the poll updates the cached per-session totals that
-    // `ClientMsg::TokenUsage` reads.
+
     if mux.usage.token_monitor.due_session_count() == 0 {
         record_skipped_provider_probe();
     } else {
@@ -93,12 +78,7 @@ pub(crate) async fn handle_state_tick(
             }
         }
     }
-    // Snapshot visible agent state, refresh, snapshot again. The ticker's only
-    // time-based effect is Working→Idle transitions; tab labels derive from
-    // state and the status bar has no per-second counter, so when state is
-    // unchanged the chrome is identical. A full redraw (clear + repaint) every
-    // tick reads as a constant flicker, so skip it unless state actually
-    // changed.
+
     let states_before: Vec<_> = mux
         .session_supervisor
         .sessions
@@ -106,14 +86,10 @@ pub(crate) async fn handle_state_tick(
         .map(|(id, s)| (id, s.state))
         .collect();
     for (_, session) in mux.session_supervisor.sessions.iter_mut() {
-        // Session::advance_status is the sole state-authoring path; the daemon
-        // only reacts to the resulting transition.
         let tick = session.advance_status(rule_registry, now);
         record_agent_status_tick(session, tick);
     }
-    // Seen/ack: the focused pane is being reviewed, so it must never linger on
-    // `done`. Acknowledge it each tick (idempotent — only done→idle changes
-    // anything), which records the seen revision.
+
     if let Some(focused) = mux.active_focused_id()
         && let Some(session) = mux.session_supervisor.sessions.get_mut(focused)
         && let Some(effective) = session.status.acknowledge()
@@ -143,9 +119,7 @@ pub(crate) async fn handle_state_tick(
         mux.invalidate(dialog_change_redraw_reason());
         return;
     }
-    // A modal owns the whole screen behind an opaque backdrop; repainting the
-    // status/branch chrome here would draw it back over the fill, so skip the
-    // chrome frame while a dialog is open.
+
     if mux.dialog_open() {
         return;
     }

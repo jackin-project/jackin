@@ -131,9 +131,6 @@ pub(super) fn antigravity_usage_view_fixture() -> jackin_protocol::control::Focu
         "Updated 5m ago",
         vec![
             quota_bucket("Gemini · 5h", 73, Some("Resets in 1h 30m"), Some("On pace")),
-            // Legacy weekly fallback: no percent, no meter. The label head
-            // collides with the Gemini provider name, which used to route
-            // this row through the overview arm (S4/S5 parity).
             text_bucket("Gemini · Weekly", "No data"),
             quota_bucket(
                 "Other models · 5h",

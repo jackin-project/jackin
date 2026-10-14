@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Codex` quota windows and reset credits.
 
 use super::{CodexIndividualLimit, CodexUsageResponse, CodexWindowSnapshot};
 use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
@@ -46,7 +45,6 @@ impl CodexUsageResponse {
                 .or(limit.metered_feature.as_deref())
                 .map_or_else(|| "Codex extra limit".to_owned(), codex_limit_label);
             if let Some(rate_limit) = &limit.rate_limit {
-                // Extra per-feature limits are detail rows, never the headline.
                 push_codex_window(
                     &mut buckets,
                     &format!("{label} 5-hour"),
@@ -228,8 +226,7 @@ pub fn push_codex_window(
     };
     let used = window.used_percent_clamped();
     let remaining = used.map(|value| 100u8.saturating_sub(value));
-    // The label carries the raw figure (`142% used` over cap); only the
-    // remaining bar clamps. Negative garbage floors at 0, never "-3% used".
+
     let used_label = window
         .used_percent_raw()
         .map(|raw| codex_used_label(raw.max(0.0)));
@@ -252,8 +249,6 @@ pub fn push_codex_window(
     ));
 }
 
-/// Used-side label preserving the raw provider figure, including over-cap
-/// readings (`142% used`) — the Muse lane renders the same form.
 pub(crate) fn codex_used_label(used_percent: f64) -> String {
     if used_percent.fract() == 0.0 {
         format!("{used_percent:.0}% used")

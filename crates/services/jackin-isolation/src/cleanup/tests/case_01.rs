@@ -147,10 +147,7 @@ async fn inconclusive_or_present_verification_retains_registration_and_record() 
         let container = TempDir::new().unwrap();
         let rec = rec_for(repo.path(), container.path());
         save(&rec, container.path());
-        // Queue: initial scratch_tip (tip present), rev-parse
-        // --show-ref-format ("files"; tip non-empty so no object-format
-        // query), pre-deletion reinspect (tip still present), then the
-        // post-deletion verification under test (malformed or present).
+
         let mut runner = FakeRunner::with_capture_queue([
             tip_row(&rec),
             "files".into(),
@@ -325,9 +322,6 @@ async fn verification_capture_error_after_deletion_retains_retry_authority() {
     let rec = rec_for(repo.path(), container.path());
     save(&rec, container.path());
     let mut runner = VerifyFailureRunner {
-        // Initial scratch_tip (tip present), rev-parse --show-ref-format,
-        // pre-deletion reinspect (tip still present); the 4th call
-        // (verify-deletion) is failed by the wrapper above.
         inner: FakeRunner::with_capture_queue([tip_row(&rec), "files".into(), tip_row(&rec)]),
         ..Default::default()
     };

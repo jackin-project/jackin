@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded in-memory invocation progress and timing state.
-
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 #[cfg(test)]
@@ -40,11 +38,11 @@ pub struct RunDiagnostics {
     run_id: String,
     scope: PathBuf,
     debug: bool,
-    /// Per-stage start timestamps for wall-clock timing (Defect 47.5).
+
     stage_starts: Mutex<HashMap<String, Instant>>,
-    /// Per-stage tracing spans so progress events for one stage stay correlated.
+
     stage_spans: Mutex<HashMap<crate::DiagnosticStage, tracing::Span>>,
-    /// Fine-grained timing starts nested under broad launch stages.
+
     timing_starts: Mutex<HashMap<String, Instant>>,
 }
 
@@ -66,10 +64,7 @@ impl Drop for ActiveRunGuard {
         if let Some(active_dir) = self.active_dir.take() {
             locked(active_run_by_dir()).remove(&active_dir);
         }
-        // Flush OTLP batches here, not at the call sites in `app::run`: the
-        // guard is a run-scoped local, so this fires on every exit path —
-        // including `?` error early-returns — instead of only the two
-        // success returns. No-op unless OTLP export was configured.
+
         crate::observability::shutdown_otlp();
     }
 }
@@ -85,27 +80,20 @@ impl RunDiagnostics {
         command: &str,
         identity: crate::observability::ServiceIdentity,
     ) -> anyhow::Result<Arc<Self>> {
-        // Mint before subscriber init: the OTLP resource carries the run id.
         let run_id = jackin_telemetry::identity::current_invocation().map_or_else(
             || jackin_telemetry::identity::InvocationId::mint().to_string(),
             |id| id.to_string(),
         );
-        // Install direct OTLP export when configured.
+
         let (otlp_active, otlp_error) =
             match crate::observability::init_tracing_for(debug, &run_id, identity) {
                 Ok(active) => (active, None),
-                // "already installed" is benign (a test harness set its own
-                // subscriber); treat as inactive with no operator-facing error.
+
                 Err(error) if error.to_string().contains("already installed") => (false, None),
-                // A configured endpoint whose exporter fails or uses an unsupported
-                // protocol is a real loss of requested telemetry. Surface one
-                // compact operator breadcrumb while product work remains fail-open.
+
                 Err(error) => (false, Some(error.to_string())),
             };
-        // Export not installed, no build error, yet endpoint vars ARE set: the
-        // config is incomplete (e.g. a metrics endpoint with no traces/logs base,
-        // which can't satisfy the mandatory traces+logs signals). Surface it as a
-        // breadcrumb rather than treating export as never requested.
+
         let otlp_error = otlp_error.or_else(|| {
             (!otlp_active && crate::observability::otlp_endpoint_configured()).then(|| {
                 "OTLP endpoint configured but incomplete (traces and logs endpoints required)"
@@ -121,8 +109,6 @@ impl RunDiagnostics {
             timing_starts: Mutex::new(HashMap::new()),
         });
         if let Some(error) = otlp_error {
-            // Emit the compact operator notice on stderr, or defer it while a rich
-            // TUI owns the terminal. There is no local telemetry fallback.
             let line = format!("OTLP export disabled: {error}");
             run.compact("otlp", &line);
             crate::logging::emit_compact_line("otlp", &line);
@@ -189,11 +175,7 @@ impl RunDiagnostics {
         _detail: Option<&str>,
     ) {
         let stage_label = stage.as_str();
-        // Track wall-clock stage timings for the end-of-run summary (Defect 47.5).
-        // A stage runs on the operator's foreground launch path, so a slow one is a
-        // foreground wait the operator is paying for; capture its duration to
-        // explain any wait over the threshold (acceptance: explain every
-        // foreground wait over 500ms).
+
         let mut foreground_wait_ms: Option<u64> = None;
         match kind {
             "stage_started" => {
@@ -240,17 +222,8 @@ impl RunDiagnostics {
         }
     }
 
-    /// Threshold above which a foreground wait is explicitly explained in the
-    /// diagnostics stream, not merely timed. The operator is blocked at the
-    /// terminal for the whole foreground launch path, so any single stage that
-    /// holds them longer than this gets a typed `slow_foreground_wait` event
-    /// naming the stage and its cost (acceptance: explain every foreground wait
-    /// over 500ms).
     pub const FOREGROUND_WAIT_EXPLAIN_THRESHOLD_MS: u64 = 500;
 
-    /// Emit a `slow_foreground_wait` diagnostic when a foreground stage/timing
-    /// exceeds [`Self::FOREGROUND_WAIT_EXPLAIN_THRESHOLD_MS`]. No-op below the
-    /// threshold so the stream stays quiet for the fast path.
     fn explain_foreground_wait(&self, label: &str, ms: u64) {
         let Some(wait) =
             slow_foreground_wait_payload(label, ms, Self::FOREGROUND_WAIT_EXPLAIN_THRESHOLD_MS)
@@ -319,7 +292,6 @@ impl RunDiagnostics {
         }
     }
 
-    /// Close any unfinished in-memory timing state and emit a bounded summary event.
     pub fn emit_run_summary(&self) {
         let unclosed = self.drain_unclosed_keys();
         crate::observability::emit_progress_event(
@@ -386,12 +358,6 @@ impl RunDiagnostics {
         true
     }
 
-    /// Emit a structured `container_exited` or `container_crash` event.
-    ///
-    /// Call this when the container exits non-normally (pre-attach crash,
-    /// OOM kill, or non-zero post-attach exit). For clean `exit 0` post-attach
-    /// shutdowns, no event is needed.
-    ///
     pub fn container_exited(&self, exit_code: i64, oom_killed: bool) {
         let kind = if exit_code != 0 || oom_killed {
             "container_crash"
@@ -492,16 +458,10 @@ pub fn install_host_panic_hook() {
     });
 }
 
-/// Emit the standard bounded crash event used by both host and capsule panic
-/// hooks. Panic payloads are untrusted free text, so redaction precedes the
-/// four-KiB export cap.
 pub fn emit_panic_crash(info: &std::panic::PanicHookInfo<'_>, context: &str) {
     emit_crash_message(context, panic_payload(info));
 }
 
-/// Print a default-hook-style panic summary after redacting the payload and
-/// location. Calling Rust's default hook with the original `PanicHookInfo`
-/// would write the untrusted payload directly to stderr.
 pub fn write_redacted_panic_to_stderr(info: &std::panic::PanicHookInfo<'_>) {
     let thread_name = std::thread::current().name().map(str::to_owned);
     let header = match (thread_name, info.location()) {
@@ -568,8 +528,6 @@ pub(crate) fn emit_crash_message(context: &str, payload: &str) {
     );
 }
 
-/// A fresh session id for the capsule's `session.id`. One daemon run is one
-/// session; the id groups all of its OTLP telemetry into a single timeline.
 #[must_use]
 pub fn mint_session_id() -> String {
     let mut rng = rand::rng();
@@ -582,8 +540,6 @@ fn timing_key(stage: &str, name: &str) -> String {
 }
 
 fn launch_stage_span(stage: crate::DiagnosticStage) -> tracing::Span {
-    // Registered span names only (plan 007) — free-form stage strings cannot
-    // invent unbounded `launch.{token}` names.
     let otel_name = stage.span_name();
     let span = tracing::info_span!(
         "launch_stage",
@@ -594,8 +550,7 @@ fn launch_stage_span(stage: crate::DiagnosticStage) -> tracing::Span {
     );
     {
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-        // Derived-image build is a peer subsystem of launch: link it to the active
-        // launch span so the BuildKit trace is not a peer without a parent (plan 044).
+
         if stage == crate::DiagnosticStage::DerivedImage {
             use opentelemetry::trace::TraceContextExt as _;
             let parent_ctx = tracing::Span::current().context();
@@ -612,9 +567,6 @@ struct SlowForegroundWait {
     message: String,
 }
 
-/// Build the `slow_foreground_wait` payload when `ms` exceeds `threshold`; `None`
-/// at or below it. Pure so the threshold decision and payload shape are
-/// unit-testable without a tracing subscriber.
 fn slow_foreground_wait_payload(
     label: &str,
     ms: u64,

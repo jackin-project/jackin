@@ -1,12 +1,3 @@
-//! jackin-usage-store-backend: turso `SQLite` import chokepoint.
-//!
-//! **Architecture Invariant:** T1.
-//! Entry point: [`connect_local`] — open a local store connection.
-//!
-//! All production and test usage-store code — and the host CLI usage
-//! cache under `crates/apps/jackin` — reaches turso through this crate so a
-//! version bump or backend swap is one-file work.
-
 use std::future::Future;
 use std::time::Instant;
 
@@ -55,7 +46,6 @@ pub async fn operation<T, E>(
     result
 }
 
-/// Open a local `SQLite` database at `path` and return a connection.
 pub async fn connect_local(path: &str) -> Result<Connection, String> {
     operation(DbOperation::Connect, async {
         let db = turso::Builder::new_local(path)

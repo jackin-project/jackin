@@ -1,8 +1,3 @@
-//! jackin-usage-host-glance: host label and glance-row builders.
-//!
-//! **Architecture Invariant:** T4.
-//! Entry point: [`build_provider_glance_row`] — build one glance row.
-
 mod render;
 
 pub use render::{

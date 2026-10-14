@@ -43,8 +43,6 @@ fn disc_source_cache_alias_request_refreshes_through_governed_name() {
         panic!("alias declaration must resolve");
     };
 
-    // Refresh routing addresses the governed name; the alias-resolved secret
-    // must be reachable through it.
     match resolver.refresh_provider_credential(HostSurfaceId::Codex, "OPENAI_API_KEY", handle) {
         ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {
             assert_eq!(
@@ -54,7 +52,7 @@ fn disc_source_cache_alias_request_refreshes_through_governed_name() {
         }
         other => panic!("governed-name refresh must hit the alias cache: {other:?}"),
     }
-    // A direct governed-name request for the same declaration shares the entry.
+
     let mut governed_config = AppConfig::default();
     governed_config.env.insert(
         "OPENAI_API_KEY".to_owned(),

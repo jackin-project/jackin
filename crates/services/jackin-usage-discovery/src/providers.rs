@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Per-provider profile identity.
 
 use crate::{
     ProfileCredentialMaterial, ProfileCredentialReader, ProfileReadOutcome, ProfileValidation,
@@ -9,12 +8,6 @@ use crate::{
 
 use std::path::Path;
 
-/// Cursor identity comes from the sibling `cli-config.json` (`authInfo`
-/// email), verified locally; token presence in `auth.json` is proven at
-/// discovery and the path is kept as refresh material, so refresh re-reads
-/// the registered root instead of a stale discovery-time copy. A
-/// present-but-tokenless `auth.json` is malformed, never an anonymous
-/// binding refresh cannot serve.
 pub(crate) fn cursor_profile_identity(
     reader: &dyn ProfileCredentialReader,
     root: &Path,
@@ -43,10 +36,6 @@ pub(crate) fn cursor_profile_identity(
     }
 }
 
-/// Gemini identity comes from `oauth_creds.json` when it names the login;
-/// any valid credential file mints material (the Grok shape), since refresh
-/// only needs discovery-proven OAuth presence until an entitlement endpoint
-/// lands.
 pub(crate) fn gemini_profile_identity(
     reader: &dyn ProfileCredentialReader,
     path: &Path,
@@ -69,10 +58,6 @@ pub(crate) fn gemini_profile_identity(
     )
 }
 
-/// Antigravity identity is the host Keychain grant singleton, probed for
-/// presence only: the CLI owns the secret, so any payload is ignored and no
-/// identity label is extracted. Grant present → anonymous binding with
-/// refresh material; absent/denied propagates truthfully.
 pub(crate) fn antigravity_profile_identity(
     reader: &dyn ProfileCredentialReader,
 ) -> ProfileValidation {
@@ -86,8 +71,6 @@ pub(crate) fn antigravity_profile_identity(
     }
 }
 
-/// Muse identity comes from `auth.json` (`providers.meta.user_email`),
-/// verified locally; the secret itself stays in the host Keychain.
 pub(crate) fn muse_profile_identity(
     reader: &dyn ProfileCredentialReader,
     path: &Path,
@@ -125,9 +108,6 @@ pub(crate) fn opencode_profile_identity(
                 .map(|parent| parent.join("opencode.db"))
                 .is_some_and(|database| reader.exists(&database))
             {
-                // Database-only OpenCode stores have no materializable auth
-                // source. Do not advertise a usage profile until the database
-                // credential identity can be carried through launch binding.
                 ProfileValidation::Malformed
             } else {
                 ProfileValidation::Missing

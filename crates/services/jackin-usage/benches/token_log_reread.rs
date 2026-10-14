@@ -1,9 +1,3 @@
-//! Token-log whole-file re-read recompute cost (plan 026).
-//!
-//! ```sh
-//! cargo bench -p jackin-usage --bench token_log_reread -- --test
-//! ```
-
 #![expect(clippy::panic, reason = "criterion bench harness: fail-fast setup")]
 
 use std::hint::black_box;
@@ -44,7 +38,6 @@ fn bench_reread(c: &mut Criterion) {
         group.bench_function(format!("recompute_{files}x{lines}"), |b| {
             b.iter(|| {
                 let acc = recompute_spend(black_box(&paths), |text, acc: &mut SpendAcc| {
-                    // Cheap fold: count non-empty lines as activity units.
                     acc.input += text.lines().filter(|l| !l.is_empty()).count() as u64;
                     acc.seen = true;
                 });

@@ -10,9 +10,8 @@ fn s_commits_highlighted_entry() {
     let child = parent.join("child");
     std::fs::create_dir_all(&child).unwrap();
 
-    // root = tmp so that neither parent nor child trip the $HOME guard.
     let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-    // Highlighted entry at index 0 is `..`; advance to `child`.
+
     handle_with_services(&mut state, key(KeyCode::Down));
 
     let outcome = handle_with_services(&mut state, key(KeyCode::Char('s')));
@@ -31,7 +30,7 @@ fn s_falls_back_to_cwd_when_directory_is_empty() {
     std::fs::create_dir(&empty).unwrap();
 
     let mut state = state_rooted_at(tmp.path().to_path_buf(), empty.clone());
-    // Empty except for `..` — `s` should commit cwd, not `..`.
+
     let outcome = handle_with_services(&mut state, key(KeyCode::Char('s')));
     match outcome {
         FileBrowserOutcome::Commit(path) => {
@@ -176,9 +175,7 @@ fn h_at_root_is_noop() {
     let tmp = tempdir().unwrap();
     let mut state = make_state_at(tmp.path().to_path_buf());
     handle_with_services(&mut state, key(KeyCode::Char('h')));
-    // After `h` at the sandbox root, cwd must not have moved above
-    // root. Compare root-to-root (both canonicalized by new_at) so the
-    // assertion is platform-robust on macOS's /var → /private/var.
+
     assert_eq!(state.cwd, state.root);
 }
 
@@ -188,7 +185,7 @@ fn l_navigates_into_highlighted_dir() {
     let child = tmp.path().join("child");
     std::fs::create_dir(&child).unwrap();
     let mut state = make_state_at(tmp.path().to_path_buf());
-    // No `..` at root — index 0 is `child`.
+
     handle_with_services(&mut state, key(KeyCode::Char('l')));
     assert_eq!(
         state.cwd.canonicalize().unwrap(),
@@ -215,9 +212,6 @@ fn enter_on_plain_folder_still_navigates() {
 
 #[test]
 fn url_row_rect_none_when_no_url_flag() {
-    // The public helper is parameterised on has_rejection; it always
-    // assumes the git-prompt would render with a URL. This test pins
-    // the returned rect when the overlay would have a URL row.
     let rect = git_prompt_url_row_rect(manufactured_modal_area(), false);
     assert!(rect.is_some(), "URL row should resolve for a valid modal");
     assert_eq!(rect.unwrap().y, 19);
@@ -236,7 +230,6 @@ fn click_on_url_row_without_url_returns_false() {
     assert!(state.pending_git_prompt.is_some());
     assert!(state.pending_git_url.is_none());
 
-    // Click at the URL row's rough centre — still false because no URL.
     let modal = manufactured_modal_area();
     let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
     let opened = state.url_to_open_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
@@ -260,14 +253,11 @@ fn click_outside_url_row_returns_false_even_with_url() {
 
     let modal = manufactured_modal_area();
     let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
-    // One row below the URL row — outside.
+
     let opened = state.url_to_open_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y + 1);
     assert!(opened.is_none(), "click outside URL row should not open");
-    // Column outside the URL row's x-range.
-    let opened = state.url_to_open_on_click(
-        modal, modal.x, // left border column
-        url_rect.y,
-    );
+
+    let opened = state.url_to_open_on_click(modal, modal.x, url_rect.y);
     assert!(opened.is_none(), "click on left border should not open");
 }
 
@@ -291,16 +281,13 @@ fn click_on_url_row_with_url_returns_true() {
         Some("file:///tmp/definitely-not-real"),
         "click on URL row with URL should return URL",
     );
-    // Click doesn't dismiss the prompt.
+
     assert!(state.pending_git_prompt.is_some());
 }
 
 #[cfg(unix)]
 #[test]
 fn commit_rejects_out_of_root_target() {
-    // TOCTOU defence: even if an escaping path somehow reached
-    // `commit_or_reject` (list filtering beaten by a race, or a
-    // future bug elsewhere), the belt-and-suspenders check rejects it.
     let tmp = tempdir().unwrap();
     let root = tmp.path().join("home");
     let outside = tmp.path().join("outside");
@@ -323,9 +310,6 @@ fn commit_rejects_out_of_root_target() {
 #[cfg(unix)]
 #[test]
 fn commit_rejects_symlink_resolving_to_root() {
-    // A symlink under root whose canonical form IS root itself must
-    // be rejected by the $HOME-itself rule — not allowed through just
-    // because the lexical path is `<root>/escape_to_root`.
     let tmp = tempdir().unwrap();
     let root = tmp.path().join("home");
     std::fs::create_dir_all(&root).unwrap();
@@ -348,9 +332,6 @@ fn commit_rejects_symlink_resolving_to_root() {
 #[cfg(unix)]
 #[test]
 fn commit_rejects_symlink_resolving_to_jackin_data() {
-    // A symlink under root whose canonical form lands inside .jackin
-    // must be rejected by the reserved-paths rule — not allowed
-    // through because the lexical path doesn't start with `.jackin`.
     let tmp = tempdir().unwrap();
     let root = tmp.path().join("home");
     let jackin = root.join(".jackin").join("workspaces");
@@ -374,9 +355,6 @@ fn commit_rejects_symlink_resolving_to_jackin_data() {
 #[cfg(unix)]
 #[test]
 fn commit_accepts_symlink_resolving_to_normal_in_root_folder() {
-    // Sanity check: a symlink to a normal subfolder of root should
-    // still commit successfully — the canonicalize-everywhere policy
-    // must not over-reject legitimate symlinks.
     let tmp = tempdir().unwrap();
     let root = tmp.path().join("home");
     let plain = root.join("plain");
@@ -388,8 +366,6 @@ fn commit_accepts_symlink_resolving_to_normal_in_root_folder() {
     let outcome = commit_with_services(&mut fb, link.clone());
     match outcome {
         FileBrowserOutcome::Commit(path) => {
-            // The lexical (returned) path is the symlink itself,
-            // preserving what the operator clicked/highlighted.
             assert_eq!(path, link);
         }
         other => panic!("expected Commit, got {other:?}"),

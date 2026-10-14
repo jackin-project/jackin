@@ -125,7 +125,7 @@ fn select_nested_direct_change_pulls_resolve_dependents() {
         )],
     )
     .expect("select");
-    // jackin-image-fuzz feeds jackin-image (fixture resolve graph), which feeds jackin.
+
     assert_eq!(
         selection.members,
         vec!["jackin".to_owned(), "jackin-image".to_owned()]
@@ -299,7 +299,6 @@ fn scanner_widens_only_on_compilable_non_literals() {
     );
     assert!(inputs.unknown);
 
-    // Out-of-repo literals drop: no commit can change their target.
     let mut inputs = InputOwners::default();
     scan_source_inputs(
         concat!("include_str!", "(\"../../../../../../etc/hostname\");"),
@@ -339,8 +338,6 @@ fn scanner_records_raw_string_path_and_include_literals() {
 
 #[test]
 fn scanner_parses_all_compilable_cooked_escapes() {
-    // Every escape below compiles in a `str` literal, so the `#[path]`
-    // consumer must record (not silently skip) each of them.
     assert_eq!(
         parse_string_literal(r#""a\nb""#),
         Some(("a\nb".to_owned(), 6))
@@ -373,7 +370,7 @@ fn scanner_parses_all_compilable_cooked_escapes() {
         parse_string_literal("\"a\\\n   b\""),
         Some(("ab".to_owned(), 9))
     );
-    // Non-`str` literals never compile in path/include position.
+
     assert_eq!(parse_string_literal("rb\"a\""), None);
     assert_eq!(parse_string_literal("br\"a\""), None);
     assert_eq!(parse_string_literal("\"\\x80\""), None);

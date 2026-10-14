@@ -36,8 +36,7 @@ fn summary_counts_mounts_and_readonly() {
 fn manager_from_config_lists_all_workspaces() {
     let mut config = AppConfig::default();
     config.workspaces.insert("a".into(), empty_ws("/a"));
-    // cwd is unrelated to /a — landing row is the synthetic
-    // "Current directory" at index 0.
+
     let tmp = tempfile::tempdir().unwrap();
     let state = ManagerState::from_config(&config, tmp.path());
     assert_eq!(state.workspaces.len(), 1);
@@ -173,11 +172,6 @@ fn live_running_overlay_backfills_manifest_missing_from_index() {
 
 #[test]
 fn refresh_instances_throttles_within_interval() {
-    // 20 Hz render loop must not reparse instances.json on every
-    // tick. After the first refresh, a follow-up call inside the
-    // throttle window keeps the cached `instances` snapshot even
-    // when the on-disk index changes; `force_refresh_instances_for_test`
-    // bypasses the gate.
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     let mut manifest = InstanceManifest::new(NewInstanceManifest {
@@ -214,8 +208,6 @@ fn refresh_instances_throttles_within_interval() {
     assert_eq!(state.instances.len(), 1);
     assert_eq!(state.instances[0].status, InstanceStatus::Active);
 
-    // Mutate the manifest on disk; without the bypass, an
-    // immediate refresh must observe the cached value.
     manifest.mark_status(InstanceStatus::Crashed);
     manifest
         .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
@@ -230,7 +222,6 @@ fn refresh_instances_throttles_within_interval() {
         "throttle window must keep the cached snapshot",
     );
 
-    // Bypass the throttle — disk state is now observable.
     state.force_refresh_instances_for_test();
     refresh_instances(&mut state, &paths);
     assert_eq!(state.instances[0].status, InstanceStatus::Crashed,);
@@ -274,16 +265,13 @@ fn manager_preselects_saved_workspace_matching_cwd() {
             ..Default::default()
         },
     );
-    // Second workspace that does NOT match cwd — used to verify the
-    // preselect calculation points at the matching one, not simply
-    // "index 1" which works for a single workspace by accident.
+
     config
         .workspaces
         .insert("z-unrelated".into(), empty_ws("/some/other/path"));
 
     let state = ManagerState::from_config(&config, &project);
-    // Workspaces are ordered by BTreeMap key: ["big-monorepo", "z-unrelated"].
-    // "big-monorepo" is at saved_index 0, so selected = 1 + 0 = 1.
+
     assert_eq!(state.selected, 1);
     assert_eq!(state.workspaces[state.selected - 1].name, "big-monorepo");
 }
@@ -293,14 +281,11 @@ fn manager_current_directory_is_first_row() {
     let tmp = tempfile::tempdir().unwrap();
     let cwd = tmp.path().canonicalize().unwrap();
 
-    // Empty config: only the synthetic "Current directory" + sentinel.
     let config_empty = AppConfig::default();
     let state_empty = ManagerState::from_config(&config_empty, &cwd);
     assert_eq!(state_empty.selected, 0);
     assert_eq!(state_empty.workspaces.len(), 0);
 
-    // Non-empty config with unrelated saved workspaces — preselect
-    // still lands on row 0.
     let mut config = AppConfig::default();
     config
         .workspaces
@@ -371,7 +356,7 @@ fn isolation_only_change_counts_as_one() {
     });
     let mut e = EditorState::new_edit("jackin".into(), ws);
     assert_eq!(e.change_count(), 0);
-    // Cycle from Shared to Worktree on the only mount row.
+
     e.active_field = FieldFocus::Row(0);
     e.cycle_isolation_for_selected_mount();
     assert_eq!(e.change_count(), 1);

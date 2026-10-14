@@ -1,23 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Network labels and session contract formatting.
 
 use super::{
     DockerSecurityProfile, EffectiveGrants, MINIMUM_CAPABILITIES, NetworkGrant, dind_enabled,
     drops_all_caps, format_bytes, tmpfs_paths,
 };
 
-/// The `JACKIN_NETWORK_MODE` / contract label for a network tier. Delegates to
-/// [`NetworkGrant::as_str`] so the label tracks the serde vocabulary.
 pub fn network_grant_label(network: NetworkGrant) -> &'static str {
     network.as_str()
 }
 
-/// Returns the network enforcement quality label.
-///
-/// Used for session contract output and `JACKIN_NETWORK_ENFORCEMENT`. Shared
-/// between `format_session_contract` and `launch_role_runtime` so both surfaces
-/// stay in sync.
 pub fn network_enforcement_label(grants: &EffectiveGrants) -> &'static str {
     if !matches!(grants.network, NetworkGrant::Allowlist) {
         return "n/a";
@@ -31,12 +23,6 @@ pub fn network_enforcement_label(grants: &EffectiveGrants) -> &'static str {
     }
 }
 
-/// Format a human-readable session contract table for the active grants.
-///
-/// Surfaced to the operator in `--debug` mode as a factual summary of what the
-/// container can do; it is operator output, not exported telemetry.
-// Eight contract dimensions are one flat argument list by design; bundling them
-// into a struct would just move the same fields without aiding any caller.
 #[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -63,10 +49,7 @@ pub fn format_session_contract(
     };
     let network_mode = match grants.network {
         NetworkGrant::None => "none (--network none)".to_owned(),
-        // `allowed_hosts` is only the operator/role-configured set; the launch
-        // path also injects the agent's API endpoint(s) and (when forwarded)
-        // GitHub into JACKIN_ALLOWED_HOSTS. Report the configured count honestly
-        // rather than guessing the injected total with a fixed `+1`.
+
         NetworkGrant::Allowlist => format!(
             "allowlist ({} configured hosts + agent/GitHub endpoints)",
             grants.allowed_hosts.len()
@@ -136,7 +119,7 @@ pub fn format_session_contract(
         } else {
             tmpfs_paths(profile).join(",")
         },
-        grants.dind, // Display impl emits "none"/"rootless"/"privileged"
+        grants.dind,
         network_mode,
         network_enforcement,
         cgroup_version,

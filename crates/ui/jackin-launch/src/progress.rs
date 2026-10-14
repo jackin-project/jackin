@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch progress display: stage tracking and rich terminal progress bar
-//! for the `jackin load` cockpit.
-//!
-//! Not responsible for: executing launch stages (see `runtime`) or
-//! capsule attach after handoff.
-
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,8 +30,7 @@ pub struct LaunchProgress {
 
 enum Renderer {
     Rich(RichDriver),
-    /// Rich surface torn down at the handoff; inert (no draws, no diagnostics
-    /// trailer) so the interactive capsule attach owns the terminal alone.
+
     Done,
     Test,
 }
@@ -116,8 +109,7 @@ impl LaunchProgress {
         detail: impl Into<String>,
     ) {
         let detail = detail.into();
-        // The activity spinner tracks in-progress stages: set it iff the stage is
-        // still running. Done/Skipped are terminal and clear it.
+
         let set_activity = matches!(status, StageStatus::Running);
         self.update_view(LaunchMessage::StageStatus {
             stage,
@@ -157,11 +149,7 @@ impl LaunchProgress {
             detail.as_deref().or(next_step.as_deref()),
         );
         self.diagnostics.error("launch_failed", &summary, None);
-        // On a rich surface the render task draws the failure popup and owns the
-        // terminal's input; poll for the operator's Enter/Esc dismiss. Yielding
-        // with an async sleep (rather than a blocking stdin read) is essential on
-        // the single-threaded runtime — a blocking read would never let the
-        // render task run, so the popup would neither draw nor receive the key.
+
         if matches!(self.renderer, Renderer::Rich(_)) {
             loop {
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -176,39 +164,21 @@ impl LaunchProgress {
         self.stage_started(LaunchStage::Hardline, "opening hardline");
     }
 
-    /// Give the rich renderer at least one visible frame after a stage change.
-    ///
-    /// Fast Docker/cache paths can otherwise advance from one stage to the next
-    /// before the 33ms render tick observes the intermediate state, making the
-    /// progress rail appear to skip labels. Test renderers do not draw
-    /// asynchronously, so they should not pay this delay.
     pub async fn settle_stage_visual(&self) {
         if matches!(self.renderer, Renderer::Rich(_)) {
             tokio::time::sleep(STAGE_VISUAL_SETTLE).await;
         }
     }
 
-    /// Stop the render task and release the rich surface before the interactive
-    /// handoff, so the capsule attach owns the terminal alone. Idempotent;
-    /// no-op for the test renderer.
     pub fn finish(&mut self) {
         if let Renderer::Rich(driver) = &mut self.renderer {
-            // Signal the task to stop drawing; it exits on its next tick and
-            // drops its renderer (any stray final frame is wiped by the
-            // capsule's clear-on-attach). Detach the handle — we do not block.
             driver.stop_detached();
-            // The interactive attach must inherit the terminal, not be
-            // captured, so clear the rich-surface flag now regardless of when
-            // the task's renderer finally drops.
+
             self.host.set_rich_surface_active(false);
             self.renderer = Renderer::Done;
         }
     }
 
-    /// Reclaim the rich renderer from the background render task and run a
-    /// modal dialog against it. The task try-locks per frame, so it simply
-    /// skips frames while the modal holds the lock. Bails when the launch is
-    /// not driving the rich surface — `what` names the dialog in that error.
     fn with_rich_renderer<T>(
         &mut self,
         what: &str,
@@ -221,9 +191,6 @@ impl LaunchProgress {
         }
     }
 
-    /// Present a forced-choice picker over `items` and return the chosen
-    /// index. The picker cannot be cancelled — the operator must commit one
-    /// of the options.
     pub fn select_choice(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
         self.with_rich_renderer("launch choice", |renderer| renderer.select(title, items))
     }
@@ -267,8 +234,6 @@ impl LaunchProgress {
         })
     }
 
-    /// Returns a clone of the cancellation token so callers in `jackin-runtime`
-    /// can register additional cancel-aware tasks without owning the token.
     pub fn cancel_token(&self) -> CancellationToken {
         self.cancel_token.clone()
     }
@@ -288,9 +253,6 @@ impl LaunchProgress {
 
 impl Drop for LaunchProgress {
     fn drop(&mut self) {
-        // Dropped without an explicit finish (e.g. an error path): stop the
-        // render task. Its renderer drops when the task exits, restoring the
-        // terminal — the host-screen guard is the ultimate safety net.
         if let Renderer::Rich(driver) = &self.renderer {
             driver.request_stop();
             self.host.set_rich_surface_active(false);
@@ -320,11 +282,6 @@ pub fn prelaunch_select_choice(
     renderer.select(title, items)
 }
 
-/// Standalone forced-choice picker with a `context` block above the options.
-///
-/// For callers that run after the launch progress surface has been torn down
-/// — the post-attach worktree-cleanup prompt. Enters its own rich surface (or
-/// draws into the host guard's screen when one is active).
 pub fn standalone_select_with_context(
     title: &str,
     context: &[PromptContextLine],
@@ -336,8 +293,6 @@ pub fn standalone_select_with_context(
     renderer.select_with_context(title, context, items)
 }
 
-/// Standalone error popup for launch-adjacent failures that need operator
-/// acknowledgement in the same rich surface.
 pub fn standalone_error_popup(
     title: &str,
     message: &str,
@@ -348,11 +303,6 @@ pub fn standalone_error_popup(
     renderer.error_popup(title, message)
 }
 
-/// D23/D24: exit dialog with `I`-key inspect support.
-///
-/// Shows the D23 three-way choice (Return/Keep/Discard) with each preserved
-/// worktree's file list reachable via `I`. `worktrees_per_record` maps 1:1
-/// to the context records — one `Vec<WorktreeInspect>` per preserved record.
 pub fn standalone_exit_dialog_with_inspect(
     title: &str,
     context: &[PromptContextLine],
@@ -365,10 +315,6 @@ pub fn standalone_exit_dialog_with_inspect(
     renderer.exit_dialog_with_inspect(title, context, options, worktrees_per_record)
 }
 
-/// D23/D21: standalone launch dialog. Supports delete-in-place and D24 inspect.
-///
-/// Returns `LaunchDialogResult` which the caller processes (delete → purge,
-/// then call again; restore → connect; fresh → supersede old candidates).
 pub fn standalone_launch_dialog(
     title: &str,
     candidates: &[crate::LaunchCandidate],
@@ -380,7 +326,6 @@ pub fn standalone_launch_dialog(
 }
 
 impl LaunchProgress {
-    /// D23 launch dialog through the live launch progress surface.
     pub fn launch_dialog_progress(
         &mut self,
         title: &str,

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Process-local exact-source Claude credential lease.
 
 use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicU64};
 
@@ -13,13 +12,12 @@ use crate::payload_diagnostic::{
     ClaudeCredentialPayloadDiagnostic, diagnose_claude_profile_payload,
 };
 
-/// Secret-free result of explicit foreground Claude Keychain bootstrap.
 #[derive(Debug)]
 pub enum ClaudeCredentialBootstrapOutcome {
     Missing,
     Denied,
     InteractionRequired,
-    /// Rejected payload with bounded facts that exclude credential values.
+
     Malformed(ClaudeCredentialPayloadDiagnostic),
     Acquired(ClaudeCredentialLease),
 }
@@ -163,8 +161,6 @@ fn valid_claude_keychain_payload(payload: &str) -> Result<(), ClaudeCredentialPa
     }
 }
 
-/// Stable opaque partition for one exact Keychain service. It is independent
-/// of tokens and account metadata, so credential rotation cannot remap consent.
 #[must_use]
 pub fn claude_source_capability_id_for_service(service: &str) -> String {
     let hashed = jackin_core::account_key_hash("claude-keychain-service-v1", service);
@@ -183,8 +179,6 @@ impl Drop for ClaudeCredentialLeaseInner {
     }
 }
 
-/// Owner handle for the selected foreground Claude credential. It exposes
-/// only a local source partition; raw service and credential payload stay private.
 #[must_use = "hold the lease for the full foreground service lifetime"]
 #[derive(Clone)]
 pub struct ClaudeCredentialLease {
@@ -192,7 +186,6 @@ pub struct ClaudeCredentialLease {
 }
 
 impl ClaudeCredentialLease {
-    /// Opaque stable local ID for the exact selected Keychain service.
     #[must_use]
     pub fn source_capability_id(&self) -> &str {
         &self.inner.source_capability_id
@@ -213,8 +206,6 @@ impl std::fmt::Debug for ClaudeCredentialLease {
     }
 }
 
-/// Acquire the only process-local Claude source lease after an attached
-/// operator explicitly permits Keychain interaction. No payload leaves cache.
 pub fn bootstrap_claude_credential(
     service: &str,
 ) -> Result<ClaudeCredentialBootstrapOutcome, ClaudeKeychainPolicyError> {

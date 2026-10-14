@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Comment-preserving config writer.
-//!
-//! Reads still go through `AppConfig::load_or_init` (serde + `toml`).
-//! Writes go through `ConfigEditor::open → mutate → save`, which keeps
-//! user-written comments, blank lines, and key ordering intact in
-//! sections untouched by the mutation.
-
 use crate::ConfigError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
@@ -29,75 +22,42 @@ use crate::persist::{
 };
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
-/// Which env map a setter/remover targets in the config tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvScope {
-    /// Top-level `[env]` in `config.toml`.
     Global,
-    /// Top-level `[github.env]` in `config.toml`.
+
     GlobalGithub,
-    /// `[roles.<name>.env]` in `config.toml`.
+
     Role(String),
-    /// `[env]` inside a split workspace file.
+
     Workspace(String),
-    /// `[roles.<role>.env]` inside a split workspace file.
-    WorkspaceRole {
-        /// Workspace file stem.
-        workspace: String,
-        /// Role key under that workspace.
-        role: String,
-    },
-    /// `[github.env]` inside the workspace file — the github-kind env
-    /// block, parallel to the regular workspace `env` map but read by
-    /// [`crate::build_github_env_layers`] instead of the regular launch-time
-    /// env merge. Used to thread `GH_TOKEN` / `GH_HOST` /
-    /// `GH_ENTERPRISE_TOKEN` without polluting the agent-facing env map.
+
+    WorkspaceRole { workspace: String, role: String },
+
     WorkspaceGithub(String),
-    /// `[roles.<role>.github.env]` inside the workspace file — most
-    /// specific layer of the github env layering.
-    WorkspaceRoleGithub {
-        /// Workspace file stem.
-        workspace: String,
-        /// Role key under that workspace.
-        role: String,
-    },
+
+    WorkspaceRoleGithub { workspace: String, role: String },
 }
 
-/// Outcome of a first-run bootstrap scan: registered account IDs plus
-/// every discovery issue (surfaced to CLI/Settings callers, never dropped).
 #[derive(Debug, Default)]
 pub struct BootstrapReport {
-    /// True when a fresh-install scan ran during this open.
     pub fresh_install: bool,
-    /// True when the editor contains a scan mutation that must be saved.
+
     pub changed: bool,
-    /// Account IDs registered by the bootstrap scan.
+
     pub added_accounts: Vec<String>,
-    /// Full `(id, account)` pairs for `added_accounts`, in the same order.
-    /// Draft-merge callers (Settings scan) join these into the pending
-    /// draft instead of saving immediately. Credentials are references
-    /// (`$VAR`), 1Password refs, or profile directories — discovery
-    /// never reads secret values.
+
     pub added: Vec<(String, crate::AccountConfig)>,
-    /// Discovery issues observed during the scan.
+
     pub issues: Vec<crate::DiscoveryIssue>,
-    /// `.zshrc` model profiles that could not be attached to a persisted
-    /// API-key account. These are model/endpoint literals only; no secret
-    /// values are carried here.
+
     pub unapplied_zshrc_models: Vec<crate::ModelProfile>,
-    /// `.zshrc` wrapper call sites that have no launch executor yet. The
-    /// parser's wrapper identity/arguments are retained so callers can report
-    /// the exact unimplemented input instead of dropping it.
+
     pub unapplied_zshrc_wrappers: Vec<crate::WrapperCallSite>,
-    /// Complete Amp XDG triples for which no credential evidence was found.
-    /// A discovered triple is persisted on the profile account instead.
+
     pub unapplied_zshrc_xdg_roots: Vec<crate::XdgRoots>,
 }
 
-/// Build a profile candidate with an explicit identity and optional Amp XDG
-/// roots. Callers must resolve a provider before creating the account; this
-/// keeps a multi-provider store entry source-bound instead of inferring from
-/// the agent alone.
 fn profile_account_candidate(
     id: String,
     agent: jackin_core::Agent,
@@ -123,7 +83,6 @@ fn profile_account_candidate(
     )
 }
 
-/// Synthesize the registry entry for a discovered default profile.
 fn profile_scan_candidate(
     discovered: &crate::DiscoveredAccount,
 ) -> Option<(String, crate::AccountConfig)> {
@@ -152,8 +111,6 @@ fn profile_scan_candidate(
     ))
 }
 
-/// Map the shell variable stem used by [`crate::ModelProfile`] to a provider.
-/// Only canonical provider slugs from the provider catalog are accepted.
 fn zshrc_provider(stem: &str) -> Option<crate::AiProvider> {
     crate::AiProvider::ALL
         .iter()
@@ -161,8 +118,6 @@ fn zshrc_provider(stem: &str) -> Option<crate::AiProvider> {
         .find(|provider| provider.slug() == stem)
 }
 
-/// Synthesize the registry entry for an environment-provided API key.
-/// The credential is a `$VAR` reference — the value is never read.
 fn env_scan_candidate(
     provider: crate::AiProvider,
     variable: &str,
@@ -171,8 +126,6 @@ fn env_scan_candidate(
     api_key_scan_candidate(provider, EnvValue::from(format!("${variable}")), base_url)
 }
 
-/// Synthesize the registry entry for a provider API key with an explicit
-/// credential value (environment reference or 1Password ref).
 fn api_key_scan_candidate(
     provider: crate::AiProvider,
     value: EnvValue,
@@ -192,9 +145,6 @@ fn api_key_scan_candidate(
     (id, account)
 }
 
-/// Synthesize the registry entry for an environment-provided subscription
-/// token. `None` if the agent ever loses its native provider (today only
-/// Claude is discovered, which always has one).
 fn oauth_scan_candidate(
     agent: jackin_core::Agent,
     variable: &str,
@@ -202,8 +152,6 @@ fn oauth_scan_candidate(
     oauth_scan_candidate_with_value(agent, EnvValue::from(format!("${variable}")))
 }
 
-/// Synthesize the registry entry for a subscription token with an explicit
-/// credential value (environment reference or 1Password ref).
 fn oauth_scan_candidate_with_value(
     agent: jackin_core::Agent,
     value: EnvValue,
@@ -219,9 +167,6 @@ fn oauth_scan_candidate_with_value(
     Some((id, account))
 }
 
-/// Scan default evidence + environment into `config`, registering only
-/// IDs that do not collide with existing accounts. Never overwrites an
-/// operator-registered account.
 fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapReport {
     let mut report = BootstrapReport::default();
     let scan = crate::discover_default_accounts(home);
@@ -263,10 +208,6 @@ fn bootstrap_scan_accounts(config: &mut AppConfig, home: &Path) -> BootstrapRepo
     report
 }
 
-/// Whether `candidate`'s credential source is already registered under any
-/// ID. Uses the same source fingerprint as `upsert_account` so scans skip
-/// instead of erroring when the operator renamed an account ID or used a path
-/// alias.
 fn scan_source_registered(
     accounts: &BTreeMap<String, crate::AccountConfig>,
     candidate: &crate::AccountConfig,
@@ -277,8 +218,6 @@ fn scan_source_registered(
         .any(|registered| account_source_fingerprint(registered) == candidate_fingerprint)
 }
 
-/// Apply the same ID, tombstone, and credential-source collision policy to
-/// every discovery helper.
 fn scan_candidate_is_blocked(
     known: &BTreeMap<String, crate::AccountConfig>,
     excluded: &BTreeSet<String>,
@@ -290,10 +229,6 @@ fn scan_candidate_is_blocked(
         || scan_source_registered(known, account)
 }
 
-/// Read an installer `fresh_install` marker without changing it.
-///
-/// The marker is cleared only in the same successful write that commits the
-/// bootstrap result, so a failed bootstrap remains retryable.
 fn has_fresh_install_marker(path: &Path) -> crate::ConfigResult<bool> {
     let raw = match std::fs::read_to_string(path) {
         Ok(raw) => raw,
@@ -315,7 +250,6 @@ fn has_fresh_install_marker(path: &Path) -> crate::ConfigResult<bool> {
         .unwrap_or(false))
 }
 
-/// Comment-preserving mutator for `config.toml` and split workspace files.
 #[derive(Debug)]
 pub struct ConfigEditor {
     _lock: ConfigWriteGuard,
@@ -356,17 +290,10 @@ fn apply_xdg_profile_candidate(
 }
 
 impl ConfigEditor {
-    /// Loads the existing config file as a `DocumentMut`. Performs both
-    /// schema-version and split-workspace migration before reading, so the
-    /// on-disk result matches what `AppConfig::load_or_init` would produce.
-    /// Fresh installs are bootstrapped directly while this editor already owns
-    /// the write lock, avoiding recursive editor acquisition.
     pub fn open(paths: &JackinPaths) -> crate::ConfigResult<Self> {
         Self::open_detailed(paths).map(|(editor, _)| editor)
     }
 
-    /// [`open`](Self::open) plus the bootstrap report for callers that
-    /// surface first-run discovery results (CLI report, Settings scan).
     pub fn open_detailed(paths: &JackinPaths) -> crate::ConfigResult<(Self, BootstrapReport)> {
         let lock = acquire_config_write_lock(&paths.config_file)?;
         Self::open_with_lock(paths, lock)
@@ -377,8 +304,7 @@ impl ConfigEditor {
         lock: ConfigWriteGuard,
     ) -> crate::ConfigResult<(Self, BootstrapReport)> {
         paths.ensure_base_dirs()?;
-        // The passed-in lock's acquisition already forward-rolled any
-        // pending publication.
+
         let mut report = BootstrapReport::default();
         let initial_contents = if paths.config_file.exists() {
             None
@@ -400,13 +326,6 @@ impl ConfigEditor {
             loaded.add_pending_write(paths.config_file.clone(), contents);
         }
         if !report.fresh_install && has_fresh_install_marker(&paths.config_file)? {
-            // Installer-created config: run the first account scan exactly
-            // once, then clear the marker. The file is installer-shaped
-            // (no operator comments to preserve), so a typed round-trip
-            // write is safe. Workspaces live in split files, never embedded,
-            // so they are excluded from the global rewrite; the write
-            // commits through pending_writes together with any migration
-            // rewrites.
             let serialized = {
                 let config = loaded.config_mut();
                 report = bootstrap_scan_accounts(&mut *config, &paths.home_dir);
@@ -420,11 +339,6 @@ impl ConfigEditor {
             loaded.add_pending_write(paths.config_file.clone(), serialized);
         }
         if loaded.has_pending_writes() {
-            // Registry, binding, and reserved-env semantics must pass before
-            // migration bytes are committed. Workspace geometry remains
-            // editable through create/edit, and launch-instance references
-            // are enforced at save/load instead, so the editor can open a
-            // config whose instance account is not registered yet for repair.
             loaded.validate_for_editor()?;
         }
         drop(loaded.commit(&publication_journal_path(&paths.config_file))?);
@@ -446,20 +360,6 @@ impl ConfigEditor {
         Ok((editor, report))
     }
 
-    /// Scan default evidence + the process environment for importable
-    /// accounts, registering only IDs and credential sources not already
-    /// present. Same id-synthesis/dedup rules as the first-run bootstrap
-    /// (skip on ID collision; Omp/Hermes have no native billing and are
-    /// skipped), plus a credential-source check so a re-scan skips instead
-    /// of erroring when the operator renamed an account ID. Never
-    /// overwrites an operator-registered account.
-    ///
-    /// Runs under this editor's config lock, so concurrent scans serialize
-    /// and the loser dedupes to a no-op. Performs blocking filesystem /
-    /// Keychain I/O — console callers must run it on a worker thread.
-    ///
-    /// # Errors
-    /// Returns an error if a synthesized account fails validation.
     pub fn scan_for_accounts(&mut self) -> crate::ConfigResult<BootstrapReport> {
         let home = self.home_dir.clone();
         let mut codex_home = None;
@@ -474,9 +374,6 @@ impl ConfigEditor {
         self.scan_for_accounts_with_codex_home(&home, &environment, codex_home.as_deref())
     }
 
-    /// [`scan_for_accounts`](Self::scan_for_accounts) with explicit
-    /// discovery inputs (deterministic seam for tests; production passes
-    /// the live home directory and process environment).
     #[cfg(test)]
     fn scan_for_accounts_with(
         &mut self,
@@ -521,9 +418,6 @@ impl ConfigEditor {
         let excluded = existing.account_scan_exclusions;
         let mut known = existing.accounts;
         for (id, account) in candidates {
-            // Skip-on-collision in both dimensions: an operator
-            // registration (same ID, or same credential source under
-            // another ID) always wins over scan synthesis.
             if scan_candidate_is_blocked(&known, &excluded, &id, &account) {
                 continue;
             }
@@ -536,18 +430,6 @@ impl ConfigEditor {
         Ok(report)
     }
 
-    /// Apply a `.zshrc` import plan, seeding verified profile accounts for
-    /// config-dir/XDG overrides plus `op read` references as key/token values.
-    /// Same skip-on-collision rules as
-    /// [`scan_for_accounts`](Self::scan_for_accounts): never overwrites an
-    /// operator registration, and override directories without credential
-    /// evidence seed nothing. Model/endpoint groups update matching API-key
-    /// accounts when present; wrapper call sites and otherwise-unapplied
-    /// model/XDG entries are returned in the report so no parsed field
-    /// disappears silently.
-    ///
-    /// # Errors
-    /// Returns an error if a seeded account fails validation.
     pub fn apply_zshrc_plan(
         &mut self,
         plan: &crate::ZshrcImportPlan,
@@ -573,9 +455,7 @@ impl ConfigEditor {
             &mut report,
         )?;
         self.apply_zshrc_models(&plan.models, &mut known, &mut report)?;
-        // Arbitrary shell wrappers cannot safely be executed or serialized
-        // into the current launch protocol. Retain the parsed call sites in
-        // the report so callers surface them instead of dropping them.
+
         report.unapplied_zshrc_wrappers = plan.wrappers.clone();
         Ok(report)
     }
@@ -613,10 +493,6 @@ impl ConfigEditor {
             };
             match crate::discover_account_directory(directory.agent, &directory.directory, home) {
                 Ok(Some(found)) => {
-                    // Shell overrides are distinct profiles from the
-                    // default-home discovery entry. Reusing
-                    // `default-{agent}` made a valid custom profile vanish
-                    // after the default profile had already been scanned.
                     let id = format!("custom-{}", directory.agent.slug());
                     let account = crate::AccountConfig {
                         enabled: true,
@@ -656,10 +532,6 @@ impl ConfigEditor {
         let opencode_data = roots.data.join("opencode");
         let opencode_config = roots.config.join("opencode");
         if opencode_data.exists() || opencode_config.exists() {
-            // The generic XDG triple is currently an Amp profile contract.
-            // OpenCode's data root has provider-keyed auth and may also
-            // contain a database; without an explicit source directory,
-            // importing it as Amp would persist an unrelated identity.
             report.unapplied_zshrc_xdg_roots.push(roots.clone());
             report.issues.push(crate::DiscoveryIssue {
                 agent: jackin_core::Agent::Opencode,
@@ -715,8 +587,7 @@ impl ConfigEditor {
                 continue;
             }
             let value = EnvValue::OpRef(op_ref.reference.clone());
-            // Presence-only probe: the synthetic value is never read, only
-            // its non-emptiness gates provider attribution.
+
             let probe = BTreeMap::from([(op_ref.var.clone(), String::from("1"))]);
             let seeded = if crate::discover_environment_oauth_accounts(&probe).is_empty() {
                 crate::discover_environment_accounts(&probe)
@@ -732,8 +603,7 @@ impl ConfigEditor {
             } else {
                 oauth_scan_candidate_with_value(jackin_core::Agent::Claude, value)
             };
-            // Variables with no provider home stay in the plan for an
-            // explicit `account add`.
+
             let Some((id, account)) = seeded else {
                 continue;
             };
@@ -783,17 +653,6 @@ impl ConfigEditor {
         Ok(())
     }
 
-    /// Atomic write + return a fresh `AppConfig` parsed from the
-    /// written content.
-    ///
-    /// Validates the candidate before renaming over the real config —
-    /// otherwise a setter that produced an unloadable shape (e.g.
-    /// stub role missing `git`) would brick every subsequent CLI
-    /// command until the operator hand-edits TOML to recover.
-    ///
-    /// Skips `load_or_init`'s builtin-role sync — the invariant is
-    /// that `load_or_init` ran once at `open` time, so builtins are
-    /// already in place.
     pub fn save(self) -> crate::ConfigResult<AppConfig> {
         self.save_with_stager(stage_atomic_write)
     }
@@ -846,7 +705,6 @@ impl ConfigEditor {
         )
     }
 
-    /// Set an env key at `scope` (plain string, op ref, or extended value).
     pub fn set_env_var(
         &mut self,
         scope: &EnvScope,
@@ -873,14 +731,11 @@ impl ConfigEditor {
                 breadcrumb.insert("version", Value::from(1));
                 breadcrumb.insert("value", Value::from(r.path));
                 tbl.insert("breadcrumb", Value::InlineTable(breadcrumb));
-                // Pin the resolving account so multi-account vaults read
-                // back correctly; serialized only when set (matches the
-                // `OpRef` serde skip-when-None contract).
+
                 if let Some(account) = r.account {
                     tbl.insert("account", Value::from(account));
                 }
-                // Only emit `on_demand` when set, mirroring the serde
-                // skip-when-false contract so existing refs stay compact.
+
                 if r.on_demand {
                     tbl.insert("on_demand", Value::from(true));
                 }
@@ -893,8 +748,6 @@ impl ConfigEditor {
                     tbl.insert("on_demand", Value::from(true));
                     Item::Value(Value::InlineTable(tbl))
                 } else {
-                    // `on_demand = false` is identical to a plain scalar; the
-                    // editor collapses it back so files stay in compact form.
                     toml_value(e.value)
                 }
             }
@@ -903,11 +756,9 @@ impl ConfigEditor {
         Ok(())
     }
 
-    /// Set or clear the TOML key prefix comment for an env entry (no-op if missing).
     pub fn set_env_comment(&mut self, scope: &EnvScope, key: &str, comment: Option<&str>) {
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
-        // Walk without creating — setting a comment on a nonexistent key
-        // is a silent no-op (same contract as remove_env_var).
+
         let mut current: &mut Item = doc.as_item_mut();
         for segment in &path {
             match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
@@ -926,20 +777,9 @@ impl ConfigEditor {
         decor.set_prefix(prefix);
     }
 
-    /// Adds or replaces a named mount, mirroring `AppConfig::add_mount`.
-    ///
-    /// Unscoped (`scope = None`): writes `[docker.mounts.<name>]` — a single
-    /// `MountConfig` entry keyed by `name`.
-    ///
-    /// Scoped (`scope = Some(scope_key)`): writes `[docker.mounts.<scope_key>]`
-    /// with `name` as an inner key — i.e. the shape is
-    /// `docker.mounts[scope_key][name]`, matching how `AppConfig` stores
-    /// `MountEntry::Scoped`. Note this means `scope_key` is the OUTER key, not
-    /// `name` — the same ordering used by `AppConfig::add_mount`.
     pub fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
         match scope {
             None => {
-                // Unscoped: [docker.mounts.<name>]
                 let mount_table = table_path_mut(
                     &mut self.doc,
                     &["docker".to_owned(), "mounts".to_owned(), name.to_owned()],
@@ -952,9 +792,6 @@ impl ConfigEditor {
                 }
             }
             Some(scope_key) => {
-                // Scoped: [docker.mounts.<scope_key>] with name as inner key.
-                // Matches AppConfig::add_mount which stores MountEntry::Scoped
-                // keyed by scope_key at the outer level.
                 let scoped_table = table_path_mut(
                     &mut self.doc,
                     &[
@@ -963,7 +800,7 @@ impl ConfigEditor {
                         scope_key.to_owned(),
                     ],
                 );
-                // Build a sub-table for this named mount.
+
                 let mut entry_table = Table::new();
                 entry_table.insert("src", toml_edit::value(mount.src));
                 entry_table.insert("dst", toml_edit::value(mount.dst));
@@ -975,15 +812,6 @@ impl ConfigEditor {
         }
     }
 
-    /// Removes a named mount, mirroring `AppConfig::remove_mount`. Returns
-    /// `true` if an entry was present and removed.
-    ///
-    /// Unscoped (`scope = None`): removes `docker.mounts[name]`.
-    /// Scoped (`scope = Some(scope_key)`): removes the `name` entry from
-    /// `docker.mounts[scope_key]`. If that scope table becomes empty after
-    /// the removal, the scope table itself is removed too — matching
-    /// `AppConfig::remove_mount`'s cleanup so empty scope tables do not
-    /// accumulate in the on-disk config.
     pub fn remove_mount(&mut self, name: &str, scope: Option<&str>) -> bool {
         let Some(docker) = self.doc.get_mut("docker").and_then(|i| i.as_table_mut()) else {
             return false;
@@ -1006,25 +834,20 @@ impl ConfigEditor {
         }
     }
 
-    /// Write or clear `[roles.<agent_key>].trusted`.
     pub fn set_agent_trust(&mut self, agent_key: &str, trusted: bool) {
         let table = table_path_mut(&mut self.doc, &["roles".to_owned(), agent_key.to_owned()]);
         if trusted {
             table.insert("trusted", toml_edit::value(true));
         } else {
-            // Canonical representation of false is absent (matches serde
-            // skip_serializing_if on RoleSource::trusted).
             table.remove("trusted");
         }
     }
 
-    /// Write `[github].auth_forward = <mode>` at the global layer.
     pub fn set_global_github_auth_forward(&mut self, mode: GithubAuthMode) {
         let table = table_path_mut(&mut self.doc, &["github".to_owned()]);
         table.insert("auth_forward", toml_edit::value(github_mode_str(mode)));
     }
 
-    /// Set a key under global `[github.env]`.
     pub fn set_global_github_env_var(
         &mut self,
         key: &str,
@@ -1033,17 +856,14 @@ impl ConfigEditor {
         self.set_env_var(&EnvScope::GlobalGithub, key, value)
     }
 
-    /// Remove a key from global `[github.env]`; returns whether it existed.
     pub fn remove_global_github_env_var(&mut self, key: &str) -> bool {
         self.remove_env_var(&EnvScope::GlobalGithub, key)
     }
 
-    /// Enable or clear `[git].coauthor_trailer`.
     pub fn set_git_coauthor_trailer(&mut self, enabled: bool) {
         self.set_git_bool_field("coauthor_trailer", enabled);
     }
 
-    /// Enable or clear `[git].dco`.
     pub fn set_git_dco(&mut self, enabled: bool) {
         self.set_git_bool_field("dco", enabled);
     }
@@ -1066,13 +886,6 @@ impl ConfigEditor {
         }
     }
 
-    /// Write or clear `[github].auth_forward` inside the workspace file.
-    ///
-    /// Mirrors [`Self::set_workspace_auth_forward`] but threads the
-    /// GitHub kind's `[github]` block instead of an `Agent`-keyed
-    /// child block. `mode = None` removes the `auth_forward` field
-    /// (and the `github` block if it becomes empty), letting the
-    /// resolver fall back to the next layer.
     pub fn set_workspace_github_auth_forward(
         &mut self,
         workspace: &WorkspaceName,
@@ -1088,11 +901,6 @@ impl ConfigEditor {
         }
     }
 
-    /// Write or clear `[roles.<role>.github].auth_forward` inside the workspace file.
-    ///
-    /// Persists GitHub policy in the role layer; one kind
-    /// dimension wider — `github` lives at the same three layers as
-    /// `claude` / `codex`, but with no per-agent split.
     pub fn set_workspace_role_github_auth_forward(
         &mut self,
         workspace: &WorkspaceName,
@@ -1109,23 +917,12 @@ impl ConfigEditor {
         }
     }
 
-    /// Ensure a built-in role has the expected `git` URL and `trusted = true`.
     pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
-        // Touch only git + trusted. Leave [roles.X.env] alone —
-        // operator-owned.
         let table = table_path_mut(&mut self.doc, &["roles".to_owned(), agent_key.to_owned()]);
         table.insert("git", toml_edit::value(git_url));
         table.insert("trusted", toml_edit::value(true));
     }
 
-    /// Writes `git` and `trusted` from the given `RoleSource` into
-    /// `[roles.<agent_key>]`. Does NOT touch `[roles.<agent_key>.env]` —
-    /// operator-owned.
-    ///
-    /// Used by call sites that first invoke `resolve_role_source` (which may
-    /// insert a new role into the in-memory `AppConfig`) and need the editor
-    /// to persist that insert alongside whatever trust change they're about
-    /// to make.
     pub fn upsert_agent_source(&mut self, agent_key: &str, source: &crate::schema::RoleSource) {
         let table = table_path_mut(&mut self.doc, &["roles".to_owned(), agent_key.to_owned()]);
         table.insert("git", toml_edit::value(source.git.clone()));
@@ -1136,10 +933,9 @@ impl ConfigEditor {
         }
     }
 
-    /// Remove an env key at `scope`; prunes empty parent tables. Returns whether removed.
     pub fn remove_env_var(&mut self, scope: &EnvScope, key: &str) -> bool {
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
-        // Walk without creating: return false if any segment is missing.
+
         let mut current: &mut Item = doc.as_item_mut();
         for segment in &path {
             match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
@@ -1151,31 +947,17 @@ impl ConfigEditor {
             .as_table_mut()
             .is_some_and(|table| table.remove(key).is_some());
         if removed {
-            // Avoid leaving an empty `[…env]` (and its now-empty kind
-            // parent like `[…github]`) behind on disk after the last
-            // key is removed. `max_prune = 2` lets the walk peel both
-            // the `env` segment and its kind parent, but no further —
-            // workspace / role identifier slots stay untouched even
-            // when an operator names them "env" / "github" / etc.
             prune_empty_trailing_tables(doc, &path, 2);
         }
         removed
     }
 
-    /// Persist sticky `last_role` for a workspace (role key used last).
     pub fn set_last_agent(&mut self, workspace: &WorkspaceName, agent_key: &str) {
         let doc = self.workspace_doc_mut(workspace.as_str());
         let table = table_path_mut(doc, &[]);
         table.insert("last_role", toml_edit::value(agent_key));
     }
 
-    /// Rename a workspace key in the `[workspaces]` table.
-    ///
-    /// Preserves all nested fields (mounts, env, roles overrides, etc.)
-    /// because `toml_edit` renames the key in place. Fails if:
-    ///   - new name is empty
-    ///   - old name does not exist
-    ///   - new name already exists
     pub fn rename_workspace(
         &mut self,
         old: &WorkspaceName,
@@ -1199,7 +981,6 @@ impl ConfigEditor {
         Ok(())
     }
 
-    /// Mark a workspace for deletion on the next [`Self::save`].
     pub fn remove_workspace(&mut self, name: &WorkspaceName) -> crate::ConfigResult<()> {
         if self.workspace_docs.remove(name.as_str()).is_none() {
             return Err(ConfigError::WorkspaceNotFound(name.as_str().to_owned()));
@@ -1208,16 +989,11 @@ impl ConfigEditor {
         Ok(())
     }
 
-    /// Validate and stage a new workspace document for the next [`Self::save`].
     pub fn create_workspace(
         &mut self,
         name: &WorkspaceName,
         ws: WorkspaceConfig,
     ) -> crate::ConfigResult<()> {
-        // Delegate to AppConfig::create_workspace's validated logic
-        // (collision check, workdir / mount-destination relationship,
-        // plan-collapse sanity) so the editor path behaves identically
-        // to the direct-mutation path. Mirrors edit_workspace's pattern.
         let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
             .context("re-parsing current docs into AppConfig for workspace creation")?;
         in_memory.create_workspace(name, ws)?;
@@ -1239,32 +1015,22 @@ impl ConfigEditor {
         Ok(())
     }
 
-    /// Apply a [`WorkspaceEdit`] via in-memory validation, then replace the workspace doc.
     pub fn edit_workspace(
         &mut self,
         name: &WorkspaceName,
         edit: WorkspaceEdit,
     ) -> crate::ConfigResult<()> {
-        // Snapshot current on-disk state into an AppConfig.
         let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
             .context("re-parsing current docs into AppConfig for workspace edit")?;
 
-        // Apply the edit using the existing validated logic. Mutates
-        // in_memory or returns Err with the validation message on failure.
         in_memory.edit_workspace(name, edit)?;
 
-        // Pull the resulting WorkspaceConfig back out and splat into the doc.
         let updated = in_memory.workspaces.get(name.as_str()).ok_or_else(|| {
             anyhow::Error::from(ConfigError::WorkspaceDisappearedAfterEdit(
                 name.as_str().to_owned(),
             ))
         })?;
 
-        // Replace the entire workspace document. This preserves
-        // comments in OTHER workspaces and in unrelated top-level sections,
-        // which is what the migration cares about. Comments inside the
-        // edited workspace itself are consumed — that's acceptable because
-        // the edit IS the change the user is making to that workspace.
         let rendered = toml::to_string(updated)?;
         let parsed: DocumentMut = rendered.parse()?;
         self.workspace_docs.insert(name.as_str().to_owned(), parsed);
@@ -1272,10 +1038,6 @@ impl ConfigEditor {
         Ok(())
     }
 
-    /// Test-only: insert a string value at a dotted table path in the main doc.
-    ///
-    /// Used by tests that need to inject invalid TOML shapes (e.g. a role env
-    /// block without the required `git` field) to exercise save-time rejection.
     pub fn insert_at_path(&mut self, path: &[String], key: &str, value: &str) {
         let table = table_path_mut(&mut self.doc, path);
         table.insert(key, toml_edit::value(value));
@@ -1364,11 +1126,6 @@ fn env_scope_path(scope: &EnvScope) -> Vec<String> {
     }
 }
 
-/// Subset of `load_or_init` validations the editor's typed setters
-/// could plausibly violate: serde-required fields (catches stub
-/// role missing `git`) and `validate_reserved_names`. Skips
-/// `validate_workspaces` — only `create_workspace`/`edit_workspace`
-/// mutate that geometry and they already validate.
 fn validate_candidate(
     global_contents: &str,
     workspace_docs: &BTreeMap<String, DocumentMut>,
@@ -1420,13 +1177,6 @@ fn load_workspace_docs(paths: &JackinPaths) -> anyhow::Result<BTreeMap<String, D
     Ok(docs)
 }
 
-/// Remove the `auth_forward` field at `kind_path` (a `[…claude]` /
-/// `[…codex]` / `[…github]` block). If the kind block is left empty
-/// afterwards, the now-empty kind segment is peeled off too. Empty
-/// `[…env]` subtables are removed by [`ConfigEditor::remove_env_var`] when
-/// the operator's env diff goes through; this helper does not touch
-/// them itself. Walks without creating, so a reset on a layer that
-/// was already empty is a no-op.
 fn clear_auth_forward_field(doc: &mut DocumentMut, kind_path: &[String]) {
     let mut current: &mut Item = doc.as_item_mut();
     for segment in kind_path {
@@ -1438,32 +1188,10 @@ fn clear_auth_forward_field(doc: &mut DocumentMut, kind_path: &[String]) {
     if let Some(table) = current.as_table_mut() {
         table.remove("auth_forward");
     }
-    // Peel off only the trailing kind segment if it's now empty.
-    // Caller passes `max_prune = 1` to bound the walk so a workspace
-    // or role identifier — even one literally named "github" /
-    // "claude" / "codex" / "env" — is never reached.
+
     prune_empty_trailing_tables(doc, kind_path, 1);
 }
 
-/// Walk `path` from leaf back toward root, peeling off **at most
-/// `max_prune` trailing segments** whose corresponding tables are
-/// empty after prior removals. Stops on the first segment whose
-/// table is still non-empty.
-///
-/// `max_prune` is an absolute bound on how many trailing segments may
-/// be removed. Callers set it based on the path's known structure so
-/// the walk is bounded by *position* rather than by segment name —
-/// this is what prevents the helper from stripping an operator's
-/// workspace or role override, even when they happen to use a name
-/// like "github" or "env" for the workspace / role identifier.
-///
-/// Typical bounds:
-///   * `max_prune = 1` — peel only the kind segment (called from
-///     [`clear_auth_forward_field`] with paths like
-///     `[…, ws, "claude"]` or `[…, ws, "roles", role, "github"]`).
-///   * `max_prune = 2` — peel `[…env]` and its kind parent (called
-///     from [`ConfigEditor::remove_env_var`] with paths like
-///     `[…, ws, "env"]` or `[…, ws, "github", "env"]`).
 fn prune_empty_trailing_tables(doc: &mut DocumentMut, path: &[String], max_prune: usize) {
     let stop_at = path.len().saturating_sub(max_prune);
     for i in (stop_at..path.len()).rev() {

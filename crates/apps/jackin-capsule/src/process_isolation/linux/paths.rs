@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Isolation path validation and session tree preparation.
 
 use super::{Rule, TRAVERSE};
 use anyhow::{Context, Result, bail};
@@ -9,10 +8,6 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 
-/// Existing cwd aliases are canonicalized before any recursive Landlock
-/// grant is created. The grant must not overlap capsule-owned roots or any
-/// private mount destination, including a path supplied by a stale or
-/// hostile launch config.
 pub(crate) fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
     anyhow::ensure!(path.is_absolute(), "isolated session path must be absolute");
     let normalized = jackin_core::container_paths::normalize_path(path);
@@ -45,10 +40,6 @@ pub(crate) fn validate_workspace_mount_boundary(
     Ok(mount)
 }
 
-/// Aux git dirs live under `/jackin/host` by construction
-/// (`/jackin/host/<dst>/.git`), a subtree the workspace boundary policy
-/// can never admit. Grant exactly strict descendants of that root so git
-/// can follow the worktree gitdir pointer; anything else fails closed.
 pub(crate) fn validate_worktree_git_target(target: &str) -> Result<PathBuf> {
     anyhow::ensure!(
         !target.split('/').any(|component| component == ".."),
@@ -120,9 +111,6 @@ pub(crate) fn session_root_path(session_id: u64) -> PathBuf {
     Path::new(jackin_core::container_paths::SESSION_ROOTS_DIR).join(session_id.to_string())
 }
 
-/// Lexical `{home}/panes` parent for an instance's derived pane homes.
-/// Every admitted instance carries a home entry; a missing entry fails
-/// the spawn closed (the daemon enforces the same invariant).
 pub(crate) fn pane_homes_parent(config: &CapsuleConfig, instance: &str) -> Result<PathBuf> {
     let home = config
         .instance_home_dirs
@@ -132,12 +120,6 @@ pub(crate) fn pane_homes_parent(config: &CapsuleConfig, instance: &str) -> Resul
     Ok(home.join(jackin_core::container_paths::PANE_HOMES_DIR_NAME))
 }
 
-/// Create the instance's `{home}/panes` parent before dropping UID and
-/// installing Landlock. The host mount provides the home itself; only the
-/// leaf is ever created here. A symlink or non-directory at the leaf fails
-/// closed (a same-instance session could otherwise redirect the next
-/// spawn's grant outside its home), as does a leaf that resolves outside
-/// the home. Shell sessions carry no instance home and skip this.
 pub(crate) fn prepare_pane_homes_parent(
     config: &CapsuleConfig,
     instance: Option<&str>,
@@ -194,10 +176,6 @@ pub(crate) fn prepare_pane_homes_parent(
     Ok(())
 }
 
-/// Create the private tree before dropping UID and installing Landlock.
-/// Session ids are process-local and restart from one, so a stale root is
-/// removed only after rejecting symlinks/non-directories. The root is
-/// never accepted from child input.
 pub(crate) fn prepare_session_root(root: &Path) -> Result<()> {
     match fs::symlink_metadata(root) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -247,9 +225,6 @@ pub(crate) fn optional_exact_rule(rules: &mut Vec<Rule>, path: &Path, access: u6
     });
 }
 
-/// Permit path lookup only. Every readable or writable location is added
-/// separately above; no parent rule may accidentally expose a sibling
-/// home, default-home fragment, runtime secret, or credential directory.
 pub(crate) fn add_execute_only_ancestors(rules: &mut Vec<Rule>, path: &Path) {
     for ancestor in path.ancestors().skip(1) {
         rules.push(Rule {

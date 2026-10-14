@@ -129,9 +129,6 @@ fn resolved_workspace_as_workspace_label_accepts_path_and_stem() {
 
 #[test]
 fn resolve_heals_wiped_cache_mounts_end_to_end() {
-    // Regression test for a wiped `~/.cache/jackin` bricking every launch:
-    // cache directories are recreated, cache files are skipped with a
-    // report, and resolution succeeds.
     static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let unique = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let cache_sandbox = PathBuf::from(std::env::var("HOME").unwrap())
@@ -140,8 +137,7 @@ fn resolve_heals_wiped_cache_mounts_end_to_end() {
             "jackin-config-heal-test-{}-{unique}",
             std::process::id()
         ));
-    // Start clean (stale junk from a previously aborted run heals the
-    // same way, but asserting recreation needs a missing dir).
+
     let _unused = std::fs::remove_dir_all(&cache_sandbox);
     let cargo_git = cache_sandbox.join("global/cargo/git");
     let gradle_properties = cache_sandbox.join("global/gradle/gradle.properties");
@@ -212,8 +208,6 @@ fn resolve_heals_wiped_cache_mounts_end_to_end() {
 
 #[test]
 fn resolve_still_rejects_missing_non_cache_mount_sources() {
-    // Healing is confined to cache roots: a missing project checkout
-    // must stay a hard error, never an auto-created empty directory.
     let temp = tempdir().unwrap();
     let missing_project = temp.path().join("projects/gone");
     let mut config = AppConfig::default();
@@ -275,7 +269,7 @@ fn effective_default_launch_follows_scope_precedence() {
         effective_ids(&config, Some(&ws), "smith"),
         Some(vec!["claude-z".to_owned()])
     );
-    // Ad-hoc launches have no workspace scope: the global list applies.
+
     assert_eq!(
         effective_ids(&config, None, "smith"),
         Some(vec!["claude-a".to_owned()])
@@ -293,13 +287,12 @@ fn effective_default_launch_follows_scope_precedence() {
         effective_ids(&config, Some(&ws), "smith"),
         Some(vec!["claude-a".to_owned()])
     );
-    // A role default binds its own role only.
+
     assert_eq!(
         effective_ids(&config, Some(&ws), "other"),
         Some(vec!["claude-z".to_owned()])
     );
 
-    // An explicit empty list is still a configured default (shell-only).
     config
         .workspaces
         .get_mut(ws.as_str())
@@ -313,15 +306,12 @@ fn effective_default_launch_follows_scope_precedence() {
         .clear();
     assert_eq!(effective_ids(&config, Some(&ws), "smith"), Some(Vec::new()));
 
-    // Unknown workspaces defer to the legacy unknown-workspace error path.
     let ghost = WorkspaceName::parse("ghost").unwrap();
     assert_eq!(effective_ids(&config, Some(&ghost), "smith"), None);
 }
 
 #[test]
 fn effective_default_launch_agrees_with_resolve_launch() {
-    // None ⟺ sole-eligible fallback: two eligible accounts with no
-    // defaults fail with ambiguity, never resolve.
     let (mut config, ws) = launch_config();
     assert!(
         config
@@ -334,9 +324,6 @@ fn effective_default_launch_agrees_with_resolve_launch() {
         "{error:?}"
     );
 
-    // Some ⟺ `resolve_launch` consults defaults: the same ambiguous
-    // accounts now fail on the invalid explicit default instead of the
-    // fallback — the error names the bad configuration, not ambiguity.
     config
         .workspaces
         .get_mut(ws.as_str())

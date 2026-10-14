@@ -20,7 +20,7 @@ fn codex_wham_relative_reset_resolves_against_now() {
         .expect("session bucket");
     assert_eq!(session.remaining_percent, Some(75));
     assert_eq!(session.resets_at, Some(1_781_185_560 + 3_600));
-    // Absolute reset_at still wins when both are present.
+
     let weekly = buckets
         .iter()
         .find(|bucket| bucket.status_slot == Some(StatusSlot::Weekly))
@@ -51,8 +51,6 @@ fn codex_used_percent_tolerates_float_string_and_missing() {
 
 #[test]
 fn codex_rpc_tolerates_missing_windows_credits_and_counts() {
-    // Missing `usedPercent`, `rateLimits`, `availableCount`, and credit flags
-    // all decode; unknown extra fields are ignored.
     let usage = decode_codex_rpc_usage(
         serde_json::json!({
             "rateLimits": {
@@ -86,7 +84,6 @@ fn codex_rpc_tolerates_missing_windows_credits_and_counts() {
         "flag-less credits stay hidden"
     );
 
-    // A wholly absent `rateLimits` object still decodes to an empty snapshot.
     let empty = decode_codex_rpc_usage(serde_json::json!({}), None).expect("empty decodes");
     assert!(empty.response.buckets(1_781_185_560).is_empty());
 }

@@ -8,7 +8,7 @@ fn parse_apparmor_present_host() {
     let (available, layer) =
         parse_apparmor_from_docker_info("name=apparmor name=seccomp,profile=default");
     assert!(available, "apparmor string should be detected");
-    // Layer is host on non-macOS test runner.
+
     assert!(layer == "host" || layer == "backend-vm");
 }
 
@@ -66,8 +66,7 @@ fn allowlist_union_dedups_and_includes_all_sources() {
     grants.allowed_hosts = vec!["example.com".to_owned(), "api.anthropic.com".to_owned()];
     let github = vec!["github.com".to_owned()];
     let hosts = allowlist_hosts("claude", &grants, &github, Some("host.docker.internal"));
-    // configured first, agent default (api.anthropic.com already present, deduped),
-    // github, then OTLP.
+
     assert_eq!(
         hosts,
         vec![
@@ -99,7 +98,7 @@ fn allowlist_empty_is_fail_closed_when_no_otlp() {
 #[test]
 fn firewall_exec_only_for_allowlist_and_runs_as_root() {
     let mut grants = profile_base_grants(DockerSecurityProfile::Hardened);
-    // hardened is allowlist by default.
+
     let argv = firewall_post_run_argv(&grants, "ctr-1").expect("allowlist emits exec");
     assert_eq!(
         argv,
@@ -112,7 +111,7 @@ fn firewall_exec_only_for_allowlist_and_runs_as_root() {
             "firewall-apply"
         ]
     );
-    // open / none emit no firewall.
+
     grants.network = NetworkGrant::Open;
     assert!(firewall_post_run_argv(&grants, "ctr-1").is_none());
     grants.network = NetworkGrant::None;
@@ -121,8 +120,6 @@ fn firewall_exec_only_for_allowlist_and_runs_as_root() {
 
 #[test]
 fn minimum_capability_set_is_exactly_eight_expected_caps() {
-    // The roadmap's "8-cap minimum" under hardened/locked. Guards against
-    // accidental drift of the dropped-to set without needing a container.
     assert_eq!(
         MINIMUM_CAPABILITIES,
         [
@@ -180,7 +177,6 @@ fn sudo_provision_exec_runs_as_root() {
 
 #[test]
 fn sudo_default_off_outside_compat_on_for_compat() {
-    // The grant the launch path turns into JACKIN_SUDO=1.
     assert!(profile_base_grants(DockerSecurityProfile::Compat).sudo);
     assert!(!profile_base_grants(DockerSecurityProfile::Standard).sudo);
     assert!(!profile_base_grants(DockerSecurityProfile::Hardened).sudo);
@@ -204,7 +200,7 @@ fn rootless_dind_fails_closed_on_cgroup_v1() {
     validate_dind_grant_for_cgroup(DindGrant::Rootless, "v1")
         .expect_err("rootless DinD must fail closed on cgroup v1, never fall back to privileged");
     validate_dind_grant_for_cgroup(DindGrant::Rootless, "v2").unwrap();
-    // privileged / none impose no cgroup requirement here.
+
     validate_dind_grant_for_cgroup(DindGrant::Privileged, "v1").unwrap();
     validate_dind_grant_for_cgroup(DindGrant::None, "v1").unwrap();
 }

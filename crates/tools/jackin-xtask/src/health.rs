@@ -1,14 +1,3 @@
-//! Report-only code-health dashboard.
-//!
-//! ```sh
-//! cargo xtask health                  # human report
-//! cargo xtask health --format json    # machine-readable
-//! cargo xtask health --write-baseline # refresh code-health-baseline.toml
-//! ```
-//!
-//! Report-only by design — not wired into `cargo xtask lint` or CI as a
-//! failing gate. Phase 7 decides which metrics become budgets.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,13 +17,12 @@ const TOP_TESTS: usize = 10;
 
 #[derive(Args, Debug)]
 pub(crate) struct HealthArgs {
-    /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
     format: OutputFormat,
-    /// Write aggregate floors to `code-health-baseline.toml` at the repo root.
+
     #[arg(long)]
     write_baseline: bool,
-    /// Minimum crate count for a helper name to count as a duplicate family.
+
     #[arg(long, default_value_t = 3)]
     min_crates: usize,
 }
@@ -166,7 +154,7 @@ struct Report {
     duplicate_helpers: Vec<DuplicateHelper>,
     advisory: AdvisoryNote,
     verification_map: BTreeMap<String, String>,
-    /// Plan 027: headroom vs ratchet / baseline for shrink proposals.
+
     trend: TrendSection,
 }
 
@@ -331,21 +319,14 @@ fn untested_large(root: &Path, counts: &BTreeMap<PathBuf, usize>) -> Vec<FileLin
     out
 }
 
-/// Parse `#[expect(...)]` / `#[expect(...)]` (and inner `#!` forms) with a
-/// syntax-aware `syn` walk. Returns `(is_allow, lint_names, has_reason)` per
-/// attribute. Comma-containing reason strings never leak as fake lint names.
 pub(crate) fn parse_suppression_attrs(source: &str) -> Vec<(bool, Vec<String>, bool)> {
     let file = match syn::parse_file(source) {
         Ok(file) => file,
         Err(_first) => {
-            // Hard error for real files is handled by the caller path that
-            // names the path; in-test fixtures may be fragments — wrap as a
-            // module so item-level attributes still parse.
             let wrapped = format!("mod __jackin_suppression_fragment {{\n{source}\n}}");
             match syn::parse_file(&wrapped) {
                 Ok(file) => file,
-                // Unparseable input contributes no suppressions; the gate
-                // that names the path can escalate if needed.
+
                 Err(_second) => return Vec::new(),
             }
         }
@@ -368,7 +349,7 @@ impl<'ast> syn::visit::Visit<'ast> for SuppressionVisitor {
 
 fn collect_suppression_attr(attr: &syn::Attribute, out: &mut Vec<(bool, Vec<String>, bool)>) {
     let path = attr.path();
-    // Unwrap one level of cfg_attr(…, allow/expect(...)).
+
     if path.is_ident("cfg_attr") {
         if let syn::Meta::List(list) = &attr.meta
             && let Ok(nested) = list.parse_args_with(
@@ -411,9 +392,7 @@ fn collect_meta_suppression(meta: &syn::Meta, out: &mut Vec<(bool, Vec<String>, 
             syn::Meta::NameValue(nv) if nv.path.is_ident("reason") => {
                 has_reason = true;
             }
-            syn::Meta::List(_inner) => {
-                // Nested lists are not lint names.
-            }
+            syn::Meta::List(_inner) => {}
             syn::Meta::NameValue(_) => {}
         }
     }
@@ -431,7 +410,6 @@ fn path_to_lint_name(path: &syn::Path) -> String {
 }
 
 pub(crate) fn crate_name_from_path(root: &Path, path: &Path) -> String {
-    // crates/<group>/<package>/... — the package dir is the second component.
     let rel_path = path.strip_prefix(root.join(CRATES_GLOB)).unwrap_or(path);
     rel_path.components().nth(1).map_or_else(
         || String::from("unknown"),
@@ -535,8 +513,6 @@ fn leading_doc_bytes(text: &str) -> usize {
         if t.starts_with("//!") {
             bytes += line.len() + 1;
         } else if t.is_empty() {
-            // blank lines inside the module-doc block still count as part of
-            // the leading header only when we have already seen a `//!` line.
             if bytes == 0 {
                 break;
             }
@@ -758,9 +734,6 @@ fn read_health_history(path: &Path) -> Result<Vec<HistorySnapshot>> {
         .collect())
 }
 
-/// Compare the live report with restored per-main snapshots. Tightening is
-/// proposed only after four dated observations span at least four weeks and
-/// every observation, plus the current value, retains 20% headroom.
 fn build_trend_section(root: &Path, agent_docs: &[DocBytes]) -> Result<TrendSection> {
     let history = root.join("health-history.jsonl");
     let snapshots = read_health_history(&history)?;
@@ -770,7 +743,6 @@ fn build_trend_section(root: &Path, agent_docs: &[DocBytes]) -> Result<TrendSect
         format!("health-history.jsonl ({} snapshot(s))", snapshots.len())
     };
 
-    // Parse agent-doc-bytes bounds from ratchet.toml (best-effort; skip if missing).
     let mut bounds: BTreeMap<String, usize> = BTreeMap::new();
     let ratchet_path = root.join("ratchet.toml");
     if ratchet_path.is_file() {

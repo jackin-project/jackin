@@ -1,8 +1,3 @@
-//! jackin-core: universal vocabulary types shared across all jackin❯ crates.
-//!
-//! **Architecture Invariant:** T0.
-//! Entry point: [`Agent`] — primary domain noun re-exported to every crate.
-
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
@@ -14,7 +9,6 @@
     clippy::panic_in_result_fn,
     clippy::unchecked_time_subtraction
 )]
-#![deny(missing_docs)]
 
 mod account_env;
 pub use account_env::{ACCOUNT_ROUTING_ENV_NAMES, account_env_names, is_account_env};
@@ -26,8 +20,7 @@ mod claude_keychain;
 mod clock;
 mod constants;
 mod container_id;
-/// Container-side path constants. Kept as a `pub mod` so call sites can
-/// `use jackin_core::container_paths` as a namespace (many sites; plan 019).
+
 pub mod container_paths;
 mod docker;
 mod docker_security;

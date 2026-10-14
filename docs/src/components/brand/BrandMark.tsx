@@ -1,16 +1,16 @@
 type BrandMarkProps = {
-  /** Select the explicit lockup asset alias (footer / large surfaces).
-   *  Both lockup and default wordmark artwork include the "by tailrocks" byline. */
+
+
   byline?: boolean
   className?: string
 }
 
-// Generated, fully-outlined SVG (scripts/gen-brand.ts), rendered as an <img> so
-// every placement is byte-for-byte identical and needs no webfont. Two variants
-// are emitted: the default white-word mark for dark surfaces, and an "onlight"
-// dark-word mark for white chrome in light mode. CSS (docs-theme.css) shows the
-// right one per theme; the hero, whose canvas stays dark in light mode, keeps the
-// white-word variant.
+
+
+
+
+
+
 export function BrandMark({ byline = false, className }: BrandMarkProps) {
   const onDark = byline ? '/brand/jackin-lockup.svg' : '/brand/jackin-wordmark.svg'
   const onLight = byline ? '/brand/jackin-lockup-onlight.svg' : '/brand/jackin-wordmark-onlight.svg'

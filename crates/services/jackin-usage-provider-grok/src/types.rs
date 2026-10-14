@@ -1,14 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Grok` billing response types.
 
 use super::grok_cycle_label_from_minutes;
 use serde::Deserialize;
 
-/// Billing-auth precedence: stored subscription auth outranks ambient inference
-/// keys. An `XAI_API_KEY` / deployment key alone is explicitly not billing
-/// auth — the REST call never sends it, so env-key-only accounts report an
-/// honest billing gap instead of a failed request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GrokBillingAuth {
     Subscription,
@@ -30,18 +25,14 @@ pub fn resolve_grok_billing_auth(
     }
 }
 
-/// Current ACP `x.ai/billing` response (top-level `config` + resolved tier).
 #[derive(Debug, Deserialize)]
 pub struct GrokBillingResponse {
     pub(crate) config: Option<GrokBillingConfig>,
     pub(crate) on_demand_enabled: Option<bool>,
-    /// Server-resolved subscription tier (already `display.or(machine)` upstream).
+
     pub(crate) subscription_tier: Option<String>,
 }
 
-/// The one `config` object: preferred `creditUsagePercent`/`currentPeriod`,
-/// current fallback `monthlyLimit`/`used`/`billingPeriod*`, and confirmed
-/// prepaid/on-demand quota bounds.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokBillingConfig {
@@ -54,8 +45,7 @@ pub struct GrokBillingConfig {
     pub(crate) prepaid_balance: Option<GrokCent>,
     pub(crate) billing_period_start: Option<String>,
     pub(crate) billing_period_end: Option<String>,
-    /// Unified-billing monthly quota aliases (`periodStart`/`periodEnd`) from
-    /// the plain `{proxy}/billing` response.
+
     pub(crate) period_start: Option<String>,
     pub(crate) period_end: Option<String>,
 }
@@ -68,22 +58,16 @@ pub struct GrokCurrentPeriod {
     pub(crate) end: Option<String>,
 }
 
-/// Proto3 JSON cents: an omitted `{}` object means zero.
 #[derive(Debug, Deserialize)]
 pub struct GrokCent {
     #[serde(default)]
     pub(crate) val: i64,
 }
 
-/// Positive cent value as-is. Zero/negative magnitudes are invalid for
-/// limits and caps, and a negative prepaid is a deficit, not a credit —
-/// never mirrored into positive bounds. Every monetary quota field passes
-/// through this before comparison/label/money.
 pub fn positive_cent_value(val: i64) -> Option<i64> {
     (val > 0).then_some(val)
 }
 
-/// Period label: the server period type wins, then window duration, then Credits.
 pub fn grok_period_label(period_type: Option<&str>, window_seconds: i64) -> &'static str {
     match period_type {
         Some(kind) if kind.contains("WEEKLY") => "Weekly",
@@ -94,7 +78,6 @@ pub fn grok_period_label(period_type: Option<&str>, window_seconds: i64) -> &'st
 
 #[derive(Debug)]
 pub enum GrokBillingSnapshot {
-    // Boxed: the current `config`-bearing RPC response is far larger than Web.
     Rpc(Box<GrokBillingResponse>),
     Rest(Box<GrokBillingResponse>),
     Web(GrokWebBillingSnapshot),

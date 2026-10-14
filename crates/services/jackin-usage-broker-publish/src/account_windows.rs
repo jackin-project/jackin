@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Account window projection builders.
 
 use jackin_core::account_key_hash;
 use jackin_protocol::control::{QuotaBucketView, StatusSlot};
@@ -72,10 +71,7 @@ pub fn project_window(
         reset_at_epoch: bucket.resets_at,
         quota_state: quota_state(bucket),
         pace_label: bucket.pace_label.clone(),
-        // No run-out signal exists outside the provider pace composite (which
-        // already reaches both surfaces via `pace_label`); the field stays
-        // unset rather than deriving a burn-rate estimate no producer stands
-        // behind.
+
         runs_out_label: None,
     })
 }
@@ -88,9 +84,6 @@ pub const fn window_category(status_slot: Option<StatusSlot>) -> UsageWindowCate
     }
 }
 
-/// Raw used percentage from a monetary bucket, unclamped so over-100% overage
-/// survives. One shared [`Money::raw_percent_of`] rule with the capsule
-/// bucket presentation, so both surfaces recover the same overage magnitude.
 fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
     bucket
         .used_money

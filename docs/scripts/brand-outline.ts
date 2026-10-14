@@ -1,6 +1,6 @@
-// Word outlining for the brand generators. The jackin❯ word is rendered as
-// vector paths (JetBrains Mono Bold → outlines), never as SVG <text>, so every
-// generated SVG is font-independent and identical on any surface.
+
+
+
 
 import * as fontkit from 'fontkit'
 import type { Font } from 'fontkit'
@@ -14,7 +14,7 @@ export const jbBoldData = readFileSync(
 )
 export const font = fontkit.create(jbBoldData) as Font
 
-// Inter — used for the "by tailrocks" byline (a sans subtext, not the mono mark).
+
 export const interData = readFileSync(
   join(root, 'node_modules', '@fontsource', 'inter', 'files', 'inter-latin-500-normal.woff'),
 )
@@ -23,19 +23,19 @@ export const interFont = fontkit.create(interData) as Font
 const round = (n: number) => Math.round(n * 100) / 100
 
 export type OutlinedWord = {
-  /** <g> of vector paths, baseline placed at y = its returned baseline. */
+
   group: string
-  /** placement-ready: replace the group's translate to move it. */
+
   baseline: number
-  /** advance width (includes the trailing side-bearing). */
+
   width: number
-  /** visual ink right edge of the last glyph (no side-bearing). */
+
   inkRight: number
   bottom: number
   capCenter: number
 }
 
-/** Outline `text` at `fontSize`, filled with `fill`, in `face` (default mono bold). */
+
 export function outlineWord(text: string, fontSize: number, fill: string, face: Font = font): OutlinedWord {
   const scale = fontSize / face.unitsPerEm
   const run = face.layout(text)
@@ -56,8 +56,8 @@ export function outlineWord(text: string, fontSize: number, fill: string, face: 
     x += g.advanceWidth
   }
   const baseline = round(maxY * scale)
-  // Keep full precision on the scale — rounding it (e.g. 0.0273 → 0.03) distorts
-  // the glyph size and throws off alignment for small text like the byline.
+
+
   const s = Math.round(scale * 1e6) / 1e6
   return {
     group: `<g fill="${fill}" transform="translate(0 ${baseline}) scale(${s} ${-s})">${glyphs.join('')}</g>`,
@@ -69,7 +69,7 @@ export function outlineWord(text: string, fontSize: number, fill: string, face: 
   }
 }
 
-/** Re-place an outlined word's group at (x, baseline). */
+
 export function placeWord(word: OutlinedWord, x: number, baseline: number): string {
   return word.group.replace(/translate\(0 [0-9.-]+\)/, `translate(${round(x)} ${round(baseline)})`)
 }

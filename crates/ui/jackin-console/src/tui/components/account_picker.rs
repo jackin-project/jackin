@@ -1,20 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Account picker: choose a registered account without carrying credentials.
-//!
-//! Not responsible for: rendering the list widget (see caller view modules)
-//! or persisting the selection to config.
-
 use crossterm::event::{KeyCode, KeyEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountPickerState<C, A, P> {
     pub context: C,
     pub agent: A,
-    // Private so the `selected < providers.len()` invariant holds: `selected`
-    // is only ever moved by the clamping `move_up`/`move_down`, and `providers`
-    // is set once at construction. External code reads them via the accessors.
+
     providers: Vec<P>,
     selected: usize,
 }

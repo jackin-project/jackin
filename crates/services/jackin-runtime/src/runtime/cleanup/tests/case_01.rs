@@ -79,8 +79,6 @@ async fn lifecycle_operations_keep_original_id_after_same_name_replacement() {
     let inspection = docker.inspect_container_by_name(name).await;
     let handle = inspection.handle.expect("running container has an ID");
 
-    // A replacement can claim the mutable name after lookup. Every lifecycle
-    // operation below must still target the originally inspected daemon ID.
     docker
         .container_id_by_name
         .borrow_mut()
@@ -318,13 +316,12 @@ async fn purge_all_removes_matching_state_directories() {
     std::fs::create_dir_all(paths.data_dir.join(unrelated)).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
 
-    // FakeDockerClient with NotFound for all containers (safe to purge)
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
-            ContainerState::NotFound, // primary role container
-            ContainerState::NotFound, // primary dind
-            ContainerState::NotFound, // second role container
-            ContainerState::NotFound, // second dind
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+            ContainerState::NotFound,
         ])),
         ..Default::default()
     };

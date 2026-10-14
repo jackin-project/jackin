@@ -14,8 +14,7 @@ fn backend_renders_text_to_output_buffer() {
         })
         .unwrap();
     let output = terminal.backend_mut().take_output();
-    // Each character gets its own cursor-positioning sequence; verify
-    // both letters appear in the output.
+
     let text = String::from_utf8_lossy(&output);
     assert!(
         text.contains('h') && text.contains('i'),
@@ -49,7 +48,7 @@ fn suppressed_clear_resets_style_without_screen_erase() {
 
     backend.begin_clear_suppression();
     backend.clear_region(ClearType::All).unwrap();
-    // Sustained: a width-shrink resize clears twice; both stay byte-silent.
+
     backend.clear_region(ClearType::All).unwrap();
     assert!(
         backend.take_output().is_empty(),
@@ -57,7 +56,6 @@ fn suppressed_clear_resets_style_without_screen_erase() {
     );
     assert_eq!(backend.current_style, CellStyle::default());
 
-    // After lifting suppression, the next clear erases again.
     backend.end_clear_suppression();
     backend.clear_region(ClearType::All).unwrap();
     let output = backend.take_output();
@@ -132,9 +130,6 @@ fn backend_emits_frame_sgr_metadata() {
 
 #[test]
 fn backend_emits_indexed_color_sgr() {
-    // 256-color fg/bg (`write_color_sgr`) and an indexed underline color
-    // (`write_sgr_metadata`) all route through `push_indexed_color_tail`;
-    // assert the `38;5;`/`48;5;`/`58;5;` forms emit.
     let output = frame_sgr_output(
         SgrMetadata {
             underline_color: termpane::Color::Idx(200),
@@ -178,9 +173,9 @@ fn backend_emits_osc8_metadata_wire_snapshot() {
 fn take_output_drains_buffer() {
     let backend = SocketBackend::new(10, 1);
     let terminal = Terminal::new(backend).unwrap();
-    drop(terminal); // do not call draw
+    drop(terminal);
     let mut backend = SocketBackend::new(10, 1);
-    // Push directly for simplicity.
+
     backend.output.extend_from_slice(b"hello");
     let first = backend.take_output();
     let second = backend.take_output();
@@ -216,7 +211,7 @@ fn cursor_movement_uses_1_based_coords() {
         .unwrap();
     let output = terminal.backend_mut().take_output();
     let text = String::from_utf8_lossy(&output);
-    // Row 3 (0-based) → row 4 (1-based), col 2 → col 3
+
     assert!(
         text.contains("\x1b[4;3H") || text.contains("\x1b[4;1H"),
         "expected cursor at row 4: {text:?}"

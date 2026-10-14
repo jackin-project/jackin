@@ -1,14 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Owned, validated, file-descriptor-pinned recursive directory removal.
-//!
-//! Every directory level is pinned with an `O_NOFOLLOW` descriptor opened
-//! through `openat`. Once pinned, renames above it cannot redirect traversal.
-//! Symlinks where directories are expected are refused; links within removed
-//! contents are unlinked without descent. Record-driven paths are bounded by
-//! a trusted containment root before missing targets are accepted.
-
 use std::ffi::{CStr, CString, OsString};
 use std::io::Read as _;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
@@ -28,8 +20,6 @@ fn dir_oflags() -> OFlag {
     OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC
 }
 
-/// A directory pinned together with the parent entry that authorized it.
-/// No operation re-resolves its display path.
 #[derive(Debug)]
 pub(crate) struct PinnedDir {
     fd: OwnedFd,
@@ -39,8 +29,6 @@ pub(crate) struct PinnedDir {
     identity: FileStat,
 }
 
-/// Process-shared admission lease for Jackin worktree-registry mutations.
-/// The lock file is persistent: unlinking it could split waiters across inodes.
 pub(crate) struct WorktreeRegistryLock {
     _lock: Flock<std::fs::File>,
     file_identity: (u64, u64),
@@ -59,9 +47,6 @@ impl PinnedDir {
         (dev_id(&self.identity), self.identity.st_ino)
     }
 
-    /// Serialize Jackin worktree additions and cleanup for this common Git
-    /// directory. Git itself does not honor this lock; callers must also
-    /// validate checkout inventory while holding the lease.
     pub(crate) async fn lock_worktree_registry(&self) -> std::io::Result<WorktreeRegistryLock> {
         self.verify_entry()?;
         verify_directory_owner(&self.identity, &self.path)?;
@@ -101,9 +86,6 @@ impl PinnedDir {
         Ok(lock)
     }
 
-    /// Confirm the pinned directory is still registered at its original
-    /// parent/name edge. Directory descriptors remain valid after a rename,
-    /// so transactions must check this before relying on their inventory.
     pub(crate) fn verify_entry(&self) -> std::io::Result<()> {
         let (Some(parent), Some(name)) = (&self.parent, &self.name) else {
             return refuse(format!(
@@ -133,7 +115,6 @@ impl PinnedDir {
         Ok(())
     }
 
-    /// Open one child directory without following symlinks.
     pub(crate) fn open_child_dir(&self, name: &str) -> std::io::Result<Option<Self>> {
         let name = child_name(name.as_bytes(), &self.path)?;
         pin_child(
@@ -160,7 +141,6 @@ impl PinnedDir {
             .ok_or_else(|| std::io::Error::other("created directory disappeared while pinning"))
     }
 
-    /// Read bounded UTF-8 metadata; reject links and nonregular files before reading.
     pub(crate) fn read_file(&self, name: &str) -> std::io::Result<Option<String>> {
         let name = child_name(name.as_bytes(), &self.path)?;
         let path = self.path.join(std::ffi::OsStr::from_bytes(name.to_bytes()));
@@ -226,7 +206,6 @@ impl PinnedDir {
         })
     }
 
-    /// Delete the pinned contents, refusing any replacement parent entry.
     pub(crate) fn remove(self) -> std::io::Result<()> {
         let (Some(parent), Some(name)) = (&self.parent, &self.name) else {
             return refuse(format!(
@@ -242,8 +221,6 @@ impl PinnedDir {
         nix::unistd::fsync(parent.as_fd()).map_err(|error| refuse_io(&self.path, error))
     }
 
-    /// Atomically move this exact directory under a pinned destination parent.
-    /// The destination must not exist; the returned pin follows the moved inode.
     pub(crate) fn rename_into(
         self,
         destination_parent: &PinnedDir,
@@ -401,8 +378,6 @@ fn acquire_worktree_registry_lock(
     })
 }
 
-/// Pin an absolute path by walking every component from `/` without links.
-/// Invalid syntax is refused even if an earlier component is missing.
 pub(crate) fn pin_dir(path: &Path) -> std::io::Result<Option<PinnedDir>> {
     let segments = absolute_segments(path)?;
     let mut fd = open(Path::new("/"), dir_oflags(), Mode::empty())
@@ -423,9 +398,6 @@ pub(crate) fn pin_dir(path: &Path) -> std::io::Result<Option<PinnedDir>> {
     pin_child(fd.as_fd(), &segments[segments.len() - 1], path)
 }
 
-/// Pin a target strictly below the caller's trusted containment root.
-/// Validate the original lexical suffix before accepting any missing target.
-/// Only the trusted root is canonicalized; target symlinks are never followed.
 pub(crate) fn pin_dir_contained(root: &Path, path: &Path) -> std::io::Result<Option<PinnedDir>> {
     let (pinned_root, segments, pinned_path) = contained_root(root, path)?;
     let mut fd = pinned_root.fd;
@@ -493,9 +465,6 @@ fn contained_root(root: &Path, path: &Path) -> std::io::Result<(PinnedDir, Vec<C
     Ok((pinned_root, segments, pinned_path))
 }
 
-/// Admission for one contained directory removal, including a pinned absence
-/// witness. Admission never mutates the filesystem. The consuming effect
-/// refuses replacement directories and any target that appeared after admission.
 #[derive(Debug)]
 pub struct OwnedRemoval {
     ancestors: Vec<PinnedDir>,
@@ -544,8 +513,7 @@ impl OwnedRemoval {
             .ancestors
             .first()
             .ok_or_else(|| std::io::Error::other("missing containment root"))?;
-        // Rewalk the trusted canonical root without links. This only observes;
-        // destructive operations still use the originally admitted descriptors.
+
         let current_root = pin_dir(&root.path)?
             .ok_or_else(|| std::io::Error::other("containment root disappeared after admission"))?;
         if dev_id(&current_root.identity) != dev_id(&root.identity)
@@ -589,8 +557,6 @@ impl OwnedRemoval {
     }
 }
 
-/// Recursively remove a directory through a pinned lexical path.
-/// Missing paths are a no-op; links and non-directories are refused.
 pub fn safe_remove_dir_all(path: &Path) -> std::io::Result<()> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
@@ -603,7 +569,6 @@ pub fn safe_remove_dir_all(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Recursively remove a strictly contained directory through pinned fds.
 pub fn safe_remove_dir_contained(root: &Path, path: &Path) -> std::io::Result<()> {
     if let Some(dir) = pin_dir_contained(root, path)? {
         dir.remove()?;
@@ -618,7 +583,7 @@ fn absolute_segments(path: &Path) -> std::io::Result<Vec<CString>> {
             path.display()
         ));
     }
-    // `Path::components` normalizes interior `.`; inspect bytes first.
+
     if path
         .as_os_str()
         .as_bytes()
@@ -753,27 +718,16 @@ fn verify_entry(
     Ok(())
 }
 
-/// Device id of an `fstat` result as the `u64` that `Metadata::dev`
-/// reports. `st_dev` is already `u64` on Linux, so no conversion exists
-/// there; every other platform converts fallibly (macOS `st_dev` is `i32`).
 #[cfg(target_os = "linux")]
 fn dev_id(stat: &FileStat) -> u64 {
     stat.st_dev
 }
 
-/// Device id of an `fstat` result as the `u64` that `Metadata::dev`
-/// reports. Portable fallible conversion for non-Linux Unix (macOS
-/// `st_dev` is `i32`); see the Linux variant.
 #[cfg(not(target_os = "linux"))]
 fn dev_id(stat: &FileStat) -> u64 {
     u64::try_from(stat.st_dev).unwrap_or(u64::MAX)
 }
 
-/// Delete every entry directly under pinned `dir_fd`, recursing into
-/// subdirectories through newly pinned fds. Each entry is classified by an
-/// atomic `openat(O_DIRECTORY|O_NOFOLLOW)`: success means directory,
-/// `ENOTDIR`/`ELOOP` means unlink-without-descent, anything else aborts
-/// loudly so a half-removed tree is never mistaken for a clean one.
 fn remove_dir_contents(dir_fd: BorrowedFd<'_>, path: &Path) -> std::io::Result<()> {
     let names = list_names(dir_fd, path)?;
     for name in &names {
@@ -798,7 +752,6 @@ fn remove_dir_contents(dir_fd: BorrowedFd<'_>, path: &Path) -> std::io::Result<(
 }
 
 fn list_names(dir_fd: BorrowedFd<'_>, path: &Path) -> std::io::Result<Vec<CString>> {
-    // A new open description avoids sharing directory offsets with the pin.
     let fd = openat(dir_fd, Path::new("."), dir_oflags(), Mode::empty())
         .map_err(|error| refuse_io(path, error))?;
     let mut dir = Dir::from_fd(fd).map_err(|error| refuse_io(path, error))?;

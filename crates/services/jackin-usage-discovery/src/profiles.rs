@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Profile credential readers.
 
 use crate::ProfileCredentialMaterial;
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,9 +19,7 @@ pub(crate) trait ProfileCredentialReader {
     fn read(&self, path: &Path) -> ProfileReadOutcome;
     fn exists(&self, path: &Path) -> bool;
     fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome;
-    /// Presence-only probe for the Antigravity Keychain grant singleton.
-    /// `Bytes` is always empty and never carries the grant: the CLI owns the
-    /// secret, discovery only learns whether it exists.
+
     fn read_antigravity_keychain(&self) -> ProfileReadOutcome;
 }
 
@@ -128,17 +125,12 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
         {
             use security_framework::item::{ItemClass, ItemSearchOptions};
 
-            // This profile query can run outside the shipped broker binary
-            // (for example through a library discovery caller), so establish
-            // its own no-UI scope before invoking Security.framework.
             let Ok(_unattended_keychain_guard) =
                 jackin_usage_provider_claude::unattended_keychain_guard()
             else {
                 return ProfileReadOutcome::ConsentRequired;
             };
 
-            // Reference-only search: no `load_data`, so the grant payload is
-            // never read into this process — presence is the whole answer.
             let mut options = ItemSearchOptions::new();
             options
                 .class(ItemClass::generic_password())
@@ -152,8 +144,6 @@ impl ProfileCredentialReader for SystemProfileCredentialReader {
                 Err(error) => match jackin_usage_provider_claude::classify_claude_keychain_status(
                     error.code(),
                 ) {
-                    // Unreachable: the classifier only emits Denied/Missing.
-                    // Fail closed to absence either way.
                     jackin_usage_provider_claude::ClaudeKeychainRead::Payload { .. } => {
                         ProfileReadOutcome::Missing
                     }

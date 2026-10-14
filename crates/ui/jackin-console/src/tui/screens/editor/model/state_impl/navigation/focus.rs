@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EditorState` content area, scroll, and hover.
 
 use super::super::super::{
     EditorFocusTarget, EditorHoverTarget, EditorNavigationKeyPlan, EditorState, EditorTab,

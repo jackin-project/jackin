@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Docker network creation and `DinD` sidecar launch for the role container.
-//!
-//! `wait_for_dind` is already shared with `attach`; this module is the
-//! single-file counterpart that creates the network and starts the sidecar.
-//!
-//! Split out of `jackin-runtime` (S7 split 92); the old
-//! `jackin_runtime::runtime::launch::launch_dind::*` paths keep working
-//! through the hub shim re-export.
-
 use anyhow::Context as _;
 use fs4::FileExt;
 use jackin_core::JackinPaths;
@@ -28,7 +19,7 @@ pub const PREWARM_STATE_FILE: &str = "prewarm-dind.json";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DindSidecarPrewarm {
     pub dind: String,
-    /// Immutable daemon ID captured when the retained sidecar was created.
+
     pub dind_id: String,
     pub network: String,
     pub certs_volume: String,
@@ -95,11 +86,6 @@ impl DindSidecarOwner<'_> {
     }
 }
 
-/// Create the Docker network and start the `DinD` sidecar container.
-///
-/// This lets fresh launches overlap sidecar startup with other foreground
-/// requirements, such as workspace materialization, while keeping the same
-/// `DockerApi` calls and diagnostics.
 pub async fn run_dind_sidecar_headless(
     container_name: &str,
     network: &str,
@@ -121,9 +107,6 @@ pub async fn run_dind_sidecar_headless(
     .await
 }
 
-/// `docker.create_network` wrapped in the shared `sidecar`/`create_network`
-/// timing span. `create_network` is idempotent, hence the `created_or_exists`
-/// success label.
 async fn create_network_timed(
     network: &str,
     labels: std::collections::HashMap<String, String>,
@@ -167,12 +150,9 @@ async fn run_dind_sidecar_headless_with_owner(
     dind_handle_slot: Option<std::sync::Arc<std::sync::Mutex<Option<ContainerHandle>>>>,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    // WP4 Part B: image + privileged flag are tier-aware. `rootless` uses the
-    // rootless DinD image without `--privileged`; `privileged` keeps the
-    // standard DinD image + `--privileged` path.
     let (dind_image, dind_privileged) =
         jackin_runtime_docker_profile::docker_profile::dind_image_and_privileged(grant);
-    // Create Docker network (sidecar networks are never internal).
+
     create_network_timed(network, owner.labels(None), false, docker).await?;
 
     jackin_diagnostics::active_timing_started(
@@ -210,19 +190,6 @@ async fn run_dind_sidecar_headless_with_owner(
         pull_dind_image_result?;
     }
 
-    // Start Docker-in-Docker with TLS.
-    //
-    // `DOCKER_TLS_SAN` is read by docker:dind's `dockerd-entrypoint.sh` and
-    // appended to the auto-generated server cert's Subject Alternative Names.
-    // Without it, the cert only covers the short container ID, `docker`, and
-    // `localhost` — so roles connecting via `tcp://{dind}:2376` get a TLS
-    // hostname-mismatch error.
-    //
-    // The entrypoint concatenates `DOCKER_TLS_SAN` into the openssl config
-    // verbatim (no type prefix added), so the value must already be in the
-    // `DNS:<name>` form that openssl's `subjectAltName` section expects.
-    // Without the prefix, openssl aborts with `v2i_GENERAL_NAME_ex: missing
-    // value` and `DinD` never comes up.
     let certs_dind_mount = format!("{certs_volume}:/certs/client");
     let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
     let labels = owner.labels(Some(LABEL_KIND_DIND));
@@ -299,9 +266,6 @@ async fn run_dind_sidecar_headless_with_owner(
     Ok(())
 }
 
-/// Prewarm a sidecar after validating any persisted retained-sidecar identity.
-/// A same-name replacement must stop this operation before stale cleanup can
-/// inspect or remove it.
 pub async fn prewarm_dind_sidecar_container_with_paths(
     paths: &JackinPaths,
     docker: &impl DockerApi,
@@ -354,8 +318,7 @@ async fn prewarm_dind_sidecar_container_inner(
     }
 
     let started = std::time::Instant::now();
-    // Prewarm warms the privileged DinD path (the only one a prewarmed sidecar
-    // can be adopted into today); a rootless launch starts its own sidecar.
+
     let dind_handle_slot = std::sync::Arc::new(std::sync::Mutex::new(None));
     let result = run_dind_sidecar_headless_with_owner(
         DindSidecarOwner::Prewarm,
@@ -466,8 +429,6 @@ async fn load_prewarmed_dind_state_with_identity(
         return Ok(Some(state));
     }
 
-    // Schema 1 stored only mutable names. Recover the daemon ID only when the
-    // exact named row still carries all three Jackin prewarm ownership labels.
     let rows = docker
         .list_containers(&[LABEL_MANAGED, LABEL_KIND_PREWARM_DIND], true)
         .await
@@ -639,9 +600,6 @@ fn record_prewarm_adoption_skip(reason: &str) {
     emit_prewarmed_dind_adoption("skipped", reason);
 }
 
-/// Opportunistically consume the explicit kept sidecar prewarm as a one-shot
-/// launch resource. The warmed resource names are recorded in the instance
-/// manifest and normal session/eject cleanup owns them after launch succeeds.
 #[expect(
     clippy::too_many_lines,
     reason = "identity validation, readiness, and adoption must remain one atomic ownership handoff"
@@ -710,9 +668,6 @@ pub async fn adopt_prewarmed_dind_sidecar(
         return None;
     };
     if inspected_handle != expected_handle {
-        // Keep the state file so GC continues to reserve this name. Removing
-        // it would let a later best-effort prewarm cleanup mistake a
-        // same-name replacement for the retained sidecar.
         record_prewarm_adoption_skip("container:identity-mismatch");
         return None;
     }

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings auth modal handling.
 
 use super::{
     SourceFolderValidator, apply_source_folder_to_settings_auth_form, clear_settings_auth_kind,
@@ -140,34 +139,27 @@ pub fn handle_settings_auth_modal(
                     auth.set_modal(modal);
                     return SettingsAuthOutcome::ApplyFileBrowserOutcome(browser_outcome);
                 }
-                other => {
-                    match auth_source_folder_picker_plan(other) {
-                        AuthSourceFolderPickerPlan::Commit(path) => {
-                            match validate_source_folder(auth.selected_kind(), &path) {
-                                Ok(()) => apply_source_folder_to_settings_auth_form(auth, path),
-                                // Wrong folder for this agent: keep the picker open and
-                                // raise the standard error dialog (promoted from
-                                // `auth.error`) over it, rather than committing a folder
-                                // that yields no credentials. Dismissing the dialog
-                                // leaves the picker so the operator can pick another.
-                                Err(reason) => {
-                                    auth.set_error(reason);
-                                    auth.set_modal(modal);
-                                }
+                other => match auth_source_folder_picker_plan(other) {
+                    AuthSourceFolderPickerPlan::Commit(path) => {
+                        match validate_source_folder(auth.selected_kind(), &path) {
+                            Ok(()) => apply_source_folder_to_settings_auth_form(auth, path),
+
+                            Err(reason) => {
+                                auth.set_error(reason);
+                                auth.set_modal(modal);
                             }
                         }
-                        AuthSourceFolderPickerPlan::Close => restore_settings_auth_form(auth),
-                        AuthSourceFolderPickerPlan::KeepModal => {
-                            auth.set_modal(modal);
-                        }
                     }
-                }
+                    AuthSourceFolderPickerPlan::Close => restore_settings_auth_form(auth),
+                    AuthSourceFolderPickerPlan::KeepModal => {
+                        auth.set_modal(modal);
+                    }
+                },
             }
         }
         SettingsModal::AuthOpPicker { state } => {
             let outcome = state.handle_key(key);
             match crate::tui::update::op_picker_inline_plan(outcome) {
-                // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }
                     | crate::tui::op_picker::OpPickerSelection::EditItemField { .. },
@@ -175,10 +167,6 @@ pub fn handle_settings_auth_modal(
                 InlinePickerPlan::Commit(crate::tui::op_picker::OpPickerSelection::Existing(
                     op_ref,
                 )) => {
-                    // Close the OpPicker — the auth form stays stashed on
-                    // modal_parents so the _committed / _failed helpers find it.
-                    // Dispatch already took the current picker. Preserve its
-                    // parent until asynchronous validation completes.
                     return SettingsAuthOutcome::ValidateOpRef(op_ref);
                 }
                 InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),

@@ -14,7 +14,7 @@ fn save_rejects_reserved_name_candidate_and_preserves_on_disk_config() {
     let baseline = std::fs::read_to_string(&paths.config_file).unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    // Bypass the CLI pre-flight via the unchecked setter.
+
     editor
         .set_env_var(&EnvScope::Global, "DOCKER_HOST", "tcp://bad".into())
         .unwrap();
@@ -120,12 +120,6 @@ fn editor_save_second_commit_failure_rolls_back_every_original_file() {
         )
         .unwrap();
 
-    // Fail the workspace rename after the global rename already committed:
-    // once the workspace file is staged (second stage call), swap its
-    // target for a non-empty directory so the rename fails and the
-    // transaction must restore the already-committed global file.
-    // Rollback restores bytes, not modes (restore re-stages through a
-    // fresh 0o600 temp file), so only contents are asserted below.
     let mut stage_number = 0;
     let err = editor
         .save_with_stager(|path, contents| {
@@ -165,8 +159,6 @@ fn editor_save_second_commit_failure_rolls_back_every_original_file() {
         "leftover transaction files: {leftovers:?}"
     );
 
-    // The failed editor released its lock only after rollback completed; a
-    // fresh editor can immediately publish the same tree again.
     ConfigEditor::open(&paths).unwrap().save().unwrap();
 }
 
@@ -299,9 +291,7 @@ fn add_mount_scoped_creates_nested_entry() {
     std::fs::write(&paths.config_file, "").unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    // Behavioral equivalence with AppConfig::add_mount:
-    // scope is the OUTER key; name is the INNER key.
-    // So scope=agent-smith produces [docker.mounts.agent-smith] with creds = {...}
+
     editor.add_mount(
         "creds",
         MountConfig {
@@ -315,7 +305,7 @@ fn add_mount_scoped_creates_nested_entry() {
     editor.save().unwrap();
 
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
-    // The scoped shape: [docker.mounts.agent-smith] with creds sub-table
+
     assert!(out.contains("[docker.mounts.agent-smith]"), "{out}");
     assert!(out.contains(r#"src = "/run/secrets/x""#), "{out}");
     assert!(out.contains("readonly = true"), "{out}");
@@ -359,8 +349,6 @@ fn remove_mount_returns_false_for_missing() {
 
 #[test]
 fn remove_mount_scoped_last_entry_deletes_scope_table() {
-    // Matches AppConfig::remove_mount cleanup: when the last named mount
-    // in a scope is removed, the scope table itself is removed.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();

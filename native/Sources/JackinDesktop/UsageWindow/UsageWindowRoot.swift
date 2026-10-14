@@ -5,7 +5,7 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// SwiftUI content for the native AppKit sidebar split item.
+
 public struct UsageWindowSidebar: View {
     private enum Destination: Hashable {
         case overview
@@ -100,7 +100,7 @@ public struct UsageWindowSidebar: View {
     }
 }
 
-/// SwiftUI content for the native AppKit detail split item.
+
 public struct UsageWindowDetail: View {
     @ObservedObject public var store: PresentationStore
 
@@ -182,7 +182,7 @@ public struct UsageWindowDetail: View {
     }
 }
 
-/// Native split-item top accessory for detail-local identity and Refresh.
+
 struct UsageWindowDetailAccessory: View {
     @ObservedObject var store: PresentationStore
 

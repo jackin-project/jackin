@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Hardline reconnect, restore, and moved-path recovery logic.
-
 use anyhow::{Context, Result};
 
 use crate::workspace::{self, resolve_path};
@@ -19,9 +17,6 @@ use crate::console;
 
 use super::resolve_new_session_agent;
 
-/// Bridge from the TUI event loop to async docker work for Stop/Purge.
-/// Now that `run_in_place` is async, the work runs directly on the
-/// existing Tokio runtime — no nested runtime or OS thread needed.
 pub(super) struct ConsoleInPlaceHandler {
     pub(super) paths: JackinPaths,
     pub(super) debug: bool,
@@ -35,12 +30,7 @@ impl console::InstanceActionHandler<jackin_core::Agent> for ConsoleInPlaceHandle
     ) -> Result<()> {
         let docker = BollardDockerClient::connect()?;
         let mut runner = ShellRunner { debug: self.debug };
-        // Wrap the eject + post-condition work in an async block so a
-        // partial failure still hits the trailing reconcile +
-        // manifest-status update. Without this, an eject that errored
-        // after removing the last keep-awake container would leave
-        // caffeinate asserted on the host and the on-disk manifest
-        // stuck at Active/Running while the container is half-gone.
+
         let result: Result<()> = async {
             match action {
                 console::ConsoleInstanceAction::Stop => {
@@ -69,13 +59,6 @@ impl console::InstanceActionHandler<jackin_core::Agent> for ConsoleInPlaceHandle
     }
 }
 
-/// Promote the manifest for `container` to `RestoreAvailable` so the
-/// console list reflects "stopped, recoverable on demand" instead of the
-/// stale `Active` / `Running` that `eject_role` would otherwise leave
-/// behind (eject removes Docker resources but writes nothing to the
-/// on-disk index). Logs and proceeds on error — the eject itself
-/// succeeded and a stale row is recoverable on next interaction with
-/// the container.
 pub(crate) fn mark_instance_restore_available(paths: &JackinPaths, container: &str) {
     let state_dir = paths.data_dir.join(container);
     match instance::InstanceManifest::read(&state_dir) {
@@ -133,12 +116,6 @@ pub(super) async fn handle_console_instance_action(
             result
         }
         console::ConsoleInstanceAction::ReconnectFocus(session_id) => {
-            // Same as `Reconnect` but forwards a pane-focus id to the
-            // daemon. Only fires for running instances reachable via
-            // the bind-mounted socket — `restore_hardline_instance`
-            // (cold-restore path) does not surface the snapshot
-            // preview that produces a focus id, so we route directly
-            // through the focused hardline.
             runtime::reconcile_keep_awake(paths, docker, runner).await;
             let result = runtime::hardline_agent_with_focus(
                 paths,
@@ -191,13 +168,7 @@ pub(super) async fn handle_console_instance_action(
             );
             Ok(())
         }
-        // Stop and Purge are dispatched via `ConsoleInPlaceHandler::run_in_place`
-        // (see `console::ConsoleInstanceAction::runs_in_place`), so
-        // the console event loop never returns
-        // `ConsoleOutcome::InstanceAction` for them. Bail with a
-        // diagnostic — `unreachable!` would panic in a future caller
-        // that bypasses the runs_in_place gate; bail surfaces the
-        // dispatch bug without taking the process down.
+
         console::ConsoleInstanceAction::Stop | console::ConsoleInstanceAction::Purge => {
             anyhow::bail!(
                 "{action:?} must run via ConsoleInPlaceHandler::run_in_place; reached handle_console_instance_action by mistake"
@@ -450,17 +421,11 @@ fn moved_path_browser_child_dirs(cwd: &std::path::Path) -> Vec<std::path::PathBu
     dirs
 }
 
-/// One step of the moved-path entry loop, factored out of the
-/// `dialoguer::Input::interact_text()` call so the four cases (blank /
-/// valid dir / not-a-dir / canonicalize-fail) can be unit-tested
-/// without an interactive prompt.
 pub(crate) enum MovedPathEntryStep {
-    /// Empty input → operator cancelled.
     Cancel,
-    /// Canonical absolute path; entry loop returns this.
+
     Accepted(std::path::PathBuf),
-    /// Operator must retry; carries the message to print before the
-    /// next prompt iteration.
+
     Retry(String),
 }
 

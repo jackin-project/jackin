@@ -1,10 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Bulk instance prune and absent-for-purge ensures.
-//!
-//! The absent-for-purge guards live in
-//! `jackin_runtime_cleanup_absent_guards` (S7 split 100),
-//! re-exported below.
 
 use crate::instance::InstanceIndex;
 use crate::runtime::prune_output;
@@ -15,14 +10,8 @@ use jackin_docker::docker_client::DockerApi;
 
 use super::{exile_all, purge_container_filesystem};
 
-// Moved to jackin_runtime_cleanup_absent_guards::absent_guards (S7 split
-// 100); the item re-export keeps every
-// `cleanup::ensure_role_resources_absent_for_purge` path stable.
 pub(crate) use jackin_runtime_cleanup_absent_guards::absent_guards::ensure_role_resources_absent_for_purge;
 
-/// Force-eject all managed Docker resources then purge every instance's
-/// state directory and index entry, regardless of status.
-/// Used by `jackin prune instances --all` and `jackin prune system --all`.
 pub async fn prune_all_instances(
     paths: &JackinPaths,
     docker: &impl DockerApi,

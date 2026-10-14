@@ -69,10 +69,6 @@ async fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
 
 #[tokio::test]
 async fn role_input_trusted_existing_role_skips_trust_prompt() {
-    // When the config already has a trusted role source the editor
-    // must register the cached repo and add it to the workspace
-    // *without* re-prompting for trust (`Ok(source) if
-    // source.trusted` branch in the role-registration effect executor).
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     paths.ensure_base_dirs().unwrap();
@@ -352,10 +348,6 @@ fn role_text_input_misroute_uses_error_popup_instead_of_panicking() {
 
 #[test]
 fn agents_tab_star_sets_default_on_allowed_agent() {
-    // Cursor on row 1 (role "beta"), no default set yet. Workspace
-    // starts in "all roles allowed" shorthand, so beta is
-    // effectively allowed. Pressing `*` pins it as default while
-    // preserving the shorthand (empty allow list).
     let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
     let mut state = editor_on_agents_tab(empty_ws(), 1);
 

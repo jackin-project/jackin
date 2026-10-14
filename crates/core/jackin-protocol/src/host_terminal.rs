@@ -1,46 +1,23 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host-terminal default-color capture shared by attach clients.
-//!
-//! Before an attach `Hello`, the client can ask the terminal it runs on for
-//! its default foreground/background (OSC 10/11). The daemon feeds the answer
-//! into every pane grid, which answers agent OSC 10/11 queries from that stored
-//! state. Agents gate theming on this answer; for example Codex paints no
-//! backgrounds at all when OSC 11 goes silent.
-
 use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
 
-/// Result of the pre-Hello color query. `leftover_input` is the bytes from
-/// the query window that were not part of a complete OSC reply — operator
-/// keystrokes typed before attach completed — which the caller forwards as
-/// ordinary input.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct HostColors {
-    /// Reported default foreground RGB value.
     pub fg: Option<(u8, u8, u8)>,
-    /// Reported default background RGB value.
+
     pub bg: Option<(u8, u8, u8)>,
-    /// Operator input read during the handshake that was not an OSC reply.
+
     pub leftover_input: Vec<u8>,
 }
 
-/// Wall-clock cap for the whole query. Local terminals answer in
-/// single-digit milliseconds; the cap bounds terminals that never answer or
-/// answer too late.
 const QUERY_TIMEOUT: Duration = Duration::from_millis(250);
 
-/// Byte cap on the query-window buffer. Both replies fit in well under a
-/// hundred bytes; the cap bounds the per-chunk re-scan and the buffer when
-/// stdin floods inside the window.
 const QUERY_BUFFER_CAP: usize = 4096;
 
-/// Query the controlling terminal for its default colors. Writes the OSC
-/// 10/11 queries to `writer` (the raw-mode terminal), reads `reader` until
-/// both replies arrived or the timeout passed. Terminals that cannot answer
-/// (`TERM=dumb`/`linux`) are skipped without writing anything.
 pub async fn query_host_terminal_colors<R, W>(
     term: Option<&str>,
     reader: &mut R,
@@ -88,9 +65,6 @@ where
     extract_color_replies(&buf)
 }
 
-/// Scan `buf` for OSC 10/11 color replies; return the parsed colors and, as
-/// `leftover_input`, the bytes that were not part of a reply in their
-/// original order.
 fn extract_color_replies(buf: &[u8]) -> HostColors {
     let mut fg = None;
     let mut bg = None;

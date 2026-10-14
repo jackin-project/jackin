@@ -1,26 +1,22 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Launch account choices and admission.
 
 use jackin_config::{AccountConfig, AppConfig, ResolvedInstance, resolve_launch};
 use jackin_core::{Agent, WorkspaceName};
 
-/// Secret-free account row used by launch and session pickers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountChoice {
     pub id: String,
     pub name: String,
     pub provider: jackin_config::AiProvider,
     pub agents: Vec<Agent>,
-    /// Exact pre-container launch configuration. `None` for legacy account
-    /// rows and live rows, which use their own routing identity.
+
     pub configuration_id: Option<String>,
-    /// Exact live launch instance. `None` for pre-container launch rows.
+
     pub instance_id: Option<String>,
 }
 
 impl AccountChoice {
-    /// Consume this pre-container picker row as one exclusive launch identity.
     #[must_use]
     pub fn into_launch_selection(self) -> jackin_core::LaunchSelection {
         match self.configuration_id {
@@ -48,8 +44,6 @@ impl AccountChoice {
     }
 }
 
-/// Secret-free row for one registered account: id, display name, provider,
-/// and every agent the account can authenticate.
 pub(crate) fn account_row(id: &str, account: &AccountConfig) -> AccountChoice {
     AccountChoice {
         id: id.to_owned(),
@@ -65,10 +59,6 @@ pub(crate) fn account_row(id: &str, account: &AccountConfig) -> AccountChoice {
     }
 }
 
-/// One exact account/agent binding admitted by a live container manifest.
-/// This is deliberately separate from [`ResolvedInstance`]: the console
-/// refresh service must not re-resolve mutable host defaults to describe a
-/// running container.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveInstanceAdmission {
     pub instance_id: String,
@@ -76,13 +66,6 @@ pub struct LiveInstanceAdmission {
     pub account_id: String,
 }
 
-/// List only registered accounts authorized by the saved workspace.
-/// Ad-hoc launches have no workspace allowlist; choosing a registered account
-/// here is the explicit selection. A missing saved workspace yields no choices.
-///
-/// This is the authorization-and-compatibility view, not the admission view:
-/// it ignores `default_launch`. Defaults-aware callers use
-/// [`admitted_account_choices`] instead.
 pub fn account_choices(
     config: &AppConfig,
     workspace: Option<&WorkspaceName>,
@@ -103,10 +86,6 @@ pub fn account_choices(
         .collect()
 }
 
-/// Filter authorized registered accounts by coding-agent compatibility.
-///
-/// Like [`account_choices`], this ignores `default_launch`; see
-/// [`admitted_account_choices`] for the admission-constrained rows.
 pub fn accounts_for_launch(
     config: &AppConfig,
     workspace: Option<&WorkspaceName>,
@@ -118,14 +97,6 @@ pub fn accounts_for_launch(
         .collect()
 }
 
-/// Map admitted launch instances to secret-free picker rows.
-///
-/// One row per admitted configuration, in ascending account/configuration
-/// order. Configurations sharing an account remain distinct: the
-/// configuration, not just the account, is the launch identity.
-/// Instances naming an unregistered account are skipped:
-/// `jackin_config::resolve_launch` never produces them, so only a foreign
-/// instance list can hit that.
 #[must_use]
 pub fn account_choices_for_instances(
     config: &AppConfig,
@@ -149,9 +120,6 @@ pub fn account_choices_for_instances(
     choices
 }
 
-/// Build live-session rows from the manifest's admitted instance set.
-/// Duplicate accounts remain distinct because `instance_id` is the routing
-/// identity; a later picker commit must never collapse them back to account ID.
 #[must_use]
 pub fn account_choices_for_live_instances(
     config: &AppConfig,
@@ -178,21 +146,6 @@ pub fn account_choices_for_live_instances(
     choices
 }
 
-/// Admitted picker rows for a committed (role + agent) launch.
-///
-/// Returns `None` when no `default_launch` is configured at any scope —
-/// the legacy account-bindings path applies. Otherwise resolves through
-/// `jackin_config::resolve_launch`, the same resolver the runtime
-/// provisions from, so this pre-check cannot drift from it, and returns
-/// the admitted rows for `agent` (possibly empty when the defaults admit
-/// nothing for this agent).
-///
-/// # Errors
-///
-/// Returns the resolver error verbatim when the configured defaults are
-/// invalid (unknown configuration, unauthorized or incompatible account):
-/// an explicit default fails atomically and never falls back to the
-/// eligible-candidate list.
 pub fn admitted_account_choices(
     config: &AppConfig,
     workspace: Option<&WorkspaceName>,

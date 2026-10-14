@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch surface product composition tests (migrated out of jackin-runtime).
-
 use crate::tui::components::build_log_dialog::{
     BUILD_LOG_WRAP_PREFIX, build_log_scroll_metrics, refresh_build_log_layout,
     render_build_log_dialog, wrap_build_log_lines,

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `github_picker`.
 use super::*;
 use crate::github_mounts::GithubChoice;
 use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -56,7 +55,6 @@ fn new_selects_nothing_when_empty() {
 
 #[test]
 fn enter_commits_selected_url() {
-    // Default selection is index 0 — Enter returns the first URL.
     let mut s = GithubPickerState::new(vec![
         choice("/a", "main", "https://github.com/o/a/tree/main"),
         choice("/b", "dev", "https://github.com/o/b/tree/dev"),
@@ -68,8 +66,6 @@ fn enter_commits_selected_url() {
 
 #[test]
 fn down_then_enter_resolves_second_url() {
-    // Pin that Enter commits the URL at the *current* selection, not a
-    // stale index.
     let mut s = GithubPickerState::new(vec![
         choice("/a", "main", "https://github.com/o/a/tree/main"),
         choice("/b", "dev", "https://github.com/o/b/tree/dev"),

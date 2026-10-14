@@ -15,8 +15,7 @@ fn process_exit_wins() {
     assert_eq!(result.raw_state, RawAgentState::Idle);
     assert_eq!(result.winner, EvidenceWinner::ProcessExit);
     assert!(result.has_note(EvidenceNote::ProcessExited));
-    // Exit is a definitive idle: Strong so debounce publishes done on this tick,
-    // before the daemon clears authority for the exiting session.
+
     assert_eq!(result.confidence, AgentStatusConfidence::Strong);
 }
 
@@ -62,8 +61,7 @@ fn pending_permission_blocks_immediately() {
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
     assert_eq!(result.raw_state, RawAgentState::Blocked);
-    // A pending-permission block is authored by the authority (the hook), so the
-    // winner carries its source — report() shows Reported, not VisibleScreen.
+
     assert_eq!(
         result.winner,
         EvidenceWinner::Authority {
@@ -87,8 +85,7 @@ fn fresh_screen_blocker_overrides_non_blocked_authority() {
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
     assert_eq!(result.raw_state, RawAgentState::Blocked);
-    // The visible dialog wins via the screen channel (not the authority), so
-    // report() will attribute it to VisibleScreen, not Reported.
+
     assert_eq!(result.winner, EvidenceWinner::Blocked);
 }
 
@@ -101,7 +98,7 @@ fn fresh_authority_wins_after_blocker_checks() {
     let result = arbitrate(&snapshot, RawAgentState::Idle, now);
 
     assert_eq!(result.raw_state, RawAgentState::Working);
-    // When authority wins, the winner carries its source (report() shows Reported).
+
     assert_eq!(
         result.winner,
         EvidenceWinner::Authority {
@@ -112,9 +109,6 @@ fn fresh_authority_wins_after_blocker_checks() {
 
 #[test]
 fn losing_authority_is_not_attributed_as_source() {
-    // An expired authority loses to a strong screen idle. The source must NOT be
-    // attributed to the authority — otherwise report() emits Reported{source} for
-    // a screen-authored state (and `stale_report = true` at the same time).
     let now = Instant::now();
     let mut snapshot = base_snapshot();
     snapshot.authority = Some(authority(
@@ -128,8 +122,6 @@ fn losing_authority_is_not_attributed_as_source() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    // The screen authored the state, not the (expired) authority — so the winner
-    // is not Authority and report() will not emit Reported{source}.
     assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
     assert!(result.stale_report);
 }
@@ -138,8 +130,6 @@ fn losing_authority_is_not_attributed_as_source() {
 fn authority_confidence_reflects_grade() {
     let now = Instant::now();
 
-    // Complete-grade runtime-event authority is the most trusted semantic
-    // source -> Authoritative.
     let mut complete = base_snapshot();
     let mut a = authority(RawAgentState::Working, false, now);
     a.grade = AuthorityGrade::Complete;
@@ -149,7 +139,6 @@ fn authority_confidence_reflects_grade() {
         AgentStatusConfidence::Authoritative,
     );
 
-    // Partial-grade coverage cannot author at full confidence -> Strong.
     let mut partial = base_snapshot();
     let mut b = authority(RawAgentState::Working, false, now);
     b.grade = AuthorityGrade::Partial;

@@ -39,7 +39,7 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
     let state_dir = paths.data_dir.join(&manifest.container_base);
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-    // inspect returns Running → ad-hoc indexed candidate is live
+
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             jackin_docker::docker_client::ContainerState::Running,
@@ -167,7 +167,7 @@ async fn resolve_running_container_from_context_ignores_disallowed_running_agent
     std::fs::create_dir_all(&project_dir).unwrap();
 
     let config = config_with_workspace(&project_dir, vec!["agent-smith".to_owned()], None);
-    // the-architect is running but not allowed in this workspace.
+
     let docker = fake_docker_with_running_agents(&["jk-the-architect"]);
 
     let paths = JackinPaths::for_tests(temp.path());

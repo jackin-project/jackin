@@ -16,8 +16,6 @@ fn validate_op_source_rejects_non_op_scheme() {
 
 #[test]
 fn validate_op_source_rejects_flag_segments() {
-    // A path segment that looks like a CLI flag could inject arguments into
-    // `op read` — must be rejected before the subprocess is spawned.
     validate_op_source("op://vault/-rf/field").unwrap_err();
     validate_op_source("op://-vault/item").unwrap_err();
 }
@@ -311,9 +309,6 @@ fn container_init_peer_status_requires_exact_direct_container_nspid() {
 
 #[tokio::test]
 async fn unapproved_source_is_rejected() {
-    // Same name + kind, but a `source` the operator never approved. A
-    // name-only match would let a compromised container swap the source to
-    // read a different secret — the allow-list must reject this.
     let allowed = vec![ExecBinding {
         name: "TOKEN".into(),
         kind: ExecKind::Op,
@@ -356,8 +351,6 @@ async fn resolution_failure_reply_does_not_echo_the_credential_source() {
 
 #[tokio::test]
 async fn approved_env_ref_resolves_from_host_env() {
-    // Use an existing var (PATH is always set) — the crate forbids `unsafe`, so
-    // `std::env::set_var` is unavailable.
     let expected = std::env::var("PATH").expect("PATH is set in the test env");
     let allowed = vec![ExecBinding {
         name: "X".into(),

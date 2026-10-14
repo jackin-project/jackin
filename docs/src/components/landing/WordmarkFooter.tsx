@@ -1,4 +1,4 @@
-// docs/components/landing/WordmarkFooter.tsx
+
 import { BrandMark } from '../brand/BrandMark';
 
 export function WordmarkFooter() {

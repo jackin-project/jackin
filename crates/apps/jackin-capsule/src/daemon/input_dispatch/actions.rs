@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Top-level `Action` dispatcher for multiplexed input.
 
 use crate::tui::components::branch_context_bar::{branch_context_bar_hit, debug_run_id_label};
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
@@ -17,8 +16,6 @@ use super::super::{
 };
 
 impl Multiplexer {
-    /// Record the invalidation an action implies. Handlers only mutate
-    /// state; the render loop composes when the generation moved.
     fn invalidate_for(&mut self, action: &Action) {
         if let Some(plan) = action_frame_plan(action) {
             self.invalidate(plan.reason());
@@ -43,8 +40,6 @@ impl Multiplexer {
                 self.invalidate_for(&Action::OpenPalette);
             }
             Action::RequestExit => {
-                // Ctrl+Q → confirm before the force-stop. Esc/No dismisses and
-                // resumes; Yes routes to ExitAllSessions (immediate teardown).
                 self.cancel_drag();
                 self.dialog_push(Dialog::new_confirm_action(
                     crate::tui::components::dialog::ConfirmKind::Exit,
@@ -194,40 +189,25 @@ impl Multiplexer {
                     self.clipboard.selection = None;
                     self.clipboard.selection_copied = false;
                     self.clipboard.selection_copy_feedback_deadline = None;
-                    // Stamp the press even though it only cleared the old
-                    // highlight: a double-click on the next word should be
-                    // two presses, not three. The return value is ignored
-                    // because a double cannot resolve here — every selection
-                    // setter clears `last_pane_press` first, so this press
-                    // can only be a fresh first half.
+
                     if let Some(candidate) = self.detect_selection_start(row, col) {
                         self.register_pane_press(&candidate);
                     }
                     self.invalidate(selection_change_redraw_reason());
                     return;
                 }
-                // Press on a shared pane border starts a drag — skip focus
-                // switch and PTY forward in that case.
+
                 if self.detect_drag_start(row, col).is_some() {
                     self.apply_action(Action::StartDragResize { row, col });
                     return;
                 }
-                // Press on the focused pane's scrollbar track jumps the
-                // scrollback view to the clicked position.
+
                 if self.scrollbar_jump_at(row, col) {
                     return;
                 }
-                // Click on a pane other than the currently-focused one switches
-                // focus first so the operator never has to click twice. Selection
-                // or PTY-mouse forwarding then runs against the freshly-focused
-                // pane.
+
                 self.apply_action(Action::FocusPaneAt { row, col });
-                // Press inside a pane whose program never asked for a mouse
-                // protocol arms a text selection. A double-click selects and
-                // copies the word under the cursor immediately; a single
-                // press only becomes a selection after motion leaves the
-                // press cell, so a plain click stays a click/focus gesture
-                // and never interacts with copy.
+
                 if let Some(selection) = self.detect_selection_start(row, col) {
                     if self.register_pane_press(&selection) {
                         return;
@@ -277,8 +257,7 @@ impl Multiplexer {
                 };
                 if matches!(action, Action::SwitchTab(_)) {
                     self.render.last_tab_click = tab.map(|idx| (idx, now));
-                    // P5: clicking a tab moves focus onto the tab bar (green
-                    // underline + Left/Right nav until the agent is re-focused).
+
                     self.set_tab_bar_focused(true);
                 }
                 self.apply_action(action);
@@ -350,15 +329,6 @@ impl Multiplexer {
             Action::SelectionMotion { row, col } => self.selection_motion(row, col),
             Action::FinalizeSelection => self.finalize_selection(),
             Action::DialogClick { row, col } => {
-                // Mouse handling while a dialog overlay is up:
-                //   click on a row  -> select + confirm
-                //   click on border / padding -> swallowed
-                //   click anywhere outside the box -> dismiss
-                //
-                // SGR mouse coords are 0-based; `box_rect` returns
-                // render-side coords that are 1-based (the values passed to
-                // `move_to`, which emits `\x1b[r;cH`). Pass row+1 / col+1 here
-                // so the dialog can classify the modal click in render coords.
                 let term_rows = self.render.term_rows;
                 let term_cols = self.render.term_cols;
                 let Some(action) = self.dispatch_to_dialog_top(|dialog, github| {

@@ -36,8 +36,6 @@ fn sync_does_not_rewrite_inode_when_content_unchanged() {
     assert_eq!(outcome1, AuthProvisionOutcome::Synced);
     let ino_before = std::fs::metadata(&auth_json).unwrap().ino();
 
-    // Second identical sync (mirrors the background prewarm re-provisioning
-    // the same file the foreground launch already bind-mounted).
     let (outcome2, mounted) =
         provision_codex_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
     assert_eq!(outcome2, AuthProvisionOutcome::Synced);
@@ -164,8 +162,7 @@ fn api_key_mode_wipes_role_auth_json() {
     let temp = tempdir().unwrap();
     let auth_json = temp.path().join("auth.json");
     std::fs::write(&auth_json, "{\"stale\":\"creds\"}").unwrap();
-    // Stage a host auth.json too — api_key mode must NOT copy it,
-    // and must NOT leave the stale role-state file in place either.
+
     let (host_home, _) = stage_host_auth_json(&temp, "should-not-be-copied");
 
     let (outcome, mounted) =
@@ -235,7 +232,7 @@ fn rejects_symlink_at_auth_json_under_ignore() {
         err.to_string().contains("symlink"),
         "expected symlink rejection, got: {err}"
     );
-    // Decoy file must be untouched.
+
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "secret");
 }
 
@@ -295,11 +292,9 @@ fn surfaces_unreadable_host_auth_json_as_error() {
     std::fs::create_dir_all(&host_codex).unwrap();
     let host_auth_json = host_codex.join("auth.json");
     std::fs::write(&host_auth_json, "{\"auth_mode\":\"chatgpt\"}").unwrap();
-    // chmod 0 — file exists but is unreadable. Skip if we can't
-    // produce an unreadable file (e.g. running as root in CI).
+
     std::fs::set_permissions(&host_auth_json, std::fs::Permissions::from_mode(0o000)).unwrap();
     if std::fs::read_to_string(&host_auth_json).is_ok() {
-        // Running as root — chmod 0 doesn't block reads. Skip.
         return;
     }
 

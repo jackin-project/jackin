@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Modal baseline builders.
+
 #![cfg(test)]
 
 use super::*;
@@ -192,5 +192,3 @@ pub(crate) fn modal_auth_form() -> (ManagerState<'static>, AppConfig, PathBuf) {
         literal_buffer: String::new(),
     })
 }
-
-// ── Create-prelude wizard modal steps ──────────────────────────────────────

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! File-browser commit validation and rejection.
 
 use super::{AuthSourceFolderValidator, FileBrowserCommitResult, active_file_browser_state_mut};
 use crate::services::file_browser::FileBrowserListingRequest;
@@ -170,7 +169,7 @@ pub(crate) fn apply_file_browser_commit(
             prelude.modal = None;
             prelude.last_browser_cwd = browser_cwd;
             prelude.accept_mount_src(path);
-            // FileBrowser commit advances the wizard to `mount-dst-choice`.
+
             prelude.wizard.next();
             let src = prelude
                 .pending_mount_src

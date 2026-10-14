@@ -67,7 +67,6 @@ fn kimi_usage_response_maps_weekly_and_rate_limit() {
 
     let buckets = usage.buckets(1_781_185_560);
 
-    // render order is Rate Limit, then Weekly.
     assert_eq!(buckets[0].label, "Rate Limit");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
     assert_eq!(buckets[0].used_label.as_deref(), Some("50"));
@@ -145,7 +144,7 @@ fn minimax_usage_response_maps_model_remains() {
 
     assert_eq!(usage.plan_name().as_deref(), Some("MiniMax Pro"));
     assert_eq!(buckets[0].label, "MiniMax Text");
-    // A non-general model fills no headline slot.
+
     assert_eq!(buckets[0].status_slot, None);
     assert_eq!(buckets[0].used_label.as_deref(), Some("60"));
     assert_eq!(buckets[0].limit_label.as_deref(), Some("100"));
@@ -209,8 +208,7 @@ fn minimax_usage_response_maps_live_root_model_remains() {
             ("Video", Some(100), Some("Usage: 0 / 5")),
         ]
     );
-    // The general model's windows fill the headline slots; per-model windows
-    // (Video) fill none.
+
     assert_eq!(
         buckets
             .iter()
@@ -307,7 +305,7 @@ fn minimax_operation_path_matches_candidate_path() {
         minimax_operation_path("https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains"),
         "/v1/api/openplatform/coding_plan/remains"
     );
-    // An arbitrary override never exposes its real path in telemetry.
+
     assert_eq!(
         minimax_operation_path("https://quota.example/custom/remains?tenant=secret"),
         "/custom"

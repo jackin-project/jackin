@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Active launch preparation, execution, and run.
 
 use crate::runtime::launch::launch_pipeline::launch_phases::{
     InstancePrepared, WorkspaceMaterialized,
@@ -115,9 +114,7 @@ where
         launch.initialized.cleanup.run(launch.docker).await;
         return Err(error);
     }
-    // Record the admitted instances on the manifest now that resolution
-    // succeeded, and persist immediately: all downstream paths (docker,
-    // detached, apple-container) read the same manifest file.
+
     prepared
         .instance_manifest
         .set_admitted_instances(trust.instances.iter().map(AdmittedInstance::from));

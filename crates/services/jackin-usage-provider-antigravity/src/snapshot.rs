@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Antigravity` snapshot entry points and status.
 
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
@@ -53,9 +52,7 @@ pub fn antigravity_snapshot(agent: &str, provider: Option<&str>, now: i64) -> Fo
     let mut view = usage_view(UsageViewInput {
         agent,
         provider: provider.or(Some("Antigravity")),
-        // No UsageSurface variant exists for Antigravity yet (this lane is
-        // constrained to mod lines + re-exports in usage.rs); patch the
-        // provider label until the surface wiring lands.
+
         surface: UsageSurface::Unsupported,
         account_label: usage
             .as_ref()
@@ -86,10 +83,6 @@ pub fn antigravity_snapshot(agent: &str, provider: Option<&str>, now: i64) -> Fo
     view
 }
 
-/// View status for a passed version gate: `Fresh` only when the response
-/// carried quota signal (parsed pools or a credits row). A parsed-but-
-/// pool-less response is `Stale` — never `Fresh` with a lone `Stale`
-/// placeholder bucket inside.
 pub(crate) fn antigravity_snapshot_status(
     usage: Option<&AntigravityUsage>,
     credits_bucket: Option<&QuotaBucketView>,
@@ -102,10 +95,6 @@ pub(crate) fn antigravity_snapshot_status(
     }
 }
 
-/// Status for a version-gate failure: a too-old binary predates JSON usage
-/// (`Unsupported`), but a missing/unparseable binary is `NeedsSecret` — a
-/// login cannot install a binary (Cursor/Gemini lanes agree). Pure so the
-/// mapping is unit-testable without a live `agy`.
 pub(crate) fn antigravity_version_error_status(error: &str) -> UsageSnapshotStatus {
     if error.contains("predates JSON") {
         UsageSnapshotStatus::Unsupported

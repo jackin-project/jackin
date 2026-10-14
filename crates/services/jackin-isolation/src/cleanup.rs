@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Remove owned isolated worktree and exact Git registration through pinned descriptors.
-//!
-//! Tolerates idempotent paths (already-removed worktree, already-deleted
-//! branch). Bails without removing the record on real failures so the operator
-//! can investigate and re-run `jackin purge`. Not responsible for branch-name
-//! derivation (`branch.rs`) or record persistence schema (`state.rs`).
-
 #![expect(
     clippy::print_stderr,
     reason = "isolation cleanup emits operator-visible cleanup warnings"
@@ -127,13 +120,6 @@ struct FreshCleanup<'a, R: CommandRunner> {
     common_identity: (u64, u64),
 }
 
-/// Remove the owned worktree, exact registration and derived scratch branch,
-/// then remove its isolation record. Filesystem removal uses pinned descriptors;
-/// Ref transactions use pinned descriptors; Git inventory runs from a pinned directory.
-///
-/// Every uncertainty retains the record. Verified missing worktree/registration
-/// and absent branch remain idempotent; a missing repository cannot prove cleanup.
-// verify-and-bail flow has lots of small steps; splitting hurts readability
 pub async fn force_cleanup_isolated(
     record: &IsolationRecord,
     container_state_dir: &Path,
@@ -152,8 +138,6 @@ pub async fn force_cleanup_isolated(
         "unsupported isolation cleanup record; record retained"
     );
 
-    // Record paths and branch names are deletion authority: validate them before
-    // touching either repository or worktree. Git never removes a filesystem path.
     anyhow::ensure!(
         record.scratch_branch == crate::branch::branch_name(&record.container_name, None),
         "scratch branch does not match container identity; record retained"
@@ -1343,9 +1327,7 @@ fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> 
             ),
         "clone path does not match mount and container identity; record retained"
     );
-    // Same owned-validated-path removal as the worktree path: the record
-    // path is untrusted, so containment-bound fd-pinned deletion refuses
-    // escapes and symlinks instead of following them.
+
     crate::safe_remove::safe_remove_dir_contained(container_state_dir, clone_path).map_err(
         |e| crate::IsolationError::CloneRemove {
             path: record.worktree_path.clone(),
@@ -1369,12 +1351,6 @@ fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> 
     Ok(())
 }
 
-/// Find exactly one linked-worktree registration by its backlink. Git chooses
-/// registration names independently of container names (including suffixes),
-/// and the worktree's current HEAD is mutable after Jackin creates it. The
-/// exact backlink and Git markers establish ownership; HEAD is validated for
-/// inventory and to detect other checkouts of the scratch ref, not as target
-/// ownership identity.
 fn find_registration(
     checkout: &mut crate::ref_transaction::CheckoutInventory,
     git_dir: &crate::safe_remove::PinnedDir,
@@ -1540,8 +1516,6 @@ fn validate_head(head: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Enumerate branch refs, rejecting aliases that could hide an indirect checkout.
-/// An absent exact scratch ref is safe only after a successful full inventory.
 async fn scratch_tip(
     runner: &mut impl CommandRunner,
     branch_ref: &str,
@@ -1585,14 +1559,6 @@ async fn scratch_tip(
     Ok(tip)
 }
 
-/// Force-cleanup every record in a container's isolation.json. Used by purge.
-///
-/// Iterates ALL records (does not stop at the first failure) so a single
-/// stuck mount doesn't block cleanup of independent siblings. After the
-/// loop, if any record failed to clean, surfaces an aggregate `Err` so
-/// the caller's exit code reflects reality — operator gets a non-zero
-/// status and an actionable summary instead of a misleading exit-0
-/// "purge succeeded" with a warning that scrolled past.
 pub async fn purge_isolated_for_container(
     container_state_dir: &Path,
     runner: &mut impl CommandRunner,

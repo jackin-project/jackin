@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor per-tab content renderers.
 
 use super::{
     editor_auth_lines_for_state, editor_general_lines_for_state, editor_mount_lines_for_state,

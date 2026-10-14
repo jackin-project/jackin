@@ -1,28 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Unix socket helpers: create, bind, and accept connections on
-//! `/jackin/run/jackin.sock`.
-//!
-//! Not responsible for: protocol decoding, session management, or daemon
-//! business logic.
-
 use jackin_core::container_paths;
 
-/// Unix domain socket server.
-///
-/// Listens on `/jackin/run/jackin.sock`. Two protocols share the socket:
-/// the **control channel** (length-prefixed JSON, used by the host CLI
-/// for one-shot queries) and the **attach channel** (binary tag+length
-/// frames, used by interactive clients). Every client first negotiates
-/// the shared Capsule transport major. Only after the exact ACK does
-/// the first application byte route control (`0x00`) or attach frames.
-///
-/// Path lives under the `/jackin/` container-root convention (see
-/// AGENTS.md "Container path convention"): every jackin-owned mount,
-/// runtime asset, and runtime state directory sits beneath `/jackin/`
-/// so an operator can `ls /jackin/` to find all jackin-controlled
-/// state in one place.
 pub const SOCKET_PATH: &str = container_paths::CAPSULE_SOCKET;
 
 use std::os::unix::fs::PermissionsExt as _;
@@ -41,44 +21,18 @@ type ClientPermit = tokio::sync::OwnedSemaphorePermit;
 type ListenerReceiver = mpsc::UnboundedReceiver<(UnixStream, ClientPermit)>;
 type ListenerWithLimiter = (ListenerReceiver, Arc<Semaphore>);
 
-/// Bail out of the accept loop after this many consecutive errors. The
-/// dominant cause of repeating `accept` failures is fd exhaustion
-/// (EMFILE) — busy-looping at 100% CPU and flooding the docker-logs
-/// stream is worse than tearing down the listener so PID 1 can exit
-/// and the container restarts cleanly.
 const ACCEPT_FAILURE_BAIL: u32 = 10;
 
-/// Hard cap on concurrent attach connections. The socket is locked
-/// 0600 so only the agent uid can dial in, but a rogue in-container
-/// process that shares the agent uid can otherwise open thousands
-/// of sockets — each a tokio task + `UnixStream` fd. Reject excess
-/// connections by closing immediately so the legitimate operator's
-/// attach is never starved.
 const MAX_CONCURRENT_CLIENTS: usize = 16;
 
-/// Start the Unix socket listener. Returns a receiver of newly-connected
-/// clients paired with the concurrency-cap permit. The caller (daemon)
-/// must hold the permit alive for the lifetime of the spawned attach
-/// task so the per-process cap correctly tracks live connections.
-/// # Errors
-///
-/// Returns an error when the socket directory or listener cannot be created.
 pub fn start_listener() -> Result<ListenerReceiver> {
     start_listener_at(Path::new(SOCKET_PATH))
 }
 
-/// Bind a `UnixListener` at `path` with the parent dir locked to 0o700
-/// and the socket file to 0o600. Test-visible variant: production
-/// callers go through `start_listener`.
 pub(crate) fn start_listener_at(path: &Path) -> Result<ListenerReceiver> {
     start_listener_at_with_limiter(path).map(|(rx, _limiter)| rx)
 }
 
-/// Same as `start_listener_at` but also returns the `Semaphore` Arc
-/// the accept loop holds. Tests use the returned handle to assert on
-/// `available_permits()` directly instead of relying on real-wall-
-/// clock timeouts against `rx.recv()` for negative-delivery
-/// assertions.
 #[cfg(test)]
 pub(crate) fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
     start_listener_at_inner(path)
@@ -118,21 +72,13 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
-        // Parent dir 0o700 so only the owner can list/connect. The socket
-        // file itself gets 0o600 after bind, but on a system where the
-        // parent dir is world-x an attacker can still enumerate the path.
-        // Lock both. The dir is host-owned and the root capsule supervisor
-        // (`--user 0:0`) owns the bind-mounted socket path, so it can set this.
+
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
             .with_context(|| format!("locking socket parent {} to 0o700", parent.display()))?;
     }
 
     let listener = UnixListener::bind(path)?;
-    // Lock the socket to owner-only as defense in depth. The daemon also
-    // authenticates each peer with Unix credentials because the session
-    // wrapper retains CAP_DAC_OVERRIDE, so file mode alone cannot identify an
-    // operator. Hard error: the capsule always owns the socket file it just
-    // created.
+
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("locking socket {} to 0o600", path.display()))?;
     let (tx, rx) = mpsc::unbounded_channel();
@@ -146,21 +92,12 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
             match listener.accept().await {
                 Ok((stream, _)) => {
                     consecutive_failures = 0;
-                    // try_acquire fails when MAX_CONCURRENT_CLIENTS
-                    // tasks are already in flight. Drop the new
-                    // socket without sending so a flood of in-uid
-                    // peers cannot starve the legitimate operator's
-                    // attach. Once a task finishes, its OwnedSemaphorePermit
-                    // drops and a fresh accept proceeds.
+
                     let Ok(permit) = Arc::clone(&limiter).try_acquire_owned() else {
                         drop(stream);
                         continue;
                     };
                     if tx.send((stream, permit)).is_err() {
-                        // Receiver dropped — daemon is shutting down.
-                        // Stop accepting so we don't burn cycles
-                        // accepting connections that are immediately
-                        // dropped on the floor.
                         jackin_telemetry::stream::complete_success(
                             jackin_telemetry::stream::phase(
                                 jackin_telemetry::schema::enums::StreamOperation::Close,
@@ -184,12 +121,7 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
                         return;
                     }
                     let _retry_event = jackin_telemetry::record_retry_scheduled();
-                    // Exponential backoff capped at 5 s so an EMFILE
-                    // storm doesn't spin the runtime. The 5 s `.min()`
-                    // is the load-bearing cap; the shift cap at 16 is
-                    // dead-code defence against a future operator
-                    // raising `ACCEPT_FAILURE_BAIL` past the current
-                    // ladder and tripping the `1u64 << N` UB shift.
+
                     let shift = consecutive_failures.saturating_sub(1).min(16);
                     let backoff_ms = 50u64.saturating_mul(1u64 << shift).min(5_000);
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
@@ -201,23 +133,8 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
     Ok((rx, limiter))
 }
 
-/// Maximum wall-clock time for a single control-channel read. Capped
-/// so a peer that stalls between length prefix and body — or trickles
-/// bytes slower than the bandwidth bound — cannot pin a tokio task
-/// and its concurrency permit indefinitely. 4 MiB across 10 s is
-/// ~409 KiB/s, well below any reasonable localhost rate.
 const CONTROL_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Read a length-prefixed JSON control message whose 4-byte length
-/// prefix begins with `first_byte = 0x00` (already consumed by the
-/// dispatcher). Returns `Err` with context on every failure mode so
-/// callers can clog the underlying cause; a silently-collapsed None
-/// would let the host's `jackin status` block on `read_exact` for a
-/// reply that never comes.
-/// # Errors
-///
-/// Returns an error when the length prefix or payload times out, the payload
-/// exceeds its limit, or JSON decoding fails.
 pub async fn read_control_msg(
     stream: &mut UnixStream,
     first_byte: u8,
@@ -239,19 +156,6 @@ pub async fn read_control_msg(
     serde_json::from_slice(&body).context("control msg: parsing JSON body")
 }
 
-/// Read exactly `len` bytes from `stream` into a freshly-allocated
-/// `Vec<u8>` that grows lazily as chunks arrive. Two reasons for the
-/// chunked shape over `read_exact(&mut vec![0u8; len])`:
-///
-/// 1. `vec![0u8; len]` calls `write_bytes(0)` over `len` bytes before
-///    any payload byte arrives. A peer that sends a 4 MiB length
-///    prefix then stalls forces 4 MiB of zero-touched RSS per
-///    connection. `Vec::with_capacity` only reserves and grows as
-///    `extend_from_slice` runs, so memset cost scales with bytes
-///    actually delivered.
-/// 2. Bounded `total_timeout` for the whole read prevents a
-///    trickle-bytes attacker from holding the connection (and the
-///    attach-concurrency permit) indefinitely.
 async fn read_payload_lazy(
     stream: &mut UnixStream,
     len: usize,
@@ -272,19 +176,10 @@ async fn read_payload_lazy(
     Ok(buf)
 }
 
-/// # Errors
-///
-/// Returns an error when writing the framed response times out or fails.
 pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) -> Result<()> {
     write_control_frame(&mut stream, reply).await
 }
 
-/// Write one framed `ServerMsg` without consuming the stream. Subscriptions
-/// (`events`) write many frames over one connection, so they borrow; the
-/// one-shot path calls this once and drops the stream afterwards.
-/// # Errors
-///
-/// Returns an error when the framed response write times out or fails.
 pub async fn write_control_frame(stream: &mut UnixStream, reply: &ServerMsg) -> Result<()> {
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
         Ok(result) => result.context("control reply write failed"),

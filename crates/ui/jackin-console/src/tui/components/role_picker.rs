@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Modal picker for role disambiguation.
-
 use crossterm::event::{KeyCode, KeyEvent};
 use jackin_oppicker::ModalOutcome;
 use termrock::widgets::ListState;
@@ -17,8 +15,7 @@ pub struct RolePickerState<R: RoleChoice> {
     pub list_state: ListState<usize>,
     pub filter: String,
     pub filtered: Vec<R>,
-    /// Verb after `Enter` in the footer (`launch` for launch
-    /// disambiguation, `select` for editor override-scope picking).
+
     pub confirm_label: String,
 }
 
@@ -99,8 +96,6 @@ impl<R: RoleChoice> RolePickerState<R> {
             }
             KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Char(ch) => {
-                // Every printable char goes to the filter — `j`/`k`
-                // included; navigation is via arrow keys.
                 self.filter.push(ch);
                 self.recompute_filtered();
                 ModalOutcome::Continue
@@ -121,17 +116,6 @@ use termrock::layout::render_dialog_shell;
 use termrock::widgets::PanelChrome;
 use termrock::widgets::{List, ListRow, TextInput, TextInputState, Validation};
 
-// Plan 010 step 3 (C8) reviewed the picker family's named upstream pairings
-// at rev `29a16b5b` and recorded a behavior-preserving non-adoption
-// (commit-message carve-out): `Select::paint`/`ComboboxState` are
-// trigger-centric dropdowns — an unconditional field-chrome trigger row
-// (fill, prompt glyph, value label, chevron) ahead of the option list —
-// while every console picker body is a dialog shell carrying a Filter row +
-// List or an ActionBar, with no trigger row. That holds for the modal
-// pickers and for the inline sidebar pickers (`SelectPresentation::Popover`
-// carries the same trigger), so consumer configuration is exhausted.
-// Product outcome/choice enums stay product regardless.
-
 pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
     let inner = render_dialog_shell(
         frame,
@@ -144,17 +128,15 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // filter row
-            Constraint::Length(1), // spacer
-            Constraint::Min(1),    // list
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
         ])
         .split(inner);
 
     let theme = termrock::style::DesignSystem::default();
     let mut filter = TextInputState::new(&state.filter).with_allow_empty(true);
-    // Head's TextInput always reserves a 1-col prompt cell at its left edge;
-    // the label column gives the input one column back so that prompt cell
-    // supplies the space after "Filter:".
+
     let filter_columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(7), Constraint::Min(1)])
@@ -171,9 +153,6 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
         &mut filter,
     );
 
-    // List body. When the filter narrows the visible set to nothing, show
-    // a dim centered placeholder so the operator knows the list is empty,
-    // not broken.
     if state.filtered.is_empty() {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(Span::styled(

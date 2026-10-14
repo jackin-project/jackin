@@ -1,14 +1,6 @@
-//! Shared snapshot string helpers for insta / TUI characterization tests.
-//!
-//! Keeps redaction and line-normalization in one place so console, capsule,
-//! and host test suites do not re-invent volatile-token scrubbing (residual
-//! R-snapshot-helpers).
-
 #[cfg(test)]
 mod tests;
 
-/// Replace sequences of digits that look like epoch ms / large counters with
-/// a stable placeholder so snapshot diffs ignore clock noise.
 #[must_use]
 pub fn redact_digit_runs(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -18,12 +10,11 @@ pub fn redact_digit_runs(input: &str) -> String {
             let mut run = String::new();
             run.push(c);
             while chars.peek().is_some_and(char::is_ascii_digit) {
-                // Peeked digit: next cannot be None.
                 if let Some(d) = chars.next() {
                     run.push(d);
                 }
             }
-            // Short numbers (ports, counts < 4 digits) stay; long runs are volatile.
+
             if run.len() >= 4 {
                 out.push_str("<digits>");
             } else {
@@ -36,8 +27,6 @@ pub fn redact_digit_runs(input: &str) -> String {
     out
 }
 
-/// Normalize trailing whitespace per line and strip trailing blank lines —
-/// common when capturing ratatui buffers into strings for insta.
 #[must_use]
 pub fn normalize_snapshot_text(input: &str) -> String {
     let lines: Vec<String> = input

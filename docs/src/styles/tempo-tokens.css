@@ -1,10 +1,10 @@
-/* Radix color ramps + semantic tokens, copied from tempoxyz/docs _root.css.
-   Stays global so Tailwind v4 utilities work in MDX; Vocs chrome picks up
-   these via vocs.config.ts theme variables referencing them by var().
-   Landing page uses its own --landing-* tokens (scoped to .landing-root) and
-   is not affected. */
 
-/* biome-ignore format: <explanation> */
+
+
+
+
+
+
 @theme {
   --color-black: #000000;
   --color-white: #ffffff;

@@ -1,12 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Staged account credentials loading and env allowlists.
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
 use std::collections::BTreeSet;
 
-/// Load protected account data without including file contents in diagnostics.
 pub(crate) fn load_agent_credentials(
     config: &CapsuleConfig,
 ) -> std::io::Result<jackin_protocol::AgentCredentialEnv> {
@@ -46,10 +44,6 @@ pub(crate) fn load_agent_credentials(
     Ok(credentials)
 }
 
-/// Decode one staged protected-credentials file. Anything else (a legacy
-/// container-wide envelope, missing version, or malformed JSON) is an
-/// explicit restart/upgrade error, never a silent misread. Diagnostics never
-/// carry file contents.
 pub(crate) fn parse_staged_credential(
     raw: &[u8],
 ) -> std::io::Result<jackin_protocol::StagedInstanceCredential> {
@@ -80,10 +74,6 @@ pub(crate) const ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV_NAME: &str = "ANTHROPIC_DEFAU
 pub(crate) const OPENAI_BASE_URL_ENV_NAME: &str = "OPENAI_BASE_URL";
 pub(crate) const KIMI_BASE_URL_ENV_NAME: &str = "KIMI_BASE_URL";
 
-/// Return the exact account-owned environment names that one admitted agent
-/// may receive. `provider_surface` is the selected account's credential
-/// routing surface. The caller must prove the surface before asking for an
-/// allowlist; unsupported provider variables cannot cross an agent boundary.
 pub(crate) fn allowed_account_env_names(
     agent_slug: &str,
     auth_mode: &str,
@@ -117,8 +107,7 @@ pub(crate) fn allowed_account_env_names(
                 return Ok(allowed);
             }
             allowed.insert(jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME);
-            // An explicit Claude endpoint override is part of the OAuth
-            // account contract and is still scoped to the selected pane.
+
             allowed.insert(ANTHROPIC_BASE_URL_ENV_NAME);
             return Ok(allowed);
         }

@@ -7,7 +7,7 @@ use super::*;
 fn clean_worktree_at_base_is_clean() {
     let mut mock = MockGit {
         porcelain: String::new(),
-        // One branch parked at base, attached HEAD.
+
         for_each_ref: format!("scratch\t{BASE}\t\t"),
         symbolic_ref_ok: true,
         ..MockGit::default()
@@ -37,7 +37,7 @@ fn untracked_files_are_dirty() {
 fn branch_ahead_with_no_upstream_is_unpushed() {
     let mut mock = MockGit {
         porcelain: String::new(),
-        // tip moved past base, no upstream column.
+
         for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\t\t".to_owned(),
         symbolic_ref_ok: true,
         ..MockGit::default()
@@ -65,7 +65,7 @@ fn branch_fully_pushed_is_clean() {
         porcelain: String::new(),
         for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t"
             .to_owned(),
-        rev_list: String::new(), // nothing ahead of upstream
+        rev_list: String::new(),
         symbolic_ref_ok: true,
         ..MockGit::default()
     };
@@ -89,7 +89,7 @@ fn detached_head_off_base_is_unpushed() {
     let mut mock = MockGit {
         porcelain: String::new(),
         for_each_ref: format!("scratch\t{BASE}\t\t"),
-        symbolic_ref_ok: false, // detached
+        symbolic_ref_ok: false,
         rev_parse_head: "cccccccccccccccccccccccccccccccccccccccc".to_owned(),
         ..MockGit::default()
     };
@@ -129,8 +129,6 @@ fn no_local_branches_fails_closed_to_unpushed() {
 
 #[test]
 fn multiple_repos_assessed_independently() {
-    // Repo A dirty, repo B clean — assessed via separate calls (the caller
-    // iterates mounts), proving the function is per-path with no shared state.
     let mut dirty = MockGit {
         porcelain: " M a.rs\n".to_owned(),
         ..MockGit::default()

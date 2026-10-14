@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Account and window projection.
 
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, StatusSlot, UsageSnapshotStatus,
@@ -13,7 +12,6 @@ use jackin_protocol::usage_broker::{
 
 use super::{failure_lifecycle, lifecycle, metric_groups_for_view};
 
-/// Server-side incremental publisher. Cheap to clone; all state is shared.
 use super::{
     AccountIdentityMetadata, issue_code, issue_recoverability, money_used_raw_percent,
     quota_state_for_bucket,
@@ -93,9 +91,7 @@ pub fn account_for_view(
             }]
         })
         .unwrap_or_default();
-    // Display labels do not prove whether an identifier came from the
-    // provider or from a local source. Preserve the identity as unverified
-    // until discovery supplies explicit provenance metadata.
+
     let fallback_identity_kind = UsageIdentityKindV1::UnverifiedHandle;
     UsageAccountV1 {
         canonical_account_id: view.capability.account_id.clone(),

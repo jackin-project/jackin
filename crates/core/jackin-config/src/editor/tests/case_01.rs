@@ -90,12 +90,6 @@ fn open_leaves_semantically_invalid_migration_unchanged() {
 
 #[test]
 fn open_admits_dangling_launch_instance_account_for_repair() {
-    // Multi-account × #1006 reconciliation: unlike dangling bindings
-    // (above), a launch instance referencing a not-yet-registered account
-    // must not brick the editor — the account is added through the editor
-    // itself, and instance references are enforced at save/load instead.
-    // The versionless fixture forces a pending schema migration so the
-    // open-path gate actually runs.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();

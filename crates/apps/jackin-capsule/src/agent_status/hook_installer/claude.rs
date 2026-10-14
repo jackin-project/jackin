@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Claude hook installer (`ClaudeHookInstaller`).
 
 use super::{HookInstaller, read_existing_json_object, write_json_file};
 use jackin_core::container_paths;
@@ -8,13 +7,8 @@ use std::fs;
 
 use std::path::Path;
 
-/// Hook installer for Claude Code.
-///
-/// Installs `/home/agent/.claude/settings.json` entries that register the
-/// jackin status reporter for every relevant Claude hook event.
 #[derive(Debug)]
 pub struct ClaudeHookInstaller {
-    /// Path to the hook script inside the container.
     pub hook_script_path: String,
 }
 
@@ -29,9 +23,7 @@ impl Default for ClaudeHookInstaller {
 impl HookInstaller for ClaudeHookInstaller {
     fn install(&self, _agent_home: &Path, config_dir: &Path) -> anyhow::Result<()> {
         let settings_path = config_dir.join("settings.json");
-        // Claude Code owns this file (model, theme, permissions, MCP config), so
-        // we merge our hooks into the existing object and never overwrite it; the
-        // shared helper bails on a corrupt file rather than destroying it.
+
         let existing = serde_json::Value::Object(read_existing_json_object(&settings_path)?);
         let updated = self.merge_hook_entries(existing);
         write_json_file(&settings_path, &updated)?;
@@ -53,9 +45,6 @@ impl HookInstaller for ClaudeHookInstaller {
     }
 }
 
-/// Claude reporter events written under `hooks.<Event>`, paired with each event's
-/// `async` flag. `PermissionRequest` is synchronous so Claude reads the continue
-/// ack; every other event fires async.
 pub(crate) const CLAUDE_HOOK_EVENTS: &[(&str, bool)] = &[
     ("UserPromptSubmit", true),
     ("PreToolUse", true),
@@ -95,15 +84,12 @@ impl ClaudeHookInstaller {
                   merge-with-preserve protocol."
     )]
     fn merge_hook_entries(&self, mut settings: serde_json::Value) -> serde_json::Value {
-        // Start from the existing hooks map (if any); our command entries merge
-        // in below and the whole map is written back to `settings` at the end.
         let mut hooks_obj = settings
             .get("hooks")
             .and_then(|h| h.as_object())
             .cloned()
             .unwrap_or_default();
 
-        // Install or repair only our command entry inside each event array.
         for &(event, async_flag) in CLAUDE_HOOK_EVENTS {
             let expected_command = self.command_for_event(event);
             let mut entries = hooks_obj
@@ -160,7 +146,7 @@ impl ClaudeHookInstaller {
             let Some(arr) = hooks.get(event).and_then(|v| v.as_array()) else {
                 return false;
             };
-            // Check that at least one entry has our command with the correct async flag.
+
             #[expect(
                 clippy::excessive_nesting,
                 reason = "JSON hook-array membership check: nested `any` + `as_str` \

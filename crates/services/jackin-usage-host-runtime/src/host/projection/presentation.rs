@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Credential-free presentation state over broker-canonical publications.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,17 +16,14 @@ use super::super::{HOST_USAGE_STATE_REL, HostSurfaceId};
 
 const SELECTED_PROJECTION_ACCOUNTS_FILE: &str = "selected-projection-accounts.json";
 
-/// Inputs for a presentation runtime that consumes broker publications only.
 #[derive(Debug, Clone)]
 pub struct HostUsageProjectionConfig {
-    /// jackin data dir (`~/.jackin/data` or a test root).
     pub data_dir: PathBuf,
-    /// Initially enabled host surface ids; empty means every host surface.
+
     pub enabled_surface_ids: Vec<String>,
 }
 
 impl HostUsageProjectionConfig {
-    /// Build config under one data directory with every host surface enabled.
     #[must_use]
     pub fn under_data_dir(data_dir: impl Into<PathBuf>) -> Self {
         Self {
@@ -38,62 +33,48 @@ impl HostUsageProjectionConfig {
     }
 }
 
-/// One account entry exposed to a native consumer without changing its
-/// canonical identity or flattening its typed metric groups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HostUsageProjectionAccountPresentation<'a> {
-    /// Host surface id used by native settings and display code.
     pub surface_id: &'static str,
-    /// Broker-canonical provider record, including provider freshness/issues.
+
     pub provider: &'a UsageProviderV1,
-    /// Broker-canonical account record, including windows and typed groups.
+
     pub account: &'a UsageAccountV1,
-    /// Whether this exact canonical account id is selected for the surface.
+
     pub selected: bool,
 }
 
-/// Resolution of persisted operator intent against the current publication.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostUsageProjectionSelectedAccount<'a> {
-    /// No account is selected for the surface.
     Unselected,
-    /// The selected canonical id is present in this provider publication.
+
     Available {
         canonical_account_id: &'a str,
         account: &'a UsageAccountV1,
     },
-    /// The selected canonical id is not present in this provider publication.
-    /// It remains selected so a sibling account is never chosen implicitly.
-    Unavailable { canonical_account_id: &'a str },
+
+    Unavailable {
+        canonical_account_id: &'a str,
+    },
 }
 
-/// Current broker-owned provider status and selected-account presentation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostUsageProjectionProviderPresentation<'a> {
-    /// Host surface id used by native settings and display code.
     pub surface_id: &'static str,
-    /// Canonical provider id used by the broker publication.
+
     pub provider_id: &'static str,
-    /// Current broker provider row, if it exists in this publication.
-    /// Its membership, freshness, issues, and ranked accounts remain typed.
+
     pub provider: Option<&'a UsageProviderV1>,
-    /// Broker unresolved-capability rows for this provider, when identity is
-    /// not yet available. They remain separate from canonical accounts.
+
     pub unresolved_capabilities: Vec<&'a UsageUnresolvedV1>,
-    /// Exact persisted selection resolved against the current provider row.
+
     pub selected_account: HostUsageProjectionSelectedAccount<'a>,
-    /// First rank-ordered typed weekly group (daily for Amp), if published.
+
     pub glance_metric_group: Option<&'a UsageMetricGroupV1>,
-    /// All typed detail groups for the selected current account.
+
     pub detail_metric_groups: &'a [UsageMetricGroupV1],
 }
 
-/// Broker-publication consumer for account inventory and native presentation.
-///
-/// This runtime owns no discovery, credentials, cache, or provider client. Its
-/// only usage input is a complete `UsageProjectionV1` publication. Selected
-/// account values are canonical broker account ids, persisted independently
-/// of the discovery-backed host runtime's account-key store.
 #[derive(Debug, Clone)]
 pub struct HostUsageProjectionRuntime {
     projection: UsageProjectionV1,
@@ -109,11 +90,6 @@ struct PersistedProjectionSelections {
 }
 
 impl HostUsageProjectionRuntime {
-    /// Open presentation state from one complete broker publication.
-    ///
-    /// This validates the publication and reads only the dedicated selection
-    /// preferences file under `data_dir`; it performs no discovery, credential
-    /// resolution, or provider access.
     pub fn open(
         projection: UsageProjectionV1,
         config: HostUsageProjectionConfig,
@@ -139,18 +115,11 @@ impl HostUsageProjectionRuntime {
         Ok(runtime)
     }
 
-    /// Current immutable broker publication.
     #[must_use]
     pub fn projection(&self) -> &UsageProjectionV1 {
         &self.projection
     }
 
-    /// Apply one later whole publication.
-    ///
-    /// For one broker incarnation, generations cannot move backwards and a
-    /// generation cannot be reused for different content. A new broker
-    /// incarnation may restart its generation. Invalid or stale publications
-    /// leave the current publication and selections untouched.
     pub fn apply_publication(&mut self, projection: UsageProjectionV1) -> Result<(), String> {
         validate_projection(&projection)?;
         if projection.broker_instance_id == self.projection.broker_instance_id {
@@ -178,8 +147,6 @@ impl HostUsageProjectionRuntime {
         Ok(())
     }
 
-    /// Replace the enabled host surface set. An empty list enables all known
-    /// surfaces. Existing selections for disabled surfaces remain persisted.
     pub fn set_enabled_surface_ids(&mut self, ids: &[String]) -> Result<(), String> {
         let enabled_surfaces = enabled_surfaces(ids)?;
         let mut selections = self.selected_accounts.clone();
@@ -192,11 +159,6 @@ impl HostUsageProjectionRuntime {
         Ok(())
     }
 
-    /// Select one exact broker `canonical_account_id`, or clear selection.
-    ///
-    /// A selection is persisted even if a later publication removes that
-    /// account. The resulting provider presentation reports `Unavailable`
-    /// until the same canonical identity returns or the user selects another.
     pub fn set_selected_account(
         &mut self,
         surface_id: &str,
@@ -234,8 +196,6 @@ impl HostUsageProjectionRuntime {
         Ok(())
     }
 
-    /// List broker-canonical account rows in publication order, filtered by
-    /// enabled surfaces and optionally one host surface id.
     pub fn account_inventory(
         &self,
         surface_id: Option<&str>,
@@ -246,7 +206,6 @@ impl HostUsageProjectionRuntime {
         let mut inventory = Vec::new();
         for provider in &self.projection.providers {
             let Some(surface) = surface_for_provider_id(&provider.provider_id) else {
-                // `open` and `apply_publication` already reject this shape.
                 continue;
             };
             if !self.enabled_surfaces.contains(&surface)
@@ -267,7 +226,6 @@ impl HostUsageProjectionRuntime {
         Ok(inventory)
     }
 
-    /// Current provider status and selected account, retaining broker types.
     pub fn provider_presentation(
         &self,
         surface_id: &str,

@@ -23,7 +23,6 @@ fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
         None
     );
 
-    // The Fresh, Authoritative view preserves provenance and has no plan label.
     for source in [UsageSource::ProviderApi, UsageSource::Cli] {
         let view = amp_view_from_usage(
             AmpSuccessContext {
@@ -49,7 +48,6 @@ fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
         );
     }
 
-    // A Daily bucket beside credits yields the daily headline, never a credit amount.
     let mut with_daily = usage.clone();
     with_daily.daily_remaining_percent = Some(61);
     assert_eq!(
@@ -61,11 +59,10 @@ fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
 
 #[test]
 fn amp_legacy_hourly_display_text_is_rejected() {
-    // The retired hourly-dollar line alone parses to nothing.
     assert!(
         parse_amp_usage_output("Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour)").is_none()
     );
-    // Paired with current credit rows it contributes no Amp Free bucket.
+
     let usage = parse_amp_usage_output(
         "Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour)\n\
          Individual credits: $0.33 remaining",
@@ -143,7 +140,7 @@ fn zai_quota_response_maps_token_session_and_time_limits() {
     let buckets = quota.buckets(1_781_185_560);
 
     assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
-    // Semantic identity comes from explicit duration, not array position.
+
     assert_eq!(buckets[0].label, "Session");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
     assert_eq!(buckets[0].remaining_percent, Some(75));
@@ -173,7 +170,7 @@ fn zai_plan_label_falls_back_to_level() {
         "percentage": 25,
         "nextResetTime": 1_781_189_520_000_i64
     });
-    // `level` present, no `planName`: the one plan field observed in the wild.
+
     let level_only: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
         "code": 200,
         "success": true,
@@ -182,7 +179,6 @@ fn zai_plan_label_falls_back_to_level() {
     .expect("level-only quota");
     assert_eq!(level_only.plan_name().as_deref(), Some("pro"));
 
-    // Both present parses without a duplicate-field error; explicit name wins.
     let both: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
         "code": 200,
         "success": true,

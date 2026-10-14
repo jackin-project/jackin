@@ -9,8 +9,6 @@ fn list_names_content_width_includes_trailing_scroll_padding() {
     let tmp = tempfile::tempdir().unwrap();
     let state = ManagerState::from_config(&config, tmp.path());
 
-    // Rows without active instances: cursor(1) + 2 spaces + name(27) = 30 cols.
-    // The selected highlight adds a trailing-padding span: 30 + 3 = 33.
     let width = list_names_content_width(&state, 19);
 
     assert_eq!(width, 33);
@@ -163,7 +161,6 @@ fn instance_details_fallback_preserves_session_account_and_config_identity() {
 
 #[test]
 fn header_and_data_rows_share_path_column_width() {
-    // Short path + long path forces path_w to be the length of the long one.
     let rows = vec![
         mount_row("~/short", "rw", "shared", "git · main"),
         mount_row(
@@ -195,8 +192,6 @@ fn header_and_data_rows_share_path_column_width() {
 
 #[test]
 fn single_row_still_uses_minimum_column_width() {
-    // Single short mount — path_w should stay at the floor so the
-    // table is still visibly tabular.
     let rows = vec![mount_row(
         "~/Projects/ChainArgos/blockchain-nodes",
         "rw",
@@ -213,12 +208,10 @@ fn single_row_still_uses_minimum_column_width() {
 
 #[test]
 fn empty_rows_uses_floor_for_header() {
-    // Empty case: header should still render with the floor width and
-    // include the two-space gap between every column.
     let path_w = mount_path_width(&[]);
     assert_eq!(path_w, "Destination".len());
     let header = render_mount_header(path_w);
-    // "  <path padded>  <mode padded>  <iso padded>  Type"
+
     let expected = format!(
         "  {path:<path_w$}  {mode:<mw$}  {iso:<iw$}  Type",
         path = "Destination",
@@ -234,20 +227,13 @@ fn empty_rows_uses_floor_for_header() {
 
 #[test]
 fn header_has_two_space_gap_between_columns() {
-    // Regression for the "Mode Type" spacing bug, extended to cover the
-    // new `Isolation` column: header must emit a literal two-space gap
-    // between every column (Mode → Isolation → Type), mirroring the gap
-    // data rows emit between `rw`/`ro`, the isolation label, and the
-    // kind. Additionally pins the type-column alignment: the `Type`
-    // header label must start at the same character offset as the data
-    // row's kind label.
     let rows = vec![mount_row("~/p", "rw", "shared", "folder")];
     let path_w = mount_path_width(&rows);
     let header = render_mount_header(path_w);
     let data = render_mount_lines(&rows, path_w);
     let header_text = line_text(&header);
     let data_text = line_text(&data[0]);
-    // Header should have "Mode" followed by gap+padding to the isolation column.
+
     assert!(
         header_text.contains("Isolation"),
         "expected header to contain 'Isolation'; got {header_text:?}"
@@ -297,15 +283,11 @@ fn mount_row_renders_isolation_badge_for_shared() {
 
 #[test]
 fn empty_mounts_reserves_row_for_none_placeholder() {
-    // 0 data rows + "(none)" placeholder (1 row) + 1 header + 2 borders = 4.
     assert_eq!(mount_block_height(&[]), 4);
 }
 
 #[test]
 fn single_mount_fits_in_four_rows() {
-    // Regression: the current-dir pane used to hard-code `Length(5)`
-    // which left an extra empty line inside the block. Correct total
-    // for a 1-mount workspace is 1 data + 1 header + 2 borders = 4.
     assert_eq!(mount_block_height(&[mount("/tmp/a")]), 4);
 }
 
@@ -341,7 +323,6 @@ fn global_mount_heights_match_rendered_line_count() {
 
 #[test]
 fn subpanel_content_column_alignment() {
-    // General
     let backend = TestBackend::new(40, 4);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
@@ -350,7 +331,6 @@ fn subpanel_content_column_alignment() {
     .unwrap();
     let general_col = first_content_indent(&term).expect("general has content");
 
-    // Mounts
     let backend = TestBackend::new(40, 4);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
@@ -360,7 +340,6 @@ fn subpanel_content_column_alignment() {
     .unwrap();
     let mounts_col = first_content_indent(&term).expect("mounts has content");
 
-    // Roles, "any role" branch (no allowed list)
     let cfg = AppConfig::default();
     let backend = TestBackend::new(40, 4);
     let mut term = Terminal::new(backend).unwrap();

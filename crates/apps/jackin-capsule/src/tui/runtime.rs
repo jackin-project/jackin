@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capsule adapters for the phase-frozen jackin❯ runtime facade.
-//!
-//! `CapsuleView` is the active `View<Model>` adapter: `daemon/compositor.rs`
-//! routes frames through [`jackin_tui::runtime::drive_frame`], which delegates
-//! to `tui/view.rs` (`render_capsule_ratatui_frame`). The retained
-//! `Component<Vec<u8>, Vec<InputEvent>>` implementation for `InputParser` has no
-//! invocation; actual input still parses directly through `tui/input.rs`
-//! (`InputParser::parse`).
-
 use crate::tui::input::{InputEvent, InputParser};
 use crate::tui::view::CapsuleRatatuiFrame;
 
@@ -24,9 +15,6 @@ impl jackin_tui::runtime::View<CapsuleRatatuiFrame<'_>> for CapsuleView {
     }
 }
 
-/// Zero-sized view handle for the product `View<Model>` contract. The capsule
-/// render function lives in `tui/view.rs`; this wrapper exists so the
-/// contract is satisfied without a behavioural change.
 #[derive(Debug)]
 pub struct CapsuleView;
 

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Tab navigation, tab close, and per-tab zoom.
 
 use super::super::Multiplexer;
 
@@ -51,12 +50,7 @@ impl Multiplexer {
         if self.session_supervisor.active_tab >= self.session_supervisor.tabs.len() {
             return;
         }
-        // Drop any in-flight selection / drag-resize anchored to a
-        // pane in this tab — resize_panes below invalidates every
-        // remaining pane's rect and removing the active tab swaps the
-        // visible content entirely. Mirrors close_focused_pane and
-        // remove_exited_session, which both call cancel_drag for the
-        // same reason.
+
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let tab_ids = self.session_supervisor.tabs[self.session_supervisor.active_tab]

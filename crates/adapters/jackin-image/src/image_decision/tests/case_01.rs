@@ -111,9 +111,6 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         Some(ImageInvalidationReason::ConstructImageChanged)
     );
 
-    // Only the minimal kept labels report a precise, component-specific reason.
-    // Every other recipe input now invalidates via the master recipe hash
-    // (RecipeHashChanged) — see `recipe_diagnostic_labels`.
     for (label, reason) in [
         (
             LABEL_IMAGE_ROLE_GIT_SHA,

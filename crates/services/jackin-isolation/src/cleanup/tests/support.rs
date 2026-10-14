@@ -81,11 +81,7 @@ impl CommandRunner for VerifyFailureRunner {
         opts: &jackin_core::RunOptions,
     ) -> anyhow::Result<String> {
         self.captures += 1;
-        // Production issues 4 capture_with_options calls before the
-        // post-deletion verification: initial scratch_tip, rev-parse
-        // --show-ref-format, pre-deletion reinspect, then the
-        // verify-deletion scratch_tip. Fail that 4th call so the
-        // reference is already deleted when the error strikes.
+
         if self.captures == 4 {
             anyhow::bail!("verification capture failed");
         }

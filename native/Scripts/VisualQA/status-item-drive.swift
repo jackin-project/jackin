@@ -1,4 +1,4 @@
-// Drive a real NSStatusItem through the macOS Accessibility and event APIs.
+
 
 import ApplicationServices
 import Foundation

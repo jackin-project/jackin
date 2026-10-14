@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! A fake-only proof that the normal CLI routes an explicit Codex home through
-//! discovery, account authorization, and role-scoped selection.
-
 use std::{fs, path::Path, time::Duration};
 
 use assert_cmd::Command;
@@ -101,9 +98,7 @@ fn explicit_codex_home_keeps_discovery_and_role_selection_on_one_source() -> any
         home.join(".claude/.credentials.json"),
         r#"{"claudeAiOauth":{"accessToken":"synthetic-claude-token"}}"#,
     )?;
-    // The shell declaration and the process override name the same source.
-    // The scan should keep the default discovery ID and deduplicate the
-    // duplicate shell candidate by its canonical source fingerprint.
+
     fs::write(
         home.join(".zshrc"),
         format!("CODEX_HOME={}\n", explicit_home.display()),
@@ -134,8 +129,6 @@ fn explicit_codex_home_keeps_discovery_and_role_selection_on_one_source() -> any
     assert!(!rendered.contains("synthetic-"));
     assert!(!rendered.contains(&default_home.display().to_string()));
 
-    // An operator-registered second home remains distinct from the
-    // environment-selected account.
     command(&home, &explicit_home)?
         .args([
             "account",
@@ -183,9 +176,7 @@ fn explicit_codex_home_keeps_discovery_and_role_selection_on_one_source() -> any
         ])
         .assert()
         .success();
-    // `account select --role` requires the role to be registered; the test's
-    // second role is synthetic, so register it directly (the-architect is
-    // built in).
+
     {
         let config_path = home.join(".config/jackin/config.toml");
         let mut config_text = fs::read_to_string(&config_path)?;

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `AppConfig` mount resolution impl blocks and display helpers.
-
 use crate::ConfigError;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -17,41 +15,29 @@ use crate::schema::{
     launch_cache_roots, validate_mount_paths, validate_mount_specs, validate_mounts,
 };
 
-/// A resolved global mount entry for display and validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalMountRow {
-    /// Scope key (`None` = unscoped global); e.g. `"ns/*"` or role key.
     pub scope: Option<String>,
-    /// Mount name within that scope.
+
     pub name: String,
-    /// Expanded mount geometry.
+
     pub mount: MountConfig,
 }
 
-/// Result of resolving applicable global mounts for a workspace.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceGlobalMountRows {
-    /// Role is determinable; mounts merged for that role.
     Applicable {
-        /// Role key that drove scoped global mounts.
         role: String,
-        /// Merged global mount rows for the role.
+
         rows: Vec<GlobalMountRow>,
     },
-    /// Multiple or zero roles could apply; operator must pick.
+
     Ambiguous {
-        /// Candidate role keys.
         candidates: Vec<String>,
     },
 }
 
 impl AppConfig {
-    /// Determine which role drives role-scoped global mounts for this
-    /// workspace. Returns `Applicable` (with the resolved role + merged
-    /// rows) when role is determinable; `Ambiguous` (with candidates)
-    /// otherwise. Role candidates merge `allowed_roles`, `default_role`,
-    /// and `last_role`; if none is set and the config has exactly one
-    /// role, that one is used.
     pub fn workspace_applicable_mount_rows(
         &self,
         workspace: &crate::schema::WorkspaceConfig,
@@ -103,7 +89,6 @@ impl AppConfig {
                   helpers would re-pass mutable by_name + selector borrows across \
                   fn boundaries and obscure the per-scope merge logic."
     )]
-    /// Union-merge global mounts for `selector` across unscoped, namespace, and role scopes.
     pub fn resolve_mount_rows(&self, selector: &RoleSelector) -> Vec<GlobalMountRow> {
         let mut by_name: BTreeMap<String, GlobalMountRow> = BTreeMap::new();
         let scopes = [
@@ -148,7 +133,6 @@ impl AppConfig {
         by_name.into_values().collect()
     }
 
-    /// Like [`Self::resolve_mount_rows`] but returns `(name, mount)` pairs only.
     pub fn resolve_mounts(&self, selector: &RoleSelector) -> Vec<(String, MountConfig)> {
         self.resolve_mount_rows(selector)
             .into_iter()
@@ -156,12 +140,6 @@ impl AppConfig {
             .collect()
     }
 
-    /// Expand tildes in named mounts, heal cache-backed sources, and validate.
-    ///
-    /// Missing sources under cache roots are recreated (directories) or
-    /// skipped (files) by [`ensure_mount_sources`] before existence
-    /// validation, so a wiped cache never fails launch resolution. The
-    /// returned [`MountHealReport`] must be surfaced to the operator.
     pub fn expand_and_validate_named_mounts(
         mounts: &[(String, MountConfig)],
     ) -> crate::ConfigResult<(Vec<MountConfig>, MountHealReport)> {
@@ -185,8 +163,6 @@ impl AppConfig {
         Ok((healed, report))
     }
 
-    /// Insert or replace a global named mount (test / in-memory only; prefer `ConfigEditor`).
-    // Test-only; production writes go through ConfigEditor.
     pub fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
         debug_assert!(
             matches!(mount.isolation, MountIsolation::Shared),
@@ -218,7 +194,6 @@ impl AppConfig {
         }
     }
 
-    /// Flatten all global mount entries (scoped and unscoped) into display rows.
     pub fn list_mount_rows(&self) -> Vec<GlobalMountRow> {
         let mut result = Vec::new();
         for (key, entry) in self.docker.mounts.iter() {
@@ -242,7 +217,6 @@ impl AppConfig {
         result
     }
 
-    /// Ensure workspace and global mount destinations do not collide.
     pub fn validate_effective_mount_destinations(
         workspace: &crate::schema::WorkspaceConfig,
         rows: &[GlobalMountRow],
@@ -268,7 +242,6 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Validate global mount rows: names, isolation, paths, and overlapping destinations.
     pub fn validate_global_mount_rows(rows: &[GlobalMountRow]) -> crate::ConfigResult<()> {
         let mut seen_keys: BTreeSet<(Option<&str>, &str)> = BTreeSet::new();
         for row in rows {
@@ -277,9 +250,7 @@ impl AppConfig {
                     "global mount name cannot be empty"
                 )));
             }
-            // Two rows with the same (scope, name) silently collapse on
-            // wire-write because `add_mount` keys the BTreeMap by name —
-            // catch it here before the editor loses one row's data.
+
             if !seen_keys.insert((row.scope.as_deref(), row.name.as_str())) {
                 let scope = row.scope.as_deref().unwrap_or("global");
                 return Err(ConfigError::msg(format_args!(

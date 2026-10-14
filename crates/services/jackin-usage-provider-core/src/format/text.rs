@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Text parsing, currency, and path helpers.
 
 use std::path::{Path, PathBuf};
 
@@ -73,8 +72,6 @@ pub fn home_path(rel: &str) -> PathBuf {
         .join(rel)
 }
 pub fn oauth_origin(path: &Path) -> String {
-    // `to_string_lossy` borrows (no alloc) for the common UTF-8 path and only
-    // allocates for non-UTF-8 container paths; `&Cow<str>` coerces to `&str`.
     format!(
         "OAuth · {}",
         jackin_core::shorten_home(&path.to_string_lossy())

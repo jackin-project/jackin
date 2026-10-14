@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Stable documentation cache contracts used by GitHub Actions.
-
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -19,13 +17,12 @@ use crate::cmd;
 
 #[derive(Args)]
 pub(crate) struct DocsContractArgs {
-    /// Documentation surface whose cache key is required.
     #[arg(value_enum)]
     kind: ContractKind,
-    /// Git revision to inspect.
+
     #[arg(long, default_value = "HEAD")]
     git_ref: String,
-    /// Reproduce the retired full-site link contract during cache migration.
+
     #[arg(long)]
     legacy: bool,
 }

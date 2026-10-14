@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `UsageCache` types and methods.
 
 use std::collections::HashMap;
 
@@ -20,9 +19,7 @@ use super::{
 #[derive(Debug, Clone)]
 pub struct UsageCache {
     pub snapshots: HashMap<String, CachedUsage>,
-    /// Destination for accounts.json materialization. Production uses
-    /// [`MATERIALIZED_USAGE_ACCOUNTS_PATH`]; benches/tests inject a temp path
-    /// via [`UsageCache::set_accounts_materialize_path`].
+
     pub accounts_materialize_path: PathBuf,
 }
 
@@ -35,8 +32,7 @@ pub struct CachedUsage {
 pub struct UsageRefreshTarget {
     pub agent: String,
     pub provider: Option<String>,
-    /// Exact broker authority for the selected account. Surface labels are
-    /// presentation only and must never route a refresh.
+
     pub capability: jackin_protocol::usage_broker::UsageAccountCapability,
 }
 
@@ -47,8 +43,6 @@ impl UsageRefreshTarget {
 }
 
 impl UsageCache {
-    /// Test-only helper: seed a snapshot into the cache. Kept `pub` for the
-    /// Capsule daemon tests in a separate crate.
     #[doc(hidden)]
     pub fn insert_snapshot_for_test(
         &mut self,
@@ -69,8 +63,6 @@ impl UsageCache {
         self.snapshots.insert(cache_key, CachedUsage { view });
     }
 
-    /// Test-only helper for an exact account snapshot. Production broker
-    /// adoption always uses this same capability-qualified key.
     #[doc(hidden)]
     pub fn insert_snapshot_for_capability_for_test(
         &mut self,
@@ -89,15 +81,11 @@ impl UsageCache {
         self.snapshots.insert(cache_key, CachedUsage { view });
     }
 
-    /// Bench/test helper: write materialized accounts to `path` instead of the
-    /// container path. Cross-crate like `insert_snapshot_for_test`.
     #[doc(hidden)]
     pub fn set_accounts_materialize_path(&mut self, path: PathBuf) {
         self.accounts_materialize_path = path;
     }
 
-    /// Bench/test entry: materialize the cache to the configured path.
-    /// Production refresh calls the same body via [`Self::materialize_accounts`].
     #[doc(hidden)]
     pub fn materialize_accounts_for_bench(&self, generated_at_epoch: i64) -> Result<(), String> {
         self.materialize_accounts(generated_at_epoch)
@@ -109,22 +97,14 @@ impl UsageCache {
         focused_provider: Option<&str>,
     ) -> Option<String> {
         let agent = focused_agent?;
-        // Label-only fast path: the status bar needs just `status_bar_label`, which
-        // `cached_focused_usage_view`'s clone + enrich/mark-active never touch. Read
-        // it straight from the stored view instead of cloning the whole snapshot.
+
         if let Some(cached) = cached_usage_for_target(&self.snapshots, agent, focused_provider) {
             return Some(cached.view.status_bar_label.clone());
         }
-        // A focused agent with no snapshot yet is mid-load — show `refreshing`
-        // (clickable to force a load), never blank or a stale headline. The
-        // segment is hidden only when there is no focused agent at all (the
-        // `focused_agent?` above returns `None` → caller renders nothing).
+
         Some("refreshing".to_owned())
     }
 
-    /// Exact-account status-bar lookup used by Capsule sessions. A missing
-    /// capability is intentionally treated as not yet loaded; it must never
-    /// fall back to another account on the same provider surface.
     pub fn focused_status_bar_label_for_capability(
         &self,
         focused_agent: Option<&str>,
@@ -166,14 +146,10 @@ impl UsageCache {
         if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
             return view;
         }
-        // Agent is focused but no snapshot is cached yet: the agent has started
-        // and the fetch is in flight — an honest "refreshing" state, not the
-        // "usage unavailable" we reserve for a genuine absence.
+
         cached_refreshing_view(agent, focused_provider, now)
     }
 
-    /// Exact-account focused snapshot. Surface-only cache selection is not
-    /// acceptable for a Capsule with duplicate provider accounts.
     pub fn focused_snapshot_for_capability(
         &mut self,
         focused_agent: Option<&str>,

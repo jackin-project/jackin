@@ -1,5 +1,3 @@
-//! Input/update handlers for the 1Password picker.
-
 use crate::ModalOutcome;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -25,8 +23,6 @@ use crate::first_selection;
 
 impl OpPickerState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerCoreSelection> {
-        // Naming sub-stages are pure text input (no async load), so the
-        // load-state guards must not swallow their keys.
         match self.stage {
             OpPickerStage::NewItemName => return self.handle_new_item_name_key(key),
             OpPickerStage::FieldLabel => return self.handle_field_label_key(key),
@@ -59,8 +55,6 @@ impl OpPickerState {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Re-fires the probe so add/remove of signed-in
-                // accounts mid-session is picked up without restart.
                 let plan = account_stage_refresh_plan();
                 self.op_cache.borrow_mut().invalidate_accounts();
                 if plan.clear_accounts {
@@ -240,7 +234,6 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                // `None` is the `+ New item` sentinel (Create mode only).
                 let visible = self.filtered_item_choices();
                 let picked: Option<Option<OpPickerItem>> =
                     selected_choice(&visible, self.item_list_state.active().copied())
@@ -269,10 +262,6 @@ impl OpPickerState {
         }
     }
 
-    /// Create-mode Section stage: pick `(root)` / an existing section /
-    /// `+ New section`. The list has `section_choices().len()` choice rows
-    /// followed by a single `+ New section` sentinel. No filtering; sections
-    /// are few, so `Char` input is ignored here.
     fn handle_section_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerCoreSelection> {
         let choices = self.section_choices();
         let sentinel_idx = choices.len();
@@ -326,8 +315,6 @@ impl OpPickerState {
         }
     }
 
-    /// Esc back-nav from the Field stage. Create mode steps back to the
-    /// Section stage (keeping the loaded fields); Browse steps back to Item.
     fn field_stage_back(&mut self) {
         self.filter_buf.clear();
         let plan = field_stage_back_plan(&self.mode);
@@ -474,7 +461,7 @@ impl OpPickerState {
                 self.stage = OpPickerStage::Item;
                 ModalOutcome::Continue
             }
-            // selected_item stays None => FieldLabel commit takes the new-item path.
+
             ModalOutcome::Commit(_) => {
                 let plan = new_item_name_commit_plan();
                 self.stage = plan.stage;
@@ -493,7 +480,6 @@ impl OpPickerState {
     ) -> ModalOutcome<OpPickerCoreSelection> {
         match self.section_name_input.handle_key(key) {
             ModalOutcome::Cancel => {
-                // The `+ New section` entry point lives on the Section stage.
                 self.stage = OpPickerStage::Section;
                 ModalOutcome::Continue
             }
@@ -545,10 +531,6 @@ impl OpPickerState {
         }
     }
 
-    /// Collapse (`collapsed = true`) or expand a section header, then clamp
-    /// the field selection so it never dangles past the new row count.
-    /// All three entry points (Enter toggle, Left collapse, Right expand)
-    /// route here so the selection clamp stays in lockstep with the rows.
     fn set_section_collapsed(&mut self, section_id: String, collapsed: bool) {
         if collapsed {
             self.collapsed_sections.insert(section_id);
@@ -562,10 +544,6 @@ impl OpPickerState {
         ));
     }
 
-    /// Browse: commit the field's `op://` reference. Create: overwrite the
-    /// field by its exact id. The consumer matches on `field_id` and preserves
-    /// the field's existing section, so `selected_section` rides along only
-    /// for display, not placement.
     #[expect(
         clippy::expect_used,
         reason = "existing-field commit is reachable only after vault and item selections exist"
@@ -616,10 +594,6 @@ impl OpPickerState {
     }
 }
 
-/// Keyboard cycle WRAPS at the ends, replicating the retired list
-/// wrapper's cycling move exactly: count 0 clears the selection; a stale
-/// or missing selection normalizes to row 0 before the wrapping step
-/// (`CollectionState::move_by` with the state-level `wrap = true`).
 fn cycle_select(list_state: &mut CollectionState<usize>, count: usize, delta: isize) {
     if count == 0 {
         list_state.set_active(None);

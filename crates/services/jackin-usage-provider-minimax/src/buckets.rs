@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `MiniMax` quota buckets and window labels.
 
 use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
 use jackin_usage_provider_core::{compact_count, timed_bucket, titlecase_ascii};
@@ -13,7 +12,6 @@ pub enum MiniMaxWindow {
     Weekly,
 }
 
-/// Window status codes: `0`/`1` normal, `2` exhausted, `3` unlimited.
 pub(crate) fn minimax_window_exhausted(status: Option<i64>) -> bool {
     status == Some(2)
 }
@@ -38,8 +36,6 @@ pub fn minimax_bucket(
     remains_time: Option<i64>,
     now: i64,
 ) -> Option<QuotaBucketView> {
-    // Only the general model fills the status-bar slots; per-model windows are
-    // detail rows the headline ignores.
     let status_slot = match (minimax_is_general_model(Some(model_name)), window) {
         (true, MiniMaxWindow::Interval) => Some(StatusSlot::Session),
         (true, MiniMaxWindow::Weekly) => Some(StatusSlot::Weekly),
@@ -112,9 +108,6 @@ pub fn minimax_bucket(
     Some(view)
 }
 
-/// Apply the interval/weekly boost: rendered remaining = base ×
-/// (`boost_permille` / 1000), which can exceed 100%. The raw over-cap value is
-/// kept (bar geometry clamps at render); only the `u8` carrier bounds it.
 pub(crate) fn minimax_effective_remaining(
     base_percent: Option<f64>,
     boost_permille: Option<f64>,
@@ -135,7 +128,6 @@ pub(crate) fn minimax_effective_remaining(
     }
 }
 
-/// Human note for a non-trivial boost, e.g. `+20% boost` for permille 1200.
 pub(crate) fn minimax_boost_note(boost_permille: Option<f64>) -> Option<String> {
     let boost = boost_permille.filter(|boost| boost.is_finite() && *boost > 0.0)?;
     if (boost - 1000.0).abs() < f64::EPSILON {

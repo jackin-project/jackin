@@ -22,7 +22,7 @@ fn claude_hook_installer_repairs_stale_async_flag() {
     let home = dir.path().to_path_buf();
     let claude_dir = home.join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
-    // Write settings.json with wrong async flag on PermissionRequest.
+
     let bad_settings = serde_json::json!({
         "hooks": {
             "PermissionRequest": [{"matcher":"","hooks":[{"type":"command","command":"/jackin/runtime/agent-status/hooks/claude/report-hook.sh","async":true}]}]
@@ -33,9 +33,9 @@ fn claude_hook_installer_repairs_stale_async_flag() {
         serde_json::to_string_pretty(&bad_settings).unwrap(),
     )
     .unwrap();
-    // Verify fails (PermissionRequest has wrong async flag).
+
     assert!(!installer().verify(&home, &home.join(".claude")));
-    // Install repairs it.
+
     installer().install(&home, &home.join(".claude")).unwrap();
     assert!(installer().verify(&home, &home.join(".claude")));
 }
@@ -50,7 +50,6 @@ fn claude_stop_hook_is_async_and_permission_request_is_sync() {
     let val: serde_json::Value = serde_json::from_str(&content).unwrap();
     let hooks = val.get("hooks").and_then(|h| h.as_object()).unwrap();
 
-    // Stop must be async: true; observability must not mutate agent flow.
     let stop_entries = hooks.get("Stop").and_then(|v| v.as_array()).unwrap();
     let stop_hook = &stop_entries[0]["hooks"][0];
     assert_eq!(
@@ -59,7 +58,6 @@ fn claude_stop_hook_is_async_and_permission_request_is_sync() {
         "Stop hook must be async: true"
     );
 
-    // PermissionRequest must also be async: false.
     let perm_entries = hooks
         .get("PermissionRequest")
         .and_then(|v| v.as_array())
@@ -71,7 +69,6 @@ fn claude_stop_hook_is_async_and_permission_request_is_sync() {
         "PermissionRequest hook must be async: false"
     );
 
-    // The hook script path matches our expected path.
     assert_eq!(
         stop_hook.get("command").and_then(|v| v.as_str()),
         Some("/jackin/runtime/agent-status/hooks/claude/report-hook.sh --event Stop")
@@ -93,9 +90,6 @@ fn codex_hooks_json_has_no_unknown_top_level_keys() {
     let content = fs::read_to_string(hooks_path).unwrap();
     let val: serde_json::Value = serde_json::from_str(&content).unwrap();
 
-    // Current Codex rejects any top-level key other than `hooks` (it discards
-    // the whole file on "unknown field, expected `hooks`"), so the only key
-    // must be `hooks` — in particular NOT the old top-level `notify`.
     let obj = val.as_object().expect("hooks.json is a JSON object");
     assert_eq!(
         obj.keys().collect::<Vec<_>>(),
@@ -105,7 +99,6 @@ fn codex_hooks_json_has_no_unknown_top_level_keys() {
     );
     assert!(val.get("notify").is_none(), "top-level notify must be gone");
 
-    // Turn-complete is carried by the Stop hook; PermissionRequest reporter wired.
     assert_eq!(
         val.pointer("/hooks/Stop/0/command")
             .and_then(serde_json::Value::as_str),
@@ -192,20 +185,17 @@ fn opencode_install_bails_on_corrupt_or_wrong_shape_and_never_clobbers() {
     fs::create_dir_all(&oc).unwrap();
     let path = oc.join("plugins.json");
 
-    // Unparseable JSON -> bail, file left byte-identical.
     fs::write(&path, "{ not json").unwrap();
     PluginInstaller::opencode()
         .install(&home, &home)
         .unwrap_err();
     assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
 
-    // Valid JSON, but root is an array (not an object) -> bail.
     fs::write(&path, "[1,2,3]").unwrap();
     PluginInstaller::opencode()
         .install(&home, &home)
         .unwrap_err();
 
-    // Valid object, but `plugins` is the wrong shape (string, not array) -> bail.
     fs::write(&path, r#"{"plugins":"not-an-array"}"#).unwrap();
     PluginInstaller::opencode()
         .install(&home, &home)
@@ -235,7 +225,7 @@ fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
     let home = dir.path().to_path_buf();
     let codex_dir = home.join(".codex");
     fs::create_dir_all(&codex_dir).unwrap();
-    // Operator/role owns a custom hook + a custom event the reporter never touches.
+
     let existing = serde_json::json!({
         "hooks": {
             "UserPromptSubmit": [{ "command": "/role/own-hook.sh" }],
@@ -250,13 +240,12 @@ fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
         .unwrap();
     let val: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
 
-    // The role's hook + custom event survive; our reporter command is added.
     let ups = val["hooks"]["UserPromptSubmit"].as_array().unwrap();
     assert!(ups.iter().any(|e| e["command"] == "/role/own-hook.sh"));
     assert!(ups.iter().any(|e| e["command"]
         == "/jackin/runtime/agent-status/hooks/codex/report-hook.sh --event UserPromptSubmit"));
     assert_eq!(val["hooks"]["CustomEvent"][0]["command"], "/role/custom.sh");
-    // Idempotent: a second install does not duplicate our entry.
+
     CodexHookInstaller::default()
         .install(&home, &home.join(".codex"))
         .unwrap();
@@ -267,7 +256,6 @@ fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
         2
     );
 
-    // A corrupt file is never clobbered.
     fs::write(&path, "{ not json").unwrap();
     CodexHookInstaller::default()
         .install(&home, &home.join(".codex"))
@@ -298,7 +286,7 @@ fn opencode_install_preserves_existing_plugins() {
             .iter()
             .any(|p| p.as_str().unwrap().contains("opencode"))
     );
-    // Idempotent.
+
     PluginInstaller::opencode().install(&home, &home).unwrap();
     let val2: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -372,14 +360,14 @@ fn claude_install_bails_on_malformed_settings_and_preserves_it() {
     let claude_dir = home.join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
     let settings = claude_dir.join("settings.json");
-    // A malformed settings.json (e.g. a half-flushed write) must not be clobbered.
+
     fs::write(&settings, "{ not valid json").unwrap();
 
     installer()
         .install(&home, &home.join(".claude"))
         .unwrap_err();
-    // The operator's (broken) file is left exactly as-is, not overwritten.
+
     assert_eq!(fs::read_to_string(&settings).unwrap(), "{ not valid json");
-    // And verify keeps reporting drift, so the failure stays visible.
+
     assert!(!installer().verify(&home, &home.join(".claude")));
 }

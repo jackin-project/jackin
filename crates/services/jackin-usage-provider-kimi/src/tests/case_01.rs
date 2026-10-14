@@ -39,7 +39,7 @@ fn kimi_code_api_pools_map_rolling_weekly_monthly() {
     .expect("valid Kimi Code API usage");
 
     let buckets = usage.buckets(1_781_185_560);
-    // Pools supersede the coarser summary/limits shapes: no window twice.
+
     assert_eq!(buckets.len(), 3);
     assert_eq!(buckets[0].label, "5-hour");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
@@ -70,12 +70,12 @@ fn kimi_membership_plan_mapping_is_version_gated() {
         kimi_membership_plan("LEVEL_ADVANCED", Some("GOODS_VERSION_V1")),
         "Allegro".to_owned()
     );
-    // Unknown goods version: raw level through, never a stale mapping.
+
     assert_eq!(
         kimi_membership_plan("LEVEL_BASIC", Some("GOODS_VERSION_V2")),
         "Level Basic".to_owned()
     );
-    // Unknown level: prefix stripped, humanized.
+
     assert_eq!(
         kimi_membership_plan("LEVEL_FOUNDER", None),
         "Founder".to_owned()
@@ -118,7 +118,6 @@ fn kimi_numeric_detail_and_snake_reset_parse() {
     assert_eq!(buckets[0].remaining_percent, Some(78));
     assert!(buckets[0].resets_at.is_some());
 
-    // Epoch-millisecond reset normalizes to seconds.
     let ms: KimiUsageResponse = serde_json::from_value(serde_json::json!({
         "usage": { "limit": 100, "used": 10, "reset_at": 1_782_000_000_000_i64 }
     }))
@@ -157,7 +156,6 @@ fn kimi_extra_usage_wallet_maps_to_spend_bucket() {
         Some(2000)
     );
 
-    // Balance/total pair without a monthly cap: consumed of total.
     let pair: KimiLocalUsage = serde_json::from_value(serde_json::json!({
         "extra_usage": { "balance": 7500, "total": 10000 }
     }))
@@ -172,7 +170,6 @@ fn kimi_extra_usage_wallet_maps_to_spend_bucket() {
         Some("credits")
     );
 
-    // HTTP-200 in-band error rejects the body.
     let failed: KimiLocalUsage = serde_json::from_value(serde_json::json!({
         "error": { "code": "UNAUTHENTICATED", "message": "bad credential" }
     }))
@@ -185,8 +182,6 @@ fn kimi_extra_usage_wallet_maps_to_spend_bucket() {
 
 #[test]
 fn kimi_unitless_wallet_keys_are_unknown_scale_never_money() {
-    // Unitless aliases no longer feed `Money`: they render as a label-only
-    // row so a major-unit value can never go 100x off in the headline.
     let usage: KimiLocalUsage = serde_json::from_value(serde_json::json!({
         "extra_usage": { "monthly_used": 500, "monthly_cap": 2000 }
     }))
@@ -206,7 +201,6 @@ fn kimi_unitless_wallet_keys_are_unknown_scale_never_money() {
     assert_eq!(view.status_slot, None);
     assert_eq!(view.remaining_percent, None);
 
-    // Evidenced `*_cents` keys still feed `Money` when present alongside.
     let mixed: KimiLocalUsage = serde_json::from_value(serde_json::json!({
         "extra_usage": {
             "monthly_used_cents": 500,
@@ -241,11 +235,10 @@ fn kimi_over_cap_keeps_raw_percent_with_clamped_bar() {
         "raw overage stays visible"
     );
     assert_eq!(buckets[0].used_label.as_deref(), Some("140"));
-    // `used_ratio` above 1.0 is an already-scaled percent: 150 → 150%.
+
     assert_eq!(buckets[1].remaining_percent, Some(0));
     assert_eq!(buckets[1].pace_label.as_deref(), Some("150% used"));
 
-    // At/below cap: no over-cap prefix, pace untouched.
     assert_eq!(kimi_over_cap_label(100.0), None);
     assert_eq!(kimi_over_cap_label(42.5), None);
     assert_eq!(kimi_over_cap_label(f64::NAN), None);

@@ -56,7 +56,7 @@ fn trparity_surface_focus_moves_between_tab_bar_and_content() {
     assert_eq!(focus.focused_content(), Some("settings"));
     assert!(focus.is_content("settings"));
     assert!(focus.show_cursor_for(&"settings"));
-    // Only one content identity is registered at a time (focus.rs register()).
+
     assert!(!focus.is_content("editor"));
 
     focus.focus_tab_bar();

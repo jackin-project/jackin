@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Physical OTLP channel ownership and eventually delivered connection facts.
-
 use super::super::config::TlsConfig;
 use jackin_telemetry::schema::enums::{ConnectionPeerType, ErrorType, OutcomeValue};
 use rustls::pki_types::ServerName;

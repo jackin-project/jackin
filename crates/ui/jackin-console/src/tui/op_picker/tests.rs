@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Most tests inject a no-op `StubRunner` and overwrite
-//! `vaults`/`items`/`fields`/`load_state`/`stage`/selection
-//! directly before driving `handle_key` — bypasses the worker
-//! channel. The `*_uses_injected_runner_in_async_worker` tests at
-//! the end exercise the worker path end-to-end.
-
 use super::*;
 
 use crate::tui::components::op_picker::{field_label_input_state, section_name_input_state};

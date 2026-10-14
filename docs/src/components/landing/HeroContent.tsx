@@ -1,4 +1,4 @@
-// docs/components/landing/HeroContent.tsx
+
 import { CodePanel } from './CodePanel';
 
 export function HeroContent() {

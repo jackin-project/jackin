@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! In-container clipboard asset staging for host-affordance bridge frames.
-//!
-//! The host may claim an image format, but the Capsule validates magic bytes
-//! before writing a container-readable path under jackin❯'s runtime root.
-
 use std::collections::HashMap;
 use std::fs::{
     OpenOptions, create_dir_all, read_dir, remove_file, set_permissions, symlink_metadata,

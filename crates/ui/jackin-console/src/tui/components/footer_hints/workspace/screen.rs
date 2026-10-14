@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace screen footer plans and items.
 
 use termrock::scroll::ScrollAxes;
 use termrock::widgets::HintSpan;
@@ -96,7 +95,6 @@ pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
     let mut items = vec![
         HintSpan::Dyn("Create workspace — follow the prompts".to_owned()),
         HintSpan::GroupSep,
-        // UNREGISTERABLE(create-prelude-no-keymap): Esc handled inline; no dedicated create-prelude keymap.
         super::super::key_span("Esc"),
         HintSpan::Text("cancel"),
     ];

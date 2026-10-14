@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! File-browser effect executors: open, apply outcome, resolve git URL, poll.
-//!
-//! `execute_editor_file_browser_outcome` accepts an injectable
-//! `auth_source_folder_validator` so the root binary can supply the macOS
-//! `security`-subprocess check without creating a runtime dep here.
 mod commit;
 mod git_urls;
 mod listing;

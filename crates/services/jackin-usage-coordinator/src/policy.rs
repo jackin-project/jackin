@@ -1,47 +1,38 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Broker-owned refresh cadence and retry policy.
-
 use std::time::Duration;
 
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCoordinationErrorKind};
 
-/// Claude usage attempts are spaced at least five minutes apart.
 pub(crate) const CLAUDE_MIN_ATTEMPT_INTERVAL: Duration = Duration::from_mins(5);
 
-/// Claude's undocumented OAuth usage endpoint gets a local one-hour cooldown
-/// after repeated failed generations ending in a rate-limit response.
 pub(crate) const CLAUDE_RATE_LIMIT_CIRCUIT_INTERVAL: Duration = Duration::from_hours(1);
 const CLAUDE_RATE_LIMIT_CIRCUIT_FAILURE_THRESHOLD: u32 = 3;
 
-/// Operator activity used to select the automatic refresh cadence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageActivity {
-    /// A surface is actively being used.
     DirectInteraction,
-    /// The operator interacted recently.
+
     Recent,
-    /// No recent interaction.
+
     Idle,
-    /// Long-idle or Low Power Mode.
+
     LongIdle,
 }
 
-/// Frozen broker timing constants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsagePolicy {
-    /// Broker exits after this idle interval.
     pub idle_exit: Duration,
-    /// Lease lifetime.
+
     pub lease_duration: Duration,
-    /// Lease renewal interval.
+
     pub lease_renewal: Duration,
-    /// Provider hard timeout.
+
     pub provider_timeout: Duration,
-    /// Minimum retry backoff.
+
     pub retry_base: Duration,
-    /// Maximum retry backoff.
+
     pub retry_cap: Duration,
 }
 
@@ -58,7 +49,6 @@ impl Default for UsagePolicy {
     }
 }
 
-/// Select the automatic refresh cadence. Low Power Mode always uses long idle.
 #[must_use]
 pub const fn cadence(activity: UsageActivity, low_power: bool) -> Duration {
     if low_power {
@@ -72,7 +62,6 @@ pub const fn cadence(activity: UsageActivity, low_power: bool) -> Duration {
     }
 }
 
-/// Whether a terminal failure should receive broker-owned transient retry.
 #[must_use]
 pub const fn is_retryable(kind: UsageCoordinationErrorKind) -> bool {
     matches!(
@@ -85,9 +74,6 @@ pub const fn is_retryable(kind: UsageCoordinationErrorKind) -> bool {
     )
 }
 
-/// Deterministic positive exponential retry deadline. The capability and
-/// generation seed bounded jitter, so joined callers never derive different
-/// retry times and backoff never falls below its exponential interval.
 #[must_use]
 pub fn retry_deadline(
     policy: UsagePolicy,
@@ -120,9 +106,6 @@ pub fn retry_deadline(
     Some(provider_deadline.map_or(fallback, |deadline| deadline.max(fallback)))
 }
 
-/// Claude's persisted provider invocation is the authority for a hard minimum
-/// interval. This remains enforceable after restart and is independent of the
-/// caller's `force` flag.
 #[must_use]
 pub(crate) fn minimum_attempt_deadline(
     capability: &UsageAccountCapability,
@@ -139,13 +122,6 @@ pub(crate) fn minimum_attempt_deadline(
     }
 }
 
-/// Add a local circuit cooldown to a repeated Claude rate-limit failure.
-///
-/// This uses the existing persisted count of all failed generations since the
-/// last success, including non-retryable credential and authorization errors.
-/// The latest failure must still be `RateLimited`; other providers and other
-/// latest failure kinds keep the normal retry policy. This cooldown is local
-/// policy, not a provider reset estimate.
 #[must_use]
 pub(crate) fn claude_rate_limit_circuit_deadline(
     capability: &UsageAccountCapability,
@@ -163,8 +139,6 @@ pub(crate) fn claude_rate_limit_circuit_deadline(
         })
 }
 
-/// Preserve an existing provider/backoff deadline while applying the Claude
-/// rate-limit circuit as an additional local lower bound.
 #[must_use]
 pub(crate) fn claude_rate_limit_retry_deadline(
     capability: &UsageAccountCapability,

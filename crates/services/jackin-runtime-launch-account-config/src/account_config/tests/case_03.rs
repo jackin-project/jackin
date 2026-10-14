@@ -339,8 +339,7 @@ fn codex_catalog_rotation_preserves_stale_container_reference() {
         None,
     )];
     let second_config = config;
-    // The first fixture uses k3-256k; the second publication intentionally
-    // changes the catalog content while keeping the slot/container path.
+
     configure_for_test(temp.path(), &second_config, &second_instances).unwrap();
     let document: toml::Value =
         toml::from_str(&std::fs::read_to_string(directory.join("config.toml")).unwrap()).unwrap();

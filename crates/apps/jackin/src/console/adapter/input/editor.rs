@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Thin adapter shell — editor-stage input dispatch lives in jackin-console.
-
 #[cfg(test)]
 pub(super) use jackin_console::tui::input::editor::{
     EditorModalOutcome, apply_file_browser_to_editor, apply_text_input_to_pending,

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Linux isolation entry: wrapper orchestration over rules and enforcement.
 
 use super::SessionIdentity;
 use anyhow::{Context, Result};
@@ -44,8 +43,6 @@ pub(crate) fn run(
     args: &[String],
 ) -> Result<()> {
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
-    // SAFETY: `geteuid` has no pointer arguments and only returns the
-    // effective uid of the calling process.
     let effective_uid = unsafe { libc::geteuid() };
     anyhow::ensure!(
         effective_uid == 0,

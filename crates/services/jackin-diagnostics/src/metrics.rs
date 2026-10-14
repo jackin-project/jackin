@@ -1,12 +1,5 @@
-//! Governed hot-path metric wrappers.
-//!
-//! Instrument definitions, privacy validation, and cardinality limits live in
-//! `jackin-telemetry`; this composition-root crate only exposes product-facing
-//! recording helpers.
-
 use jackin_telemetry::{Attr, Value, counter, histogram, metric};
 
-/// Record one emitted client frame: bytes, cursor moves, and painted cells.
 pub fn record_frame(bytes: u64, cursor_moves: u64, painted_cells: u64) {
     let output = [Attr {
         key: jackin_telemetry::schema::attrs::STREAM_DIRECTION,
@@ -18,7 +11,6 @@ pub fn record_frame(bytes: u64, cursor_moves: u64, painted_cells: u64) {
     let _frames_result = counter(&metric::TERMINAL_RENDER_FRAMES).add(1, &[]);
 }
 
-/// Record one render using the registry's seconds unit.
 pub fn record_render(duration_us: u64, painted_cells: u64) {
     let _duration_result =
         histogram(&metric::TERMINAL_RENDER_DURATION).record(duration_us as f64 / 1_000_000.0, &[]);
@@ -27,7 +19,6 @@ pub fn record_render(duration_us: u64, painted_cells: u64) {
     }
 }
 
-/// Record bytes read from a PTY.
 pub fn incr_terminal_bytes_received(bytes: u64) {
     let input = [Attr {
         key: jackin_telemetry::schema::attrs::STREAM_DIRECTION,
@@ -36,21 +27,16 @@ pub fn incr_terminal_bytes_received(bytes: u64) {
     let _bytes_result = counter(&metric::TERMINAL_BYTES).add(bytes, &input);
 }
 
-/// Record one semantic mouse input without coordinates or payload.
 pub fn incr_mouse_events() {
     let _mouse_result = counter(&metric::TERMINAL_INPUT_MOUSE).add(1, &[]);
 }
 
-/// Docker inspection is represented by its governed connection/HTTP boundary.
 pub fn incr_docker_inspect() {}
 
-/// Database activity is represented by governed database operation spans.
 pub fn incr_db_statement(_statement_name: &'static str) {}
 
-/// Account reconciliation is represented by its governed background cycle.
 pub fn incr_accounts_refreshed(_count: u64) {}
 
-/// Errors are represented by the owning operation and typed error event.
 pub fn incr_errors(_error_type: &str) {}
 
 #[cfg(test)]

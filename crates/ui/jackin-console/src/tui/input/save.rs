@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Editor save flow: two-phase commit with planner validation, a
-//! `ConfirmSave` preview modal, and service-backed config writes.
-
 use crate::services::config_save::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
     plan_editor_save_preview, pre_existing_redundant_mounts_message,
@@ -42,13 +39,6 @@ pub fn append_env_map_diff_lines(
     );
 }
 
-/// Continue the editor save flow after an async drift check completes.
-///
-/// Called by the event loop when `poll_pending_drift_check` returns a result.
-/// Handles the drift result identically to the synchronous path in
-/// `commit_editor_save_with_runner`, then continues to the actual workspace
-/// write (or shows an error / deletion-confirm modal) without blocking the
-/// reactor.
 pub fn continue_save_after_drift_check(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
@@ -59,7 +49,6 @@ pub fn continue_save_after_drift_check(
         return Ok(None);
     };
 
-    // Clear the "Checking..." status popup; results or errors replace it.
     editor.dismiss_status_popup();
 
     match detection {
@@ -103,8 +92,6 @@ pub fn continue_save_after_drift_check(
         }
     }
 
-    // No drift detected — mark the drift gate complete before proceeding
-    // so the write pass does not request the same check again.
     let mut plan = drift_check.plan;
     plan.isolated_cleanup_complete = true;
     commit_editor_save_with_runner(state, config, plan, drift_check.exit_on_success)
@@ -129,10 +116,6 @@ pub fn continue_save_after_isolation_cleanup(
     commit_editor_save_with_runner(state, config, plan, cleanup.exit_on_success)
 }
 
-/// Phase 1: validate, plan, open `ConfirmSave`. Validation failures
-/// route to `EditorSaveFlow::Error` and the shared `ErrorPopup`, same
-/// as phase-2 commit errors. The plan is stashed on the modal so
-/// commit doesn't re-run `plan_edit`/`plan_create`.
 pub fn begin_editor_save(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -141,7 +124,7 @@ pub fn begin_editor_save(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
     };
-    // Clear any stale error from a prior attempt.
+
     editor.save_flow = EditorSaveFlow::Idle;
 
     let save_mode = editor_save_mode_plan(&editor.mode);
@@ -203,18 +186,6 @@ pub fn begin_editor_save(
     Ok(())
 }
 
-/// Phase 2: write to disk via `ConfigEditor` (no CLI subprocess). On
-/// Err → `EditorSaveFlow::Error` + `ErrorPopup`. On Ok → refresh
-/// editor snapshot, optionally bounce to list.
-///
-/// **Source-drift safeguard (Task 10.3):** before any disk write, runs
-/// the same `detect_workspace_edit_drift` check the CLI uses. Running
-/// containers with preserved isolated state for an affected mount → open
-/// `ErrorPopup` ("eject first") and abort. Stopped containers with
-/// preserved state → open a `ConfirmTarget::DeleteIsolatedAndSave`
-/// confirm modal that, on Yes, re-stashes the plan with
-/// `delete_isolated_acknowledged = true` so the second commit pass starts
-/// the cleanup worker, then the final pass writes after cleanup completes.
 pub fn commit_editor_save(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
@@ -236,21 +207,12 @@ pub fn commit_editor_save_with_runner(
 
     let save_mode = editor_save_mode_plan(&editor.mode);
 
-    // Operator already approved the collapsed mount set in ConfirmSave.
-    // Clone so subsequent source-drift logic can still inspect the full plan.
     editor.apply_confirmed_mounts(plan.final_mounts.clone());
 
-    // ── Source-drift safeguard ────────────────────────────────────────
-    // Only meaningful in Edit mode — Create has no preserved state. Skip
-    // entirely if the operator already acknowledged the modal on a
-    // previous commit pass.
     if let EditorSaveModePlan::Edit { original_name } = &save_mode
         && !plan.delete_isolated_acknowledged
         && !plan.isolated_cleanup_complete
     {
-        // Build prospective mounts mirroring `edit_workspace`'s merge
-        // order: drop `effective_removals`, then upsert each pending
-        // mount over the existing on-disk set.
         let current_ws = config.workspaces.get(original_name).cloned();
         if let Some(current_ws) = current_ws {
             let prospective_mounts = crate::services::workspace::prospective_workspace_mounts(
@@ -267,10 +229,6 @@ pub fn commit_editor_save_with_runner(
         }
     }
 
-    // Acknowledged — clean up preserved state for each affected record
-    // before the on-disk write so a partial failure leaves the system in
-    // a recoverable state. Mirrors the CLI's `--delete-isolated-state`
-    // branch in `app/mod.rs`.
     if let EditorSaveModePlan::Edit { original_name } = &save_mode
         && plan.delete_isolated_acknowledged
         && !plan.isolated_cleanup_complete
@@ -282,9 +240,7 @@ pub fn commit_editor_save_with_runner(
                 &editor.pending.mounts,
                 &plan.effective_removals,
             );
-            // Re-detect outside the TUI boundary to avoid a TOCTOU window
-            // where state changed between the confirm modal opening and the
-            // operator's Yes.
+
             return Ok(Some(WorkspaceSaveEffect::StartDriftCheck {
                 original_name: original_name.clone(),
                 prospective_mounts,

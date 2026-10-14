@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the background image-prewarm trigger (D22).
-
 use super::*;
 use jackin_config::{RoleSource, WorkspaceConfig};
 
@@ -45,12 +43,12 @@ fn resolves_workspace_default_role_with_narrowed_agent() {
 #[test]
 fn workspace_without_default_role_or_known_git_is_skipped() {
     let mut config = AppConfig::default();
-    // default role with no matching role source → skipped.
+
     config.workspaces.insert(
         "nogit".to_owned(),
         workspace(Some("ghost"), Some(Agent::Claude)),
     );
-    // no default role → skipped.
+
     config
         .workspaces
         .insert("norole".to_owned(), workspace(None, None));
@@ -75,7 +73,7 @@ fn shared_role_widens_to_all_when_one_workspace_leaves_agent_unset() {
     let targets = background_prewarm_targets(&config);
 
     assert_eq!(targets.len(), 1);
-    // One workspace pins Codex, the other leaves it open → refresh all supported.
+
     assert!(
         targets[0].agents.is_empty(),
         "unset default agent must widen the target to the role's full supported set"
@@ -109,7 +107,7 @@ fn shared_role_unions_distinct_narrowed_agents() {
 fn empty_targets_spawn_is_a_noop() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    // No panic, returns immediately with nothing to do.
+
     spawn_background_image_prewarm(&paths, Vec::new(), false);
 }
 

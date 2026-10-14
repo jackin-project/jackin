@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker configuration and socket aliases.
 
 use std::fs::{self};
 use std::io::ErrorKind;
@@ -21,27 +20,25 @@ use crate::{
     BROKER_SOCKET, BROKER_SOCKET_ALIAS_DIR_PREFIX, UNIX_SOCKET_PATH_LIMIT, UsageBrokerClient,
     unavailable,
 };
-/// Host broker filesystem and handshake configuration.
+
 #[derive(Debug, Clone)]
 pub struct UsageBrokerConfig {
-    /// Host-only jackin data directory. Never mounted into a Capsule.
     pub data_dir: PathBuf,
-    /// Exact caller build identifier.
+
     pub build_id: String,
-    /// Bounded refresh scheduling policy.
+
     pub coordinator: UsageCoordinatorConfig,
-    /// Idle lifetime after the last client while no generation is active.
+
     pub idle_exit: Duration,
-    /// Lease lifetime used by the process-independent authority.
+
     pub lease_duration: Duration,
-    /// Lease renewal cadence.
+
     pub lease_renewal: Duration,
-    /// Optional sibling broker executable used by process activation.
+
     pub service_executable: Option<PathBuf>,
 }
 
 impl UsageBrokerConfig {
-    /// Build production defaults for one host data directory.
     #[must_use]
     pub fn for_data_dir(data_dir: PathBuf) -> Self {
         Self {
@@ -64,8 +61,6 @@ impl UsageBrokerConfig {
         short_socket_alias_path(&full).unwrap_or(full)
     }
 
-    /// Prepare the host socket rendezvous for a service bind. Passive clients
-    /// use `client()` and never create or chmod directories.
     pub(crate) fn prepare_socket_path(
         &self,
     ) -> Result<PathBuf, jackin_protocol::usage_broker::UsageCoordinationError> {
@@ -80,7 +75,6 @@ impl UsageBrokerConfig {
         short_socket_alias(&full).ok_or_else(unavailable)
     }
 
-    /// Construct a fail-closed client even when broker startup is unavailable.
     #[must_use]
     pub fn client(&self) -> UsageBrokerClient {
         let full = self
@@ -96,16 +90,6 @@ impl UsageBrokerConfig {
     }
 }
 
-/// Deterministic short alias for a broker socket path that exceeds the
-/// platform `sun_path` limit (deep test tempdirs, long `$HOME`).
-///
-/// Returns `None` when the full path fits or the alias directory cannot be
-/// provisioned. Client and server derive the same alias from the same
-/// `data_dir`, so no rendezvous state is needed. The alias directory is
-/// per-uid, `0700`, and ownership-validated like the run directory; the
-/// socket file itself keeps the existing `0600` + ownership checks at bind
-/// time. Distinct data directories map to distinct alias names via the
-/// 64-bit SHA-256 prefix of the full path.
 pub fn short_socket_alias(full: &Path) -> Option<PathBuf> {
     let alias = short_socket_alias_path(full)?;
     let dir = alias.parent()?;
@@ -173,7 +157,6 @@ fn validate_trusted_ancestors(path: &Path) -> Option<()> {
     Some(())
 }
 
-/// Derive the deterministic alias path without creating or changing anything.
 fn short_socket_alias_path(full: &Path) -> Option<PathBuf> {
     if full.as_os_str().len() < UNIX_SOCKET_PATH_LIMIT {
         return None;

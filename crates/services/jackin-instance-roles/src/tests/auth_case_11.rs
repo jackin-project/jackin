@@ -108,8 +108,7 @@ fn tree_entry_classification_routes_symlinks_away_from_mode_checks() {
     use nix::sys::stat::{SFlag, mode_t};
 
     let mode = |kind: SFlag, perm: mode_t| kind.bits() | perm;
-    // Linux reports every symlink as 0777; macOS reports 0755. Both are
-    // unlinkable links, not writable files.
+
     assert_eq!(
         classify_tree_entry_for_removal(mode(SFlag::S_IFLNK, 0o777)),
         TreeEntryKind::Symlink
@@ -186,11 +185,6 @@ fn sync_copies_credentials_files_when_present() {
 
 #[test]
 fn sync_does_not_forward_mcp_json() {
-    // `mcp.json` is operator-preference MCP server config, not auth
-    // state. Forwarding it would leak host paths/binaries into the
-    // sealed container and bypass the role-author model for declaring
-    // in-container MCP servers. Regression guard for that decision:
-    // even with the host file present, Sync must not copy it.
     let temp = tempdir().unwrap();
     let kimi_dir = temp.path().join("kimi_state");
     let host_home = stage_host_kimi_dir(&temp, None, &[], Some(r#"{"servers":{}}"#), None);
@@ -301,9 +295,6 @@ fn ignore_mode_wipes_prior_kimi_dir() {
 
 #[test]
 fn oauth_token_defensive_arm_wipes_kimi_dir() {
-    // OAuthToken is parser-rejected for Kimi; the defensive arm wipes
-    // any prior Sync's role-state dir so a config bypass cannot leak
-    // forwarded credentials into the container.
     let temp = tempdir().unwrap();
     let kimi_dir = temp.path().join("kimi_state");
     std::fs::create_dir_all(&kimi_dir).unwrap();

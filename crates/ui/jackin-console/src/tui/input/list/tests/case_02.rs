@@ -251,10 +251,6 @@ fn instance_shortcuts_return_selected_workspace_actions() {
         other => panic!("expected inspect instance action; got {other:?}"),
     }
 
-    // P now stages a confirm modal instead of dispatching Purge
-    // directly — the action destroys role + DinD + volume + network
-    // + local state in one stroke, so an unconditional confirmation
-    // step keeps mis-keyed `P` from destroying running work.
     let outcome = handle_key(
         &mut state,
         &mut config,
@@ -272,7 +268,6 @@ fn instance_shortcuts_return_selected_workspace_actions() {
         "P should have set ConfirmInstancePurge stage"
     );
 
-    // Confirm via Y → the staged action fires.
     let outcome = handle_key(
         &mut state,
         &mut config,
@@ -292,9 +287,6 @@ fn instance_shortcuts_return_selected_workspace_actions() {
 
 #[test]
 fn crashed_instance_is_visible_in_tree_and_enter_restarts_via_ladder() {
-    // D15: a failed/stopped instance appears in the console tree, the
-    // workspace expands to show it, and selecting + Enter routes it into the
-    // restore ladder (the Reconnect action).
     let workdir = "/workspace/demo";
     let ws = WorkspaceConfig {
         workdir: workdir.into(),

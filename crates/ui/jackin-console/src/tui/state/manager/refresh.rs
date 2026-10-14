@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ManagerState` refresh and poll operations.
 
 use crate::tui::runtime::BlockingSubscription;
 use crate::tui::runtime::SubscriptionPoll;

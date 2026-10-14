@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Manager recovery record and shell state.
 
 use crate::tui::update::ListShellState;
 

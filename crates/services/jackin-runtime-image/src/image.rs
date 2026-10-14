@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Docker image build pipeline: prepare binaries, build derived image, tag and cache.
-
 mod version;
 
 mod published;

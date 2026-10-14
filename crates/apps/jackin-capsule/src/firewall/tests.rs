@@ -23,7 +23,6 @@ fn classifies_ipv4_and_cidr_as_net() {
 
 #[test]
 fn classifies_ipv6_literal_without_port_mangling() {
-    // The old shell script's `${entry%%:*}` truncated this to `2001`.
     assert_eq!(classify_entry("::1"), Entry::Net("::1".into()));
     assert_eq!(
         classify_entry("2001:db8::1"),
@@ -79,11 +78,9 @@ fn enforceable_ipv4_accepts_addr_and_valid_cidr() {
 
 #[test]
 fn enforceable_ipv4_rejects_ipv6_and_malformed() {
-    // IPv6 is classified as Net but cannot be enforced (inet ipset / IPv4
-    // iptables) — must be rejected so it never enters the restore batch.
     assert!(!enforceable_ipv4("::1"));
     assert!(!enforceable_ipv4("2001:db8::/32"));
-    // Malformed prefixes must not reach `ipset restore` and abort the batch.
+
     assert!(!enforceable_ipv4("1.2.3.0/99"));
     assert!(!enforceable_ipv4("1.2.3.0/abc"));
     assert!(!enforceable_ipv4("1.2.3.0/"));
@@ -116,17 +113,15 @@ fn ipset_restore_stream_empty_is_create_flush_only() {
 
 #[test]
 fn ipv6_deny_rules_drop_first_loopback_and_established_only() {
-    // Fail-closed ordering: the default-DROP policy must be the first rule, so a
-    // mid-apply error can never leave IPv6 OUTPUT at ACCEPT.
     assert_eq!(BASE_DENY_RULES[0], ["-P", "OUTPUT", "DROP"]);
-    // Loopback + established return traffic permitted.
+
     assert!(BASE_DENY_RULES.iter().any(|r| r.contains(&"lo")));
     assert!(
         BASE_DENY_RULES
             .iter()
             .any(|r| r.contains(&"ESTABLISHED,RELATED"))
     );
-    // Deny-all: no destination/allowlist accept (the ipset is IPv4-only).
+
     assert!(
         !BASE_DENY_RULES
             .iter()

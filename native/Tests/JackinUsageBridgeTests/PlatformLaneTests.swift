@@ -3,15 +3,15 @@
 
 import XCTest
 
-/// Platform-lane contract: both SDK lanes are recorded in the manifest and
-/// the native README, `UIDesignRequiresCompatibility` never ships, and any
-/// post-26.0 symbol the component map lists is reachable only behind a guard.
+
+
+
 final class PlatformLaneTests: XCTestCase {
     private var nativeRoot: URL {
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // Tests/JackinUsageBridgeTests
-            .deletingLastPathComponent()  // Tests
-            .deletingLastPathComponent()  // native
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 
     private func text(_ relative: String) throws -> String {
@@ -61,9 +61,9 @@ final class PlatformLaneTests: XCTestCase {
             let raw = try String(contentsOf: url, encoding: .utf8)
             scanned += 1
             if url.lastPathComponent == "PlatformLaneTests.swift" { continue }
-            // Documentation may name the key only to forbid it.
+
             if url.pathExtension == "md" { continue }
-            // Manifest/policy comments may name the key to forbid it; strip them.
+
             let content = raw.components(separatedBy: .newlines)
                 .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
                 .joined(separator: "\n")
@@ -77,7 +77,7 @@ final class PlatformLaneTests: XCTestCase {
 
     func testComponentMapPost26SymbolsAreGuarded() throws {
         let componentMap = try text("Design/UnifiedAgentUsage/NativeComponentMap.md")
-        // Table rows naming a post-26.0 availability, e.g. `| Symbol | macOS 27 |`.
+
         let rowPattern = try NSRegularExpression(
             pattern: #"^\| *`([A-Za-z0-9_]+)` *\| *macOS (2[7-9]|[3-9][0-9])"#,
             options: [.anchorsMatchLines]

@@ -180,14 +180,8 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
     server.join().expect("server thread");
     jackin_diagnostics::flush_wire_test_export()?;
 
-    // Flush acknowledges spans already owned by the providers. Final shutdown
-    // owns the providers and their runtime, including the exporter-owned
-    // physical-channel connection span created while flushing.
     jackin_diagnostics::shutdown_capsule_tracing();
 
-    // Wait for the complete owned export set before asserting exactness. The
-    // deadline is only a failure detector; no span filtering or count
-    // relaxation is allowed here.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     let spans = runtime.block_on(async {
         loop {
@@ -287,9 +281,7 @@ fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
     let (mut client, mut server) = UnixStream::pair().expect("daemon socket pair");
     serde_json::to_writer(&mut client, &request).expect("write daemon request");
     client.write_all(b"\n").expect("terminate daemon request");
-    // WHY: Shutdown::Both alone lets macOS accept short response writes into the
-    // kernel buffer (write "succeeds", test flakes). SO_LINGER=0 RST forces EPIPE
-    // on the peer write path portably.
+
     let linger = nix::libc::linger {
         l_onoff: 1,
         l_linger: 0,
@@ -330,9 +322,7 @@ fn daemon_layout_uses_private_run_dir() {
 fn hello_reports_protocol_without_adapters() {
     let (_temp, _paths, layout) = layout();
     let mut attention = AttentionAdapter::new(RecordingNotifier::default());
-    // Scope spans privately: without a thread-local subscriber they reach
-    // the process-global wire exporter owned by the concurrently running
-    // wire conformance test.
+
     let (_export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
     let request = DaemonRequest {

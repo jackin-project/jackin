@@ -79,7 +79,7 @@ fn console_modal_role_picker_overlay_size_uses_filtered_rows() {
     };
 
     let size = modal.overlay_size(Rect::new(0, 0, 100, 40));
-    // 50% of the 160-column reference, 5 filtered rows + 6 chrome rows.
+
     assert_eq!(size.width, 80);
     assert_eq!(size.height, 11);
 }

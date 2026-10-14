@@ -80,8 +80,7 @@ fn all_provider_snapshots_round_trip_from_turso_to_usage_overlay_rows() {
         assert_eq!(view.buckets[0].remaining_percent, Some(remaining));
         assert_eq!(view.updated_label, "Updated 2m ago");
         assert_eq!(view.tabs.len(), 7);
-        // One tab per stored account, keyed by the stable account id, sorted
-        // by display label.
+
         let mut ids: Vec<&str> = view.tabs.iter().map(|tab| tab.id.as_str()).collect();
         ids.sort_unstable();
         ids.dedup();
@@ -108,11 +107,6 @@ fn all_provider_snapshots_round_trip_from_turso_to_usage_overlay_rows() {
             .expect("account tab");
         assert_eq!(tab.id, account_key_hash(provider, account));
 
-        // Dialog rendering assertion removed: Dialog type lives in jackin-capsule
-        // and would create a circular dep (Blocker 2 Option A). The
-        // bucket-row assertion that followed referenced `rows` from the
-        // removed Dialog::new_usage(view).usage_state() expression; that
-        // expression is now gone, so the rows variable is unreachable.
         let _unused = (view, account, plan, bucket, remaining, tab_label);
     }
 }

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `workdir_pick`.
 use super::*;
 use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -30,8 +29,6 @@ fn mount(_src: &str, dst: &str) -> TestMount {
 
 #[test]
 fn single_mount_generates_dst_plus_ancestors_minus_filtered() {
-    // Intermediate ancestors are kept; `/` and the $HOME-parent are
-    // always filtered out regardless of host OS.
     let mounts = vec![mount("/opt/jackin/p", "/opt/jackin/p")];
     let s = WorkdirPickState::from_mounts(&mounts);
     let paths: Vec<&str> = s.choices.iter().map(|c| c.path.as_str()).collect();
@@ -64,9 +61,6 @@ fn root_path_is_filtered_out() {
 
 #[test]
 fn home_parent_is_filtered_out() {
-    // Build a mount whose dst walks through the user's $HOME so the
-    // ancestor chain includes the $HOME-parent directory — which must
-    // be filtered.
     let home = directories::BaseDirs::new().map_or_else(
         || "/home/test".to_owned(),
         |b| b.home_dir().display().to_string(),

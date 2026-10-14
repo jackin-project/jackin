@@ -1,13 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Bucket quota states.
 
 use jackin_protocol::control::{QuotaBucketView, UsageSeverity, UsageSnapshotStatus};
 use jackin_protocol::usage_broker::{UsageCoordinationErrorKind, UsageQuotaStateV1};
 
-/// Raw used percentage for money-backed quota windows. The broker publisher
-/// must preserve overage just like the desktop projection; only bar geometry
-/// is clamped.
 pub fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
     let used = bucket.used_money.as_ref()?;
     let limit = bucket.limit_money.as_ref()?;

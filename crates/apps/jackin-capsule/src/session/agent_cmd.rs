@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Agent command construction and spawn environment.
 
 use super::{
     apply_terminal_env, is_explicit_capability_env, isolated_command, remove_ambient_capability_env,
@@ -10,11 +9,6 @@ use std::path::{Path, PathBuf};
 
 use portable_pty::CommandBuilder;
 
-/// Inject session-scoped environment into a command. The isolation wrapper
-/// receives its private numeric identity for every child; only agent panes
-/// receive the public runtime/status identity used by hook reporters. State is
-/// never authored from these — reporters forward events, the daemon maps and
-/// gates them.
 pub(crate) fn inject_status_env(
     cmd: &mut CommandBuilder,
     session_id: u64,
@@ -27,9 +21,7 @@ pub(crate) fn inject_status_env(
     let session_tmp = session_root.join("tmp");
     let session_runtime = session_root.join("runtime");
     let session_cache = session_root.join("cache");
-    // These paths are allocated by the root wrapper before Landlock is
-    // installed. Every mutable setup/cache path is therefore private to this
-    // PTY, never the capsule-wide state or host /tmp.
+
     cmd.env("JACKIN_SESSION_ROOT", &session_root);
     cmd.env(jackin_protocol::SESSION_STATE_DIR_ENV, &session_state);
     cmd.env("TMPDIR", &session_tmp);
@@ -62,18 +54,10 @@ pub(crate) fn inject_status_env(
     }
 }
 
-/// Canonical private root for one daemon-assigned session id. The wrapper
-/// derives the same path from the trusted numeric id rather than accepting a
-/// caller-supplied filesystem path.
 pub(crate) fn session_root_path(session_id: u64) -> PathBuf {
     Path::new(container_paths::SESSION_ROOTS_DIR).join(session_id.to_string())
 }
 
-/// Per-instance facts for one agent spawn, resolved from the Capsule
-/// launch config. `home_dir` is the folder-var target
-/// (`/home/agent/.claude` for primary slots,
-/// `/home/agent/.claude-<suffix>` for secondary same-agent slots);
-/// `forwarded_dir` is the host-forwarded credential dir.
 #[derive(Debug)]
 pub struct AgentSpawnSpec<'a> {
     pub agent: &'a str,
@@ -86,13 +70,10 @@ pub struct AgentSpawnSpec<'a> {
     pub env_passthrough: &'a [(String, String)],
     pub cwd: &'a Path,
     pub codename: &'a str,
-    /// Identity admitted by the host for this instance.
+
     pub identity: jackin_protocol::SessionIdentity,
 }
 
-/// Whether `name` is an agent config-folder env var
-/// (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …). Folder vars are owned by the
-/// spawned instance, never by passthrough.
 pub(crate) fn is_folder_env(name: &str) -> bool {
     jackin_core::Agent::ALL.iter().any(|agent| {
         agent
@@ -103,26 +84,6 @@ pub(crate) fn is_folder_env(name: &str) -> bool {
     })
 }
 
-/// Build a `CommandBuilder` for an agent session.
-///
-/// Entrypoint is `/jackin/runtime/entrypoint.sh` with `JACKIN_AGENT=<slug>`.
-/// `cwd` is the workspace workdir from the Capsule launch config. It must be
-/// passed explicitly: `portable_pty`'s `CommandBuilder`
-/// defaults the child's cwd to `$HOME` when none is set — it does not
-/// inherit the daemon's cwd — so omitting this would land every agent in
-/// `/home/agent` regardless of the workspace.
-///
-/// Every agent folder var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …) is
-/// scrubbed and rejected from passthrough, then this instance's folder
-/// var is set to its own home: a stale or foreign value can never leak
-/// this pane into another account's credentials or history. `HOME` is
-/// account-owned the same way (`account_env` strips the ambient value),
-/// so it is re-pointed at the instance home below. That is the
-/// folder-var target: a private writable slot root for `Dir`-kind and
-/// folder-less agents, the traverse-only `/home/agent` for primary
-/// `Parent`-kind slots, and the shared XDG data root for `XdgRoot`
-/// agents. `HOME` always equals the folder var, so agent state
-/// resolution stays self-consistent and nothing leaks cross-account.
 #[must_use]
 pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
     let mut cmd = isolated_command(
@@ -151,17 +112,9 @@ pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
     if let Some(agent) = jackin_core::Agent::from_slug(spec.agent)
         && let Some(var) = agent.runtime().state_paths().folder_env_var
     {
-        // Claude atomically replaces onboarding metadata; keep it inside the
-        // durable directory mount rather than a file mounted at the home root.
         cmd.env(var.name, spec.home_dir);
     }
-    // `HOME` was stripped with the other account-owned roots above; point it
-    // at this instance's home (the folder-var target) so the entrypoint,
-    // hooks, and `$HOME`-relative tool state resolve inside this account's
-    // own roots instead of crashing on an unbound `HOME` or leaking into
-    // another account's home. Writability of the `HOME` root itself varies
-    // by folder-var kind (see above); the granted credential child always
-    // holds the durable state.
+
     cmd.env("HOME", spec.home_dir);
     cmd.env("JACKIN_AGENT", spec.agent);
     cmd.env(jackin_protocol::INSTANCE_ENV, spec.instance);
@@ -191,10 +144,6 @@ pub(crate) fn agent_model_args<'a>(agent: &str, model: Option<&'a str>) -> Vec<&
     }
 }
 
-/// Inject model and reasoning settings for this instance only. The host launch
-/// env is intentionally not used: two same-agent slots may route to different
-/// endpoints/models, so a process-wide value would make the hook and child
-/// command disagree.
 pub(crate) fn apply_lane_env(
     cmd: &mut CommandBuilder,
     agent: &str,

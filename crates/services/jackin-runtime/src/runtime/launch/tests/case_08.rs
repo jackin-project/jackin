@@ -96,7 +96,6 @@ plugins = ["code-review@claude-plugins-official"]
     .await
     .unwrap();
 
-    // Source was auto-registered and persisted with trust
     let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(persisted.contains("chainargos/the-architect"));
     assert!(persisted.contains("trusted = true"));
@@ -233,8 +232,7 @@ model = "sonnet"
         !role_run_cmd.contains("docker.sock"),
         "role container must never bind-mount the host Docker socket; run cmd was: {role_run_cmd}"
     );
-    // Belt and suspenders: no container the fake daemon created (the DinD
-    // sidecar included) binds the host Docker socket.
+
     for (name, spec) in docker.created_containers.borrow().iter() {
         assert!(
             !spec.binds.iter().any(|b| b.contains("docker.sock")),
@@ -288,11 +286,9 @@ plugins = []
 
     assert!(error.to_string().contains("not trusted"));
 
-    // Source was NOT persisted when trust was declined
     let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(!persisted.contains("evil-org/backdoor"));
 
-    // No Docker build or run commands were issued
     assert!(
         !runner
             .recorded

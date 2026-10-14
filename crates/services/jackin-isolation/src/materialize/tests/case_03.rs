@@ -5,8 +5,6 @@ use super::*;
 
 #[tokio::test]
 async fn clone_materialization_strips_embedded_credentials_from_host_origin() {
-    // Credentialed host origin (PAT baked into `.git/config`) must
-    // not land verbatim in the per-container clone.
     let repo = make_repo_root();
     let data = tempfile::TempDir::new().unwrap();
     let container_dir = data.path().join("jackin-x");
@@ -14,9 +12,9 @@ async fn clone_materialization_strips_embedded_credentials_from_host_origin() {
 
     let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
     let mut runner = fake_with_outputs(&[
-        &repo.path().to_string_lossy(), // rev-parse --show-toplevel
-        "",                             // status --porcelain
-        "deadbeef\n",                   // rev-parse HEAD
+        &repo.path().to_string_lossy(),
+        "",
+        "deadbeef\n",
         "https://x-access-token:ghp_secretsecretsecret@github.com/jackin-project/jackin.git\n",
     ]);
 
@@ -230,10 +228,6 @@ async fn find_local_branch_tip_reads_packed_refs_sha() {
 
 #[tokio::test]
 async fn find_local_branch_tip_loose_ref_wins_over_packed_refs() {
-    // git semantics: loose refs override packed-refs entries.
-    // Critical because base_commit feeds finalize's safety
-    // classifier, and a wrong SHA there can authorize deletion
-    // of operator work.
     let repo = make_repo_root();
     write_loose_branch(repo.path(), "jackin/scratch/x", "1010101010101010\n");
     write_packed_refs(
@@ -248,9 +242,6 @@ async fn find_local_branch_tip_loose_ref_wins_over_packed_refs() {
 
 #[tokio::test]
 async fn find_local_branch_tip_rejects_symref_loose_content() {
-    // `git symbolic-ref refs/heads/<x> refs/heads/main` writes
-    // `ref: refs/heads/main\n`. Returning that verbatim as the
-    // SHA poisons IsolationRecord.base_commit.
     let repo = make_repo_root();
     write_loose_branch(repo.path(), "jackin/scratch/x", "ref: refs/heads/main\n");
     assert_eq!(
@@ -261,9 +252,6 @@ async fn find_local_branch_tip_rejects_symref_loose_content() {
 
 #[tokio::test]
 async fn find_local_branch_tip_empty_loose_falls_through_to_packed() {
-    // A 0-byte ref file (interrupted git op, third-party
-    // tooling) must not yield Some("") and must not block the
-    // packed-refs lookup.
     let repo = make_repo_root();
     write_loose_branch(repo.path(), "jackin/scratch/x", "");
     write_packed_refs(
@@ -286,8 +274,7 @@ async fn find_local_branch_tip_skips_malformed_packed_refs_lines() {
              noseparator\n\
              1111111111111111111111111111111111111111\trefs/heads/jackin/scratch/x\n",
     );
-    // Tab-separated row also resolves (split_once now matches
-    // any ASCII whitespace, defensive against non-stock writers).
+
     assert_eq!(
         find_local_branch_tip(&repo.path().to_string_lossy(), "jackin/scratch/x"),
         Some("1111111111111111111111111111111111111111".into()),
@@ -308,10 +295,7 @@ async fn stale_scratch_branch_is_adopted_when_record_absent() {
     );
 
     let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
-    // fake_with_outputs is positional: order must match
-    // materialize_workspace's runner.capture() sequence.
-    // Adopted branch tip is read directly from the loose ref —
-    // no runner.capture() entry is consumed for it.
+
     let mut runner = fake_with_outputs(&[
         &repo.path().to_string_lossy(),
         "",
@@ -364,10 +348,7 @@ async fn stale_scratch_branch_is_adopted_when_record_absent() {
 
     let recs = read_records(&container_dir).unwrap();
     assert_eq!(recs.len(), 1);
-    // base_commit is host_head, NOT branch tip — see the comment
-    // above the adopt arm in materialize_one. Asserting the
-    // branch-tip value here would silently re-introduce the
-    // data-loss regression flagged in PR #219 review.
+
     assert_eq!(
         recs[0].base_commit,
         "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",

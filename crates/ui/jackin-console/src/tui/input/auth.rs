@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspace account assignment and shared credential picker round trips.
-
 use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 
@@ -17,10 +15,6 @@ use crate::tui::state::{
 use jackin_config::AppConfig;
 use jackin_env::OpCache;
 
-/// Open the auth-edit form modal for the row currently under the
-/// cursor on the Auth tab. Pre-populates the form from the row's
-/// effective mode + credential so editing an existing entry shows
-/// what's there.
 pub fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     let Some((target, form)) = editor.focused_auth_form(config) else {
         return;
@@ -34,12 +28,6 @@ pub fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     });
 }
 
-/// Handle `D`/`d` on the Auth tab.
-///
-/// - `RoleHeader` → clear the selected auth kind's role override.
-/// - `RoleMode` → silently clear the selected auth kind's role-level override.
-/// - `WorkspaceMode` → clear the workspace-level override for the selected auth kind.
-/// - Anything else (`AuthKindRow`, `AddSentinel`, `Spacer`) → no-op.
 pub fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppConfig) {
     editor.clear_auth_row_at_cursor(config);
 }
@@ -69,10 +57,6 @@ fn record_missing_return_path() {
     );
 }
 
-/// Commit branch for `Modal::AuthSourcePicker` when the operator picks
-/// the plain-text source. Re-stashes the auth form's context with the
-/// focus pinned to `CredentialSource`, then mounts a `Modal::TextInput`
-/// pre-filled from the round-trip's literal buffer.
 pub fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_>) {
     if !crate::tui::auth_config::ModalAuthPlainSourceOpen::open_auth_plain_source_text_input(
         &mut editor.modal,
@@ -85,11 +69,6 @@ pub fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_>) {
     }
 }
 
-/// Commit branch for the credential `Modal::TextInput`. Lifts the
-/// stashed auth form back, applies the typed value via `set_literal`,
-/// and re-mounts the form with focus on Save. Also the post-mint
-/// re-mount target for the plain-text generate path in the
-/// `run_console` loop, hence the wider visibility.
 pub fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value: &str) {
     if !crate::tui::auth_config::ModalAuthFormCredentialApply::apply_auth_plain_text(
         &mut editor.modal,
@@ -112,10 +91,6 @@ pub fn apply_source_folder_to_auth_form(editor: &mut EditorState<'_>, value: Pat
     }
 }
 
-/// Commit branch for `Modal::AuthSourcePicker` when the operator picks
-/// the 1Password source. Pins the stashed return-path focus to
-/// `CredentialSource` (so cancel/error paths land back on the source
-/// row) and mounts a fresh `Modal::OpPicker`.
 pub fn open_op_picker_from_auth_source(
     editor: &mut EditorState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
@@ -130,26 +105,6 @@ pub fn open_op_picker_from_auth_source(
     }
 }
 
-/// Re-mount the auth-form modal with a freshly-picked `OpRef` applied
-/// against the production `OpCli` runner. Called from the `OpPicker`'s
-/// commit handler in `editor.rs` when the auth form is the modal parent
-/// set (i.e. the picker was opened from the auth form, not from the
-/// Secrets tab).
-///
-/// On vault read error, the form stays on the modal parent stack and
-/// `Modal::ErrorPopup` is mounted;
-/// dismissing the popup invokes `restore_auth_form_after_op_picker_cancel`
-/// so the operator lands back on the form with the prior credential
-/// unchanged. Root input validates with `op read` before mutating the
-/// form, so a broken reference never lands in `editor.pending`.
-/// Apply a committed op picker selection after the 1Password read has already
-/// succeeded on the `spawn_blocking` thread. Called from the `run_console`
-/// poll loop — the read was verified asynchronously so Touch ID / the 1Password
-/// desktop dialog did not freeze the TUI reactor.
-///
-/// The auth form is on `editor.modal_parents` (it was stashed when the
-/// `OpPicker` opened) — pop it, set the `OpRef` without re-reading, and
-/// re-mount with focus on Save.
 pub fn apply_op_picker_to_auth_form_committed(
     editor: &mut EditorState<'_>,
     op_ref: jackin_core::OpRef,
@@ -164,9 +119,6 @@ pub fn apply_op_picker_to_auth_form_committed(
     }
 }
 
-/// Restore the auth-form modal unchanged after the operator cancels
-/// the `OpPicker` or the literal `TextInput`. Both side modals share
-/// the same recovery shape, so the same helper handles both.
 pub fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<'_>) {
     if !crate::tui::auth_config::ModalAuthFormCredentialApply::restore_auth_form_modal(
         &mut editor.modal,
@@ -199,10 +151,6 @@ pub fn handle_auth_form_key(
         return AuthFormKeyOutcome::Continue;
     };
 
-    // Esc cancels at every focus. Drain the auth-form return stash too so
-    // a stale OpPicker round-trip can't be re-applied to a future modal —
-    // every other exit path (Save / Cancel / Reset commit, OpPicker
-    // commit/cancel) drains it explicitly; Esc must too.
     if key.code == KeyCode::Esc {
         editor.clear_modal_chain();
         return AuthFormKeyOutcome::Changed;

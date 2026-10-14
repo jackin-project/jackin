@@ -424,8 +424,7 @@ fn ticker_polls_approved_source_and_publishes_terminal_result_while_idle() {
         "failed monitor persistence must leave the terminal projection pending"
     );
     let retry_after = ticker_state.observation_retry_after;
-    // Stay below the one-second monotonic persistence retry while wall time
-    // remains in the same whole second.
+
     let retry_sample = ClockSample {
         wall_epoch: NOW + 2,
         monotonic_elapsed: Duration::from_millis(2_200),

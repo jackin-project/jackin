@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Global-mount add flow.
 
 use super::{SettingsModalOutcome, scope_picker_modal, text_modal, text_modal_for_target};
 

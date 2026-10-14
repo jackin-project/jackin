@@ -39,7 +39,7 @@ async fn while_waiting_passes_through_inner_error() {
 async fn cancel_after_while_waiting_started_interrupts_pending_future() {
     let progress = test_progress();
     let token = progress.cancel_token();
-    // Yield once so while_waiting starts polling before the cancel fires.
+
     tokio::spawn(async move {
         tokio::task::yield_now().await;
         token.cancel();
@@ -85,8 +85,6 @@ fn poisoned_failure_ack_lock_recovers_without_auto_acknowledging() {
 
 #[tokio::test]
 async fn stage_failed_does_not_block_on_test_renderer() {
-    // The Rich path waits for an operator Enter/Esc dismiss. The test
-    // renderer returns immediately so failure-state tests do not hang.
     let mut progress = LaunchProgress::for_test(test_diagnostics());
     tokio::time::timeout(
         Duration::from_millis(500),
@@ -130,8 +128,6 @@ async fn stage_failed_writes_full_detail_to_diagnostics() {
 
 #[tokio::test]
 async fn stage_failed_resets_prior_ack() {
-    // A second failure must start un-acked: a stale ack left over from a
-    // previously dismissed popup would otherwise auto-dismiss the new one.
     let mut progress = LaunchProgress::for_test(test_diagnostics());
     progress.stage_failed(dummy_failure()).await;
     progress.view_for_test().lock().unwrap().failure_ack = true;
@@ -191,7 +187,7 @@ fn update_stage_sets_one_rows_status_and_detail() {
         .unwrap();
     assert_eq!(net.status, StageStatus::Done);
     assert_eq!(net.detail, "up");
-    // A different stage is left untouched.
+
     let cap = view
         .stages
         .iter()

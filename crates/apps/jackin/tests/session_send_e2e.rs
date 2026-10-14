@@ -1,26 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! End-to-end proof of the capsule's `session.send` and `events` control
-//! surface against a real Docker daemon: launch an instance, subscribe to its
-//! event stream, type a prompt into the running agent session, and observe the
-//! `Working` transition arrive on that stream.
-//!
-//! What makes this an integration test rather than a unit test is the loop it
-//! closes. The bytes leave the host through the control protocol, land on a
-//! real PTY inside the container, are observed by the capsule's own
-//! terminal-observation arbitration, and come back as a state transition. No
-//! part of that chain is stubbed — in particular the state is the capsule's
-//! verdict, never the test's.
-//!
-//! The fake agent marks the work it starts with `OSC 133 ; C`, the
-//! shell-integration pre-exec mark the capsule already reads as strong
-//! working evidence, and keeps real work in flight while it holds that state.
-//! That reuses the shipped detection design instead of teaching the test a
-//! private signal the product does not have.
-
-// Expects only apply when the e2e feature compiles the body; without it the
-// crate is empty and unfulfilled-expect would fail `cargo clippy -p jackin`.
 #![cfg_attr(
     feature = "e2e",
     expect(
@@ -43,10 +23,6 @@ use jackin_runtime::runtime::session_control::{SessionEvents, send_session_text}
 use jackin_runtime::runtime::snapshot::fetch_snapshot;
 use tempfile::tempdir;
 
-// The `dind_e2e` helper modules are shared verbatim with that suite, which
-// uses all of them; this suite drives one launch and needs only part. Each
-// integration test is its own binary, so the unused half is genuinely dead
-// here — and duplicating the harness to avoid saying so would be worse.
 #[path = "dind_e2e/common.rs"]
 mod common;
 #[path = "dind_e2e/diagnostics.rs"]
@@ -73,14 +49,8 @@ use util::{cleanup_role, run};
 const ROLE_KEY: &str = "jackin-e2e/session-send";
 const ROLE_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__session-send";
 
-/// What the host types into the running agent. The trailing carriage return is
-/// the submit key: `session.send` writes the payload verbatim and appends
-/// nothing, so a caller that wants the agent to act includes it.
 const PROMPT: &str = "start the review\r";
 
-/// How long the fake agent stays busy after a prompt. Long enough that the
-/// capsule's status tick observes the working state and publishes it well
-/// before the agent falls back to idle.
 const AGENT_WORK_SECONDS: u32 = 20;
 
 struct E2eRoleCleanup;
@@ -117,9 +87,6 @@ fn session_send_reaches_the_pty_and_events_report_the_working_transition() {
             .to_string()
     });
 
-    // The control work runs on a side thread while the PTY keeps the launch
-    // (and therefore the instance) alive. It reports back through `outcome`
-    // and releases the PTY runner through `completed`.
     let completed = Arc::new(AtomicBool::new(false));
     let outcome: Arc<Mutex<Option<Result<Observed, String>>>> = Arc::new(Mutex::new(None));
     let worker = {
@@ -146,10 +113,6 @@ fn session_send_reaches_the_pty_and_events_report_the_working_transition() {
         &extra_env,
         &[],
         PtyFileSentinel {
-            // Deliberately a path nothing ever writes: this launch is torn
-            // down by `stop_after`, when the observing thread is done, not by
-            // a file the agent produces. The instance has to stay up for the
-            // whole subscription.
             path: &workspace_dir.join("never-written.txt"),
             text: "unreachable",
             timeout: Duration::from_mins(8),
@@ -173,16 +136,12 @@ fn session_send_reaches_the_pty_and_events_report_the_working_transition() {
             )
         });
 
-    // 1. The daemon accepted the send and reported the byte count it wrote.
     assert_eq!(
         observed.bytes_sent,
         PROMPT.len() as u64,
         "the daemon must report writing the whole payload, verbatim"
     );
 
-    // 2. The bytes actually reached the agent's PTY. The agent writes what it
-    //    read into the bound workspace, so this is checked outside the
-    //    terminal transcript.
     let received =
         std::fs::read_to_string(workspace_dir.join("agent-received.txt")).unwrap_or_default();
     assert!(
@@ -191,8 +150,6 @@ fn session_send_reaches_the_pty_and_events_report_the_working_transition() {
         diagnostics::e2e_failure_context(&home, &stdout, &stderr)
     );
 
-    // 3. The `Working` transition arrived on the event stream, for the session
-    //    addressed, with the state the capsule arbitrated.
     assert_eq!(observed.working.session, observed.session);
     assert_eq!(observed.working.state, AgentState::Working);
     assert!(
@@ -205,7 +162,6 @@ fn session_send_reaches_the_pty_and_events_report_the_working_transition() {
     );
 }
 
-/// What the observing thread proved.
 struct Observed {
     session: u64,
     bytes_sent: u64,
@@ -215,8 +171,6 @@ struct Observed {
 fn observe_session_send(home: &Path, workspace_dir: &Path) -> Result<Observed, String> {
     let paths = JackinPaths::resolve_with_env(home, None, None);
 
-    // The agent writes this once its PTY is live and it is reading stdin.
-    // Sending before that would race the runtime's own startup.
     wait_for(Duration::from_mins(6), "the agent to come up", || {
         workspace_dir.join("agent-ready.txt").exists()
     })?;
@@ -238,8 +192,6 @@ fn observe_session_send(home: &Path, workspace_dir: &Path) -> Result<Observed, S
             })
     })?;
 
-    // Subscribe before sending: the transition this test is about is caused by
-    // the send, so the stream has to be open first or the proof is a race.
     let mut events = SessionEvents::subscribe(&paths, &container, Some(session))
         .map_err(|error| format!("subscribing to the event stream failed: {error:#}"))?;
     let baseline = events
@@ -383,15 +335,6 @@ plugins = []
     );
 }
 
-/// A fake `claude` that reads its PTY and reacts the way a real agent does:
-/// announce readiness, block on stdin, and on receiving a prompt mark the work
-/// with `OSC 133 ; C` and stay genuinely busy until it marks completion with
-/// `OSC 133 ; D`.
-///
-/// The mark is the load-bearing part. It is the shipped shell-integration
-/// signal `Session::feed_pty` already scans and arbitration already grades as
-/// strong working evidence, so the transition this test observes is produced
-/// by the product's detection path, not by anything the test taught it.
 fn prompt_reader_agent_script() -> String {
     format!(
         r#"if [ "${{1:-}}" = "--version" ]; then

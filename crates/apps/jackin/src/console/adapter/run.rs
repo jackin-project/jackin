@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console TUI run entry: terminal setup, raw mode, cleanup on exit.
-//!
-//! Drives the per-tick event loop, input dispatch, and suspend/resume around
-//! container attach. Not responsible for state construction (`app.rs`) or
-//! individual dialog rendering — those are in sibling modules and
-//! `jackin-console`.
-
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
 };
@@ -47,15 +40,6 @@ pub struct ConsoleRunOptions<'a> {
     pub parent_session: Option<&'a TerminalSession>,
 }
 
-/// Worker body for the Console Usage refresh effect: read the broker's
-/// latest canonical projection for the Console route.
-///
-/// Runs on a worker thread via `spawn_blocking_subscription` — never on the
-/// UI thread. Passive route heartbeats read `current_projection` only. An
-/// explicit operator refresh requests one whole broker publication; the
-/// broker owns catalog discovery, credentials, provider work, and cooldowns.
-/// Startup has a separate due-aware request so the broker can populate its
-/// first publication without blocking Console startup.
 pub(crate) fn load_console_usage_state(
     paths: &JackinPaths,
     force_refresh: bool,
@@ -90,12 +74,6 @@ fn load_console_usage_state_inner(
     load_console_usage_projection(&client, force_refresh, request_due_refresh)
 }
 
-/// Read and optionally refresh the broker's canonical usage publication.
-///
-/// Keeping this boundary client-only makes the Console a passive projection
-/// consumer: discovery, credential resolution, and provider work remain in
-/// the broker process. Heartbeats return the cached publication; startup may
-/// request due work once, and only an operator action can force it.
 fn load_console_usage_projection(
     client: &jackin_usage::host::UsageBrokerClient,
     force_refresh: bool,
@@ -114,14 +92,6 @@ fn load_console_usage_projection(
     Ok(jackin_console::tui::screens::usage::UsageScreenState::from_projection(&projection))
 }
 
-/// Execute one due Console Usage refresh: poll a completed worker result (if
-/// any), then start a refresh when one is due and none is in flight. This is
-/// the `ConsoleEffect::RequestUsageRefresh` executor, following the
-/// instance-refresh effect+subscription shape: the screen owns the throttle
-/// and generation, broker work runs on the worker thread, and the UI thread
-/// only polls and applies. Manual `r` (flagged by the route) joins shared
-/// in-flight work instead of queueing a duplicate. Returns true when a
-/// completion landed and the screen changed.
 pub(crate) fn execute_usage_refresh_effect(
     manager: &mut crate::console::adapter::state::ManagerState<'_>,
     paths: &JackinPaths,
@@ -162,8 +132,6 @@ pub(crate) fn execute_usage_refresh_effect(
     changed
 }
 
-/// Poll the off-UI-thread startup usage snapshot once. Returns true when it
-/// landed (or failed) and the manager snapshot changed.
 fn poll_startup_usage(
     state: &mut ConsoleState,
     rx: &mut Option<
@@ -184,10 +152,6 @@ fn poll_startup_usage(
     };
     *rx = None;
     if let ConsoleStage::Manager(manager) = &mut state.stage {
-        // Startup and route workers may overlap. Once a route completion has
-        // landed, the startup result cannot replace its newer publication or
-        // transport failure. Runtime instance ids differ across these workers,
-        // so broker generations cannot order their locally built projections.
         if manager.usage_snapshot.canonical_projection.is_some()
             || manager
                 .usage
@@ -219,10 +183,6 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
     }
 }
 
-/// Which telemetry screen the visible manager stage maps to. Confirm dialogs
-/// overlay the list, so they stay on `List`; the create *prelude* and the
-/// field editor are distinct screens (the create flow shows as `create` then
-/// `editor`).
 pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_telemetry::schema::enums::ScreenId {
     use crate::console::adapter::state::ManagerStage;
     use jackin_telemetry::schema::enums::ScreenId;
@@ -238,11 +198,6 @@ pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_telemetry::schema:
     }
 }
 
-/// True iff no modal overlay is currently blocking input on the console surface.
-///
-/// Used by the mouse routing layer to enforce single-consumer precedence: when
-/// this returns `false`, chrome interactions (debug chip) and base-surface mouse
-/// handling are suppressed so only the active modal handles the event.
 pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
     use crate::console::adapter::state::ManagerStage;
     let ConsoleStage::Manager(ms) = &state.stage;
@@ -469,10 +424,7 @@ fn drain_background_messages(
         *needs_redraw |=
             crate::console::effects::apply_background_event(ms, config, paths, cwd, message);
     }
-    // Usage heartbeat ticks every frame regardless of the visible route, so
-    // periodic broker refreshes continue while the Usage screen is offscreen
-    // (after its first open creates the screen state). The screen owns the
-    // throttle and generation; worker completions land as state updates.
+
     *needs_redraw |= crate::console::effects::execute_manager_effect(
         ms,
         config,
@@ -503,9 +455,6 @@ where
     let (main_area, debug_bar_area) =
         split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
     {
-        // Scoped mutable borrow of `state.stage`: released before the
-        // `Terminal::draw` below needs an immutable borrow of the whole
-        // `state`.
         let ConsoleStage::Manager(ms) = &mut state.stage;
         if *context.container_info_overlay_active
             && !matches!(
@@ -519,10 +468,6 @@ where
         crate::console::adapter::prepare_for_render(ms, context.config, context.cwd, main_area);
     }
 
-    // Primary render: a direct `Terminal::draw` with the confirm-dialog /
-    // debug-bar overlay composited into the same in-progress frame — exactly
-    // what the retired facade frame driver wrapped. The run loop stays
-    // surface-owned (arch gate).
     let confirm_state = state.quit_confirm.as_ref();
     let screen = screen_of(state);
     let render_started = std::time::Instant::now();
@@ -597,8 +542,7 @@ where
                                 .add_modifier(ratatui::style::Modifier::BOLD),
                         ),
                 ];
-            // Head made the state's region storage private; hovered
-            // stays public.
+
             let mut status_state = termrock::widgets::StatusBarState::new();
             status_state.hovered = (context.mouse_state.chrome_hover
                 == Some(ConsoleChromeHover::DebugChip))
@@ -657,10 +601,6 @@ where
     Ok(())
 }
 
-/// Frame pacing lives in the console-owned pacer (upstream Presenter +
-/// FrameClock): sample the clock once per loop turn, mark dirty when the
-/// product flagged a redraw, and draw exactly when a frame is owed. The 50 ms
-/// animation interval stays the product cadence driving `needs_redraw`.
 fn present_owed_frame<B>(
     pacer: &mut jackin_console::tui::runtime::ConsoleFramePacer,
     needs_redraw: &mut bool,
@@ -785,13 +725,6 @@ where
     Ok(())
 }
 
-/// Surface a launch-dispatch failure as an in-TUI error popup.
-///
-/// Launch resolution can fail for operator-fixable reasons (a deleted
-/// project directory, a disallowed role); killing the whole console over
-/// it strands the operator outside the very UI that could fix the config.
-/// Mirrors the instance-action failure pattern above: report inline, stay
-/// alive.
 fn show_launch_dispatch_error(state: &mut ConsoleState, error: &anyhow::Error) {
     let ConsoleStage::Manager(ms) = &mut state.stage;
     crate::console::adapter::update_manager(
@@ -1209,9 +1142,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         options.op_available,
         options.startup_error,
     )?;
-    // Startup asks the broker to refresh due accounts off the UI thread. The
-    // broker owns discovery and credentials; Console startup never waits for
-    // provider work. The result is polled into manager state below.
+
     let paths_for_usage_startup = paths.clone();
     let mut startup_usage_rx = Some(jackin_console::tui::runtime::spawn_blocking_subscription(
         move || {
@@ -1219,9 +1150,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 .map_err(|error| error.to_string())
         },
     ));
-    // When the launch flow in `app` already owns the host screen, draw into it
-    // and leave teardown to that guard; otherwise own the screen here for the
-    // lifetime of the console (standalone `jackin console` with no launch).
+
     let owned_screen = if options
         .parent_session
         .is_some_and(TerminalSession::is_active)
@@ -1234,15 +1163,13 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let mut terminal = ratatui::Terminal::new(backend)?;
     let mut mouse_state = ConsoleMouseState::new();
     let mut event_stream = crossterm::event::EventStream::new();
-    // Animation tick: redraws the TUI when no events arrive so spinners,
-    // the op-picker panel rain, and other animations stay live.
+
     let mut animation_tick = tokio::time::interval(Duration::from_millis(TICK_MS));
     animation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut pacer = jackin_console::tui::runtime::ConsoleFramePacer::new();
     let mut pending_events = std::collections::VecDeque::new();
     let mut needs_redraw = true;
 
-    // Force a full clear after the raw OSC 8 Debug-info overlay closes.
     let mut container_info_overlay_active = false;
 
     let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
@@ -1255,8 +1182,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         sync_active_screen(&state, &mut screen_tracker, action_parent.as_ref());
         sync_widget_focus(&state, &mut widget_tracker, action_parent.as_ref());
 
-        // Drain worker results before render so a fresh result lands
-        // this frame instead of a stale Loading one.
         drain_background_messages(&mut state, &mut config, paths, cwd, &mut needs_redraw);
         needs_redraw |= poll_startup_usage(&mut state, &mut startup_usage_rx);
 
@@ -1280,10 +1205,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         }
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
-        // Async event wait: yield to the Tokio reactor until either a
-        // terminal event arrives or the animation tick fires. This frees
-        // the reactor between events so background tasks can progress
-        // instead of blocking for up to TICK_MS.
         let (event_batch, tick_fired) = if pending_events.is_empty() {
             next_event_batch(&mut event_stream, &mut animation_tick).await?
         } else {
@@ -1348,13 +1269,9 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let _screen_result =
         screen_tracker.exit(jackin_telemetry::schema::enums::TransitionReason::Shutdown);
     let _focus_result = widget_tracker.unfocus();
-    // Tears down only when the console owns the screen standalone. When the
-    // launch flow owns it, this is `None` and teardown waits for that guard so
-    // the console → loading transition stays on one alternate screen.
+
     drop(owned_screen);
-    // Return the in-memory config so the post-console path can skip a disk
-    // reload when nothing was written (and still sees in-session mutations
-    // that already updated `config` on successful save).
+
     Ok((result?, config))
 }
 

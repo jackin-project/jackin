@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspace trust seeding: Codex project-level trust and mise trusted paths.
-
 use anyhow::Context;
 
 pub const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
@@ -45,8 +43,6 @@ pub fn inject_workspace_mise_env(
     }
 }
 
-/// Coerce `key` to a table, overwriting any non-table value — the trailing
-/// `as_table_mut` is infallible only because of this normalization.
 #[expect(
     clippy::expect_used,
     reason = "toml_edit item is normalized to a table immediately before borrowing it"
@@ -62,9 +58,6 @@ fn ensure_table<'a>(table: &'a mut toml_edit::Table, key: &str) -> &'a mut toml_
         .expect("item was just normalized to a table")
 }
 
-/// Codex's per-folder trust prompt is separate from approval/sandbox bypass,
-/// so the launch flag alone does not suppress it — each workspace path is
-/// marked `trusted` in the container's `config.toml`.
 pub fn seed_codex_project_trust(
     state: &jackin_instance::RoleState,
     workspace: &jackin_config::ResolvedWorkspace,
@@ -80,9 +73,6 @@ pub fn seed_codex_project_trust(
         .values()
         .filter(|slot| slot.agent == jackin_core::Agent::Codex)
     {
-        // `container_home_rel` is the same per-slot path used by capsule
-        // setup and mount construction. Never collapse secondary Codex
-        // instances onto the primary `.codex` directory.
         let config_path = state
             .root
             .join("home")

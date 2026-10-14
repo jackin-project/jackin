@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Secret line building and rendering.
 
 use super::{
     SECRET_LABEL_COL_WIDTH, SecretEnvLineFrame, SecretLineRow, SecretValueDisplay,
@@ -90,8 +89,6 @@ pub fn secret_env_lines<'a, S>(
     lines
 }
 
-/// `OpRef` rows skip masking and render as a breadcrumb (3-segment:
-/// `vault / item -> field`, 4-segment adds `section`).
 #[must_use]
 pub fn render_secret_key_line(
     selected: bool,

@@ -96,7 +96,6 @@ fn schema_migration_adds_columns_to_pre_v4_table() {
     let db = dir.path().join("snapshots.db");
     let path = db.to_str().expect("utf8 path").to_owned();
 
-    // Seed a legacy table: the original 16 columns only, plus one row.
     block_on_store(async move {
         let conn = connect_local(&path).await?;
         conn.execute_batch(
@@ -134,7 +133,6 @@ fn schema_migration_adds_columns_to_pre_v4_table() {
     })
     .expect("seed pre-v4 db");
 
-    // Opening the store runs ensure_account_snapshot_columns (the ALTER loop).
     store_usage_snapshot(&db, &usage_view()).expect("store after migration");
 
     let rows = stored_account_snapshots(&db).expect("read migrated rows");
@@ -142,13 +140,13 @@ fn schema_migration_adds_columns_to_pre_v4_table() {
         .iter()
         .find(|r| r.account_key_hash == "sha256:legacy")
         .expect("legacy row survived the migration");
-    // New columns were added with their ALTER-clause defaults on the old row.
+
     assert_eq!(legacy.view_status, "unavailable");
     assert_eq!(legacy.updated_label, "Unavailable");
     assert_eq!(legacy.status_bar_label, "usage unavailable");
     assert!(legacy.plan_label.is_none());
     assert!(legacy.remaining_percent.is_none());
-    // The fresh write landed too, and the schema version is stamped current.
+
     assert!(rows.iter().any(|r| r.account_key_hash != "sha256:legacy"));
     assert_eq!(
         schema_version(&db).expect("schema version"),
@@ -175,11 +173,7 @@ fn focused_usage_view_rebuilds_snapshot_from_account_rows() {
     assert_eq!(view.buckets[0].label, "Session");
     assert_eq!(view.buckets[0].remaining_percent, Some(37));
     assert_eq!(view.buckets[1].label, "Credits");
-    // Restored buckets carry no status-bar slot: the headline is persisted as
-    // `status_bar_label` and read directly, never recomputed from the restored
-    // (untagged) buckets. Locks that contract so a future change recomputing
-    // the headline from buckets — which would blank every cached headline —
-    // fails loudly here.
+
     assert!(
         view.buckets
             .iter()

@@ -6,9 +6,6 @@ use super::*;
 #[cfg(unix)]
 #[test]
 fn rejects_symlink_at_kimi_dir_under_every_mode() {
-    // The symlink check is hoisted above the mode match; verify all
-    // four arms are protected so a future refactor cannot regress the
-    // Sync arm (highest blast radius).
     for mode in [
         AuthForwardMode::Sync,
         AuthForwardMode::ApiKey,
@@ -60,8 +57,6 @@ fn synced_credential_files_have_0600_permissions() {
 
 #[test]
 fn credentials_subdir_copies_recursively() {
-    // Kimi Code stores MCP OAuth credentials under credentials/mcp/, so
-    // subdirectories must be copied recursively.
     let temp = tempdir().unwrap();
     let kimi_dir = temp.path().join("kimi_state");
     let host_home = temp.path().join("host_home");
@@ -154,9 +149,6 @@ fn surfaces_unreadable_config_toml_as_error() {
 #[cfg(unix)]
 #[test]
 fn credentials_nested_symlink_is_rejected_not_skipped() {
-    // A symlink planted under `credentials/mcp/` (e.g. by a hostile or
-    // misconfigured host) must fail the complete source snapshot. Silently
-    // dropping it would publish an incomplete credential tree.
     use std::os::unix::fs::symlink;
     let temp = tempdir().unwrap();
     let kimi_dir = temp.path().join("kimi_state");
@@ -172,17 +164,13 @@ fn credentials_nested_symlink_is_rejected_not_skipped() {
 
     assert!(error.to_string().contains("symlink"), "{error:#}");
     assert!(!kimi_dir.exists(), "failed source must not publish a tree");
-    // The decoy on the host must remain untouched: no write through the
-    // rejected symlink and no read into the role state.
+
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "must_not_leak");
 }
 
 #[cfg(unix)]
 #[test]
 fn credentials_directories_are_chmodded_0700() {
-    // Every copied credentials directory (root + nested) must be 0o700 so
-    // the OAuth token subtree is not group/other-readable inside the
-    // role-state bind mount.
     use std::os::unix::fs::PermissionsExt;
     let temp = tempdir().unwrap();
     let kimi_dir = temp.path().join("kimi_state");
@@ -235,8 +223,6 @@ fn claude_metadata_persists_inside_directory_and_supports_atomic_replacement() {
         let directory = state.root.join("home/.claude");
         let metadata = directory.join(".claude.json");
         if mode == AuthForwardMode::Ignore {
-            // Fresh ignore-mode provisioning deliberately creates no auth home.
-            // The container's directory mount/CLI creates its mutable state later.
             assert!(!directory.exists());
             std::fs::create_dir_all(&directory).unwrap();
         } else {

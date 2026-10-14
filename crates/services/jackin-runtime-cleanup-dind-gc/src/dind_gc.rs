@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Orphaned `dind`/network garbage collection.
 
 #![expect(
     clippy::print_stderr,
@@ -20,7 +19,6 @@ use jackin_runtime_naming::naming::{
     LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, LABEL_ROLE_KEY,
 };
 
-/// Parsed row from `docker ps` for a `DinD` sidecar.
 #[derive(Debug)]
 pub struct DindInfo {
     handle: ContainerHandle,
@@ -52,9 +50,6 @@ pub async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Result<Vec
     Ok(sidecars)
 }
 
-/// Return `DinD` sidecar containers whose corresponding role container is no
-/// longer running.  These are leftovers from hard kills, terminal closures,
-/// or startup failures.
 pub fn filter_orphaned_dind(sidecars: Vec<DindInfo>, existing: &[String]) -> Vec<DindInfo> {
     sidecars
         .into_iter()
@@ -62,9 +57,6 @@ pub fn filter_orphaned_dind(sidecars: Vec<DindInfo>, existing: &[String]) -> Vec
         .collect()
 }
 
-/// Remove orphaned `DinD` containers, their associated role containers, cert
-/// volumes, and networks.  Errors are logged but do not abort the launch — GC
-/// is best-effort.
 pub async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl DockerApi) {
     let _timing = cleanup_timing("orphaned_resources");
     let sidecars = match collect_labeled_dind(docker).await {
@@ -80,13 +72,11 @@ pub async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl DockerApi)
     };
 
     if sidecars.is_empty() {
-        // No orphaned DinD sidecars — still check for orphaned networks.
         gc_orphaned_networks(docker, None).await;
         gc_orphaned_prewarm_dind(paths, docker).await;
         return;
     }
 
-    // Fetch existing roles once; reuse for both orphan detection and network GC.
     let existing_rows = match docker.list_containers(&[LABEL_KIND_ROLE], true).await {
         Ok(v) => v,
         Err(err) => {
@@ -108,9 +98,6 @@ pub async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl DockerApi)
         let certs_volume = dind_certs_volume(&info.role);
         let network = role_network_name(&info.role);
 
-        // The role is absent by definition of `orphaned`. Remove only the
-        // sidecar row's immutable ID; resolving/removing the role by name
-        // could destroy a same-name replacement created after the listing.
         let r1 = docker.remove_container_by_id(&info.handle).await;
         if let Err(err) = &r1 {
             eprintln!(
@@ -225,10 +212,6 @@ pub async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerA
     }
 }
 
-/// Remove jackin-managed Docker networks whose owning role container no longer
-/// exists. Pass `Some(existing)` to reuse an already-fetched set of existing
-/// role names; pass `None` to fetch fresh (used when no `DinD` sidecars were
-/// found and the list was never retrieved).
 pub async fn gc_orphaned_networks(
     docker: &impl DockerApi,
     existing: Option<&std::collections::HashSet<String>>,

@@ -230,10 +230,9 @@ fn parse_version_accepts_canonical_forms() {
 fn channel_order_is_alpha_beta_stable() {
     assert!(Channel::Alpha(nz(1)) < Channel::Beta(nz(1)));
     assert!(Channel::Beta(nz(1)) < Channel::Stable);
-    // Within a channel, sequence orders.
+
     assert!(Channel::Alpha(nz(1)) < Channel::Alpha(nz(2)));
-    // Cross-channel beats sequence: a high alpha is still less than any
-    // beta.
+
     assert!(Channel::Alpha(nz(99)) < Channel::Beta(nz(1)));
 }
 
@@ -248,7 +247,7 @@ fn parse_registry_version_handles_legacy_sentinel() {
         parse_registry_version("legacy").unwrap(),
         SchemaVersion::Legacy
     );
-    // Non-sentinel strings delegate to parse_version.
+
     parse_registry_version("legacyfoo").unwrap_err();
     assert_eq!(
         parse_registry_version("v1alpha1").unwrap(),
@@ -293,7 +292,7 @@ fn rejects_when_migration_path_was_removed() {
 fn rejects_when_middle_migration_path_was_removed() {
     let old = parse_version("v1alpha1").unwrap();
     let current = parse_version("v1alpha4").unwrap();
-    // No content mutation: framework stamps `step.to` after each step.
+
     let migrations = [MigrationStep {
         from: "v1alpha2",
         to: "v1alpha3",
@@ -351,10 +350,6 @@ fn rejects_when_chain_overshoots_current() {
 
 #[test]
 fn applies_multi_step_chain_in_order() {
-    // Each step appends a marker key so the final doc captures the
-    // execution order — a regression that double-applies, skips, or
-    // reorders steps changes the marker.
-
     let old = parse_version("v1alpha1").unwrap();
     let current = parse_version("v1alpha4").unwrap();
     let migrations = [

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Account usage views.
 
 use std::collections::HashMap;
 
@@ -18,16 +17,13 @@ use super::{
     row_opt_i64, row_opt_string, row_string,
 };
 
-/// One durable account reconstructed from a single, source-consistent snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredAccountUsageView {
-    /// Historical wire key written with the snapshot rows.
     pub account_key_hash: String,
-    /// Reconstructed latest view. All buckets come from one selected source.
+
     pub view: FocusedUsageView,
 }
 
-/// List distinct accounts in the durable store (multi-account Desktop / host).
 pub fn list_account_identities(path: &Path) -> Result<Vec<AccountIdentitySummary>, String> {
     let rows = load_all_account_snapshot_rows(path)?;
     let mut by_key: HashMap<String, AccountIdentitySummary> = HashMap::new();
@@ -67,7 +63,6 @@ pub fn list_account_identities(path: &Path) -> Result<Vec<AccountIdentitySummary
     Ok(out)
 }
 
-/// Reconstruct a focused usage view for one account key from the durable store.
 pub fn load_account_usage_view(
     path: &Path,
     account_key_hash: &str,
@@ -79,11 +74,6 @@ pub fn load_account_usage_view(
         .map(|stored| stored.view))
 }
 
-/// Reconstruct every durable account with one database scan.
-///
-/// Rows first pin the newest fetch generation, then one evidence source. This
-/// prevents a same-timestamp provider API/CLI/local-log mix from duplicating
-/// buckets or pairing one source's header with another source's limits.
 pub fn load_all_account_usage_views(
     path: &Path,
     now_epoch: i64,
@@ -159,7 +149,7 @@ pub(crate) fn account_usage_view_from_rows(
             status: usage_status_from_storage(&row.status),
         })
         .collect();
-    // Stable window order: session/weekly first when present.
+
     buckets.sort_by(|a, b| a.label.cmp(&b.label));
     buckets.dedup_by(|a, b| a.label == b.label);
     Some(FocusedUsageView {

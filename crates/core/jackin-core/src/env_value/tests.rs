@@ -1,5 +1,3 @@
-//! Tests for `env_value`.
-
 use super::*;
 
 #[test]

@@ -49,14 +49,14 @@ fn copy_payload_at_returns_copyable_row_value() {
         vec![ContainerInfoRow::new("Run ID", "run-abc").copyable()],
     );
     let area = Rect::new(0, 0, 40, 10);
-    // Prime viewport geometry the same way surfaces do after paint.
+
     let theme = termrock::style::DesignSystem::default();
     let panel = Panel::new(&theme)
         .title(state.title())
         .emphasis(PanelChrome::Focused);
     let table_area = detail_table_area(panel.inner(area));
     state.viewport = Some(area);
-    // Click roughly on first content row value cell (inside table body).
+
     let col = table_area.x.saturating_add(12);
     let row = table_area.y;
     let payload = copy_payload_at(area, &state, col, row);
@@ -66,7 +66,7 @@ fn copy_payload_at_returns_copyable_row_value() {
 #[test]
 fn required_height_scales_with_product_row_count() {
     let empty = ContainerInfoState::new("T", vec![]);
-    // Floor is 7; only counts beyond that grow height (rows + 4).
+
     assert_eq!(required_height(&empty), 7);
     let many: Vec<ContainerInfoRow> = (0..10)
         .map(|i| ContainerInfoRow::new(format!("R{i}"), format!("v{i}")))

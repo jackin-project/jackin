@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! List edit, delete, and settings actions.
 
 use super::{ConcreteInstanceAction, selected_instance_container};
 
@@ -28,9 +27,6 @@ use crate::tui::state::{
 use crate::tui::update::apply_inline_new_session_picker_plan;
 use jackin_config::AppConfig;
 
-/// Open the new-session agent picker for the selected instance row: a live
-/// container gets the agent picker with rows read from its admitted manifest,
-/// anything else gets the create-workspace or instance-unavailable path.
 pub(crate) fn open_new_session_picker(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -38,9 +34,6 @@ pub(crate) fn open_new_session_picker(
     match workspace_list_new_session_open_plan(
         workspace_list_new_session_plan(state.selected_row()),
         |workspace_idx, instance_idx| {
-            // Tree rows index the visible list (live + failed). A new
-            // session can only attach to a live container, so resolve
-            // by visible index but yield a container only when running.
             state
                 .workspace_visible_instances(workspace_idx)
                 .get(instance_idx)
@@ -177,12 +170,6 @@ pub(crate) fn instance_action_outcome(
     }
 }
 
-/// Resolve the container for Purge, then stage a Y/N confirmation
-/// modal. Purge now also calls `eject_role` before deleting preserved
-/// state (so a mis-keyed `P` on a running instance destroys role +
-/// `DinD` + volume + network plus on-disk state in one stroke), so the
-/// confirmation step is non-optional. Mirrors the workspace-delete
-/// pattern at `handle_list_key` line 158.
 pub(crate) fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
     match selected_instance_purge_confirm_plan(
         selected_instance_container(state, ConcreteInstanceAction::Purge),

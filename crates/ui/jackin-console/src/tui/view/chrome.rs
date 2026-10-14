@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Footer, header, and confirm-area rendering.
 
 use ratatui::{Frame, layout::Rect};
 
@@ -9,11 +8,8 @@ pub const fn workspace_header_title() -> &'static str {
     "workspaces"
 }
 
-/// How many rows the footer needs to display all `items` within `width`
-/// columns. Includes one leading blank spacer row above the hints.
 #[must_use]
 pub fn footer_height(items: &[termrock::widgets::HintSpan<'_>], width: u16) -> u16 {
-    // +1 for the mandatory leading spacer row above the hints on every screen.
     u16::try_from(
         termrock::widgets::wrapped_hint_lines(
             items,
@@ -40,7 +36,7 @@ pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[termrock::widge
     if area.height == 0 {
         return;
     }
-    // Render hints in the bottom portion; the top row is the leading spacer.
+
     let hint_rows = area.height.saturating_sub(1).max(1);
     let hint_area = Rect {
         x: area.x,
@@ -69,21 +65,16 @@ pub fn render_modal_backdrop(frame: &mut Frame<'_>, area: Rect) {
 
 #[must_use]
 pub fn delete_confirm_area(area: Rect) -> Rect {
-    // Stage-level confirm (not a `ConsoleModal`): wraps shared centering
-    // directly, as it did beside the retired rect registry.
     crate::tui::layout::centered_rect_fixed(area, 60, 7)
 }
 
 #[must_use]
 pub fn purge_confirm_area(area: Rect) -> Rect {
-    // Stage-level confirm (not a `ConsoleModal`): wraps shared centering
-    // directly, as it did beside the retired rect registry.
     crate::tui::layout::centered_rect_fixed(area, 70, 9)
 }
 
 #[must_use]
 pub fn settings_error_area(area: Rect, height: u16) -> Rect {
-    // Structural exception: legacy console status/error helpers wrap shared centering while callers supply footer-excluded areas.
     crate::tui::layout::centered_rect_fixed(area, 60, height)
 }
 

@@ -1,50 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Read-only enumerator for `.hermes/` credential stores.
-//!
-//! A store is a directory holding up to three inputs:
-//!
-//! - `config.yaml`: optional top-level `profiles:` mapping of profile name to
-//!   a `{ provider: <slug> }` mapping;
-//! - `profiles/*.yaml` (or `*.yml`): one mapping per file, shaped like the
-//!   inline entries; the filename stem is the profile name and file entries
-//!   override inline entries of the same name;
-//! - `auth.json`: provider-keyed secrets using the shared entry shapes
-//!   (`{ "type": "api", "key": ... }` and `{ "type": "oauth", ... }`).
-//!
-//! One [`StoreCandidate`](super::StoreCandidate) is emitted per
-//! profile whose provider has a usable `auth.json` entry, sorted by profile
-//! name. Profiles without a provider, providers without an entry, and absent
-//! inputs yield no candidates rather than errors.
-//!
-//! `config.yaml` and the profile files are parsed as a minimal mapping-only
-//! YAML subset (nested `key: value` mappings, `#` comments, bare and quoted
-//! scalars) because this crate has no YAML dependency. Anything outside the
-//! subset — sequences, flow styles, anchors, tags, block scalars, tab
-//! indentation — fails closed with [`StoreError::Malformed`].
-
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::path::Path;
 
 use super::{StoreCandidate, StoreError, StoreKind, read_store_file, select_entry_secret};
 
-/// Maximum YAML input size accepted for enumeration.
 const YAML_LIMIT: u64 = 1024 * 1024;
-/// Maximum `auth.json` size accepted for enumeration.
+
 const AUTH_JSON_LIMIT: u64 = 1024 * 1024;
 
-/// Enumerate usable profile credentials from a `.hermes/` directory.
-///
-/// A missing directory, or any missing input within it, yields no
-/// candidates. Pure parsing from the given directory: only the documented
-/// `config.yaml`, `profiles/`, and `auth.json` locations are read, nothing
-/// is written.
-///
-/// # Errors
-///
-/// Returns [`StoreError`] for unreadable, oversized, or malformed sources.
 pub(crate) fn enumerate_hermes_store(dir: &Path) -> Result<Vec<StoreCandidate>, StoreError> {
     let mut profiles: BTreeMap<String, String> = BTreeMap::new();
     if let Some(bytes) = read_store_file(&dir.join("config.yaml"), YAML_LIMIT)? {
@@ -80,9 +46,6 @@ pub(crate) fn enumerate_hermes_store(dir: &Path) -> Result<Vec<StoreCandidate>, 
     Ok(candidates)
 }
 
-/// Prove that the Hermes directory contains one profile and one auth entry
-/// before a whole-store sync is allowed. The directory provisioner cannot
-/// safely rewrite unknown profile/state files, so any extra entry fails closed.
 pub(crate) fn validate_single_profile_store(dir: &Path) -> Result<(), StoreError> {
     let candidates = enumerate_hermes_store(dir)?;
     let Some(candidate) = candidates.first() else {
@@ -127,7 +90,6 @@ pub(crate) fn validate_single_profile_store(dir: &Path) -> Result<(), StoreError
     Ok(())
 }
 
-/// Merge inline `profiles:` entries from `config.yaml` into `profiles`.
 fn collect_inline_profiles(
     doc: &BTreeMap<String, YamlNode>,
     profiles: &mut BTreeMap<String, String>,
@@ -149,7 +111,6 @@ fn collect_inline_profiles(
     Ok(())
 }
 
-/// Merge `profiles/*.yaml|*.yml` entries into `profiles`, overriding inline.
 fn collect_file_profiles(
     profiles_dir: &Path,
     profiles: &mut BTreeMap<String, String>,
@@ -191,23 +152,19 @@ fn collect_file_profiles(
     Ok(())
 }
 
-/// A node in the mapping-only YAML subset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum YamlNode {
-    /// A bare or quoted scalar value.
     Scalar(String),
-    /// A nested `key: value` mapping.
+
     Map(BTreeMap<String, YamlNode>),
 }
 
-/// One comment-stripped content line with its space indentation.
 #[derive(Debug)]
 struct YamlLine<'a> {
     indent: usize,
     content: &'a str,
 }
 
-/// Parse the mapping-only YAML subset into a top-level mapping.
 fn parse_simple_yaml(text: &str) -> Result<BTreeMap<String, YamlNode>, StoreError> {
     let mut lines = Vec::new();
     for raw in text.lines() {
@@ -219,7 +176,6 @@ fn parse_simple_yaml(text: &str) -> Result<BTreeMap<String, YamlNode>, StoreErro
     parse_block(&lines, &mut pos, 0)
 }
 
-/// Strip line endings, indentation, and comments; `None` skips the line.
 fn preprocess_line(raw: &str) -> Result<Option<YamlLine<'_>>, StoreError> {
     let line = raw.strip_suffix('\r').unwrap_or(raw);
     let mut indent = 0_usize;
@@ -247,7 +203,6 @@ fn preprocess_line(raw: &str) -> Result<Option<YamlLine<'_>>, StoreError> {
     Ok(Some(YamlLine { indent, content }))
 }
 
-/// Cut an unquoted `#` comment; quote-aware so `#` inside scalars survives.
 fn strip_comment(content: &str) -> &str {
     let mut quote: Option<char> = None;
     let mut escaped = false;
@@ -273,7 +228,6 @@ fn strip_comment(content: &str) -> &str {
     content
 }
 
-/// Parse consecutive mapping lines at exactly `indent`.
 fn parse_block(
     lines: &[YamlLine<'_>],
     pos: &mut usize,
@@ -306,7 +260,6 @@ fn parse_block(
     Ok(map)
 }
 
-/// Split `key: value` on the first colon followed by blank or end of line.
 fn split_mapping(content: &str) -> Result<(String, &str), StoreError> {
     if content.starts_with('-') && content.get(1..2).is_none_or(|next| next != "-") {
         return Err(StoreError::Malformed);
@@ -343,7 +296,6 @@ fn split_mapping(content: &str) -> Result<(String, &str), StoreError> {
     Ok((unquote_key(key)?, value))
 }
 
-/// Unquote a mapping key; bare keys pass through unchanged.
 fn unquote_key(key: &str) -> Result<String, StoreError> {
     if key.starts_with(['\'', '"']) {
         parse_scalar(key)
@@ -354,7 +306,6 @@ fn unquote_key(key: &str) -> Result<String, StoreError> {
     }
 }
 
-/// Parse one scalar: reject block/flow/anchor/tag markers, unquote the rest.
 fn parse_scalar(value: &str) -> Result<String, StoreError> {
     match value.chars().next() {
         None => Err(StoreError::Malformed),
@@ -365,7 +316,6 @@ fn parse_scalar(value: &str) -> Result<String, StoreError> {
     }
 }
 
-/// Unquote a double-quoted scalar with a minimal escape subset.
 fn parse_double_quoted(value: &str) -> Result<String, StoreError> {
     if value.len() < 2 || !value.ends_with('"') {
         return Err(StoreError::Malformed);
@@ -392,7 +342,6 @@ fn parse_double_quoted(value: &str) -> Result<String, StoreError> {
     Ok(out)
 }
 
-/// Unquote a single-quoted scalar, where `''` escapes one quote.
 fn parse_single_quoted(value: &str) -> Result<String, StoreError> {
     if value.len() < 2 || !value.ends_with('\'') {
         return Err(StoreError::Malformed);

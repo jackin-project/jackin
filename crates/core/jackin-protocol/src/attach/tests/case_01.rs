@@ -29,9 +29,6 @@ fn contextual_attach_control_and_response_roundtrip() {
 
 #[test]
 fn hot_path_output_avoids_base64_and_json() {
-    // Regression for the first attempt's `base64-inside-JSON` hot path:
-    // a 4 KiB chunk of raw PTY bytes must travel through the attach
-    // channel with only 5 bytes of overhead (tag + length).
     let payload = vec![0xCDu8; 4096];
     let frame = encode_server(ServerFrame::Output(payload.clone()));
     assert_eq!(frame.len(), 5 + payload.len());
@@ -52,8 +49,7 @@ fn hello_roundtrips() {
         context: None,
     })
     .unwrap();
-    // First byte is tag, never `0x00` (which is reserved for the
-    // control-channel JSON length high byte).
+
     assert_eq!(bytes[0], TAG_HELLO);
     assert_ne!(bytes[0], 0x00);
 }
@@ -101,8 +97,7 @@ fn hello_with_spawn_agent_and_env_roundtrips() {
         context: None,
     })
     .unwrap();
-    // Decode skips the 4-byte length prefix that `encode_client` writes
-    // after the tag; reconstruct the payload to feed `decode_client`.
+
     let payload = bytes[5..].to_vec();
     let frame = decode_client(TAG_HELLO, payload).unwrap();
     assert_eq!(
@@ -132,9 +127,6 @@ fn hello_rejects_removed_provider_spawn_kind() {
 
 #[test]
 fn hello_rejects_oversized_agent_len() {
-    // spawn_kind=agent, agent_len=99 but payload only carries
-    // 12 bytes of "only-7-bytes".
-    // decode must bail rather than slice past the buffer.
     let mut payload = vec![0, 42, 0, 100, 2, 0, 99];
     payload.extend(b"only-7-bytes");
     decode_client(TAG_HELLO, payload).unwrap_err();
@@ -163,8 +155,6 @@ fn hello_rejects_truncated_4_byte_payload() {
 
 #[test]
 fn hello_shell_with_non_empty_agent_slug_rejected() {
-    // spawn_kind=1 (Shell), agent_len=5 ("claude"-ish bytes).
-    // Shell + slug is structurally invalid; decode must bail.
     let mut payload = vec![0, 24, 0, 80, 1, 0, 5];
     payload.extend(b"claud");
     payload.extend(&[0, 0]);
@@ -174,9 +164,6 @@ fn hello_shell_with_non_empty_agent_slug_rejected() {
 
 #[test]
 fn hello_with_trailing_bytes_rejected() {
-    // Extra byte after the focus_kind tail must fail rather than be
-    // tolerated — the wire format is closed, future fields go via a
-    // versioned schema bump.
     let mut bytes = encode_client(ClientFrame::Hello {
         rows: 24,
         cols: 80,

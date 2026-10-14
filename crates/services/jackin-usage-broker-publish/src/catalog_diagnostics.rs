@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Typed, secret-free diagnostics from one broker catalog scan.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,26 +9,24 @@ use jackin_protocol::usage_broker::{
     UsageUnresolvedV1,
 };
 
-/// Closed set of discovery issue categories exported through the projection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CatalogDiagnosticCode {
-    /// The config source could not be read.
     ConfigUnreadable,
-    /// The config source was malformed or invalid.
+
     ConfigInvalid,
-    /// The config schema is newer than the supported schema.
+
     ConfigVersionUnsupported,
-    /// Repeated reads observed a changing config generation.
+
     ConfigTransientConflict,
-    /// A required credential source is absent.
+
     CredentialMissing,
-    /// Protected credential access was denied or unavailable.
+
     CredentialDenied,
-    /// The operator must approve protected credential access.
+
     KeychainConsentRequired,
-    /// The credential source is malformed.
+
     CredentialMalformed,
-    /// Credential access requires operator interaction.
+
     InteractionRequired,
 }
 
@@ -118,11 +115,6 @@ struct UnresolvedCatalogSource {
     capability_id: String,
 }
 
-/// Secret-free projection of one discovery scan's diagnostics.
-///
-/// Fields are private and builder inputs are closed issue codes plus Rust-owned
-/// provider identifiers/names. Discovery scope labels and arbitrary messages
-/// cannot enter this value.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CatalogDiagnostics {
     projection_issues: BTreeSet<CatalogDiagnosticCode>,
@@ -131,12 +123,10 @@ pub struct CatalogDiagnostics {
 }
 
 impl CatalogDiagnostics {
-    /// Add one whole-catalog discovery issue.
     pub fn push_projection_issue(&mut self, code: CatalogDiagnosticCode) {
         self.projection_issues.insert(code);
     }
 
-    /// Add one issue for a provider id and label owned by Rust code.
     pub fn push_provider_issue(
         &mut self,
         provider_id: &'static str,
@@ -152,8 +142,6 @@ impl CatalogDiagnostics {
             .insert(code);
     }
 
-    /// Add a configured source that could not resolve to canonical identity.
-    /// `capability_id` is the discovery-owned opaque candidate identifier.
     pub fn push_unresolved(
         &mut self,
         provider_id: &'static str,
@@ -288,8 +276,6 @@ fn unresolved_state(codes: impl Iterator<Item = CatalogDiagnosticCode>) -> Usage
     } else if codes.iter().any(|code| code.needs_secret()) {
         UsageLifecycleV1::NeedsSecret
     } else {
-        // Discovery failure is not a temporary provider outage. `Error` keeps
-        // unresolved identity from being typed as provider unavailability.
         UsageLifecycleV1::Error
     }
 }

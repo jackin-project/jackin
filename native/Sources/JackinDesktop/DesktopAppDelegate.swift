@@ -6,19 +6,19 @@ import Combine
 import JackinUsageBridge
 import SwiftUI
 
-/// Owns the per-provider `NSStatusItem`s, keyed by Rust `surfaceId`, and the one
-/// shared transient popover.
-///
-/// Rust owns detection, ranking (SB-17), and every
-/// string; this controller reconciles items against `store.statusBarGlanceRows`
-/// and rebuilds when ranked order changes (SB-13).
+
+
+
+
+
+
 @MainActor
 public final class StatusBarController: NSObject {
     private let store: PresentationStore
     private let compactStatusItems: Bool
     private var providerItems: [String: NSStatusItem] = [:]
     private var fallbackItem: NSStatusItem?
-    /// Last applied burn-first rank order (left → right = rank 1…n).
+
     private var canonicalOrder: [String] = []
     private let popover = NSPopover()
     private let popoverPresentationState = PopoverPresentationState()
@@ -26,11 +26,11 @@ public final class StatusBarController: NSObject {
     private var automationAnchorPanel: NSPanel?
     private var rightClickMonitors: [ObjectIdentifier: Any] = [:]
     private var cancellables: Set<AnyCancellable> = []
-    /// Opens the Usage window focused on a provider (`nil` = Overview).
+
     private let onOpenUsage: (UsageNavigationContext?) -> Void
-    /// Owns the context menu and is the `NSMenuItem` target. Must stay retained
-    ///
-    /// for the bar lifetime (see `StatusItemMenu` docs — drop target ⇒ all rows disabled).
+
+
+
     private let statusItemMenu: StatusItemMenu
 
     init(
@@ -44,8 +44,8 @@ public final class StatusBarController: NSObject {
         self.onOpenUsage = onOpenUsage
         self.statusItemMenu = StatusItemMenu(router: menuRouter)
         super.init()
-        // XCUITest steals application activation while synthesizing scroll gestures. Keep the
-        // real NSPopover alive only in deterministic fixture runs; production remains transient.
+
+
         popover.behavior = compactStatusItems ? .applicationDefined : .transient
         popover.animates = true
         popover.contentSize = PopoverRoot.liveContentSize
@@ -59,7 +59,7 @@ public final class StatusBarController: NSObject {
         }
         popover.contentViewController = NSHostingController(rootView: root)
 
-        // Burn-first chips only (SB-3/14/17/19) — not full providerGlanceRows inventory.
+
         store.$statusBarGlanceRows
             .receive(on: DispatchQueue.main)
             .sink { [weak self] rows in self?.apply(rows: rows) }
@@ -80,8 +80,8 @@ public final class StatusBarController: NSObject {
         }
         removeFallbackItem()
         let newOrder = rows.map(\.surfaceId)
-        // SB-13: NSStatusItem left→right order is creation order. When Rust
-        // rank changes, remove and recreate so visual order tracks rank 1 first.
+
+
         if statusBarOrderRequiresRebuild(previous: canonicalOrder, next: newOrder) {
             removeAllProviderItems()
         } else {
@@ -115,7 +115,7 @@ public final class StatusBarController: NSObject {
 
     private func configure(item: NSStatusItem, row: PresentationStore.GlanceProviderRow) {
         guard let button = item.button else { return }
-        // Template icon plus dual-stack values keeps status chrome system-owned.
+
         button.image = StatusItemRendering.icon(forIconKey: row.iconKey)
         button.imagePosition = .imageLeading
         button.attributedTitle =
@@ -225,7 +225,7 @@ public final class StatusBarController: NSObject {
         )
     }
 
-    /// Resolve which provider (or fallback) owns this status button.
+
     private func clickTarget(
         for button: NSStatusBarButton
     ) -> (surfaceId: String?, isFallback: Bool) {
@@ -249,7 +249,7 @@ public final class StatusBarController: NSObject {
     }
 
     private func togglePopover(_ sender: NSStatusBarButton) {
-        // Anchored to the same button → toggle closed (keep last selection).
+
         if popover.isShown, anchoredButton === sender {
             popover.performClose(sender)
             anchoredButton = nil
@@ -258,7 +258,7 @@ public final class StatusBarController: NSObject {
         if popover.isShown {
             popover.performClose(sender)
         }
-        // A primary status-item click focuses that provider; fallback has no provider focus.
+
         let target = clickTarget(for: sender)
         let outcome = StatusPopoverFocus.outcome(
             surfaceId: target.surfaceId,
@@ -266,10 +266,10 @@ public final class StatusBarController: NSObject {
         )
         store.popoverSelection = StatusPopoverFocus.popoverSelection(for: outcome)
 
-        // A menu-bar click on a secondary display does not reliably activate
-        // an accessory app. Presenting an inactive transient popover can then
-        // fail silently even though the clicked status button is a valid
-        // screen-local anchor.
+
+
+
+
         NSApp.activate(ignoringOtherApps: true)
         anchoredButton = sender
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
@@ -277,10 +277,10 @@ public final class StatusBarController: NSObject {
         resetPopoverScrollAfterPresentation()
     }
 
-    /// Deterministic visual-QA launch seam.
-    ///
-    /// The real `NSPopover` remains anchored
-    /// to a real status item; no detached preview host is introduced.
+
+
+
+
     func showPopover(focusOn surfaceId: String?, attemptsRemaining: Int = 200) {
         let button =
             surfaceId.flatMap { providerItems[$0]?.button }
@@ -305,7 +305,7 @@ public final class StatusBarController: NSObject {
         togglePopover(button)
     }
 
-    /// Close the real popover between deterministic visual-QA assertions.
+
     func closePopoverForVisualQA() {
         popover.performClose(nil)
         anchoredButton = nil
@@ -348,9 +348,9 @@ public final class StatusBarController: NSObject {
         return panel
     }
 
-    /// Cancel subscriptions, close the popover, and remove every status item.
-    ///
-    /// Safe to call more than once.
+
+
+
     func invalidate() {
         cancellables.removeAll()
         if popover.isShown {
@@ -365,10 +365,10 @@ public final class StatusBarController: NSObject {
     }
 }
 
-/// Application delegate for jackin❯ desktop (menu-bar agent).
-///
-/// Owns the store,
-/// status-bar controller, main menu, and document windows (Usage / Settings).
+
+
+
+
 @MainActor
 public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     private static let visualQAShowUsageNotification = Notification.Name(
@@ -398,7 +398,7 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     private var visualQAUsageSelection: String?
     private var statusBar: StatusBarController?
     private var usageWindow: UsageWindowController?
-    /// Retained: menu item targets point here / AppMainMenu for the process life.
+
     private var mainMenu: AppMainMenu?
 
     override public init() {
@@ -511,16 +511,16 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
         visualQAUsageSelection = selection
         if visualQALaunchOptions.openUsage || visualQALaunchOptions.invalidFixtureID != nil {
             let windowSize = visualQALaunchOptions.windowSize
-            // AppKit can leave a synchronously constructed launch window absent from the
-            // accessibility tree until the application-finished callback returns. Present on
-            // the next main-loop turn, matching the real popover launch seam below.
+
+
+
             DispatchQueue.main.async { [weak usageWindow] in
                 usageWindow?.show(focusOn: selection, size: windowSize)
             }
         }
         if visualQALaunchOptions.openPopover {
-            // Automation launches without a status-item click. Front the fixture process so the
-            // system menu bar attaches its real status-item window before NSPopover presentation.
+
+
             NSApp.setActivationPolicy(.regular)
             NSApp.activate()
             let popoverSelection = selection ?? fixture?.popoverSelection
@@ -531,7 +531,7 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Menu-bar agent stays alive after Usage/Settings close.
+
         false
     }
 
@@ -541,8 +541,8 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
 
     private func restoreFixtureUsageVisibility() {
         guard visualQALaunchOptions.usesFixture else { return }
-        // The UI-test runner may own focus while scrolling or auditing. Reverse only an actual
-        // application hide, without activating the fixture process or fighting the runner.
+
+
         NSApp.unhideWithoutActivation()
         if visualQALaunchOptions.openUsage, usageWindow?.qiVisibilityDesired == true,
             let window = usageWindow?.qiWindow
@@ -557,7 +557,7 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     public func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows: Bool
     ) -> Bool {
-        // Dock click while regular (or after hide) → bring Usage forward.
+
         if !hasVisibleWindows, !visualQALaunchOptions.openPopover {
             usageWindow?.show()
         }

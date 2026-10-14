@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `dispatch`: keyboard-help overlay routing (`?` opens from every
-//! stage, the open overlay owns keys, Esc returns to the stage).
-
 use super::*;
 use crate::tui::components::ConfirmState;
 use crate::tui::state::{EditorState, SettingsState};

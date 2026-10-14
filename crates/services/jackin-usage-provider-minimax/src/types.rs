@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `MiniMax` usage response types and validation.
 
 use super::{
     MiniMaxBalanceResponse, MiniMaxRegion, MiniMaxWindow, minimax_bucket, minimax_is_general_model,
@@ -8,8 +7,6 @@ use super::{
 use jackin_protocol::control::QuotaBucketView;
 use serde::Deserialize;
 
-/// A successful `MiniMax` fetch: the decoded product payload plus the region
-/// and host label that actually served it.
 #[derive(Debug)]
 pub struct MiniMaxFetched {
     pub(crate) usage: MiniMaxUsage,

@@ -1,23 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Interactive attach step shared by the apple-container paths.
-//!
-//! [`attach`] runs `container exec -it <name>` against the capsule
-//! binary so the operator gets a proper PTY with SIGWINCH
-//! forwarding via the vminitd gRPC/vsock layer, then reasserts the
-//! alternate screen on return.
-
 use anyhow::{Context as _, Result};
 use jackin_core::container_paths;
 
-/// Attach interactively to a running apple/container container.
-/// Uses `container exec -it <name> /jackin/runtime/jackin-capsule` which
-/// provides a proper PTY with SIGWINCH forwarding via the vminitd gRPC/vsock layer.
-///
-/// Returns the capsule's exit code (`None` if it was signalled) so the caller
-/// can record an attach outcome — a non-zero exit distinguishes a crash from a
-/// clean detach.
 pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<Option<i32>> {
     let mut args: Vec<&str> = vec![
         "exec",

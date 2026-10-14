@@ -1,15 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Sidebar layout metrics and selection types.
 
 use ratatui::layout::Rect;
 
 use crate::tui::screens::workspaces::model::ManagerListRow;
 
-/// Fixed height of the compact running-instances badge (borders + 1 text line).
 pub const COMPACT_INSTANCES_HEIGHT: u16 = 3;
 
-/// Root-derived heights and visibility flags for sidebar layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SidebarLayoutMetrics {
     pub instance_count: usize,
@@ -21,8 +18,6 @@ pub struct SidebarLayoutMetrics {
     pub agent_count: usize,
 }
 
-/// Rect for each rendered block. `None` panels are skipped in both render
-/// and hit-test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SidebarLayout {
     pub instances: Option<Rect>,

@@ -184,8 +184,6 @@ fn control_reply_report_runtime_event_applies_to_session_and_acks() {
 
 #[test]
 fn control_reply_runtime_event_and_capture_for_unknown_session_still_ack() {
-    // The hook must never be blocked or failed by a stale/wrong session id: both
-    // control messages Ack (and do not panic) when the session is absent.
     let mut mux = single_pane_tab_mux();
 
     let event_reply = control_reply_for_request(
@@ -260,10 +258,7 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("refresh usage action must keep usage dialog open");
     };
-    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
-    // below); the "refreshing" marker is applied by the dialog tick only when a
-    // refresh task is genuinely in flight. No task is spawned here, so the marker
-    // must NOT appear — it is no longer driven by the scheduling flag.
+
     assert!(
         !view.updated_label.contains("refreshing"),
         "{:?}",
@@ -293,10 +288,7 @@ fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("refresh usage action must keep usage dialog open");
     };
-    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
-    // below); the "refreshing" marker is applied by the dialog tick only when a
-    // refresh task is genuinely in flight. No task is spawned here, so the marker
-    // must NOT appear — it is no longer driven by the scheduling flag.
+
     assert!(
         !view.updated_label.contains("refreshing"),
         "{:?}",
@@ -338,7 +330,7 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
 
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
         provider_label: "Claude".to_owned(),
-        // Empty id: old payloads keep label resolution.
+
         account_id: String::new(),
     });
 

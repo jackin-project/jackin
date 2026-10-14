@@ -9,12 +9,7 @@ async fn renamed_branch_pushed_clean_is_safe_to_delete() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // status clean,
-    // for-each-ref enumerates two branches:
-    //   - scratch at base_commit (no upstream)
-    //   - feature/x ahead, upstream set, no [gone]
-    // rev-list <upstream>..feature/x → empty (everything pushed)
-    // symbolic-ref HEAD             (HEAD on feature/x → attached)
+
     let branches = [
         ferow("jackin/scratch/x", "abc", "", ""),
         ferow("feature/x", "newhead", "origin/feature/x", ""),
@@ -43,10 +38,6 @@ async fn renamed_branch_pushed_clean_is_safe_to_delete() {
 
 #[tokio::test]
 async fn pruned_gone_branch_is_treated_as_merged_and_cleaned() {
-    // Policy: `[gone]` upstream means merged-and-pruned (squash-merge is the
-    // dominant workflow); assess issues zero rev-list and treats the branch
-    // as clean. Pinned by jackin-core
-    // `upstream_gone_is_treated_as_merged_clean`.
     let dir = TempDir::new().unwrap();
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
@@ -161,9 +152,7 @@ async fn multiple_branches_all_safe_deletes_record() {
     ]
     .join("\n")
         + "\n";
-    // Queue: status, for-each-ref, rev-list for feature/b only
-    // (feature/a is [gone], which production treats as
-    // merged-and-pruned with no reachability query), symbolic-ref.
+
     let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/b"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -204,13 +193,11 @@ async fn multiple_branches_one_unsafe_preserves() {
     let branches = [
         ferow("jackin/scratch/x", "abc", "", ""),
         ferow("feature/a", "aaaa", "origin/feature/a", ""),
-        ferow("feature/b", "bbbb", "", ""), // ahead, no upstream → unsafe
+        ferow("feature/b", "bbbb", "", ""),
     ]
     .join("\n")
         + "\n";
-    // for-each-ref, then rev-list for feature/a (empty == pushed),
-    // then enumeration hits feature/b and short-circuits to
-    // PreservedUnpushed without another rev-list.
+
     let mut runner = fake_with_outputs(&["", &branches, ""]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -239,9 +226,9 @@ async fn unpushed_branch_prompts_with_unpushed_reason() {
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
-    // status clean → for-each-ref → ahead+no-upstream → preserve
+
     let mut runner = fake_with_outputs(&["", &branches]);
-    let mut p = RecordingPrompt::new(ExitDialogChoice::KeepAll); // operator picks "preserve"
+    let mut p = RecordingPrompt::new(ExitDialogChoice::KeepAll);
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
         container_name: "jackin-x",
@@ -292,7 +279,7 @@ async fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // Empty name column — malformed row, fail closed.
+
     let branches = format!("{}\n", ferow("", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
@@ -321,8 +308,7 @@ async fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // Empty tip column — must not compare equal to any base_commit,
-    // including an empty one; always fails closed.
+
     let branches = format!("{}\n", ferow("feature/x", "", "origin/feature/x", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
@@ -351,7 +337,7 @@ async fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // status clean, branch ahead of base with no upstream → PreservedUnpushed
+
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;

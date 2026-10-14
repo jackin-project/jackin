@@ -73,9 +73,6 @@ fn validate_effective_grants_passes_when_invariants_hold() {
 
 #[test]
 fn resolve_effective_grants_no_grants_still_gets_implicit_caps() {
-    // When locked profile launches with no config/workspace grants,
-    // resolve_effective_grants must inject NET_ADMIN/NET_RAW so the
-    // iptables allowlist (`jackin-capsule firewall-apply`) can run.
     let grants = resolve_effective_grants(DockerSecurityProfile::Locked, None, None);
     assert_eq!(grants.network, NetworkGrant::Allowlist);
     assert!(
@@ -105,7 +102,7 @@ fn locked_tmpfs_is_minimal_subset() {
         tmpfs_values.contains(&"/run"),
         "locked must have /run tmpfs"
     );
-    // Package-manager paths absent from locked.
+
     for path in TMPFS_PATHS_HARDENED_EXTRA {
         assert!(
             !tmpfs_values.contains(path),
@@ -129,18 +126,15 @@ fn hardened_tmpfs_includes_extra_paths() {
 
 #[test]
 fn network_enforcement_label_all_cases() {
-    // n/a for open network.
     let open = EffectiveGrants {
         network: NetworkGrant::Open,
         ..profile_base_grants(DockerSecurityProfile::Standard)
     };
     assert_eq!(network_enforcement_label(&open), "n/a");
 
-    // full: allowlist, no sudo, no dind.
     let full = profile_base_grants(DockerSecurityProfile::Locked);
     assert_eq!(network_enforcement_label(&full), "full");
 
-    // partial: allowlist + sudo.
     let partial_sudo = EffectiveGrants {
         network: NetworkGrant::Allowlist,
         sudo: true,
@@ -151,7 +145,6 @@ fn network_enforcement_label_all_cases() {
         "partial (sudo grants iptables access)"
     );
 
-    // partial: allowlist + dind active.
     let partial_dind = EffectiveGrants {
         network: NetworkGrant::Allowlist,
         dind: DindGrant::Privileged,
@@ -192,8 +185,6 @@ fn session_contract_reports_dind_inner_egress_partial_enforcement() {
 
 #[test]
 fn allowlist_network_with_grants_still_gets_implicit_caps() {
-    // Hardened profile has Allowlist network; add a memory config grant.
-    // apply_grants runs (so it fired), then apply_implicit_grants must still add caps.
     let config_grants = DockerGrants {
         memory: Some("8G".to_owned()),
         ..Default::default()
@@ -216,7 +207,7 @@ fn grant_layering_workspace_wins_over_config() {
         ..Default::default()
     };
     let workspace_grants = DockerGrants {
-        memory: Some("16G".to_owned()), // workspace raises memory
+        memory: Some("16G".to_owned()),
         ..Default::default()
     };
     let grants = resolve_effective_grants(
@@ -224,10 +215,10 @@ fn grant_layering_workspace_wins_over_config() {
         Some(&config_grants),
         Some(&workspace_grants),
     );
-    // Workspace memory wins (higher).
+
     assert_eq!(grants.memory_bytes, Some(16 * GB));
-    // Config cpus preserved (workspace didn't override).
-    assert_eq!(grants.cpus, Some(4.0_f64.max(2.0))); // profile default 4.0 wins over config 2.0
+
+    assert_eq!(grants.cpus, Some(4.0_f64.max(2.0)));
 }
 
 #[test]
@@ -246,9 +237,6 @@ fn validate_grants_pids_must_be_positive() {
 
 #[test]
 fn validate_grants_memory_overflow_is_error() {
-    // 2^63 bytes = i64::MAX + 1, expressed with a parseable `G` suffix so the
-    // value actually reaches the i64-boundary check. A bare-"B" value would be
-    // rejected as UnparsableSize first and never exercise the overflow branch.
     let grants = DockerGrants {
         memory: Some("8589934592G".to_owned()),
         ..Default::default()
@@ -358,9 +346,6 @@ fn compat_sudo_on_means_no_new_privileges_off() {
 
 #[test]
 fn hardened_sudo_grant_clears_no_new_privileges() {
-    // hardened base is no_new_privileges:true + sudo:false. An explicit
-    // sudo=true grant must clear no_new_privileges, else sudo is provisioned
-    // but no-new-privileges blocks the setuid escalation (silent failure).
     let config = DockerGrants {
         sudo: Some(true),
         ..Default::default()
@@ -375,8 +360,6 @@ fn hardened_sudo_grant_clears_no_new_privileges() {
 
 #[test]
 fn profile_base_grants_dind_defaults() {
-    // Decision 12 / WP4: only compat keeps privileged DinD; every secure-default
-    // profile (standard/hardened/locked) defaults DinD off.
     for (profile, expected) in [
         (DockerSecurityProfile::Standard, DindGrant::None),
         (DockerSecurityProfile::Compat, DindGrant::Privileged),

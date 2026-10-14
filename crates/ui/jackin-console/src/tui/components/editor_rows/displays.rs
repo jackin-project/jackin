@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Auth and secret display types.
 
 use jackin_tui::tokens::{ACTION_ACCENT, DISCLOSURE_ACCENT};
 use ratatui::style::{Color, Modifier, Style};

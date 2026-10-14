@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `sensitive`.
 use super::*;
 
 fn mount(src: &str) -> MountConfig {
@@ -125,7 +124,6 @@ fn sensitive_symlink_alias_is_canonicalized() {
 
 #[test]
 fn does_not_match_partial_name() {
-    // ".sshd" should NOT match ".ssh"
     let hits = find_sensitive_mounts(&[mount("/home/user/.sshd")]);
     assert!(hits.is_empty());
 }

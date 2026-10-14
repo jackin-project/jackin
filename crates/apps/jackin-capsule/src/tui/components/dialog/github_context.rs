@@ -1,16 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! GitHub context view types, `PullRequestStatus`, construction and state helpers
-//! extracted from the dialog coordinator (types + the two Dialog methods).
-//! Free types re-exported from parent to preserve `super::*` / `dialog::` sites
-//! in tests and other call sites.
-
 use crate::pull_request::PullRequestInfo;
 
-/// Borrowed snapshot of multiplexer PR state, so `GitHubContext`
-/// rendering and dispatch stay live without copying the data into
-/// the dialog variant.
 #[derive(Debug, Clone, Copy)]
 pub struct GithubContextView<'a> {
     pub branch: Option<&'a str>,
@@ -31,10 +23,6 @@ pub fn github_context_view_from_state<'a>(
     GithubContextView { branch, status }
 }
 
-/// Resolution state of the multiplexer's PR lookup. Mirrors the
-/// daemon's `(in_flight, Option<PullRequestInfo>)` pair but rules
-/// out the impossible `Loaded + Resolving` combination at the type
-/// level — keeps every dialog branch a single exhaustive match.
 #[derive(Debug, Clone, Copy)]
 pub enum PullRequestStatus<'a> {
     Loaded(&'a PullRequestInfo),

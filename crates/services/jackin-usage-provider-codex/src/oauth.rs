@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Codex` OAuth fetch and token refresh.
 
 use jackin_usage_provider_core::ProviderError;
 use jackin_usage_provider_core::{
@@ -36,8 +35,6 @@ pub fn fetch_codex_oauth_usage(
     )
 }
 
-/// Body for the `refresh_token` grant. Pure so the request shape is unit-tested
-/// without a live endpoint.
 pub fn codex_refresh_request_body(refresh_token: &str) -> serde_json::Value {
     serde_json::json!({
         "client_id": CODEX_OAUTH_CLIENT_ID,
@@ -47,7 +44,6 @@ pub fn codex_refresh_request_body(refresh_token: &str) -> serde_json::Value {
     })
 }
 
-/// Extract the re-minted access token from a token-endpoint response. Pure.
 pub fn codex_access_token_from_response(value: &serde_json::Value) -> Option<String> {
     value
         .get("access_token")
@@ -100,15 +96,6 @@ pub fn refresh_codex_access_token(refresh_token: &str) -> Result<String, Provide
     )
 }
 
-/// Fetch Codex usage, transparently re-minting the access token once if the
-/// on-disk token is rejected (HTTP 401/403).
-///
-/// Root cause this addresses: jackin❯ reads `auth.json` as-is, while the Codex
-/// CLI refreshes that token only on its own launch — so a token that expired
-/// since the last CLI run would 401 here indefinitely. The refresh is used only
-/// for this read-only fetch and deliberately NOT written back to `auth.json`
-/// (avoiding any risk of corrupting the operator's live credential file); the
-/// CLI re-mints and persists its own copy on next launch.
 pub fn fetch_codex_oauth_usage_refreshing(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,

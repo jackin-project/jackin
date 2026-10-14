@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Spawn requests, session launch construction, and pane home assignment.
 
 use super::super::{
     Dialog, FullRedrawReason, Multiplexer, Result, SessionLaunch, SpawnRequest,
@@ -30,21 +29,10 @@ impl Multiplexer {
         }
     }
 
-    /// P3: an agent session just spawned — the start moment the usage lifecycle
-    /// hangs off. Kick a usage refresh now so the focused segment moves from
-    /// `refreshing` to a real headline promptly rather than waiting for the next
-    /// poll cycle. (The daemon already owns this moment via `SpawnRequest`, so no
-    /// separate launch proxy is needed.)
     fn note_agent_started(&mut self) {
         self.spawn_active_usage_account_refresh();
     }
 
-    /// Derived-root suffix for one more concurrent session of `instance`.
-    /// The first live session keeps the launch-config home; every further
-    /// concurrent session gets `{home}/panes/{seq}` with a daemon-monotonic
-    /// `seq`, so concurrent panes never share one account's state root.
-    /// The entrypoint seeds credentials into the derived root from the
-    /// instance's forwarded dir, exactly like a fresh base home.
     fn assign_pane_home_seq(&mut self, instance: &str) -> Option<u64> {
         let live = self
             .session_supervisor

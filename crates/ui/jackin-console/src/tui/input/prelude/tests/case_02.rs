@@ -5,9 +5,6 @@ use super::*;
 
 #[test]
 fn golden_walk_4_edit_dst_full_rewind_cancels() {
-    // Walk 2 to TextInputName, then Esc at each step:
-    // TextInputName → WorkdirPick → TextInputDst (used_edit_dst rule) →
-    // MountDstChoice → FileBrowser → Esc ⇒ Cancelled.
     let mut prelude = prelude_with_browser_committed(GOLDEN_SRC);
     handle_prelude_modal(&mut prelude, key(KeyCode::Char('e')));
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
@@ -53,9 +50,6 @@ fn golden_walk_4_edit_dst_full_rewind_cancels() {
 
 #[test]
 fn golden_walk_5a_direction_change_edit_branch_matches_uninterrupted() {
-    // Forward 2 (Edit → TextInputDst commit), back 1 (Esc →
-    // TextInputDst), forward again: the final pending fields are
-    // identical to walk 2's.
     let mut prelude = prelude_with_browser_committed(GOLDEN_SRC);
     let mut steps = vec![observed_step(&prelude)];
 
@@ -63,10 +57,10 @@ fn golden_walk_5a_direction_change_edit_branch_matches_uninterrupted() {
     steps.push(observed_step(&prelude));
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
     steps.push(observed_step(&prelude));
-    // Back 1: used_edit_dst rewind lands on TextInputDst.
+
     handle_prelude_modal(&mut prelude, key(KeyCode::Esc));
     steps.push(observed_step(&prelude));
-    // Forward again to completion.
+
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
     steps.push(observed_step(&prelude));
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
@@ -113,8 +107,6 @@ fn golden_walk_5a_direction_change_edit_branch_matches_uninterrupted() {
 
 #[test]
 fn golden_walk_5b_direction_change_same_path_branch_matches_uninterrupted() {
-    // Forward 2 (SamePath → WorkdirPick commit), back 1 (Esc →
-    // WorkdirPick), forward again: identical to walk 1.
     let mut prelude = prelude_with_browser_committed(GOLDEN_SRC);
     let mut steps = vec![observed_step(&prelude)];
 
@@ -122,11 +114,10 @@ fn golden_walk_5b_direction_change_same_path_branch_matches_uninterrupted() {
     steps.push(observed_step(&prelude));
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
     steps.push(observed_step(&prelude));
-    // Back 1: Esc at TextInputName reopens WorkdirPick.
+
     handle_prelude_modal(&mut prelude, key(KeyCode::Esc));
     steps.push(observed_step(&prelude));
-    // Forward again to completion: WorkdirPick commit →
-    // TextInputName commit.
+
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
     steps.push(observed_step(&prelude));
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
@@ -164,7 +155,6 @@ fn golden_walk_5b_direction_change_same_path_branch_matches_uninterrupted() {
 
 #[test]
 fn golden_walk_6_esc_at_file_browser_src_cancels() {
-    // Esc at step 1 (FileBrowserSrc) cancels the whole prelude.
     let mut prelude = file_browser_src_prelude();
     assert_eq!(observed_step(&prelude), Some(CREATE_PRELUDE_STEP_MOUNT_SRC));
 

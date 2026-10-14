@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Configured-provider credential snapshots (vendor dispatch, see `lib.rs`).
 
 use jackin_protocol::control::{
     FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
@@ -10,12 +9,7 @@ use jackin_usage_provider_core::{
     unsupported_snapshot, usage_view,
 };
 
-/// Per-vendor snapshot arms for [`provider_credential_snapshot_with_metadata`].
-/// Implemented once by `jackin-usage-credential-resolver`, which names the
-/// T3 vendor crates from T4. Each arm receives only the routing inputs plus the
-/// caller-retained secret, and returns a view that never embeds the secret.
 pub trait CredentialSnapshotVendors {
-    /// `claude` arm with an OAuth token: wave view over the resolved grant.
     fn claude_oauth_wave_view(
         &self,
         secret: &str,
@@ -25,31 +19,28 @@ pub trait CredentialSnapshotVendors {
         Option<ProviderRateLimit>,
         Option<ProviderFailureMetadata>,
     );
-    /// `claude` arm with an API key: key snapshot view.
+
     fn claude_api_key_view(&self, key_name: &str, secret: &str, now: i64) -> FocusedUsageView;
-    /// `openrouter` arm: key snapshot with rate limit.
+
     fn openrouter_key_view(
         &self,
         secret: &str,
         now: i64,
     ) -> (FocusedUsageView, Option<ProviderRateLimit>);
-    /// `amp` arm: API-key snapshot view.
+
     fn amp_key_view(&self, secret: &str, now: i64) -> FocusedUsageView;
-    /// `zai` arm: provider-key snapshot view.
+
     fn zai_key_view(&self, key_name: &str, secret: &str, now: i64) -> FocusedUsageView;
-    /// `kimi` arm: key snapshot view.
+
     fn kimi_key_view(&self, secret: &str, now: i64) -> FocusedUsageView;
-    /// `minimax` arm: key snapshot view.
+
     fn minimax_key_view(&self, secret: &str, now: i64) -> FocusedUsageView;
-    /// `grok` arm: key snapshot view (billing needs an authenticated profile).
+
     fn grok_key_view(&self, key_name: &str, now: i64) -> FocusedUsageView;
-    /// `google` arm: Gemini presence snapshot view.
+
     fn gemini_key_view(&self, key_name: &str, now: i64) -> FocusedUsageView;
 }
 
-/// Build one explicit configured-provider snapshot while the caller retains the
-/// credential. This is the tier-3 probe body used by tier-4 protected-source
-/// adapters; the secret is never returned or persisted.
 #[must_use]
 pub fn provider_credential_snapshot<V: CredentialSnapshotVendors>(
     surface_id: &str,
@@ -106,9 +97,7 @@ pub fn provider_credential_snapshot_with_metadata<V: CredentialSnapshotVendors>(
             now,
             last_error: Some("OpenAI API-key subscription quota is unavailable".to_owned()),
         }),
-        // A Cursor API key cannot drive the personal dashboard RPC (that
-        // needs the OAuth JWT from `auth.json`); the key route stays an
-        // explicit gap like the OpenAI arm above, never a speculative fetch.
+
         "cursor" => usage_view(UsageViewInput {
             agent: "cursor",
             provider: Some("Cursor"),
@@ -125,10 +114,7 @@ pub fn provider_credential_snapshot_with_metadata<V: CredentialSnapshotVendors>(
             last_error: Some("Cursor API-key subscription quota is unavailable".to_owned()),
         }),
         "google" => vendors.gemini_key_view(key_name, now),
-        // Explicitly blocked (no production dispatch): `meta` (Muse has no
-        // pollable usage fetch by design), `omp`/`hermes`
-        // (attribution-only adapters with no native endpoint), `copilot` (no
-        // collector, registry, or discovery entry exists at all).
+
         _ => unsupported_snapshot(surface_id, None, now),
     };
     (view, None, None)

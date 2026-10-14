@@ -1,8 +1,3 @@
-//! PTY-based runner family: spawn `script(1)` wrapping `jackin load`, drive
-//! stdin with either a sentinel file watch, a transcript script, or a quick
-//! exit probe, then collect stdout / stderr into `Arc<Mutex<Vec<u8>>>`
-//! buffers.
-
 #![expect(
     clippy::expect_used,
     clippy::panic,
@@ -38,8 +33,6 @@ fn wait_for_file_exists(path: &str, done: &AtomicBool, timeout: Duration) -> boo
     false
 }
 
-/// Sets `done` when dropped so the macOS typescript follower always
-/// terminates, including on panic-unwind past the explicit stores.
 struct DoneGuard {
     done: Arc<AtomicBool>,
 }
@@ -58,29 +51,15 @@ pub(super) fn pty_command(
     extra_env: &[(&str, &str)],
 ) -> Command {
     let mut command = Command::new("script");
-    // BSD `script` (macOS) takes the command as positional args after the
-    // typescript file. util-linux `script` (most Linux distros) takes it
-    // via `-c <shell-string>`. BusyBox `script` is closer to BSD; if
-    // encountered on Linux it will fall through to the util-linux branch
-    // and fail loudly rather than silently misbehave.
+
     let invocation = std::iter::once(jackin)
         .chain(args.iter().copied())
         .map(shell_quote)
         .collect::<Vec<_>>()
         .join(" ");
-    // `quit undef`: the palette hotkey (`^\`, 0x1c) doubles as the tty
-    // VQUIT char. A script step gated on a boot-marker file can land
-    // while the child is still in cooked mode, and the line discipline
-    // would SIGQUIT the child instead of delivering a keypress — a
-    // coin-flip crash. Undefining VQUIT keeps every other discipline
-    // behavior (canonical mode, ICRNL for `\r` prompt answers) intact.
+
     let full = format!("stty cols 120 rows 40 quit undef >/dev/null 2>&1; exec {invocation}");
     if cfg!(target_os = "macos") {
-        // BSD `script` block-buffers pipe stdout (nothing arrives live), so
-        // the transcript is followed through this file instead; see
-        // `spawn_stdout_collector`. Remove any stale typescript BEFORE
-        // spawn: after spawn the file may already be the live one, and a
-        // reused `cwd` would otherwise pollute matching with old bytes.
         drop(std::fs::remove_file(cwd.join(MACOS_TYPESCRIPT_NAME)));
         command
             .arg("-q")
@@ -97,11 +76,6 @@ pub(super) fn pty_command(
         .env("TERM", "xterm-256color")
         .env_remove("CI")
         .env_remove("JACKIN_DEBUG")
-        // Inherit DOCKER_HOST/DOCKER_TLS_VERIFY/DOCKER_CERT_PATH so the launch
-        // drives whatever daemon the operator points at — the DOCKER_HOST
-        // behavior architecture.mdx documents. TESTCONTAINERS_HOST_OVERRIDE
-        // stays stripped so a host value can't bleed past jackin❯'s reserved
-        // per-container override into the in-container testcontainers smoke.
         .env_remove("TESTCONTAINERS_HOST_OVERRIDE");
     apply_host_docker_config(&mut command);
     for (k, v) in extra_env {
@@ -141,9 +115,6 @@ pub(super) fn run_in_pty_until_file(
     let script = script.to_vec();
     let stdin_writer = std::thread::spawn(move || {
         for step in script {
-            // File gates observe container-side progress (agent boot
-            // markers) that never reaches the transcript; they budget
-            // for image build + boot, unlike the fast UI transcript waits.
             if !step.wait_for_file.is_empty()
                 && !wait_for_file_exists(
                     step.wait_for_file,
@@ -258,8 +229,7 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
     let _done_guard = DoneGuard {
         done: Arc::clone(&done),
     };
-    // macOS follows the live typescript; other platforms keep the exact
-    // previous pipe collector (no new files, no new failure modes).
+
     #[cfg(target_os = "macos")]
     let (stdout_buf, stdout_reader) = spawn_stdout_collector(stdout, cwd, &done);
     #[cfg(not(target_os = "macos"))]
@@ -358,10 +328,7 @@ pub(super) fn assert_restored_terminal(output: &std::process::Output) {
 pub(super) struct PtyScriptStep {
     pub(super) wait_for: &'static str,
     pub(super) input: &'static str,
-    /// Optional filesystem gate (empty = none): the step waits for this
-    /// path to exist before the transcript wait. Only the focused tab's
-    /// pane content reaches the transcript, so boot markers from
-    /// background tabs are unmatchable there; file gates observe them.
+
     pub(super) wait_for_file: &'static str,
 }
 

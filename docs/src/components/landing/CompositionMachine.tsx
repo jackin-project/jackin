@@ -1,4 +1,4 @@
-// docs/components/landing/CompositionMachine.tsx
+
 import { useState } from 'react';
 import { orgs } from './machineData';
 import { FocusCallout } from './FocusCallout';

@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `prelude`.
-//! Create-wizard tests: the prelude's multi-step modal sequence
-//! (`FileBrowserSrc` → `MountDstChoice` → `TextInputDst` → `WorkdirPick` →
-//! `TextInputName`) and its step-back / Esc semantics.
-
 use super::super::fixtures::key;
 
 use super::{

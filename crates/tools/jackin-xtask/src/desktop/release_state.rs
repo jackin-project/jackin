@@ -1,7 +1,3 @@
-//! Independent publication state for jackin❯ desktop release assets.
-//!
-//! Prints `KEY=value` lines suitable for `GITHUB_OUTPUT` / shell capture.
-
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
@@ -14,12 +10,11 @@ const DEFAULT_TAP: &str = "jackin-project/homebrew-tap";
 
 #[derive(Args)]
 pub(crate) struct ReleaseStateArgs {
-    /// Release version without leading `v` (e.g. `0.6.0`).
     version: String,
-    /// GitHub repo `owner/name` hosting the release.
+
     #[arg(long, default_value = DEFAULT_REPO)]
     repo: String,
-    /// Homebrew tap repo `owner/name`.
+
     #[arg(long, default_value = DEFAULT_TAP)]
     tap: String,
 }
@@ -56,7 +51,6 @@ pub(crate) fn desktop_asset_name(version: &str) -> String {
     format!("jackin-desktop-{version}-aarch64-apple-darwin.zip")
 }
 
-/// Pure computation — used by live fetch and offline fixtures.
 pub(crate) fn compute_state(
     version: &str,
     repo: &str,
@@ -125,7 +119,7 @@ pub(crate) fn run(args: ReleaseStateArgs) -> Result<()> {
         bail!("version is required");
     }
     let state = live_state(&args.version, &args.repo, &args.tap)?;
-    // stdout is the capture surface for GITHUB_OUTPUT / tee.
+
     #[expect(
         clippy::print_stdout,
         reason = "release-state KEY=value lines are the command product"
@@ -161,7 +155,7 @@ fn live_state(version: &str, repo: &str, tap: &str) -> Result<ReleaseState> {
 fn gh_release_exists(repo: &str, tag: &str) -> bool {
     let mut gh = cmd::command("gh");
     gh.args(["release", "view", tag, "--repo", repo]);
-    // Existence probe — failure means missing.
+
     cmd::run(&mut gh).is_ok()
 }
 

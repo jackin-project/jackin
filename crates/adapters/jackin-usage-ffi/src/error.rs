@@ -3,17 +3,15 @@
 
 use std::{error::Error, fmt, panic::AssertUnwindSafe};
 
-/// Typed bridge failures. Messages never include credentials or tokens.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[boltffi::error]
 pub enum UsageBridgeError {
-    /// Recoverable rejection (validation, unknown surface, closed runtime).
     Rejected { code: String, message: String },
-    /// A Rust panic was caught at the facade boundary.
+
     ContainedPanic { message: String },
-    /// Runtime not opened or already shut down.
+
     RuntimeUnavailable,
-    /// Event cursor requires resync.
+
     ResyncRequired,
 }
 
@@ -42,7 +40,6 @@ impl fmt::Display for UsageBridgeError {
 
 impl Error for UsageBridgeError {}
 
-/// Run `body` and convert panics into [`UsageBridgeError::ContainedPanic`].
 pub(crate) fn catch_entry<T>(
     body: impl FnOnce() -> Result<T, UsageBridgeError>,
 ) -> Result<T, UsageBridgeError> {

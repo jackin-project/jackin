@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Immediately admitted, bounded long polls never occupy control workers.
-
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -18,8 +16,6 @@ use jackin_protocol::usage_broker::{
 use jackin_protocol::usage_monitor::MonitorOperation;
 use jackin_usage_coordinator::UsageCoordinator;
 
-// The broker contract includes twenty simultaneous Capsule clients plus Desktop.
-// Excess admission fails immediately; no short wait can queue behind a long one.
 const MAX_WAIT_TASKS: usize = 32;
 
 pub(super) struct WaitPool {
@@ -112,8 +108,7 @@ impl Drop for WaitPool {
             .workers
             .get_mut()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // No queued waits exist. Each accepted join has at most 30 seconds;
-        // response writing has its own absolute deadline.
+
         for worker in workers.drain(..) {
             drop(worker.join());
         }

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace instance pane types.
 
 use super::{instance_detail_lines, instance_sessions_empty_message, panel};
 use ratatui::{Frame, layout::Rect, style::Style, widgets::Paragraph};

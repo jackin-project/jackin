@@ -1,15 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Claude API-key route: API keys cannot poll the OAuth usage endpoint.
 
 use jackin_protocol::control::{
     FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 use jackin_usage_provider_core::{UsageSurface, UsageViewInput, bucket, usage_view};
 
-/// Claude API keys do not authenticate the OAuth quota endpoint. Keep this
-/// route explicit and unsupported rather than feeding an API key into the
-/// OAuth adapter and reporting a misleading login/error state.
 pub fn claude_api_key_snapshot(
     agent: &str,
     provider: Option<&str>,

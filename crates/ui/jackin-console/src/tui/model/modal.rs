@@ -1,17 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `ConsoleModal` enum and its core impl methods.
-//!
-//! Spec carve-out (plan 009): the flow enum and its open/close/result flow
-//! stay product-owned — upstream `OverlayStack`/`DismissPolicy` carry
-//! geometry, stacking, and dismiss policy only (see `display.rs`).
-//!
-//! Coordinator — declares the sibling modules `auth_impls` (auth-related
-//! trait impls) and `display` (`rect/footer_items` impls). All public
-//! types stay reachable from `crate::tui::model::modal::*` — sibling
-//! impls use `super::ConsoleModal`.
-
 #[expect(
     unused_imports,
     reason = "documented residual allow; prefer expect when site is lint-true"

@@ -72,8 +72,7 @@ fn verify_usage_provider(
                 .any(|alias| usage_provider_matches(alias, &account.provider))
         })
         .collect::<Vec<_>>();
-    // `max_by_key` is `None` exactly when there are no matching rows, so it
-    // doubles as the "missing" guard.
+
     let Some(latest) = rows.iter().max_by_key(|row| row.fetched_at) else {
         return UsageVerifyCheck {
             label,
@@ -117,8 +116,6 @@ fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
 }
 
 fn usage_provider_matches(needle: &str, provider: &str) -> bool {
-    // Interchangeable provider/agent labels: a match needs one member of a group
-    // on each side. Bidirectional and extensible — add a group, not two arms.
     const SYNONYMS: &[&[&str]] = &[
         &["openai", "codex"],
         &["anthropic", "claude"],

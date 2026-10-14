@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `footer_hints`.
-
 use super::*;
 
 fn has_help_hint(items: &[HintSpan<'static>]) -> bool {
@@ -45,8 +43,6 @@ fn every_stage_footer_builder_advertises_help_hint() {
 
 #[test]
 fn picker_footers_do_not_advertise_help_hint() {
-    // Inline pickers own `?` as typed input (dispatch precedence), so their
-    // footers must not advertise the overlay.
     assert!(!has_help_hint(&workspace_list_footer_items(
         WorkspaceListFooterMode::AgentPicker {
             scroll_axes: termrock::scroll::ScrollAxes::none(),

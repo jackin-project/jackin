@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Spawn: PTY creation and child supervision.
 
 use super::{
     OscPolicy, SCROLLBACK_LEN, Session, SessionEvent, SessionSpawnSpec, SessionTerminal,
@@ -17,17 +16,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
-/// Reject spawn-target strings that are flags (start with `-`), empty, or
-/// contain whitespace / control characters. Syntax only: membership is
-/// resolved separately via `CapsuleConfig::resolve_instance`, which maps
-/// an instance config ID (or an unambiguous agent-slug shorthand) to its
-/// admitted instance. Shared by the PID-1 argv path and the
-/// `jackin-capsule new <target>` client path; the daemon re-resolves
-/// authoritatively at spawn time.
-/// # Errors
-///
-/// Returns an error when the value is empty, looks like a flag, or contains
-/// whitespace or control characters.
 pub fn validate_spawn_token_syntax(raw: &str) -> Result<&str, &'static str> {
     if raw.is_empty() {
         return Err("empty value");
@@ -55,10 +43,6 @@ impl Session {
           the multiplexer state. Inline shape preserves captured-runtime \
           state across the per-stage error-reporting branches."
     )]
-    /// # Errors
-    ///
-    /// Returns an error when the PTY cannot be opened or the session process
-    /// cannot be spawned.
     pub fn spawn(
         spec: SessionSpawnSpec,
         mut cmd: CommandBuilder,
@@ -74,8 +58,7 @@ impl Session {
             cache_dir,
         } = spec;
         let conversation_id = agent.as_ref().map(|_| uuid::Uuid::new_v4().to_string());
-        // Per-tab trace: each pane/agent spawn is its own short trace on the
-        // session timeline (shares the resource session.id).
+
         let rows = terminal.rows;
         let cols = terminal.cols;
         let pty_system = native_pty_system();
@@ -91,8 +74,6 @@ impl Session {
         let master = pair.master;
         let slave = pair.slave;
 
-        // Session id must exist before the child spawns so the agent-status
-        // reporter env can carry it. (Assigned here, used for the Session below.)
         let sid = next_id();
         let control_capability = uuid::Uuid::new_v4().to_string();
         inject_status_env(
@@ -125,12 +106,6 @@ impl Session {
         let event_tx_writer_err = event_tx.clone();
         emit_pty_spawn(agent.as_deref(), conversation_id.as_deref());
 
-        // PTY writer task. take_writer / lock failures emit Exited so the
-        // daemon reaps the half-initialised session instead of leaving a
-        // tab whose input keystrokes silently vanish. blocking_recv is
-        // used instead of Handle::current().block_on(rx.recv()) because
-        // the latter panics inside spawn_blocking on a current-thread
-        // runtime ("Cannot block the current thread from within a runtime").
         jackin_telemetry::spawn::stream_blocking("pty.reader", move || {
             let writer = match lock_or_record_poison(&master_for_write) {
                 None => None,
@@ -211,26 +186,6 @@ impl Session {
             }
         });
 
-        // Child-reaper task: blocks on `child.wait()` and emits the
-        // Exited event the moment the child process is reaped, even
-        // if the PTY master never returns EOF.
-        //
-        // Why this is separate from the reader task: when the
-        // foreground process exec'd into another binary and that
-        // binary forks subprocesses (Claude Code spawning git, npm,
-        // background watchers), those subprocesses inherit the slave
-        // PTY fd. The slave only fully closes once *all* fd holders
-        // exit, so the master read blocks indefinitely after the
-        // foreground agent quits while the lingering subprocess
-        // keeps the fd alive. The reader-EOF-only design left the
-        // pane stuck in this case.
-        //
-        // `child.wait()` blocks until the foreground process is
-        // reaped — the exact moment the operator's perspective says
-        // "the agent exited." Sending Exited here lets the daemon
-        // remove the pane immediately; the reader task (still
-        // blocked on master) becomes a leak that ends when the
-        // multiplexer process itself exits.
         let exit_agent = agent.clone();
         let exit_conversation_id = conversation_id.clone();
         let exit_termination_requested = Arc::clone(&termination_requested);

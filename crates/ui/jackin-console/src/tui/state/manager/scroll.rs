@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ManagerState` list scroll accessors and state.
 
 use super::super::{ManagerState, MountScrollFocus};
 

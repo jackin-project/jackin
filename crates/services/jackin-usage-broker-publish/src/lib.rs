@@ -1,13 +1,3 @@
-//! jackin-usage-broker-publish: canonical broker projection publication.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`ProjectionPublisher`] — incremental per-account publication.
-//!
-//! One immutable [`UsageProjectionV1`](jackin_protocol::usage_broker::UsageProjectionV1)
-//! per change: account/window/group projection builders plus the publisher
-//! that merges per-account generations, checkpoints them through the
-//! coordinator stores, and keeps the last-good publication on failure.
-
 mod account_windows;
 mod catalog_diagnostics;
 mod errors;

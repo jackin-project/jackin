@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `editor_*_lines_for_state` render adapters.
 
 use super::editor_tab_content_focused;
 use ratatui::{layout::Rect, text::Line};

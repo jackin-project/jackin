@@ -1,12 +1,3 @@
-//! jackin-usage-broker-wire: broker socket/lease wire primitives.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`secure_run_directory`] — harden the broker run directory.
-//!
-//! Socket/lease constants, descriptor-bound lease ownership, run-directory
-//! hardening, bounded probe budgets, and wire error constructors. The
-//! socket client, dispatch, and serve loop stay with the T4 broker.
-
 mod consts;
 mod errors;
 mod lease;

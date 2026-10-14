@@ -53,7 +53,6 @@ async fn no_update_on_first_build() {
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
 
-    // No stored baseline → first build → UpToDate (never warns/rebuilds).
     seed_latest(&paths, Agent::Claude, "2.1.92");
     assert_eq!(
         needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await,

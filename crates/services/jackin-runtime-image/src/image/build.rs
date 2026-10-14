@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Role-base + agent derived-image build orchestration.
-//!
-//! Owns cache-bust minting, local role-base ensure, and `build_agent_image`.
-//! Host GitHub auth is not forwarded to `BuildKit`; no explicit build-secret API
-//! exists, so `Dockerfile`-requested credentials are not supplied by Jackin.
-
 use std::sync::Arc;
 
 use jackin_core::Agent;
@@ -64,19 +58,6 @@ pub fn cache_bust_value_for_build(
     Ok(version_check::stored_cache_bust(paths, image).unwrap_or_else(|| "0".to_owned()))
 }
 
-/// Resolve the role's **base** image into a local `jk_<role>__base:<sha>` image
-/// that the derived overlay is built `FROM`.
-///
-/// - `published_base = Some(img)` (the decision found a fresh published image):
-///   tag the already pulled and label-verified image as the local base.
-/// - `published_base = None`: build the role Dockerfile locally (construct `FROM`
-///   overridden by `JACKIN_CONSTRUCT_IMAGE` when set), no overlay.
-///
-/// Reused when `jk_<role>__base:<sha>` already exists and its labels match the
-/// current role SHA plus either the local-build construct image label or the
-/// published-image construct version label — so the heavy role layers are built
-/// or tagged once per (role commit, construct) and overlay rebuilds don't touch
-/// them.
 #[expect(
     clippy::too_many_arguments,
     reason = "Resolving the local role base needs every caller-supplied input \
@@ -98,11 +79,6 @@ pub async fn ensure_local_role_base(
     runner: &mut impl CommandRunner,
     mut progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
-    // The base is always materialized locally as `jk_<role>__base:<sha>` so the
-    // derived overlay never depends on the mutable published `:latest` tag:
-    //   - published fresh -> tag the verified image under the local base name;
-    //   - otherwise        -> build the role Dockerfile locally.
-    // Reused when the local base tag already exists and its labels still match.
     let construct = jackin_manifest::repo_contract::construct_image();
     let base_name = role_base_image_name(selector, branch_override, head_sha);
 
@@ -175,16 +151,7 @@ pub async fn ensure_local_role_base(
     let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
 
     let mut args = local_image_build_args();
-    // A workspace rebuild refreshes the construct base. A plain workspace base
-    // build rides the local layer cache.
-    //
-    // Only `--pull` the default published construct: an operator override of
-    // `JACKIN_CONSTRUCT_IMAGE` (e.g. the local `jackin-local/construct:trixie`
-    // built for PR verification) exists only in the local image store, so
-    // `--pull` would force a registry resolve and fail with "pull access denied".
-    // We treat "not the default published image" as "locally built / not
-    // pullable" — overriding to a *different published* image would also skip the
-    // pull, which is an accepted limitation of the override.
+
     let construct_is_locally_built = construct != jackin_manifest::repo_contract::CONSTRUCT_IMAGE;
     if rebuild && !construct_is_locally_built {
         args.push("--pull");
@@ -203,9 +170,6 @@ pub async fn ensure_local_role_base(
         &context_dir,
     ]);
 
-    // Surface the role-base build on the live build screen exactly like the
-    // derived build: a stage header plus the captured output teed into the
-    // build-log panel the cockpit shows on demand.
     if let Some(p) = progress.as_deref_mut() {
         p.stage_progress(LaunchStage::DerivedImage, "Building role base image");
     }
@@ -240,7 +204,6 @@ pub async fn ensure_local_role_base(
     Ok(base_name)
 }
 
-/// Build the Docker image for the role. Returns the image name.
 #[expect(
     clippy::too_many_arguments,
     reason = "Building the agent image needs every caller-supplied input \
@@ -285,9 +248,6 @@ pub async fn build_agent_image(
         build_reason.as_str()
     };
 
-    // Resolve the role repo HEAD SHA once — used for the published-image
-    // staleness check, the local-image freshness check, and as a build-arg
-    // so local builds carry the same label.
     let head_sha = role_git_sha_for_recipe(cached_repo, known_head_sha, runner).await;
 
     let local_image_name = branch_override.map_or_else(
@@ -298,12 +258,6 @@ pub async fn build_agent_image(
     let force_base_rebuild = rebuild;
     let mint_fresh_cache_bust = should_mint_fresh_cache_bust(rebuild, build_reason);
 
-    // Resolve the role base into a local `jk_<role>__base:<sha>` image — tagged
-    // from the pulled, label-verified published image when the decision found it
-    // fresh (`build_base_image_override`), or built from the role Dockerfile
-    // otherwise — then derive the overlay `FROM` it. The derived build below
-    // always uses a local base, so it never inlines the role Dockerfile and
-    // never `--pull`s.
     let local_base = ensure_local_role_base(
         selector,
         branch_override,
@@ -320,19 +274,12 @@ pub async fn build_agent_image(
     .await?;
     let base_image_override = Some(local_base.as_str());
 
-    // create_derived_build_context copies the repo into a temp directory,
-    // creating an immutable snapshot.  After this point the shared cached
-    // repo can be safely modified by a parallel load.
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::DerivedImage,
         "create_build_context",
         None,
     );
-    // Install every supported agent into the image, not just the selected one.
-    // The container runs a multiplexer; a new tab can launch any supported
-    // agent, exec'ing its CLI inside this same container. A selected-agent-only
-    // image makes those sibling tabs crash with a missing binary. The selected
-    // agent still drives the recipe's selected-install/version label.
+
     let agents_to_install = validated_repo.manifest.supported_agents();
     let build_result = create_derived_build_context_for_agents(
         &cached_repo.repo_dir,
@@ -368,9 +315,6 @@ pub async fn build_agent_image(
     };
     drop(repo_lock);
 
-    // Read the rendered Dockerfile once and drive every downstream decision
-    // (debug dump and ROLE_GIT_SHA arg) off the in-memory body instead of
-    // re-reading the file 2–3× per build.
     let dockerfile_body = std::fs::read_to_string(&build.dockerfile_path).ok();
     if debug {
         let rendered = dockerfile_body.as_deref().unwrap_or("<read failed>");
@@ -393,25 +337,9 @@ pub async fn build_agent_image(
         "JACKIN_RUN_UID={}",
         jackin_runtime_identity::identity::host_uid().unwrap_or(1000)
     );
-    // Always pass the cache-bust arg so Docker matches the correct layer.
-    //
-    // When rebuilding, generate a fresh timestamp to invalidate fallback
-    // installer layers, and persist it so subsequent non-rebuild builds reuse
-    // the same layer.
-    //
-    // When NOT rebuilding, replay the stored bust value.  Without this,
-    // Docker resolves the Dockerfile default `JACKIN_CACHE_BUST=0` and hits
-    // the original pre-bust layer, causing the installed agent version to
-    // ping-pong between old and new on alternate launches.
-    // If a derived image already exists locally, check whether it was built
-    // against the same construct image as the current invocation. A mismatch
-    // means the cached image is tainted — e.g. built with a local construct
-    // override while this invocation uses the canonical one, or vice versa —
-    // and must be rebuilt from scratch rather than reused.
+
     let current_construct = jackin_manifest::repo_contract::construct_image();
-    // When rebuild is already forced, the mismatch check result cannot change the
-    // outcome — skip the round-trip. Treat inspect errors as label-absent (no
-    // mismatch) so transient daemon errors never abort an otherwise-proceeding build.
+
     let construct_mismatch = if force_base_rebuild {
         false
     } else {
@@ -444,12 +372,6 @@ pub async fn build_agent_image(
 
     let mut build_args = local_image_build_args();
 
-    // --pull semantics:
-    //
-    // The overlay always builds `FROM` the local `jk_<role>__base:<sha>` (restamped
-    // from the published image or built locally by ensure_local_role_base), so the
-    // derived build never `--pull`s — that would fail on the local-only base tag.
-    // (The pull-vs-cache decision for the base itself lives in ensure_local_role_base.)
     emit_image_build_source(base_image_override, build_source_reason, false);
 
     let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
@@ -463,9 +385,7 @@ pub async fn build_agent_image(
     for label in &recipe_labels {
         build_args.extend(["--label", label]);
     }
-    // Stamp per-agent baked-binary versions as diagnostic labels (D3/D20).
-    // Not part of the recipe hash; used for observability and future
-    // version-comparison rebuild enforcement.
+
     let agent_version_labels: Vec<String> = runtime_binaries
         .prefetched_agent_versions
         .iter()
@@ -493,14 +413,6 @@ pub async fn build_agent_image(
     }
     emit_non_containerd_image_store_note(runner).await;
 
-    // Tee the build's captured output into the live build-log sink so the
-    // loading cockpit can show it on demand (the build is the slowest step).
-    // `end` stops teeing but keeps the captured lines for the dialog.
-    //
-    // `build_log::end()` must always fire — even on cancellation — so the
-    // process-global ACTIVE flag is reset before the next launch. The
-    // `while_waiting` branch returns `Err` on cancel, which we capture in
-    // `build_result` and only `?`-propagate after calling `end()`.
     jackin_diagnostics::build_log::begin();
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::DerivedImage,
@@ -518,11 +430,7 @@ pub async fn build_agent_image(
         ..RunOptions::default()
     };
     let build_future = runner.run("docker", &build_args, None, &build_options);
-    // The Docker build is the slowest foreground step, so its await must race
-    // the launch cancel token — otherwise Ctrl+C / Exit during the build is
-    // ignored until docker finishes (the operator sees the modal hang). With a
-    // rich surface, `while_waiting` returns `Err(LaunchCancelled)` the instant
-    // the token fires; headless launches just await.
+
     let build_result = match progress.as_deref() {
         Some(p) => p.while_waiting(build_future).await,
         None => build_future.await,
@@ -544,8 +452,6 @@ pub async fn build_agent_image(
     Ok(image)
 }
 
-/// Returns the HEAD commit SHA of the git repo at `dir`, or `None` if the
-/// directory is not a git repo or the command fails.
 pub async fn git_head_sha(
     dir: &std::path::Path,
     runner: &mut impl CommandRunner,

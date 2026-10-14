@@ -1,8 +1,3 @@
-//! jackin-agent-status: agent-status packs, hooks, and rule evaluation.
-//!
-//! **Architecture Invariant:** T2.
-//! Entry point: [`evaluate_rules`] — status pack rule evaluation.
-
 pub mod arbitrate;
 pub mod evidence;
 pub mod gating;
@@ -17,23 +12,18 @@ use jackin_protocol::control::AgentState;
 mod osc;
 pub use osc::{OscShellMark, OscStatusDecoder, OscStatusEvent};
 
-/// Per-session accumulated status. Holds the current effective state and
-/// the `seen` flag used to derive `Done`.
 #[derive(Debug, Clone)]
 pub struct SessionStatus {
-    /// Wire-format effective state consumed by the UI and protocol.
     pub effective: AgentState,
-    /// Four-state raw status before `done` is derived from raw idle + unseen.
+
     pub raw: RawAgentState,
-    /// Confidence of the evidence that produced `raw`.
+
     pub confidence: AgentStatusConfidence,
-    /// Last evidence summary used to publish the current state.
+
     pub last_snapshot_summary: EvidenceSummary,
-    /// `true` once the operator has focused or acknowledged this pane after
-    /// its last `Done` transition. Used to derive `Done` from raw `Idle`.
+
     pub seen: bool,
-    /// Monotonically-increasing revision counter. Incremented on every
-    /// state change. UI consumers compare revision to detect stale snapshots.
+
     pub revision: u64,
 }
 
@@ -69,9 +59,7 @@ impl SessionStatus {
             self.seen = false;
         }
         let next = self.effective_from_raw(raw);
-        // `raw`/`confidence` were read from `summary` above, so the cached copies
-        // on self are exactly the incoming summary's verdict — kept for `report()`
-        // and the next tick's `previous_raw` without re-reading the summary.
+
         self.raw = raw;
         self.confidence = confidence;
         self.last_snapshot_summary = summary;
@@ -84,8 +72,6 @@ impl SessionStatus {
         }
     }
 
-    /// Mark this session as seen by the operator (pane focused / acknowledged).
-    /// Transitions Done → Idle. Returns `Some(Idle)` when the state changed.
     pub fn acknowledge(&mut self) -> Option<AgentState> {
         self.seen = true;
         if self.effective == AgentState::Done {
@@ -101,8 +87,7 @@ impl SessionStatus {
         let summary = &self.last_snapshot_summary;
         AgentStatusReport {
             raw_state: self.raw,
-            // The reported source is a pure function of the winning channel — no
-            // separate flag to fall out of sync with the winner.
+
             source: match &summary.winner {
                 evidence::EvidenceWinner::Authority { source_id } => AgentStatusSource::Reported {
                     source_id: source_id.clone(),

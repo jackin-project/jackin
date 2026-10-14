@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Status and list-modal overlay plans.
 
 #[derive(Debug, Clone)]
 pub enum StatusOverlayPlan {

@@ -333,8 +333,7 @@ async fn usage_relay_denies_every_monitor_operation_including_operator_claims() 
     };
 
     let temp = tempfile::tempdir().unwrap();
-    // A broker client without a running broker proves denial occurs at the
-    // relay boundary: any accidentally forwarded request returns Unavailable.
+
     let broker = UsageBrokerConfig::for_data_dir(temp.path().join("data")).client();
     let allowlist = UsageCapabilitySet::new([]);
     let binding_id = "operator-confirmed-binding".to_owned();

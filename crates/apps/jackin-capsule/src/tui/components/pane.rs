@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Custom pane-body widget for rendering terminal screen content into a Ratatui Buffer.
-//!
-//! Blits `DamageGrid` cells directly into the Ratatui Buffer so the existing
-//! `SocketBackend` diff mechanism handles terminal output.
-
 use crate::tui::socket_backend::term_color;
 use std::num::NonZeroU16;
 
@@ -23,7 +18,6 @@ pub(crate) enum PaneBodyContent<'a> {
     View(&'a GridView<'a>),
 }
 
-/// A Ratatui widget that renders terminal body cells into the given area.
 #[derive(Debug)]
 pub struct PaneBodyWidget<'a> {
     content: PaneBodyContent<'a>,
@@ -234,7 +228,6 @@ impl PaneCell for TermCell {
     }
 }
 
-/// Cell width forced for the lead cell of a wide glyph (always 2).
 const WIDE_CELL_WIDTH: NonZeroU16 = NonZeroU16::MIN.saturating_add(1);
 
 fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {

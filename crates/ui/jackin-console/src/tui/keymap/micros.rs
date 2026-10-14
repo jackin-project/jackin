@@ -1,15 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Inline-picker and single-action micro keymaps.
 
 use termrock::input::KeyCode;
 
 use termrock::keymap::{KeyBinding, KeyChord, Keymap, Visibility};
 
-/// Actions in the inline picker shell wrapping `SelectListState`.
-///
-/// `q/Q` exit is omitted: both callers unified to `exit_on_q = false`
-/// (q filters, quit via Ctrl+Q).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InlinePickerShellAction {
     ScrollLeft,
@@ -54,13 +49,6 @@ pub(crate) static INLINE_PICKER_SHELL_KEYMAP_BINDINGS: &[KeyBinding<InlinePicker
 ];
 pub(crate) static INLINE_PICKER_SHELL_KEYMAP: Keymap<InlinePickerShellAction> =
     Keymap::from_static(INLINE_PICKER_SHELL_KEYMAP_BINDINGS);
-
-// ── Row-level hint keymaps (display-only) ─────────────────────────────────────
-//
-// These keymaps drive hint generation for per-row contextual footer items. They
-// are never dispatched — action type is `()`. Each builder function in
-// `components/footer_hints.rs` calls `keymap.hint_spans()` instead of
-// hard-coding span slices, keeping dispatch and display in sync.
 
 pub(crate) static EDITOR_GENERAL_RENAME_KEYMAP_BINDINGS: &[KeyBinding<()>] =
     &[KeyBinding::borrowed(
@@ -149,5 +137,3 @@ pub(crate) static AUTH_EDIT_SOURCE_KEYMAP_BINDINGS: &[KeyBinding<()>] = &[KeyBin
 )];
 pub(crate) static AUTH_EDIT_SOURCE_KEYMAP: Keymap<()> =
     Keymap::from_static(AUTH_EDIT_SOURCE_KEYMAP_BINDINGS);
-
-// ── Workspace list ────────────────────────────────────────────────────────────

@@ -1,21 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Multi-account isolation in ONE real container: two `codex` instances on
-//! distinct `OpenAI` API-key accounts (different canary key/endpoint/model) plus
-//! one `opencode` instance on a profile account, all booted by a single
-//! `default_launch` list.
-//!
-//! Proof is in-container, never tab labels: each fake agent dumps its own
-//! process environment to the shared workspace, and the test asserts per-tab
-//! credential/endpoint/model identity, independent state roots, and the
-//! absence of unselected credential canaries. The same run then exercises
-//! split, new tab (both through the agent picker), client-kill + `hardline`
-//! reconnect, and container-remove + `hardline` restore, asserting the
-//! per-pane account bindings survive every step.
-
-// Expects only apply when the e2e feature compiles the body; without it the
-// crate is empty and unfulfilled-expect would fail `cargo clippy -p jackin`.
 #![cfg_attr(
     feature = "e2e",
     expect(
@@ -75,7 +60,6 @@ const ENDPOINT_B: &str = "https://openai-b.example.invalid/v1";
 const MODEL_A: &str = "gpt-s3-a";
 const MODEL_B: &str = "gpt-s3-b";
 
-/// Fail before the interactive launch if Cargo did not build the broker binary.
 fn require_broker_sibling(jackin: &str) {
     let broker_sibling = Path::new(jackin)
         .parent()
@@ -138,9 +122,6 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
     let construct_image = e2e_construct_image();
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
 
-    // Phase A+B: boot three tabs, then split (cx-b) and new tab (oc-c) via
-    // the agent picker. Fake agents number themselves with an atomic
-    // mkdir sequence so each picker step can wait for a unique marker.
     let (observed, stdout, stderr) =
         run_boot_split_newtab(&jackin, &home, &workspace_dir, &extra_env);
     let phase_ab = match observed {
@@ -156,8 +137,6 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
     };
     assert_phase_ab(&phase_ab, &workspace_dir).unwrap();
 
-    // Phase C: the killed client left the container running; `hardline`
-    // reattaches to the same sessions with bindings intact.
     let container = phase_ab.container.clone();
     phase_c_reconnect(
         &jackin,
@@ -168,8 +147,6 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         &phase_ab,
     );
 
-    // Phase D: removing the container makes `hardline` restore it; the
-    // default launch set boots again with correct bindings.
     run("docker", &["rm", "-f", container.as_str()], None);
     let restore_outcome: RestoreOutcome = Arc::new(Mutex::new(None));
     let restore_worker = {
@@ -210,8 +187,6 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
     assert_restore_bindings(&bindings);
 }
 
-/// Run the boot + split + new-tab PTY session; returns the observer outcome
-/// plus captured transcripts for failure context.
 fn run_boot_split_newtab(
     jackin: &str,
     home: &Path,
@@ -231,12 +206,7 @@ fn run_boot_split_newtab(
             completed.store(true, Ordering::Release);
         })
     };
-    // Boot progress gates on the agents' atomic mkdir sequence: only the
-    // focused tab's pane content reaches the transcript, so background
-    // tabs' readiness markers are unmatchable there. Split/new-tab run
-    // through the palette (`\x1c`): the tmux-style prefix is opt-in and
-    // disabled, so prefix chords would quit instead of splitting.
-    // (Leaked: the harness script holds `&'static str` gates for one run.)
+
     let boot_gate: &'static str = Box::leak(
         workspace_dir
             .join("s3-seq-2")
@@ -252,7 +222,6 @@ fn run_boot_split_newtab(
             .into_boxed_str(),
     );
     let script = [
-        // All three boot agents are up once sequence #2 is taken.
         PtyScriptStep {
             wait_for: "",
             input: "\x1c",
@@ -263,8 +232,6 @@ fn run_boot_split_newtab(
             input: "split\r",
             wait_for_file: "",
         },
-        // Below matches the old prefix `"` geometry: the new pane lands
-        // after the focused one.
         PtyScriptStep {
             wait_for: "Below",
             input: "below\r",
@@ -275,9 +242,6 @@ fn run_boot_split_newtab(
             input: "cx-b-inst\r",
             wait_for_file: "",
         },
-        // The palette has no fresh second-opening needle (every item was
-        // already listed), so open + filter + select ride one ordered
-        // chunk; input bytes apply in order after the palette opens.
         PtyScriptStep {
             wait_for: "",
             input: "\x1cnew\r",
@@ -315,13 +279,11 @@ fn run_boot_split_newtab(
     (observed, stdout, stderr)
 }
 
-/// Shared restore-observer cell: `None` until the worker records its outcome.
 type RestoreOutcome = Arc<Mutex<Option<Result<Vec<(String, String)>, String>>>>;
 
-/// Bindings observed after boot + split + new tab.
 struct PhaseAB {
     container: String,
-    /// (instance config id, account id) per pane, in snapshot order.
+
     bindings: Vec<(String, String)>,
 }
 
@@ -372,12 +334,12 @@ fn observe_boot_split_newtab(home: &Path, workspace: &Path) -> Result<PhaseAB, S
     let container = wait_for_value(Duration::from_mins(6), "the instance container", || {
         running_container_name()
     })?;
-    // Three boot tabs first.
+
     wait_for_value(Duration::from_mins(4), "three bound boot sessions", || {
         let bindings = snapshot_bindings(&paths, &container)?;
         (bindings.len() == 3).then_some(bindings)
     })?;
-    // Five env dumps: 3 boot + split + new tab.
+
     wait_for(Duration::from_mins(4), "five agent env dumps", || {
         env_dumps(workspace).len() == 5
     })?;
@@ -392,7 +354,6 @@ fn observe_boot_split_newtab(home: &Path, workspace: &Path) -> Result<PhaseAB, S
 }
 
 fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
-    // Boot order is launch-list order; split + new tab append.
     let got: Vec<(&str, &str)> = phase
         .bindings
         .iter()
@@ -427,7 +388,6 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
         "one boot opencode + one new-tab opencode"
     );
 
-    // Same agent/provider, distinct runtime identity per account.
     let mut codex_homes = BTreeSet::new();
     let mut seen_canaries = BTreeSet::new();
     for &env in &codex {
@@ -459,7 +419,7 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
             }
         }
         seen_canaries.insert(key);
-        // No unselected canary may leak into this pane's environment.
+
         for (name, value) in env {
             assert!(
                 !value.contains(CANARY_C),
@@ -472,9 +432,7 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
         BTreeSet::from([CANARY_A.to_owned(), CANARY_B.to_owned()]),
         "both codex accounts must be live in the container"
     );
-    // The two cx-a/cx-b panes (and the cx-b split) each need their own root.
-    // Boot cx-a vs boot cx-b must differ; the split pane must differ from
-    // its own boot twin too (three distinct roots total).
+
     assert_eq!(codex_homes.len(), 3, "independent codex state roots");
 
     for &env in &opencode {
@@ -483,7 +441,7 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
             !root.is_empty(),
             "opencode panes need an isolated XDG_DATA_HOME state root"
         );
-        // The provisioned profile root must hold this account's auth only.
+
         let auth = docker_read(&phase.container, &format!("{root}/auth.json"))
             .or_else(|| docker_find_auth(&phase.container, &root));
         assert!(
@@ -511,8 +469,7 @@ fn phase_c_reconnect(
     phase_ab: &PhaseAB,
 ) {
     let reconnect_done = completed_reconnect(home, container, phase_ab);
-    // Five live sessions make explicit-selector `hardline` prompt under a
-    // PTY; answer Reconnect (option 1) like the operator would.
+
     let script = [PtyScriptStep {
         wait_for: "Choose [1/4]",
         input: "1\r",
@@ -559,8 +516,6 @@ fn assert_reconnect_snapshot(
 }
 
 fn observe_restore(home: &Path) -> Result<Vec<(String, String)>, String> {
-    // Restore recreates the container and boots the default launch set;
-    // session ids are fresh but every binding must be a known account.
     let new_container = wait_for_value(Duration::from_mins(6), "the restored container", || {
         running_container_name()
     })?;
@@ -617,7 +572,7 @@ fn read_dumps(workspace: &Path) -> BTreeMap<String, BTreeMap<String, String>> {
                 env.insert(key.to_owned(), value.to_owned());
             }
         }
-        // The dump filename records which fake agent wrote it.
+
         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
             let agent = stem
                 .strip_prefix("s3-env-")
@@ -833,9 +788,6 @@ name = "S3 Multi Account"
     );
 }
 
-/// A fake agent that numbers itself with an atomic `mkdir` sequence,
-/// dumps its own environment for the host to inspect, announces
-/// readiness on stdout, then idles reading stdin.
 fn fake_agent_script(agent: &str) -> String {
     format!(
         r#"if [ "${{1:-}}" = "--version" ]; then

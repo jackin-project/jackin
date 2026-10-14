@@ -367,8 +367,6 @@ fn save_rejects_invalid_candidate_and_preserves_on_disk_config() {
     AppConfig::load_or_init(&paths).unwrap();
     let baseline = std::fs::read_to_string(&paths.config_file).unwrap();
 
-    // Inject `[roles.ghost.env]` without the required
-    // `[roles.ghost].git` — fails serde parsing.
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.insert_at_path(
         &["roles".to_owned(), "ghost".to_owned(), "env".to_owned()],
@@ -389,7 +387,6 @@ fn save_rejects_invalid_candidate_and_preserves_on_disk_config() {
         "rejected save must leave the on-disk config byte-identical"
     );
 
-    // No leftover .tmp file.
     let tmp_path = paths.config_file.with_extension("tmp");
     assert!(
         !tmp_path.exists(),

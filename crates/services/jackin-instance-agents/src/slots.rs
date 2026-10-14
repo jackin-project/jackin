@@ -1,11 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential slot layout and directory mapping.
 
 use crate::InstanceAuthBinding;
 
-/// Container-visible layout for one provisioned slot, derived from the
-/// legacy per-agent dirs plus the slot suffix.
 #[derive(Debug)]
 pub struct SlotLayout {
     pub suffix: Option<String>,
@@ -14,9 +11,6 @@ pub struct SlotLayout {
     pub folder_target: String,
 }
 
-/// Sanitize a binding key into a directory-name suffix: keep
-/// alphanumerics plus `-_.`, fold anything else (notably `@` in
-/// synthesized `{account}@{agent}` keys) to `-`.
 pub(crate) fn sanitize_slot_suffix(key: &str) -> String {
     let sanitized: String = key
         .chars()
@@ -35,8 +29,6 @@ pub(crate) fn sanitize_slot_suffix(key: &str) -> String {
     }
 }
 
-/// Apply a slot suffix to a store dir name (`claude` →
-/// `claude-<suffix>`); `None` keeps the legacy name.
 pub fn slot_store_rel(store: &str, suffix: Option<&str>) -> String {
     match suffix {
         Some(suffix) => format!("{store}-{suffix}"),
@@ -44,9 +36,6 @@ pub fn slot_store_rel(store: &str, suffix: Option<&str>) -> String {
     }
 }
 
-/// Apply a slot suffix to the last component of a home-relative dir
-/// (`.local/share/amp` → `.local/share/amp-<suffix>`); `None` keeps
-/// the legacy path.
 #[must_use]
 pub fn slot_home_rel(rel: &str, suffix: Option<&str>) -> String {
     let Some(suffix) = suffix else {
@@ -71,13 +60,6 @@ pub fn xdg_cache_rel(agent: jackin_core::Agent, suffix: Option<&str>) -> Option<
     xdg_root_agent(agent).then(|| slot_home_rel(&format!(".cache/{}", agent.slug()), suffix))
 }
 
-/// Slot home rel + folder-var target for `agent`, honoring the
-/// folder-var kind. `Dir` agents point at their config home; `Parent`
-/// agents (`GEMINI_CLI_HOME`) point at a unique parent whose
-/// `credential_dir` child is the home; `XdgRoot` agents point at the
-/// XDG data root (the parent of the credential directory), matching the
-/// client's `XDG_DATA_HOME + <agent>/` lookup. Agents without a folder var
-/// resolve the plain home; the target is unused because they admit one slot.
 pub fn slot_home_and_target(
     agent: jackin_core::Agent,
     home_rel: &str,
@@ -99,10 +81,6 @@ pub fn slot_home_and_target(
         }
         (Some(FolderVarKind::Parent), None) => (home_rel.to_owned(), "/home/agent".to_owned()),
         (Some(FolderVarKind::XdgRoot), _) => {
-            // The client appends its own durable subdirectory (`amp/` or
-            // `opencode/`) to XDG_DATA_HOME. Exporting only `.local` would
-            // leave the runtime variable and the mounted `.local/share/...`
-            // tree describing different paths.
             let root = home_rel
                 .rsplit_once('/')
                 .map_or(home_rel, |(parent, _)| parent);
@@ -119,12 +97,6 @@ pub fn slot_home_and_target(
     }
 }
 
-/// Per-binding slot suffixes in binding order: the first binding per
-/// agent keeps the legacy layout (`None`); later same-agent bindings
-/// get their sanitized key as suffix. Shared by foreground prepare and
-/// background prewarm so shared keys land in identical dirs.
-/// Sanitized keys that collide (`a@b` vs `a-b`) get a numeric tail so
-/// two slots never share a directory.
 pub fn slot_suffixes(bindings: &[InstanceAuthBinding]) -> Vec<Option<String>> {
     let mut primaried: std::collections::HashSet<jackin_core::Agent> =
         std::collections::HashSet::new();
@@ -163,8 +135,6 @@ pub fn slot_layout(
     }
 }
 
-/// Legacy store dir + home rel per agent, the single source the
-/// provision, skip, and ignore-check paths derive slot dirs from.
 pub fn agent_slot_dirs(agent: jackin_core::Agent) -> (&'static str, &'static str) {
     match agent {
         jackin_core::Agent::Claude => ("claude", ".claude"),

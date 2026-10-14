@@ -1,14 +1,10 @@
-//! Equivalence tests: ranged content snapshots match slices of the full snapshot.
-
 use termpane::DamageGrid;
 
 use super::{pane_content_from_damagegrid, pane_content_range_from_damagegrid};
 
-/// Feed enough line feeds to push `scrollback_rows` into history, then a
-/// live-screen marker on the final visible line.
 fn grid_with_scrollback(screen_rows: u16, cols: u16, scrollback_rows: usize) -> DamageGrid {
     let mut grid = DamageGrid::new(screen_rows, cols, scrollback_rows.saturating_add(64));
-    // Each `\n` advances a row; write a unique digit so rows are distinguishable.
+
     for i in 0..scrollback_rows.saturating_add(usize::from(screen_rows)) {
         let ch = char::from(b'A' + u8::try_from(i % 26).unwrap_or_default());
         let line = format!("{ch}{i:04}\r\n");
@@ -59,9 +55,8 @@ fn ranged_out_of_bounds_clamps() {
     let full = pane_content_from_damagegrid(&grid, 12);
     let total = full.len();
 
-    // Past the end → empty.
     assert!(pane_content_range_from_damagegrid(&grid, 12, total..total + 10).is_empty());
-    // Inverted / empty range → empty.
+
     assert!(pane_content_range_from_damagegrid(&grid, 12, 5..5).is_empty());
     #[expect(
         clippy::reversed_empty_ranges,
@@ -69,7 +64,7 @@ fn ranged_out_of_bounds_clamps() {
     )]
     let inverted = 8..3;
     assert!(pane_content_range_from_damagegrid(&grid, 12, inverted).is_empty());
-    // Start in range, end past total → truncated to full[start..].
+
     let start = total.saturating_sub(2);
     let ranged = pane_content_range_from_damagegrid(&grid, 12, start..total + 50);
     assert_eq!(ranged, full[start..].to_vec());
@@ -89,13 +84,12 @@ fn ranged_empty_scrollback_live_only() {
 
 #[test]
 fn ranged_matches_full_for_seeded_window_sizes() {
-    // Property-style: for a few fixed grids and window starts, range == full[r].
     for (screen, cols, sb, start, len) in [
         (4u16, 20u16, 10usize, 0usize, 3usize),
         (4, 20, 10, 5, 4),
-        (4, 20, 10, 8, 6), // crosses boundary
-        (6, 12, 0, 1, 2),  // no scrollback
-        (3, 8, 15, 12, 1), // single row (hover window size)
+        (4, 20, 10, 8, 6),
+        (6, 12, 0, 1, 2),
+        (3, 8, 15, 12, 1),
     ] {
         let grid = grid_with_scrollback(screen, cols, sb);
         let full = pane_content_from_damagegrid(&grid, cols);

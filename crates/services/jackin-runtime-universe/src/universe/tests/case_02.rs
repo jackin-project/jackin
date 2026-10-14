@@ -54,8 +54,7 @@ async fn stale_idle_observation_cannot_remove_a_newer_live_marker() {
         std::fs::remove_file(first.pending_file().unwrap()).unwrap();
         generation
     };
-    // A new launch completes while the first release's Docker request is in
-    // flight. No pending token remains, so generation is the required guard.
+
     let second = claim_entry(&paths, &docker).await;
     drop(second);
     assert_eq!(count_pending_claims(&authority(&paths)), Some(0));
@@ -203,8 +202,6 @@ async fn observe_exit_rechecks_docker_after_reclaiming_dead_owner() {
     assert!(!owner.0.wait().unwrap().success());
     assert!(pending.exists(), "SIGKILL leaves the pending inode");
 
-    // Script an empty stale snapshot followed by a live container. The same
-    // observe_exit call must list Docker again after reclaiming the token.
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([
             vec![],

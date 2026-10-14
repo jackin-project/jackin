@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! CLI argument structs for `jackin workspace` subcommands (add, remove, list, edit).
-//!
-//! Not responsible for: reading or writing workspace state — structs are parsed
-//! by `clap` and dispatched to handlers in `src/commands/workspace/`.
-
 use clap::{Args, Subcommand};
 use std::str::FromStr;
 
@@ -28,21 +23,16 @@ fn parse_agent(s: &str) -> Result<jackin_core::Agent, String> {
         .map_err(|e: jackin_core::ParseAgentError| e.to_string())
 }
 
-/// Shared args for read-only workspace subcommands that support `--format`.
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct WorkspaceFormatArgs {
-    /// Output format (`human` or `json`)
     #[arg(long, value_name = "FORMAT", default_value = "human")]
     pub format: String,
 }
 
-/// Args for `jackin workspace list`
 pub type WorkspaceListArgs = WorkspaceFormatArgs;
 
-/// Args for `jackin workspace show`
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct WorkspaceShowArgs {
-    /// Name of the workspace to display
     pub name: String,
     #[command(flatten)]
     pub fmt: WorkspaceFormatArgs,
@@ -50,11 +40,6 @@ pub struct WorkspaceShowArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum WorkspaceCommand {
-    /// Create a new workspace definition
-    ///
-    /// The workdir is the path jackin starts the agent in. It is not mounted
-    /// implicitly; provide one or more --mount entries for the directories the
-    /// container should see.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -67,26 +52,23 @@ Examples:
   jackin workspace create restricted --workdir ~/app --mount ~/app --allowed-role agent-smith --default-role agent-smith"
     )]
     Create {
-        /// Unique name for this workspace
         name: String,
-        /// Working directory inside the container
+
         #[arg(long)]
         workdir: String,
-        /// Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
+
         #[arg(long = "mount", required = true)]
         mounts: Vec<String>,
-        /// Restrict which roles may use this workspace (repeatable)
+
         #[arg(long = "allowed-role")]
         allowed_roles: Vec<String>,
-        /// Role to select by default when loading this workspace
+
         #[arg(long = "default-role")]
         default_role: Option<String>,
-        /// Default agent for this workspace (claude, codex, amp, kimi, opencode,
-        /// grok, antigravity, gemini, cursor, muse, omp, or hermes)
+
         #[arg(long, value_parser = parse_agent)]
         default_agent: Option<jackin_core::Agent>,
-        /// Set isolation mode for a mount destination. Repeatable.
-        /// Format: `<container-dst>=<shared|worktree|clone>`.
+
         #[arg(
             long = "mount-isolation",
             value_name = "DST=TYPE",
@@ -94,22 +76,17 @@ Examples:
             action = clap::ArgAction::Append
         )]
         mount_isolation: Vec<(String, MountIsolation)>,
-        /// Opt the workspace into the macOS keep-awake reconciler.
-        /// While any role in this workspace is running, jackin holds a
-        /// `caffeinate -imsu` assertion so the host stays awake. Silent
-        /// no-op on Linux/Windows.
+
         #[arg(long = "keep-awake", default_value_t = false)]
         keep_awake: bool,
-        /// Run `git pull` on all mounted git repositories before starting the
-        /// agent. Executed on the host. Failures are warnings — the launch
-        /// continues even when offline.
+
         #[arg(long = "git-pull", default_value_t = false)]
         git_pull: bool,
     },
-    /// List all saved workspaces
+
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     List(WorkspaceListArgs),
-    /// Display details of a saved workspace
+
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -118,7 +95,7 @@ Examples:
   jackin workspace show my-app"
     )]
     Show(WorkspaceShowArgs),
-    /// Modify an existing workspace
+
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -139,50 +116,48 @@ Examples:
   jackin workspace edit my-app --prune"
     )]
     Edit {
-        /// Name of the workspace to modify
         name: String,
-        /// Update the container working directory
+
         #[arg(long)]
         workdir: Option<String>,
-        /// Add a bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
+
         #[arg(long = "mount")]
         mounts: Vec<String>,
-        /// Remove a mount by its container destination path (repeatable)
+
         #[arg(long = "remove-destination")]
         remove_destinations: Vec<String>,
-        /// Remove the auto-mounted workdir (the mount where src = dst = workdir)
+
         #[arg(long, default_value_t = false)]
         no_workdir_mount: bool,
-        /// Grant a role access to this workspace (repeatable)
+
         #[arg(long = "allowed-role")]
         allowed_roles: Vec<String>,
-        /// Revoke a role's access to this workspace (repeatable)
+
         #[arg(long = "remove-allowed-role")]
         remove_allowed_roles: Vec<String>,
-        /// Set the default role for this workspace
+
         #[arg(long = "default-role")]
         default_role: Option<String>,
-        /// Clear the current default role
+
         #[arg(
             long = "clear-default-role",
             conflicts_with = "default_role",
             default_value_t = false
         )]
         clear_default_role: bool,
-        /// Set the default agent for this workspace
+
         #[arg(long, value_parser = parse_agent)]
         default_agent: Option<jackin_core::Agent>,
-        /// Clear the explicit default agent so the workspace falls back to claude
+
         #[arg(long, conflicts_with = "default_agent", default_value_t = false)]
         clear_default_agent: bool,
-        /// Skip confirmation prompts for mount collapses
+
         #[arg(long = "yes", short = 'y', default_value_t = false)]
         assume_yes: bool,
-        /// Also remove pre-existing redundant mounts (rule-C violations) as part of this edit
+
         #[arg(long, default_value_t = false)]
         prune: bool,
-        /// Set isolation mode for a mount destination. Repeatable.
-        /// Format: `<container-dst>=<shared|worktree|clone>`.
+
         #[arg(
             long = "mount-isolation",
             value_name = "DST=TYPE",
@@ -190,46 +165,37 @@ Examples:
             action = clap::ArgAction::Append
         )]
         mount_isolation: Vec<(String, MountIsolation)>,
-        /// Allow this edit to delete preserved isolated worktree state.
-        /// Required when --mount source changes for a mount whose dst has
-        /// active isolation records on a stopped container.
+
         #[arg(long)]
         delete_isolated_state: bool,
-        /// Opt the workspace into the macOS keep-awake reconciler. Mutually
-        /// exclusive with `--no-keep-awake`. See `workspace create`.
+
         #[arg(long = "keep-awake", default_value_t = false)]
         keep_awake: bool,
-        /// Opt the workspace OUT of the keep-awake reconciler. Mutually
-        /// exclusive with `--keep-awake`.
+
         #[arg(
             long = "no-keep-awake",
             conflicts_with = "keep_awake",
             default_value_t = false
         )]
         no_keep_awake: bool,
-        /// Enable git pull on entry for this workspace. Mutually exclusive with
-        /// `--no-git-pull`.
+
         #[arg(long = "git-pull", default_value_t = false)]
         git_pull: bool,
-        /// Disable git pull on entry for this workspace. Mutually exclusive with
-        /// `--git-pull`.
+
         #[arg(
             long = "no-git-pull",
             conflicts_with = "git_pull",
             default_value_t = false
         )]
         no_git_pull: bool,
-        /// Set the workspace launch admission set: agent-configuration IDs
-        /// admitted to this workspace's containers (repeatable). Replaces
-        /// the inherited global default entirely.
+
         #[arg(
             long = "default-launch",
             value_name = "CONFIG_ID",
             action = clap::ArgAction::Append
         )]
         default_launch: Vec<String>,
-        /// Clear the workspace launch admission set so the workspace
-        /// inherits the global default again.
+
         #[arg(
             long = "clear-default-launch",
             conflicts_with = "default_launch",
@@ -237,7 +203,7 @@ Examples:
         )]
         clear_default_launch: bool,
     },
-    /// Remove redundant mounts (rule-C violations) from a saved workspace
+
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -247,13 +213,12 @@ Examples:
   jackin workspace prune my-app --yes"
     )]
     Prune {
-        /// Name of the workspace to prune
         name: String,
-        /// Skip the confirmation prompt
+
         #[arg(long = "yes", short = 'y', default_value_t = false)]
         assume_yes: bool,
     },
-    /// Delete a saved workspace
+
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -261,25 +226,17 @@ Examples:
 Examples:
   jackin workspace remove my-app"
     )]
-    Remove {
-        /// Name of the workspace to delete
-        name: String,
-    },
-    /// Manage operator env vars at workspace and workspace-role scope
+    Remove { name: String },
+
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(WorkspaceEnvCommand),
-    /// Assign accounts and choose agent defaults for this workspace
+
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Account(super::account::WorkspaceAccountCommand),
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum WorkspaceEnvCommand {
-    /// Set an env var at workspace or workspace-role scope
-    ///
-    /// Without `--role`, scopes the env var to the whole workspace. With
-    /// `--role <SELECTOR>`, narrows it to that role within the workspace.
-    /// The role selector is not pre-validated.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -291,28 +248,22 @@ Examples:
   jackin workspace env set prod OP_TOKEN \"op://Work/svc/credential\" --on-demand"
     )]
     Set {
-        /// Workspace name
         workspace: String,
-        /// Env var name (stored verbatim; no POSIX validation)
+
         key: String,
-        /// Env var value (use `op://...`, `$VAR`, `${VAR}`, or literal)
+
         value: String,
-        /// Apply to a specific role inside this workspace
+
         #[arg(long)]
         role: Option<String>,
-        /// Attach a comment to the key (recorded alongside the value)
+
         #[arg(long)]
         comment: Option<String>,
-        /// Inject on demand at `jackin-exec` time instead of at launch. The
-        /// value is never resolved during launch; the agent asks for it and
-        /// the operator approves each use.
+
         #[arg(long = "on-demand")]
         on_demand: bool,
     },
-    /// Unset an env var at workspace or workspace-role scope
-    ///
-    /// Idempotent: if the key is not present, prints "KEY not set." and
-    /// exits 0 without saving the config.
+
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -322,15 +273,14 @@ Examples:
   jackin workspace env unset prod OPENAI_KEY --role agent-smith"
     )]
     Unset {
-        /// Workspace name
         workspace: String,
-        /// Env var name to remove
+
         key: String,
-        /// Unset from a specific role inside this workspace
+
         #[arg(long)]
         role: Option<String>,
     },
-    /// List env vars at workspace or workspace-role scope
+
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -340,9 +290,8 @@ Examples:
   jackin workspace env list prod --role agent-smith"
     )]
     List {
-        /// Workspace name
         workspace: String,
-        /// List vars for a specific role inside this workspace
+
         #[arg(long)]
         role: Option<String>,
     },

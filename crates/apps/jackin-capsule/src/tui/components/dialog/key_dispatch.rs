@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Top-level dialog key dispatch across all modal variants.
 
 use super::github_context::GithubContextView;
 use super::input::{exec_picker_handle_key, export_file_handle_key, rename_tab_handle_key};
@@ -10,10 +9,6 @@ use crate::tui::keymap::READ_ONLY_DISMISS_KEYMAP;
 use crate::tui::keymap::raw_bytes_to_chord;
 
 impl Dialog {
-    /// Mutable body-scroll state for the read-only info dialogs whose content
-    /// can overflow (`ContainerInfo`, `GitHubContext`). `None` for dialogs that do
-    /// not scroll. Lets the daemon route mouse-wheel events to the dialog body.
-    /// Handle a raw key byte and return the resulting action.
     #[expect(
         clippy::too_many_lines,
         reason = "Dialog key-event dispatcher with one arm per key binding. \
@@ -30,15 +25,10 @@ impl Dialog {
         key: &[u8],
         github: Option<&GithubContextView<'_>>,
     ) -> DialogAction {
-        // Text-input dialog has its own dismissal / editing rules and
-        // must intercept keys before the arrow-key + dismiss-key
-        // shortcuts below would steal them (e.g. `q` is a legal
-        // character inside a custom tab name).
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
-        // The exec credential picker is multi-select (Space toggles), so it
-        // intercepts keys before the shared single-select arrow/dismiss logic.
+
         if let Self::ExecPicker(state) = self {
             return exec_picker_handle_key(state, key);
         }
@@ -58,12 +48,7 @@ impl Dialog {
                 DialogAction::Redraw
             };
         }
-        // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
-        // dismiss keys close, Enter copies the dialog's value to the
-        // operator's clipboard with the `copied` flag flipped to true
-        // so the next render's check affordance confirms the OSC 52
-        // fired. The dialog stays open until dismissed so the feedback
-        // is actually visible.
+
         if matches!(self, Self::Usage { .. }) {
             if matches!(key, b"r" | b"R") {
                 return DialogAction::RefreshUsage;
@@ -139,9 +124,7 @@ impl Dialog {
             {
                 return DialogAction::Dismiss;
             }
-            // Scroll the read-only body (offsets clamp at render time): Up/Down +
-            // k/j vertical, Left/Right + h/l horizontal. The shared state is
-            // rebuilt each frame, so the offset lives on the dialog enum.
+
             let body_scroll = match self {
                 Self::ContainerInfo { scroll, .. } | Self::GitHubContext { scroll, .. } => {
                     Some(scroll)
@@ -162,8 +145,6 @@ impl Dialog {
             }
             return match key {
                 b"\r" | b"\n" => {
-                    // ContainerInfo: Enter copies the shared default copy
-                    // target. Mouse clicks copy whichever row was clicked.
                     if let Some((row, payload)) = self
                         .container_info_state()
                         .and_then(|state| state.keyboard_copy_payload())
@@ -227,13 +208,7 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
-        // Coalesced typing (scripted input, paste, batched PTY reads)
-        // arrives as one multi-byte `Data` chunk — the input parser
-        // coalesces contiguous plain bytes. Dispatch an ESC-free chunk
-        // byte-by-byte in order so filter-then-confirm (`b"split\r"`)
-        // works as one write; the first substantive action wins and
-        // stops the scan. Chunks holding ESC keep the legacy
-        // whole-chunk dispatch so escape sequences stay atomic.
+
         if key.len() > 1 && !key.contains(&0x1B) {
             let mut result = DialogAction::Redraw;
             for byte in key {

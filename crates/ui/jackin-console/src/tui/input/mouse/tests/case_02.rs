@@ -5,8 +5,6 @@ use super::*;
 
 #[test]
 fn drag_ignored_on_non_list_stage() {
-    // While in the Editor (or any non-List stage), mouse events are
-    // ignored outright — no seam to drag.
     let mut state = list_state();
     let ws = WorkspaceConfig {
         workdir: "/w".into(),
@@ -28,11 +26,8 @@ fn drag_ignored_on_non_list_stage() {
 
 #[test]
 fn drag_ignored_when_terminal_too_narrow() {
-    // Terminals narrower than MIN_DRAGGABLE_WIDTH skip hit-testing
-    // entirely — below that the clamp bounds already leave the right
-    // pane implausibly small.
     let mut state = list_state();
-    // 30-col terminal is below the 40-col threshold.
+
     handle_mouse(
         &mut state,
         mouse(MouseEventKind::Down(MouseButton::Left), 13),
@@ -101,9 +96,6 @@ fn mouse_down_on_editor_tab_selects_tab() {
     };
     state.stage = ManagerStage::Editor(EditorState::new_edit("x".into(), ws));
 
-    // Rendered tab spans start at x=0:
-    // " General " (0..9), space, " Mounts " (10..18), space,
-    // " Roles " (19..26), space, " Environments " (27..41).
     handle_mouse(&mut state, mouse_down_at(33, 3), term(100));
 
     let ManagerStage::Editor(editor) = state.stage else {
@@ -123,8 +115,6 @@ fn mouse_motion_sets_and_clears_editor_tab_hover() {
     };
     state.stage = ManagerStage::Editor(EditorState::new_edit("x".into(), ws));
 
-    // Motion inside " Roles " (cols 19..26 on the strip row) highlights the
-    // third cell without changing the active tab.
     handle_mouse(
         &mut state,
         mouse_kind_at(MouseEventKind::Moved, 22, 3),
@@ -137,7 +127,6 @@ fn mouse_motion_sets_and_clears_editor_tab_hover() {
     assert_eq!(editor.hover_target, Some(EditorHoverTarget::Tab(2)));
     assert_eq!(editor.active_tab, EditorTab::General);
 
-    // Motion off the strip (header row) clears the highlight.
     handle_mouse(
         &mut state,
         mouse_kind_at(MouseEventKind::Moved, 22, 0),
@@ -290,8 +279,6 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
     let repo = parent.join("repo");
     std::fs::create_dir_all(repo.join(".git")).unwrap();
 
-    // Build a FileBrowser at `parent`, select the repo, open git prompt,
-    // and inject a URL so the URL row renders.
     let mut fb = FileBrowserState::from_listing(crate::services::file_browser::listing_at(
         tmp.path().to_path_buf(),
         parent,
@@ -335,7 +322,7 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
         }
         other => panic!("expected OpenUrl effect, got {other:?}"),
     }
-    // No drag latched — URL click is consumed before the seam path.
+
     assert!(
         state.drag_state.is_none(),
         "URL click must not start a seam drag",
@@ -369,16 +356,13 @@ fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
     };
     state.stage = ManagerStage::CreatePrelude(prelude);
 
-    // Row 0 is well outside the URL row (17) and the modal entirely.
     handle_mouse(&mut state, mouse_down_at(60, 0), term_120x40());
-    // CreatePrelude is not the List stage, so the list-drag path is
-    // also inert — no drag latched regardless of the URL branch.
+
     assert!(state.drag_state.is_none());
 }
 
 #[test]
 fn click_on_first_row_sets_selected_to_zero() {
-    // y=3 = first list item (index 0, "Current directory").
     let mut state = list_state_with_saved(3);
     state.selected = 2;
     handle_mouse(&mut state, mouse_at(10, 3), term(100));
@@ -387,8 +371,6 @@ fn click_on_first_row_sets_selected_to_zero() {
 
 #[test]
 fn click_on_fifth_row_sets_selected_to_four() {
-    // y=7 = fifth list row (index 4). Needs enough saved workspaces
-    // to make index 4 a valid selection target.
     let mut state = list_state_with_saved(5);
     state.selected = 0;
     handle_mouse(&mut state, mouse_at(10, 7), term(100));

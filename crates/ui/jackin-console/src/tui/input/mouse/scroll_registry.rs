@@ -1,56 +1,35 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Per-event scroll-block registry (mouse parity matrix rows 4, 5, 6).
-//!
-//! Built fresh for every input event — the same recompute-per-event timing
-//! the hand-rolled wheel/drag lanes always used, so there is no frame cache
-//! and no staleness class. Entries are sourced from the existing pure
-//! geometry (`list_scroll_areas` / `SidebarScrollAreas`, `editor_scroll_area`,
-//! the settings content areas) and ordered in the screens' paint z-order:
-//! `InteractionScene::hit_test` picks the LAST registered region on overlap,
-//! so registration order is the z-order guarantee. Modal scroll blocks are
-//! absent by construction — the modal lanes precede the wheel arm in the
-//! dispatch chain (row 8); modal/prelude/confirm stages register nothing.
-//!
-//! The registry is additive infrastructure: the wheel arm keeps its current
-//! dispatch until the cutover step consumes `hit`.
-
 use ratatui::layout::Rect;
 
 use crate::tui::state::ManagerState;
 
-/// Stable identity of a wheel/drag-reachable scroll block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConsoleScrollBlock {
-    /// List stage, left names pane (horizontal-only scroll today).
     ListNames,
-    /// List stage sidebar: selected workspace mounts.
+
     ListWorkspaceMounts,
-    /// List stage sidebar: global mounts.
+
     ListGlobalMounts,
-    /// List stage sidebar: role-scoped global mounts.
+
     ListRoleGlobalMounts,
-    /// List stage sidebar: roles.
+
     ListRoles,
-    /// Editor stage: active tab content (both axes drive `tab_scroll`).
+
     EditorTabContent,
-    /// Editor stage, Mounts tab: workspace mounts block. Painted on top of
-    /// the tab content (registered later); the vertical axis still drives
-    /// `tab_scroll`, exactly as the pre-registry vertical lane did.
+
     EditorWorkspaceMounts,
-    /// Settings stage: Mounts tab content.
+
     SettingsMounts,
-    /// Settings stage: Environments tab content.
+
     SettingsEnv,
-    /// Settings stage: Trust tab content.
+
     SettingsTrust,
-    /// Settings stage: Auth tab content.
+
     SettingsAuth,
 }
 
-/// One registered scroll block: identity, painted rect, and content dims as
-/// the wheel/drag lanes measure them today.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScrollBlockRegion {
     pub id: ConsoleScrollBlock,
@@ -60,8 +39,6 @@ pub struct ScrollBlockRegion {
 }
 
 impl ScrollBlockRegion {
-    /// Upstream region view for hit-testing. Geometry is half-open
-    /// `Rect::contains` — identical to the consumer `point_in_rect` (row 6).
     #[must_use]
     pub const fn hit_region(&self) -> termrock::interaction::HitRegion<ConsoleScrollBlock> {
         termrock::interaction::HitRegion {
@@ -71,9 +48,6 @@ impl ScrollBlockRegion {
     }
 }
 
-/// Last-registered-wins hit test, mirroring `InteractionScene::hit_test`
-/// (`interaction/scene.rs` `.iter().rev()`); registration in paint z-order is
-/// what makes the topmost block win (row 4 compensation).
 #[must_use]
 pub fn hit(blocks: &[ScrollBlockRegion], col: u16, row: u16) -> Option<ConsoleScrollBlock> {
     let position = ratatui::layout::Position::new(col, row);
@@ -84,7 +58,6 @@ pub fn hit(blocks: &[ScrollBlockRegion], col: u16, row: u16) -> Option<ConsoleSc
         .map(|block| block.id)
 }
 
-/// Build the registry for the current stage in paint z-order.
 #[must_use]
 pub fn scroll_block_registry(
     state: &ManagerState<'_>,
@@ -122,11 +95,10 @@ fn list_blocks(
         id: ConsoleScrollBlock::ListNames,
         rect: names_area,
         content_w: crate::tui::layout::list::list_names_content_width(state, names_viewport),
-        // Horizontal-only block (row 12 axis rule): no vertical lane exists.
+
         content_h: 0,
     });
     if let Some(areas) = super::list_scroll_areas(state, term_size, config) {
-        // Sidebar paint order: workspace → global → role-global → roles.
         blocks.push(ScrollBlockRegion {
             id: ConsoleScrollBlock::ListWorkspaceMounts,
             rect: areas.workspace.area,
@@ -175,9 +147,7 @@ fn editor_blocks(
             id: ConsoleScrollBlock::EditorWorkspaceMounts,
             rect: mounts.area,
             content_w: mounts.content_width,
-            // The vertical lane on the Mounts tab scrolls `tab_scroll` with
-            // the tab content height — carried here so the cutover dispatch
-            // can read both axes' dims from the hit block.
+
             content_h: editor.tab_content_height,
         });
     }

@@ -1,18 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Session contract printer for the apple-container backend.
-//!
-//! [`print_session_contract`] prints the security-boundary summary
-//! shown to the operator before the interactive attach begins, so
-//! they see the isolation model and residual risks before the
-//! session starts.
-
 use jackin_runtime_apple_container_client::apple_container_client::AppleContainerMount;
 
-/// Print the session contract — the security boundary summary shown to the
-/// operator before the interactive attach begins, so they see the isolation
-/// model and residual risks before the session starts.
 #[expect(
     clippy::print_stderr,
     reason = "documented residual allow; prefer expect when site is lint-true"

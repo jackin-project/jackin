@@ -253,8 +253,6 @@ fn codex_configuration_model_override_routes_without_account_model() {
         Some("https://route.example/v1"),
     )];
 
-    // Empty here is intentional: the writer must preserve the effective
-    // ResolvedInstance model instead of silently falling back to the account.
     configure_with_models(temp.path(), &config, &instances, &BTreeMap::new()).unwrap();
     let contents =
         std::fs::read_to_string(temp.path().join("provider-config/home/.codex/config.toml"))

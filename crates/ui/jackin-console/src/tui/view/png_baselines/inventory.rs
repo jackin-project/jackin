@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Baseline inventory and comparison.
+
 #![cfg(test)]
 
 use super::*;
@@ -49,8 +49,6 @@ pub(crate) fn stage_views() -> Vec<BaselineCase> {
         case("keyboard-help", LIST, keyboard_help),
     ]
 }
-
-// ── Account cases ──
 
 pub(crate) fn account_cases() -> Vec<BaselineCase> {
     vec![
@@ -143,8 +141,6 @@ pub(crate) fn inventory() -> Vec<BaselineCase> {
     cases
 }
 
-/// Complete account-era corpus: 16 stage/overlay views, five account cases,
-/// four create-prelude wizard steps, and 18 `ConsoleModal` variants.
 pub(crate) const EXPECTED_INVENTORY: usize = 43;
 
 pub(crate) fn baselines_dir() -> PathBuf {
@@ -155,9 +151,6 @@ pub(crate) fn baseline_path(dir: &Path, id: &str) -> PathBuf {
     dir.join(format!("{id}.png"))
 }
 
-/// Compare-or-bless one case against `dir`. Returns `Err` with a message
-/// naming the screen on missing baseline or pixel drift. Bless mode writes
-/// the rendered PNG and returns `Ok`.
 pub(crate) fn check_case(
     case: &BaselineCase,
     dir: &Path,

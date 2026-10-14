@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `update`.
-
 use super::{
     ActionFramePlan, DialogActionFramePlan, HoverFramePlan, action_frame_plan,
     dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,

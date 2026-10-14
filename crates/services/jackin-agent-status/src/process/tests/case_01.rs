@@ -322,8 +322,6 @@ fn foreground_agent_fixture_reports_unknown_shell_handoff() {
 
 #[test]
 fn foreground_agent_fixture_rejects_missing_foreground_group() {
-    // tpgid <= 0 means no foreground group; the public entry point short-circuits
-    // before touching /proc, so the guard is testable from a fixture.
     let root = proc_info(100, 100, 0, Some("/bin/bash"), "bash", &["bash"]);
     assert_eq!(detect_foreground_agent(&root), ForegroundGroup::None);
 }

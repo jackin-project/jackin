@@ -1,5 +1,3 @@
-//! Rendering facade for the shared 1Password picker modal.
-
 use jackin_oppicker::TextInputState as OppickerTextInputState;
 use ratatui::text::Line;
 

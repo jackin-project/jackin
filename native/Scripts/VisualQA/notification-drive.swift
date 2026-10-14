@@ -1,4 +1,4 @@
-// Post a fixture-only distributed notification to the running native app.
+
 
 import Foundation
 

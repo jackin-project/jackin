@@ -1,15 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `MiniMax` PAYG balance parsing.
 
 use super::{MiniMaxBaseResponse, MiniMaxRegion};
 use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
 use jackin_usage_provider_core::bucket;
 use serde::Deserialize;
 
-/// PAYG balance (`GET {base}/account/query_balance`, `sk-api-*` keys only).
-/// Amounts are decimal strings; a balance is always shown with its region
-/// currency, never bare.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MiniMaxBalanceResponse {
     #[serde(rename = "base_resp")]
@@ -61,8 +57,7 @@ impl MiniMaxBalanceResponse {
                 parts.push(format!("{label} {amount}"));
             }
         }
-        // A balance is funds, not used-of-limit: amounts ride in labels only,
-        // never as mislabeled `Money` spend.
+
         vec![bucket(
             "Balance",
             self.available_amount
@@ -79,9 +74,6 @@ impl MiniMaxBalanceResponse {
     }
 }
 
-/// Parse a decimal balance string to minor units (exponent 2) without float
-/// rounding: `12.5` → `1250`, `-3.456` → `-345` (truncated, never rounded
-/// up across the owed boundary).
 pub(crate) fn minimax_decimal_minor(text: &str) -> Option<i64> {
     let text = text.trim();
     let (negative, digits) = match text.strip_prefix('-') {

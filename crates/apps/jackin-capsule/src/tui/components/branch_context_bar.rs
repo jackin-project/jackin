@@ -1,16 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Branch context bar component: renders the current git branch and
-//! ahead/behind counts in the capsule status bar.
-//!
-//! Not responsible for: fetching git state (caller provides `branch` and
-//! `PullRequestInfo`) or mouse-event dispatch.
-//!
-//! Key invariant: `BRANCH_CONTEXT_BAR_ROWS` is the exact row budget callers
-//! must reserve; rendering writes ANSI escape sequences directly into the
-//! caller-supplied `buf` using absolute cursor positions.
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -23,9 +13,6 @@ use crate::pull_request::PullRequestInfo;
 
 pub const BRANCH_CONTEXT_BAR_ROWS: u16 = 1;
 
-/// Half-open `[start, end)` column range. Constructor returns `None`
-/// when `end <= start` so the renderer / hit-tester can rely on
-/// `end > start` for every alive region without re-checking.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ColRange {
     pub(crate) start: u16,
@@ -85,8 +72,7 @@ pub(crate) fn branch_context_bar_layout(
     if term_rows == 0 || term_cols == 0 {
         return None;
     }
-    // `branch` is the post-filter visible branch. Trust the input here so
-    // renderer / layout / hit-test helpers stay default-branch-agnostic.
+
     let (context_left, left_clickable) = match (pull_request, branch) {
         (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         (None, Some(b)) if pull_request_loading => (format!(" Resolving PR · {b} "), true),
@@ -327,7 +313,7 @@ pub(crate) fn render_branch_context_bar(
         termrock::style::Role::StatusBar,
         white_bg.fg(jackin_tui::tokens::INK),
     );
-    // Head made the state's region storage private; hovered stays public.
+
     let mut state = StatusBarState::new();
     state.hovered = hovered;
     (&StatusBar::new(&left, &right, &theme)).render(area, buffer, &mut state);
@@ -347,7 +333,7 @@ pub(crate) enum BranchContextBarHit {
     Context,
     UsageStatus,
     Container,
-    /// Click on the debug run-id chip (only shown when `--debug` is active).
+
     DebugChip,
 }
 

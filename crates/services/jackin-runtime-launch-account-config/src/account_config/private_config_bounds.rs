@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Resource bounds for private provider configuration input and serialization.
-
 use std::fs::File;
 use std::io::Read as _;
 use std::time::{Duration, Instant};
@@ -26,9 +24,6 @@ pub(super) fn read(file: &mut File, name: &str, limit: usize) -> anyhow::Result<
     read_with_hook(file, name, limit, || Ok(()))
 }
 
-/// Stat limits sparse files before allocation; the bounded reader also catches
-/// growth after stat. Neither input size nor concurrent append can grow the
-/// number of bytes read beyond the configured limit plus one detection byte.
 pub(super) fn read_with_hook<F>(
     file: &mut File,
     name: &str,

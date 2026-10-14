@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `LaunchRuntime` input and runtime dispatch.
 
 use super::runtime_dispatch::{RuntimeDispatch, complete_docker_launch};
 use crate::runtime::launch::launch_pipeline::launch_phases::{

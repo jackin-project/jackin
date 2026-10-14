@@ -3,9 +3,6 @@
 
 use super::*;
 
-// Filesystem race fixture: must fail immediately (unwrap) if the expected
-// syscall boundary is absent. `allow-unwrap-in-tests` covers the lint;
-// no attribute needed here.
 pub(super) fn canonicalize_with_appearing_directory(
     ancestor: &Path,
     raced: &Path,
@@ -16,7 +13,7 @@ pub(super) fn canonicalize_with_appearing_directory(
         *retry_calls += 1;
         if *retry_calls == 1 {
             assert_eq!(result.as_ref().unwrap_err().kind(), io::ErrorKind::NotFound);
-            // Actual filesystem creation at the vulnerable syscall boundary.
+
             std::fs::create_dir(raced).unwrap();
         }
     }

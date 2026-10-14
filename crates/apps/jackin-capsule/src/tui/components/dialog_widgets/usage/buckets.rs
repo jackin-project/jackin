@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Quota-bucket sections with separators and full-width meter scaling.
 
 use super::{
     USAGE_METER_EMPTY, USAGE_METER_FILLED, usage_content_indent, usage_content_width,

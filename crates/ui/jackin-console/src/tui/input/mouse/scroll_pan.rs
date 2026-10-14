@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Per-panel wheel scrolling: wheel events on the focused active panel
-//! and the helper that re-derives the focused scroll-focus plan.
-
 use super::{
     ConsoleScrollBlock, EditorTab, LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, ManagerMessage,
     ManagerStage, ManagerState, MouseEvent, Rect, dispatch_manager, editor_scroll_area,
@@ -23,7 +20,6 @@ pub fn update_scroll_focus(
 ) {
     match &mut state.stage {
         ManagerStage::List => {
-            // Determine whether the click is in the left pane.
             let seam_x = split_seam_column(state.list_split_pct, term_size.width);
             let left_pane_area = Rect {
                 x: 0,
@@ -97,8 +93,7 @@ pub fn update_scroll_focus(
                 )
             };
             editor.apply_scroll_focus_plan(plan);
-            // Clicking the content block transfers interaction focus into it —
-            // same as Tab/↓ — so the green border and ▸ appear in the same frame.
+
             let clicked_content =
                 plan.workspace_mounts_scroll_focused || plan.tab_content_scroll_focused;
             if clicked_content && editor.tab_bar_focused() {
@@ -114,8 +109,7 @@ pub fn update_scroll_focus(
             };
             let plan = settings_scroll_focus_plan(settings.active_tab, modal_open, in_content);
             settings.apply_scroll_focus_plan(plan);
-            // Clicking the content block transfers interaction focus into it —
-            // same as Tab/↓ — so the green border and ▸ appear in the same frame.
+
             if in_content && settings.tab_bar_focused() {
                 settings.apply_tab_bar_focus_plan(settings_tab_bar_focus_plan(false));
             }
@@ -135,12 +129,6 @@ pub fn settings_modal_open(settings: &crate::tui::state::SettingsState<'_>) -> b
     )
 }
 
-/// Wheel dispatch through the per-event scroll-block registry (matrix rows
-/// 3, 4, 12): hit-test the pointer against the paint-z-ordered blocks, run
-/// the stage's focus side effect, then apply the delta to the hit block's
-/// `ScrollAreaState` via the dims-plumbing idiom. Returns the upstream
-/// outcome so the caller can fire the Shift-fallback vertical retry on
-/// `ScrollOutcome::Ignored` (row 3 — upstream never retries vertical).
 pub fn dispatch_wheel(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -149,7 +137,6 @@ pub fn dispatch_wheel(
     dy: i16,
     dx: i16,
 ) -> ScrollOutcome {
-    // Modal guards (row 13) hold their place before any block resolves.
     match &state.stage {
         ManagerStage::List if state.list_modal.is_some() => return ScrollOutcome::Ignored,
         ManagerStage::Editor(editor) if editor.modal.is_some() => return ScrollOutcome::Ignored,
@@ -164,8 +151,6 @@ pub fn dispatch_wheel(
 
     match &mut state.stage {
         ManagerStage::List => {
-            // Row 4: scroll focus re-derives from the pointer on every wheel
-            // event, before the offset moves.
             update_scroll_focus(state, mouse, term_size, config);
             let Some(id) = hit_id else {
                 return ScrollOutcome::Ignored;
@@ -176,8 +161,6 @@ pub fn dispatch_wheel(
             let region = *region;
             let scroll = match id {
                 ConsoleScrollBlock::ListNames => {
-                    // Horizontal-only block (row 12): vertical wheel never
-                    // moves the names pane.
                     if dy != 0 {
                         return ScrollOutcome::Ignored;
                     }
@@ -202,9 +185,6 @@ pub fn dispatch_wheel(
         }
         ManagerStage::Editor(editor) => {
             if dx != 0 {
-                // Row 4: horizontal wheel applies the same focus plan the
-                // pre-registry lane did, and scrolls only when the plan
-                // grants the block focus.
                 let in_scrollable = if editor.active_tab == EditorTab::Mounts {
                     let area = editor_scroll_area(editor, term_size);
                     point_in_rect(mouse.column, mouse.row, area.area)
@@ -247,8 +227,6 @@ pub fn dispatch_wheel(
                 ),
                 ConsoleScrollBlock::EditorWorkspaceMounts => {
                     if dy != 0 {
-                        // Mounts-tab vertical wheel drives the tab content
-                        // offset, exactly as the pre-registry lane did.
                         scroll_block_by(
                             &mut editor.tab_scroll,
                             region.rect,
@@ -272,7 +250,6 @@ pub fn dispatch_wheel(
             }
         }
         ManagerStage::Settings(settings) => {
-            // Settings wheel sets no focus (row 4: side-effect-free stage).
             let Some(id) = hit_id else {
                 return ScrollOutcome::Ignored;
             };

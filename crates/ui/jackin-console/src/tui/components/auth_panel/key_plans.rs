@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Auth-form key plans and focus chain.
 
 use super::AuthFormKeyPlan;
 
@@ -18,10 +17,6 @@ pub fn auth_form_key_plan(
     auth_form_key_plan_with_source_folder(focus, key, false, shows_credential_block, can_save)
 }
 
-/// The auth form's focus fields in cycle order (the recipe's focus routing):
-/// mode switch, then the optional source-folder and credential rows, then the
-/// action row Save → Cancel → Reset. Fields hidden by the active auth mode
-/// drop out of the chain, so walking it never lands on an invisible row.
 #[must_use]
 pub fn auth_form_focus_chain(
     shows_source_folder: bool,
@@ -43,7 +38,6 @@ pub fn auth_form_focus_chain(
     chain
 }
 
-/// Step along the focus chain, wrapping at both ends.
 #[must_use]
 pub(crate) fn auth_form_focus_step(
     chain: &[AuthFormFocus],

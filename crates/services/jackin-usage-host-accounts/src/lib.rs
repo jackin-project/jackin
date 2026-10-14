@@ -1,14 +1,3 @@
-//! jackin-usage-host-accounts: canonical host account inventory.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`materialize_account_catalog`] — catalog materialization.
-//!
-//! Canonical, multi-source account inventory for the host runtime.
-//! Durable reads and current-membership evidence arrive through the
-//! [`AccountCatalogStores`] / [`AccountMembershipDescriptor`] seams,
-//! implemented once by the T4 host: the snapshot store is a same-tier
-//! sibling and membership descriptors are T4 discovery types.
-
 mod catalog;
 mod identity;
 mod lifecycle;

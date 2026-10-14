@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Dedicated terminal-input owner for the launch rich surface.
-
 use std::io::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -161,9 +159,7 @@ pub(super) fn write_forced_terminal_restore<W: std::io::Write>(out: &mut W) -> s
         termrock::osc::PointerShape::Default,
     ))?;
     disable_mouse_capture(out)?;
-    // Defensive teardown for modes used by hosted agent UIs. The launch
-    // surface does not enable all of them, but a hard process exit must leave
-    // the operator's terminal cooked even when it interrupts a transition.
+
     out.write_all(b"\x1b[?1004l\x1b[?2004l\x1b[?25h")?;
     out.flush()
 }

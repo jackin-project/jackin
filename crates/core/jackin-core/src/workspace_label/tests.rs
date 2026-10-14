@@ -1,4 +1,3 @@
-//! Tests for `workspace_label`.
 use super::*;
 use crate::WorkspaceName;
 

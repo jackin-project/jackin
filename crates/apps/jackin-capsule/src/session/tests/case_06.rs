@@ -175,7 +175,6 @@ fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
     );
     assert_eq!(env("JACKIN_AGENT"), Some("claude"));
 
-    // A codex pane never inherits another runtime's folder var either.
     let spec = AgentSpawnSpec {
         agent: "codex",
         instance: "codex-work",
@@ -201,9 +200,6 @@ fn secondary_instance_gets_its_own_home_and_forwarded_dir() {
 
 #[test]
 fn agent_home_matches_folder_var_target_for_parent_and_xdg_kinds() {
-    // `HOME` echoes the instance home (the folder-var target) for every
-    // folder-var kind — not just `Dir`. Values pinned by the slot-layout
-    // tests; the spawn layer must carry them through unchanged.
     for (agent, home_dir, folder_var) in [
         ("gemini", "/home/agent", "GEMINI_CLI_HOME"),
         ("amp", "/home/agent/.local/share", "XDG_DATA_HOME"),

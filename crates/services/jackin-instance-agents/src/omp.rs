@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! OMP snapshot credential provisioning.
 
 use jackin_instance_credentials::AuthProvisionOutcome;
 
@@ -16,9 +15,6 @@ use crate::{provision_single_blob_credential, provision_single_blob_credential_f
 use jackin_instance_credentials::auth_directory;
 use zeroize::Zeroizing;
 
-/// Provision omp's host-side `~/.omp/agent/agent.db` (`SQLite`) per the
-/// chosen mode. Byte-oriented twin of `provision_grok_auth`: the store
-/// is binary, so the UTF-8 provisioner cannot be used.
 pub fn provision_omp_auth(
     agent_db: &Path,
     mode: AuthForwardMode,
@@ -113,9 +109,6 @@ pub(crate) fn select_omp_snapshot_account<'a>(
     provider: Option<AiProvider>,
     selector: Option<&ProfileSelector>,
 ) -> anyhow::Result<OmpSelectedAccount<'a>> {
-    // The current launch contract copies the whole OMP database. Until a
-    // selected-row-only SQLite image is supported, more than one usable row
-    // would expose a sibling account to the role and is therefore unavailable.
     if snapshot.accounts().len() != 1 {
         anyhow::bail!("OMP account selection is missing or ambiguous");
     }
@@ -141,7 +134,6 @@ pub(crate) fn capture_omp_snapshot_bytes(
     Ok(bytes)
 }
 
-/// Bounded fallback for platforms without descriptor-relative Unix traversal.
 #[cfg(not(unix))]
 pub fn capture_omp_database_snapshot_from_paths(
     source_dir: &Path,

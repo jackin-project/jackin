@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the parent module.
 #[test]
 fn kimi_token_reader_parses_wire_jsonl() {
     let line = r#"{"token_usage":{"input_other":500,"output":200,"input_cache_read":100,"input_cache_creation":50}}"#;

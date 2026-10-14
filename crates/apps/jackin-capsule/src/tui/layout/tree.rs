@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Pane-tree structure, leaf queries, splits, removal, and focus moves.
 
 use super::{Direction, Rect, SplitPosition, ratio_to_cells};
 
@@ -20,13 +19,6 @@ pub enum PaneTree {
 }
 
 impl PaneTree {
-    /// Walk the tree and return `(session_id, rect)` for every leaf.
-    /// Each leaf's rect is the **outer** rectangle the pane occupies,
-    /// including the cells the renderer paints its border on when
-    /// the tab has more than one pane. The renderer subtracts a
-    /// one-cell inset before laying out the agent's content.
-    /// Adjacent panes share no gap — their borders sit immediately
-    /// next to each other, matching zellij's `││` interior look.
     #[must_use]
     pub fn leaves(&self, rect: Rect) -> Vec<(u64, Rect)> {
         match self {
@@ -56,10 +48,6 @@ impl PaneTree {
         }
     }
 
-    /// Replace the leaf with `old_id` with an `HSplit`. `position`
-    /// controls whether `new_id` lands on the left or right of
-    /// `old_id`. Recurses into existing splits so nested layouts
-    /// still find the target leaf.
     pub fn split_h(&mut self, old_id: u64, new_id: u64, position: SplitPosition) -> bool {
         match self {
             Self::Leaf(id) if *id == old_id => {
@@ -84,8 +72,6 @@ impl PaneTree {
         }
     }
 
-    /// Replace the leaf with `old_id` with a `VSplit`. `position`
-    /// controls whether `new_id` lands above or below `old_id`.
     pub fn split_v(&mut self, old_id: u64, new_id: u64, position: SplitPosition) -> bool {
         match self {
             Self::Leaf(id) if *id == old_id => {
@@ -110,12 +96,6 @@ impl PaneTree {
         }
     }
 
-    /// When the removed leaf is a direct child of the **root** split,
-    /// `remove_inner` returns `Some(sibling)` because there is no
-    /// parent to splice the surviving subtree into. Apply that
-    /// replacement here so the root is replaced with the sibling
-    /// instead of remaining as `Self::Leaf(0)` (the sentinel value
-    /// the inner removal uses for the swapped-out child).
     pub fn remove(&mut self, id: u64) -> bool {
         let (found, replacement) = self.remove_inner(id);
         if let Some(sibling) = replacement {
@@ -194,7 +174,6 @@ impl PaneTree {
         }
     }
 
-    /// Find the leaf ID adjacent in direction from `from_id`, or None.
     #[must_use]
     pub fn adjacent(&self, rect: Rect, from_id: u64, dir: Direction) -> Option<u64> {
         let leaves = self.leaves(rect);
@@ -241,7 +220,6 @@ impl PaneTree {
         }
     }
 
-    /// Number of leaf panes, without allocating an id vector.
     #[must_use]
     pub fn leaf_count(&self) -> usize {
         match self {

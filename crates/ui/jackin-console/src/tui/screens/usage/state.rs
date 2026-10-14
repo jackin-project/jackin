@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage screen state and constructors.
 
 use super::{
     UsageAccount, UsageFilter, UsageMetricGroup, UsageRefreshOutcome, UsageSort, UsageWindow,
@@ -17,7 +16,7 @@ use crate::tui::runtime::BlockingSubscription;
 #[derive(Debug, Default)]
 pub struct UsageScreenState {
     pub accounts: Vec<UsageAccount>,
-    /// Complete broker publication retained through startup, refresh, and navigation.
+
     pub canonical_projection: Option<jackin_protocol::usage_broker::UsageProjectionV1>,
     pub selected: usize,
     pub selected_id: Option<String>,
@@ -27,7 +26,7 @@ pub struct UsageScreenState {
     pub scroll: u16,
     pub notice: Option<String>,
     pub generated_at_epoch: Option<i64>,
-    /// Sanitized projection-scoped issues from the latest publication.
+
     pub projection_issues: Vec<UsageIssueV1>,
     pub refresh_due: bool,
     pub force_refresh_pending: bool,
@@ -36,10 +35,6 @@ pub struct UsageScreenState {
     pub refresh_rx: Option<Box<BlockingSubscription<(u64, UsageRefreshOutcome)>>>,
 }
 
-// Manual impls: the in-flight refresh handle carries no value identity.
-// Cloning drops it (the worker result is then discarded); equality ignores
-// it so tests can compare screen snapshots while a refresh runs. The
-// generation counter is value state and survives both.
 impl Clone for UsageScreenState {
     fn clone(&self) -> Self {
         Self {
@@ -86,19 +81,12 @@ impl PartialEq for UsageScreenState {
 impl Eq for UsageScreenState {}
 
 impl UsageScreenState {
-    /// Open the route over a cached snapshot and mark a refresh due so the
-    /// first broker read lands right after open. Selection starts at
-    /// Overview; refreshes re-anchor by stable id from there.
     #[must_use]
     pub fn open_with_snapshot(mut snapshot: Self) -> Self {
         snapshot.refresh_due = true;
         snapshot
     }
 
-    /// Project the Rust-owned canonical publication into Console rows.
-    ///
-    /// The Console owns only layout. Provider/account identity, lifecycle,
-    /// ordering, and quota labels remain in the protocol projection.
     pub fn from_projection(projection: &jackin_protocol::usage_broker::UsageProjectionV1) -> Self {
         let mut accounts = Vec::new();
         for provider in &projection.providers {

@@ -255,9 +255,6 @@ fn line_has_provider_route(line: &str, symbol: &str) -> bool {
             return true;
         }
 
-        // A function item can be supplied as any positional argument to an
-        // adapter dispatch call. Imports use brace trees, so these punctuation
-        // boundaries do not turn an unused import into an execution route.
         let previous = line[..start].trim_end().chars().next_back();
         if matches!(previous, Some('(' | ','))
             && matches!(next, Some(',' | ')'))

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Background events and instance actions.
 
 #[derive(Debug)]
 pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationCleanup, ConfigSave> {
@@ -48,8 +47,7 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Selection> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsoleInstanceAction<Agent> {
     Reconnect,
-    /// Reconnect and ask the in-container daemon to focus this pane
-    /// (`session_id`) before forwarding output.
+
     ReconnectFocus(u64),
     NewSession,
     NewSessionWithAgent(Agent),
@@ -60,7 +58,6 @@ pub enum ConsoleInstanceAction<Agent> {
 }
 
 impl<Agent> ConsoleInstanceAction<Agent> {
-    /// Actions that do not replace the TUI with another foreground process.
     pub fn runs_in_place(self) -> bool {
         matches!(self, Self::Stop | Self::Purge)
     }
@@ -89,13 +86,13 @@ pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Selection> {
         container: String,
         action: ConsoleInstanceAction<Agent>,
     },
-    /// Operator selected an agent and a provider in the console picker.
+
     NewSessionWithAccount {
         container: String,
         agent: Agent,
         instance_id: String,
     },
-    /// Initial launch with a provider selected before the container exists.
+
     LaunchWithAccount {
         selector: RoleSelector,
         workspace: Workspace,

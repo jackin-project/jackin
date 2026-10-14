@@ -1,10 +1,3 @@
-//! GitHub-kind auth-form integration tests for the manager TUI.
-//!
-//! Extracted from `manager_flow.rs` to keep each test binary under the
-//! 1500-line file-size cap. Covers the GitHub token save path, the
-//! role-header github override clear, and the picker filter for
-//! roles that already carry a github override.
-
 use anyhow::Result;
 use jackin::console::adapter::state::AuthRow;
 use jackin::workspace::WorkspaceRoleOverride;
@@ -15,15 +8,6 @@ use tempfile::tempdir;
 
 use super::*;
 
-// ── GitHub auth-tab integration tests ────────────────────────────────
-//
-// End-to-end coverage of the new GitHub kind on the Auth tab.
-// Mirror-shape with `auth_form_save_persists_mode_and_credential_to_disk`
-// for Claude — open the form on the workspace × Github row, set mode =
-// token + a literal `GH_TOKEN`, commit, save, reload from disk, and
-// assert the persisted TOML carries BOTH the `[github]`
-// auth_forward = "token" block AND the `GH_TOKEN` env var on the
-// matching `[github.env]` block.
 #[test]
 fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()> {
     let temp = tempdir()?;
@@ -51,7 +35,6 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     ed.active_field = FieldFocus::Row(ws_github_idx);
     state.stage = ManagerStage::Editor(ed);
 
-    // Enter opens the auth-edit form on workspace × Github.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
         matches!(editor(&state).modal, Some(Modal::AuthForm { .. })),
@@ -59,8 +42,6 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         editor(&state).modal
     );
 
-    // Cycle mode: None → Sync → Token (two presses through the
-    // [Sync, Token, Ignore] cycle).
     handle_key(
         &mut state,
         &mut config,
@@ -75,7 +56,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         cwd,
         key(KeyCode::Char(' ')),
     )?;
-    // Tab → credential row, Enter → source picker, Enter → plain text.
+
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
@@ -99,8 +80,6 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         "auth-form save must close the modal"
     );
 
-    // pending.github reflects Token + GH_TOKEN landed on the github
-    // env block (NOT the regular workspace env).
     let pending = &editor(&state).pending;
     let github = pending
         .github
@@ -121,8 +100,6 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         "GH_TOKEN must not leak into the regular workspace env map"
     );
 
-    // Save the editor: `s` opens ConfirmSave; Tab moves Cancel -> Save,
-    // Enter commits and returns to List.
     handle_key(
         &mut state,
         &mut config,
@@ -130,15 +107,14 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         cwd,
         key(KeyCode::Char('s')),
     )?;
-    // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
+
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-    // Enter moves state to PendingCommit; flush the queued write to disk.
+
     mark_pending_save_drift_checked_for_test(&mut state);
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
     wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 
-    // Reload AppConfig from disk and assert the round-trip.
     let reloaded = AppConfig::load_or_init(&paths)?;
     let ws_on_disk = reloaded
         .workspaces
@@ -161,15 +137,12 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         jackin_core::EnvValue::Extended(e) => assert_eq!(e.value, "ghp_round_trip"),
         jackin_core::EnvValue::OpRef(_) => panic!("expected literal credential"),
     }
-    // GH_TOKEN must NOT leak into the regular workspace env map after
-    // reload (the kind-scoped layer is the only place it should live).
+
     assert!(
         !ws_on_disk.env.contains_key("GH_TOKEN"),
         "GH_TOKEN must not appear in [env]; only in [github.env]"
     );
 
-    // Belt-and-braces: read the raw workspace TOML and confirm the
-    // literal text landed on `[github]` / `[github.env]`, not `[env]`.
     let toml = std::fs::read_to_string(paths.workspaces_dir.join("big-monorepo.toml"))?;
     assert!(
         toml.contains("[github]"),
@@ -186,10 +159,6 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     Ok(())
 }
 
-/// `D` on a Github `RoleMode` clears the role's
-/// `[roles.<role>.github]` override end-to-end through
-/// the input dispatcher (in addition to the unit-level coverage in
-/// `src/console/manager/input/auth.rs`).
 #[test]
 fn github_role_mode_d_clears_github_role_override() -> Result<()> {
     let temp = tempdir()?;
@@ -239,7 +208,6 @@ fn github_role_mode_d_clears_github_role_override() -> Result<()> {
     Ok(())
 }
 
-/// Role auth rows are always available, including roles with existing overrides.
 #[test]
 fn github_role_override_opens_directly_from_role_row() -> Result<()> {
     let temp = tempdir()?;

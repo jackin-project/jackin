@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Reconnect-or-create session flows with focus and lease variants.
 
 use anyhow::Context as _;
 use jackin_core::container_paths;
@@ -163,8 +162,7 @@ pub(crate) async fn reconnect_or_create_session_with_container_handle_with_lease
             "operator detached from capsule session",
         );
     }
-    // The capsule has detached; re-claim the alt screen before any post-attach
-    // work so the exit flow does not flash the operator's shell.
+
     jackin_diagnostics::reassert_alt_screen();
     admission_lease
         .ensure_current(paths)

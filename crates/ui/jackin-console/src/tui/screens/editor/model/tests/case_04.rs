@@ -366,7 +366,6 @@ fn trparity_editor_focus_owner_survives_modal_commit() {
     editor.open_sub_modal(TestStatusModal::Status);
     editor.open_sub_modal(TestStatusModal::Other);
 
-    // Commit path: clear the whole chain.
     editor.clear_modal_chain();
     assert!(editor.modal.is_none());
     assert!(!editor.has_modal_parent());
@@ -375,7 +374,6 @@ fn trparity_editor_focus_owner_survives_modal_commit() {
         ConsoleFocusTarget::Content(EditorFocusTarget::WorkspaceMounts)
     );
 
-    // Pop path from a two-level chain restores the parent modal, focus unchanged.
     editor.open_sub_modal(TestStatusModal::Status);
     editor.open_sub_modal(TestStatusModal::Other);
     editor.pop_modal_chain();

@@ -208,7 +208,6 @@ fn workspace_list_names_render_plan_derives_viewport_and_follow_scroll() {
 fn workspace_list_names_window_matches_literal_visible_indices() {
     let plan_at = |selected_index: usize, scroll_y: u16| {
         workspace_list_names_render_plan(WorkspaceListNamesRenderFacts {
-            // height 12 -> viewport_h 10 over 20 rows.
             area: Rect::new(0, 0, 30, 12),
             selected_index,
             row_count: 20,
@@ -218,21 +217,18 @@ fn workspace_list_names_window_matches_literal_visible_indices() {
     };
     let last = |first: u16| usize::from(first) + 10 - 1;
 
-    // Cursor inside the stored window: offset kept (rows 4..=13).
     let first = plan_at(8, 4);
     assert_eq!((first, last(first)), (4, 13));
-    // Cursor above the window: window jumps up to the cursor (rows 2..=11).
+
     let first = plan_at(2, 4);
     assert_eq!((first, last(first)), (2, 11));
-    // Cursor below the window: window scrolls to pin it at the bottom
-    // (rows 10..=19).
+
     let first = plan_at(19, 4);
     assert_eq!((first, last(first)), (10, 19));
-    // Stored offset beyond the max clamps to 10, then the cursor above it
-    // pulls the window up to the cursor (rows 8..=17).
+
     let first = plan_at(8, 60);
     assert_eq!((first, last(first)), (8, 17));
-    // Zero-height viewport: the upstream guard keeps the offset at 0.
+
     let plan = workspace_list_names_render_plan(WorkspaceListNamesRenderFacts {
         area: Rect::new(0, 0, 30, 2),
         selected_index: 8,

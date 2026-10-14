@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Projection publisher.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
@@ -14,14 +13,12 @@ use jackin_usage_coordinator::{
     FileProjectionStateStore, ProjectionStateEnvelope, UsageCoordinator,
 };
 
-/// Server-side incremental publisher. Cheap to clone; all state is shared.
 use super::{
     CatalogDiagnostics, apply_catalog_diagnostics, catalog_entries, catalog_revision_conflict,
     first_publisher_rollback_error, merge_views, preserve_publisher_error, projection_store_error,
     publisher_corrupt_state, publisher_unavailable, retain_revoked_accounts,
 };
 
-/// Server-side incremental publisher. Cheap to clone; all state is shared.
 #[derive(Debug, Clone)]
 pub struct ProjectionPublisher {
     coordinator: Arc<UsageCoordinator>,
@@ -30,8 +27,7 @@ pub struct ProjectionPublisher {
     known: Arc<Mutex<BTreeSet<UsageAccountCapability>>>,
     published: Arc<Mutex<BTreeMap<UsageAccountCapability, PublishedAccount>>>,
     catalog: Arc<Mutex<Option<BTreeMap<UsageAccountCapability, String>>>>,
-    /// Serializes catalog replacement with incremental publication and
-    /// observed-capability admission.
+
     catalog_lifecycle: Arc<Mutex<()>>,
     identity_metadata: BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
 }
@@ -43,8 +39,6 @@ pub(crate) struct PublishedAccount {
     has_snapshot: bool,
 }
 
-/// Canonical identity evidence captured by host discovery and carried into
-/// the Capsule-facing projection. A display label is not identity evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccountIdentityMetadata {
     pub identity_kind: UsageIdentityKindV1,
@@ -52,7 +46,6 @@ pub struct AccountIdentityMetadata {
 }
 
 impl ProjectionPublisher {
-    /// Attach a publisher to one broker-owned coordinator and projection.
     pub fn new(
         coordinator: Arc<UsageCoordinator>,
         projection: Arc<Mutex<UsageProjectionV1>>,
@@ -70,9 +63,6 @@ impl ProjectionPublisher {
         }
     }
 
-    /// Attach the last durable catalog. Existing materialized projection rows
-    /// are observed; newly admitted catalog members are not, so discovery
-    /// cannot expand the manifest/tab surface by itself.
     #[must_use]
     pub fn with_catalog(self, entries: impl IntoIterator<Item = UsageCatalogEntry>) -> Self {
         let catalog = entries
@@ -102,9 +92,6 @@ impl ProjectionPublisher {
         self
     }
 
-    /// Attach the immutable host-discovery identity evidence used by the
-    /// Capsule/FFI publication. Missing entries remain conservative fallback
-    /// rows for synthetic broker seams only.
     #[must_use]
     pub fn with_identity_metadata(
         mut self,
@@ -114,8 +101,6 @@ impl ProjectionPublisher {
         self
     }
 
-    /// Record one capability served by the broker. Only observed capabilities
-    /// are ever merged into a publication.
     pub fn observe(&self, capability: &UsageAccountCapability) {
         let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
             return;
@@ -130,7 +115,6 @@ impl ProjectionPublisher {
         }
     }
 
-    /// Capabilities observed so far, in settled order.
     pub fn known_capabilities(&self) -> Vec<UsageAccountCapability> {
         let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
             return Vec::new();
@@ -155,7 +139,6 @@ impl ProjectionPublisher {
         })
     }
 
-    /// Replace the broker catalog and publish the revocation transaction.
     pub fn reconcile_catalog(
         &self,
         catalog_revision: String,
@@ -165,10 +148,6 @@ impl ProjectionPublisher {
         self.reconcile_catalog_if_projection(None, catalog_revision, entries, now_epoch)
     }
 
-    /// Replace the catalog only when the caller still owns the observed
-    /// publication lease. Every shared lock is acquired before durable or
-    /// coordinator mutation; the old envelope is restored if coordinator
-    /// reconciliation fails.
     pub fn reconcile_catalog_if_projection(
         &self,
         expected_projection_id: Option<&str>,
@@ -185,9 +164,6 @@ impl ProjectionPublisher {
         )
     }
 
-    /// Replace the catalog and its scan diagnostics in one durable transaction.
-    /// Only catalog-derived issue codes are replaced; other issue records and
-    /// canonical account state remain intact.
     pub fn reconcile_catalog_if_projection_with_diagnostics(
         &self,
         expected_projection_id: Option<&str>,
@@ -292,8 +268,6 @@ impl ProjectionPublisher {
         Ok(next)
     }
 
-    /// Read one publication under the same boundary used for catalog
-    /// replacement and observed-capability admission.
     pub fn current_projection(&self) -> Result<UsageProjectionV1, UsageCoordinationError> {
         let _catalog_lifecycle = self
             .catalog_lifecycle
@@ -305,11 +279,6 @@ impl ProjectionPublisher {
             .map_err(|_| publisher_unavailable())
     }
 
-    /// Merge every observed account's latest state and publish when anything
-    /// advanced. Returns whether a new publication was stored.
-    ///
-    /// Each account is read independently: one unreadable account is skipped
-    /// without affecting the others.
     pub fn publish_due(&self, now_epoch: i64) -> bool {
         let Ok(_catalog_lifecycle) = self.catalog_lifecycle.lock() else {
             return false;
@@ -338,8 +307,7 @@ impl ProjectionPublisher {
                 phase: view.phase,
                 has_snapshot: view.snapshot.is_some(),
             };
-            // Older generations and resurrected activity never regress a
-            // publication; unchanged accounts publish nothing new.
+
             let stale = published.get(&view.capability).is_some_and(|previous| {
                 *previous == current
                     || previous.generation > current.generation

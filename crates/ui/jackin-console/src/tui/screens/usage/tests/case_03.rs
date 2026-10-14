@@ -110,8 +110,7 @@ fn render_full_route_narrow_and_wide() {
             text.contains("OpenAI · work"),
             "missing account header at {width}x{height}"
         );
-        // Narrow widths wrap the notice across rows; assert tokens there
-        // and the full string where it fits on one row.
+
         if width < 80 {
             assert!(
                 text.contains("unresolved"),
@@ -148,7 +147,7 @@ fn render_detail_account_shows_freshness_and_refreshing_indicator() {
         state.refresh_generation,
         Ok(snapshot(Vec::new(), None)),
     )));
-    // Keep in flight: poll nothing, render while pending.
+
     manager.usage.screen = Some(state);
 
     let backend = TestBackend::new(80, 25);
@@ -216,7 +215,6 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
 
     let (projection, epochs) = metric_group_projection_fixture();
 
-    // Projection -> state: every canonical field survives intact.
     let state = UsageScreenState::from_projection(&projection);
     assert_eq!(state.accounts.len(), 1);
     let account = &state.accounts[0];
@@ -276,7 +274,6 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     assert_eq!(plan.renews_at_epoch, Some(epochs.renews_at));
     assert_eq!(plan.meter_percent(), None);
 
-    // State -> rendered rows, detail view.
     use crate::tui::state::ManagerState;
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -298,7 +295,6 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     let detail = backend_text(&terminal);
     assert_detail_group_rows(&detail);
 
-    // State -> rendered rows, overview panel.
     manager.usage.screen = Some(UsageScreenState {
         accounts: state.accounts.clone(),
         projection_issues: state.projection_issues.clone(),

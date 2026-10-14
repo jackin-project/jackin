@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pure workspace validation helpers: isolation layout and workspace config.
-
 use crate::ConfigError;
 use jackin_core::{MountIsolation, WorkspaceName, container_paths};
 use std::io::ErrorKind;
@@ -10,11 +8,6 @@ use std::path::{Path, PathBuf};
 
 use crate::schema::{MountConfig, WorkspaceConfig, validate_mount_specs};
 
-/// Validate the isolation layout for a workspace's mounts.
-///
-/// Two rules enforced:
-/// 1. No nested isolated mounts (inner dst inside outer dst).
-/// 2. No same-host-repo worktree siblings (same src canonicalized).
 pub fn validate_isolation_layout(mounts: &[MountConfig]) -> crate::ConfigResult<()> {
     let isolated: Vec<(usize, &MountConfig, &str)> = mounts
         .iter()
@@ -55,13 +48,10 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> crate::ConfigResult<
     Ok(())
 }
 
-/// Validate a saved workspace: workdir, mounts, isolation, auth modes, roles.
 pub fn validate_workspace_config(
     name: &WorkspaceName,
     workspace: &WorkspaceConfig,
 ) -> crate::ConfigResult<()> {
-    // Use Debug of the stem string (not Debug of the newtype) so operator
-    // messages stay `workspace "foo"` rather than `WorkspaceName("foo")`.
     let name = name.as_str();
     if workspace.workdir.is_empty() {
         return Err(ConfigError::WorkdirRequired(name.to_owned()));
@@ -104,10 +94,6 @@ pub fn validate_workspace_config(
     Ok(())
 }
 
-/// Reject a workspace cwd that would make the capsule's recursive full-access
-/// Landlock grant cover capsule state or an admitted agent home. The host
-/// config boundary uses lexical normalization because these are container
-/// destinations, not paths in the host filesystem.
 fn validate_container_workdir_boundary(workdir: &str) -> crate::ConfigResult<PathBuf> {
     let normalized = container_paths::normalize_path(Path::new(workdir));
     if !normalized.is_absolute() {

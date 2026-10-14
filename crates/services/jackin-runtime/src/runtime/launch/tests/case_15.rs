@@ -118,17 +118,11 @@ async fn load_agent_skips_unused_github_env_resolution() {
 
 #[tokio::test]
 async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
-    // Regression for the adopted-prewarm-DinD leak: `adopt_prewarmed_dind_sidecar`
-    // takes over a *running* prewarmed DinD container/network/volume and deletes
-    // its on-disk state, so nothing re-adopts it. A fallible preflight after
-    // adoption (here Token-mode GitHub auth with no resolvable token) must tear
-    // those resources down rather than orphan a live privileged container.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-    // Token mode with an empty env => GH_TOKEN resolves to None =>
-    // `verify_github_token_present` fails, after adoption.
+
     config.github = Some(jackin_config::GithubAuthConfig {
         auth_forward: jackin_config::GithubAuthMode::Token,
         env: std::collections::BTreeMap::new(),
@@ -155,7 +149,6 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
         "0",
     );
 
-    // Seed a kept, running prewarmed DinD so the launch adopts it.
     let prewarm_dind = "jk-prewarm-b4-dind";
     let prewarm_net = "jk-prewarm-b4-net";
     let prewarm_certs = "jk-prewarm-b4-certs";
@@ -173,7 +166,7 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
     .unwrap();
 
     let docker = jackin_test_support::FakeDockerClient::default();
-    // Image-reuse path (no build needed to reach adoption).
+
     docker
         .list_image_tags_queue
         .borrow_mut()
@@ -186,9 +179,7 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
         .container_id_by_name
         .borrow_mut()
         .insert(prewarm_dind.to_owned(), "prewarm-b4-dind-id".to_owned());
-    // Adoption: pin the prewarmed dind to Running by name (the restore/claim
-    // inspects that run first hit the default NotFound), and give its network
-    // the prewarm labels so adoption accepts it.
+
     docker
         .inspect_state_by_name
         .borrow_mut()
@@ -251,17 +242,11 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
 
 #[tokio::test]
 async fn load_agent_dind_free_launch_preserves_available_prewarm() {
-    // Regression for the adopted-prewarm-DinD leak: `adopt_prewarmed_dind_sidecar`
-    // takes over a *running* prewarmed DinD container/network/volume and deletes
-    // its on-disk state, so nothing re-adopts it. A fallible preflight after
-    // adoption (here Token-mode GitHub auth with no resolvable token) must tear
-    // those resources down rather than orphan a live privileged container.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-    // Token mode with an empty env => GH_TOKEN resolves to None =>
-    // `verify_github_token_present` fails, after adoption.
+
     config.github = Some(jackin_config::GithubAuthConfig {
         auth_forward: jackin_config::GithubAuthMode::Token,
         env: std::collections::BTreeMap::new(),
@@ -288,7 +273,6 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
         "0",
     );
 
-    // Seed a kept, running prewarmed DinD so the launch adopts it.
     let prewarm_dind = "jk-prewarm-b4-dind";
     let prewarm_net = "jk-prewarm-b4-net";
     let prewarm_certs = "jk-prewarm-b4-certs";
@@ -306,7 +290,7 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
     .unwrap();
 
     let docker = jackin_test_support::FakeDockerClient::default();
-    // Image-reuse path (no build needed to reach adoption).
+
     docker
         .list_image_tags_queue
         .borrow_mut()
@@ -319,9 +303,7 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
         .container_id_by_name
         .borrow_mut()
         .insert(prewarm_dind.to_owned(), "prewarm-b4-dind-id".to_owned());
-    // Adoption: pin the prewarmed dind to Running by name (the restore/claim
-    // inspects that run first hit the default NotFound), and give its network
-    // the prewarm labels so adoption accepts it.
+
     docker
         .inspect_state_by_name
         .borrow_mut()

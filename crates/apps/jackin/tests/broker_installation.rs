@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Installed executable boundaries: passive reads stay passive, while explicit
-//! service startup reports a missing broker executable.
-
 use std::fs;
 use std::path::Path;
 use std::time::Duration;

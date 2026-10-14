@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ConfirmState` and rendering.
 
 use jackin_oppicker::ModalOutcome;
 use ratatui::{
@@ -95,8 +94,7 @@ impl ConfirmState {
         if let Some(value) = direct {
             return ModalOutcome::Commit(value);
         }
-        // Head TermRock leaves Tab/BackTab to the host; pre-bump the choice
-        // dialog cycled its own actions on them.
+
         match key.code {
             KeyCode::Tab => {
                 self.choice.select_next(&confirm_actions());

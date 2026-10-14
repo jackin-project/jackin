@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings confirm modal handling.
 
 use super::{
     SettingsModalOutcome, commit_add_scope_choice, commit_settings_confirm, commit_text,
@@ -134,12 +133,6 @@ pub fn handle_settings_confirm_modal(
         SettingsModal::MountScopePicker { mut state } => {
             match scope_picker_plan(state.handle_key(key)) {
                 ScopePickerPlan::AllAgents | ScopePickerPlan::SpecificAgent => {
-                    // Drop the picker before dispatching: commit_text
-                    // (AllAgents path) calls clear_modal_chain anyway, and
-                    // open_sub_modal (SpecificAgent → RolePicker) would
-                    // otherwise stash this already-committed picker as
-                    // the RolePicker's parent — Esc on RolePicker would
-                    // then resurrect a consumed ScopePicker.
                     let choice = state.focused;
                     outcome = commit_add_scope_choice(settings, choice);
                 }

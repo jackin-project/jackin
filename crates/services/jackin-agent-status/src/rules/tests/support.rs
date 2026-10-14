@@ -43,8 +43,7 @@ pub(super) fn fixture_for_detection(path: &Path) -> (Option<RawAgentState>, Vec<
     if forbidden.is_some() {
         rows.remove(0);
     }
-    // Drop `# provenance:` / other harness comments so goldens can document
-    // origin without poisoning screen matchers (plan 005).
+
     rows.retain(|line| !line.trim_start().starts_with('#'));
     (forbidden, rows)
 }

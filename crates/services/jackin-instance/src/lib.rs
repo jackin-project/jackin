@@ -1,13 +1,3 @@
-//! jackin-instance: instance naming, manifests, and lifecycle records.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`InstanceManifest`] — on-disk instance record.
-//!
-//! Auth provisioning lives in the sibling crates
-//! `jackin-instance-roles` (orchestration), `jackin-instance-agents`
-//! (per-agent provisioners), and `jackin-instance-credentials`
-//! (substrate); this crate re-exports their API for compatibility.
-
 pub mod manifest;
 pub mod naming;
 

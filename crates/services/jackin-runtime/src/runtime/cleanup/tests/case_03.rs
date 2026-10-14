@@ -15,7 +15,7 @@ async fn gc_removes_only_the_listed_sidecar_when_role_name_is_replaced() {
                 id: "old-dind-id".to_owned(),
                 labels,
             }],
-            vec![], // The role was absent when the sidecar was classified orphaned.
+            vec![],
         ])),
         list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         container_id_by_name: std::cell::RefCell::new(HashMap::from([(
@@ -50,20 +50,18 @@ async fn gc_skips_dind_when_agent_is_running() {
     labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-agent-smith".to_owned());
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([
-            // collect_labeled_dind: DinD sidecar present
             vec![ContainerRow {
                 name: "jk-agent-smith-dind".to_owned(),
                 id: "container-id".to_owned(),
                 labels: labels.clone(),
             }],
-            // list_role_names (running): role IS running — skip GC
             vec![ContainerRow {
                 name: "jk-agent-smith".to_owned(),
                 id: "container-id".to_owned(),
                 labels: HashMap::default(),
             }],
         ])),
-        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // gc_orphaned_networks: no networks
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         ..Default::default()
     };
 
@@ -84,20 +82,18 @@ async fn gc_skips_dind_when_agent_is_stopped() {
     labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-agent-smith".to_owned());
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([
-            // collect_labeled_dind: DinD sidecar present
             vec![ContainerRow {
                 name: "jk-agent-smith-dind".to_owned(),
                 id: "container-id".to_owned(),
                 labels: labels.clone(),
             }],
-            // list_role_names (including stopped): role container exists (stopped)
             vec![ContainerRow {
                 name: "jk-agent-smith".to_owned(),
                 id: "container-id".to_owned(),
                 labels: HashMap::default(),
             }],
         ])),
-        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // gc_orphaned_networks: no networks
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         ..Default::default()
     };
 
@@ -202,8 +198,8 @@ async fn gc_keeps_state_less_prewarm_dind_resources_without_identity() {
 #[tokio::test]
 async fn gc_does_nothing_when_no_orphans() {
     let docker = FakeDockerClient {
-        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // collect_labeled_dind: no DinD
-        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // gc_orphaned_networks: no networks
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         ..Default::default()
     };
 
@@ -223,18 +219,11 @@ async fn gc_removes_orphaned_network_without_dind() {
     let mut net_labels = HashMap::new();
     net_labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-agent-smith".to_owned());
     let docker = FakeDockerClient {
-        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
-            vec![], // collect_labeled_dind: no DinD sidecars
-            // list_role_names (running) for gc_orphaned_networks: role not running
-            vec![],
-        ])),
-        list_networks_queue: std::cell::RefCell::new(VecDeque::from([
-            // gc_orphaned_networks: has a network with jackin.role label
-            vec![NetworkRow {
-                name: "jk-agent-smith-net".to_owned(),
-                labels: net_labels,
-            }],
-        ])),
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![], vec![]])),
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![NetworkRow {
+            name: "jk-agent-smith-net".to_owned(),
+            labels: net_labels,
+        }]])),
         ..Default::default()
     };
 
@@ -255,21 +244,17 @@ async fn gc_preserves_network_when_role_container_is_stopped() {
     net_labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-agent-smith".to_owned());
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([
-            vec![], // collect_labeled_dind: no DinD sidecars
-            // list_role_names (including stopped): role container exists (stopped)
+            vec![],
             vec![ContainerRow {
                 name: "jk-agent-smith".to_owned(),
                 id: "container-id".to_owned(),
                 labels: HashMap::default(),
             }],
         ])),
-        list_networks_queue: std::cell::RefCell::new(VecDeque::from([
-            // gc_orphaned_networks: has a network with jackin.role label
-            vec![NetworkRow {
-                name: "jk-agent-smith-net".to_owned(),
-                labels: net_labels,
-            }],
-        ])),
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![NetworkRow {
+            name: "jk-agent-smith-net".to_owned(),
+            labels: net_labels,
+        }]])),
         ..Default::default()
     };
 
@@ -292,7 +277,6 @@ async fn gc_cleans_multiple_orphans() {
     labels_neo.insert(LABEL_ROLE_KEY.to_owned(), "jk-neo".to_owned());
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([
-            // collect_labeled_dind: two orphaned DinD sidecars
             vec![
                 ContainerRow {
                     name: "jk-agent-smith-dind".to_owned(),
@@ -305,10 +289,9 @@ async fn gc_cleans_multiple_orphans() {
                     labels: labels_neo,
                 },
             ],
-            // list_role_names (running): no running roles
             vec![],
         ])),
-        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // gc_orphaned_networks: no networks
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         ..Default::default()
     };
 
@@ -353,8 +336,6 @@ async fn gc_cleans_multiple_orphans() {
 
 #[tokio::test]
 async fn gc_does_not_panic_when_collect_orphaned_dind_fails() {
-    // Docker daemon unreachable — the DinD ps call fails. gc_orphaned_resources
-    // must emit a warning and return without panicking.
     let docker = FakeDockerClient {
         fail_with: vec![(
             LABEL_KIND_DIND.to_owned(),
@@ -363,15 +344,13 @@ async fn gc_does_not_panic_when_collect_orphaned_dind_fails() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 }
 
 #[tokio::test]
 async fn gc_does_not_panic_when_network_ls_fails() {
-    // DinD list succeeds (no orphans), but docker network ls fails.
-    // gc_orphaned_networks must emit a warning and return without panicking.
     let docker = FakeDockerClient {
-        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // no DinD sidecars
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         fail_with: vec![(
             "docker network ls".to_owned(),
             "Error response from daemon: socket timeout".to_owned(),
@@ -379,5 +358,5 @@ async fn gc_does_not_panic_when_network_ls_fails() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 }

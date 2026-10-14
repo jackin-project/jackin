@@ -1,35 +1,3 @@
-//! Test-file-layout gate.
-//!
-//! Enforces the workspace hard rule: every module's tests live in a sibling
-//! `tests.rs`, declared exactly as `#[cfg(test)] mod tests;`. Large suites
-//! split into canonical case files: `tests.rs` holds shared imports/fixtures
-//! plus plain `mod <case>;` declarations resolving to `tests/<case>.rs`
-//! (mirrors rust-repository-policy `GAP-TEST-002`). Forbidden in `crates/*/src`:
-//!
-//!   1. An inline `#[cfg(test)] mod <name> { … }` body in any non-`tests.rs`
-//!      source file — the body must move to a sibling `tests.rs`.
-//!   2. An external `#[cfg(test)]` module declaration other than the exact
-//!      two-line `#[cfg(test)] mod tests;` form — Rust resolves the sibling
-//!      `tests.rs` without `#[path]`.
-//!   3. A direct unit-test function attribute in a non-`tests.rs` source file
-//!      — the test must move to a sibling `tests.rs`.
-//!   4. A `tests.rs` child module that is not a plain private `mod <case>;`
-//!      resolving to `tests/<case>.rs` — no inline bodies, no `#[path]`,
-//!      no visibility, no test-mentioning gates; no modules nested deeper.
-//!   5. A `tests/<file>.rs` that is not declared by its sibling `tests.rs`,
-//!      that declares sub-modules of its own, or that nests under a
-//!      sub-directory — case files are flat and parent-declared.
-//!
-//! ```sh
-//! cargo xtask lint tests                  # enforce, fail on new violations
-//! cargo xtask lint tests --print-allowlist  # emit fresh ratchet family keys
-//! ```
-//!
-//! Production enforcement is a thin shim over [`crate::ratchet`] for the
-//! `test-layout` presence family in `ratchet.toml`. Measurement
-//! (`measure_violations`) stays here for the ratchet provider. Pure `check`
-//! helpers below exist only for unit characterization tests.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -49,8 +17,7 @@ use crate::report::{self, FormatArgs};
 pub(crate) struct LintTestsArgs {
     #[command(flatten)]
     output: FormatArgs,
-    /// Emit regenerated `ratchet.toml` `test-layout` family keys on stdout.
-    /// Prefer `cargo xtask lint ratchet --print test-layout` for the same data.
+
     #[arg(long)]
     print_allowlist: bool,
 }
@@ -71,7 +38,7 @@ fn run_inner(args: LintTestsArgs) -> Result<()> {
     if args.print_allowlist {
         return ratchet::print_families(TEST_LAYOUT_FAMILIES);
     }
-    // Scoped ratchet enforce; OK line uses the engine's family-scoped message.
+
     let outcome = ratchet::check_families_at_root(TEST_LAYOUT_FAMILIES)?;
     if outcome.problems.is_empty() {
         let root = crate::docs::repo_root()?;
@@ -99,8 +66,6 @@ fn run_inner(args: LintTestsArgs) -> Result<()> {
     )
 }
 
-/// Walk every `crates/<group>/<package>/src` tree and collect
-/// `relative path → reason` for each file that breaks the test-layout rule.
 pub(crate) fn measure_violations(root: &Path) -> Result<BTreeMap<String, String>> {
     let crates_dir = root.join("crates");
     if !crates_dir.is_dir() {
@@ -126,7 +91,6 @@ fn walk(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) -> Result<(
         let path = entry.path();
         if path.is_dir() {
             if path.file_name().is_some_and(|n| n == "tests") {
-                // Canonical case files: flat, parent-declared, mod-free.
                 check_tests_dir(&path, root, out)?;
                 continue;
             }
@@ -151,9 +115,6 @@ fn walk(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) -> Result<(
     Ok(())
 }
 
-/// Validate a `tests/` case directory against its sibling `tests.rs`:
-/// every `.rs` file directly inside must be declared by the parent and
-/// contain no module declarations; sub-directories are forbidden.
 fn check_tests_dir(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) -> Result<()> {
     let declared = dir
         .parent()
@@ -164,7 +125,6 @@ fn check_tests_dir(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) 
         let path = entry.path();
         let rel = rel_path(&path, root);
         if path.is_dir() {
-            // Fixture/data directories (no `.rs` inside) are not test files.
             if dir_contains_rs(&path)? {
                 out.insert(rel, TESTS_NESTING_REASON.to_owned());
             }
@@ -190,8 +150,6 @@ fn check_tests_dir(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) 
     Ok(())
 }
 
-/// Top-level `mod <name>;` declarations in a `tests.rs` (canonical or not;
-/// malformed decls are reported against `tests.rs` itself by rule 4).
 fn declared_case_modules(text: &str) -> BTreeSet<String> {
     let Ok(file) = syn::parse_file(text) else {
         return BTreeSet::new();
@@ -205,7 +163,6 @@ fn declared_case_modules(text: &str) -> BTreeSet<String> {
         .collect()
 }
 
-/// True when a directory tree holds any `.rs` file.
 fn dir_contains_rs(dir: &Path) -> Result<bool> {
     for entry in crate::fs_util::read_dir_sorted(dir)? {
         let path = entry.path();
@@ -220,7 +177,6 @@ fn dir_contains_rs(dir: &Path) -> Result<bool> {
     Ok(false)
 }
 
-/// True when a case file breaks the flat-and-mod-free rule.
 fn case_file_violation(text: &str) -> bool {
     let Ok(file) = syn::parse_file(text) else {
         return true;
@@ -410,8 +366,6 @@ fn tests_rs_violation(text: &str) -> Option<String> {
     None
 }
 
-/// A canonical case declaration: private, external, no `#[path]`, no
-/// test-mentioning gate (platform gates like `#[cfg(unix)]` are fine).
 fn is_canonical_case_decl(module: &ItemMod) -> bool {
     if !matches!(module.vis, Visibility::Inherited)
         || module.content.is_some()
@@ -441,7 +395,6 @@ fn contains_module(items: &[Item]) -> bool {
     finder.0
 }
 
-/// Pure presence check (unit characterization tests).
 #[cfg(test)]
 fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> Result<()> {
     let stale: Vec<&String> = allowed

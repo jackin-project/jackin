@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! General tab content lines, widths, and geometry extracted from the view
-//! coordinator. All items re-exported from parent to preserve `super::` call
-//! sites in `frame.rs` (via `render_general_tab`) and `view/tests.rs`.
-
 use ratatui::text::Line;
 
 use crate::tui::screens::editor::model::FieldFocus;
@@ -36,7 +32,6 @@ pub(crate) fn editor_general_content_width(
     .unwrap_or(0)
 }
 
-/// Build the shared form section for the editor general tab.
 #[must_use]
 pub(crate) fn general_form_section(
     cursor: usize,
@@ -119,8 +114,7 @@ pub(crate) fn general_lines(
         keep_awake_enabled,
         git_pull_on_entry,
     );
-    // Keep render_editor_row path for byte-identical editor snapshots; FormSection
-    // carries the shared row model for geometry/settings reuse.
+
     section
         .rows
         .iter()

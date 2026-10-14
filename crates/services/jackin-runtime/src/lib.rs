@@ -1,8 +1,3 @@
-//! jackin-runtime: role launch, attach, cleanup, and backend orchestration.
-//!
-//! **Architecture Invariant:** T8.
-//! Entry point: [`launch_role_runtime`] — role launch orchestration.
-
 pub mod apple_container_client;
 pub mod exec_host;
 #[cfg(unix)]
@@ -13,15 +8,11 @@ mod process_telemetry;
 pub mod reactive_daemon;
 pub mod runtime;
 pub mod spin_wait;
-// Moved to jackin_runtime_usage_relay::usage_relay (S7 split 70); the
-// module re-export keeps every `jackin_runtime::usage_relay::*` path stable.
+
 pub use jackin_runtime_usage_relay::usage_relay;
 
-// Re-export jackin_instance as `instance` so existing call sites
-// (crate::instance::X) continue to compile unchanged.
 pub use jackin_instance as instance;
 
-// Re-export the key public items to match what the binary's src/runtime/mod.rs exposes.
 pub use runtime::{
     AgentSession, AgentSessionInventory, ContainerState, DindSidecarPrewarm, LoadOptions,
     describe_agent_session_count, eject_role, exile_all, hardline_agent, hardline_agent_with_focus,

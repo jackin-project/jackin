@@ -155,9 +155,6 @@ fn spawn_failure_is_typed_not_installed_and_keeps_guidance() {
 
 #[test]
 fn not_signed_in_stderr_is_typed_and_keeps_signin_guidance() {
-    // Construct the same shape `run_op_with_timeout` emits for a not-signed
-    // stderr signature, so the display parity + downcast contract is pinned
-    // without spawning a real `op`.
     let exit_msg =
         "1Password CLI exited with status 1 running `op account list`: not currently signed in";
     let err = anyhow::Error::new(jackin_core::OpProbeError::NotSignedIn {

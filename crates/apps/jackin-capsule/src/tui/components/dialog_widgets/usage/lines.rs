@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Info-line composition core: row dispatch and content primitives.
 
 use super::{
     is_overview_provider_label, is_overview_provider_row, is_quota_bucket_row,
@@ -15,8 +14,6 @@ use ratatui::{
 pub(crate) fn usage_info_lines(
     state: &crate::tui::components::container_info_surface::ContainerInfoState,
 ) -> Vec<Line<'static>> {
-    // Width 0 disables right-alignment so content-size/height measurement
-    // reflects the intrinsic line width, not a padded-to-panel width.
     usage_info_lines_impl(state, false, 0)
 }
 
@@ -24,8 +21,6 @@ pub(crate) fn usage_info_lines_for_width(
     state: &crate::tui::components::container_info_surface::ContainerInfoState,
     width: u16,
 ) -> Vec<Line<'static>> {
-    // Below 64 cols the two-column rows can no longer right-align without the
-    // left and right halves overlapping, so fall back to a single-column list.
     usage_info_lines_impl(state, width < 64, width)
 }
 
@@ -83,7 +78,7 @@ pub(crate) struct UsageLineContext<'a> {
     account: Option<&'a str>,
     activity: Option<&'a str>,
     list_layout: bool,
-    /// Panel inner width for right-aligned header fields; 0 disables alignment.
+
     width: usize,
 }
 
@@ -157,11 +152,7 @@ pub(crate) fn usage_lines_for_row(
                 usage_quota_bucket_lines(bucket, value, accent, context.width, lines);
             }
         }
-        // Overview-tab rows only: the provider tab always carries the
-        // identity header (`context.provider`), so a meter-less bucket whose
-        // label head collides with a provider name (e.g. the Antigravity
-        // "Gemini · Weekly" fallback row) must not take the overview arm and
-        // render garbled (S4/S5 parity).
+
         _ if context.provider.is_none() && is_overview_provider_label(label) => {
             usage_overview_provider_lines(label, value, context.width, lines);
         }

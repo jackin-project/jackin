@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Non-TUI instance discovery services.
-
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
@@ -119,8 +117,7 @@ pub(crate) fn running_role_containers() -> anyhow::Result<Vec<String>> {
             "{{.Names}}",
         ],
     );
-    // Instance refresh is launched through spawn_blocking_subscription;
-    // keep the docker listing on the shared process transport.
+
     let output = crate::process_telemetry::exec_sync(&request)
         .context("starting live instance reconciliation")?;
     anyhow::ensure!(output.success, "live instance reconciliation failed");

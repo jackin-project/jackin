@@ -10,10 +10,9 @@ fn exit_dirty_down_arrow_recomposes_a_changed_frame() {
         vec!["holla   1 changed".to_owned()],
         Arc::from([]),
     ));
-    // Paint the modal once so rendered == frame generation.
+
     let first = mux.compose_pending_frame();
 
-    // Down arrow should invalidate and produce a non-empty, *changed* frame.
     mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
     assert!(
         mux.has_pending_render(),
@@ -41,7 +40,7 @@ fn exit_dirty_marker_moves_on_screen_with_zero_panes() {
     grid.process(&mux.compose_pending_frame());
     let before = marker_row_on_screen(&grid, rows, cols);
 
-    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
     grid.process(&mux.compose_pending_frame());
     let after = marker_row_on_screen(&grid, rows, cols);
 
@@ -57,24 +56,16 @@ fn exit_dirty_marker_moves_on_screen_with_zero_panes() {
 
 #[test]
 fn exit_dirty_marker_moves_after_session_exits_realistic() {
-    // Reproduce the real path: a live agent pane, the session exits, the
-    // dirty-exit modal opens with zero panes, then the operator presses down.
-    // The client is a persistent VirtualClient (its grid carries the agent
-    // screen forward), so this exercises the exact diff baseline the operator's
-    // terminal sees — unlike a modal opened on a blank mux.
     let (rows, cols) = (44u16, 157u16);
     let mut mux = single_pane_tab_mux_with_size(rows, cols);
     let (session, _rx) = test_session(rows, cols);
     mux.session_supervisor.sessions.insert(1, session);
     let mut client = VirtualClient::new(rows, cols);
 
-    // Agent paints something; the client mirrors it.
     feed_and_compose(&mut mux, &mut client, 1, b"agent output here\r\n");
 
-    // The session exits — the daemon removes it (zero panes now).
     mux.remove_exited_session(1);
 
-    // handle_last_session_exit opens the modal and invalidates.
     mux.dialog_push(Dialog::new_exit_dirty(
         vec!["holla   1 changed \u{b7} 3 unpushed".to_owned()],
         Arc::from([]),
@@ -84,7 +75,6 @@ fn exit_dirty_marker_moves_after_session_exits_realistic() {
     client.apply(&frame);
     let before = marker_row_on_screen(&client.grid, rows, cols);
 
-    // Operator presses down.
     dispatch_and_compose(
         &mut mux,
         &mut client,
@@ -104,10 +94,6 @@ fn exit_dirty_marker_moves_after_session_exits_realistic() {
 
 #[tokio::test]
 async fn last_session_exit_does_not_repush_modal_while_dialog_open() {
-    // Regression: the event loop calls handle_last_session_exit on every client
-    // frame while no sessions are live. With the dirty-exit modal already open,
-    // re-entering must NOT push a second modal (which reset the selection to 0
-    // every keypress, capping navigation at row 1).
     let mut mux = test_mux(44, 157);
     mux.dialog_push(Dialog::new_exit_dirty(
         vec!["holla   1 changed".to_owned()],
@@ -127,15 +113,13 @@ async fn last_session_exit_does_not_repush_modal_while_dialog_open() {
 
 #[test]
 fn exit_dirty_down_arrow_reaches_last_row() {
-    // The selection must advance all the way to the final row (Discard), not cap
-    // at row 1 — guards against an off-by-one or re-push regression.
     let mut mux = test_mux(44, 157);
     mux.dialog_push(Dialog::new_exit_dirty(
         vec!["holla   1 changed".to_owned()],
         Arc::from([]),
     ));
     for _ in 0..5 {
-        mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
+        mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
     }
     match mux.dialog_top() {
         Some(Dialog::ExitDirty { selected, .. }) => {
@@ -176,25 +160,25 @@ fn build_exit_inspect_rows_groups_repos_with_header_and_file_rows() {
         },
     ];
     let rows = build_exit_inspect_rows(&repos);
-    // First entry must be a Repo header.
+
     assert!(matches!(rows.first(), Some(InspectRow::Repo(_))));
-    // Two repos → exactly two Repo headers.
+
     let repo_count = rows
         .iter()
         .filter(|r| matches!(r, InspectRow::Repo(_)))
         .count();
     assert_eq!(repo_count, 2, "one header per repo");
-    // alpha has two changed files → two File rows follow its header.
+
     let file_count = rows
         .iter()
         .filter(|r| matches!(r, InspectRow::File(_)))
         .count();
     assert_eq!(file_count, 2, "only changed files produce File rows");
-    // Repo labels are derived from the final path component.
+
     if let Some(InspectRow::Repo(label)) = rows.first() {
         assert_eq!(label, "alpha");
     }
-    // File rows are formatted as "<status> <path>".
+
     let file_rows: Vec<_> = rows
         .iter()
         .filter_map(|r| {
@@ -292,11 +276,10 @@ async fn input_frames_apply_to_post_takeover_mux() {
 
 #[test]
 fn remove_exited_session_retires_codename_inv_d8() {
-    // INV-D8: removing an exited session retires its codename so labels update.
     let mut mux = single_pane_tab_mux();
     let (session, _rx) = test_session(24, 80);
     mux.session_supervisor.sessions.insert(1, session);
-    // Seed live set the way spawn_session would after pick_next_codename.
+
     mux.session_supervisor
         .codename_live
         .insert("test".to_owned());
@@ -331,8 +314,6 @@ fn remove_exited_session_retires_codename_inv_d8() {
 
 #[tokio::test]
 async fn last_session_exit_defers_when_dialog_already_open_inv_d19() {
-    // INV-D19: when a dirty-exit (or any) dialog is open, last-session exit
-    // handling must not re-enter and drain.
     let mut mux = single_pane_tab_mux();
     mux.dialog_push(Dialog::new_exit_dirty(
         vec!["repo   1 changed".to_owned()],
@@ -372,8 +353,7 @@ fn session_send_writes_the_payload_verbatim_into_the_addressed_pty() {
             bytes: 16
         }
     ));
-    // Verbatim: the daemon appends no newline, no bracketed-paste wrapper.
-    // The submit key is the caller's to include.
+
     assert_eq!(
         input_rx.try_recv().expect("payload reached the PTY writer"),
         b"review the diff\r".to_vec()

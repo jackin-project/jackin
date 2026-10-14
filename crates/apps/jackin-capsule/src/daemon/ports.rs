@@ -1,17 +1,3 @@
-//! Effectful daemon ports at the Multiplexer / session-supervisor boundary.
-//!
-//! Production ports operate on the owning subsystem rather than accepting
-//! precomputed predicates. Tests inject [`FakeDaemonPorts`] and inspect its
-//! event ledger after driving the same operations.
-//!
-//! ## Sim / state-machine tooling evaluation (plan 017 step 4)
-//!
-//! | Tool | Verdict | Rationale |
-//! |---|---|---|
-//! | `proptest-state-machine` | **defer** | The fake-port transition suite covers attach, displace, detach, and reattach over the real registry boundary; add a model when supervisor transitions gain another asynchronous edge. |
-//! | `turmoil` / `madsim` | **defer** | The in-container event loop has no network-partition surface; host-to-capsule networking is integration-tested at its transport boundary. |
-//! | `fail` / failpoints | **defer** | Spawn failure is already injected through the port without process-wide failpoints or global test state. |
-
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
@@ -33,7 +19,6 @@ pub(crate) struct RuntimeEvent<'a> {
     pub(crate) observed_at: Instant,
 }
 
-/// Control-channel effects for reporter events.
 pub(crate) trait ControlPort {
     fn report_runtime_event(
         &self,
@@ -48,7 +33,6 @@ pub(crate) enum AttachTransition {
     Displace,
 }
 
-/// Attach lifecycle over the live client registry.
 pub(crate) trait AttachPort {
     fn begin_attach(&self, clients: &ClientRegistry) -> AttachTransition;
     fn record_attached(&self) {}
@@ -58,7 +42,6 @@ pub(crate) trait AttachPort {
     }
 }
 
-/// Status effects over session-owned state.
 pub(crate) trait StatusPort {
     fn retire_codename(
         &self,
@@ -74,7 +57,6 @@ pub(crate) enum ExitDisposition {
     Defer,
 }
 
-/// Persistence decision over the live control state.
 pub(crate) trait PersistencePort {
     fn last_session_exit(&self, control: &ControlRouting) -> ExitDisposition;
 }
@@ -97,8 +79,7 @@ impl ControlPort for DefaultDaemonPorts {
                 event.observed_at,
             );
         }
-        // INV-D12: reporter hooks always receive an ACK, including when the
-        // addressed session disappeared before the event was processed.
+
         ServerMsg::Ack
     }
 }

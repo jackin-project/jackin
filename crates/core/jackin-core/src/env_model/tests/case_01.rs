@@ -20,18 +20,16 @@ fn open_links_allowed_rejects_deny_values() {
 
 #[test]
 fn reserved_runtime_env_vars_covers_every_previously_reserved_name() {
-    // Each name previously in manifest::RESERVED_RUNTIME_ENV_VARS
-    // AND in runtime's old RUNTIME_OWNED_ENV_VARS must be present.
     let names: Vec<&str> = RESERVED_RUNTIME_ENV_VARS.iter().map(|(n, _)| *n).collect();
     for sentinel in &[
-        "JACKIN",               // in-container sentinel (was JACKIN)
-        "JACKIN_DIND_HOSTNAME", // was manifest JACKIN_DIND_HOSTNAME_ENV_NAME value
+        "JACKIN",
+        "JACKIN_DIND_HOSTNAME",
         "JACKIN_CONTAINER_NAME",
         "JACKIN_INSTANCE_ID",
         "JACKIN_CAPSULE_SUPERVISOR_PID",
-        "JACKIN_AGENT", // injected per agent session — agent slug (claude/codex/amp)
-        "JACKIN_AGENT_CODENAME", // unique per-tab codename, never reused in container lifetime
-        "JACKIN_ROLE",  // runtime-owned role selector key
+        "JACKIN_AGENT",
+        "JACKIN_AGENT_CODENAME",
+        "JACKIN_ROLE",
         "JACKIN_GIT_COAUTHOR_TRAILER",
         "JACKIN_GIT_DCO",
         "DOCKER_HOST",

@@ -1,19 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Sibling-agent auth prewarm for a launch role.
-//!
-//! The selected agent owns the foreground launch; every other agent the
-//! role manifest supports gets its auth slot prewarmed on the blocking
-//! pool while the pipeline continues. The await phase must run before
-//! `RoleState::prepare_for_bindings` (which acquires the leases that
-//! protect paths mounted into the live container), so each phase keeps
-//! one owner and a canceled blocking worker stays safe to detach.
-//!
-//! Split out of `jackin-runtime` (S7 split 97); the old
-//! `jackin_runtime::runtime::launch::spawn_sibling_auth_prewarm` path
-//! keeps working through the hub re-export.
-
 use anyhow::Context;
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
@@ -107,9 +94,7 @@ pub fn spawn_sibling_auth_prewarm(
                     return;
                 }
             };
-        // Sibling instances keep their config-ID keys so prewarm lands in
-        // the same slots the foreground prepare will own; sibling agents
-        // without instances get a placeholder Ignore binding each.
+
         let mut bindings =
             match jackin_runtime_launch_capsule_setup::capsule_setup::instance_auth_bindings(
                 &config, &instances,
@@ -169,10 +154,6 @@ pub fn spawn_sibling_auth_prewarm(
     }))
 }
 
-/// Run auth prewarm on the blocking pool. A running `spawn_blocking` task
-/// cannot be aborted; if launch cancellation drops its join handle, the
-/// worker still finishes its own writes before releasing their short-lived
-/// target locks.
 pub fn spawn_auth_prewarm_worker<F, R>(work: F) -> tokio::task::JoinHandle<R>
 where
     F: FnOnce() -> R + Send + 'static,
@@ -181,12 +162,6 @@ where
     jackin_telemetry::spawn::joined_blocking(work)
 }
 
-/// Wait for sibling auth writes before role-state mount admission.
-///
-/// This phase must run before `RoleState::prepare_for_bindings`: that method
-/// acquires the leases that protect paths mounted into the live container.
-/// Keeping prewarm before admission gives each phase one owner and makes a
-/// canceled blocking worker safe to detach without cloning those leases.
 pub async fn await_sibling_auth_prewarm(
     prewarm: Option<tokio::task::JoinHandle<()>>,
 ) -> anyhow::Result<()> {

@@ -103,7 +103,6 @@ pub(super) struct ParityBucket {
 }
 
 impl ParityBucket {
-    /// Minimal fresh bucket with a remaining percent and no reset/money.
     pub(super) fn metered(label: &'static str, remaining: u8) -> Self {
         Self {
             label,
@@ -132,9 +131,7 @@ pub(super) struct ParityAccount {
     pub(super) username: Option<&'static str>,
     pub(super) plan_label: Option<&'static str>,
     pub(super) credential_origin: Option<&'static str>,
-    /// Capsule provider label override for surfaces without a `UsageSurface`
-    /// variant (Cursor, Antigravity); mirrors the adapter pattern of building
-    /// with `Unsupported` and then stamping the label.
+
     pub(super) capsule_provider_label: Option<&'static str>,
     pub(super) agent: &'static str,
     pub(super) focused_provider: Option<&'static str>,
@@ -144,7 +141,7 @@ pub(super) struct ParityAccount {
     pub(super) fetched_at: i64,
     pub(super) buckets: Vec<ParityBucket>,
     pub(super) last_error: Option<&'static str>,
-    /// Broker-owned overlays (populated post-projection, as the broker does).
+
     pub(super) account_issues: Vec<UsageIssueV1>,
     pub(super) credential_expires_at: Option<i64>,
     pub(super) extra_groups: Vec<ParityExtraGroup>,
@@ -241,8 +238,7 @@ pub(super) fn parity_view_at(account: &ParityAccount, now: i64) -> FocusedUsageV
     if let Some(label) = account.capsule_provider_label {
         view.account.provider_label = label.to_owned();
     }
-    // Mirror the cache read path at the harness clock so `updated_label`
-    // carries the deterministic fixture age instead of build time.
+
     refresh_cached_updated_label(&mut view, now);
     view
 }

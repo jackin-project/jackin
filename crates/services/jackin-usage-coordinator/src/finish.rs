@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Probe completion.
 
 use std::sync::Arc;
 
@@ -46,8 +45,7 @@ pub(crate) fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> Option<i64>
     {
         entry.envelope.provider_invoked_at_epoch = previous_invocation;
         entry.envelope.reload_fence_required = previous_reload_fence;
-        // Retain the catalog transaction while resolving the owned generation;
-        // reacquiring its lifecycle mutex here would deadlock this worker.
+
         finish_failure_in_state(
             shared,
             &mut state,
@@ -141,7 +139,6 @@ pub(crate) fn finish_failure(
     );
 }
 
-/// Resolve a failure inside the caller's existing catalog/state transaction.
 pub(crate) fn finish_failure_in_state(
     shared: &Arc<Shared>,
     state: &mut CoordinatorState,
@@ -227,8 +224,6 @@ pub(crate) fn finish_failure_in_state(
     persist_terminal(shared, state, &job.capability, finished_at_epoch);
 }
 
-/// Finish a provider call fenced by catalog removal or revision change. The
-/// data and error remain discarded, but its cooldown starts at completion.
 fn finish_fenced_provider_attempt(
     shared: &Arc<Shared>,
     state: &mut CoordinatorState,

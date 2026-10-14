@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Descriptor-bound state transactions. Cooperating readers/writers hold the
-//! same isolation lock; independent instance-manifest writers are protected by
-//! before/after snapshot witnesses. Recovery directories are private host-owned namespaces; arbitrary
-//! hostile writers with the same UID are outside that transaction contract.
-
 use anyhow::{Context, ensure};
 use nix::errno::Errno;
 use nix::fcntl::{AtFlags, Flock, FlockArg, OFlag, open, openat};
@@ -61,8 +56,7 @@ impl StateDirectory {
         } else {
             std::env::current_dir()?.join(path)
         };
-        // Only the platform's immutable system aliases are normalized. Owned
-        // state components and arbitrary configured aliases are never followed.
+
         #[cfg(target_os = "macos")]
         let absolute = if let Ok(rest) = absolute.strip_prefix("/var") {
             Path::new("/private/var").join(rest)
@@ -123,8 +117,7 @@ impl StateDirectory {
             });
             directory = child;
         }
-        // Lock the pinned directory inode, so pure reads require no writable
-        // lock file and never create metadata in a fresh/read-only state dir.
+
         let lock: File = directory.try_clone()?.into();
         let lock = match Flock::lock(lock, FlockArg::LockExclusiveNonblock) {
             Ok(lock) => lock,
@@ -449,7 +442,7 @@ impl StateDirectory {
                 "state transaction refused; retained recovery artifacts in {transaction_name}"
             ));
         }
-        // Keep the displaced original until both namespaces are durable.
+
         nix::unistd::fsync(&transaction)
             .and_then(|()| nix::unistd::fsync(&self.directory))
             .with_context(|| format!("state install durability unconfirmed; retained recovery artifacts in {transaction_name}"))?;

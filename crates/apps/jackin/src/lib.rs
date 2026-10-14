@@ -1,8 +1,3 @@
-//! jackin: host CLI binary and top-level dispatch.
-//!
-//! **Architecture Invariant:** T9.
-//! Entry point: [`main`] — host CLI binary entry.
-
 #![expect(
     clippy::redundant_pub_crate,
     reason = "documented residual allow; prefer expect when site is lint-true"

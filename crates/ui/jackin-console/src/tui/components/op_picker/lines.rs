@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Line builders for the shared 1Password picker modal.
-
 use std::collections::HashSet;
 
 use ratatui::{
@@ -15,7 +13,6 @@ use super::{
     OpPickerItemRef, OpPickerStage, OpPickerVaultRef, OpSection, section_display_label,
 };
 
-/// `+ New X` creation row, styled like picker list rows.
 pub fn sentinel_line(text: &str, _is_selected: bool) -> Line<'static> {
     Line::from(Span::styled(
         text.to_owned(),
@@ -98,8 +95,6 @@ pub fn item_choice_lines<'a>(
         .collect()
 }
 
-/// Render section-stage rows: `(root)`, named sections, then a creation
-/// sentinel.
 pub fn section_lines(
     choices: impl IntoIterator<Item = Option<OpSection>>,
     _selected: Option<usize>,

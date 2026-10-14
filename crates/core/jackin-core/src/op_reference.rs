@@ -1,51 +1,33 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Parse and format `op://vault/item/field` references used by the 1Password
-//! secret-resolution paths.
-//!
-//! Vocabulary shared by `jackin-env` (token resolution) and `jackin-console`
-//! (the Auth-tab picker); it lives here so neither has to reach into the other
-//! for the grammar. Not responsible for calling the `op` CLI or rendering any
-//! widget.
-
-/// Structured parts of an `op://...` reference.
-///
-/// Syntax: `op://<vault>/<item>/[<section>/]<field>`. Account scope is
-/// not encoded in the path; multi-account picks live separately on the
-/// selected account. See
-/// <https://developer.1password.com/docs/cli/secret-reference-syntax/>.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpReferenceParts {
-    /// Vault name or ID segment.
     pub vault: String,
-    /// Item name or ID segment.
+
     pub item: String,
-    /// Optional section between item and field.
+
     pub section: Option<String>,
-    /// Field name or ID segment.
+
     pub field: String,
 }
 
-/// Human-readable parts of a local 1Password breadcrumb.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpBreadcrumbParts {
-    /// Vault label.
     pub vault: String,
-    /// Item label.
+
     pub item: String,
-    /// Optional item subtitle used to distinguish same-name items.
+
     pub item_subtitle: Option<String>,
-    /// Optional section label.
+
     pub section: Option<String>,
-    /// Field label.
+
     pub field: String,
-    /// Optional query suffix carried by older snapshots.
+
     pub attribute_query: Option<String>,
 }
 
 impl OpReferenceParts {
-    /// Operator-facing copy-pasteable `op item delete` invocation.
     pub fn manual_delete_hint(&self) -> impl std::fmt::Display + '_ {
         struct Hint<'a> {
             item: &'a str,
@@ -63,11 +45,6 @@ impl OpReferenceParts {
     }
 }
 
-/// Whether an identifier is a non-empty RFC 3986 URI path component.
-///
-/// Canonical references use opaque 1Password IDs, not display labels. Raw
-/// separators, query/fragment delimiters, whitespace, and control characters
-/// are rejected rather than rewritten; valid percent triplets remain literal.
 #[must_use]
 pub fn is_valid_op_reference_path_component(component: &str) -> bool {
     let bytes = component.as_bytes();
@@ -121,10 +98,6 @@ pub fn is_valid_op_reference_path_component(component: &str) -> bool {
     true
 }
 
-/// Format a reference from known vault/item/section/field IDs.
-///
-/// `None` means at least one ID cannot occupy exactly one URI path segment.
-/// Omitting `section_id` deliberately keeps the three-segment reference.
 #[must_use]
 pub fn build_op_reference(
     vault_id: &str,
@@ -150,11 +123,6 @@ fn is_hex_digit(byte: u8) -> bool {
     byte.is_ascii_hexdigit()
 }
 
-/// Escape a component in the local `OpRef.path` breadcrumb.
-///
-/// This display-path encoding is separate from 1Password URI syntax. It keeps
-/// the breadcrumb's `/`, `?`, and item-subtitle brackets unambiguous while
-/// preserving the original label for the console parser to display.
 #[must_use]
 pub fn encode_op_breadcrumb_segment(segment: &str) -> String {
     let mut encoded = String::with_capacity(segment.len());
@@ -171,7 +139,6 @@ pub fn encode_op_breadcrumb_segment(segment: &str) -> String {
     encoded
 }
 
-/// Decode a component escaped by [`encode_op_breadcrumb_segment`].
 #[must_use]
 pub fn decode_op_breadcrumb_segment(segment: &str) -> Option<String> {
     let mut decoded = String::with_capacity(segment.len());
@@ -193,7 +160,6 @@ pub fn decode_op_breadcrumb_segment(segment: &str) -> Option<String> {
     Some(decoded)
 }
 
-/// Parse a v1 percent-escaped local `OpRef.path` breadcrumb.
 #[must_use]
 pub fn parse_op_breadcrumb_path(path: &str) -> Option<OpBreadcrumbParts> {
     if path.is_empty() {
@@ -229,7 +195,6 @@ pub fn parse_op_breadcrumb_path(path: &str) -> Option<OpBreadcrumbParts> {
     })
 }
 
-/// Render a v1 local breadcrumb as plain text for CLI, preview, and error output.
 #[must_use]
 pub fn display_op_breadcrumb_path(path: &str) -> String {
     let Some(parts) = parse_op_breadcrumb_path(path) else {
@@ -252,13 +217,6 @@ pub fn display_op_breadcrumb_path(path: &str) -> String {
     display
 }
 
-/// Convert an unversioned config breadcrumb into the v1 escaped value.
-///
-/// The old wire schema stored display text literally, so percent triplets and
-/// question marks in component labels are literal characters. This function
-/// never decodes them. A value is migrated only when its old 3/4-segment
-/// structure is recoverable. An old breadcrumb may omit the URI query; when a
-/// query suffix is present, it must exactly match the stored `op://` URI.
 #[must_use]
 pub fn encode_legacy_op_breadcrumb(path: &str, reference: &str) -> Option<String> {
     let query = reference.split_once('?').map(|(_, query)| query);
@@ -266,9 +224,7 @@ pub fn encode_legacy_op_breadcrumb(path: &str, reference: &str) -> Option<String
     let (path_no_query, had_query_suffix) = match query {
         Some(query) => match path.strip_suffix(&format!("?{query}")) {
             Some(path) => (path, true),
-            // Legacy producers keep the query in `op`, not in the display
-            // breadcrumb. Accept that representation while still rejecting
-            // an unmatched `?` that could be inconsistent query data.
+
             None if !path.contains('?') => (path, false),
             None => return None,
         },
@@ -363,7 +319,6 @@ fn hex_value(ch: char) -> Option<u8> {
     }
 }
 
-/// Parse an `op://vault/item/field` (or sectioned) secret reference.
 #[must_use]
 pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     let path = value.strip_prefix("op://")?;

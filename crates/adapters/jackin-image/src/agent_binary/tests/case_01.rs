@@ -48,8 +48,7 @@ async fn retry_exhausts_and_returns_last_error() {
     })
     .await;
     assert_eq!(calls.get(), 3);
-    // Chain carries the attempt count and preserves the LAST attempt's
-    // error (not the "no attempts made" seed).
+
     let err = format!("{:#}", r.unwrap_err());
     assert!(err.contains("giving up after 3 attempts"), "{err}");
     assert!(err.contains("attempt 3 failed"), "{err}");
@@ -75,7 +74,7 @@ async fn retry_backoff_grows_exponentially() {
         anyhow::bail!("nope")
     })
     .await;
-    // Attempt 1 is immediate; attempts 2 and 3 wait 100ms then 200ms.
+
     assert_eq!(start.elapsed(), Duration::from_millis(300));
 }
 
@@ -329,15 +328,12 @@ async fn ensure_binary_or_cached_fallback_uses_cached_binary_when_primary_downlo
     let dir = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(dir.path());
 
-    // Last-known-good cached executable — the fallback target.
     let cached_good = release_fixture();
     write_version_release(&paths, &cached_good).unwrap();
     let cached_good_binary = cached_binary_path(&paths, &cached_good);
     std::fs::write(&cached_good_binary, b"good").unwrap();
     chmod_executable(&cached_good_binary).unwrap();
 
-    // Primary release with an unparseable URL and no cached binary: the download
-    // fails offline at URL parse, exercising the fallback without a network call.
     let primary = AgentRelease {
         version: "1.2.5".to_owned(),
         url: "not-a-valid-url".to_owned(),

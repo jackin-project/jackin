@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Provider labels, storage names, and reason text.
 
 use std::path::PathBuf;
 
@@ -24,15 +23,11 @@ pub fn resolved_usage_provider_label(
     (surface != UsageSurface::Unsupported).then_some(surface.label())
 }
 
-/// Closed host-broker surface id for a Capsule refresh target.
 #[must_use]
 pub fn broker_surface_id(agent: &str, focused_provider: Option<&str>) -> Option<&'static str> {
     resolve_surface(agent, focused_provider).id()
 }
 
-/// Shared provider display remap for Capsule tabs and jackin❯ desktop overview.
-///
-/// Single mapping so Desktop never grows a second Swift-side provider rename.
 #[must_use]
 pub fn provider_display_label(label: &str) -> &str {
     match label {
@@ -44,7 +39,6 @@ pub fn provider_display_label(label: &str) -> &str {
     }
 }
 
-/// Honesty caption when numbers are estimated / local-log derived.
 #[must_use]
 pub fn estimate_caption(view: &FocusedUsageView) -> Option<String> {
     if matches!(view.confidence, UsageConfidence::Estimated)
@@ -95,16 +89,10 @@ pub fn severity_from_label(label: Option<&str>) -> UsageSeverity {
     }
 }
 
-/// Turn an API reason slug (`out_of_credits`) into a human phrase
-/// (`out of credits`) for the disabled-spend pace label.
 pub fn humanize_reason(reason: &str) -> String {
     reason.replace(['_', '-'], " ")
 }
 
-/// Title-case a codename window key (`amber_ladder` → `Amber Ladder`) for use as
-/// a bucket label. Distinct from [`humanize_reason`] (which yields a lowercase
-/// phrase for inline pace text); a window label is a proper-noun-style heading
-/// shown beside `Session`/`Weekly`.
 pub fn humanize_window_label(key: &str) -> String {
     key.split(['_', '-'])
         .filter(|word| !word.is_empty())

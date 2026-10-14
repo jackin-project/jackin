@@ -65,9 +65,6 @@ fn editor_mounts_tab_click_full_row_width_selects_mount_and_focuses_block() {
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
-    // Mounts editor body begins at y=5. Interior row y=6 is the
-    // header, y=7 is mount 0, y=8 is mount 1. Click far to the
-    // right in whitespace on mount 1's row, not on the path text.
     handle_mouse_with_config(&mut state, mouse_at(95, 8), term(100), None);
 
     let ManagerStage::Editor(editor) = &state.stage else {
@@ -95,7 +92,6 @@ fn editor_mounts_tab_click_host_source_continuation_selects_parent_and_focuses_b
     editor.active_field = FieldFocus::Row(editor.pending.mounts.len());
     state.stage = ManagerStage::Editor(editor);
 
-    // y=8 is the host-source continuation line for the first mount.
     handle_mouse_with_config(&mut state, mouse_at(95, 8), term(100), None);
 
     let ManagerStage::Editor(editor) = &state.stage else {
@@ -124,23 +120,19 @@ fn scroll_up_decrements_vertical_scroll_offset() {
 
 #[test]
 fn clicking_editor_content_area_clears_tab_bar_focus() {
-    // Defect 17: clicking the content block must transfer interaction focus
-    // into it — same end state as Tab/↓ — regardless of whether it overflows.
     let mut state = list_state();
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    editor.set_tab_bar_focused(true); // tab bar owns focus before the click
+    editor.set_tab_bar_focused(true);
     editor.active_tab = EditorTab::Roles;
     editor.tab_content_height = 10;
     state.stage = ManagerStage::Editor(editor);
 
-    // Click somewhere in the content area (rows 5–14 on a term(42) at SCREEN_HEADER_HEIGHT=2,
-    // TAB_STRIP_HEIGHT=2 → content starts at row 4).
     handle_mouse_with_config(&mut state, mouse_at(10, 6), term(42), None);
 
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("editor stage expected");
     };
-    // After clicking the content block, tab_bar_focused must be false.
+
     assert!(
         !editor.tab_bar_focused(),
         "clicking content must clear tab_bar_focused (Defect 17)"
@@ -168,9 +160,7 @@ fn wheel_shift_fallback_retries_vertical_at_horizontal_edge() {
     }
     let mut state = selected_demo_state(&config);
     let areas = list_scroll_areas(&state, term(100), Some(&config)).expect("list areas");
-    // Pre-set the horizontal offset at the block's real maximum so the
-    // Shift+wheel horizontal application is `Ignored` and the consumer retry
-    // must fire the vertical fallback on the SAME block (matrix row 3).
+
     let global_mounts: Vec<MountConfig> = config
         .list_mount_rows()
         .into_iter()
@@ -260,10 +250,7 @@ fn click_non_row_trust_block_area_deselects_via_sentinel() {
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings stage");
     };
-    // The lane dispatches SelectSettingsTrustRow(usize::MAX), which the plan
-    // maps to `selected: None` (covered by
-    // settings_trust_row_select_plan_bounds_checks_and_focuses_content) —
-    // selection is left unchanged while the block takes content focus.
+
     assert_eq!(settings.trust.selected, 0);
     assert_eq!(
         settings.focus_owner(),
@@ -274,10 +261,6 @@ fn click_non_row_trust_block_area_deselects_via_sentinel() {
 
 #[test]
 fn hover_regions_topmost_first_matches_hit_test() {
-    // Row-15 convention lock: hover regions are built topmost-FIRST
-    // (reverse of paint order) because `HoverState::update` keeps the
-    // FIRST hit in the slice while scene `hit_test` keeps the LAST
-    // registered — topmost-first makes both pick the same target.
     use termrock::interaction::{HitRegion, HoverState};
 
     let top = HitRegion {
@@ -293,13 +276,12 @@ fn hover_regions_topmost_first_matches_hit_test() {
     let regions = [top.clone(), under];
     let mut hover = HoverState::default();
 
-    // Overlap row: the first (topmost) region wins.
     assert_eq!(
         hover.update(ratatui::layout::Position::new(5, 1), &regions),
         Some(&top.id)
     );
     assert_eq!(hover.hovered(), Some(&top.id));
-    // Off every region: the cache clears.
+
     assert_eq!(
         hover.update(ratatui::layout::Position::new(50, 50), &regions),
         None

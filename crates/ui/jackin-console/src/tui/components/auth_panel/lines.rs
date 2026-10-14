@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Auth-form source, credential, and button lines.
 
 use super::{
     AUTH_FORM_CREDENTIAL_LABEL_WIDTH, AuthCredential, AuthCredentialRef, AuthForm, CredentialInput,

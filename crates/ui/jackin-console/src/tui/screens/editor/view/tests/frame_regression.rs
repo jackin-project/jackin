@@ -39,8 +39,6 @@ fn clamp_binds_both_axes_before_input_and_after_resize() {
         )
     );
 
-    // A later event must use the same bounded dimensions, so neither axis
-    // can continue past the frame's maximum.
     tab.scroll_by(1, 1);
     assert_eq!(
         tab.offset_x(),
@@ -62,8 +60,6 @@ fn clamp_binds_both_axes_before_input_and_after_resize() {
     assert_eq!(tab.offset_x(), 0);
     assert_eq!(tab.offset_y(), 0);
 
-    // After resize makes both axes fit, stale frame dimensions must not let
-    // the next input recreate an offset.
     tab.scroll_by(1, 1);
     assert_eq!(tab.offset_x(), 0);
     assert_eq!(tab.offset_y(), 0);

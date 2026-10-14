@@ -96,9 +96,6 @@ fn omp_selected_snapshot_and_provision_include_only_committed_wal_state() {
         source_wal_before,
         "snapshotting must not truncate or rewrite the source WAL"
     );
-    // NOTE: no `-shm` assertion here: the fixture writer is deliberately
-    // held open (dropping it would checkpoint the WAL away), and an open
-    // WAL connection owns a shared-memory file by design.
 }
 
 #[cfg(unix)]
@@ -127,10 +124,6 @@ fn omp_sync_rejects_checksum_and_joint_salt_checksum_corruption() {
 #[cfg(unix)]
 #[test]
 fn omp_sync_supports_little_and_big_endian_wal_checksums() {
-    // Success-path provisioning through a synthetic v7 store. Big-endian
-    // checksum LOGIC is covered at the validator level
-    // (`jackin-omp-store` fixtures), which a little-endian host cannot
-    // regenerate through SQLite itself.
     let temp = tempdir().unwrap();
     let source = temp.path().join("omp-source");
     let _writer = write_v7_omp_source(
@@ -158,7 +151,7 @@ fn omp_sync_materializes_schema_and_credentials_from_wal_only_pages() {
              VALUES (41, 'openai', 'api_key', '{{\"key\":\"fixture-schema-wal-token\"}}');"
         ),
     );
-    // Nothing checkpointed: the main image carries no schema or secret.
+
     let main = std::fs::read(source.join("agent/agent.db")).unwrap();
     assert!(!contains_bytes(&main, b"auth_credentials"));
     assert!(!contains_bytes(&main, b"fixture-schema-wal-token"));
@@ -332,8 +325,6 @@ fn validate_claude_accepts_file_credentials_rejects_bare_folder() {
     std::fs::write(good.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
     validate_sync_source_dir(Agent::Claude, &good, temp.path()).unwrap();
 
-    // No .credentials.json file; host_home is a temp dir so the macOS
-    // Keychain probe is skipped — must be rejected, not accepted.
     let bare = temp.path().join("claude-bare");
     std::fs::create_dir_all(&bare).unwrap();
     let err = validate_sync_source_dir(Agent::Claude, &bare, temp.path()).unwrap_err();

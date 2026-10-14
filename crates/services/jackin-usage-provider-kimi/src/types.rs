@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Kimi` usage response and pool types.
 
 use jackin_usage_provider_core::{epoch_seconds_from_maybe_ms, parse_iso_epoch};
 use serde::Deserialize;
@@ -16,8 +15,6 @@ pub struct KimiUsageResponse {
     pub(crate) version: Option<String>,
 }
 
-/// The two `usages` shapes: the web gateway sends a list of scoped entries
-/// while the Code API sends the rolling/weekly/monthly pools object.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum KimiUsages {
@@ -57,8 +54,6 @@ pub struct KimiPool {
 }
 
 impl KimiPool {
-    /// Raw used percent, unclamped: over-cap readings (>100%) survive so the
-    /// bucket can carry the raw figure (T02); only the bar geometry clamps.
     pub(crate) fn used_percent_raw(&self) -> Option<f64> {
         if let Some(limit) = self
             .limit
@@ -75,8 +70,7 @@ impl KimiPool {
             #[expect(clippy::cast_precision_loss, reason = "count magnitudes fit f64")]
             return Some(used.max(0) as f64 / limit as f64 * 100.0);
         }
-        // `used_ratio` is a 0.0–1.0 fraction; values above 1.0 are an
-        // already-scaled percent.
+
         self.used_ratio.and_then(|ratio| {
             if !ratio.is_finite() || ratio < 0.0 {
                 return None;
@@ -108,8 +102,6 @@ impl KimiPool {
     }
 }
 
-/// A quota count sent either as a JSON number (Code API) or a string (web
-/// gateway); both families are accepted so neither fails the whole parse.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum KimiCount {
@@ -126,8 +118,6 @@ impl KimiCount {
     }
 }
 
-/// A reset timestamp sent either as RFC 3339 text or an epoch (seconds or
-/// milliseconds); unparseable text yields no reset rather than failing.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum KimiReset {

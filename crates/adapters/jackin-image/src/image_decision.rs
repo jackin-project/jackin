@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `ImageInvalidationReason` + `ImageDecision` value types and the label-classifier helpers.
-//!
-//! Architecture Invariant: L1 application crate module. Depends on `jackin-core`,
-//! `jackin-image` siblings (`image_recipe`).
-
 use std::collections::HashMap;
 
 use crate::image_recipe::IMAGE_RECIPE_VERSION;
@@ -25,7 +20,7 @@ pub enum ImageInvalidationReason {
     CapsuleVersionChanged,
     PublishedImageStale,
     InspectFailed,
-    /// D20: an agent CLI release is newer than the version baked into the image.
+
     AgentVersionChanged,
 }
 
@@ -70,8 +65,6 @@ pub enum ImageDecision {
 }
 
 impl ImageDecision {
-    /// Role-repo commit SHA embedded in this decision — short SHA from the
-    /// image tag for Reuse/Refresh, or the value from Build* variants.
     pub fn role_git_sha(&self) -> Option<String> {
         match self {
             Self::Reuse { image } | Self::RefreshInBackground { image, .. } => {
@@ -82,10 +75,6 @@ impl ImageDecision {
         }
     }
 
-    /// Stable machine-readable name of this decision variant.
-    ///
-    /// Shared by the `--dry-run --format json` plan and any other machine
-    /// surface, so the wire spelling has exactly one definition.
     #[must_use]
     pub const fn kind(&self) -> &'static str {
         match self {
@@ -96,7 +85,6 @@ impl ImageDecision {
         }
     }
 
-    /// Why the image is being rebuilt or refreshed; `None` for a plain reuse.
     #[must_use]
     pub const fn reason(&self) -> Option<ImageInvalidationReason> {
         match self {
@@ -107,8 +95,6 @@ impl ImageDecision {
         }
     }
 
-    /// Concrete image tag this decision resolved to, when it already has one.
-    /// `None` for the build variants, whose tag is derived from the role SHA.
     #[must_use]
     pub fn resolved_image(&self) -> Option<&str> {
         match self {
@@ -117,7 +103,6 @@ impl ImageDecision {
         }
     }
 
-    /// Base/construct image reference for this decision; `None` for Reuse/Refresh.
     pub fn base_image_ref(&self) -> Option<&str> {
         match self {
             Self::BuildFromPublished { base_image, .. } => Some(base_image.as_str()),

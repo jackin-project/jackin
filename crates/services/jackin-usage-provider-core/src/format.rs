@@ -1,17 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Formatting, CLI, and JSON helpers shared by every usage provider.
-//!
-//! Extracted from `usage.rs` for the file-size ratchet. Lives in a sibling
-//! module so the
-//! provider-specific sections in `usage.rs` only carry their own logic,
-//! not the shared display/parsing utilities every provider depends on.
-//!
-//! Helpers live in submodules and are re-exported here so the coordinator
-//! can still call every helper directly; tests under `usage/tests.rs` see
-//! them through `super::*` and do not need their own re-exports.
-
 mod cli;
 mod labels;
 mod numbers;

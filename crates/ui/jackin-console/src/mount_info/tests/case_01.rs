@@ -116,7 +116,7 @@ fn inspect_classifies_repo_without_remote_as_no_origin() {
     let git_dir = temp.path().join(".git");
     std::fs::create_dir(&git_dir).unwrap();
     std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
-    // No config file at all — simulates `git init` without a remote.
+
     let result = inspect(temp.path().to_str().unwrap());
     match result {
         MountKind::Git { origin: None, .. } => {}
@@ -153,7 +153,6 @@ fn submodule_gitfile_resolves() {
 fn worktree_gitfile_resolves_to_commondir() {
     let temp = tempdir().unwrap();
 
-    // Main repo's .git directory with the shared config.
     let main_gitdir = temp.path().join("main_repo").join(".git");
     std::fs::create_dir_all(&main_gitdir).unwrap();
     std::fs::write(
@@ -164,16 +163,11 @@ fn worktree_gitfile_resolves_to_commondir() {
     )
     .unwrap();
 
-    // Worktree-specific gitdir under main_repo/.git/worktrees/feat.
-    // Owns HEAD + a `commondir` relative pointer back to the main .git.
     let worktree_gitdir = main_gitdir.join("worktrees").join("feat");
     std::fs::create_dir_all(&worktree_gitdir).unwrap();
     std::fs::write(worktree_gitdir.join("HEAD"), "ref: refs/heads/feature-x\n").unwrap();
     std::fs::write(worktree_gitdir.join("commondir"), "../..\n").unwrap();
 
-    // The worktree checkout itself — .git is a file pointing at the
-    // worktree-specific gitdir (absolute path, the form `git worktree
-    // add` writes).
     let worktree = temp.path().join("feat_tree");
     std::fs::create_dir(&worktree).unwrap();
     std::fs::write(
@@ -220,8 +214,7 @@ fn worktree_commondir_with_absolute_path() {
     let worktree_gitdir = main_gitdir.join("worktrees").join("abs_feat");
     std::fs::create_dir_all(&worktree_gitdir).unwrap();
     std::fs::write(worktree_gitdir.join("HEAD"), "ref: refs/heads/abs-branch\n").unwrap();
-    // Absolute commondir pointer — what real-world `git worktree add`
-    // writes on some platforms/versions.
+
     std::fs::write(
         worktree_gitdir.join("commondir"),
         format!("{}\n", main_gitdir.display()),
@@ -262,8 +255,7 @@ fn submodule_gitfile_still_resolves_host_end_to_end() {
     let actual_gitdir = temp.path().join("parent_repo_gitdir");
     std::fs::create_dir(&actual_gitdir).unwrap();
     std::fs::write(actual_gitdir.join("HEAD"), "ref: refs/heads/submain\n").unwrap();
-    // No `commondir` file — this is a plain submodule, so config
-    // lives directly in `actual_gitdir`.
+
     std::fs::write(
         actual_gitdir.join("config"),
         r#"[remote "origin"]
@@ -300,8 +292,6 @@ fn submodule_gitfile_still_resolves_host_end_to_end() {
 
 #[test]
 fn label_formats_generic_git() {
-    // Non-GitHub (or unresolved remote) mounts use the generic
-    // `git · …` prefix.
     assert_eq!(MountKind::Missing.label(), "missing");
     assert_eq!(MountKind::Folder.label(), "folder");
     assert_eq!(
@@ -323,8 +313,6 @@ fn label_formats_generic_git() {
 
 #[test]
 fn label_formats_github_host() {
-    // GitHub-hosted mounts get a `github · …` prefix so the operator
-    // can tell which rows have an "open in browser" affordance.
     assert_eq!(
         github_mount("owner/repo", GitBranch::Named("main".into())).label(),
         "github · main"
@@ -371,16 +359,12 @@ fn remote_to_web_ssh_protocol() {
 
 #[test]
 fn remote_to_web_returns_none_for_gitlab() {
-    // GitLab is a non-GitHub host — `remote_to_web` no longer synthesises
-    // a web URL for it. (Classification falls through to `GitOrigin::Other`
-    // at the `resolve_host_and_url` layer.)
     assert_eq!(remote_to_web("git@gitlab.com:owner/repo.git"), None);
     assert_eq!(remote_to_web("https://gitlab.com/owner/repo.git"), None);
 }
 
 #[test]
 fn remote_to_web_returns_none_for_self_hosted() {
-    // Any non-github.com host yields None.
     assert_eq!(remote_to_web("git@git.example.com:owner/repo.git"), None);
     assert_eq!(remote_to_web("ssh://git@forge.internal/owner/repo"), None);
 }

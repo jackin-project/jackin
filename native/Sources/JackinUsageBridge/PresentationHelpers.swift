@@ -3,9 +3,9 @@
 
 import SwiftUI
 
-/// Pure style mapping.
-///
-/// Rust owns the semantic severity and every visible string.
+
+
+
 public func severityTint(_ severity: String) -> Color {
     switch severity {
     case "danger": return .red
@@ -14,12 +14,12 @@ public func severityTint(_ severity: String) -> Color {
     }
 }
 
-/// Hard product cap for provider status items.
+
 public let statusBarMaxChips = 3
 
-/// Frozen-fixture filter.
-///
-/// Live membership and order come from Rust.
+
+
+
 public func selectStatusBarGlanceRows(
     from rows: [PresentationStore.GlanceProviderRow],
     maxCount: Int = statusBarMaxChips
@@ -32,7 +32,7 @@ public func selectStatusBarGlanceRows(
     )
 }
 
-/// AppKit status-item order follows creation order, so rank changes rebuild items.
+
 public func statusBarOrderRequiresRebuild(previous: [String], next: [String]) -> Bool {
     previous != next
 }

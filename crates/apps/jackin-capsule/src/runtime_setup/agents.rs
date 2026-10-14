@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Per-agent credential setup routines.
 
 use super::{
     AGENT_HOME, AuthMaterialization, AuthMode, ForwardedCredential, GROK_AUTH_PATH, MUSE_AUTH_PATH,
@@ -49,10 +48,6 @@ pub(crate) fn setup_amp(mode: AuthMode) -> Result<AuthMaterialization> {
     )
 }
 
-/// Kimi is the one sync-capable agent whose credential store is a directory, so
-/// it cannot use [`seed_forwarded_credential`]. It applies the same closed mode
-/// policy to the whole store: sync seeds/reuses it, environment modes and ignore
-/// remove it so stale credentials cannot silently override the selected mode.
 pub(crate) fn setup_kimi(mode: AuthMode) -> Result<AuthMaterialization> {
     use jackin_telemetry::schema::enums::{
         CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,
@@ -233,7 +228,7 @@ pub(crate) fn setup_omp(mode: AuthMode) -> Result<AuthMaterialization> {
             label: "omp",
             forwarded: &forwarded,
             target: &target,
-            // No native key: any routed provider key suppresses the warning.
+
             api_key_envs: &[
                 "OPENROUTER_API_KEY",
                 "ANTHROPIC_API_KEY",
@@ -247,8 +242,6 @@ pub(crate) fn setup_omp(mode: AuthMode) -> Result<AuthMaterialization> {
     )
 }
 
-/// Hermes's store is a directory (like Kimi), so it cannot use
-/// [`seed_forwarded_credential`]; same closed mode policy as [`setup_kimi`].
 pub(crate) fn setup_hermes(mode: AuthMode) -> Result<AuthMaterialization> {
     use jackin_telemetry::schema::enums::{
         CredentialSourceType as Source, ErrorType, OutcomeValue as Outcome,

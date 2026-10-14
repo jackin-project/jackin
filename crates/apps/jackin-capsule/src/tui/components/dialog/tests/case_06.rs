@@ -19,14 +19,14 @@ fn exec_picker_space_toggles_enter_confirms_esc_cancels() {
         },
     ];
     let state = ExecPickerState::from_bindings("ssh".into(), vec!["sentry".into()], &bindings);
-    // Two unselected rows, cursor at the top.
+
     assert_eq!(state.items.len(), 2);
     assert!(state.items.iter().all(|i| !i.selected));
 
     let mut dialog = Dialog::ExecPicker(state);
-    // Space toggles the row under the cursor (GH_TOKEN) on.
+
     assert_eq!(dialog.handle_key(b" ", None), DialogAction::Redraw);
-    // Enter confirms, carrying the command + only the selected credential.
+
     let action = dialog.handle_key(b"\r", None);
     let DialogAction::ExecConfirm {
         command,
@@ -43,7 +43,6 @@ fn exec_picker_space_toggles_enter_confirms_esc_cancels() {
     assert_eq!(selected[0].kind, jackin_protocol::ExecKind::Env);
     assert_eq!(selected[0].source, "$GH_TOKEN");
 
-    // Esc cancels with no command run.
     let mut cancel = Dialog::ExecPicker(ExecPickerState::from_bindings(
         "deploy".into(),
         vec![],
@@ -74,9 +73,6 @@ fn exit_dirty_enter_routes_each_row() {
 
 #[test]
 fn exit_dirty_esc_and_ctrl_c_keep_and_exit() {
-    // Reuses the shared FilterListAction::Dismiss path like every other dialog,
-    // mapping dismiss to keep-and-exit so the operator never loses work and the
-    // global Ctrl+C contract is preserved (no swallowed keys).
     let mut esc = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     assert_eq!(
         esc.handle_key(b"\x1b", None),
@@ -91,14 +87,13 @@ fn exit_dirty_esc_and_ctrl_c_keep_and_exit() {
 
 #[test]
 fn exit_dirty_navigation_clamps_at_ends() {
-    // Up at the top stays on the first row.
     let mut top = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     top.handle_key(b"\x1b[A", None);
     assert!(matches!(
         top.handle_key(b"\r", None),
         DialogAction::ExitDirty(ExitDirtyRow::StartNewAgent)
     ));
-    // Down past the end clamps to the last row.
+
     let mut bottom = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     for _ in 0..10 {
         bottom.handle_key(b"\x1b[B", None);
@@ -152,8 +147,6 @@ fn exit_dirty_selection_marker_moves_on_down_arrow() {
 
 #[test]
 fn trparity_capsule_exit_dirty_esc_keeps_and_exits() {
-    // "Esc is ignored" (dialog.rs:269) is implemented as a redirect: the
-    // dialog never returns Dismiss, so the operator cannot lose work.
     let mut d = Dialog::new_exit_dirty(vec!["jackin   1 changed".to_owned()], Arc::from([]));
     assert_eq!(
         d.handle_key(b"\x1b", None),
@@ -172,9 +165,6 @@ fn trparity_capsule_exit_dirty_ctrl_c_keeps_and_exits() {
 
 #[test]
 fn trparity_capsule_exit_dirty_enter_on_inspect_row_requests_inspect() {
-    // Forward walk: cursor from StartNewAgent to Inspect, Enter requests the
-    // Inspect row — the action that makes the daemon push ExitInspect
-    // (input_dispatch.rs:103-113).
     let mut d = Dialog::new_exit_dirty(vec!["jackin   1 changed".to_owned()], Arc::from([]));
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
     assert_eq!(
@@ -185,8 +175,6 @@ fn trparity_capsule_exit_dirty_enter_on_inspect_row_requests_inspect() {
 
 #[test]
 fn trparity_capsule_exit_inspect_esc_walks_back_with_dismiss() {
-    // Dismiss pops one level of the daemon's dialog stack, restoring the
-    // ExitDirty modal underneath.
     let mut d = Dialog::new_exit_inspect(Arc::from([
         InspectRow::Repo("jackin".to_owned()),
         InspectRow::File("M a.rs".to_owned()),
@@ -202,7 +190,7 @@ fn trparity_capsule_exit_inspect_arrows_scroll_without_dismissing() {
         InspectRow::File("M a.rs".to_owned()),
     ]));
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
-    // Second Down clamps at the last row.
+
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
     assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
 }
@@ -235,18 +223,16 @@ fn s8_usage_esc_reverses_focus_then_dismisses() {
     assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
     assert!(!s8_usage_tab_bar_focused(&d));
 
-    // First Esc walks focus back to the tab bar (focus reversal).
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Redraw);
     assert!(s8_usage_tab_bar_focused(&d));
 
-    // Second Esc dismisses the dialog.
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
 }
 
 #[test]
 fn s8_usage_content_arrows_scroll_two_axes() {
     let mut d = Dialog::new_usage(usage_view_fixture());
-    // Tab-bar focus owns Left/Right for tab switches: no scroll movement.
+
     assert_eq!(
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
@@ -256,7 +242,6 @@ fn s8_usage_content_arrows_scroll_two_axes() {
     );
     assert_eq!(s8_usage_scroll(&d), (0, 0));
 
-    // Content focus owns every arrow plus hjkl for two-axis scrolling.
     assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
     assert_eq!(s8_usage_scroll(&d), (0, 1));
@@ -301,8 +286,6 @@ fn s8_usage_left_from_overview_goes_to_last_tab() {
 
 #[test]
 fn s8_usage_removed_account_renders_honest_unavailable() {
-    // Daemon fallback for a tab whose account left the cache (removal while
-    // the dialog is open): an honest unavailable view, never a sibling.
     let view = jackin_protocol::control::FocusedUsageView::unavailable(
         "usage unavailable: account not cached",
         1_781_185_560,

@@ -1,18 +1,3 @@
-//! Shrink-only gate: production `"/jackin` string literals + forbidden-root audit.
-//!
-//! New container-side paths must go through `jackin_core::container_paths`.
-//! Residual literals (Dockerfile template bodies, the chokepoint module
-//! itself) are recorded in `container-path-allowlist.toml` and may only shrink.
-//!
-//! Forbidden absolute roots (`/run`, `/var`, `/opt`, `/etc`, `/tmp/jackin*`) in
-//! production string literals must be allowlisted with a reason under
-//! `[[forbidden-roots]]` (shrink-only).
-//!
-//! ```sh
-//! cargo xtask lint container-paths
-//! cargo xtask lint container-paths --print-allowlist
-//! ```
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,8 +18,7 @@ const CHOKEPOINT: &str = "crates/core/jackin-core/src/container_paths.rs";
 pub(crate) struct LintContainerPathsArgs {
     #[command(flatten)]
     output: FormatArgs,
-    /// Print a regenerated allowlist TOML for the current residual set
-    /// (does not write the file).
+
     #[arg(long)]
     print_allowlist: bool,
 }
@@ -51,7 +35,7 @@ struct Allowlist {
 struct AllowlistFile {
     path: String,
     literals: usize,
-    /// Human-readable residual rationale; not read by the gate.
+
     #[serde(default)]
     #[expect(dead_code, reason = "documentational allowlist field")]
     note: String,
@@ -137,7 +121,6 @@ fn run_inner(args: LintContainerPathsArgs) -> Result<()> {
     let allowlist = read_allowlist(&root)?;
     let mut problems = Vec::new();
 
-    // --- /jackin ledger (file counts + file:line in growth reports) ---
     let mut measured_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut hits_by_file: BTreeMap<String, Vec<&LiteralHit>> = BTreeMap::new();
     for hit in &jackin_hits {
@@ -193,7 +176,6 @@ fn run_inner(args: LintContainerPathsArgs) -> Result<()> {
         }
     }
 
-    // --- forbidden roots (token-aware string literals, file:line) ---
     let mut allowed_forbidden: BTreeMap<(String, String), usize> = BTreeMap::new();
     for row in &allowlist.forbidden_roots {
         *allowed_forbidden
@@ -202,7 +184,6 @@ fn run_inner(args: LintContainerPathsArgs) -> Result<()> {
     }
     let mut measured_forbidden: BTreeMap<(String, String), usize> = BTreeMap::new();
     for hit in &forbidden_hits {
-        // Chokepoint module may document forbidden roots — OK.
         if hit.file == CHOKEPOINT {
             continue;
         }
@@ -261,8 +242,6 @@ fn run_inner(args: LintContainerPathsArgs) -> Result<()> {
 }
 
 fn measure_jackin_literals(root: &Path) -> Result<Vec<LiteralHit>> {
-    // Source-substring ledger (stable vs the pre-syn count of `"\/jackin`).
-    // Syn is used for forbidden-root audit (string-literal contents only).
     let crates_dir = root.join("crates");
     let mut hits = Vec::new();
     for entry in walkdir_rs_files(&crates_dir)? {
@@ -279,7 +258,7 @@ fn measure_jackin_literals(root: &Path) -> Result<Vec<LiteralHit>> {
         for (line_no, line) in text.lines().enumerate() {
             let mut rest = line;
             while let Some(idx) = rest.find("\"/jackin") {
-                let after = &rest[idx + 1..]; // drop leading quote
+                let after = &rest[idx + 1..];
                 let end = after.find('"').unwrap_or(after.len());
                 let lit = after[..end].to_owned();
                 hits.push(LiteralHit {
@@ -287,8 +266,7 @@ fn measure_jackin_literals(root: &Path) -> Result<Vec<LiteralHit>> {
                     line: line_no + 1,
                     literal: lit,
                 });
-                // Advance past the closing quote when present so the next
-                // `"\/jackin` search continues.
+
                 let next = after.get(end..).unwrap_or("");
                 rest = next.get(1..).unwrap_or("");
             }
@@ -377,12 +355,11 @@ impl<'ast> Visit<'ast> for LiteralVisitor<'_> {
 }
 
 fn line_of_span(source: &str, span: proc_macro2::Span) -> usize {
-    // syn/proc_macro2 spans are 1-indexed lines when using the default parser.
     let start = span.start();
     if start.line > 0 {
         return start.line;
     }
-    // Fallback: byte offset if available via unstable APIs is unavailable; 1.
+
     let _ = source;
     1
 }
@@ -419,7 +396,6 @@ fn read_allowlist(root: &Path) -> Result<Allowlist> {
     toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
 }
 
-/// Turso sole-owner rule: only `jackin-usage-store-backend` may depend on or import Turso.
 pub(crate) fn check_turso_sole_owner(root: &Path) -> Result<()> {
     let mut problems = Vec::new();
     let crates_dir = root.join("crates");
@@ -469,7 +445,7 @@ pub(crate) fn check_turso_sole_owner(root: &Path) -> Result<()> {
             if trimmed.starts_with("//") {
                 continue;
             }
-            // Token-level: path imports / use, not bare log strings.
+
             if let Some(col) = turso_import_column(trimmed) {
                 let _ = col;
                 problems.push(format!(
@@ -510,17 +486,11 @@ fn cargo_declares_turso(cargo_toml: &str) -> bool {
 }
 
 fn turso_import_column(line: &str) -> Option<usize> {
-    // Match `use turso` / `use turso::` / `turso::Builder` path forms; ignore
-    // string/log mentions by requiring identifier boundaries without quotes.
-    if line.contains('"') && !line.contains("use turso") {
-        // Likely a string-only mention when no use-form present.
-        if !line.contains("turso::") {
-            return None;
-        }
+    if line.contains('"') && !line.contains("use turso") && !line.contains("turso::") {
+        return None;
     }
     for needle in ["use turso::", "use turso ", "use turso;", "turso::"] {
         if let Some(idx) = line.find(needle) {
-            // Skip if inside a line comment already handled; skip if inside quotes.
             let before = &line[..idx];
             if before.matches('"').count() % 2 == 1 {
                 continue;

@@ -359,12 +359,6 @@ fn telemetry_command_mapper_covers_account_leaves() {
 
 #[test]
 fn root_help_clap_render_has_no_before_help_pill() {
-    // The root command intentionally carries no clap `before_help`: the binary
-    // prints the brand mark (frozen-rain banner or pill) itself, so clap's own
-    // root render leads with the about text, not the pill. (Subcommands keep
-    // their pill — see `all_subcommand_help_pages_show_banner`.) The binary-level
-    // brand mark is covered by the `root_help_leads_with_brand_mark` integration
-    // test.
     let help = help_text(&["jackin", "--help"]);
     assert!(
         !help.trim_start().starts_with("jackin❯"),
@@ -448,7 +442,6 @@ fn removed_local_artifact_commands_stay_rejected_by_parser() {
 
 #[test]
 fn root_help_lists_help_subcommand() {
-    // Our explicit `help` command must appear in the top-level listing.
     let help = help_text(&["jackin", "--help"]);
     assert!(
         help.contains("\n  help "),

@@ -11,19 +11,9 @@ async fn first_materialization_runs_worktree_add_and_writes_record() {
     std::fs::create_dir_all(&container_dir).unwrap();
 
     let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
-    // capture queue (in order materialize_workspace will request):
-    //   preflight: rev-parse --show-toplevel
-    //   preflight: status --porcelain
-    //   ensure_worktree_config: extensions.worktreeConfig --get
-    //   ensure_worktree_config: core.repositoryformatversion --get
-    //   rev-parse HEAD
-    let mut runner = fake_with_outputs(&[
-        &repo.path().to_string_lossy(), // rev-parse --show-toplevel (preflight)
-        "",                             // status --porcelain (clean)
-        "",                             // extensions.worktreeConfig --get (not enabled)
-        "0",                            // core.repositoryformatversion --get
-        "deadbeef\n",                   // rev-parse HEAD
-    ]);
+
+    let mut runner =
+        fake_with_outputs(&[&repo.path().to_string_lossy(), "", "", "0", "deadbeef\n"]);
 
     let mat = materialize_workspace(
         &resolved,
@@ -52,7 +42,6 @@ async fn first_materialization_runs_worktree_add_and_writes_record() {
     assert_eq!(m.dst, "/workspace/jackin");
     assert_eq!(m.isolation, MountIsolation::Worktree);
 
-    // git worktree add should have been invoked.
     assert!(
         runner
             .run_recorded
@@ -60,7 +49,6 @@ async fn first_materialization_runs_worktree_add_and_writes_record() {
             .any(|c| c.contains("worktree add"))
     );
 
-    // record persisted; branch follows Model B (container name verbatim).
     let recs = read_records(&container_dir).unwrap();
     assert_eq!(recs.len(), 1);
     assert_eq!(recs[0].cleanup_status, CleanupStatus::Active);
@@ -124,10 +112,10 @@ async fn clone_materialization_runs_local_shared_clone_and_writes_record() {
 
     let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
     let mut runner = fake_with_outputs(&[
-        &repo.path().to_string_lossy(), // rev-parse --show-toplevel
-        "",                             // status --porcelain
-        "deadbeef\n",                   // rev-parse HEAD
-        "https://github.com/jackin-project/jackin\n", // remote get-url origin
+        &repo.path().to_string_lossy(),
+        "",
+        "deadbeef\n",
+        "https://github.com/jackin-project/jackin\n",
     ]);
 
     let mat = materialize_workspace(
@@ -166,7 +154,7 @@ async fn clone_materialization_runs_local_shared_clone_and_writes_record() {
         "clone mode must not create or switch to a scratch branch: {:?}",
         runner.run_recorded
     );
-    // Origin rewritten from bind-mount loopback to host's upstream.
+
     assert!(
         runner
             .run_recorded
@@ -184,9 +172,6 @@ async fn clone_materialization_runs_local_shared_clone_and_writes_record() {
 
 #[tokio::test]
 async fn clone_materialization_normalizes_ssh_origin_to_https() {
-    // SCP-form host origin would point the clone at an SSH endpoint
-    // the container has no key for; rewrite must land on HTTPS so
-    // `gh auth git-credential` can authenticate the push.
     let repo = make_repo_root();
     let data = tempfile::TempDir::new().unwrap();
     let container_dir = data.path().join("jackin-x");
@@ -194,10 +179,10 @@ async fn clone_materialization_normalizes_ssh_origin_to_https() {
 
     let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
     let mut runner = fake_with_outputs(&[
-        &repo.path().to_string_lossy(), // rev-parse --show-toplevel
-        "",                             // status --porcelain
-        "deadbeef\n",                   // rev-parse HEAD
-        "git@github.com:jackin-project/jackin.git\n", // remote get-url origin (SCP form)
+        &repo.path().to_string_lossy(),
+        "",
+        "deadbeef\n",
+        "git@github.com:jackin-project/jackin.git\n",
     ]);
 
     materialize_workspace(
@@ -229,8 +214,6 @@ async fn clone_materialization_normalizes_ssh_origin_to_https() {
 
 #[tokio::test]
 async fn clone_materialization_skips_origin_rewrite_when_host_origin_is_empty() {
-    // Ok-arm with whitespace-only output: `trimmed.is_empty()`
-    // collapses to `None`, no rewrite emitted.
     let repo = make_repo_root();
     let data = tempfile::TempDir::new().unwrap();
     let container_dir = data.path().join("jackin-x");
@@ -238,10 +221,10 @@ async fn clone_materialization_skips_origin_rewrite_when_host_origin_is_empty() 
 
     let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
     let mut runner = fake_with_outputs(&[
-        &repo.path().to_string_lossy(), // rev-parse --show-toplevel
-        "",                             // status --porcelain
-        "deadbeef\n",                   // rev-parse HEAD
-        "   \r\n\t  ",                  // remote get-url origin (whitespace-only)
+        &repo.path().to_string_lossy(),
+        "",
+        "deadbeef\n",
+        "   \r\n\t  ",
     ]);
 
     materialize_workspace(
@@ -272,19 +255,13 @@ async fn clone_materialization_skips_origin_rewrite_when_host_origin_is_empty() 
 
 #[tokio::test]
 async fn clone_materialization_falls_through_when_host_has_no_origin_remote() {
-    // Err with `No such remote 'origin'` (fresh init, never pushed)
-    // — fall through to loopback, do not abort.
     let repo = make_repo_root();
     let data = tempfile::TempDir::new().unwrap();
     let container_dir = data.path().join("jackin-x");
     std::fs::create_dir_all(&container_dir).unwrap();
 
     let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
-    let mut runner = fake_with_outputs(&[
-        &repo.path().to_string_lossy(), // rev-parse --show-toplevel
-        "",                             // status --porcelain
-        "deadbeef\n",                   // rev-parse HEAD
-    ]);
+    let mut runner = fake_with_outputs(&[&repo.path().to_string_lossy(), "", "deadbeef\n"]);
     runner.fail_with.push((
         "remote get-url origin".into(),
         "fatal: No such remote 'origin'".into(),
@@ -318,21 +295,13 @@ async fn clone_materialization_falls_through_when_host_has_no_origin_remote() {
 
 #[tokio::test]
 async fn clone_materialization_aborts_when_get_url_fails_unexpectedly() {
-    // Permission denied / corrupt config — anything that isn't a
-    // `No such remote` signal — must abort the launch rather than
-    // silently fall through to a loopback origin and misroute the
-    // operator's pushes.
     let repo = make_repo_root();
     let data = tempfile::TempDir::new().unwrap();
     let container_dir = data.path().join("jackin-x");
     std::fs::create_dir_all(&container_dir).unwrap();
 
     let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
-    let mut runner = fake_with_outputs(&[
-        &repo.path().to_string_lossy(), // rev-parse --show-toplevel
-        "",                             // status --porcelain
-        "deadbeef\n",                   // rev-parse HEAD
-    ]);
+    let mut runner = fake_with_outputs(&[&repo.path().to_string_lossy(), "", "deadbeef\n"]);
     runner.fail_with.push((
         "remote get-url origin".into(),
         "fatal: unable to read config: Permission denied".into(),

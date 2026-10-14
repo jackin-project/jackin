@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Snapshot-to-widget rendering: per-variant Ratatui dialog painters.
 
 use super::{
     DialogRatatuiSnapshot, PickerItem, usage_body_rect, usage_info_lines_for_width,
@@ -19,15 +18,6 @@ use termrock::widgets::{
     TextInputState, Validation,
 };
 
-// ---------------------------------------------------------------------------
-// Rendering — called from compose_ratatui_frame() inside the draw closure
-// ---------------------------------------------------------------------------
-
-/// Render a dialog overlay using Ratatui shared components.
-///
-/// `rect` is the `(row, col, height, width)` tuple from `Dialog::box_rect()`,
-/// already computed before the draw closure. `frame` is the Ratatui frame
-/// for the current draw pass.
 pub(crate) fn render_dialog_ratatui(
     frame: &mut Frame<'_>,
     rect: (u16, u16, u16, u16),
@@ -40,7 +30,7 @@ pub(crate) fn render_dialog_ratatui(
         width,
         height,
     };
-    // Skip if the dialog rect would overflow the terminal.
+
     if area.right() > frame.area().width || area.bottom() > frame.area().height {
         return;
     }
@@ -101,10 +91,6 @@ pub(crate) fn render_dialog_ratatui(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Per-variant render helpers
-// ---------------------------------------------------------------------------
-
 pub(crate) fn render_confirm_action(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -114,8 +100,7 @@ pub(crate) fn render_confirm_action(
     data_loss: bool,
 ) {
     let theme = DesignSystem::default();
-    // Exit uses the shared data-loss variant (prompt + warning notes); every
-    // other confirm keeps the plain title+body prompt. Same widget either way.
+
     let body = if data_loss {
         "Exit jackin❯?\n\n! Exiting force-stops the container immediately.\n! Work not saved outside the container will be lost.".to_owned()
     } else {
@@ -178,9 +163,7 @@ pub(crate) fn render_usage_info(
         .map(|tab| tab.id);
     tabs_state.hovered = hovered_tab;
     tabs_state.focused = tab_bar_focused;
-    // The usage dialog keeps the old pin's hover vocabulary: an underlined
-    // tab label. Head dropped the underline in favor of a pure tint wash, so
-    // the hovered roles get the modifier back via theme override.
+
     let base = DesignSystem::default();
     let active_hovered = base
         .style(termrock::style::Role::TabActiveHovered)
@@ -196,10 +179,7 @@ pub(crate) fn render_usage_info(
         tab_area,
         &mut tabs_state,
     );
-    // Body geometry comes from the shared `usage_body_rect`, the same source the
-    // scroll-bound path uses, so the rendered viewport and the scroll clamp can
-    // never disagree (Bug 2). (`usage_tab_strip_area` above gives the strip its
-    // centered x; its height matches `usage_body_rect`'s fixed 2-row reservation.)
+
     let body = usage_body_rect(area);
     let lines = usage_info_lines_for_width(state, body.width);
     let mut scroll = state.scroll.clone();
@@ -215,8 +195,6 @@ pub(crate) fn render_filter_picker(
     selected: usize,
     show_filter: bool,
 ) {
-    // Reuse the shared modal panel so the menu/pickers match every other
-    // jackin❯ dialog: DesignSystem::default().style(termrock::style::Role::Accent).fg.unwrap_or_default() focused border + bold-white title.
     let theme = DesignSystem::default();
     let block = Panel::new(&theme)
         .title(title)
@@ -230,10 +208,6 @@ pub(crate) fn render_filter_picker(
         return;
     }
 
-    // A flat list fills the whole inner area from row 0; a
-    // filterable picker reserves row 0 for the input and row 1 as a gap, so
-    // its items start at row 2. box_rect mirrors this: +2 rows flat, +4 with
-    // the filter — keep the two in lockstep or the list clips.
     let list_area = if show_filter {
         let filter_area = Rect { height: 1, ..inner };
         let mut filter_state = TextInputState::new(filter).with_allow_empty(true);
@@ -247,10 +221,7 @@ pub(crate) fn render_filter_picker(
         if inner.height < 3 {
             return;
         }
-        // Items from row 2 onward (row 1 = separator gap). Section rows are
-        // dim; item rows are white and let the shared render_picker_list paint
-        // the selected-row highlight (green background, ▸ cursor) + scroll
-        // thumb.
+
         Rect {
             y: inner.y + 2,
             height: inner.height.saturating_sub(2),
@@ -260,8 +231,6 @@ pub(crate) fn render_filter_picker(
         inner
     };
 
-    // Section rows are full-width centered dividers drawn by render_picker_list;
-    // item rows are white and let the shared highlight paint the selected row.
     let rows = items
         .iter()
         .enumerate()
@@ -282,9 +251,6 @@ pub(crate) fn render_filter_picker(
         })
         .collect::<Vec<_>>();
     frame.render_stateful_widget(
-        // The picker speaks the classic loud-cursor vocabulary: full-row fill
-        // with a leading ▸ marker (SelectionChrome::Marker), not the quiet
-        // default gutter.
         &List::new(
             &rows,
             &DesignSystem::default().selection(termrock::style::SelectionChrome::Marker),

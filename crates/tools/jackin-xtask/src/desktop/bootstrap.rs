@@ -1,7 +1,3 @@
-//! Bootstrap GitHub environment `release-macos` Apple credentials.
-//!
-//! Never prints secret material. Uses `gh secret set` / `gh variable set`.
-
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -224,12 +220,11 @@ fn op_read(reference: &str) -> Result<String> {
 
 fn base64_file(path: &Path) -> Result<String> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    // Match shell `base64 | tr -d '\n'` — no line wraps.
+
     Ok(base64_nopad_std(&bytes))
 }
 
 fn base64_nopad_std(bytes: &[u8]) -> String {
-    // Standard base64 without newlines (no external crate — simple encoder).
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     let mut i = 0;

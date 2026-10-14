@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Container context: identity metadata (container name, instance ID,
-//! invocation identity) about the running container, available to the daemon.
-//!
-//! Not responsible for: role/workspace config (see `config`) or attach-session
-//! state (see `attach_context`).
-
 use jackin_core::instance_id_from_container_base as instance_id_from_container_name;
 
 pub const JACKIN_CONTAINER_NAME_ENV: &str = "JACKIN_CONTAINER_NAME";

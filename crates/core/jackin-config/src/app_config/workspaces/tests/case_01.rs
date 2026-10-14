@@ -58,9 +58,6 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
 
 #[test]
 fn edit_workspace_toggles_keep_awake_when_set() {
-    // Round-trip: enable, disable, no-change. The Option<bool> shape
-    // distinguishes "user touched the field" from "user said nothing
-    // about it", which is the whole point of the field type.
     let temp = tempdir().unwrap();
     let mut config = AppConfig::default();
     config
@@ -92,9 +89,6 @@ fn edit_workspace_toggles_keep_awake_when_set() {
         .unwrap();
     assert!(config.workspaces.get("my-app").unwrap().keep_awake.enabled);
 
-    // Subsequent edit with no keep_awake change must leave the
-    // field alone — this is the contract that lets `workspace edit
-    // --workdir` not silently flip power-management state.
     config
         .edit_workspace(
             &wn("my-app"),

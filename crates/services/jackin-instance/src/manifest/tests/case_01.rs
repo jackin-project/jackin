@@ -50,7 +50,7 @@ fn manifest_v3_backend_roundtrips_and_omitted_backend_deserializes() {
             inner_docker_enabled: false,
         }),
     );
-    // A v3 apple-container manifest survives a serialize -> deserialize round trip.
+
     let json = serde_json::to_string(&manifest).unwrap();
     assert_eq!(
         serde_json::from_str::<InstanceManifest>(&json).unwrap(),
@@ -61,7 +61,6 @@ fn manifest_v3_backend_roundtrips_and_omitted_backend_deserializes() {
         Some(BackendResources::AppleContainer(_))
     ));
 
-    // `backend` is optional for v3 Docker manifests.
     let mut obj = serde_json::to_value(&manifest)
         .unwrap()
         .as_object()
@@ -106,14 +105,12 @@ fn admitted_instances_empty_is_explicit_and_validate_tabs() {
     );
     assert_eq!(manifest.agent_for_instance("codex-work"), None);
 
-    // Admission survives a serialize -> deserialize round trip.
     let json = serde_json::to_string(&manifest).unwrap();
     assert_eq!(
         serde_json::from_str::<InstanceManifest>(&json).unwrap(),
         manifest
     );
 
-    // Admission is required by the v3 manifest schema; omission is malformed.
     let mut obj = serde_json::to_value(&manifest)
         .unwrap()
         .as_object()
@@ -135,9 +132,6 @@ fn admitted_manifest_membership_does_not_expand_from_unrelated_registration() {
     manifest.set_admitted_instances([AdmittedInstance::new("claude-work", Agent::Claude, "work")]);
     let admitted_before = manifest.admitted_instances.clone();
 
-    // A newly registered account/configuration exists outside this immutable
-    // launch admission set until an explicit recreate/update path writes a new
-    // manifest.
     assert!(!manifest.admits_instance("claude-personal"));
     assert_eq!(manifest.admitted_instances, admitted_before);
 }
@@ -326,8 +320,7 @@ fn index_update_replaces_existing_entry() {
 fn mark_many_purged_empty_slice_is_noop() {
     let data_dir = tempdir().unwrap();
     InstanceIndex::mark_many_purged(data_dir.path(), &[]).unwrap();
-    // Empty slice must not create an index file — short-circuits
-    // before any read or write.
+
     assert!(!data_dir.path().join(INSTANCE_INDEX_FILE).exists());
 }
 
@@ -339,8 +332,6 @@ fn mark_many_purged_tombstones_absent_and_present_in_one_pass() {
     manifest_a.write(&state_a).unwrap();
     InstanceIndex::update_manifest(data_dir.path(), &manifest_a).unwrap();
 
-    // Container B has a manifest on disk but no index entry —
-    // simulates a manifest written before an index update.
     let manifest_b_base = "jk-orphan01-workspace-agent";
     let manifest_b = InstanceManifest {
         container_base: manifest_b_base.to_owned(),
@@ -374,9 +365,7 @@ fn mark_many_purged_is_idempotent() {
     InstanceIndex::update_manifest(data_dir.path(), &manifest).unwrap();
 
     InstanceIndex::mark_many_purged(data_dir.path(), &[manifest.container_base.as_str()]).unwrap();
-    // Second call must not duplicate the entry or change the
-    // status. Operator running `purge` twice (e.g. retry after a
-    // partial failure) sees a stable tombstone.
+
     InstanceIndex::mark_many_purged(data_dir.path(), &[manifest.container_base.as_str()]).unwrap();
 
     let index = InstanceIndex::read(data_dir.path()).unwrap();

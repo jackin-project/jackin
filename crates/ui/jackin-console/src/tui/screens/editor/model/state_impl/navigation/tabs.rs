@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EditorState` construction, focus, and tab plans.
 
 use super::super::super::{EditorFocusTarget, EditorMode, EditorState, EditorTab, FieldFocus};
 use crate::tui::focus::ConsoleFocusTarget;

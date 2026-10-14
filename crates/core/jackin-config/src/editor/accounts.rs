@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Account registry edits under the existing config write lock.
 use super::{ConfigEditor, table_path_mut, validate_candidate};
 use crate::accounts::account_source_fingerprint;
 use crate::{AccountConfig, ConfigError, ConfigResult, validate_account_id};
@@ -10,10 +9,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use toml_edit::{DocumentMut, Item};
 
 impl ConfigEditor {
-    /// Insert or replace an account. Existing references must remain compatible.
-    ///
-    /// # Errors
-    /// Rejects invalid account IDs, credentials and incompatible references.
     pub fn upsert_account(&mut self, id: &str, account: &AccountConfig) -> ConfigResult<()> {
         validate_account_id(id)?;
         let existing: crate::AppConfig = toml::from_str(&self.doc.to_string())?;
@@ -43,10 +38,7 @@ impl ConfigEditor {
         self.workspace_docs = workspaces;
         Ok(())
     }
-    /// Prune bindings to the given account ID across global, workspace, and role scopes.
-    ///
-    /// # Errors
-    /// Returns an error if the candidate configuration is invalid.
+
     pub fn prune_account_bindings(&mut self, id: &str) -> ConfigResult<()> {
         let mut candidate = self.doc.clone();
         remove_bindings(candidate.as_table_mut(), id);
@@ -60,10 +52,7 @@ impl ConfigEditor {
         self.workspace_docs = workspaces;
         Ok(())
     }
-    /// Remove an account and every assignment/binding referring to it.
-    ///
-    /// # Errors
-    /// Returns an error if the account does not exist or the candidate is invalid.
+
     pub fn remove_account(&mut self, id: &str) -> ConfigResult<()> {
         let existing: crate::AppConfig = toml::from_str(&self.doc.to_string())?;
         let account = existing
@@ -95,10 +84,7 @@ impl ConfigEditor {
         self.workspace_docs = workspaces;
         Ok(())
     }
-    /// Replace a workspace's allowed accounts, pruning bindings for removed IDs.
-    ///
-    /// # Errors
-    /// Rejects missing workspaces, unknown IDs and duplicate assignments.
+
     pub fn set_workspace_accounts(
         &mut self,
         workspace: &WorkspaceName,
@@ -119,10 +105,7 @@ impl ConfigEditor {
         self.workspace_docs = docs;
         Ok(())
     }
-    /// Set or clear a global, workspace, or workspace-role account selection.
-    ///
-    /// # Errors
-    /// Rejects unknown accounts, incompatible agents and unauthorized workspace accounts.
+
     pub fn set_account_binding(
         &mut self,
         workspace: Option<&WorkspaceName>,
@@ -283,8 +266,6 @@ fn remove_scan_exclusion(doc: &mut DocumentMut, fingerprint: &str) {
 }
 
 fn prune_empty_role_overrides(doc: &mut DocumentMut) -> ConfigResult<()> {
-    // Table::to_string omits nested tables. Parse the entire document so a
-    // nonempty nested account_bindings/env table cannot look like an empty role.
     let workspace: crate::WorkspaceConfig = toml::from_str(&doc.to_string())?;
     let Some(roles) = doc.get_mut("roles").and_then(Item::as_table_mut) else {
         return Ok(());

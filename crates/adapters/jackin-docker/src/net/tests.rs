@@ -1,25 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `net`.
 use super::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 #[test]
 fn user_agent_includes_crate_version() {
-    // The bug this guards against: an empty UA causes GitHub's API edge to
-    // 403 ("Request forbidden by administrative rules") before any auth or
-    // rate-limit logic runs. Concrete `jackin/<version>` is easier to
-    // diagnose in remote access logs than a bare `jackin`.
     assert!(USER_AGENT.starts_with("jackin/"), "got: {USER_AGENT}");
     let version = USER_AGENT.strip_prefix("jackin/").unwrap();
     assert!(!version.is_empty(), "version segment empty: {USER_AGENT}");
 }
 
-/// Spin up a one-shot HTTP listener, fire a request from `http_client`, and
-/// confirm `User-Agent` arrived. Guards against reqwest's "no default UA"
-/// behaviour silently coming back after a refactor.
 #[tokio::test]
 async fn http_client_sends_user_agent_header() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

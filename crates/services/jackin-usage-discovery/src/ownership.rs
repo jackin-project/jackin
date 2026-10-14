@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Provider ownership and catalog materialization.
 
 use crate::{
     CandidateAccumulator, CredentialSourceKey, DiscoveredCredentialSource, UsageDiscoveryCatalog,
@@ -53,8 +52,6 @@ pub(crate) fn canonical_owner_for_account(
     owner
 }
 
-/// Canonical provider usage key. Launch routes may use provider-compatible
-/// aliases, but cache/refresh/capability identity always uses this key.
 pub(crate) fn canonical_usage_env_name(surface: HostSurfaceId) -> &'static str {
     match surface {
         HostSurfaceId::Claude => jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
@@ -99,7 +96,7 @@ pub(crate) fn account_diagnostic(
         jackin_core::account_key_hash("usage-discovery-unresolved-source-v1", &material);
     UsageDiscoveryDiagnostic {
         surface_id: Some(surface.id().to_owned()),
-        // Do not retain the declared account alias in an operator diagnostic.
+
         scope_label: "account".to_owned(),
         unresolved_source: Some(crate::UsageDiscoveryUnresolvedSource {
             capability_id: capability_id

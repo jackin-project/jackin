@@ -1,13 +1,3 @@
-//! Unified shrink-only ratchet engine (completed codebase-health Phase 7).
-//!
-//! One declarative `ratchet.toml` plus one semantics implementation for every
-//! budget family. Numeric families use high-water-mark shrink-only checks;
-//! presence families use stale/new allowlist checks. CLI: `cargo xtask lint ratchet`.
-//!
-//! Legacy gates (`lint files` / `lint tests` / `lint suppressions`) are thin
-//! shims that call [`check_families_at_root`] / [`print_families`] for their
-//! family IDs — no independent budget TOML readers on the production enforce path.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -22,21 +12,20 @@ use crate::report::{self, FormatArgs};
 const CONFIG_PATH: &str = "ratchet.toml";
 const RERUN: &str = "cargo xtask lint ratchet";
 
-/// Family IDs for the file-size production + test caps.
 pub(crate) const FILE_SIZE_FAMILIES: &[&str] = &["file-size-production", "file-size-test"];
-/// Family ID for the test-layout presence allowlist.
+
 pub(crate) const TEST_LAYOUT_FAMILIES: &[&str] = &["test-layout"];
-/// Family IDs for bare-allow + per-lint expect suppression budgets.
+
 pub(crate) const SUPPRESSION_FAMILIES: &[&str] = &["bare-allow-per-crate", "expect-per-lint-crate"];
 
 #[derive(Debug, Args)]
 pub(crate) struct LintRatchetArgs {
     #[command(flatten)]
     output: FormatArgs,
-    /// Print regenerated entries for one family (`file-size-production`, …).
+
     #[arg(long)]
     print: Option<String>,
-    /// Check only the named family. Repeat for multiple families.
+
     #[arg(long = "only")]
     only: Vec<String>,
 }
@@ -74,7 +63,6 @@ struct Entry {
     bound: Option<usize>,
 }
 
-/// One shrink-only problem for a numeric family entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NumericVerdict {
     Ok,
@@ -85,14 +73,12 @@ pub(crate) enum NumericVerdict {
     UnlistedOverCap { measured: usize, cap: usize },
 }
 
-/// Presence-family verdict for one key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PresenceVerdict {
     Stale,
     New { reason: String },
 }
 
-/// Pure numeric shrink-only check for one budgeted key.
 #[must_use]
 pub(crate) fn check_numeric_entry(
     measured: Option<usize>,
@@ -114,7 +100,6 @@ pub(crate) fn check_numeric_entry(
     }
 }
 
-/// Unlisted key over the family cap.
 #[must_use]
 pub(crate) fn check_numeric_unlisted(measured: usize, cap: usize) -> NumericVerdict {
     if measured > cap {
@@ -124,7 +109,6 @@ pub(crate) fn check_numeric_unlisted(measured: usize, cap: usize) -> NumericVerd
     }
 }
 
-/// Presence family: allowlist keys must still violate; unlisted violations fail.
 #[must_use]
 pub(crate) fn check_presence(
     violations: &BTreeMap<String, String>,
@@ -149,7 +133,6 @@ pub(crate) fn check_presence(
     out
 }
 
-/// One problem row from a family check (structured for shims / JSON report).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyProblem {
     pub family: String,
@@ -157,7 +140,6 @@ pub(crate) struct FamilyProblem {
     pub message: String,
 }
 
-/// Result of checking one or more families.
 #[derive(Debug, Clone)]
 pub(crate) struct FamilyCheckOutcome {
     pub problems: Vec<FamilyProblem>,
@@ -172,7 +154,6 @@ pub(crate) fn enforce() -> Result<()> {
     })
 }
 
-/// Print regenerated entries for each named family (legacy `--print-*` shims).
 pub(crate) fn print_families(ids: &[&str]) -> Result<()> {
     let root = crate::docs::repo_root()?;
     let config = read_config(&root.join(CONFIG_PATH))?;
@@ -182,7 +163,6 @@ pub(crate) fn print_families(ids: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// Cap for a numeric family (e.g. file-size production/test).
 pub(crate) fn family_cap(id: &str) -> Result<usize> {
     let root = crate::docs::repo_root()?;
     let config = read_config(&root.join(CONFIG_PATH))?;
@@ -194,7 +174,6 @@ pub(crate) fn family_cap(id: &str) -> Result<usize> {
     Ok(family.cap.unwrap_or(0))
 }
 
-/// Run family checks and return structured problems (for shims that need Report).
 pub(crate) fn check_families_at_root(ids: &[&str]) -> Result<FamilyCheckOutcome> {
     let root = crate::docs::repo_root()?;
     let config = read_config(&root.join(CONFIG_PATH))?;
@@ -289,19 +268,13 @@ fn check_families(
                     .filter_map(|e| e.bound.map(|b| (e.key.as_str(), b)))
                     .collect();
                 for (key, bound) in &budgeted {
-                    // Cap-0 families (suppressions) treat a missing key as 0 so
-                    // "now zero → delete the row" hits StaleUnderCap rather than
-                    // the file-missing path meant for path keys.
                     let measured_opt = match measured.get(*key).copied() {
                         some @ Some(_) => some,
                         None if cap == 0 => Some(0),
                         None => None,
                     };
                     let v = check_numeric_entry(measured_opt, *bound, cap);
-                    // suite-time is a wall-time ceiling with intentional headroom:
-                    // only Growth fails (prevent suite regressions). Shrink is
-                    // advisory via report_lines so flaky local/CI variance does
-                    // not thrash the bound.
+
                     let ceiling_only = is_ceiling_only(family, artifact_ceiling);
                     let msg = match v {
                         NumericVerdict::Ok => None,
@@ -449,10 +422,7 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
         "build_times" => measure_build_times(root),
         "export_volume_measured" => measure_export_volume_measured(root),
         "perf_dhat_budgets" => measure_perf_dhat_budgets(root),
-        "test_layout_violations" => {
-            // numeric view not used for presence; return empty
-            Ok(BTreeMap::new())
-        }
+        "test_layout_violations" => Ok(BTreeMap::new()),
         "public_surface_pub_mods" => measure_public_surface_pub_mods(root),
         "rust_function_complexity" => measure_rust_function_complexity(root),
         "suite_time" => measure_suite_time(root),
@@ -460,11 +430,6 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
     }
 }
 
-/// Deterministic syntax-level decision count for production Rust functions.
-///
-/// This is deliberately independent of Clippy's evolving cognitive-complexity
-/// implementation. It gives the shrink-only engine stable, reviewable per-crate
-/// maxima while Clippy continues to enforce the absolute workspace threshold.
 fn measure_rust_function_complexity(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut files = Vec::new();
     collect_production_rust_files(&root.join("crates"), &mut files)?;
@@ -583,8 +548,6 @@ impl<'ast> Visit<'ast> for DecisionVisitor {
     }
 }
 
-/// Per-crate count of `pub mod` lines (proxy for foundational surface growth).
-/// Shrink-only ratchet — plan 019 growth report alternative to API snapshots.
 fn measure_public_surface_pub_mods(root: &Path) -> Result<BTreeMap<String, usize>> {
     let crates_dir = root.join("crates");
     let mut out: BTreeMap<String, usize> = BTreeMap::new();
@@ -619,21 +582,12 @@ fn measure_public_surface_pub_mods(root: &Path) -> Result<BTreeMap<String, usize
     Ok(out)
 }
 
-/// Env-pilot style surface guard (plan 019): curated crates may only expose
-/// the allowlisted root `pub mod` names. Expanding the list is intentional API.
-///
-/// Registry grows when a plan slice narrows another foundational crate.
 const CURATED_PUB_MODS: &[(&str, &[&str])] = &[
-    // jackin-env pilot: private impl modules + `pub mod test_support` only.
     ("jackin-env", &["test_support"]),
-    // Plan 019: jackin-config narrowed (private mods + root re-exports).
-    // S6: canonical test-support name is `fixtures`.
     ("jackin-config", &["fixtures"]),
-    // Plan 019: jackin-core — only justified namespace mods remain public.
     ("jackin-core", &["container_paths"]),
 ];
 
-/// Fail if a curated crate's root `lib.rs` declares a non-allowlisted `pub mod`.
 pub(crate) fn check_curated_pub_mods(root: &Path) -> Result<()> {
     let mut problems = Vec::new();
     for &(crate_name, allowed) in CURATED_PUB_MODS {
@@ -689,7 +643,6 @@ pub(crate) fn check_curated_pub_mods(root: &Path) -> Result<()> {
     )
 }
 
-/// Composite key for expect family rows: `{lint}@{crate}`.
 pub(crate) fn expect_key(lint: &str, crate_name: &str) -> String {
     format!("{lint}@{crate_name}")
 }
@@ -716,7 +669,6 @@ fn measure_file_lines(root: &Path, tests_only: bool) -> Result<BTreeMap<String, 
     Ok(out)
 }
 
-/// Read dhat allocation ceilings from `jackin-capsule` `perf_budgets.rs`.
 fn measure_perf_dhat_budgets(root: &Path) -> Result<BTreeMap<String, usize>> {
     let path = root.join("crates/apps/jackin-capsule/src/perf_budgets.rs");
     let text = fs::read_to_string(&path)
@@ -753,11 +705,6 @@ fn measure_perf_dhat_budgets(root: &Path) -> Result<BTreeMap<String, usize>> {
     Ok(out)
 }
 
-/// Measured default-mode export volume from `target/telemetry-volume.json`.
-///
-/// Sole provider input for the `export-volume` family (plan 009). Does **not**
-/// parse `MAX_*` source constants. The telemetry job owns artifact generation;
-/// other lint callers skip this artifact-backed family when it is absent.
 fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>> {
     let artifact = root.join("target/telemetry-volume-ratchet.json");
     if !artifact.is_file() {
@@ -772,7 +719,7 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
     let value: serde_json::Value = serde_json::from_str(&text)
         .with_context(|| format!("parsing measured volume at {}", artifact.display()))?;
     let mut out = BTreeMap::new();
-    // Only measured keys — never MAX_* ceilings (those are in-test guardrails).
+
     for key in [
         "default_mode_logs",
         "default_mode_spans",
@@ -791,9 +738,7 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
 
 fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
-    // CLAUDE.md only (not Claude.md): on case-sensitive CI Claude.md is absent;
-    // on case-insensitive checkouts Claude.md is the same inode as CLAUDE.md and
-    // would double-count / thrash unlisted keys.
+
     let candidates = ["AGENTS.md", "crates/AGENTS.md", "CLAUDE.md"];
     for rel in candidates {
         let path = root.join(rel);
@@ -802,7 +747,7 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
             out.insert(rel.to_owned(), n);
         }
     }
-    // crate README files
+
     let crates_dir = root.join("crates");
     if crates_dir.is_dir() {
         for group in crate::fs_util::read_dir_sorted(&crates_dir)? {
@@ -826,7 +771,6 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     Ok(out)
 }
 
-/// Scheduled per-crate clean and incremental build seconds.
 fn measure_build_times(root: &Path) -> Result<BTreeMap<String, usize>> {
     let path = root.join("target/build-times.json");
     if !path.is_file() {
@@ -857,7 +801,6 @@ fn measure_build_times(root: &Path) -> Result<BTreeMap<String, usize>> {
     Ok(out)
 }
 
-/// Parse a junit `time` attribute (seconds as decimal text) into whole milliseconds.
 fn junit_seconds_to_ms(raw: &str) -> u64 {
     let (whole, frac) = raw.split_once('.').unwrap_or((raw, ""));
     let Ok(secs) = whole.parse::<u64>() else {
@@ -865,7 +808,7 @@ fn junit_seconds_to_ms(raw: &str) -> u64 {
     };
     let mut ms_part = 0u64;
     let mut digits = frac.chars().filter(char::is_ascii_digit).take(3);
-    // tenths, hundredths, thousandths
+
     if let Some(a) = digits.next() {
         ms_part += u64::from(a.to_digit(10).unwrap_or(0)) * 100;
     }
@@ -878,12 +821,6 @@ fn junit_seconds_to_ms(raw: &str) -> u64 {
     secs.saturating_mul(1000).saturating_add(ms_part)
 }
 
-/// Suite wall-time from nextest junit (plan 027).
-///
-/// Always returns `junit_total_ms` so the family is never skipped. When no
-/// junit artifact is present (local/default lint without a prior nextest run),
-/// measures `0` — growth-only enforcement still fails if a real suite exceeds
-/// the ceiling; Shrink remains advisory for suite-time headroom.
 pub(crate) fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
     let candidates = [
@@ -893,7 +830,7 @@ pub(crate) fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>>
     let total_ms = if let Some(path) = candidates.into_iter().find(|p| p.is_file()) {
         let text = fs::read_to_string(&path)
             .with_context(|| format!("reading suite junit at {}", path.display()))?;
-        // Sum time= attributes (seconds, possibly fractional) → whole milliseconds.
+
         let mut total_ms: u64 = 0;
         for part in text.split("time=\"").skip(1) {
             let Some(end) = part.find('"') else {
@@ -921,8 +858,6 @@ fn print_family(root: &Path, config: &Config, family_id: &str) -> Result<()> {
             let measured = invoke_provider(root, &family.provider)?;
             emit(&format!("# ratchet family {family_id} regenerated entries"));
             for (key, bound) in &measured {
-                // report-only: all keys; cap=0 (suppression-style): every nonzero;
-                // positive cap: only over-cap grandfather candidates.
                 let print = match (family.mode.as_str(), family.cap) {
                     ("report", _) => true,
                     (_, Some(0)) => *bound > 0,

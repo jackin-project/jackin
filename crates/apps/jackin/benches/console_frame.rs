@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Frame-time benchmark for the host console TUI compose path.
-//!
-//! Budget: the host console should compose a representative workspace
-//! frame well inside one 60 Hz frame (~16ms). Run with:
-//!
-//! ```sh
-//! cargo bench --bench console_frame
-//! ```
-
 use criterion::{Criterion, criterion_group, criterion_main};
 use ratatui::{Terminal, backend::TestBackend};
 

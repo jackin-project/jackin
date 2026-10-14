@@ -1,7 +1,7 @@
-// Descriptor-relative evidence file access. On Unix, each directory
-// component is opened with `O_NOFOLLOW`, and files are created/read/renamed
-// relative to the pinned parent descriptor so a symlink swap cannot redirect
-// an artifact outside the intended tree.
+
+
+
+
 
 use std::{ffi::{CString, OsStr, OsString}, path::Component};
 

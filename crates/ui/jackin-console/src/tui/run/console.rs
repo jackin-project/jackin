@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Console-state adapter plans.
 
 use super::{
     LetterInputState, QuitInterceptState, console_screen_stage_for_route, consumes_letter_input,
@@ -11,7 +10,6 @@ use ratatui::layout::Rect;
 
 #[must_use]
 pub fn quit_confirm_area(frame: Rect, confirm: &crate::tui::components::ConfirmState) -> Rect {
-    // Structural exception: the root console quit prompt is outside `Modal`; it still uses shared confirm height and centered geometry.
     let width: u16 = 44.min(frame.width.saturating_sub(4));
     let height: u16 = confirm
         .required_height()
@@ -25,11 +23,6 @@ pub fn quit_confirm_area(frame: Rect, confirm: &crate::tui::components::ConfirmS
         height,
     }
 }
-
-// ── Concrete ConsoleState accessors ──────────────────────────────────────────
-//
-// These helpers extract facts from the concrete ConsoleState/ConsoleStage types
-// that live in this crate. They avoid re-derivation in the root event loop.
 
 pub const fn is_on_main_screen(state: &crate::tui::console::ConsoleState) -> bool {
     let crate::tui::console::ConsoleStage::Manager(ms) = &state.stage;

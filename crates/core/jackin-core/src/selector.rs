@@ -1,33 +1,22 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Role and container selector types used across the CLI, workspace
-//! resolution, and launch pipeline to identify the operator's target.
-//!
-//! The `RoleChoice` trait impl (`impl RoleChoice for RoleSelector`) lives in
-//! `jackin-console` (where `RoleChoice` is defined), not here, to satisfy the
-//! orphan rule.
-
 use std::fmt;
 use thiserror::Error;
 
 use crate::constants::CONTAINER_PREFIX_DASH;
 
-/// Top-level selector: either a role (by org/name) or a bare container name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Selector {
-    /// Role identified by optional namespace and name.
     Role(RoleSelector),
-    /// Bare Docker container name (must use the jackin container prefix).
+
     Container(String),
 }
 
-/// Identifies a role by optional namespace and name (e.g. `chainargos/the-architect`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleSelector {
-    /// Optional org/namespace segment before `/`.
     pub namespace: Option<String>,
-    /// Role name segment.
+
     pub name: String,
 }
 
@@ -41,20 +30,17 @@ impl fmt::Display for RoleSelector {
     }
 }
 
-/// Why a selector string could not be parsed.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum SelectorError {
-    /// Input was empty.
     #[error("selector cannot be empty")]
     Empty,
-    /// Input failed segment/container-name validation.
+
     #[error("invalid selector: {0}")]
     Invalid(String),
 }
 
 impl RoleSelector {
-    /// Construct a role selector from optional namespace and name (already validated).
     pub fn new(namespace: Option<&str>, name: &str) -> Self {
         Self {
             namespace: namespace.map(str::to_owned),
@@ -62,12 +48,6 @@ impl RoleSelector {
         }
     }
 
-    /// Parse a role selector. Input is lowercased before validation so
-    /// `ChainArgos/Agent-Brown` and `chainargos/agent-brown` both produce
-    /// the same `RoleSelector`. This matches GitHub's case-insensitive
-    /// org/user routing and the Docker constraint that container/image
-    /// names must be lowercase. Display names live in the manifest's
-    /// `[identity].name` field, so case preservation has its own slot.
     pub fn parse(input: &str) -> Result<Self, SelectorError> {
         if input.is_empty() {
             return Err(SelectorError::Empty);
@@ -93,15 +73,11 @@ impl RoleSelector {
         Err(SelectorError::Invalid(input.to_owned()))
     }
 
-    /// Canonical key string (`name` or `namespace/name`).
     pub fn key(&self) -> String {
         self.to_string()
     }
 }
 
-/// Derive the role's canonical runtime slug (used for image-tag and
-/// repo-lock-file naming). A namespaced role becomes `namespace_name`;
-/// a bare role becomes `name`.
 pub fn runtime_slug(selector: &RoleSelector) -> String {
     selector.namespace.as_ref().map_or_else(
         || selector.name.clone(),
@@ -112,17 +88,12 @@ pub fn runtime_slug(selector: &RoleSelector) -> String {
 impl TryFrom<&str> for RoleSelector {
     type Error = SelectorError;
 
-    /// Idiomatic wrapper around [`RoleSelector::parse`]. Exists so callers
-    /// that rely on `TryFrom` conversion traits (including generic code and
-    /// `try_into()` call sites) can convert a `&str` without having to
-    /// reach for the inherent `parse` method.
     fn try_from(input: &str) -> Result<Self, Self::Error> {
         Self::parse(input)
     }
 }
 
 impl Selector {
-    /// Parse either a container name (jackin prefix) or a role selector.
     pub fn parse(input: &str) -> Result<Self, SelectorError> {
         if input.is_empty() {
             return Err(SelectorError::Empty);
@@ -139,8 +110,6 @@ impl Selector {
 impl TryFrom<&str> for Selector {
     type Error = SelectorError;
 
-    /// Idiomatic wrapper around [`Selector::parse`]. See the analogous impl
-    /// on [`RoleSelector`] for rationale.
     fn try_from(input: &str) -> Result<Self, Self::Error> {
         Self::parse(input)
     }

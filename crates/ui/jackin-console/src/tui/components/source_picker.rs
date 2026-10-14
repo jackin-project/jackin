@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Plain-or-1Password choice between `EnvKey` input and value entry.
-
 use crossterm::event::{KeyCode, KeyEvent};
 
 use jackin_oppicker::ModalOutcome;
@@ -17,10 +15,7 @@ pub enum SourceChoice {
 #[derive(Debug, Clone)]
 pub struct SourcePickerState {
     pub key: String,
-    /// Captured from `ConsoleState::op_available` (probed once at
-    /// startup); operator must restart to pick up a mid-session
-    /// install. When `false`, the Op button renders dim and `←`/`→`
-    /// skip it.
+
     pub op_available: bool,
     pub focused: SourceChoice,
 }
@@ -49,8 +44,6 @@ impl SourcePickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                // Defensive: `cycle` never parks focus on disabled Op,
-                // but refuse to commit if a future code path does.
                 if self.focused == SourceChoice::Op && !self.op_available {
                     return ModalOutcome::Continue;
                 }

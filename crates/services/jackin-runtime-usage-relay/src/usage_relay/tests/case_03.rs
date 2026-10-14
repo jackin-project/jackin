@@ -159,7 +159,6 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
         capability("acc-c"),
     ]);
 
-    // Forged D across every operation shape: denied, zero provider calls.
     for operation in [
         UsageBrokerOperation::Current {
             capability: capability("acc-d"),
@@ -195,7 +194,7 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
         };
         assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
     }
-    // Same-surface sibling: same provider surface, non-launched account.
+
     let denied = dispatch(
         UsageBrokerOperation::RefreshForCapability {
             capability: capability("acc-a-evil"),
@@ -213,7 +212,6 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
     assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
-    // Empty scope denies even a well-formed, otherwise-known capability.
     let empty = UsageCapabilitySet::new([]);
     let denied = dispatch(
         UsageBrokerOperation::RefreshForCapability {
@@ -232,7 +230,6 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
     assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
-    // Each admitted account refreshes and completes independently.
     for id in ["acc-a", "acc-b", "acc-c"] {
         let refresh = dispatch(
             UsageBrokerOperation::RefreshForCapability {

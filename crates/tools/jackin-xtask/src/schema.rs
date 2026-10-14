@@ -1,21 +1,3 @@
-//! Schema-migration gate: enforce the five-artifact rule for versioned schemas.
-//!
-//! When a PR bumps a versioned schema (`config.toml`, per-workspace files, or
-//! `jackin.role.toml`), the rule requires a version bump, a migration step, a
-//! new fixture directory, a re-bake of existing fixtures, and a
-//! `schema-versions.mdx` Timeline entry. Shipping a subset still passes the unit
-//! tests, so this gate runs in CI to catch the gap a reviewer would otherwise
-//! have to eyeball.
-//!
-//! ```sh
-//! cargo xtask schema-check --base origin/main
-//! ```
-//!
-//! The migration step and the existing-fixture re-bake are already enforced by
-//! `tests/migration_fixtures.rs` (it walks every chain on each run), so this gate
-//! checks the two artifacts unit tests cannot see: the new `from-<predecessor>`
-//! fixture directory, and the `schema-versions.mdx` entry for the new version.
-
 use std::fs;
 use std::path::Path;
 
@@ -26,13 +8,10 @@ use crate::docs::repo_root;
 
 #[derive(Args)]
 pub(crate) struct SchemaCheckArgs {
-    /// Git ref to diff against — the pre-PR baseline. CI passes the merge base.
     #[arg(long, default_value = "origin/main")]
     base: String,
 }
 
-/// A versioned schema: where its `CURRENT_*_VERSION` lives and where its
-/// migration fixtures sit.
 struct SchemaKind {
     name: &'static str,
     const_name: &'static str,
@@ -74,7 +53,6 @@ fn emit(line: &str) {
 pub(crate) fn run(args: SchemaCheckArgs) -> Result<()> {
     let root = repo_root()?;
 
-    // A clear error beats silently passing when the baseline is unfetched.
     let verify = git(&root, &["rev-parse", "--verify", "--quiet", &args.base])?;
     if !verify.success {
         bail!(
@@ -88,8 +66,7 @@ pub(crate) fn run(args: SchemaCheckArgs) -> Result<()> {
     for kind in KINDS {
         let head = read_version(&root.join(kind.version_file), kind.const_name)?;
         let base = git_show_version(&root, &args.base, kind.version_file, kind.const_name)?;
-        // Only a real bump triggers the check. A file absent at base (a brand-new
-        // schema) yields None and is skipped — there is no predecessor to migrate.
+
         if let Some(base) = base
             && base != head
         {
@@ -113,7 +90,6 @@ pub(crate) fn run(args: SchemaCheckArgs) -> Result<()> {
     );
 }
 
-/// Assert the fixture + doc artifacts a version bump must ship.
 fn check_bump(
     root: &Path,
     kind: &SchemaKind,
@@ -158,10 +134,6 @@ fn check_bump(
     Ok(())
 }
 
-/// True when `schema-versions.mdx` carries a Timeline entry for `version` — a
-/// `###` heading containing the backtick-wrapped version. The backticks bound
-/// the match so `v1alpha1` is not satisfied by an existing `v1alpha10` heading,
-/// and a bare mention in prose does not count as the Timeline entry.
 fn doc_has_timeline_entry(doc_text: &str, version: &str) -> bool {
     let token = format!("`{version}`");
     doc_text
@@ -169,14 +141,12 @@ fn doc_has_timeline_entry(doc_text: &str, version: &str) -> bool {
         .any(|line| line.trim_start().starts_with("### ") && line.contains(&token))
 }
 
-/// Read a `pub const <NAME>: &str = "vX";` value from a source file.
 fn read_version(path: &Path, const_name: &str) -> Result<String> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     parse_version(&text, const_name)
         .with_context(|| format!("could not find `const {const_name}` in {}", path.display()))
 }
 
-/// Extract the string literal from the `const <NAME>` declaration line.
 fn parse_version(text: &str, const_name: &str) -> Option<String> {
     let needle = format!("const {const_name}");
     text.lines().find_map(|line| {
@@ -188,8 +158,6 @@ fn parse_version(text: &str, const_name: &str) -> Option<String> {
     })
 }
 
-/// Read the version const from `<base>:<file>`. `None` when the file did not
-/// exist at the base ref (a brand-new schema file).
 fn git_show_version(
     root: &Path,
     base: &str,

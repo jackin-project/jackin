@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Launch dispatch resolution.
 
 use super::{build_workspace_choice, resolve_selected_workspace};
 use jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace};

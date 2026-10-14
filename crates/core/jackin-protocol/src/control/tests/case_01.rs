@@ -19,9 +19,6 @@ fn server_msg_unknown_decodes_from_unrecognised_tag() {
 
 #[test]
 fn missing_tag_field_still_bails() {
-    // Structural malformations (no `type` key, non-string tag) are
-    // not absorbed by `#[serde(other)]` — peers must still emit
-    // well-formed tagged JSON.
     serde_json::from_str::<ClientMsg>(r#"{"foo":"bar"}"#).unwrap_err();
     serde_json::from_str::<ServerMsg>(r#"{"type":42}"#).unwrap_err();
 }
@@ -104,8 +101,7 @@ fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
     let decoded: UsageProviderTab =
         serde_json::from_str(&serde_json::to_string(&tab).unwrap()).unwrap();
     assert_eq!(decoded, tab);
-    // Tabs persisted before the id field decode with an empty id rather than
-    // failing; the producer always stamps real ids.
+
     let legacy: UsageProviderTab = serde_json::from_str(
         r#"{"label":"Anthropic","status_label":"fresh","account_label":"a@example.com","plan_label":null,"source_label":null,"active":true}"#,
     )
@@ -116,14 +112,12 @@ fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
 
 #[test]
 fn token_usage_roundtrips_present_and_absent() {
-    // Request side.
     let json = serde_json::to_string(&ClientMsg::TokenUsage { session_id: 9 }).unwrap();
     assert!(matches!(
         serde_json::from_str::<ClientMsg>(&json).unwrap(),
         ClientMsg::TokenUsage { session_id: 9 }
     ));
 
-    // Reply with a summary.
     let summary = TokenUsageSummary {
         input_tokens: 100,
         output_tokens: 40,
@@ -141,7 +135,6 @@ fn token_usage_roundtrips_present_and_absent() {
         other => panic!("unexpected variant {other:?}"),
     }
 
-    // Reply for an unknown session.
     let json = serde_json::to_string(&ServerMsg::TokenUsage { summary: None }).unwrap();
     assert!(matches!(
         serde_json::from_str::<ServerMsg>(&json).unwrap(),
@@ -180,8 +173,6 @@ fn usage_account_list_roundtrips() {
 
 #[test]
 fn money_scales_minor_units_by_exponent() {
-    // 5331 minor @ exponent 2 = 53.31 major — the value that, mis-scaled as
-    // major units, produced the 100×-too-large spend bug.
     let usd = Money::new(5331, "USD", 2);
     assert!((usd.major() - 53.31).abs() < 1e-9);
     assert_eq!(usd.to_string(), "$53.31");
@@ -190,10 +181,9 @@ fn money_scales_minor_units_by_exponent() {
 
 #[test]
 fn money_formats_currency_and_credit_labels() {
-    // ISO-4217 non-USD code: leading code, full precision vs compact.
     assert_eq!(Money::new(7849, "SGD", 2).to_string(), "SGD 78.49");
     assert_eq!(Money::new(7849, "SGD", 2).format_compact(), "SGD 78");
-    // Non-standard label (credits) renders the unit as a suffix.
+
     assert_eq!(
         Money::new(30000, "credits", 2).to_string(),
         "300.00 credits"
@@ -206,8 +196,6 @@ fn money_formats_currency_and_credit_labels() {
 
 #[test]
 fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
-    // Overage survives unclamped; the projection and the capsule presentation
-    // share this rule, so both recover the same magnitude.
     assert_eq!(
         Money::new(15_000, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
         Some(150)
@@ -220,8 +208,7 @@ fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
         Money::new(0, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
         Some(0)
     );
-    // Incompatible denominations, a non-positive cap, and overflow saturate
-    // to no representation instead of a wrapped or fabricated value.
+
     assert_eq!(
         Money::new(50_00, "USD", 2).raw_percent_of(&Money::new(10_000, "SGD", 2)),
         None
@@ -238,7 +225,6 @@ fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
 
 #[test]
 fn status_slot_daily_serializes_as_daily() {
-    // snake_case serde repr, matching the FFI `"daily"` slot projection.
     assert_eq!(
         serde_json::to_value(StatusSlot::Daily).unwrap(),
         serde_json::json!("daily")
@@ -253,7 +239,7 @@ fn status_slot_daily_serializes_as_daily() {
 fn refreshing_placeholder_accepts_constructor_and_surface_decoration() {
     let mut view = FocusedUsageView::refreshing(Some("Codex"), 0);
     assert!(view.is_refreshing_placeholder());
-    // Surface decoration (provider/agent/tabs/provider_label) is allowed.
+
     view.focused_agent = Some("codex".to_owned());
     view.focused_provider = Some("OpenAI / Codex".to_owned());
     view.account.provider_label = "OpenAI / Codex".to_owned();
@@ -274,7 +260,7 @@ fn refreshing_placeholder_rejects_state_and_string_lookalikes() {
     with_bucket.buckets.push(placeholder_sample_bucket());
     let mut with_account = base.clone();
     with_account.account.account_label = "user@example.com".to_owned();
-    // Single-string lookalikes: a non-placeholder view matching only one field.
+
     let mut only_bar = FocusedUsageView::unavailable("other", 0);
     only_bar.status_bar_label = "refreshing".to_owned();
     let mut only_updated = FocusedUsageView::unavailable("other", 0);
@@ -298,8 +284,6 @@ fn refreshing_placeholder_rejects_state_and_string_lookalikes() {
 
 #[test]
 fn session_send_roundtrips_text_verbatim() {
-    // The submit key is part of `text` — the daemon appends nothing, so a
-    // payload carrying `\r` must survive the round trip byte for byte.
     let msg = ClientMsg::SessionSend {
         session: 3,
         text: "ship it\r".to_owned(),

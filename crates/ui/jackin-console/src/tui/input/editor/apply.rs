@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EditorModalOutcome` application helpers.
 
 use crate::tui::screens::editor::view::{mount_destination_input_state, mount_dst_choice_state};
 
@@ -58,16 +57,12 @@ pub(crate) fn apply_editor_confirm(
                 source: source.clone(),
             });
         }
-        // `DeleteIsolatedAndSave` is handled inline at the dispatch
-        // site because it consumes `plan` and routes through
-        // `EditorSaveFlow::PendingCommit`. No-op here.
+
         ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
     }
     Ok(EditorModalOutcome::Continue)
 }
 
-/// Only `EditAddMountSrc` is meaningful here; the prelude's
-/// `CreateFirstMountSrc` target routes through `handle_prelude_modal`.
 pub(crate) fn dispatch_editor_mount_dst_choice(
     editor: &mut EditorState<'_>,
     target: FileBrowserTarget,
@@ -108,18 +103,12 @@ pub fn apply_file_browser_to_editor(
 ) {
     match target {
         FileBrowserTarget::EditAddMountSrc => {
-            // Defer the mount push to the choice modal: in the common case
-            // the operator will take "Mount at same path" (dst = src) and we skip the
-            // TextInput entirely. Only the `Edit destination` branch pushes
-            // a provisional mount and opens the TextInput.
             editor.open_sub_modal(Modal::MountDstChoice {
                 target,
                 state: mount_dst_choice_state(path.display().to_string()),
             });
         }
         FileBrowserTarget::CreateFirstMountSrc => {
-            // Only meaningful in prelude path — handled by
-            // `handle_prelude_modal`.
             drop((editor, path));
         }
         FileBrowserTarget::AuthFormSourceFolder => {

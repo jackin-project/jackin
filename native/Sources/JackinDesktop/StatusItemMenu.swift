@@ -4,17 +4,17 @@
 import AppKit
 import JackinUsageBridge
 
-/// Builds and owns the status-item right-click `NSMenu` from the pure
-/// `StatusItemMenuModel` and dispatches selections through the injected router.
-///
-/// **Retention:** every `NSMenuItem.target` is `self`. The host
-/// (`StatusBarController`) must keep a strong reference to this object for as
-/// long as the menu is used. Holding only the `NSMenu` lets this controller
-/// deallocate; AppKit then disables every row (Open Usage / Refresh / Quit).
+
+
+
+
+
+
+
 @MainActor
 public final class StatusItemMenu: NSObject {
     private let router: StatusItemMenuRouter
-    /// Owned menu; items target `self`.
+
     private let menu: NSMenu
 
     public init(router: StatusItemMenuRouter) {

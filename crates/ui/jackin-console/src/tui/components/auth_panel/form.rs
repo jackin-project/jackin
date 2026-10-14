@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `AuthForm` state and mode helpers.
 
 use super::{AuthCredential, AuthCredentialRef, CredentialInput};
 use std::marker::PhantomData;
@@ -14,9 +13,6 @@ use crate::tui::components::editor_rows::AuthSourceFolderDisplay;
 
 use crate::tui::screens::settings::model::AuthFormFocus;
 
-/// The form's mutable state. Mode and credential are independently editable;
-/// only the [`AuthForm::can_save`] invariant decides whether the parent should
-/// allow the Save action.
 #[derive(Debug)]
 pub struct AuthForm<V: AuthCredential> {
     pub kind: AuthKind,
@@ -27,8 +23,6 @@ pub struct AuthForm<V: AuthCredential> {
     _value: PhantomData<fn() -> V>,
 }
 
-/// Output of a successful commit. The parent uses these fields to write the
-/// kind block and the env-var entry at the chosen layer.
 #[derive(Debug, Clone)]
 pub struct AuthFormOutcome<V> {
     pub mode: AuthMode,
@@ -49,7 +43,6 @@ impl<V: AuthCredential> AuthForm<V> {
         }
     }
 
-    /// Pre-populate the form from an existing row's mode and credential.
     pub fn from_existing(kind: AuthKind, mode: AuthMode, credential: Option<V>) -> Self {
         let credential = credential.map_or(CredentialInput::None, V::into_credential_input);
         Self {
@@ -73,8 +66,6 @@ impl<V: AuthCredential> AuthForm<V> {
         self
     }
 
-    /// Set the mode. If switching to a mode that doesn't need a credential,
-    /// clears the credential field automatically.
     pub fn set_mode(&mut self, mode: AuthMode) {
         debug_assert!(
             self.kind.supported_modes().contains(&mode),
@@ -106,12 +97,10 @@ impl<V: AuthCredential> AuthForm<V> {
         self.source_folder = Some(value);
     }
 
-    /// Whether the source-folder row should be shown.
     pub fn shows_source_folder(&self) -> bool {
         matches!(self.mode, Some(mode) if auth_mode_supports_source_folder(self.kind, mode))
     }
 
-    /// Whether the credential input block should be shown.
     pub const fn shows_credential_block(&self) -> bool {
         matches!(self.mode, Some(mode) if mode_requires_credential(self.kind, mode))
     }
@@ -138,12 +127,10 @@ impl<V: AuthCredential> AuthForm<V> {
         }
     }
 
-    /// Modes the user can pick.
     pub const fn available_modes(&self) -> &'static [AuthMode] {
         self.kind.supported_modes()
     }
 
-    /// Save invariant: mode is committed and, if needed, a non-empty credential.
     pub fn can_save(&self) -> bool {
         let Some(mode) = self.mode else { return false };
         if !self.available_modes().contains(&mode) {
@@ -165,7 +152,6 @@ impl<V: AuthCredential> AuthForm<V> {
         }
     }
 
-    /// Build the outcome for the parent to persist. Returns None if `!can_save`.
     pub fn commit(&self) -> Option<AuthFormOutcome<V>> {
         if !self.can_save() {
             return None;
@@ -190,7 +176,6 @@ pub(crate) const fn mode_requires_credential(kind: AuthKind, mode: AuthMode) -> 
     auth_mode_requires_credential(kind, mode)
 }
 
-/// Operator-facing slug for an [`AuthMode`].
 pub const fn mode_str(mode: AuthMode) -> &'static str {
     mode.as_str()
 }

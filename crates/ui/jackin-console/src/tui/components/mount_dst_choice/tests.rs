@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `mount_dst_choice`.
 use super::*;
 use crossterm::event::{KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -60,7 +59,7 @@ fn enter_with_ok_focus_commits_ok() {
 #[test]
 fn enter_with_edit_focus_commits_edit() {
     let mut s = MountDstChoiceState::new("/h");
-    s.handle_key(key(KeyCode::Tab)); // Ok -> Edit
+    s.handle_key(key(KeyCode::Tab));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Commit(MountDstChoice::Edit)
@@ -70,8 +69,8 @@ fn enter_with_edit_focus_commits_edit() {
 #[test]
 fn enter_with_cancel_focus_returns_cancel() {
     let mut s = MountDstChoiceState::new("/h");
-    s.handle_key(key(KeyCode::Tab)); // Ok -> Edit
-    s.handle_key(key(KeyCode::Tab)); // Edit -> Cancel
+    s.handle_key(key(KeyCode::Tab));
+    s.handle_key(key(KeyCode::Tab));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Cancel
@@ -81,8 +80,8 @@ fn enter_with_cancel_focus_returns_cancel() {
 #[test]
 fn shortcut_m_commits_ok() {
     let mut s = MountDstChoiceState::new("/h");
-    // Rotate focus away first to prove `m` is not focus-dependent.
-    s.handle_key(key(KeyCode::Tab)); // focus -> Edit
+
+    s.handle_key(key(KeyCode::Tab));
     assert!(matches!(
         s.handle_key(key(KeyCode::Char('m'))),
         ModalOutcome::Commit(MountDstChoice::SamePath)
@@ -118,8 +117,6 @@ fn esc_cancels() {
 
 #[test]
 fn uppercase_shortcuts_work() {
-    // Shift-held shortcut characters should still route to the same
-    // commit/cancel outcomes.
     let mut s = MountDstChoiceState::new("/h");
     assert!(matches!(
         s.handle_key(key(KeyCode::Char('M'))),

@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Mouse event handling for the workspace manager: list/details seam drag,
-//! click-to-select in the list pane, and `FileBrowser` URL-click fallthrough.
-//!
-//! Coordinator — declares the sibling modules under `input/mouse/` and
-//! re-exports every public symbol so external callers keep their
-//! existing `use crate::tui::input::mouse::*` paths.
-
 mod hover;
 mod modal_scroll;
 mod scroll_bars;
@@ -84,8 +77,6 @@ use crate::tui::mount_display::workspace_config_mounts_content_width as workspac
 #[cfg(test)]
 use termrock::scroll::max_offset_u16 as max_scroll_offset;
 
-/// Dispatch a mouse event into the workspace manager's list view. Drives
-/// the mouse-draggable seam between the list pane and the details pane.
 #[cfg(test)]
 fn handle_mouse(
     state: &mut ManagerState<'_>,
@@ -95,14 +86,6 @@ fn handle_mouse(
     handle_mouse_with_config(state, mouse, term_size, None)
 }
 
-/// Dispatch a mouse event into the workspace manager.
-///
-/// Mouse parity matrix row 7 carve-out: the routing precedence chain
-/// (container-info copy → container scroll → picker modal → file-browser
-/// modal → tab select → click focus → scrollbar drags → wheel → row
-/// select → URL open → seam/list) stays consumer code in exactly this
-/// order; upstream supplies the z-ordered hit + overlay routing
-/// primitives, no single carrier.
 pub fn handle_mouse_with_config(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -184,8 +167,7 @@ pub fn handle_mouse_with_config(
                     vertical_fallback,
                 } => {
                     let outcome = dispatch_wheel(state, mouse, term_size, config, 0, delta);
-                    // Matrix row 3: upstream never retries vertical — the
-                    // Shift-fallback is the consumer retry on `Ignored`.
+
                     if matches!(outcome, termrock::widgets::ScrollOutcome::Ignored)
                         && let Some(fallback) = vertical_fallback
                     {
@@ -272,7 +254,6 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     update_manager(state, message);
 }
 
-/// Whether a left-click at the pointer would act on a clickable element.
 #[must_use]
 pub fn clickable_at(
     state: &ManagerState<'_>,

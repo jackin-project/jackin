@@ -10,7 +10,7 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
     paths.ensure_base_dirs().unwrap();
     let mut config = AppConfig::default();
     let mut ws = empty_ws();
-    // Same key name in both scopes.
+
     ws.env.insert("API_TOKEN".into(), "ws-value".into());
     let mut ag_env = std::collections::BTreeMap::new();
     ag_env.insert("API_TOKEN".into(), "role-value".into());
@@ -88,15 +88,10 @@ fn cursor_skips_section_spacer_on_down_arrow() {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
-    // Rows with no workspace env keys + one collapsed role section:
-    //   0 WorkspaceAddSentinel
-    //   1 SectionSpacer
-    //   2 AgentHeader
+
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
-    // Sanity-check the row layout matches the comment above before
-    // exercising the navigation.
     if let ManagerStage::Editor(e) = &state.stage {
         let rows = e.secrets_flat_rows();
         assert!(matches!(
@@ -107,7 +102,6 @@ fn cursor_skips_section_spacer_on_down_arrow() {
         assert!(matches!(rows.get(2), Some(SecretsRow::RoleHeader { .. })));
     }
 
-    // ↓ from row 0 must land on row 2, skipping the spacer at row 1.
     handle_key(
         &mut state,
         &mut config,
@@ -126,7 +120,6 @@ fn cursor_skips_section_spacer_on_down_arrow() {
         e.active_field
     );
 
-    // ↑ from row 2 must land back on row 0, skipping the spacer.
     handle_key(
         &mut state,
         &mut config,
@@ -148,11 +141,6 @@ fn cursor_skips_section_spacer_on_down_arrow() {
 
 #[test]
 fn space_on_general_keep_awake_row_toggles_pending_flag() {
-    // Row 2 of the General tab is the keep_awake toggle. Space
-    // flips pending.keep_awake.enabled; subsequent Space flips
-    // back. The change lives only on `pending` (not `original`)
-    // until the operator saves — that's what build_workspace_edit
-    // detects to populate WorkspaceEdit.keep_awake_enabled.
     let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
     if let ManagerStage::Editor(e) = &mut state.stage {
         e.active_field = FieldFocus::Row(2);
@@ -230,10 +218,6 @@ fn enter_on_general_toggle_rows_does_not_toggle_flags() {
 
 #[test]
 fn space_on_general_non_toggle_rows_does_not_flip_keep_awake() {
-    // Row 0 (Name) and row 1 (Working dir) ignore Space — those
-    // are modal-opening fields driven by Enter. A regression that
-    // applied the toggle from any General row would flip the flag
-    // when the operator was just typing a Space in a name input.
     for row in [0usize, 1usize] {
         let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
         if let ManagerStage::Editor(e) = &mut state.stage {
@@ -259,10 +243,6 @@ fn space_on_general_non_toggle_rows_does_not_flip_keep_awake() {
 
 #[test]
 fn down_arrow_on_general_can_reach_keep_awake_row() {
-    // max_row_for_tab(General) must allow the cursor to navigate
-    // to row 2; otherwise the toggle would be reachable only via
-    // direct mutation, defeating the operator-discoverable
-    // workflow.
     let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
     if let ManagerStage::Editor(e) = &mut state.stage {
         e.active_field = FieldFocus::Row(0);
@@ -302,8 +282,6 @@ fn tui_text_entry_op_uri_always_commits_as_plain() {
         key: "CLAUDE_TOKEN".into(),
     };
 
-    // Simulate committing a typed/pasted op:// string via the
-    // text-entry path (Enter in the EnvValue modal).
     apply_text_input(&target, &mut editor, "op://Vault/Item/Field");
 
     let stored = editor
@@ -318,7 +296,7 @@ fn tui_text_entry_op_uri_always_commits_as_plain() {
         "text-entry commit of op:// string must store EnvValue::Plain, \
              not EnvValue::OpRef — the picker is the only path to OpRef"
     );
-    // Belt-and-suspenders: confirm it is NOT an OpRef.
+
     assert!(
         !matches!(stored, jackin_core::EnvValue::OpRef(_)),
         "text entry must never produce EnvValue::OpRef"

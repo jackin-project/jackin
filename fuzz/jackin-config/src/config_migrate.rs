@@ -1,4 +1,4 @@
-//! Fuzz: config.toml migration — no panic; Ok path is idempotent.
+
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 use std::fs;

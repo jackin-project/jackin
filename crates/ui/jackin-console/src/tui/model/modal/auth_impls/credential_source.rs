@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ConsoleModal` credential source picker and plain-text apply.
 
 use super::super::ConsoleModal;
 use crate::tui::components::modal_overlay::{

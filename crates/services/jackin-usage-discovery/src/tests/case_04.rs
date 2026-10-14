@@ -7,7 +7,7 @@ use super::*;
 fn disc_blocked_providers_mint_no_refresh_material() {
     let temp = tempfile::tempdir().unwrap();
     let reader = RecordingProfileReader::default();
-    // omp/hermes: attribution-only adapters; presence never mints material.
+
     let omp = temp.path().join("omp");
     std::fs::create_dir_all(omp.join("agent")).unwrap();
     std::fs::write(omp.join("agent/agent.db"), b"sqlite fixture").unwrap();
@@ -22,8 +22,7 @@ fn disc_blocked_providers_mint_no_refresh_material() {
         profile_identity(&reader, Agent::Hermes, &hermes, temp.path()),
         ProfileValidation::Anonymous(None)
     ));
-    // Muse: local identity only; the secret stays in the platform store and
-    // no pollable fetch exists, so no material.
+
     let muse = temp.path().join("muse");
     std::fs::create_dir_all(&muse).unwrap();
     std::fs::write(
@@ -41,8 +40,7 @@ fn disc_blocked_providers_mint_no_refresh_material() {
 #[test]
 fn disc_antigravity_grant_mints_cli_refresh_material() {
     let temp = tempfile::tempdir().unwrap();
-    // Grant present (payload always empty; presence is the whole answer) →
-    // anonymous binding with CLI refresh material.
+
     for grant in [
         ProfileReadOutcome::Bytes(zeroize::Zeroizing::new(Vec::new())),
         ProfileReadOutcome::Bytes(zeroize::Zeroizing::new(vec![1, 2, 3])),
@@ -55,7 +53,7 @@ fn disc_antigravity_grant_mints_cli_refresh_material() {
         };
         assert!(matches!(*material, ProfileCredentialMaterial::Antigravity));
     }
-    // Grant absent/denied propagates truthfully, never a phantom binding.
+
     for (grant, expected) in [
         (ProfileReadOutcome::Missing, "missing"),
         (ProfileReadOutcome::Denied, "denied"),
@@ -76,7 +74,7 @@ fn disc_antigravity_grant_mints_cli_refresh_material() {
 fn disc_material_less_profile_binding_is_unpollable() {
     let temp = tempfile::tempdir().unwrap();
     let reader = RecordingProfileReader::default();
-    // Muse: local identity, no material → Unpollable, never Capability.
+
     let muse = temp.path().join("muse");
     std::fs::create_dir_all(&muse).unwrap();
     std::fs::write(
@@ -99,7 +97,7 @@ fn disc_material_less_profile_binding_is_unpollable() {
         &reader,
     );
     assert!(matches!(parts.5, ValidatedCredentialSource::Unpollable));
-    // omp: attribution-only presence, no material → Unpollable as well.
+
     let omp = temp.path().join("omp");
     std::fs::create_dir_all(omp.join("agent")).unwrap();
     std::fs::write(omp.join("agent/agent.db"), b"sqlite fixture").unwrap();
@@ -139,10 +137,6 @@ fn refresh_unpollable_binding_returns_honest_unsupported() {
 
 #[test]
 fn refresh_cursor_binding_dispatches_to_collector() {
-    // Live provider RPC with a fixture token: the dashboard rejects it, so
-    // the arm must return the collector's honest Stale view — never
-    // Malformed/Unsupported, which would mean dispatch never happened. The
-    // material carries the profile root; refresh re-reads it.
     let temp = tempfile::tempdir().unwrap();
     let auth_path = temp.path().join("auth.json");
     std::fs::write(&auth_path, r#"{"accessToken":"fixture-opaque-token"}"#).unwrap();
@@ -163,9 +157,6 @@ fn refresh_cursor_binding_dispatches_to_collector() {
 
 #[test]
 fn refresh_antigravity_binding_dispatches_to_cli() {
-    // Live `agy` shell-out (cursor precedent above): any collector view —
-    // Fresh quota, Stale, or a version-gate NeedsSecret — proves dispatch.
-    // Only Malformed/Unsupported-by-discovery would mean the arm never ran.
     let binding = test_binding(
         HostSurfaceId::Google,
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity),
@@ -251,7 +242,7 @@ fn disc_env_key_account_resolves_through_isolated_alias() {
     assert_eq!(validated.accounts.len(), 1);
     assert_eq!(validated.bindings.len(), 1);
     assert!(validated.bindings[0].identity.is_some());
-    // Canonical ownership remains separate from exact provider dispatch.
+
     assert!(matches!(
         validated.bindings[0].source,
         ValidatedCredentialSource::Env {

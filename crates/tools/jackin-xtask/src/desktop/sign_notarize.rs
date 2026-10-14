@@ -1,5 +1,3 @@
-//! Developer ID sign + notarize + staple for a built `JackinDesktop.app`.
-
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,14 +14,13 @@ use crate::cmd;
 
 #[derive(Args)]
 pub(crate) struct SignNotarizeArgs {
-    /// Path to `JackinDesktop.app` (default `native/dist/JackinDesktop.app`).
     app: Option<PathBuf>,
-    /// Final post-staple ZIP path (default under `native/dist/`).
+
     out_zip: Option<PathBuf>,
-    /// Short version (or env `JACKIN_APP_VERSION`).
+
     #[arg(long)]
     version: Option<String>,
-    /// Build number (or env `JACKIN_APP_BUILD`).
+
     #[arg(long)]
     build: Option<String>,
 }
@@ -223,7 +220,7 @@ fn run_notarytool(submit_zip: &Path, notary_json: &Path) -> Result<()> {
 
     let out = cmd::output_string(&mut base).context("notarytool submit")?;
     fs::write(notary_json, &out)?;
-    // Also stream for CI logs.
+
     progress(out.trim());
     Ok(())
 }
@@ -235,7 +232,7 @@ fn parse_notary_status(path: &Path) -> Result<String> {
     {
         return Ok(status.to_owned());
     }
-    // Fallback: last line JSON blob
+
     if let Some(last) = raw.lines().last()
         && let Ok(v) = serde_json::from_str::<Value>(last)
         && let Some(status) = v.get("status").and_then(Value::as_str)
@@ -292,7 +289,7 @@ fn check_expected_team(app: &Path) -> Result<()> {
     if expected.is_empty() {
         return Ok(());
     }
-    // codesign -dv writes identity details to stderr; capture both streams.
+
     #[expect(
         clippy::disallowed_methods,
         reason = "codesign -dv emits identity on stderr; cmd helpers only surface stdout on success"

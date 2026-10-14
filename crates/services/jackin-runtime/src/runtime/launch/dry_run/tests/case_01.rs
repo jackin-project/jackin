@@ -5,8 +5,6 @@ use super::*;
 
 #[test]
 fn role_list_beats_global_binding() {
-    // Case V: binding names c-work, role list admits cfg-r/c-lab. The plan
-    // must name the admitted instance, not the binding.
     let (mut config, workspace) = matrix_config();
     config
         .account_bindings
@@ -58,7 +56,6 @@ fn global_list_beats_workspace_binding() {
 
 #[test]
 fn role_list_without_binding_lists_its_instance() {
-    // Cases B/RESTORED.
     let (mut config, workspace) = matrix_config();
     set_role_list(&mut config, &["cfg-r"]);
 
@@ -70,7 +67,6 @@ fn role_list_without_binding_lists_its_instance() {
 
 #[test]
 fn workspace_list_without_binding_lists_its_instance() {
-    // Case C shape.
     let (mut config, workspace) = matrix_config();
     config.workspaces.get_mut(WS).unwrap().default_launch = Some(vec!["cfg-w".to_owned()]);
 
@@ -82,7 +78,6 @@ fn workspace_list_without_binding_lists_its_instance() {
 
 #[test]
 fn global_list_without_binding_lists_its_instance() {
-    // Case D shape.
     let (mut config, workspace) = matrix_config();
     config.default_launch = Some(vec!["cfg-g".to_owned()]);
 
@@ -94,7 +89,6 @@ fn global_list_without_binding_lists_its_instance() {
 
 #[test]
 fn global_binding_without_list_reports_single_account() {
-    // Case E shape.
     let (mut config, workspace) = matrix_config();
     config
         .account_bindings
@@ -109,7 +103,6 @@ fn global_binding_without_list_reports_single_account() {
 
 #[test]
 fn workspace_binding_without_list_reports_single_account() {
-    // Case A1 shape.
     let (mut config, workspace) = matrix_config();
     config
         .workspaces
@@ -125,7 +118,6 @@ fn workspace_binding_without_list_reports_single_account() {
 
 #[test]
 fn role_binding_without_list_reports_single_account() {
-    // Case A2 shape.
     let (mut config, workspace) = matrix_config();
     config
         .workspaces
@@ -144,7 +136,6 @@ fn role_binding_without_list_reports_single_account() {
 
 #[test]
 fn multi_entry_list_reports_every_instance() {
-    // Case G.
     let (mut config, workspace) = matrix_config();
     set_role_list(&mut config, &["cfg-r", "cfg-r2"]);
 
@@ -178,7 +169,6 @@ fn ambiguous_fallback_errors_exactly_like_admission() {
 
 #[test]
 fn unknown_configuration_in_list_errors() {
-    // Case H5.
     let (mut config, workspace) = matrix_config();
     set_role_list(&mut config, &["cfg-nope"]);
 
@@ -209,8 +199,6 @@ fn unknown_binding_errors_exactly_like_admission() {
 
 #[test]
 fn explicit_pick_without_ambient_list_reports_single_account() {
-    // Case F shape: `--account c-work` with no ambient list synthesizes an
-    // ephemeral one-entry default; the plan still names the pick.
     let (config, workspace) = matrix_config();
     let scoped = programmatic::with_account_selection(
         &config,
@@ -244,7 +232,7 @@ fn explicit_pick_with_ambient_list_reports_single_account() {
         resolve_dry_run_identity(&scoped, Agent::Claude, Some(&workspace), ROLE, true).unwrap();
     assert_eq!(plan.account_id.as_deref(), Some("c-home"));
     assert!(plan.instances.is_empty());
-    // Substance still agrees: admission provisions exactly the pick.
+
     let admitted = admission(&scoped, &workspace).unwrap();
     assert!(
         admitted
@@ -255,7 +243,6 @@ fn explicit_pick_with_ambient_list_reports_single_account() {
 
 #[test]
 fn unadmitted_explicit_pick_errors_before_identity() {
-    // Case H4: the pick never reaches identity resolution.
     let (mut config, workspace) = matrix_config();
     set_role_list(&mut config, &["cfg-r"]);
     let error = programmatic::with_account_selection(
@@ -275,8 +262,6 @@ fn unadmitted_explicit_pick_errors_before_identity() {
 
 #[test]
 fn plan_matches_admission_across_binding_list_combinations() {
-    // No-drift sweep: every binding scope × every list scope. The plan's
-    // substance (admitted account ids in order) always equals admission's.
     let bindings: [Option<(&str, &str)>; 4] = [
         None,
         Some(("global", "c-work")),
@@ -342,7 +327,6 @@ fn plan_matches_admission_across_binding_list_combinations() {
             let plan = identity(&config, &workspace);
             let admitted = admission(&config, &workspace);
             if binding.is_none() && list.is_none() {
-                // Ambiguous fallback: both sides fail, identically.
                 assert_eq!(
                     plan.unwrap_err().to_string(),
                     admitted.unwrap_err().to_string()
@@ -368,8 +352,7 @@ fn plan_matches_admission_across_binding_list_combinations() {
                 planned_accounts, admitted_accounts,
                 "drift with binding={binding:?} list={list:?}"
             );
-            // Shape rule: single-account display only for the synthesized
-            // fallback; list-backed admissions always surface as instances.
+
             if admitted.len() == 1 && admitted[0].synthesized {
                 assert_eq!(
                     plan.account_id.as_deref(),

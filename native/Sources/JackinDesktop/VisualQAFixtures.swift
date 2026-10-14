@@ -5,7 +5,7 @@ import Foundation
 import JackinUsageBindings
 import JackinUsageBridge
 
-/// Stable, explicit launch fixtures for native visual QA.
+
 public enum VisualQAFixtureID: String, CaseIterable, Sendable {
     case noProviders = "F00-no-providers"
     case singleNormal = "F01-single-normal"
@@ -24,7 +24,7 @@ public enum VisualQAFixtureID: String, CaseIterable, Sendable {
     case globalBridgeError = "F14-global-bridge-error"
 }
 
-/// Rust-shaped presentation records plus explicit transient state.
+
 public struct VisualQAFixture: Sendable {
     public let id: VisualQAFixtureID
     public let glanceRows: [PresentationStore.GlanceProviderRow]
@@ -62,7 +62,7 @@ public struct VisualQAFixture: Sendable {
     }
 }
 
-/// One catalog owns app launch, UI automation, and native capture data.
+
 public enum VisualQAFixtures: Sendable {
     public static let frozenNow = "2026-08-12T12:00:00+07:00"
     public static let localeIdentifier = "en_US"

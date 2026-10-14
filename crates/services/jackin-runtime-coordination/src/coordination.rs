@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Permanent coordination inodes live outside every prunable runtime root.
-
 use jackin_core::JackinPaths;
 use sha2::{Digest as _, Sha256};
 use std::io;
@@ -10,8 +8,6 @@ use std::path::{Component, Path, PathBuf};
 
 const DIRECTORY: &str = ".jackin-coordination";
 
-/// Resolve a pathname through its nearest existing ancestor. Never invent an
-/// identity after permission/I/O errors or ambiguous missing symlink/`..` tails.
 fn resolve(path: &Path) -> io::Result<PathBuf> {
     resolve_with(path, |ancestor| std::fs::canonicalize(ancestor))
 }
@@ -36,11 +32,8 @@ fn resolve_with(
                 return Ok(resolved);
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                // A dangling symlink has an inode but cannot be canonicalized.
                 match std::fs::symlink_metadata(ancestor) {
                     Ok(metadata) if !metadata.file_type().is_symlink() => {
-                        // Creation may have completed after the failed syscall.
-                        // Retry once for this real inode; further errors remain errors.
                         let mut resolved = canonicalize(ancestor)?;
                         for component in tail.into_iter().rev() {
                             resolved.push(component);
@@ -110,7 +103,6 @@ fn reject_overlap(namespace: &Path, pruned: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// No creation: safe for preflight validation and fixture-owned path derivation.
 pub fn root(paths: &JackinPaths) -> io::Result<PathBuf> {
     let namespace = namespace(paths)?;
     for pruned in [
@@ -124,12 +116,10 @@ pub fn root(paths: &JackinPaths) -> io::Result<PathBuf> {
     Ok(namespace)
 }
 
-/// Check each actual deletion boundary, including non-default layouts.
 pub fn ensure_prunable(paths: &JackinPaths, pruned: &Path) -> io::Result<()> {
     reject_overlap(&namespace(paths)?, pruned)
 }
 
-/// Async callers dispatch the whole filesystem preflight off runtime threads.
 pub async fn ensure_prunable_async(paths: &JackinPaths, pruned: &Path) -> io::Result<()> {
     let paths = paths.clone();
     let pruned = pruned.to_owned();
@@ -138,8 +128,6 @@ pub async fn ensure_prunable_async(paths: &JackinPaths, pruned: &Path) -> io::Re
         .map_err(io::Error::other)?
 }
 
-/// Preserve per-data-root universe authority across data deletion/recreation.
-/// The key hashes the resolved absolute pathname, never its transient inode.
 pub fn universe_dir(paths: &JackinPaths) -> io::Result<PathBuf> {
     let data = resolve(&paths.data_dir)?;
     let mut hash = Sha256::new();
@@ -150,7 +138,6 @@ pub fn universe_dir(paths: &JackinPaths) -> io::Result<PathBuf> {
         .join(hex::encode(hash.finalize())))
 }
 
-/// File ownership is only flock ownership. Neither contention nor Drop unlinks.
 pub fn open_lock(paths: &JackinPaths, key: &str) -> io::Result<std::fs::File> {
     open_in_namespace(&root(paths)?, key)
 }
@@ -170,15 +157,12 @@ fn validate_key(key: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// Reopen an already captured namespace without reselecting its authority.
-/// Lock inodes are created once and never truncated or removed.
 pub fn open_in_namespace(directory: &Path, key: &str) -> io::Result<std::fs::File> {
     validate_key(key)?;
     let parent = open_directory_in_namespace(directory, true)?;
     open_state_at(&parent, &format!("{key}.lock"), true)
 }
 
-/// Pin every namespace path component; existing-only opens create nothing.
 pub fn open_directory_in_namespace(directory: &Path, create: bool) -> io::Result<std::fs::File> {
     if !directory.is_absolute()
         || !directory
@@ -266,7 +250,6 @@ pub fn open_directory_in_namespace(directory: &Path, create: bool) -> io::Result
     }
 }
 
-/// Literal state key, with existing-only parent. Never truncate before validation.
 pub fn open_state_in_namespace(
     directory: &Path,
     key: &str,
@@ -306,8 +289,6 @@ fn open_state_at(parent: &std::fs::File, key: &str, create: bool) -> io::Result<
         let flags = OFlag::O_RDWR | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK;
         let mode = Mode::from_bits_truncate(0o600);
         let fd = if create && before.is_none() {
-            // Concurrent nonexclusive O_CREAT opens can return ENOENT on macOS.
-            // Elect exactly one creator; contenders validate and open its inode.
             match openat(parent, key, flags | OFlag::O_CREAT | OFlag::O_EXCL, mode) {
                 Ok(fd) => fd,
                 Err(Errno::EEXIST) => {

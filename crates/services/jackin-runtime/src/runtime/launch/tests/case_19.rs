@@ -17,8 +17,8 @@ async fn load_agent_rolls_back_runtime_on_attached_run_failure() {
             String::new(),
             String::new(),
             String::new(),
-            String::new(), // identity
-            String::new(), // git pull
+            String::new(),
+            String::new(),
         ]),
         ..Default::default()
     };
@@ -66,9 +66,7 @@ plugins = ["code-review@claude-plugins-official"]
     assert!(error.to_string().contains("docker run -d --name jk-"));
     let container_name = launched_role_container_name(&runner);
     let dind = format!("{container_name}-dind");
-    // The observation seam fails after typed create/start captured the role
-    // identity. Cleanup must therefore remove the exact role and sidecar
-    // identities, not rediscover either by name.
+
     assert!(
         docker
             .recorded
@@ -148,7 +146,7 @@ plugins = []
     .unwrap();
 
     let (dind, _) = launched_dind_container(&docker);
-    // DinD readiness check polls via docker exec (bollard)
+
     assert!(
         docker
             .recorded
@@ -157,13 +155,12 @@ plugins = []
             .any(|call| call.contains(&format!("docker exec {dind} docker info")))
     );
 
-    // DinD container is created/started through DockerApi before readiness checks.
     let docker_recorded = docker.recorded.borrow();
     let dind_start = docker_recorded
         .iter()
         .position(|call| call == &format!("start_container:{dind}"))
         .unwrap();
-    // docker exec calls go through bollard docker.exec_capture
+
     let dind_info = docker_recorded
         .iter()
         .position(|call| call.contains(&format!("docker exec {dind} docker info")))
@@ -179,7 +176,6 @@ plugins = []
         "DinD readiness docker info check must be recorded; recorded: {docker_recorded:?}"
     );
 
-    // TLS cert verification also via docker.exec_capture
     assert!(docker_recorded.iter().any(|call| {
         call.contains(&format!("docker exec {dind} test -f /certs/client/ca.pem"))
     }));
@@ -238,7 +234,6 @@ plugins = []
     let certs_volume = dind.strip_suffix("-dind").unwrap().to_owned() + "-dind-certs";
     assert!(crate::instance::naming::is_dns_label(&dind), "{dind}");
 
-    // DinD sidecar: TLS enabled with cert volume.
     assert!(
         dind_spec
             .env
@@ -251,16 +246,7 @@ plugins = []
             .contains(&format!("{certs_volume}:/certs/client")),
         "DinD must mount cert volume"
     );
-    // DinD's auto-generated server cert must include the container name as a
-    // Subject Alternative Name, because the role connects via
-    // DOCKER_HOST=tcp://{dind}:2376. Without this, the TLS
-    // handshake fails because the default SANs only cover the short
-    // container ID, `docker`, and `localhost`.
-    //
-    // The `DNS:` prefix is mandatory: `dockerd-entrypoint.sh` passes
-    // `DOCKER_TLS_SAN` through to openssl verbatim (without adding a type
-    // prefix), and openssl rejects SAN entries that lack a type tag with
-    // `v2i_GENERAL_NAME_ex: missing value`.
+
     assert!(
         dind_spec
             .env
@@ -272,7 +258,6 @@ plugins = []
     assert_eq!(dind_spec.network, expected_network);
     assert_eq!(dind_spec.image, "docker:29-dind");
 
-    // Role container: TLS client config
     let run_cmd = runner
         .recorded
         .iter()

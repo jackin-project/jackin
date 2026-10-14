@@ -1,15 +1,3 @@
-//! Durable first-attempt evidence for post-merge CI cohorts.
-//!
-//! GitHub pagination and workflow identities are normalized before aggregation.
-//! The rollup joins observed attempts to an explicit expected obligation set,
-//! so a workflow that never started is recorded as `missing` rather than
-//! disappearing from the denominator.
-//!
-//! The collector validates a durable push-head artifact produced by CI; it does
-//! not create that producer workflow. The resulting rollup is an advisory
-//! observer of run identity, provenance, timing, and classification. It makes
-//! no semantic CI or merge-readiness claim.
-
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
@@ -47,13 +35,10 @@ const TARGET_REPOSITORY_ID: u64 = 1_197_700_841;
 const WORKFLOW_CONTRACT_PATH: &str = ".github-gen/velnor-workflow.toml";
 const WORKFLOW_STATE_PATH: &str = ".github/ci/.github-actions-generator-state";
 const GENERATED_STATE_SCHEMA: u32 = 2;
-// Velnor 4dec emits ownership-state generator revision 69. This is a
-// checked-in consumer contract: changing it requires regenerating the state
-// with the new pinned renderer and updating this validator in the same change.
+
 const GENERATED_STATE_GENERATOR: &str = "69";
 static WRITE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-/// Independently counted post-merge obligations.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Cohort {
@@ -84,8 +69,6 @@ impl Cohort {
     }
 }
 
-/// Classification is evidence classification, not a claim of root cause.
-/// A failed run remains non-green even when it is infrastructure or cancelled.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OutcomeClass {
@@ -137,7 +120,6 @@ pub(crate) struct ExpectedCommit {
     pub(crate) source: DenominatorSource,
 }
 
-/// Provenance of a main-branch head in the expected-work denominator.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, Serialize, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DenominatorSource {
@@ -172,7 +154,6 @@ pub(crate) struct HistoryCommitObservation {
     pub(crate) committed_at: String,
 }
 
-/// One durable push event and its producer-run binding.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct PushHeadObservation {
     pub(crate) repository: String,
@@ -193,10 +174,6 @@ pub(crate) struct PushHeadObservation {
     pub(crate) artifact: PushHeadArtifactProof,
 }
 
-/// The exact artifact bytes validated at collection time.
-///
-/// Retaining the bytes makes the digest a check over an actual artifact, not
-/// merely an unchecked 64-character marker in the evidence JSON.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct PushHeadArtifactProof {
     pub(crate) manifest: String,
@@ -206,8 +183,6 @@ pub(crate) struct PushHeadArtifactProof {
     pub(crate) artifact_digest: String,
 }
 
-/// Proof that the first in-window push is attached to the immediately prior
-/// durable ledger entry. A missing predecessor is a missing denominator proof.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) enum DenominatorBoundary {
     PushHead {
@@ -220,7 +195,6 @@ pub(crate) enum DenominatorBoundary {
     Fixture,
 }
 
-/// Provenance of the collector invocation that wrote an evidence file.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct CollectionProvenance {
     pub(crate) repository: String,
@@ -298,7 +272,7 @@ pub(crate) struct AttemptEvidence {
     pub(crate) raw_observations: Vec<RawAttemptObservation>,
     pub(crate) runtime: RuntimeIdentity,
     pub(crate) evidence_urls: Vec<String>,
-    /// Retained when a later collection turns a nonterminal row terminal.
+
     pub(crate) first_observed_at: String,
 }
 
@@ -380,13 +354,12 @@ pub(crate) struct RollupFile {
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiEvidenceCommand {
-    /// Collect and roll up evidence in the generated scheduled workflow.
     Run,
-    /// Record the exact main push event as a durable denominator artifact.
+
     RecordPush,
-    /// Fetch main-branch runs/attempts and append normalized evidence.
+
     Collect(CollectArgs),
-    /// Join evidence to expected obligations and write JSON + Markdown.
+
     Rollup(RollupArgs),
 }
 
@@ -402,8 +375,7 @@ pub(crate) struct CollectArgs {
     branch: String,
     #[arg(long, default_value = "target/ci-evidence/attempts.json")]
     output: PathBuf,
-    /// Optional expected-obligation fixture. Without it, expected obligations
-    /// are derived only from the durable main push-head ledger.
+
     #[arg(long)]
     expected: Option<PathBuf>,
     #[arg(long, value_name = "PATH", action = clap::ArgAction::Append)]

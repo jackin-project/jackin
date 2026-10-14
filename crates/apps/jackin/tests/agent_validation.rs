@@ -21,9 +21,6 @@ plugins = []
     )
     .unwrap();
 
-    // Now that load() runs validate_agent_consistency, the load itself
-    // fails — operator no longer has to remember to call validate
-    // separately.
     let err = jackin_manifest::load_role_manifest(temp.path()).unwrap_err();
     assert!(err.to_string().contains("[codex]"));
 }

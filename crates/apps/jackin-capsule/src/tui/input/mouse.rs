@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Mouse protocol gating and encoding: SGR, xterm, and wheel fallback.
 
-/// `XTerm` SGR any-event mouse tracking reports passive motion as
-/// button code 35 (`32` motion bit + `3` no-button code).
 pub(crate) const SGR_NO_BUTTON_MOTION: u8 = 35;
 
 pub(crate) fn pane_wheel_cursor_fallback_reason(
@@ -19,11 +16,6 @@ pub(crate) fn pane_wheel_cursor_fallback_reason(
     None
 }
 
-/// SGR mouse wheel events set bit 6 of the button byte. Every value in
-/// `64..=95` is a wheel event with some combination of modifier flags
-/// (shift = +4, alt = +8, ctrl = +16). Panes that did not request
-/// mouse mode must not receive these bytes because they dump raw SGR at
-/// prompts or disappear into TUIs that never subscribed to mouse input.
 pub(crate) fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
@@ -45,11 +37,11 @@ pub(crate) fn mouse_event_allowed_for_mode(
     match mode {
         termpane::MouseProtocolMode::None => false,
         termpane::MouseProtocolMode::Press => press && !motion,
-        // PressRelease = mode 1001: press + release events, no motion.
+
         termpane::MouseProtocolMode::PressRelease => !motion,
-        // ButtonMotion = mode 1002: press + release + button-held motion, no passive motion.
+
         termpane::MouseProtocolMode::ButtonMotion => !passive_motion,
-        // AnyEvent and AnyMotion are aliases for mode 1003: all events.
+
         termpane::MouseProtocolMode::AnyEvent | termpane::MouseProtocolMode::AnyMotion => true,
     }
 }
@@ -80,7 +72,6 @@ pub(crate) fn encode_mouse_for_protocol(
         }
         termpane::MouseProtocolEncoding::Default
         | termpane::MouseProtocolEncoding::Utf8
-        // Urxvt uses decimal coordinates but the same CSI M prefix — treat as Default.
         | termpane::MouseProtocolEncoding::Urxvt => {
             let release_button = (button & !0b11) | 3;
             let button_code = if press { button } else { release_button };

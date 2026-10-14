@@ -28,8 +28,8 @@ plugins = []
 
     let mut runner = FakeRunner::with_capture_queue([
         "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
-        String::new(),     // git status --porcelain (clean)
-        "main".to_owned(), // git rev-parse --abbrev-ref HEAD
+        String::new(),
+        "main".to_owned(),
     ]);
 
     let result = resolve_agent_repo(
@@ -273,8 +273,8 @@ async fn resolve_agent_repo_migrates_legacy_root_repo_to_default_sibling_layout(
 
     let mut runner = FakeRunner::with_capture_queue([
         "git@github.com:jackin-project/jackin-agent-smith.git".to_owned(),
-        String::new(),     // git status --porcelain (clean)
-        "main".to_owned(), // git rev-parse --abbrev-ref HEAD
+        String::new(),
+        "main".to_owned(),
     ]);
 
     let (cached_repo, _, _) = resolve_agent_repo(
@@ -300,11 +300,6 @@ async fn resolve_agent_repo_migrates_legacy_root_repo_to_default_sibling_layout(
 
 #[tokio::test]
 async fn register_agent_repo_cleans_up_temp_dir_on_validate_failure() {
-    // When validation rejects the cloned repo (here: no Dockerfile,
-    // no jackin.role.toml — just a `.git` dir), `register_agent_repo`
-    // must NOT rename the temp dir into the cache and must NOT call
-    // `persist_registration`. The temp dir is cleaned up by tempfile's
-    // Drop, so the only assertion is that the cache slot is empty.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -315,8 +310,6 @@ async fn register_agent_repo_cleans_up_temp_dir_on_validate_failure() {
     let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
-        // Materialise a `.git` dir but skip the manifest files so
-        // `validate_role_repo` rejects the clone.
         Box::new(move || {
             let temp_repo = first_temp_role_repo(&data_dir);
             std::fs::create_dir_all(temp_repo.join(".git")).unwrap();
@@ -347,8 +340,6 @@ async fn register_agent_repo_cleans_up_temp_dir_on_validate_failure() {
 
 #[tokio::test]
 async fn register_agent_repo_installs_valid_repo_into_cache() {
-    // The repo helper clones and validates into the cache, leaving
-    // persistence to the caller.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();

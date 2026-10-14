@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Single blob/file credential helpers shared by simple agents.
 
 #![expect(
     clippy::print_stderr,
@@ -19,9 +18,6 @@ use jackin_instance_credentials::{
 };
 use zeroize::Zeroizing;
 
-/// Byte-oriented twin of [`provision_single_file_credential`] for binary
-/// single-file stores (omp's `SQLite` `agent.db`). Same outcome/mount
-/// contract; an empty host file counts as host-missing.
 pub fn provision_single_blob_credential(
     target: &Path,
     host_path: &Path,
@@ -100,20 +96,6 @@ pub fn provision_single_blob_credential_from_content(
     Ok((outcome, mounted))
 }
 
-/// Shared file-credential provisioner for agents that use a single JSON
-/// credential file with standard `AuthForwardMode` semantics.
-///
-/// `treat_empty_as_missing` — when `true`, an empty/whitespace file on the
-/// host is treated as host-missing and invalidates stale role-state auth.
-/// When `false`, an empty file is written as-is.
-///
-/// `warn_on_oauth` — when `true`, receiving `OAuthToken` mode logs a warning
-/// that the parser invariant was bypassed. When `false`, `OAuthToken`
-/// silently returns `TokenMode`.
-///
-/// `wipe_on_oauth` — when `true`, the role-state file is wiped on `OAuthToken`.
-/// When `false`, the existing file is preserved (Codex: `OAuthToken` is a
-/// parser-rejected no-op; preserving the file allows recovery from a bypass).
 #[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -189,25 +171,12 @@ pub fn provision_single_file_credential_with_content(
         AuthForwardMode::Sync => match content {
             Some(content) if treat_empty_as_missing && content.trim().is_empty() => {
                 eprintln!("[jackin] host {label} is empty/whitespace — treating as host-missing");
-                // Empty input is an invalid source, not an absent host login:
-                // invalidate any persisted role-state credential before mount
-                // admission so a later launch cannot reuse stale auth.
+
                 retain_existing_on_missing = false;
                 wipe_agent_file_state(target, label)?;
                 AuthProvisionOutcome::HostMissing
             }
             Some(content) => {
-                // No-churn guard: skip the atomic write when the role-state
-                // file already holds identical content. `write_private_file`
-                // replaces the inode (temp + rename); on macOS that
-                // invalidates a live single-file bind mount into the running
-                // container. The background sibling-auth prewarm
-                // (`prewarm_auth_for_agents`, spawned during launch) re-runs
-                // this for already-foreground-provisioned agents, so an
-                // unconditional rename races `docker create` and silently
-                // breaks the foreground container's auth mounts — leaving the
-                // sibling agent unauthenticated. Mirrors the GitHub
-                // provisioner's no-churn guard.
                 write_private_file(target, &content).with_context(|| {
                     format!(
                         "failed to write {agent_name} role-state {label} at {}",
@@ -240,10 +209,6 @@ pub fn provision_single_file_credential_with_content(
     Ok((outcome, mounted))
 }
 
-/// Wipe a single credential file from role state.
-///
-/// `label` names the agent + file for the operator-visible error message
-/// (e.g. `"Amp secrets.json"`, `"OpenCode auth.json"`).
 pub fn wipe_agent_file_state(path: &Path, label: &str) -> anyhow::Result<()> {
     use anyhow::Context;
     wipe_file_if_present(path).with_context(|| {
@@ -256,8 +221,6 @@ pub fn wipe_agent_file_state(path: &Path, label: &str) -> anyhow::Result<()> {
     })
 }
 
-/// Remove role-state Kimi auth files so a prior Sync run cannot leak
-/// credentials under env-driven modes.
 pub fn wipe_kimi_state(kimi_dir: &Path) -> anyhow::Result<()> {
     auth_directory::wipe_auth_directory(kimi_dir).map_err(|error| {
         anyhow::anyhow!(format!(

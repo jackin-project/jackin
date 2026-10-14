@@ -26,7 +26,6 @@ pub(super) fn canned_dashboard_response(request: &[u8]) -> &'static str {
     if text.contains("GetCurrentPeriodUsage") {
         PERIOD_FIXTURE
     } else if text.contains("GetPlanInfo") {
-        // Live shape nests the label under `planInfo`.
         r#"{"planInfo": {"planName": "pro_plus"}}"#
     } else if text.contains("GetCreditGrantsBalance") {
         r#"{"grantTotal": 1500}"#

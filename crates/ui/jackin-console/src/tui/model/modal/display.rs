@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Display-side impls on `ConsoleModal`: `overlay_kind` / `dismiss_policy`
-//! / `overlay_size` / `rect` / `container_info_rect` /
-//! `prepare_for_render` / `footer_items` / `footer_items_for_area`, plus
-//! the `footer_items_for_mode` helper.
-//!
-//! Moved out of `model/modal.rs` during the Ledger 2B decomposition so
-//! the modal enum stays a thin coordinator and the per-trait dispatch
-//! lives next to the trait it implements.
-
 use ratatui::layout::Rect;
 use termrock::interaction::{DismissAction, DismissPolicy, OverlayKind, OverlaySize};
 
@@ -73,9 +64,6 @@ impl<
         SecretsScopeTag,
     >
 {
-    /// Overlay kind carried on the stack entry: the confirm-class blockers
-    /// are alert dialogs; everything else is a plain dialog. Behavior comes
-    /// from the explicit policy, not the kind's preset.
     #[must_use]
     pub const fn overlay_kind(&self) -> OverlayKind {
         match self {
@@ -84,10 +72,6 @@ impl<
         }
     }
 
-    /// Per-variant dismiss policy from CURRENT behavior (plan 009 step 4
-    /// mapping): Esc cancels every variant outright except the file browser
-    /// and op-picker, whose components spend Esc on internal
-    /// back-navigation first; outside clicks are inert for all variants.
     #[must_use]
     pub const fn dismiss_policy(&self) -> DismissPolicy {
         let escape = match self {
@@ -97,8 +81,6 @@ impl<
         crate::tui::components::modal_overlay::console_modal_dismiss_policy(escape)
     }
 
-    /// Preferred overlay size: the retired `ModalRectMode` → spec → rect-fn
-    /// chain's numbers, kept byte-identical per variant.
     #[must_use]
     pub fn overlay_size(&self, outer: Rect) -> OverlaySize
     where

@@ -145,7 +145,7 @@ pub(super) fn neighbors(x: u16, y: u16, area: Rect) -> impl Iterator<Item = (u16
 
 pub(super) fn is_focused_region_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
     let cell = &buf[coord];
-    // Product focus chrome via jackin helpers (TermRock owns Role→RGB tables).
+
     let focused = termrock::style::DesignSystem::default()
         .style(termrock::style::Role::BorderFocused)
         .fg;

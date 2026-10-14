@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![cfg(not(test))]
-//! Agent image prewarm execution.
 
 use super::published::published_image_is_stale;
 

@@ -108,7 +108,6 @@ fn disc_read_only_pending_publication_reports_transient_without_mutation() {
     let paths = JackinPaths::for_tests(temp.path());
     disc_write_tree(&paths);
 
-    // Simulate kill -9 mid-publication: journal plus staged tmps on disk.
     let journal_path = publication_journal_path(&paths.config_file);
     let staged = vec![stage_atomic_write(&paths.config_file, "version = \"v9alpha9\"\n").unwrap()];
     let deletes: Vec<StagedDelete> = Vec::new();
@@ -124,7 +123,6 @@ fn disc_read_only_pending_publication_reports_transient_without_mutation() {
 
     let snapshot = load_read_only_config_snapshot(&paths).unwrap();
 
-    // Skewed bytes are never served as a stable generation.
     assert!(snapshot.config.workspaces.is_empty());
     assert_eq!(
         snapshot.diagnostics,

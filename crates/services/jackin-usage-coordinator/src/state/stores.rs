@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! State store trait and atomic file stores.
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -21,80 +20,63 @@ use nix::sys::stat::Mode;
 use nix::unistd::{UnlinkatFlags, fsync, unlinkat};
 use serde::{Deserialize, Serialize};
 
-/// Storage port used by the coordinator.
 pub trait AccountStateStore: Send + Sync {
-    /// Read and validate one account envelope.
     fn load(
         &self,
         capability: &UsageAccountCapability,
         now_epoch: i64,
     ) -> Result<Option<AccountStateEnvelope>, StateStoreError>;
 
-    /// Atomically replace one account envelope.
     fn store(&self, envelope: &AccountStateEnvelope, now_epoch: i64)
     -> Result<(), StateStoreError>;
 
-    /// Remove durable state for one revoked capability.
     fn purge(&self, _capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
         Ok(())
     }
 
-    /// Move unreadable durable state out of the active namespace.
-    ///
-    /// A catalog rotation must be able to remove a revoked account even when
-    /// its old state cannot be decoded. Implementations may use a destructive
-    /// purge when no recoverable quarantine namespace exists.
     fn quarantine(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
         self.purge(capability)
     }
 }
 
-/// One atomic publication envelope for projection and broker metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectionStateEnvelope {
-    /// Persisted schema version.
     pub schema_version: u32,
-    /// Immutable canonical publication.
+
     pub projection: UsageProjectionV1,
-    /// Secret-free alias mappings committed with the publication.
+
     pub aliases: Vec<ProjectionAlias>,
-    /// Current discovery catalog revision.
+
     pub catalog_revision: String,
-    /// Exact capability catalog committed with the publication.
+
     pub catalog: Vec<UsageCatalogEntry>,
-    /// Broker-owned retry deadline.
+
     pub retry_deadline_epoch: Option<i64>,
-    /// Broker-owned success/cadence deadline.
+
     pub success_deadline_epoch: Option<i64>,
-    /// Process incarnation that published this envelope.
+
     pub broker_instance_id: String,
 }
 
 impl ProjectionStateEnvelope {
-    /// Current durable projection envelope schema.
     pub const SCHEMA_VERSION: u32 = PROJECTION_STATE_SCHEMA_VERSION;
 
-    /// Previous schema accepted only by the broker migration loader.
     pub const MIGRATABLE_SCHEMA_VERSION: u32 = PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION;
 }
 
-/// One secret-free capability-to-canonical alias transaction entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectionAlias {
-    /// Opaque capability identifier.
     pub capability_id: String,
-    /// Opaque canonical account identifier.
+
     pub canonical_account_id: String,
 }
 
-/// Atomic durable store for one canonical projection publication.
 #[derive(Debug, Clone)]
 pub struct FileProjectionStateStore {
     path: PathBuf,
 }
 
 impl FileProjectionStateStore {
-    /// Construct the projection envelope path under a host data directory.
     #[must_use]
     pub fn under_data_dir(data_dir: &Path) -> Self {
         Self {
@@ -102,16 +84,10 @@ impl FileProjectionStateStore {
         }
     }
 
-    /// Read one exact v3 envelope. Valid older and future versions require an
-    /// explicit migration and remain in place; corrupt bytes and unsupported
-    /// pre-v2 state are quarantined.
     pub fn load(&self) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
         self.load_with_previous_schema(false)
     }
 
-    /// Read the current envelope or the immediately previous schema for the
-    /// broker's startup migration. The broker must normalize and atomically
-    /// store v2 as v3 before exposing its projection.
     pub fn load_for_broker_migration(
         &self,
     ) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
@@ -176,7 +152,6 @@ impl FileProjectionStateStore {
         Ok(envelope)
     }
 
-    /// Atomically replace one publication envelope and sync its directory.
     pub fn store(&self, envelope: &ProjectionStateEnvelope) -> Result<(), StateStoreError> {
         if envelope.schema_version != PROJECTION_STATE_SCHEMA_VERSION {
             return Err(StateStoreError::Corrupt);
@@ -231,14 +206,12 @@ impl FileProjectionStateStore {
     }
 }
 
-/// Directory-relative, no-follow host account store.
 #[derive(Debug, Clone)]
 pub struct FileAccountStateStore {
     accounts_dir: PathBuf,
 }
 
 impl FileAccountStateStore {
-    /// Construct the broker account-state path under a host data directory.
     #[must_use]
     pub fn under_data_dir(data_dir: &Path) -> Self {
         Self {
@@ -246,7 +219,6 @@ impl FileAccountStateStore {
         }
     }
 
-    /// Construct a store at an explicit test/operator-owned directory.
     #[must_use]
     pub fn at(accounts_dir: impl Into<PathBuf>) -> Self {
         Self {
@@ -309,11 +281,6 @@ impl AccountStateStore for FileAccountStateStore {
             .ok_or(StateStoreError::Corrupt)?;
         let (envelope, migrated) = match schema_version {
             LEGACY_ACCOUNT_STATE_SCHEMA_VERSION => {
-                // v1 recorded queue admission as the attempt start. The actual
-                // provider start cannot be reconstructed for ambiguous attempts,
-                // so retain uncertainty without inventing an invocation. A
-                // fresh generation-1 Queued record with no prior result is the
-                // one provable pre-dispatch state and remains unfenced.
                 let object = value.as_object_mut().ok_or(StateStoreError::Corrupt)?;
                 object.insert("provider_invoked_at_epoch".into(), serde_json::Value::Null);
                 object.insert(
@@ -349,10 +316,6 @@ impl AccountStateStore for FileAccountStateStore {
                 (envelope, true)
             }
             PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION => {
-                // v2 did not retain uncertainty after recovering an Updating
-                // record without a real invocation timestamp. Preserve that
-                // provenance explicitly in v3 so another restart cannot lose
-                // the conservative monotonic reload fence.
                 value
                     .as_object_mut()
                     .ok_or(StateStoreError::Corrupt)?
@@ -466,8 +429,6 @@ impl AccountStateStore for FileAccountStateStore {
 }
 
 impl FileProjectionStateStore {
-    /// Remove the active envelope after a failed first publication. The
-    /// caller uses this only to restore an absent preimage.
     pub fn clear(&self) -> Result<(), StateStoreError> {
         let Some(parent) = self.path.parent() else {
             return Err(StateStoreError::Unavailable);

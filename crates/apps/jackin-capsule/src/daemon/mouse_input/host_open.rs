@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Visible-URL opening and host link-open policy.
 
 use jackin_protocol::attach::ServerFrame;
 
@@ -11,9 +10,6 @@ use super::PanePress;
 use crate::tui::selection::word_bounds_in_row;
 
 impl Multiplexer {
-    /// Resolve a modified click in a mouse-disabled pane to a visible host-open
-    /// URL and ask the host attach process to open it. Non-URL clicks return
-    /// `false` so the caller can preserve the existing raw-mouse fallback.
     pub(crate) fn open_visible_url_at(&mut self, row: u16, col: u16) -> bool {
         if !host_url_opening_allowed() {
             return false;
@@ -28,10 +24,6 @@ impl Multiplexer {
         }
     }
 
-    /// Resolve the focused pane's terminal cursor to a visible host-open URL
-    /// and ask the host attach process to open it. This backs the command
-    /// palette path for terminals or operators that prefer not to use a
-    /// mouse-modifier gesture.
     pub(crate) fn open_visible_url_under_cursor(&mut self) -> bool {
         let Some(session_id) = self.active_focused_id() else {
             return false;
@@ -46,7 +38,7 @@ impl Multiplexer {
             return false;
         }
         let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
-        // Live-screen content index: scrollback oldest-first, then screen rows.
+
         let content_row = session
             .shadow_grid
             .scrollback_len()
@@ -77,9 +69,7 @@ impl Multiplexer {
     fn resolve_host_open_target_at_mouse_cell(&self, row: u16, col: u16) -> Option<HostOpenTarget> {
         let candidate = self.detect_selection_start(row, col)?;
         let session = self.session_supervisor.sessions.get(candidate.session_id)?;
-        // Hover/click URL resolution inspects only the anchor row:
-        // single-row word_bounds_in_row; OSC8 uses absolute content coords.
-        // Window = 1 row (this function).
+
         let content_row = candidate.anchor_row;
         let range_start = content_row;
         let rows = session.render_content_snapshot_range(
@@ -95,11 +85,6 @@ impl Multiplexer {
         )
     }
 
-    /// Resolve a host-open target at an absolute content cell.
-    ///
-    /// `rows` may be a full content snapshot or a range slice; `rows_base` is
-    /// the absolute content-row index of `rows[0]` so absolute coordinates keep
-    /// working without re-basing selection/hyperlink semantics.
     fn resolve_host_open_target_at_content_cell(
         &self,
         session_id: u64,
@@ -155,8 +140,6 @@ impl Multiplexer {
     }
 }
 
-/// Two presses on the same pane cell within this window form a double-click.
-/// 500 ms matches the common desktop default.
 const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
 enum HostOpenTarget {
@@ -165,9 +148,6 @@ enum HostOpenTarget {
 }
 
 pub(crate) fn host_url_opening_allowed() -> bool {
-    // `JACKIN_OPEN_LINKS` is process-launch config, never mutated at runtime, but
-    // this is read up to ~2x per mouse-move. Resolve the env var once and cache
-    // the parsed verdict so the hot path skips the syscall + allocation.
     static ALLOWED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ALLOWED.get_or_init(|| {
         let value = std::env::var(jackin_core::JACKIN_OPEN_LINKS_ENV_NAME).ok();
@@ -179,9 +159,6 @@ pub(crate) fn host_url_opening_allowed_for(value: Option<&str>) -> bool {
     jackin_core::open_links_allowed(value)
 }
 
-/// Two presses form a double-click when they land on the same content cell
-/// of the same session within [`DOUBLE_CLICK_WINDOW`]. Pure so the timing
-/// window has direct tests without a clock injection seam.
 pub(crate) fn is_double_click(previous: &PanePress, press: &PanePress) -> bool {
     previous.session_id == press.session_id
         && previous.content_row == press.content_row

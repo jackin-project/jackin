@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Agent and role prompting helpers for the workspace manager event loop.
 mod accounts;
 mod agent_default;
 mod launch;

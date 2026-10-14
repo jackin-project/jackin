@@ -41,7 +41,6 @@ pub(super) fn make_repo_root() -> tempfile::TempDir {
 }
 
 pub(super) fn fake_with_repo_and_status(repo: &Path, status: &str) -> FakeRunner {
-    // Capture queue order: rev-parse --show-toplevel, status --porcelain
     fake_with_outputs(&[&repo.to_string_lossy(), status])
 }
 

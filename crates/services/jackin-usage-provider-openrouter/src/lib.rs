@@ -1,21 +1,3 @@
-//! jackin-usage-provider-openrouter: `OpenRouter` key/account usage snapshot collection.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`openrouter_snapshot`] — `OpenRouter` key/account snapshot.
-//!
-//! An ordinary inference key reads `GET {base}/key` (key cap, remaining,
-//! period spend, BYOK attribution, expiry). Account balance reads
-//! `GET {base}/credits` and needs a Management key: its 403 is a typed scope
-//! mismatch that never suppresses the `/key` rows. Model IDs validate against
-//! the public `GET {base}/models` catalog; a stale omission is `Unverified`,
-//! never a rejection. A null key cap means no configured cap, not infinite
-//! credit — no percentage bar is drawn without a matching denominator.
-//!
-//! Completed activity history (`GET {base}/activity`) is Management-key-only.
-//! The current account credential contract supplies an inference key, not a
-//! separate Management key, so history remains explicitly unavailable rather
-//! than being fetched with the wrong scope or inferred from live key usage.
-
 #![expect(
     dead_code,
     reason = "provider-adapter fixtures remain testable while production dispatch is broker-only"

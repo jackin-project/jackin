@@ -1,25 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Exit "still running" summary data.
-//!
-//! When the operator leaves one foreground session while other jackin❯
-//! instances are still running, the rich boundary outro does not play: the
-//! operator is still inside the Construct. We still build a compact,
-//! privacy-preserving summary for diagnostics. Saved workspaces contribute
-//! `workspace · role ×count`; ad-hoc folders collapse to a generic count so
-//! their paths are never surfaced.
-
 use std::collections::{BTreeMap, HashSet};
 
 use jackin_instance::InstanceIndex;
 
-/// Build the headline + rows from the still-running instances.
-///
-/// Saved workspaces (named) contribute one row per role: `workspace · role
-/// ×count`. Ad-hoc directories (no saved workspace) collapse to a single
-/// generic `N folders` row — their paths are never surfaced. The headline
-/// counts all still-running instances ("agents" = instances).
 pub fn summary(running_bases: &[String], index: &InstanceIndex) -> (String, Vec<String>) {
     let running: HashSet<&str> = running_bases.iter().map(String::as_str).collect();
     let mut saved: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();

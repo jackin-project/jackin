@@ -230,8 +230,6 @@ fn jackin_construct_image_override_handles_digest_pinned_from() {
 #[cfg(unix)]
 #[test]
 fn dereferences_contained_symlinks_in_repo_build_context() {
-    // Contained symlinks (CLAUDE.md -> AGENTS.md repo conventions) copy
-    // their target content instead of failing the build.
     let repo = tempdir().unwrap();
     minimal_role_repo(repo.path());
     std::fs::write(repo.path().join("AGENTS.md"), "agents\n").unwrap();
@@ -346,8 +344,6 @@ fn image_ref_validator_accepts_canonical_forms() {
 
 #[test]
 fn image_ref_validator_rejects_injection_vectors() {
-    // The threats the allowlist guards against — a poisoned env
-    // var must not inject extra Dockerfile instructions.
     assert!(!looks_like_valid_image_ref(""));
     assert!(!looks_like_valid_image_ref("foo bar"));
     assert!(!looks_like_valid_image_ref("foo\nFROM evil"));

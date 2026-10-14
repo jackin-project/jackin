@@ -1,18 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capsule TUI update-layer vocabulary.
-//!
-//! The daemon still drives most state transitions while the TUI boundary is
-//! being extracted. Redraw reasons live here because they describe visible
-//! invalidation causes, not PTY/session authority.
-
 use crate::tui::components::dialog::{ConfirmKind, DialogAction, PickerIntent};
 use crate::tui::input::PrefixCommand;
 use crate::tui::layout::{Rect, SplitOrient};
 use crate::tui::message::{Action, PaletteCommandRoute};
 
-/// Duration for transient "copied" feedback in TUI dialogs.
 pub(crate) const DIALOG_COPY_FEEDBACK_DURATION: std::time::Duration =
     std::time::Duration::from_secs(2);
 
@@ -33,7 +26,7 @@ pub(crate) enum FullRedrawReason {
     PaneClear,
     ExplicitRedraw,
     StatusChange,
-    /// PTY bytes arrived for a pane.
+
     PtyOutput,
 }
 
@@ -77,8 +70,6 @@ pub(crate) enum DialogActionFramePlan {
 }
 
 impl DialogActionFramePlan {
-    /// Invalidation label under derived rendering: the Full/Overlay split no
-    /// longer selects a compose path, only the telemetry reason survives.
     pub(crate) fn reason(self) -> FullRedrawReason {
         match self {
             Self::Full(reason) | Self::Overlay(reason) => reason,
@@ -94,8 +85,6 @@ pub(crate) enum ActionFramePlan {
 }
 
 impl ActionFramePlan {
-    /// Invalidation label under derived rendering; see
-    /// [`DialogActionFramePlan::reason`].
     pub(crate) fn reason(self) -> FullRedrawReason {
         match self {
             Self::Full(reason) | Self::Overlay(reason) | Self::Diff(reason) => reason,

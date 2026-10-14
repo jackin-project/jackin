@@ -244,15 +244,7 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
 
     assert!(usage_height >= 7);
     assert_eq!(d.box_rect(50, 120).2, usage_height);
-    // Bug 2: the scroll bound now uses the same width-wrapped line set and body
-    // viewport (box − border − tab strip) the renderer uses. Assert overflow at a
-    // wide-but-short terminal (≥64 cols → wide layout matching `usage_height`;
-    // few rows → the box clamps below the content) so the dialog scrolls. A tall
-    // terminal must NOT advertise vertical scroll — the content fits its body.
-    // Bug 2: the scroll bound now uses the same width-wrapped line set and body
-    // viewport (box − border − tab strip) the renderer uses. At a wide terminal
-    // (≥64 cols → wide layout matching `usage_height`) the content overflows a
-    // short box and scrolls, and fits — no vertical scroll — at a tall one.
+
     assert!(d.body_scroll_axes(18, 120, None).vertical);
     assert!(!d.body_scroll_axes(50, 120, None).vertical);
 }
@@ -265,18 +257,12 @@ fn container_info_esc_dismisses() {
 
 #[test]
 fn container_info_q_dismisses() {
-    // ContainerInfo has no editable input, so `q` is also a valid
-    // dismiss key (same as the list-style dialogs).
     let mut d = container_info_fixture();
     assert_eq!(d.handle_key(b"q", None), DialogAction::Dismiss);
 }
 
 #[test]
 fn container_info_arrow_keys_are_redraw_noops() {
-    // Read-only modal, no navigation. Arrow keys must neither
-    // dismiss the dialog nor produce a Command-like action — a
-    // bare Redraw keeps the box on screen and waits for Enter /
-    // Esc.
     let mut d = container_info_fixture();
     assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
@@ -344,9 +330,6 @@ fn github_context_clamp_body_scroll_reduces_overscroll() {
 
 #[test]
 fn agent_picker_section_labels_are_bare_not_dash_padded() {
-    // Defect 28 regression: section labels must be bare text ("agents", "shells")
-    // not "── agents ──". render_separator adds the surrounding dashes; if the
-    // label already contains them, the output doubles.
     let d = picker(vec!["claude"]);
     let snapshot = d.to_ratatui_snapshot(None);
     use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, PickerItem};

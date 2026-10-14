@@ -1,12 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Agent-status sampling, runtime events, and transitions.
 
 use super::{STATUS_FLAP_THRESHOLD, STATUS_FLAP_WINDOW, Session, StatusTick, StatusTransition};
 
-/// Authority grade for a runtime's semantic source. `opencode` and the flagged
-/// Codex app-server prototype ship complete lifecycle streams; `amp` and other
-/// event sources have partial coverage.
 pub(crate) fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityGrade {
     use crate::agent_status::evidence::AuthorityGrade;
     match runtime {
@@ -16,11 +12,6 @@ pub(crate) fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence:
 }
 
 impl Session {
-    /// Apply a forwarded runtime hook/plugin event from an in-container reporter.
-    /// Maps the event through the daemon-owned gating table and updates this
-    /// session's semantic authority (consumed by arbitration). Reporters forward
-    /// events only — all mapping/gating lives here, never in the reporter.
-    /// `seq` is assigned in arrival order per session.
     pub fn apply_runtime_event(
         &mut self,
         source_id: &str,
@@ -85,28 +76,20 @@ impl Session {
         }
     }
 
-    /// Clear runtime-event authority and per-source gate state after an exit /
-    /// foreground-returned-to-shell transition has been published, so a stale
-    /// semantic report cannot outlive the process it described.
     pub fn clear_runtime_authority(&mut self) {
         self.authority = None;
         self.gate_states.clear();
         self.saw_agent_foreground = false;
         self.subagents_active = 0;
-        // A new foreground process must not inherit the previous agent's
-        // title/progress evidence.
+
         self.osc.clear_agent_signals();
     }
 
-    /// Agent-authored terminal-protocol evidence for the evidence snapshot.
     #[must_use]
     pub fn osc_evidence(&self) -> &crate::agent_status::evidence::OscEvidence {
         &self.osc
     }
 
-    /// Plain-text rows of the current visible viewport (top to bottom), for the
-    /// screen rule-pack engine. Operator scrollback never affects detection —
-    /// only the live screen is read.
     #[must_use]
     pub fn visible_screen_rows(&self) -> Vec<String> {
         let (_, cols) = self.shadow_grid.size();
@@ -116,11 +99,6 @@ impl Session {
             .collect()
     }
 
-    /// Sample `/proc` physics for this session's child, producing the
-    /// `ProcessEvidence` arbitration consumes. Off-Linux (or with no child PID)
-    /// returns default evidence with `physics_sampled = false` — "no evidence",
-    /// never "quiet", so the watchdog cannot false-demote. On Linux a missing
-    /// process is a real exit.
     pub fn sample_process_evidence(
         &mut self,
         now: std::time::Instant,
@@ -143,7 +121,6 @@ impl Session {
             return ProcessEvidence::default();
         }
         let Some(info) = sampler.read_process_info(pid) else {
-            // Linux + PID gone = a real process exit.
             self.cpu_sample = None;
             return ProcessEvidence {
                 process_exited: true,
@@ -162,9 +139,7 @@ impl Session {
         if foreground_is_agent {
             self.saw_agent_foreground = true;
         }
-        // Returned to shell: the agent owned the pane earlier, the child is still
-        // alive, the foreground group is now a non-agent (shell), and no
-        // descendant work remains.
+
         let foreground_returned_to_shell = self.saw_agent_foreground
             && !foreground_is_agent
             && foreground.has_group()
@@ -183,12 +158,6 @@ impl Session {
         }
     }
 
-    /// Advance the agent-status state machine by one tick: sample evidence,
-    /// run the screen rule pack, arbitrate, debounce, and publish. This is the
-    /// sole path that authors public agent state — the daemon only reacts to the
-    /// returned [`StatusTick`] (redraw + telemetry). Exit clears runtime
-    /// authority only after the exit transition has published, so a stale
-    /// semantic report can never outlive the process it described.
     pub fn advance_status(
         &mut self,
         rule_registry: Option<&crate::agent_status::rules::RulePackRegistry>,
@@ -213,9 +182,7 @@ impl Session {
 
         let process = self.sample_process_evidence_with(sampler, now);
         let exiting = process.process_exited || process.foreground_returned_to_shell;
-        // Screen rule-pack evaluation over the live viewport: the universal
-        // detector and the sole state source for identity-only runtimes
-        // (Claude/Codex) and Kimi.
+
         let screen = rule_registry
             .and_then(|registry| {
                 let rows = self.visible_screen_rows();
@@ -244,22 +211,17 @@ impl Session {
             },
         };
         let candidate = apply_watchdog(arbitrate(&snapshot, self.status.raw, now), now);
-        // Stuck telemetry: a watchdog demotion means a witness claimed `working`
-        // while physics went quiet (the interrupt hole / a hung authority).
+
         let stuck = candidate
             .notes
             .iter()
             .any(|n| matches!(n, EvidenceNote::WatchdogDemoted));
-        // Debounce gates whether the candidate becomes a public transition
-        // (immediate for blocked/working/exit/strong-idle; inferred idle needs
-        // confirmation + CPU/OSC-quiet). Only commit through SessionStatus when
-        // it permits.
+
         let mut transition = None;
         let mut flap = false;
         if debounce(self.state, &candidate, &mut self.pending_transition, now).is_some() {
             let previous = self.state;
-            // Clone the winner only on the committing tick — most ticks debounce
-            // suppresses the transition, and the winner now carries a String.
+
             let winner = candidate.winner.clone();
             if let Some(effective) = self.status.publish_raw(candidate) {
                 self.state = effective;

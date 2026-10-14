@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Dialog click dispatch against modal hit regions.
 
 use super::github_context::GithubContextView;
 use super::input::{
@@ -16,11 +15,6 @@ use super::{
 use crate::tui::components::palette::{PALETTE_ITEMS, palette_filtered_indices};
 
 impl Dialog {
-    /// Dispatch a left-click at `(row, col)` against the dialog's
-    /// hit regions. Shared modal lifecycle classification handles
-    /// outside-dismiss; inside clicks on a row select that row and
-    /// immediately confirm; clicks on the border or padding rows are
-    /// consumed so they do not leak through to the focused pane underneath.
     #[expect(
         clippy::too_many_lines,
         reason = "Dialog click dispatcher: per-Dialog-variant handle-click arm with \
@@ -42,23 +36,18 @@ impl Dialog {
             width,
             height,
         };
-        // Outside the box dismisses; an inside hit falls through to the
-        // per-dialog click handling below.
+
         if !area.contains(ratatui::layout::Position { x: col, y: row }) {
             return DialogAction::Dismiss;
         }
-        // Text-input dialog has no clickable rows — clicks inside the
-        // box are just swallowed so they don't dismiss or reach the
-        // pane underneath.
+
         if matches!(self, Self::RenameTab { .. } | Self::ExportFile { .. }) {
             return DialogAction::Consume;
         }
         if matches!(self, Self::SpawnFailure(_)) {
             return DialogAction::Consume;
         }
-        // ContainerInfo: any copyable row (Container ID or Invocation ID)
-        // log) copies via the shared hit-test. The clicked row's value goes to
-        // the clipboard and that row shows the copied check affordance.
+
         if matches!(self, Self::ContainerInfo { .. }) {
             let hit = self.container_info_state().and_then(|state| {
                 crate::tui::components::container_info_surface::container_info_copy_payload_at(
@@ -128,9 +117,7 @@ impl Dialog {
                 None => DialogAction::Consume,
             };
         }
-        // ConfirmAction: only the visible Yes/No button cells confirm or
-        // dismiss. The shared confirm widget owns button geometry, including
-        // the taller data-loss exit variant.
+
         if let Self::ConfirmAction { kind, selected_yes } = self {
             let body = if matches!(kind, ConfirmKind::Exit) {
                 "Exit jackin❯?\n\n! Exiting force-stops the container immediately.\n! Work not saved outside the container will be lost.".to_owned()
@@ -178,18 +165,7 @@ impl Dialog {
                 _ => DialogAction::Consume,
             };
         }
-        // Row layout inside the box for filterable dialogs:
-        //   box_row + 0:  top border (decorative)
-        //   box_row + 1:  blank pad row
-        //   box_row + 2:  filter input ("/ <text>▏")
-        //   box_row + 3:  blank pad row separating filter from items
-        //   box_row + 3:  first item row
-        //
-        // Clicks on the filter row are no-op consumes (no in-place
-        // edit yet); clicks on item rows select + confirm against
-        // the current filtered list so a future refactor that
-        // shortens / lengthens the visible item count via filter
-        // input still routes the click to the right action.
+
         let first_item_row = box_row + 3;
         let visible_count: u16 = match self {
             Self::CommandPalette {
@@ -279,8 +255,7 @@ impl Dialog {
                     }
                 }
             }
-            // Text-input, ContainerInfo, and ConfirmAction
-            // clicks were already handled by early returns above.
+
             Self::RenameTab { .. }
             | Self::ExportFile { .. }
             | Self::ContainerInfo { .. }

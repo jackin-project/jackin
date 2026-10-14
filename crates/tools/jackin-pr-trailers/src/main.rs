@@ -1,8 +1,3 @@
-//! jackin-pr-trailers: PR trailer rewrite helper binary.
-//!
-//! **Architecture Invariant:** T1.
-//! Entry point: [`main`] — binary entry for trailer rewrites.
-
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use jackin_process::{ExecRequest, ExecResult, StdioMode};
@@ -14,19 +9,12 @@ use std::collections::HashSet;
     about = "Extract git trailers from PR commits for squash merge messages"
 )]
 struct Args {
-    /// GitHub PR number. If omitted, auto-detects the current branch name,
-    /// finds the corresponding PR (if any), verifies the branch is in sync with
-    /// remote, and extracts trailers from the PR or local branch commits.
     #[arg(short, long)]
     pr: Option<u64>,
 
-    /// Repository in owner/repo form
     #[arg(short, long, default_value = "jackin-project/jackin")]
     repo: String,
 
-    /// Path to a file that already contains the prepared PR body text.
-    /// If provided, the extracted trailers will be appended to this file
-    /// (after a blank line). Otherwise trailers are printed to stdout.
     #[arg(long)]
     body_file: Option<String>,
 }

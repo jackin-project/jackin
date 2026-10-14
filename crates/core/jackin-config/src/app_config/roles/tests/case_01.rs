@@ -40,23 +40,21 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
 
     let config = AppConfig::load_or_init(&paths).unwrap();
 
-    // Built-in entries are corrected
     assert_eq!(
         config.roles.get("agent-smith").unwrap().git,
         "https://github.com/jackin-project/jackin-agent-smith.git"
     );
-    // Missing built-in entries are added
+
     assert_eq!(
         config.roles.get("the-architect").unwrap().git,
         "https://github.com/jackin-project/jackin-the-architect.git"
     );
-    // User-added entries are preserved
+
     assert_eq!(
         config.roles.get("chainargos/agent-brown").unwrap().git,
         "git@github.com:chainargos/jackin-agent-brown.git"
     );
 
-    // Config file is updated on disk
     let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(persisted.contains("jackin-project/jackin-agent-smith.git"));
     assert!(persisted.contains("jackin-project/jackin-the-architect.git"));
@@ -78,8 +76,6 @@ fn resolve_agent_source_adds_owner_repo_on_first_use() {
     );
     assert!(is_new);
 
-    // Not yet persisted — write via toml::to_string_pretty (AppConfig::save
-    // was removed in Task 14; tests bootstrap the file directly).
     let contents = toml::to_string_pretty(&config).unwrap();
     std::fs::write(&paths.config_file, &contents).unwrap();
     assert!(
@@ -138,7 +134,6 @@ fn trust_agent_marks_source_as_trusted() {
             .trusted
     );
 
-    // Second call is idempotent
     let changed_again = config.trust_agent("chainargos/the-architect");
     assert!(!changed_again);
 }
@@ -170,7 +165,6 @@ fn untrust_agent_revokes_trust() {
             .trusted
     );
 
-    // Second call is idempotent
     let changed_again = config.untrust_agent("chainargos/the-architect");
     assert!(!changed_again);
 }
@@ -184,7 +178,7 @@ fn trusted_flag_round_trips_through_toml() {
 
     config.resolve_role_source(&selector).unwrap();
     config.trust_agent("chainargos/the-architect");
-    // AppConfig::save removed in Task 14 — write the bootstrap file directly.
+
     let contents = toml::to_string_pretty(&config).unwrap();
     std::fs::write(&paths.config_file, &contents).unwrap();
 
@@ -204,7 +198,6 @@ fn sync_upgrades_untrusted_builtins() {
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
 
-    // Simulate a config from a pre-trust version (no trusted field)
     std::fs::write(
         &paths.config_file,
         r#"[roles.agent-smith]
@@ -218,7 +211,6 @@ git = "https://github.com/jackin-project/jackin-the-architect.git"
 
     let config = AppConfig::load_or_init(&paths).unwrap();
 
-    // Builtins should be upgraded to trusted
     assert!(config.roles.get("agent-smith").unwrap().trusted);
     assert!(config.roles.get("the-architect").unwrap().trusted);
 }
@@ -333,7 +325,7 @@ fn build_github_env_layers_preserves_distinct_keys_across_layers() {
         ..AppConfig::default()
     };
     let merged = build_github_env_layers(&cfg, Some(&wn("proj")), "smith");
-    // All 3 keys survive — different keys at different layers.
+
     assert_eq!(merged.len(), 3);
     assert!(merged.contains_key("GH_TOKEN"));
     assert!(merged.contains_key("GH_HOST"));

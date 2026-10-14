@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Environment resolution and sibling auth prewarm.
 
 use jackin_core::WorkspaceName;
 use jackin_docker::docker_client::DockerApi;

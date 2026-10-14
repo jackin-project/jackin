@@ -1,14 +1,3 @@
-//! Launch-core phase contracts and injectable failure-path helpers
-//! (R-launch-typestate / R-033-suite-a).
-//!
-//! Pure grant resolution is separated from I/O so suite A can prove
-//! grant-failure ordering and `FailedSetup` teardown without constructing a
-//! full ~20-crate `LaunchCore` graph.
-//!
-//! The ten pipeline phases (roadmap Ownership item 1) are typed `#[must_use]`
-//! outputs consumed by value by the next phase. Helper-only substitutes are
-//! not acceptance — see `run_launch_core` + the `launch_pipeline` harness.
-
 use crate::instance::{InstanceManifest, InstanceStatus};
 use crate::runtime::docker_profile::{
     DockerGrants, DockerSecurityProfile, EffectiveGrants, ProfileSource, dind_enabled,
@@ -24,28 +13,20 @@ use jackin_manifest::RoleManifest;
 use super::super::LoadCleanup;
 use super::{bail_on_grant_errors, tag_errors, tagged_grant_errors};
 
-// ── Phase 1: validation ────────────────────────────────────────────────────
-
-/// Pure classification of an image decision for the launch typestate chain
-/// (`GrantsValidated` → [`ImagePhaseClassified`] → materialize → run).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImagePhaseClass {
-    /// Local image is reusable (or background refresh only).
     ReuseOrBackgroundRefresh,
-    /// Derived image must be built before container create.
+
     BuildRequired,
 }
 
-/// Classified image phase after grants (injectable; no Docker I/O).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImagePhaseClassified {
-    /// Whether the pipeline builds or reuses.
     pub class: ImagePhaseClass,
-    /// True when the selected agent image is reused without a foreground build.
+
     pub selected_image_reused: bool,
 }
 
-/// Classify [`jackin_image::image_decision::ImageDecision`] without I/O.
 #[must_use]
 pub fn classify_image_phase(
     decision: &crate::runtime::image::ImageDecision,
@@ -66,43 +47,32 @@ pub fn classify_image_phase(
     }
 }
 
-/// Grant + profile resolution succeeded (phase 1 → 2).
 #[derive(Debug, Clone)]
 pub struct GrantsValidated {
-    /// Folded effective grants after config/workspace/role layers.
     pub effective_grants: EffectiveGrants,
-    /// Resolved Docker security profile.
+
     pub resolved_profile: DockerSecurityProfile,
-    /// Where the profile came from (CLI / workspace / config / default).
+
     pub profile_source: ProfileSource,
-    /// Whether `DinD` is enabled under the effective grants.
+
     pub dind_started: bool,
 }
 
-/// Inputs for the pure grant-validation phase (no Docker I/O).
 #[derive(Debug)]
 pub struct GrantPhaseInput<'a> {
-    /// Host app config (global docker grants + profile).
     pub config: &'a AppConfig,
-    /// Workspace label used for workspace-layer docker grants lookup.
+
     pub workspace_label: &'a str,
-    /// Optional pre-resolved workspace docker table (avoids re-lookup).
+
     pub workspace_docker: Option<&'a WorkspaceDockerConfig>,
-    /// CLI `--docker-profile` override.
+
     pub opts_docker_profile: Option<DockerSecurityProfile>,
-    /// Role selector (error messages).
+
     pub selector: &'a RoleSelector,
-    /// Role manifest (min profile + role grants).
+
     pub role_manifest: &'a RoleManifest,
 }
 
-/// Validate config/workspace/role docker grants and fold effective grants.
-///
-/// Returns [`GrantsValidated`] on success. Validate before adopting or
-/// allocating Docker resources, so failure requires no resource cleanup.
-///
-/// # Errors
-/// Returns when any layer fails grants validation or profile floor check.
 pub fn validate_launch_grants(input: GrantPhaseInput<'_>) -> anyhow::Result<GrantsValidated> {
     let workspace_docker_for_grants = input.workspace_docker.or_else(|| {
         input
@@ -168,114 +138,88 @@ pub fn validate_launch_grants(input: GrantPhaseInput<'_>) -> anyhow::Result<Gran
     })
 }
 
-// ── Phase outputs (by-value handoff tokens) ────────────────────────────────
-
-/// Image materialization finished (reuse or build).
 #[derive(Debug, Clone)]
 #[must_use]
 pub(crate) struct ImageMaterialized {
-    /// Local image tag to run.
     pub image: String,
-    /// True when the selected agent image was reused without a foreground build.
+
     pub selected_image_reused: bool,
 }
 
-/// Instance manifest written with `Active` status (post-materialize identity).
 #[derive(Debug)]
 #[must_use]
 pub(crate) struct InstancePrepared {
-    /// Materialized image tag carried into runtime launch.
     pub image: String,
-    /// Whether the selected agent image was reused.
+
     pub selected_image_reused: bool,
-    /// On-disk instance identity for the launch.
+
     pub instance_manifest: InstanceManifest,
-    /// Per-container state directory under `paths.data_dir`.
+
     pub container_state: std::path::PathBuf,
-    /// Host workdir fingerprint captured into the manifest.
+
     pub host_workdir_fingerprint: String,
 }
 
-/// Credentials, GitHub env, and `RoleState` prepared for the container.
 #[derive(Debug)]
 #[must_use]
 pub(crate) struct EnvironmentResolved {
-    /// Prepared per-agent home/auth state.
     pub state: crate::instance::RoleState,
-    /// Resolved GitHub env map (may be empty under Ignore).
+
     pub github_resolved_env: std::collections::BTreeMap<String, String>,
-    /// Saved-workspace name when present (empty string for ad-hoc).
+
     pub workspace_name_str: String,
-    /// Optional saved workspace name for config lookups.
+
     pub workspace_opt: Option<jackin_core::WorkspaceName>,
-    /// GitHub auth mode in effect.
+
     pub github_mode: jackin_config::GithubAuthMode,
-    /// Declared `[github.env]` layers (for operator breadcrumb).
+
     pub github_env_decls: std::collections::BTreeMap<String, jackin_config::EnvValue>,
-    /// Exact source/material proofs for credential values staged at launch.
+
     pub credential_scope: jackin_protocol::usage_broker::UsageCredentialScope,
 }
 
-/// Trust seeding and operator-facing auth breadcrumbs completed.
 #[derive(Debug)]
 #[must_use]
 pub(crate) struct TrustSeeded {
-    /// Environment state whose trust material was seeded.
     pub environment: EnvironmentResolved,
-    /// Launch-admitted instances, in launch order. Recorded on the
-    /// instance manifest so host-side tab validation can check spawned
-    /// tabs against the authorized set.
+
     pub instances: Vec<jackin_config::ResolvedInstance>,
 }
 
-/// Workspace mounts materialized and network/DinD sidecar ready.
 #[derive(Debug)]
 #[must_use]
 pub(crate) struct WorkspaceMaterialized {
-    /// Materialized mount table for docker `-v` flags.
     pub materialized: crate::isolation::materialize::MaterializedWorkspace,
-    /// Capsule launch config (bindings filled by the caller).
+
     pub launch_config: jackin_protocol::CapsuleConfig,
-    /// Trusted environment carried into runtime launch.
+
     pub environment: EnvironmentResolved,
 }
 
-/// Docker (or apple-container) runtime launch completed successfully.
 #[derive(Debug)]
 #[must_use]
 pub(crate) struct RuntimeLaunched {
-    /// Manifest updated throughout finalization.
     pub instance_manifest: InstanceManifest,
-    /// Per-container state directory.
+
     pub container_state: std::path::PathBuf,
-    /// Armed teardown guard carried into finalization.
+
     pub cleanup: LoadCleanup,
-    /// Caller-bound account/config generation lease carried into reconnects.
+
     pub account_revision: crate::runtime::launch::account_identity::AccountConfigRevision,
 }
 
-/// Foreground attach finalization decision.
 #[derive(Debug, Clone, Copy)]
 #[must_use]
 pub(crate) struct SessionFinalized {
-    /// Isolation finalizer decision (clean / preserved / return-to-agent).
     pub decision: crate::isolation::finalize::FinalizeDecision,
 }
 
-/// Teardown classification finished; container name is the pipeline result.
 #[derive(Debug, Clone)]
 #[must_use]
 pub(crate) struct CleanupClassified {
-    /// Final container name returned to the caller.
     pub container_name: String,
 }
 
-// ── Failure helpers ────────────────────────────────────────────────────────
-
-/// Mid-pipeline failure: mark `FailedSetup` (best-effort) then run cleanup.
-///
-/// Order is intentional — suite A asserts cleanup Docker ops still run even
-/// when the status write fails or is skipped.
 pub(crate) async fn mark_failed_setup_then_cleanup(
     paths: &JackinPaths,
     container_state: &std::path::Path,

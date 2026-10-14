@@ -148,8 +148,6 @@ fn content_areas_exclude_the_cached_footer() {
 
 #[test]
 fn mouse_down_on_seam_starts_drag() {
-    // Default split on a 100-col terminal => seam at column
-    // `DEFAULT_SPLIT_PCT`.
     let mut state = list_state();
     assert_eq!(state.list_split_pct, DEFAULT_SPLIT_PCT);
     let e = mouse(MouseEventKind::Down(MouseButton::Left), DEFAULT_SPLIT_PCT);
@@ -166,8 +164,6 @@ fn mouse_down_on_seam_starts_drag() {
 
 #[test]
 fn mouse_drag_updates_split_pct() {
-    // Anchor at DEFAULT_SPLIT_PCT. Drag +10 columns on a 100-col
-    // terminal ⇒ +10%.
     let mut state = list_state();
     handle_mouse(
         &mut state,
@@ -185,7 +181,6 @@ fn mouse_drag_updates_split_pct() {
 
 #[test]
 fn mouse_drag_clamps_to_min_and_max() {
-    // Drag far left ⇒ clamp to MIN_SPLIT_PCT.
     let mut state = list_state();
     handle_mouse(
         &mut state,
@@ -199,7 +194,6 @@ fn mouse_drag_clamps_to_min_and_max() {
     );
     assert_eq!(state.list_split_pct, MIN_SPLIT_PCT);
 
-    // Drag far right ⇒ clamp to MAX_SPLIT_PCT.
     let mut state = list_state();
     handle_mouse(
         &mut state,
@@ -233,11 +227,8 @@ fn mouse_up_ends_drag() {
 
 #[test]
 fn mouse_down_far_from_seam_does_not_start_drag() {
-    // Clicks in the middle of either pane must be ignored — the
-    // operator's intent is "click a row/button", not "start a resize".
     let mut state = list_state();
-    // Seam at column `DEFAULT_SPLIT_PCT`; columns near either border
-    // are far enough from the seam to be rejected.
+
     handle_mouse(
         &mut state,
         mouse(MouseEventKind::Down(MouseButton::Left), 2),
@@ -254,13 +245,8 @@ fn mouse_down_far_from_seam_does_not_start_drag() {
 
 #[test]
 fn drag_ignored_when_list_modal_open() {
-    // GithubPicker is the only list-level modal today. Any mouse event
-    // while it's up must be a silent no-op — the picker owns the
-    // keyboard + (implicitly) the mouse focus.
     let mut state = list_state();
-    // Use the github_mounts resolver indirectly — easier to
-    // just synthesize a GithubPicker state with an arbitrary choice.
-    // The picker's exact contents don't matter; only `list_modal.is_some()`.
+
     let ws = WorkspaceConfig {
         workdir: "/w".into(),
         mounts: vec![MountConfig {
@@ -271,7 +257,7 @@ fn drag_ignored_when_list_modal_open() {
         }],
         ..Default::default()
     };
-    // Ensure the helper signature compiles (guards against future refactors).
+
     drop(crate::github_mounts::resolve_for_workspace(&ws));
     state.list_modal = Some(Modal::GithubPicker {
         state: crate::tui::components::github_picker::GithubPickerState::new(vec![

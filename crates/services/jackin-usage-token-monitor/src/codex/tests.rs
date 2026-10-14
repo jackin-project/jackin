@@ -1,14 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the parent module.
 use super::*;
 
 #[test]
 fn cumulative_token_count_takes_last_value_not_sum() {
-    // Two cumulative `total_token_usage` lines: the session total is the LAST
-    // value (the counter is monotonic), never their sum. Regression guard for
-    // the prior double-count, where each poll re-added the running total.
     let line1 = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":50}}}}"#;
     let line2 = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"output_tokens":90}}}}"#;
     let mut acc = Acc::default();

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ConsoleManagerMessage` vocabulary.
 
 use ratatui::layout::Rect;
 use std::path::PathBuf;

@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Visible multiplexer TUI model vocabulary.
-//!
-//! The daemon still owns PTY/session/control-plane authority. Small visible
-//! state enums live here so hover and pointer rendering share the TUI boundary
-//! instead of being defined in daemon internals.
-
 use crate::protocol::AgentState;
 use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::layout::{Rect, SplitOrient, Tab};
@@ -117,7 +111,7 @@ pub(crate) enum HoverTarget {
     BranchContext,
     UsageStatus,
     Container,
-    /// The debug invocation-id chip at the bottom-right when `--debug` is active.
+
     DebugChip,
     DialogCopyTarget,
 }
@@ -212,12 +206,6 @@ pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState
     }
 }
 
-/// Human-readable label for an agent/shell visible in tab and pane chrome.
-///
-/// The instance label (`{Agent} · {account name}` unless overridden) wins
-/// when the spawn resolved one, so two same-agent instances stay
-/// distinguishable; without it (shells, stale configs) this falls back to
-/// the slug-derived title.
 pub(crate) fn visible_agent_label(
     instance_label: Option<&str>,
     agent_slug: Option<&str>,
@@ -270,13 +258,6 @@ pub(crate) fn visible_panes_for_layout(
     leaves
         .into_iter()
         .map(|(id, outer)| {
-            // Subdivision must never escape the content rect (a pane top can't
-            // rise above `content_rect.row` == `STATUS_BAR_ROWS` into the status
-            // bar). Production correctness rests on the `leaves()` split
-            // arithmetic, which enforces this structurally; this assert is a
-            // debug/test tripwire that catches a regression in that arithmetic
-            // (release builds drop it, and the `frame-pane` trace is firehose-
-            // gated, so neither fires in a normal release run).
             debug_assert!(
                 content_rect.contains(outer),
                 "pane {id} outer rect {outer:?} escaped content_rect {content_rect:?}",
@@ -316,10 +297,6 @@ pub(crate) fn visible_tab_pane_kind(facts: VisibleTabPaneFacts<'_>) -> VisibleTa
     }
 }
 
-/// Derive the auto-label shown in the tab strip from visible pane makeup.
-///
-/// Operator-owned custom labels still shadow this in [`Tab::label`]; this helper
-/// only owns the visible default when the daemon refreshes tab chrome.
 pub(crate) fn tab_auto_label(
     pane_count: usize,
     panes: impl IntoIterator<Item = VisibleTabPaneKind>,
@@ -352,14 +329,10 @@ pub(crate) fn tab_auto_label(
 #[derive(Debug, Clone)]
 pub(crate) struct DragState {
     pub(crate) tab_idx: usize,
-    /// Tree path from the tab's root to the split node being resized
-    /// (`0` = left/top child, `1` = right/bottom). Empty path = root
-    /// split.
+
     pub(crate) path: Vec<u8>,
     pub(crate) orient: SplitOrient,
-    /// Outer rectangle of the split - stable for the duration of the
-    /// drag because spawns / closes block on dialog input and the
-    /// daemon does not reflow during a drag.
+
     pub(crate) rect: Rect,
 }
 

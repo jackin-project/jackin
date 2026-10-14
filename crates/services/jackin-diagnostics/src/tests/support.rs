@@ -56,8 +56,7 @@ pub(super) fn telemetry_volume_artifact_path() -> std::path::PathBuf {
     if let Some(path) = std::env::var_os("JACKIN_TELEMETRY_VOLUME_PATH") {
         return path.into();
     }
-    // nextest CWD is the package dir; always write to the workspace target so
-    // `cargo xtask lint ratchet` (repo root) consumes the same file.
+
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/telemetry-volume.json")
 }
 
@@ -126,7 +125,6 @@ pub(super) fn drive_standard_conformance_scenario() -> ConformanceExport {
         "conformance scenario must own the in-memory metric exporter"
     );
 
-    // ── Host bootstrap ──────────────────────────────────────────────────
     let (host, host_sub) = crate::observability::test_layers(false, RUN_ID);
     tracing::subscriber::with_default(host_sub, || {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -169,8 +167,7 @@ pub(super) fn drive_standard_conformance_scenario() -> ConformanceExport {
                 .expect("registered process operation");
         let guard = operation.span().enter();
         conformance_operation_log("process executed");
-        // Representative host failure; the actual attach failure seam is
-        // asserted in jackin-capsule's conformance test.
+
         conformance_operation_error("forced attach failure for conformance");
         drop(guard);
         operation.complete(
@@ -192,10 +189,8 @@ pub(super) fn drive_standard_conformance_scenario() -> ConformanceExport {
     drop(host.logger_provider.force_flush());
     drop(host.tracer_provider.force_flush());
 
-    // ── Capsule bootstrap (separate provider, production session-start) ─
     let (capsule, capsule_sub) = crate::observability::test_capsule_layers(false);
     tracing::subscriber::with_default(capsule_sub, || {
-        // Same code path as init_capsule → emit_session_start after attach.
         crate::observability::emit_session_start_for_test(SESSION_ID, Some(RUN_ID), None);
 
         let attach = tracing::info_span!(
@@ -230,7 +225,6 @@ pub(super) fn drive_standard_conformance_scenario() -> ConformanceExport {
         )
         .unwrap();
 
-        // Expected detach (not a failure): registry-validated session.detach.
         jackin_telemetry::emit_event(
             &jackin_telemetry::event::CAPSULE_SESSION_DETACH,
             jackin_telemetry::FieldSet::new(&detach_attrs, Some("operator detached")),

@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Three-button choice modal for picking a mount destination.
-//!
-//! Most operator mounts want `dst = src`. This modal offers a fast path
-//! (`Mount at same path`) for that common case and falls back to the
-//! text-input flow via `Edit destination` when the operator wants a
-//! different container path.
-
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -23,17 +16,10 @@ use termrock::layout::render_dialog_shell;
 use termrock::widgets::PanelChrome;
 use termrock::widgets::{Action, ActionBar, ActionBarState};
 
-/// Outcome of the mount-destination modal.
-///
-/// The button label reads "Mount at same path" — the variant name
-/// mirrors that intent so grep'ing for `Ok` doesn't conflate this
-/// modal's choice with `Result::Ok`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MountDstChoice {
-    /// Use the host source path verbatim as the container destination.
     SamePath,
-    /// Open the destination text-input so the user can pick a different
-    /// container path.
+
     Edit,
 }
 
@@ -51,8 +37,6 @@ pub struct MountDstChoiceState {
 }
 
 impl MountDstChoiceState {
-    /// Default focus = `SamePath`: the common case is "same path inside
-    /// the container", so Enter should commit that without extra effort.
     pub fn new(src: impl Into<String>) -> Self {
         Self {
             src: src.into(),
@@ -100,16 +84,15 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         &termrock::style::DesignSystem::default(),
     );
 
-    // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // leading spacer
-            Constraint::Length(1), // question
-            Constraint::Length(1), // src path
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // buttons
-            Constraint::Length(1), // trailing spacer
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
         ])
         .split(inner);
 
@@ -122,7 +105,6 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         chunks[1],
     );
 
-    // Host path line — the operator-picked source.
     let shortened = shorten_home(&state.src);
     frame.render_widget(
         Paragraph::new(Span::styled(

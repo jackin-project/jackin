@@ -58,7 +58,7 @@ fn early_scan_skips_current_inspect_only_for_matching_empty_scan() {
         },
         Agent::Claude
     ));
-    // Unselected-empty scope skips current inspect for any later agent.
+
     assert!(early_scan_skips_current_inspect(
         &EarlyCurrentRestoreScan::ScannedUnselectedEmpty,
         Agent::Claude
@@ -67,7 +67,7 @@ fn early_scan_skips_current_inspect_only_for_matching_empty_scan() {
         &EarlyCurrentRestoreScan::ScannedUnselectedEmpty,
         Agent::Codex
     ));
-    // Non-empty typed hit is reused (Some(Some(...))), not treated as skip-empty.
+
     assert_eq!(
         early_scan_reused_current(
             &EarlyCurrentRestoreScan::Scanned {
@@ -102,17 +102,12 @@ async fn early_empty_scan_avoids_second_current_role_inspect() {
 
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
-            // First call: early selected scan sees NotFound → Recreate would
-            // be returned by a live scan; we stash empty instead to prove reuse
-            // path. Drive reusing_early with an empty Scanned so any second
-            // inspect would pull this queue entry.
             ContainerState::NotFound,
             ContainerState::NotFound,
         ])),
         ..Default::default()
     };
 
-    // Empty early scan for Claude: later resolve must not call inspect again.
     let early = EarlyCurrentRestoreScan::Scanned {
         agent: Agent::Claude,
         current: None,
@@ -166,7 +161,6 @@ async fn early_nonempty_scan_reuses_typed_current_without_reinspect() {
     write_indexed_manifest(&paths, &manifest);
 
     let docker = FakeDockerClient {
-        // Any inspect would consume this; reuse must leave the queue untouched.
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::NotFound])),
         ..Default::default()
     };
@@ -206,7 +200,7 @@ async fn early_nonempty_scan_reuses_typed_current_without_reinspect() {
         inspects.is_empty(),
         "typed non-empty early hit must not re-inspect; recorded: {inspects:?}"
     );
-    // Queue still full proves we never called inspect.
+
     assert_eq!(docker.inspect_queue.borrow().len(), 1);
 }
 
@@ -224,7 +218,6 @@ async fn unselected_empty_early_scan_skips_later_agent_current_inspect() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
 
-    // No indexed manifests → role-scope empty.
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::NotFound,
@@ -280,20 +273,18 @@ async fn common_path_single_current_inspect_with_early_then_reuse() {
     let container_name = "jk-common-single-inspect";
     let mut manifest =
         workspace_manifest(container_name, "agent-smith", "Agent Smith", Agent::Claude);
-    // Running is a restore candidate but launch never attaches (D13) → empty hit.
+
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
 
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
-            // Would be consumed by a wasteful second current-role inspect.
             ContainerState::Running,
         ])),
         ..Default::default()
     };
 
-    // Early selected scan (mirrors launch_pipeline pre-role-repo probe).
     let early_hit = resolve_current_restore_candidate_timed(
         &paths,
         Some("workspace"),

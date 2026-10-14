@@ -5,9 +5,6 @@ use super::*;
 
 #[test]
 fn error_popup_returns_ok_when_no_sink_installed() {
-    // No global sink installed in this test process → must be a
-    // silent no-op success so non-UI call sites do not have to
-    // branch on the install race.
     error_popup("title", "message").unwrap();
 }
 
@@ -22,5 +19,4 @@ fn exit_dialog_with_inspect_returns_max_when_no_sink_installed() {
 #[test]
 fn set_global_sink_accepts_object_safe_trait_object() {
     fn _accept(_: &'static dyn StandaloneDialogSink) {}
-    // Compile-time check; nothing to assert at runtime.
 }

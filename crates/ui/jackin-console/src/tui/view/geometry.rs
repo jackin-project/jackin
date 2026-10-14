@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Modal and header area geometry.
 
 use super::{
     ModalContentAreas, StageFooterHeightFacts, StageModalArea, VisibleModalPrepareAreas,
@@ -26,7 +25,6 @@ pub fn workspace_frame_areas(area: Rect) -> WorkspaceFrameAreas {
     }
 }
 
-/// Full terminal area with bottom footer rows reserved for hints/status.
 #[must_use]
 pub const fn modal_content_area(area: Rect, footer_height: u16) -> Rect {
     Rect {

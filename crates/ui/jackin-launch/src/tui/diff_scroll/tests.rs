@@ -3,22 +3,14 @@
 
 use super::*;
 
-/// Renders one frame the way `inspect_surface_loop` does and returns the
-/// visible diff rows. Single place naming the `TermRock` diff types.
 fn draw(lines: &[String], scroll: &mut DiffScroll, width: u16, height: u16) -> Vec<String> {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use termrock::widgets::{DiffKind, DiffLine, DiffState, DiffView};
 
-    // Mirrors run.rs: the render arm hands the widget `offset_for_render`
-    // through the host scroll seam. A fresh state's scroll clamps against
-    // zero metrics, so publish content/viewport before injecting. Head
-    // `DiffView` always reserves a bottom chip row when the area is at least
-    // three rows tall, so render one row taller and crop the chip row; the
-    // pre-bump paint had no gutter/prefix chrome, so trim both ends.
     let mut state = DiffState::new();
     state.show_line_numbers = false;
-    // No cursor on this surface — chrome suppressed as in run.rs.
+
     state.show_cursor = false;
     state
         .scroll_mut()
@@ -41,7 +33,7 @@ fn draw(lines: &[String], scroll: &mut DiffScroll, width: u16, height: u16) -> V
         f.render_stateful_widget(&DiffView::new(&diff_lines, &theme), f.area(), &mut state);
     })
     .expect("draw");
-    // ...and stores back the offset the widget kept after its viewport clamp.
+
     scroll.record_rendered(usize::from(state.offset()));
     let buf = term.backend().buffer();
     (0..height)
@@ -55,7 +47,6 @@ fn draw(lines: &[String], scroll: &mut DiffScroll, width: u16, height: u16) -> V
         .collect()
 }
 
-/// 50 distinguishable diff lines, `L00` … `L49`.
 fn fixture_lines() -> Vec<String> {
     (0..50).map(|i| format!("L{i:02}")).collect()
 }
@@ -112,7 +103,7 @@ fn trparity_diff_scroll_bottom_window_shows_last_viewport_lines() {
         scroll.page_down(lines.len());
     }
     let rows = draw(&lines, &mut scroll, 20, 10);
-    // Key offset pinned at 49, but the widget clamps to max_offset(50, 10) = 40.
+
     assert_eq!(rows[0], "L40");
     assert_eq!(rows[9], "L49");
 }
@@ -130,10 +121,6 @@ fn trparity_diff_scroll_reset_returns_to_top() {
 
 #[test]
 fn trparity_diff_scroll_over_scroll_resumes_from_key_offset() {
-    // Pre-bump two-offset behavior being characterized: the key offset (49
-    // after six PageDowns) survives the widget's viewport clamp because only
-    // the render offset is written back. One step up lands on key offset 48,
-    // which the widget re-clamps to 40 — the window does not move.
     let lines = fixture_lines();
     let mut scroll = DiffScroll::new();
     for _ in 0..6 {

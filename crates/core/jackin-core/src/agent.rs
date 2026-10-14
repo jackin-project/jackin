@@ -1,14 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Agent` enum: the set of AI agents jackin❯ can provision inside a role
-//! container.
-//!
-//! Single source of truth for agent identity — variant ordering, display
-//! labels, CLI slug parsing, and serde shape. Every match arm across the
-//! codebase that keys on agent identity should use this enum rather than
-//! string comparisons.
-
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -17,39 +9,35 @@ use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
 use crate::env_model;
 
-/// The set of AI agents jackin❯ can provision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Agent {
-    /// Anthropic Claude Code CLI.
     Claude,
-    /// `OpenAI` Codex CLI.
+
     Codex,
-    /// Sourcegraph Amp CLI.
+
     Amp,
-    /// Moonshot Kimi Code CLI.
+
     Kimi,
-    /// `OpenCode` CLI.
+
     Opencode,
-    /// xAI Grok Build CLI.
+
     Grok,
-    /// Google Antigravity CLI (`agy`).
+
     Antigravity,
-    /// Google Gemini CLI (`gemini`).
+
     Gemini,
-    /// Cursor agent CLI (`cursor-agent`, alias `agent`).
+
     Cursor,
-    /// Meta Muse CLI (`muse`).
+
     Muse,
-    /// oh-my-pi multi-provider client (`omp`).
+
     Omp,
-    /// Nous Hermes multi-provider client (`hermes`).
+
     Hermes,
 }
 
 impl Agent {
-    /// Every variant in declaration order. Iteration sites consult this
-    /// instead of hand-rolling their own array.
     pub const ALL: &'static [Self] = &[
         Self::Claude,
         Self::Codex,
@@ -65,7 +53,6 @@ impl Agent {
         Self::Hermes,
     ];
 
-    /// Canonical lowercase CLI slug (`"claude"`, `"codex"`, …).
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Claude => "claude",
@@ -83,7 +70,6 @@ impl Agent {
         }
     }
 
-    /// Display label shown in TUI surfaces.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Claude => "Claude",
@@ -101,29 +87,18 @@ impl Agent {
         }
     }
 
-    /// Generate the Dockerfile `RUN` block that installs this agent's CLI
-    /// from a pre-fetched binary at `source` path.
     pub fn install_block(self, source: &str) -> String {
         self.runtime().install_block(source)
     }
 
-    /// Generate the Dockerfile `RUN` block that installs this agent's CLI
-    /// from the official upstream installer when host-side binary prefetch
-    /// fails.
     pub fn fallback_install_block(self) -> String {
         self.runtime().fallback_install_block()
     }
 
-    /// Official upstream installer command used when host-side binary prefetch
-    /// cannot produce a cached binary.
     pub fn fallback_install_command(self) -> &'static str {
         self.runtime().fallback_install_command()
     }
 
-    /// Well-known env var that carries the auth credential for this
-    /// (agent, mode) combination, if any. Returns `None` for modes that
-    /// don't inject a credential (sync, ignore) or for combinations that
-    /// don't make sense for the agent.
     pub const fn required_env_var(self, mode: AuthForwardMode) -> Option<&'static str> {
         use AuthForwardMode as M;
         match (self, mode) {
@@ -138,7 +113,7 @@ impl Agent {
                 Some(env_model::GEMINI_API_KEY_ENV_NAME)
             }
             (Self::Cursor, M::ApiKey) => Some(env_model::CURSOR_API_KEY_ENV_NAME),
-            // Verified in `muse login --help`: META_API_KEY overrides login.
+
             (Self::Muse, M::ApiKey) => Some(env_model::META_API_KEY_ENV_NAME),
             (Self::Claude, M::Sync | M::Ignore)
             | (
@@ -153,23 +128,13 @@ impl Agent {
                 | Self::Muse,
                 M::Sync | M::Ignore | M::OAuthToken,
             )
-            // Omp/Hermes are pure multi-provider clients with no native
-            // billing: the ApiKey variable is provider-selected at the
-            // account layer (`AccountConfig::api_key_variable`), so no
-            // single agent-level variable exists.
-            | (Self::Omp | Self::Hermes, M::Sync | M::ApiKey | M::Ignore | M::OAuthToken) => {
-                None
-            }
+            | (Self::Omp | Self::Hermes, M::Sync | M::ApiKey | M::Ignore | M::OAuthToken) => None,
         }
     }
 
-    /// Modes this agent supports. UI surfaces should consult this when
-    /// listing options to the user.
     pub const fn supported_modes(self) -> &'static [AuthForwardMode] {
         use AuthForwardMode as M;
-        // Every agent except Claude supports exactly Sync+ApiKey+Ignore:
-        // the six catalog additions follow the same policy (no per-agent
-        // OAuthToken flow; Omp/Hermes route provider keys via ApiKey).
+
         match self {
             Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
             Self::Codex
@@ -186,11 +151,6 @@ impl Agent {
         }
     }
 
-    /// Per-agent behavioral dispatch via the [`runtime::AgentRuntime`] trait.
-    ///
-    /// Returns the adapter that encapsulates all behavioral logic for this
-    /// agent. Phase 2 will migrate all match-arm dispatch sites to call
-    /// `agent.runtime().<method>()` instead of matching on `agent` directly.
     pub fn runtime(self) -> &'static dyn AgentRuntime {
         use runtime::adapters;
         match self {
@@ -216,9 +176,6 @@ impl fmt::Display for Agent {
     }
 }
 
-/// Error returned when parsing an agent name fails.
-// Hand-written Display/Error: item-level `#[error("...")]` attributes collide
-// with the boltffi source scanner (see jackin-usage-ffi).
 #[derive(Debug)]
 pub struct ParseAgentError {
     got: String,
@@ -237,10 +194,6 @@ impl fmt::Display for ParseAgentError {
 impl std::error::Error for ParseAgentError {}
 
 impl Agent {
-    /// Parse a canonical agent slug without allocating. Returns `None` on an
-    /// unrecognized slug — the hot path (per-process `/proc` sampling) prefers
-    /// this over `FromStr`, whose error payload allocates a `String` on every
-    /// miss.
     pub fn from_slug(s: &str) -> Option<Self> {
         match s {
             "claude" => Some(Self::Claude),
@@ -268,13 +221,11 @@ impl FromStr for Agent {
     }
 }
 
-// Nested modules are crate-private; public surface is re-exported below.
 pub(crate) mod adapters;
 pub(crate) mod runtime;
 
 pub use runtime::{AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind};
 
-/// Public registry entry: all built-in [`AgentRuntime`] adapters.
 #[inline]
 #[must_use]
 pub const fn agent_runtime_registry() -> &'static [&'static dyn AgentRuntime] {

@@ -24,7 +24,6 @@ const DEFAULT_PACKAGES: &[&str] = &[
 
 #[derive(Args, Debug)]
 pub(crate) struct CiBuildTimesArgs {
-    /// Destination consumed by the build-time ratchet.
     #[arg(long, default_value = "target/build-times.json")]
     output: PathBuf,
 }

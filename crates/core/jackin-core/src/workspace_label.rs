@@ -1,32 +1,18 @@
-//! Operator-facing workspace label (path/display scope).
-
 use std::borrow::Borrow;
 use std::fmt;
 
 use crate::workspace_name::WorkspaceName;
 
-/// Operator-facing / path-scoped workspace label.
-///
-/// Used for instance display, materialization prompts, and path labels.
-/// Distinct from [`WorkspaceName`] (config-file stem / identity key):
-/// ad-hoc workspaces may use a workdir path as the label, which can contain
-/// path separators and would be rejected by [`WorkspaceName::parse`].
-///
-/// Construct via [`WorkspaceLabel::parse`], [`WorkspaceLabel::from_name`], or
-/// [`TryFrom`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WorkspaceLabel(String);
 
-/// Why a workspace label string is not legal.
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceLabelError {
-    /// Label was empty.
     #[error("workspace label cannot be empty")]
     Empty,
 }
 
 impl WorkspaceLabel {
-    /// Parse a non-empty workspace label (path or display string allowed).
     pub fn parse(input: &str) -> Result<Self, WorkspaceLabelError> {
         if input.is_empty() {
             return Err(WorkspaceLabelError::Empty);
@@ -34,19 +20,16 @@ impl WorkspaceLabel {
         Ok(Self(input.to_owned()))
     }
 
-    /// Build a label from a validated config-stem name (common saved-workspace path).
     #[must_use]
     pub fn from_name(name: &WorkspaceName) -> Self {
         Self(name.as_str().to_owned())
     }
 
-    /// Borrow the label as a string slice.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// Consume and return the inner `String`.
     #[must_use]
     pub fn into_inner(self) -> String {
         self.0

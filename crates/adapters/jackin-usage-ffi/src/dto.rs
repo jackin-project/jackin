@@ -1,29 +1,22 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! boltffi-safe mirrors of protocol usage views (string enums, no secrets).
-
 use jackin_usage_provider_core::{PercentStyle, ResetStyle, UsageFormatPrefs};
 
-/// Open configuration from Swift (paths only — no credentials).
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct OpenConfig {
-    /// Optional data-dir override for hermetic tests/smoke only. Production is `None`.
     pub data_dir_override: Option<String>,
-    /// Optional config-root override for hermetic tests/fixtures only. Production is `None`.
+
     pub config_root_override: Option<String>,
-    /// Refresh floor seconds (clamped ≥ 60 in Rust).
+
     pub refresh_floor_secs: u64,
-    /// Enabled surface ids; empty = all.
+
     pub enabled_surface_ids: Vec<String>,
-    /// Whether the standard broker may dispatch live provider probes. `false`
-    /// reads an existing broker publication without credential lookup or
-    /// provider work. Not persisted.
+
     pub allow_live_probes: bool,
 }
 
-/// Surface row for Settings / list.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct SurfaceDescriptorDto {
@@ -34,7 +27,6 @@ pub struct SurfaceDescriptorDto {
     pub enabled: bool,
 }
 
-/// Sanitized issue from the broker-owned usage publication.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct DiscoveryDiagnosticDto {
@@ -45,7 +37,6 @@ pub struct DiscoveryDiagnosticDto {
     pub display_label: String,
 }
 
-/// Monetary amount (minor units).
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct MoneyDto {
@@ -54,7 +45,6 @@ pub struct MoneyDto {
     pub exponent: u8,
 }
 
-/// One quota / spend bucket.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct QuotaBucketDto {
@@ -70,18 +60,16 @@ pub struct QuotaBucketDto {
     pub used_money: Option<MoneyDto>,
     pub limit_money: Option<MoneyDto>,
     pub severity: String,
-    /// Rust-owned percentage segment text (segment 0), when present.
+
     pub remaining_label: Option<String>,
-    /// Rust-owned complete semantic segments in display order.
+
     pub display_segments: Vec<String>,
-    /// `display_segments` joined with the canonical `" · "` separator.
+
     pub display_label: String,
-    /// Meter fill geometry only (remaining for normal/credits, used for Spend).
+
     pub meter_percent: Option<u8>,
 }
 
-/// One already-grouped visual line of a [`UsageDetailRowDto`] (1:1 mirror of the
-/// Rust `UsagePresentationLine`). `leading`/`trailing` are finished strings.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct UsagePresentationLineDto {
@@ -89,45 +77,37 @@ pub struct UsagePresentationLineDto {
     pub trailing: Option<String>,
 }
 
-/// One provider-detail row (1:1 mirror of the Rust `UsageDetailRow`). Every
-/// visible string is Rust-owned; `kind`/`severity` are machine strings and
-/// `meter_percent` is meter geometry only.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct UsageDetailRowDto {
     pub row_id: String,
-    /// `metadata` | `bucket` | `detail`
+
     pub kind: String,
     pub label: String,
     pub layout_lines: Vec<UsagePresentationLineDto>,
     pub display_label: String,
     pub meter_percent: Option<u8>,
-    /// `normal` | `warn` | `danger`
+
     pub severity: String,
 }
 
-/// Rust-owned provider details assembled from broker-typed metric groups.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct UsageDetailPresentationDto {
     pub rows: Vec<UsageDetailRowDto>,
 }
 
-/// Finished provider/account/activity identity copy.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct UsageIdentityPresentationDto {
     pub provider_title: String,
     pub account_label: String,
     pub activity_label: String,
-    /// `idle` | `updating` | `exceptional`
+
     pub activity_kind: String,
     pub accessibility_label: String,
 }
 
-/// One selected-account-aware provider glance row (1:1 mirror of the Rust
-/// `HostProviderGlanceRow`). The Desktop status bar, popover, and Usage window
-/// all consume this same Rust-owned row.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct ProviderGlanceRowDto {
@@ -156,7 +136,6 @@ pub struct ProviderGlanceRowDto {
     pub dimmed: bool,
 }
 
-/// Full focused usage view for one surface.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct UsageViewDto {
@@ -167,35 +146,32 @@ pub struct UsageViewDto {
     pub account_label: String,
     pub username: Option<String>,
     pub plan_label: Option<String>,
-    /// `None`: broker publications do not expose credential-origin paths.
+
     pub credential_origin: Option<String>,
     pub buckets: Vec<QuotaBucketDto>,
     pub status: String,
-    /// Broker projection has no source-class field; this remains `none`.
+
     pub source: String,
-    /// Broker projection has no confidence field; this remains `none`.
+
     pub confidence: String,
     pub fetched_at_epoch: i64,
     pub updated_label: String,
     pub status_bar_label: String,
     pub last_error: Option<String>,
-    /// Honesty caption when estimated / local-log derived; `None` for authoritative.
+
     pub estimate_caption: Option<String>,
-    /// Typed broker metric groups rendered as Rust-owned detail rows.
+
     pub detail_presentation: UsageDetailPresentationDto,
 }
 
-/// Presentation-time format prefs (string enums).
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct UsageFormatPrefsDto {
-    /// `left` | `used`
     pub percent_style: String,
-    /// `countdown` | `exact_clock`
+
     pub reset_style: String,
 }
 
-/// Overview row for glance popover / Usage-window sidebar.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct OverviewRowDto {
@@ -208,7 +184,6 @@ pub struct OverviewRowDto {
     pub severity: String,
 }
 
-/// One known account for a host surface (multi-account Desktop).
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct AccountDescriptorDto {
@@ -238,7 +213,6 @@ pub struct AccountDescriptorDto {
     pub accessibility_label: String,
 }
 
-/// Provider state when no stable account identity exists yet.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct DesktopProviderStateDto {
@@ -249,7 +223,6 @@ pub struct DesktopProviderStateDto {
     pub is_refreshing: bool,
 }
 
-/// One Rust-ordered provider group in the atomic Desktop inventory.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct DesktopProviderGroupDto {
@@ -267,14 +240,12 @@ pub struct DesktopProviderGroupDto {
     pub empty_state: Option<DesktopProviderStateDto>,
 }
 
-/// Atomic Rust-owned Desktop inventory.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct DesktopInventoryDto {
     pub groups: Vec<DesktopProviderGroupDto>,
 }
 
-/// One grouped provider plus its exact selected account/detail snapshot.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct DesktopProviderProjectionDto {
@@ -283,18 +254,15 @@ pub struct DesktopProviderProjectionDto {
     pub selected_usage: UsageViewDto,
 }
 
-/// Provider-scoped selected-account route with a validated status/key/notice shape.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct SelectedAccountRouteDto {
-    /// `unselected` | `resolving` | `available` | `unavailable`.
     pub status: String,
     pub account_key: Option<String>,
-    /// Present only for `unavailable`; Rust-owned fixed notice copy.
+
     pub notice: Option<String>,
 }
 
-/// Complete immutable native Desktop state for one runtime generation.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct DesktopProjectionDto {
@@ -309,7 +277,6 @@ pub struct DesktopProjectionDto {
     pub diagnostics: Vec<DiscoveryDiagnosticDto>,
 }
 
-/// One host event.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct UsageEventDto {
@@ -319,7 +286,6 @@ pub struct UsageEventDto {
     pub detail: Option<String>,
 }
 
-/// Bounded event batch.
 #[derive(Debug, Clone)]
 #[boltffi::data]
 pub struct UsageEventBatchDto {
@@ -357,7 +323,6 @@ pub(crate) fn parse_format_prefs(dto: UsageFormatPrefsDto) -> Result<UsageFormat
     })
 }
 
-/// Local projection-open settings and path-only broker activation scope.
 #[derive(Debug, Clone)]
 pub(crate) struct ProjectionOpenConfig {
     pub data_dir: std::path::PathBuf,
@@ -368,7 +333,6 @@ pub(crate) struct ProjectionOpenConfig {
     pub allow_live_probes: bool,
 }
 
-/// Build local presentation settings and broker path metadata from the FFI config.
 pub(crate) fn to_projection_config(config: OpenConfig) -> Result<ProjectionOpenConfig, String> {
     let paths = jackin_core::JackinPaths::detect()
         .map_err(|_| "host path discovery unavailable".to_owned())?;

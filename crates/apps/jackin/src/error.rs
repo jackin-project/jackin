@@ -1,17 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-/// Operator-facing error codes and friendly messages for user-visible failures.
-///
-/// `JackinError` is the surface-level error type rendered at the binary entry
-/// point. Internal anyhow chains propagate as-is until they reach `main.rs`,
-/// where a downcast to `JackinError` triggers a structured friendly block.
-/// Unrecognized errors fall back to `{error:#}`.
 use thiserror::Error;
 
-/// Stable error codes for `jackin` operator-visible failures.
-///
-/// Each code maps to a docs page at `docs/content/reference/errors/<code>.mdx`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
     E001,
@@ -52,7 +43,6 @@ impl ErrorCode {
         }
     }
 
-    /// Stable semantic-convention `error.type` for this operator error.
     pub const fn telemetry_error(self) -> jackin_telemetry::schema::enums::ErrorType {
         use jackin_telemetry::schema::enums::ErrorType;
         match self {
@@ -79,7 +69,6 @@ impl ErrorCode {
     }
 }
 
-/// Structured hint for fixing a `JackinError`.
 #[derive(Debug, Clone)]
 pub struct UserMessage {
     pub code: ErrorCode,
@@ -103,7 +92,6 @@ impl UserMessage {
         self
     }
 
-    /// Render the friendly block to stderr.
     pub fn render(&self) {
         use owo_colors::OwoColorize;
         eprintln!(
@@ -121,11 +109,6 @@ impl UserMessage {
     }
 }
 
-/// Catalogue of the top ~15 operator-visible failure modes.
-///
-/// Each variant is convertible to a `UserMessage` with stable code, headline,
-/// and remediation hint. Internal details (the underlying `anyhow` chain) are
-/// carried as `source` and surfaced via `--debug` only.
 #[derive(Debug, Error)]
 pub enum JackinError {
     #[error("Docker daemon not reachable")]
@@ -181,7 +164,6 @@ pub enum JackinError {
 }
 
 impl JackinError {
-    /// Return the structured user-facing message for this error.
     pub fn user_message(&self) -> UserMessage {
         match self {
             Self::DockerDaemonUnreachable { .. } => UserMessage::new(

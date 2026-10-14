@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings key entry points.
 
 use super::{
     handle_auth_key, handle_env_key, handle_general_key, handle_global_mounts_key, handle_trust_key,
@@ -37,7 +36,6 @@ pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEv
     let auth_kind_selected = settings.auth.has_selected_kind();
     let active_tab = settings.active_tab;
 
-    // Shell: tab-bar navigation takes priority over per-tab dispatch.
     if tab_bar_focused {
         match bridged_keymap_action(&SETTINGS_TAB_BAR_KEYMAP, event) {
             Some(SettingsTabBarAction::PrevTab) => {
@@ -67,7 +65,6 @@ pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEv
             None => {}
         }
     } else {
-        // Content mode: shell intercepts Tab, BackTab, Esc before per-tab.
         match bridged_keymap_action(&SETTINGS_CONTENT_SHELL_KEYMAP, event) {
             Some(SettingsContentShellAction::NextTab) => {
                 dispatch_manager(
@@ -94,7 +91,6 @@ pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEv
         }
     }
 
-    // Env role header: Left/Right expand/collapse a role row in the env tab.
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
@@ -116,7 +112,6 @@ pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEv
         SettingsEnvHeaderKeyPlan::Continue => {}
     }
 
-    // Per-tab dispatch.
     match active_tab {
         SettingsTab::General => handle_general_key(state, key),
         SettingsTab::Mounts => handle_global_mounts_key(state, key),

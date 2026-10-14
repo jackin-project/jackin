@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Per-client attach bridge task.
 
 use super::{AttachResponseCompletion, RPC_ERROR, detach_attached_task};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -14,12 +13,6 @@ pub(crate) async fn detach_client(mux: &mut Multiplexer) {
     detach_attached_task(mux, "detach_client").await;
 }
 
-/// Per-client connection handler: bidirectional bridge between the
-/// socket and the main daemon loop. Reads `ClientFrame`s off the
-/// socket and pushes them through `cmd_tx`; writes any bytes
-/// received on `out_rx` back to the socket. Exits on any I/O error
-/// or when either channel closes (which happens during takeover —
-/// `attached_task.abort()` ends this task before its socket sees EOF).
 #[cfg(test)]
 pub(crate) async fn handle_attach_client(
     stream: UnixStream,
@@ -136,11 +129,7 @@ pub(crate) async fn handle_attach_client_with_handshake(
     for (_, completion) in completions {
         completion.complete_delivery_failure();
     }
-    // Signal the main loop that this client is gone so it can clear
-    // `attached_out` / `attached_task` — without this, subsequent
-    // `send_to_client` calls silently drop into the closed channel
-    // and the daemon keeps treating the dead socket as live. If the
-    // main loop is already shutting down, channel closure is expected.
+
     drop(cmd_tx.send(ClientFrame::Detach));
     match terminal_error {
         Some(error) => close.complete_error(error),

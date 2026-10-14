@@ -1,15 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Refresh-state view decoration.
 
 use super::super::{
     FocusedUsageView, UsageSnapshotStatus, UsageSource, UsageSurface, resolve_surface,
 };
 use super::{compact_account_identity, provider_tabs, status_bar_label, usage_account_tab_id};
 
-/// Keep row-level status honest when a broker failure preserves last-good
-/// buckets. A stale/error view must not render fresh bucket rows or an
-/// "updated now" label.
 pub(crate) fn refresh_failed_view_presentation(view: &mut FocusedUsageView) {
     if view.status != UsageSnapshotStatus::Fresh {
         for bucket in &mut view.buckets {
@@ -37,9 +33,6 @@ pub(crate) fn refresh_failed_view_presentation(view: &mut FocusedUsageView) {
     );
 }
 
-/// Stamp the surface-derived agent, provider label, and tab strip onto a base
-/// placeholder view, so a `unavailable`/`refreshing` view still shows the proper
-/// header (e.g. `Anthropic / Claude`) and tabs while it loads.
 pub fn decorate_surface_view(
     view: &mut FocusedUsageView,
     agent: &str,
@@ -51,8 +44,7 @@ pub fn decorate_surface_view(
         .map(str::to_owned)
         .or_else(|| Some(surface.label().to_owned()));
     view.account.provider_label = surface.account_label().to_owned();
-    // Tabs are per-account, built from admitted snapshots; a placeholder names
-    // no account yet, so it carries none (empty scope stays empty).
+
     view.tabs = provider_tabs(&[]);
 }
 
@@ -80,8 +72,6 @@ pub fn cached_refreshing_view(
 }
 
 pub fn mark_active_tab(view: &mut FocusedUsageView) {
-    // Navigation keys on the stable canonical account id, never on the
-    // display label: same-provider accounts share a label but never an id.
     let focused = usage_account_tab_id(&view.account.provider_label, &view.account.account_label);
     for tab in &mut view.tabs {
         tab.active = tab.id == focused;

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Antigravity` CLI version probe and usage fetch.
 
 use jackin_usage_provider_core::{PROVIDER_CLI_TIMEOUT, run_cli_with_timeout};
 
@@ -9,17 +8,10 @@ use super::{
     parse_antigravity_usage_output,
 };
 
-/// Minimum `agy` version with read-only `/usage|/credits --output-format json`.
 pub const ANTIGRAVITY_MIN_JSON_VERSION: (u64, u64, u64) = (1, 1, 11);
 
-/// macOS Keychain service holding the Antigravity OAuth grant singleton.
-/// Discovery probes its *presence* only (never the payload): the CLI owns
-/// the secret, jackin only shells out to it.
 pub const ANTIGRAVITY_KEYCHAIN_SERVICE: &str = "gemini";
 
-/// Parse `agy --version` output into `(major, minor, patch)`. Accepts a bare
-/// `1.2.5` or a decorated line (`agy version 1.2.5 (build …)`); `None` when no
-/// `N.N.N` triple is present.
 pub fn parse_agy_version(text: &str) -> Option<(u64, u64, u64)> {
     text.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '.' || ch == '-'))
         .find_map(|part| {
@@ -41,13 +33,10 @@ pub fn parse_agy_version(text: &str) -> Option<(u64, u64, u64)> {
         })
 }
 
-/// True when `version` supports the official JSON usage commands.
 pub fn agy_version_supports_json(version: (u64, u64, u64)) -> bool {
     version >= ANTIGRAVITY_MIN_JSON_VERSION
 }
 
-/// Probe `agy --version` and enforce the JSON gate. `Err` carries the exact
-/// non-secret reason (binary missing, unparseable version, too old).
 pub fn antigravity_cli_version() -> Result<(u64, u64, u64), String> {
     let text = run_cli_with_timeout("agy", &["--version"], PROVIDER_CLI_TIMEOUT)
         .map_err(|error| format!("Antigravity CLI unavailable: {error}"))?;

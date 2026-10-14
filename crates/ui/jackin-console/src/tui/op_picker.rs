@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! 1Password vault/item/field picker modal — generic state, input handlers,
-//! and load-execution helpers.
-//!
-//! Behavioral contract: `docs/content/reference/developer-reference/specs/op-picker.mdx`.
-
 pub mod input;
 pub mod load;
 pub mod model;
@@ -28,8 +23,6 @@ pub fn start_ref_validation(
     crate::tui::runtime::spawn_blocking_subscription(move || runner.read(&op).map(|_| ()))
 }
 
-/// Concrete selection type for the picker: all five type parameters are bound
-/// to `jackin-core` types already available in this crate.
 pub type OpPickerSelection = model::OpPickerSelection<
     jackin_core::OpRef,
     jackin_core::OpAccount,
@@ -38,10 +31,6 @@ pub type OpPickerSelection = model::OpPickerSelection<
     jackin_core::FieldTarget,
 >;
 
-// Test-runner thread-local: stores the injected runner so
-// `execute_pending_load_for_test` in tests can pass it to `start_load` without
-// storing it in `OpPickerState` (which would require propagating the
-// `OpStructRunner` trait bound through state types).
 #[cfg(test)]
 thread_local! {
     pub(crate) static TEST_RUNNER: std::cell::RefCell<
@@ -77,8 +66,6 @@ pub(crate) fn new_create_picker_with_runner_and_cache(
     OpPickerState::new_create_with_cache(op_cache, item_name_default, field_label_default)
 }
 
-/// Drop cached item list and field list for the account/vault/item a freshly
-/// minted op ref points at, so a reopened picker re-fetches the new entry.
 pub fn invalidate_cache_for_ref(
     op_cache: &std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
     op_ref: &jackin_core::OpRef,
@@ -92,10 +79,6 @@ pub fn invalidate_cache_for_ref(
     cache.invalidate_fields(account, &parts.vault, &parts.item);
 }
 
-/// Poll all active op-picker loads across every active manager stage and list
-/// modal. Starts pending loads and routes completed ones into picker state.
-///
-/// Returns `true` if any picker state changed (caller should redraw).
 pub fn poll_picker_loads(state: &mut crate::tui::state::ManagerState<'_>) -> bool {
     use crate::tui::state::{ManagerStage, Modal, SettingsModal};
     let mut dirty = false;
@@ -140,7 +123,6 @@ fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
     true
 }
 
-// Re-exported into test scope via `use super::*` from tests.rs.
 #[cfg(test)]
 use model::{
     FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerError, OpPickerFatalState,

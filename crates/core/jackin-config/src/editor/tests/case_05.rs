@@ -27,8 +27,6 @@ fn set_env_var_persists_op_ref_account() {
         .unwrap();
     editor.save().unwrap();
 
-    // The account must land on the inline table; without it a
-    // non-default-account ref resolves against op's default account.
     let saved = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(
             saved.contains(
@@ -102,8 +100,6 @@ workdir = "/workspace/prod"
     )
     .unwrap();
 
-    // Seed: `[workspaces.prod.github]` with auth_forward + a
-    // GH_TOKEN env entry.
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.set_workspace_github_auth_forward(&wn("prod"), Some(GithubAuthMode::Token));
     let env_scope = EnvScope::WorkspaceGithub("prod".to_owned());
@@ -112,14 +108,11 @@ workdir = "/workspace/prod"
         .unwrap();
     editor.save().unwrap();
 
-    // Sanity: both the kind block and its env subtable land on disk.
     let after_save = workspace_file_contents(&paths, "prod");
     assert!(after_save.contains("[github]"));
     assert!(after_save.contains("auth_forward"));
     assert!(after_save.contains("GH_TOKEN"));
 
-    // Operator presses `D` on github WorkspaceMode (mode → None)
-    // and the env diff drops GH_TOKEN.
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor.set_workspace_github_auth_forward(&wn("prod"), None);
     assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
@@ -328,7 +321,7 @@ auth_forward = "ignore"
     editor.save().unwrap();
 
     let cleaned = workspace_file_contents(&paths, "github");
-    // Inner [github] gone (kind block); workspace file preserved.
+
     assert!(
         cleaned.contains("workdir"),
         "workspace named 'github' must survive:\n{cleaned}"

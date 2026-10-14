@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Privacy-safe telemetry helpers for image cache and download boundaries.
-
 use std::future::Future;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Modal-presence and pending-commit traits.
 
 use super::ConsoleStageModalFacts;
 

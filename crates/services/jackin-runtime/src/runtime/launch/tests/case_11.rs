@@ -159,8 +159,7 @@ plugins = []
     assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
     assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
     assert!(!build_call.contains("--build-arg ROLE_GIT_SHA="));
-    // The host-identity strategy is now folded into the master recipe hash
-    // (no standalone label); its presence proves the recipe was stamped.
+
     assert!(build_call.contains("--label jackin.image.recipe.hash="));
     let recorded = runner.recorded.join("\n");
     assert!(
@@ -228,9 +227,6 @@ plugins = []
 
 #[tokio::test]
 async fn load_agent_tags_fresh_published_image_as_local_base() {
-    // A fresh published image is pulled, verified by Docker image labels, and
-    // tagged into the local jk_<role>__base name. The overlay derives FROM that
-    // local base without running a restamp Docker build.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
@@ -285,7 +281,6 @@ plugins = []
     .await
     .unwrap();
 
-    // The base is a local tag of the already verified published image.
     let base_tag = runner
         .recorded
         .iter()
@@ -302,7 +297,7 @@ plugins = []
             .any(|c| c.contains("docker build ") && c.contains("BaseDockerfile")),
         "fresh published images must not be restamped through a Docker build"
     );
-    // The overlay derives FROM that local base, not the published image.
+
     assert!(
         runner
             .recorded

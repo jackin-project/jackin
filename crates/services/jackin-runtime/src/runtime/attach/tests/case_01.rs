@@ -39,9 +39,6 @@ fn host_attach_transport_falls_back_when_socket_path_is_missing() {
 
 #[test]
 fn host_attach_transport_surfaces_over_sun_len_socket_path() {
-    // Bug 10: a socket path at/over the sun_path limit can never connect
-    // directly; instead of a swallowed generic connect error, the plan must fall
-    // back to the proxy with an explicit, descriptive reason (not silent).
     let (_tmp, paths) = short_test_paths();
     let long_container = format!("jk-{}", "x".repeat(110));
 

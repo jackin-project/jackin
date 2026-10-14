@@ -10,8 +10,6 @@ fn crash_during_abort_completes_restores_on_recovery() {
     std::fs::write(&workspace, "ws-new").unwrap();
     let journal = publication_journal_path(&config);
 
-    // Simulate `kill -9` halfway through applying an abort journal: the
-    // first restore landed, the second staged file is still pending.
     let mut restores = vec![
         stage_atomic_write(&config, "global-old").unwrap(),
         stage_atomic_write(&workspace, "ws-old").unwrap(),
@@ -36,9 +34,6 @@ fn recovery_skips_already_applied_ops() {
     let (_temp, config, _workspace) = staged_config_tree();
     let journal = publication_journal_path(&config);
 
-    // Crash after the last rename but before journal removal: every tmp is
-    // gone while every target holds new bytes. Recovery must converge
-    // without touching the targets.
     let staged = stage_atomic_write(&config, "global-new").unwrap();
     let target = staged.target.clone();
     let mut staged = staged;

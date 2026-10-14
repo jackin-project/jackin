@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Role and agent launch prompting.
 
 use super::{
     AgentPickerChoices, LaunchAccountSelection, LaunchPromptDispatch, LaunchPromptRequest,
@@ -139,9 +138,7 @@ pub fn committed_role_prompt(
     let Some(input) = take_pending_launch_plan(state) else {
         return Ok(LaunchPromptDispatch::None);
     };
-    // Resolution failures surface as an in-TUI error popup (the console
-    // stays alive), so the taken plan must be restored — otherwise the
-    // still-visible role picker silently stops working.
+
     let attempt = input.clone();
     let resolved =
         match crate::services::launch::resolve_committed_role_launch(config, cwd, attempt, &role) {
@@ -169,8 +166,7 @@ pub fn launch_with_committed_agent(
     let Some((input, role)) = take_pending_launch_and_role_plan(state) else {
         return Ok(None);
     };
-    // Same restore contract as `committed_role_prompt`: the agent picker
-    // stays visible behind the error popup and must keep working.
+
     let workspace_name = match &input {
         LoadWorkspaceInput::Saved(name) => match jackin_core::WorkspaceName::parse(name) {
             Ok(parsed) => Some(parsed),

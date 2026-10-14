@@ -51,7 +51,7 @@ fn enter_on_account_advances_to_vault_with_account_scope() {
         s.filter_buf.is_empty(),
         "filter must clear when advancing from Account to Vault"
     );
-    // Direct-call verification of the account threading.
+
     let runner = Arc::new(StubRunner::default());
     runner.account_list().unwrap();
     drop(runner.vault_list(s.selected_account_id().as_deref()));
@@ -124,7 +124,6 @@ fn op_cache_hit_skips_account_list_subprocess() {
     let counter1: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let counter2: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
-    // First picker: cache miss → runner invoked once.
     let mut s1 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
@@ -139,7 +138,6 @@ fn op_cache_hit_skips_account_list_subprocess() {
         "first picker constructor must miss the empty cache"
     );
 
-    // Second picker: cache hit → runner must NOT be invoked.
     let mut s2 = new_picker_with_runner_and_cache(
         Arc::new(CounterRunner {
             accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
@@ -235,7 +233,7 @@ fn picker_construction_does_not_block_on_account_list() {
         elapsed < std::time::Duration::from_millis(500),
         "constructor must not synchronously wait on account_list; elapsed={elapsed:?}"
     );
-    // Release the Condvar so the worker exits cleanly.
+
     runner_for_release.release();
 }
 

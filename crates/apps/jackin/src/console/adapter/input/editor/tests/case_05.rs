@@ -5,9 +5,6 @@ use super::*;
 
 #[test]
 fn r_key_on_non_mounts_tab_is_noop() {
-    // Cursor set to row 0 on General tab with a mount present; pressing R
-    // must not mutate the mount list (the handler is gated on
-    // `active_tab == EditorTab::Mounts`).
     let mut config = AppConfig::default();
     let ws = ws_with_one_mount(false);
     let before = ws.mounts.clone();
@@ -29,8 +26,6 @@ fn r_key_on_non_mounts_tab_is_noop() {
 
 #[test]
 fn i_key_cycles_isolation_on_current_mount_row() {
-    // Start Shared → one I press should flip to Worktree and register
-    // as a change. Mirrors `r_key_toggles_readonly_on_current_mount_row`.
     let mut config = AppConfig::default();
     let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
 
@@ -53,7 +48,6 @@ fn i_key_cycles_isolation_on_current_mount_row() {
 
 #[test]
 fn i_key_lowercase_also_cycles_isolation() {
-    // Operators often hit `i` without holding shift; both cases must work.
     let mut config = AppConfig::default();
     let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
 
@@ -89,7 +83,7 @@ fn enter_on_op_workspace_key_row_is_noop() {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
-    editor.active_field = FieldFocus::Row(0); // the only key row
+    editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
     handle_key(
@@ -143,8 +137,7 @@ fn enter_on_op_agent_key_row_is_noop() {
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
     editor.secrets_expanded.insert("smith".into());
-    // Rows: WorkspaceAddSentinel(0), SectionSpacer(1), AgentHeader(2),
-    //       AgentKeyRow(3), AgentAddSentinel(4). Focus the key row.
+
     editor.active_field = FieldFocus::Row(3);
     state.stage = ManagerStage::Editor(editor);
 
@@ -181,7 +174,7 @@ fn secrets_tab_m_accepts_shift_modifier_for_caps_lock_parity() {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
-    editor.active_field = FieldFocus::Row(0); // the only key row
+    editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
     let shift_m = KeyEvent {
@@ -217,7 +210,7 @@ fn m_on_focused_workspace_key_unmasks_only_that_row() {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
-    // Rows are alphabetically ordered: ALPHA(0), BETA(1), Sentinel(2).
+
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
@@ -344,7 +337,6 @@ fn tab_leave_resets_unmasked_rows() {
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
-    // Unmask ALPHA.
     handle_key(
         &mut state,
         &mut config,
@@ -353,7 +345,7 @@ fn tab_leave_resets_unmasked_rows() {
         key(KeyCode::Char('m')),
     )
     .unwrap();
-    // Tab from content → tab bar + advances tab to Auth (leaves Secrets).
+
     handle_key(
         &mut state,
         &mut config,
@@ -362,7 +354,7 @@ fn tab_leave_resets_unmasked_rows() {
         key(KeyCode::Tab),
     )
     .unwrap();
-    // Now on tab bar (Auth). Right × 4: General → Mounts → Roles → Secrets.
+
     for _ in 0..4 {
         handle_key(
             &mut state,

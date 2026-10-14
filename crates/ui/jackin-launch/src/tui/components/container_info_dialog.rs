@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch container-info dialog helpers.
-
 use crate::tui::components::container_info::{
     ContainerInfoRow, ContainerInfoState, DebugInfo, render_container_info,
     required_height as container_info_required_height,
@@ -53,9 +51,7 @@ pub fn launch_container_info_state(
     jackin_version: &'static str,
 ) -> ContainerInfoState {
     let identity = view.identity.as_ref();
-    // The launch surface knows the container/role/agent/target on top of what
-    // the console already showed. Build from the shared accumulating model so
-    // row order, labels, and copy affordances match every other surface.
+
     let info = DebugInfo {
         jackin_version: Some(jackin_version.to_owned()),
         container_id: Some(

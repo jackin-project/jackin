@@ -1,10 +1,3 @@
-//! jackin-usage-broker: host usage broker lifecycle and transport.
-//!
-//! **Architecture Invariant:** T5.
-//! Entry points: host process activation and broker-owned service lifecycle.
-//!
-//! Host-only usage broker lifecycle and bounded Unix-socket transport.
-
 pub(crate) use jackin_usage_broker_publish as publish;
 pub(crate) use jackin_usage_broker_wire as probe;
 mod view;

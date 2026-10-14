@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Locked source reads and bounded tree copy.
 
 use super::{
     AUTH_DIRECTORY_SWAP_COUNTER, SnapshotDirectory, entry_stat, fsync_directory, ignore_eexist,
@@ -293,11 +292,6 @@ pub fn open_directory_path(path: &Path) -> anyhow::Result<File> {
     )
 }
 
-/// Allocate a source snapshot beneath a host-private parent. Missing
-/// parent components are created descriptor-relatively with `mkdirat`;
-/// parent and child creation both use no-follow checks. The returned
-/// directory guard owns descriptor-relative cleanup of the unique child
-/// path after workers release their snapshot clones.
 pub fn create_snapshot_directory(parent_path: &Path) -> anyhow::Result<SnapshotDirectory> {
     let (parent, target, normalized) = open_parent(parent_path, true)?;
     let parent_directory = match open_directory_at(

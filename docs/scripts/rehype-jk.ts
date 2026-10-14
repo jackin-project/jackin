@@ -1,12 +1,12 @@
 import { visit, SKIP } from 'unist-util-visit'
 import type { Element, Root, Text } from 'hast'
 
-// Tag prose mentions of the brand wordmark with a split-colour span.
-// Styling lives in src/styles/docs-theme.css under .jk-name.
-//
-// Skip inside <code> and <pre>: command lines and code blocks
-// already render in monospace and shouldn't double up. Stay out
-// of <style> and <script> for safety.
+
+
+
+
+
+
 const NAME_PATTERN = /jackin❯/g
 const SKIPPED_TAGS = new Set(['code', 'pre', 'style', 'script'])
 

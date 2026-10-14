@@ -7,7 +7,6 @@ pub(super) fn strip_ansi(s: &str) -> String {
     let mut chars = s.chars();
     while let Some(ch) = chars.next() {
         if ch == '\x1b' {
-            // Skip until 'm' (SGR) or other terminator
             for inner in chars.by_ref() {
                 if inner.is_ascii_alphabetic() {
                     break;

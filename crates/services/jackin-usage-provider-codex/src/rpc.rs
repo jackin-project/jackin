@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Codex` RPC transport.
 
 use jackin_usage_provider_core::ProviderError;
 use jackin_usage_provider_core::{
@@ -22,9 +21,7 @@ pub fn decode_codex_rpc_usage(
         serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value).map_err(|err| {
             ProviderError::from(format!("Codex app-server rate limit decode failed: {err}"))
         })?;
-    // The account label is non-essential, so a decode mismatch (unknown
-    // tag, shape drift) degrades to no label rather than failing
-    // rate-limit collection.
+
     let account = account_value
         .and_then(|value| serde_json::from_value::<CodexRpcAccountResponse>(value).ok());
     Ok(CodexRpcUsage::from_rpc(limits, account))
@@ -95,8 +92,7 @@ pub fn fetch_codex_rpc_usage(
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )?;
-        // The account label is non-essential, so a typed RPC failure degrades to
-        // no label rather than failing rate-limit collection.
+
         let account_value = codex_rpc_request(
             &mut stdin,
             &rx,

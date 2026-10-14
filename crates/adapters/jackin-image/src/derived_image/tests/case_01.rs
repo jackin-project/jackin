@@ -14,14 +14,13 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
         None,
     );
 
-    // No agent_installs → overlay carries no agent COPY/install blocks.
     assert!(!dockerfile.contains("agent-binaries"));
     assert!(!dockerfile.contains("claude plugin"));
     assert!(!dockerfile.contains("WORKDIR"));
     assert!(dockerfile.contains(
         "COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh"
     ));
-    // A fixed PATH covers every agent's bin dir so the mounted binaries resolve.
+
     assert!(dockerfile.contains(
         "ENV PATH=\"/jackin/runtime:/home/agent/.local/bin:/home/agent/.amp/bin:/home/agent/.kimi-code/bin:/home/agent/.opencode/bin:/home/agent/.grok/bin:/home/agent/.antigravity/bin:/home/agent/.gemini-cli/bin:/home/agent/.cursor-agent/bin:/home/agent/.muse/bin:/home/agent/.omp/bin:/home/agent/.hermes/bin:${PATH}\""
     ));
@@ -46,8 +45,7 @@ fn renders_runtime_finalization_in_one_layer() {
         "COPY --link --chmod=0755 .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule"
     ));
     assert!(!dockerfile.contains("RUN chmod +x /jackin/runtime/"));
-    // The title shim + runtime-dir creation share one finalization RUN (separate
-    // from the now-standalone default-home snapshot for readability).
+
     assert_eq!(
         dockerfile
             .matches("( grep -q '__JACKIN_AUTO_TITLE_LOADED'")
@@ -69,8 +67,7 @@ fn renders_runtime_finalization_in_one_layer() {
         ),
         "default-home snapshot creates only the root, never the per-agent targets (else mv nests): {dockerfile}"
     );
-    // The mv target parent is made at mv time so `.claude` renames onto
-    // /jackin/default-home/.claude rather than moving into a pre-created dir.
+
     assert!(
         dockerfile.contains("mkdir -p \"$(dirname \"/jackin/default-home/$dir\")\""),
         "mv must create the target parent, not pre-create the target: {dockerfile}"
@@ -98,7 +95,7 @@ fn renders_runtime_finalization_in_one_layer() {
     );
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/default-home"));
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
-    // Finalization is its own RUN now (default-home snapshot was pulled out).
+
     assert!(dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
     assert!(!dockerfile.contains(
         "\nRUN install -d -o agent -g 0 /jackin/run /jackin/state /jackin/account-credentials"
@@ -295,10 +292,7 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     assert!(dockerfile.contains(
         "for path in /home/agent/.zshrc /home/agent/.zshenv /home/agent/.config/fish/config.fish"
     ));
-    // Structural shape: the four load-bearing fragments must appear
-    // in order — guard test, rc capture, source call, success-only
-    // export, file append. A regression that drops the guard, the rc
-    // check, or the `fi` terminator breaks this ordering.
+
     let guard_pos = ZSHENV_SOURCE_SHIM
         .find("if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\"")
         .unwrap();
@@ -315,13 +309,9 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     assert!(close_fn_pos < export_pos);
     assert!(export_pos < close_pos);
     assert!(ZSHENV_SOURCE_SHIM.contains("trap - ERR"));
-    // Role hooks that `set -euo pipefail` must not leak nounset /
-    // errexit / pipefail into the zsh that loads `.zshrc` next —
-    // the source call runs in an anonymous fn with localized
-    // options + traps.
+
     assert!(ZSHENV_SOURCE_SHIM.contains("setopt local_options local_traps"));
-    // Single emission — derived-from-derived rebuilds must not stack
-    // duplicate shim blocks in /home/agent/.zshenv.
+
     assert_eq!(dockerfile.matches(">> /home/agent/.zshenv").count(), 1);
 }
 

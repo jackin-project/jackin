@@ -125,8 +125,7 @@ TOKEN = { op = "op://v/i/f", path = "V/I/F" }
     .unwrap();
 
     let err = migrate_workspace_file_if_needed(&path).unwrap_err();
-    // The framework wraps the step error with a "running … migration"
-    // context, so check the full chain (alternate Display) for our message.
+
     let chain = format!("{err:#}");
     assert!(
         chain.contains("op_account") && chain.contains("must be a string"),
@@ -313,7 +312,7 @@ fn v1alpha10_to_current_stamps_initialized_sentinel_without_touching_accounts() 
     assert_eq!(parsed["bootstrap"]["version"].as_integer(), Some(1));
     assert_eq!(parsed["bootstrap"]["fresh_install"].as_bool(), Some(false));
     assert_eq!(parsed["accounts"]["work"]["name"].as_str(), Some("Work"));
-    // Second run is a no-op (idempotent, never rescans).
+
     assert!(!migrate_config_file_if_needed(&path).unwrap());
 }
 

@@ -37,7 +37,6 @@ fn editor_env_source_picker_esc_restores_key_input() {
 
 #[test]
 fn editor_cancel_does_not_push_mount() {
-    // C / Esc dismisses the choice modal without touching pending.mounts.
     let mut editor = editor_with_browser_committed("/host/path");
     handle_modal(&mut editor, key(KeyCode::Esc));
     assert!(editor.modal.is_none(), "Esc closes the modal");
@@ -55,7 +54,6 @@ fn editor_cancel_does_not_push_mount() {
 
 #[test]
 fn editor_right_arrow_is_noop_on_non_header_row() {
-    // Right must not cycle tabs — it is an intra-area horizontal key.
     let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
     handle_key(
         &mut state,
@@ -77,7 +75,6 @@ fn editor_right_arrow_is_noop_on_non_header_row() {
 
 #[test]
 fn editor_left_arrow_is_noop_on_non_header_row() {
-    // Left must not cycle tabs — it is an intra-area horizontal key.
     let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Mounts);
     handle_key(
         &mut state,

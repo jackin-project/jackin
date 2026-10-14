@@ -4,9 +4,9 @@
 import JackinUsageBridge
 import SwiftUI
 
-/// Native provider detail.
-///
-/// Content remains on standard list surfaces.
+
+
+
 public struct ProviderDetailView: View {
     public let content: UsageWindowModel.Content
     public let providerError: String?

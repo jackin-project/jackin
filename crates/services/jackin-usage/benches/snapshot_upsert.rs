@@ -1,9 +1,3 @@
-//! Per-row account snapshot upserts into a temp Turso DB (plan 026).
-//!
-//! ```sh
-//! cargo bench -p jackin-usage --bench snapshot_upsert -- --test
-//! ```
-
 #![expect(clippy::panic, reason = "criterion bench harness: fail-fast setup")]
 
 use std::hint::black_box;
@@ -30,7 +24,6 @@ fn bench_upsert(c: &mut Criterion) {
     group.throughput(Throughput::Elements(n as u64));
     group.bench_function("store_usage_snapshots_32", |b| {
         b.iter(|| {
-            // Fresh path each iter would dominate; reuse DB and overwrite.
             store_usage_snapshots(black_box(&db), black_box(&batch))
                 .unwrap_or_else(|e| panic!("{e}"));
         });

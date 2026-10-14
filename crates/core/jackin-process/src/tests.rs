@@ -1,5 +1,3 @@
-//! Unit tests for the shared process transport.
-
 use super::*;
 
 use std::time::Duration;

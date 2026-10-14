@@ -128,10 +128,6 @@ async fn load_agent_grant_validation_failure_preserves_unadopted_dind() {
 
 #[tokio::test]
 async fn load_agent_does_not_short_circuit_on_running_instance() {
-    // D13 reversal of PR #576: launch must NOT auto-attach to a live container.
-    // The full build pipeline must run (`docker build`) even when a current-role
-    // container is Running. Two inspect entries: the early-attach probe and the
-    // in-pipeline probe both see Running and both reject it.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
@@ -315,9 +311,6 @@ async fn load_agent_attaches_explicit_restore_container_with_stored_agent_before
         "main".to_owned(),
     ]);
     let opts = LoadOptions {
-        // The normal `jackin restore` path resolves this from the persisted
-        // instance manifest. It is identity for the exact target, not an
-        // incompatible agent override.
         agent: Some(jackin_core::Agent::Claude),
         op_runner: Some(Box::new(FailingOpRunner)),
         restore_container_base: Some(container_name.to_owned()),

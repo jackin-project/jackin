@@ -1,15 +1,3 @@
-//! File-size ratchet gate.
-//!
-//! ```sh
-//! cargo xtask lint files             # enforce, fail on violation
-//! cargo xtask lint files --print-budget  # emit fresh ratchet family entries
-//! ```
-//!
-//! Production enforcement is a thin shim over [`crate::ratchet`] for the
-//! `file-size-production` and `file-size-test` families in `ratchet.toml`.
-//! Measurement (`measure_lines`) stays here so the ratchet providers can call it.
-//! Pure `Budget`/`check` helpers below exist only for unit characterization tests.
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,18 +16,13 @@ const RERUN: &str = "cargo xtask lint files";
 
 #[derive(Args, Debug)]
 pub(crate) struct LintFilesArgs {
-    /// Emit regenerated `ratchet.toml` entries for the file-size families on
-    /// stdout (`file-size-production` then `file-size-test`). Prefer
-    /// `cargo xtask lint ratchet --print <family>` for a single family.
     #[arg(long)]
     print_budget: bool,
-    /// Output format (`human`, `json`, `github`). Defaults to human; under
-    /// GitHub Actions selects `github` unless overridden.
+
     #[arg(long, value_enum)]
     format: Option<Format>,
 }
 
-/// Test-only budget shape (characterization fixtures write this TOML themselves).
 #[cfg(test)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct Budget {
@@ -109,9 +92,6 @@ pub(crate) fn run(args: LintFilesArgs) -> Result<()> {
     Report::new("file-size", violations).emit(format)
 }
 
-/// Walk `crates/` and return every `.rs` file mapped to its line count.
-/// Canonical test files (`tests.rs` and files under `tests/`) and production
-/// files are returned together so the budget-print path can label them.
 pub(crate) fn measure_lines(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
     let crates_dir = root.join(PRODUCTION_GLOB);
     if !crates_dir.is_dir() {
@@ -122,12 +102,6 @@ pub(crate) fn measure_lines(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
     Ok(out)
 }
 
-/// Classify a repository-relative Rust path as test source.
-///
-/// The canonical layout keeps a suite entry point in `tests.rs` and split
-/// cases below a sibling `tests/` directory. Require a relative, normalized
-/// path so an ancestor directory such as `/tmp/tests/...` cannot make every
-/// source file look like a test.
 pub(crate) fn is_test_source_path(relative_path: &Path) -> bool {
     let mut has_tests_dir = false;
     for component in relative_path.components() {
@@ -155,16 +129,13 @@ fn walk(dir: &Path, out: &mut BTreeMap<PathBuf, usize>) -> Result<()> {
         if path.extension().is_some_and(|ext| ext == "rs") {
             let text =
                 fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-            // count physical lines (matches `wc -l` semantics, matches the
-            // numbers maintainers see in editors and the budget file).
+
             let lines = text.lines().count();
             out.insert(path, lines);
         }
     }
     Ok(())
 }
-
-// --- Pure helpers kept for unit characterization tests only ---
 
 #[cfg(test)]
 fn read_budget(path: &Path) -> Result<Budget> {
@@ -175,7 +146,6 @@ fn read_budget(path: &Path) -> Result<Budget> {
     Ok(budget)
 }
 
-/// Enforce the budget. Returns `Err` listing every violation (test helper).
 #[cfg(test)]
 fn check(root: &Path, budget: &Budget, counts: &BTreeMap<PathBuf, usize>) -> Result<()> {
     let violations = collect_violations(root, budget, counts);
@@ -197,7 +167,6 @@ fn check(root: &Path, budget: &Budget, counts: &BTreeMap<PathBuf, usize>) -> Res
     )
 }
 
-/// Pure violation builder for the file-size ratchet (testable without I/O emit).
 #[cfg(test)]
 fn collect_violations(
     root: &Path,
@@ -343,7 +312,6 @@ fn relative(root: &Path, path: &Path) -> String {
     )
 }
 
-/// Pure budget-report helper (unit tests; production `--print-budget` uses ratchet).
 #[cfg(test)]
 fn budget_report(root: &Path, counts: &BTreeMap<PathBuf, usize>, budget: &Budget) -> String {
     let mut prod: Vec<(&Path, usize)> = Vec::new();

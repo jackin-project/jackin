@@ -5,12 +5,8 @@ use super::*;
 
 #[tokio::test]
 async fn wait_for_dind_fails_when_cert_absent() {
-    // First exec (docker info) succeeds; second exec (test -f) exits with code 1.
     let docker = FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
-            // docker info: success
-            String::new(),
-        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([String::new()])),
         fail_with: vec![(
             "test -f /certs/client/ca.pem".to_owned(),
             "exec in jk-agent-smith-dind exited with code 1: ".to_owned(),
@@ -109,12 +105,8 @@ async fn inspect_agent_sessions_returns_not_running_for_non_running_states() {
 
 #[tokio::test]
 async fn wait_for_dind_succeeds_when_daemon_ready_immediately() {
-    // docker info succeeds on first attempt; test -f /certs/client/ca.pem also succeeds.
     let docker = FakeDockerClient {
-        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
-            String::new(), // docker info
-            String::new(), // test -f /certs/client/ca.pem
-        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([String::new(), String::new()])),
         ..Default::default()
     };
 
@@ -357,7 +349,7 @@ async fn start_stopped_container_errors_clearly_when_network_missing() {
                 exit_code: 0,
                 oom_killed: false,
             },
-            ContainerState::NotFound, // for dind check
+            ContainerState::NotFound,
         ])),
         inspect_network_queue: std::cell::RefCell::new(VecDeque::from([None])),
         fail_with: vec![("start_container".to_owned(), "network not found".to_owned())],

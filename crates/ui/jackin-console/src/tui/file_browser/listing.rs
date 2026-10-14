@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! File-browser listing results and outcome execution.
 
 use super::{
     AuthSourceFolderValidator, FileBrowserListingRequestKind, apply_file_browser_listing,
@@ -151,10 +150,6 @@ pub(crate) fn apply_file_browser_open_result(
     true
 }
 
-/// Dispatch a file-browser outcome to the active stage handler.
-///
-/// `auth_source_folder_validator` is injected so the root binary can provide
-/// the runtime check without creating a dependency on the runtime crate here.
 pub fn execute_file_browser_outcome(
     state: &mut ManagerState<'_>,
     context: FileBrowserEffectContext,

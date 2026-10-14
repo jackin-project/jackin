@@ -1,14 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Claude` OAuth credential loading.
 
 use jackin_usage_provider_core::{humanize_plan_label, read_json_file};
 use serde::Deserialize;
 use std::path::Path;
 use zeroize::Zeroizing;
 
-// No `Debug`/`Display`: this carries a live access token and (optionally) the
-// stable refresh token, so it must never be formatted into a log or error.
 #[expect(
     missing_debug_implementations,
     reason = "credential type: live access/refresh tokens must never be formatted into a log or error"
@@ -17,9 +14,7 @@ use zeroize::Zeroizing;
 pub struct ClaudeOAuthCredentials {
     pub access_token: Zeroizing<String>,
     pub subscription_type: Option<String>,
-    /// Stable rotation-independent identity input. Consumed only inside wave
-    /// resolution to derive the opaque account discriminator, then dropped —
-    /// never carried into a view, log, snapshot, or coordination key raw.
+
     pub refresh_token: Option<Zeroizing<String>>,
 }
 
@@ -62,8 +57,6 @@ struct ClaudeCredentialDocumentAccount {
     organization_type: Option<String>,
 }
 
-/// Parsed Keychain profile. Credential strings enter zeroizing containers
-/// during deserialization and never pass through a `serde_json::Value`.
 #[expect(
     missing_debug_implementations,
     reason = "credential profile contains live secrets"
@@ -116,9 +109,6 @@ pub fn parse_claude_keychain_profile(bytes: &[u8]) -> Option<ClaudeKeychainProfi
     })
 }
 
-/// Claude account email (F12): `~/.claude.json` carries `oauthAccount` metadata
-/// (never the token), and `CodexBar` reads the address from there. Returns the
-/// trimmed `oauthAccount.emailAddress`, or `None` when absent.
 pub fn claude_email_from_value(value: &serde_json::Value) -> Option<String> {
     let oauth = value.get("oauthAccount")?;
     oauth
@@ -130,12 +120,6 @@ pub fn claude_email_from_value(value: &serde_json::Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Claude account tier from `oauthAccount.organizationType` in `~/.claude.json`.
-///
-/// Enterprise/Team accounts store their billing model in `subscriptionType`
-/// ("API Usage Billing"), not the account tier. `organizationType` carries the
-/// tier directly (e.g. `"claude_enterprise"`, `"claude_max"`, `"claude_team"`) and is
-/// the authoritative source for the plan label shown in the TUI header.
 pub fn claude_organization_type_from_value(value: &serde_json::Value) -> Option<String> {
     value
         .get("oauthAccount")?
@@ -171,8 +155,7 @@ pub fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthC
     let subscription_type = subscription_type
         .or(rate_limit_tier)
         .map(humanize_plan_label);
-    // Optional stable refresh token — used only to derive the coordination
-    // discriminator when no `oauthAccount` metadata exists. Never surfaced.
+
     let refresh_token = oauth
         .get("refreshToken")
         .or_else(|| oauth.get("refresh_token"))
@@ -209,13 +192,3 @@ fn optional_string_alias<'a>(
 pub fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
     claude_oauth_from_value(&read_json_file(path)?)
 }
-
-// ===================================================================
-// macOS Keychain credential source (plan 002)
-//
-// Claude Code on macOS stores its OAuth credential only in the login
-// Keychain (a fresh `/login` deletes the credentials file). The service
-// name is derived from the effective `CLAUDE_CONFIG_DIR` by the shared
-// `jackin_core::claude_keychain_scope` helper, so instance provisioning and
-// this probe never disagree. Rust owns all resolution; Swift is display-only.
-// ===================================================================

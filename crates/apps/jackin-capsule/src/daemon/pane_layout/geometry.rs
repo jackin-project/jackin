@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Resize, content-row reconciliation, focus queries, and tab labels.
 
 use super::super::{
     Multiplexer, Rect, Tab, VisiblePane, available_content_rows, content_rect, normalize_size,
@@ -30,7 +29,7 @@ impl Multiplexer {
 
     pub(crate) fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = normalize_size(rows, cols);
-        // Outer-terminal resize invalidates the drag's saved rect.
+
         self.cancel_drag();
         self.render.term_rows = rows;
         self.render.term_cols = cols;
@@ -40,17 +39,7 @@ impl Multiplexer {
             .ratatui_terminal
             .backend_mut()
             .resize(cols, rows);
-        // Drive Ratatui's own resize so the buffers AND `last_known_area` move
-        // to the new geometry together. `Terminal::clear()` resets the diff
-        // baseline but leaves `last_known_area` stale, so the `autoresize()` at
-        // the top of the next `draw()` re-fires `Terminal::resize` mid-frame —
-        // emitting an extra screen erase (and a second one on a width shrink;
-        // this backend writes `\x1b[2J\x1b[H` for every `clear_region(All)`)
-        // that, with the render sentinel gone, leaves a transient pane border
-        // one row high over the status bar. Syncing the area here makes that
-        // autoresize a no-op. Suppression keeps this bookkeeping byte-silent
-        // (the clears would otherwise ride a later frame); the single visible
-        // wipe belongs to the Resize full redraw in `compose_pending_frame`.
+
         self.render
             .ratatui_terminal
             .backend_mut()
@@ -84,10 +73,6 @@ impl Multiplexer {
             .map(|t| t.focused_id)
     }
 
-    /// Active tab's zoomed pane, if the stored id still belongs to
-    /// that tab. Render / input / scroll / mouse paths keep consuming
-    /// this helper so inactive tabs can retain their own zoom state
-    /// without leaking it into the visible tab.
     pub(crate) fn active_zoomed_id(&self) -> Option<u64> {
         let tab = self
             .session_supervisor
@@ -121,9 +106,6 @@ impl Multiplexer {
         self.active_focused_outer_rect().map(|rect| rect.shrink(1))
     }
 
-    /// Derive the label that should appear in the tab strip for `tab`
-    /// from session facts, then delegate the visible naming rule to the
-    /// TUI model boundary.
     pub(crate) fn tab_display_label(&self, tab: &Tab) -> String {
         let ids = tab.tree.all_ids();
         let pane_count = ids.len();
@@ -133,9 +115,7 @@ impl Multiplexer {
                     .provider
                     .as_ref()
                     .map(|provider| provider.label.as_str());
-                // Sessions store instance config IDs; tabs show the
-                // per-instance label. Unknown IDs (hand-built test
-                // sessions) render verbatim.
+
                 let slug = session.agent.as_deref().map(|stored| {
                     self.launch_env
                         .launch_config
@@ -156,11 +136,6 @@ impl Multiplexer {
         crate::tui::model::tab_auto_label(pane_count, panes)
     }
 
-    /// Rewrite each tab's auto-label after a spawn / split / remove.
-    /// `Tab::label()` reads `custom_label` first, so operator-typed
-    /// names survive this refresh automatically. Cheap (clones a few
-    /// short strings) and easier to reason about than dispatching
-    /// incremental updates from every mutation site.
     pub(crate) fn refresh_tab_labels(&mut self) {
         let mut new_labels = Vec::with_capacity(self.session_supervisor.tabs.len());
         for tab in &self.session_supervisor.tabs {

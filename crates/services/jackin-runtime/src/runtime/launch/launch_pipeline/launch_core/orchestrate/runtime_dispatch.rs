@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Runtime outcome handoff and failure cleanup ownership.
-
 use super::{RuntimeLaunched, handle_launch_failure};
 use jackin_docker::docker_client::DockerApi;
 
@@ -25,8 +23,6 @@ impl RuntimeDispatch {
 
         match outcome {
             LaunchOutcome::Detached(_container_handle) => {
-                // Ownership passes to the running instance. Only a later attach
-                // or eject may decide to finalize its resources.
                 launched.cleanup.disarm();
                 Self::Detached(container_name.to_owned())
             }

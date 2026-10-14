@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Poll cadence methods.
 
 use std::collections::BTreeSet;
 
@@ -10,8 +9,6 @@ use super::entries::effective_due_epoch;
 use super::{UsageCoordinator, cadence_deadline};
 
 impl UsageCoordinator {
-    /// Earliest periodic due time across known accounts, for scheduler sleep.
-    /// `None` when no account is tracked yet.
     #[must_use]
     pub fn next_due_epoch(&self) -> Option<i64> {
         let clock_sample = self.shared.clock.sample(0);
@@ -25,9 +22,6 @@ impl UsageCoordinator {
         })
     }
 
-    /// Earliest periodic due time among caller-selected capabilities. When a
-    /// catalog is installed, each selected account is resolved through that
-    /// catalog; omitted capabilities cannot wake this scheduler.
     #[must_use]
     pub fn next_due_epoch_for_capabilities(
         &self,
@@ -54,22 +48,10 @@ impl UsageCoordinator {
         })
     }
 
-    /// Poll every account whose periodic cadence is due. Each due account
-    /// issues at most one ambient (non-force) refresh, which joins in-flight
-    /// work and honors shared Retry-After/cooldown deadlines, so one call can
-    /// never produce a burst of missed polls. Returns the started or joined
-    /// views; blocked accounts are skipped.
     pub fn poll_due(&self, now_epoch: i64) -> Vec<UsageGenerationView> {
         self.poll_due_filtered(now_epoch, None)
     }
 
-    /// Poll due accounts only from the caller-selected capability set. This
-    /// scheduler path leaves omitted accounts untouched even when their
-    /// cadence is overdue. An installed catalog still rejects selected
-    /// capabilities it does not admit.
-    ///
-    /// Each selected account follows the same single-flight and shared
-    /// cooldown admission path as [`UsageCoordinator::poll_due`].
     pub fn poll_due_for_capabilities(
         &self,
         capabilities: impl IntoIterator<Item = UsageAccountCapability>,
@@ -124,11 +106,6 @@ impl UsageCoordinator {
         views
     }
 
-    /// Recalculate due times after sleep/wake or network reconnection. Every
-    /// missed due time becomes one jittered cadence deadline from now, so the
-    /// next [`UsageCoordinator::poll_due`] issues at most one poll per
-    /// account. Future due times are untouched. Returns the number of
-    /// recalculated accounts. Never dispatches provider work.
     pub fn note_wake(&self, now_epoch: i64) -> usize {
         let clock_sample = self.shared.clock.sample(now_epoch);
         let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {
@@ -182,7 +159,6 @@ impl UsageCoordinator {
         entry.cadence.next_due_epoch = effective_due_epoch(entry, clock_sample);
     }
 
-    /// Whether no queued or active generation is retained by this authority.
     #[must_use]
     pub fn is_idle(&self) -> bool {
         let Ok(_catalog_lifecycle) = self.shared.catalog_lifecycle.lock() else {

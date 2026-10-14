@@ -16,7 +16,6 @@ use crate::{cmd, docs};
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum GithubCommand {
-    /// Reuse a successful Pages deployment with identical site inputs.
     #[command(name = "docs-deployment-reuse")]
     DocsDeploymentReuse(DocsDeploymentReuseArgs),
 }

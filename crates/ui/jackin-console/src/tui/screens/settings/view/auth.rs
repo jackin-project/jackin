@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Auth tab lines.
 
 use super::super::model::SettingsAuthState;
 
@@ -94,9 +93,6 @@ pub fn auth_state_lines<AuthModal, EnvModal, PendingOpCommit>(
     lines
 }
 
-/// Trailing non-selectable status lines for the last scan: the merge
-/// summary plus one line per discovery issue. Metadata only (agents,
-/// error categories, directories) — never credential values.
 pub(crate) fn account_scan_status_lines(
     scan: &super::super::model::AccountScanState,
 ) -> Vec<Line<'static>> {

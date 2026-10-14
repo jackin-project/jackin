@@ -7,7 +7,7 @@ included:
 excluded:
   - .build
   - DerivedData
-  # Generated boltffi Swift — generator-owned, never linted.
+
   - Sources/JackinUsageBindings
 
 analyzer_rules:
@@ -63,15 +63,15 @@ opt_in_rules:
   - yoda_condition
 
 disabled_rules:
-  # Formatter-owned: swift-format's checked-in configuration rewrites exactly
-  # what these rules demand, so enabling them makes the two tools fight.
-  # Keep disabled while .swift-format owns the same surface.
+
+
+
   - closure_parameter_position
   - opening_brace
-  # Conflicts with .swift-format "lineBreakBetweenDeclarationAttributes": false.
+
   - attributes
-  # Conflicts with .swift-format "multiElementCollectionTrailingCommas": true
-  # (swift-format adds the commas this rule forbids).
+
+
   - trailing_comma
 
 force_cast: error

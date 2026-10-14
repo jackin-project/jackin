@@ -86,7 +86,7 @@ fn opencode_entitlement_403_is_typed_apart_from_key_failure() {
         r#"{"error": {"type": "EntitlementError", "message": "OpenCode Go subscription required."}}"#,
     );
     assert!(matches!(entitlement, OpenCodeUsageError::Entitlement(_)));
-    // In-band type wins over the status code.
+
     let entitlement_on_odd_status =
         classify_opencode_http_error(200, r#"{"error": {"type": "EntitlementError"}}"#);
     assert!(matches!(

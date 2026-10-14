@@ -1,18 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! OSC policy + osc8 + `parse_osc7` extracted from session.
 use crate as _;
 
-/// reference operator-side files on click.
 #[must_use]
 pub fn osc8_uri_is_safe(uri: &str) -> bool {
     if uri.is_empty() {
         return true;
     }
-    // Byte-level case-insensitive prefix match so this stays allocation-free:
-    // the frame hyperlink-region builder calls it per linked cell every frame,
-    // and a `to_ascii_lowercase()` here would heap-allocate each call.
+
     let bytes = uri.trim().as_bytes();
     [b"http://".as_slice(), b"https://", b"mailto:"]
         .iter()
@@ -23,12 +19,6 @@ pub fn osc8_uri_is_safe(uri: &str) -> bool {
         })
 }
 
-/// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
-/// canonically arrives as `file://<host>/<percent-encoded-path>`;
-/// `url::Url` does the percent-decoding and host-stripping in one
-/// pass. Returns `None` for any payload that does not parse as a
-/// `file://` URL — silently trusting arbitrary text would let an
-/// agent overwrite the pane title with whatever it pleased.
 #[must_use]
 pub fn parse_osc7(payload: &str) -> Option<String> {
     let url = url::Url::parse(payload).ok()?;
@@ -40,14 +30,6 @@ pub fn parse_osc7(payload: &str) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-/// Per-OSC operator switches. OSC 52 clipboard writes default to deny and
-/// require `JACKIN_OSC52=allow`; the lower-risk title, notification, and
-/// hyperlink surfaces default to allow and accept `deny`, `off`, or `no`
-/// (case-sensitive) to turn the matching passthrough off when the operator
-/// runs an untrusted role. tmux exposes the same family as
-/// `set-clipboard on|off` plus `allow-passthrough` for OSC; jackin❯ keeps the
-/// surface per-OSC so the operator can leave the agent's terminal title alone
-/// but block notification spam, or vice versa.
 const ENV_OSC52: &str = "JACKIN_OSC52";
 const ENV_OSC_TITLE: &str = "JACKIN_OSC_TITLE";
 const ENV_OSC_NOTIFY: &str = "JACKIN_OSC_NOTIFY";
@@ -72,9 +54,6 @@ impl Default for OscPolicy {
 }
 
 impl OscPolicy {
-    /// Read policy from environment. Cached at `Session::spawn` time so a
-    /// background pane cannot toggle the gate at runtime by `export`ing
-    /// into a focused shell.
     #[must_use]
     pub fn from_env() -> Self {
         Self::from_lookup(|name| std::env::var(name).ok())
@@ -119,20 +98,12 @@ impl OscPolicy {
         self.flags & ALLOW_HYPERLINK != 0
     }
 
-    /// Test-only constructor with every passthrough gate closed.
-    /// Production code must call `from_env()`; the `#[doc(hidden)]`
-    /// attribute hides this from rustdoc and the `for_test_` prefix
-    /// flags intent to readers. Cargo cannot list a crate in its own
-    /// `[dev-dependencies]` with a feature flag, so a `#[cfg(feature
-    /// = "test-helpers")]` gate would break the default unit-test build
-    /// invocation that integration tests rely on.
     #[doc(hidden)]
     #[must_use]
     pub fn for_test_deny_all() -> Self {
         Self { flags: 0 }
     }
 
-    /// Test-only constructor with every passthrough gate open.
     #[doc(hidden)]
     #[must_use]
     pub fn for_test_allow_all() -> Self {

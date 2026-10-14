@@ -81,10 +81,6 @@ fn read_client_frame_rejects_oversize() {
 
 #[test]
 fn read_client_frame_accepts_exact_max_payload() {
-    // Boundary partner for `read_client_frame_rejects_oversize`: a
-    // refactor that swaps the inequality from `>` to `>=` in
-    // `read_framed_payload` would silently shrink the documented
-    // maximum by one byte. This test fails the moment that happens.
     use tokio::io::AsyncWriteExt;
     use tokio::net::UnixStream;
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -150,9 +146,6 @@ fn read_client_frame_accepts_large_clipboard_image_payload() {
 
 #[test]
 fn hello_env_count_over_cap_is_rejected_by_encoder() {
-    // Encoder gate must reject `MAX_HELLO_ENV + 1`. Without this the
-    // wire could carry an env list a future decoder gladly accepts,
-    // bypassing the documented cap.
     let env: Vec<(String, String)> = (0..=MAX_HELLO_ENV)
         .map(|i| (format!("K{i}"), "v".into()))
         .collect();
@@ -173,16 +166,11 @@ fn hello_env_count_over_cap_is_rejected_by_encoder() {
 
 #[test]
 fn hello_env_count_over_cap_is_rejected_by_decoder() {
-    // Decoder must refuse a hand-crafted payload claiming
-    // `env_count = MAX_HELLO_ENV + 1`. This is the wire-level
-    // counterpart of the encoder guard: a buggy or hostile peer
-    // could otherwise force the daemon to pre-allocate an
-    // arbitrarily large env table.
     let mut payload = Vec::new();
-    payload.extend_from_slice(&24u16.to_be_bytes()); // rows
-    payload.extend_from_slice(&80u16.to_be_bytes()); // cols
-    payload.push(0u8); // spawn_kind = None
-    payload.extend_from_slice(&0u16.to_be_bytes()); // agent_len = 0
+    payload.extend_from_slice(&24u16.to_be_bytes());
+    payload.extend_from_slice(&80u16.to_be_bytes());
+    payload.push(0u8);
+    payload.extend_from_slice(&0u16.to_be_bytes());
     let bogus_count = u16::try_from(MAX_HELLO_ENV + 1).expect("fits u16");
     payload.extend_from_slice(&bogus_count.to_be_bytes());
     let err = decode_client(TAG_HELLO, payload)
@@ -194,19 +182,11 @@ fn hello_env_count_over_cap_is_rejected_by_decoder() {
 
 #[test]
 fn hello_env_count_over_cap_is_rejected_by_decoder_with_full_payload() {
-    // Partner for `hello_env_count_over_cap_is_rejected_by_decoder`:
-    // that test crafts ONLY the env_count and stops, so the
-    // front-of-loop guard fires before the per-entry read runs. A
-    // refactor that moved the cap check below the per-entry loop
-    // (computing it from accumulated reads) would still pass that
-    // test. This variant supplies a fully-populated payload of
-    // `MAX_HELLO_ENV + 1` real entries so the boundary is verified
-    // after the per-entry read, not just at the count declaration.
     let mut payload = Vec::new();
-    payload.extend_from_slice(&24u16.to_be_bytes()); // rows
-    payload.extend_from_slice(&80u16.to_be_bytes()); // cols
-    payload.push(0u8); // spawn_kind = None
-    payload.extend_from_slice(&0u16.to_be_bytes()); // agent_len = 0
+    payload.extend_from_slice(&24u16.to_be_bytes());
+    payload.extend_from_slice(&80u16.to_be_bytes());
+    payload.push(0u8);
+    payload.extend_from_slice(&0u16.to_be_bytes());
     let bogus_count = u16::try_from(MAX_HELLO_ENV + 1).expect("fits u16");
     payload.extend_from_slice(&bogus_count.to_be_bytes());
     for i in 0..=MAX_HELLO_ENV {
@@ -217,7 +197,7 @@ fn hello_env_count_over_cap_is_rejected_by_decoder_with_full_payload() {
         payload.extend_from_slice(key.as_bytes());
         payload.extend_from_slice(value.as_bytes());
     }
-    payload.push(0u8); // focus_kind = None
+    payload.push(0u8);
     let err = decode_client(TAG_HELLO, payload)
         .expect_err("fully-populated over-cap env_count must be rejected");
     let msg = format!("{err:#}");
@@ -227,10 +207,6 @@ fn hello_env_count_over_cap_is_rejected_by_decoder_with_full_payload() {
 
 #[test]
 fn hello_env_count_at_cap_round_trips() {
-    // Partner for `hello_env_count_over_cap_is_rejected_by_encoder`:
-    // a refactor that swaps `>` to `>=` in the encoder OR decoder
-    // would silently shrink the documented cap. Both sides must
-    // accept exactly `MAX_HELLO_ENV` entries.
     let env: Vec<(String, String)> = (0..MAX_HELLO_ENV)
         .map(|i| (format!("K{i}"), "v".into()))
         .collect();
@@ -254,12 +230,6 @@ fn hello_env_count_at_cap_round_trips() {
 
 #[test]
 fn hello_with_focus_session_round_trips() {
-    // The console preview-pane click path sets
-    // `focus_session: Some(<session_id>)`. A refactor that drops
-    // the trailing 8 bytes of session id from the encoder while
-    // the decoder still expects them would only fail at a real
-    // attach. Exercise the round-trip explicitly so the contract
-    // is pinned in the test suite.
     let target = 0xDEAD_BEEF_CAFE_BABEu64;
     let bytes = encode_client(ClientFrame::Hello {
         rows: 24,

@@ -1,12 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Role/cache/home/image/instance pruning.
-//!
-//! Image pruning lives in `jackin_runtime_cleanup_prune_images` (S7 split 99),
-//! home pruning in `jackin_runtime_cleanup_prune_home` (S7 split 101),
-//! role pruning in `jackin_runtime_cleanup_prune_roles` (S7 split 103),
-//! cache pruning in `jackin_runtime_cleanup_prune_cache` (S7 split 104),
-//! all re-exported below.
 
 #![expect(
     clippy::print_stderr,
@@ -23,31 +16,14 @@ use owo_colors::OwoColorize;
 
 use super::{cleanup_timing, purge_container_filesystem};
 
-// Moved to jackin_runtime_cleanup_prune_images::prune_images (S7 split 99);
-// the item re-export keeps every `prune::prune_images` path stable.
 pub use jackin_runtime_cleanup_prune_images::prune_images::prune_images;
 
-// Moved to jackin_runtime_cleanup_prune_home::prune_home (S7 split 101);
-// the item re-export keeps every `prune::prune_jackin_home` path stable.
 pub use jackin_runtime_cleanup_prune_home::prune_home::prune_jackin_home;
 
-// Moved to jackin_runtime_cleanup_prune_roles::prune_roles (S7 split 103);
-// the item re-export keeps every `prune::prune_roles` path stable.
 pub use jackin_runtime_cleanup_prune_roles::prune_roles::prune_roles;
 
-// Moved to jackin_runtime_cleanup_prune_cache::prune_cache (S7 split 104);
-// the item re-export keeps every `prune::prune_cache` path stable.
 pub use jackin_runtime_cleanup_prune_cache::prune_cache::prune_cache;
 
-/// Purge on-disk state for terminated instances and clear their index entries.
-///
-/// Targets `clean_exited`, `superseded`, `failed_setup`, and `purged`
-/// tombstones. Any instance whose filesystem teardown fails — typically because
-/// Docker resources are still present — is skipped; use
-/// `jackin hardline <selector>` to return or `jackin eject <selector> --purge` to discard.
-/// Remove instances with terminal statuses (clean-exited, superseded,
-/// failed setup, purged). Does not touch running or restore-available
-/// instances. Used by `jackin prune instances`.
 pub async fn prune_instances(
     paths: &JackinPaths,
     docker: &impl DockerApi,
@@ -60,10 +36,6 @@ pub async fn prune_instances(
             format!("could not read instance index: {error}")
         })?;
 
-    // D9: reconcile stale Active rows whose Docker container is gone.
-    // A crash mid-session can leave an instance in Active status with no
-    // running container. Detect these and transition them to Crashed so they
-    // appear as restore candidates on the next launch.
     let stale_active: Vec<String> = index
         .instances
         .iter()

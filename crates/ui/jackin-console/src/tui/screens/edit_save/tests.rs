@@ -1,4 +1,3 @@
-//! Tests for `edit_save`.
 use super::*;
 
 #[test]

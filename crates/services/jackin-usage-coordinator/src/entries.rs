@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Account entries and catalog transactions.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::Duration;
@@ -18,8 +17,6 @@ use super::{
     policy, reconcile_executor_catalog, restore_catalog_preimages, state_error, unavailable_error,
 };
 
-/// In-memory periodic cadence for one account. Due times are scheduling
-/// hints only; shared retry/rate-limit/success deadlines always win.
 #[derive(Clone)]
 pub(crate) struct AccountCadence {
     pub(crate) activity: UsageActivity,
@@ -35,15 +32,11 @@ pub(crate) struct AccountEntry {
     pub(crate) cadence: AccountCadence,
     pub(crate) catalog_revision: Option<String>,
     pub(crate) revoked: bool,
-    /// In-process mirror of Claude's durable wall-clock cooldown. This keeps
-    /// clock adjustments from shortening the minimum interval before restart.
+
     pub(crate) cooldown_not_before_monotonic: Option<Duration>,
-    /// A provider dispatch reserved by a generation that outlived its catalog
-    /// revision. Re-added capabilities stay blocked until that work finishes.
+
     pub(crate) pending_provider_generation: Option<u64>,
-    /// Generations fenced by a catalog revision change. Keeping this separate
-    /// from terminal history makes an in-flight join wake and fail
-    /// immediately even when the capability id itself is unchanged.
+
     pub(crate) fenced_generations: BTreeSet<u64>,
 }
 
@@ -65,11 +58,6 @@ impl AccountEntry {
             .unwrap_or(now_epoch);
         let mut cooldown_not_before_monotonic = runtime_cooldown_deadline(&envelope, clock_sample);
         if reload_safety_fence && envelope.capability.surface_id == "claude" {
-            // A wall deadline cannot prove that a prior invocation's full
-            // interval elapsed across a process restart or clock jump. No
-            // trustworthy boot-relative clock is persisted, so conservatively
-            // start a fresh monotonic fence on load. This is not an invocation
-            // timestamp; queued work still has no provider-call floor.
             let reload_deadline = clock_sample
                 .monotonic
                 .saturating_add(policy::CLAUDE_MIN_ATTEMPT_INTERVAL);
@@ -115,8 +103,6 @@ impl AccountEntry {
     }
 }
 
-/// Project an in-process monotonic cooldown into the paired wall-clock domain.
-/// Rounding upward keeps scheduler wakeups from preceding admission.
 pub(crate) fn monotonic_cooldown_deadline_epoch(
     entry: &AccountEntry,
     clock_sample: ClockSample,
@@ -135,9 +121,6 @@ pub(crate) fn monotonic_cooldown_deadline_epoch(
         })
 }
 
-/// Persist a conservative wall deadline when a prior Claude invocation (or
-/// an unresolved legacy attempt) is observed outside the process that owned
-/// its monotonic clock origin.
 pub(crate) fn recovered_attempt_deadline_epoch(
     envelope: &AccountStateEnvelope,
     clock_sample: ClockSample,
@@ -158,8 +141,6 @@ pub(crate) fn recovered_attempt_deadline_epoch(
     )
 }
 
-/// Earliest scheduler wake that respects cadence, durable provider deadlines,
-/// and the active monotonic recovery/admission fence.
 pub(crate) fn effective_due_epoch(entry: &AccountEntry, clock_sample: ClockSample) -> i64 {
     [
         Some(entry.cadence.next_due_epoch),
@@ -198,8 +179,7 @@ pub(crate) struct CoordinatorState {
 
 pub(crate) struct Shared {
     pub(crate) state: Mutex<CoordinatorState>,
-    /// Catalog replacement is a transaction boundary. Executor bindings and
-    /// in-memory revision fencing must never observe two rotations interleaved.
+
     pub(crate) catalog_lifecycle: Mutex<()>,
     pub(crate) changed: Condvar,
     pub(crate) executor: Arc<dyn UsageProviderExecutor>,
@@ -212,14 +192,10 @@ pub(crate) struct Shared {
 pub(crate) enum CatalogAccountPreimage {
     Missing,
     Present(Box<AccountStateEnvelope>),
-    /// The old bytes were unreadable. Claude rotation materializes a
-    /// result-free uncertainty marker before cleanup; other providers may
-    /// quarantine the corrupt preimage.
+
     Corrupt,
 }
 
-/// Coordinator-side catalog commit whose durable projection can still reject
-/// the catalog and restore the exact pre-rotation state.
 pub struct CatalogTransaction {
     pub(crate) shared: Arc<Shared>,
     pub(crate) previous_state: CoordinatorState,
@@ -235,9 +211,6 @@ impl std::fmt::Debug for CatalogTransaction {
 }
 
 impl CatalogTransaction {
-    /// Restore coordinator memory, account state, and executor bindings.
-    /// Corrupt preimages remain in quarantine by design; they are not safe to
-    /// put back into the active account namespace.
     pub fn rollback(self, now_epoch: i64) -> Result<(), UsageCoordinationError> {
         let _catalog_lifecycle = self
             .shared

@@ -20,12 +20,10 @@ fn parse_version_reads_the_declaration() {
 
 #[test]
 fn parse_version_ignores_non_declaration_usages() {
-    // A usage line (no `const NAME`) must not be mistaken for the declaration.
     let src = "fn default() -> String { CURRENT_MANIFEST_VERSION.to_owned() }";
     assert_eq!(parse_version(src, "CURRENT_MANIFEST_VERSION"), None);
 }
 
-/// Build a fake repo root with the doc + a fixtures tree for one kind.
 fn fixture_root(
     kind_dir: &str,
     from_ver: &str,
@@ -77,8 +75,6 @@ fn check_bump_passes_when_artifacts_present() {
 
 #[test]
 fn check_bump_flags_missing_fixture_and_doc_entry() {
-    // Fixture dir is from-v1alpha4, but the bump is v1alpha5 → v1alpha6, and
-    // the doc only mentions v1alpha5.
     let root = fixture_root("config", "v1alpha4", "v1alpha5", "v1alpha5");
     let mut problems = Vec::new();
     check_bump(
@@ -105,10 +101,10 @@ fn doc_timeline_entry_is_backtick_bounded() {
     let doc = "## Timeline\n\n### `v1alpha10` — d\n\n### Manifest `v1alpha5` — d\n";
     assert!(doc_has_timeline_entry(doc, "v1alpha10"));
     assert!(doc_has_timeline_entry(doc, "v1alpha5"));
-    // `v1alpha1` must NOT be satisfied by the `v1alpha10` heading.
+
     assert!(!doc_has_timeline_entry(doc, "v1alpha1"));
     assert!(!doc_has_timeline_entry(doc, "v1alpha6"));
-    // A bare prose mention is not a Timeline entry.
+
     assert!(!doc_has_timeline_entry(
         "see v1alpha6 in passing",
         "v1alpha6"

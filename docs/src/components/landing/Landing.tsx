@@ -1,4 +1,4 @@
-// docs/components/landing/Landing.tsx
+
 import { HeroStage } from './HeroStage';
 import { VocabularyDictionary } from './VocabularyDictionary';
 import { PillCards } from './PillCards';

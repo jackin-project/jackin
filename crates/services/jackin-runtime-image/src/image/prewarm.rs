@@ -1,36 +1,25 @@
-//! Explicit role-image prewarm entrypoint and result rows.
-
 use jackin_core::Agent;
 #[cfg(not(test))]
 use jackin_core::{JackinPaths, RoleSelector};
 #[cfg(not(test))]
 use jackin_telemetry::spawn::JoinSetExt as _;
 
-/// Result status for one explicit role-image prewarm request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImagePrewarmStatus {
-    /// Existing local image labels already match the current recipe.
     Reused,
-    /// Local image was missing or invalid, so prewarm rebuilt it.
+
     Built,
 }
 
-/// One row from explicit `jackin prewarm --image` role-image preparation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleImagePrewarmRow {
-    /// Agent runtime whose image was checked or built.
     pub agent: Agent,
-    /// Derived image tag checked or built for this agent.
+
     pub image: String,
-    /// Whether prewarm reused or built the image.
+
     pub status: ImagePrewarmStatus,
 }
 
-/// Resolve a role repo and prewarm derived images for selected agents.
-///
-/// This writes only jackin-owned role cache, binary cache, build-context, and
-/// Docker image state. It does not touch host repos, host git config, shell
-/// config, `gh` config, or agent configs.
 #[cfg(not(test))]
 pub async fn prewarm_role_images(
     paths: &JackinPaths,

@@ -80,12 +80,12 @@ fn usage_detail_presentation_flattens_lines_once_in_semantic_order() {
         .iter()
         .find(|r| r.row_id == "bucket:0")
         .expect("bucket row");
-    // pace then run-out then reset, exactly once, in that order.
+
     assert_eq!(
         row.display_label,
         "40% left · 5% in deficit · Runs out in 3d 1h · Resets in 6d 22h"
     );
-    // The reset segment is the trailing column; every other segment is leading.
+
     let flattened: Vec<String> = row
         .layout_lines
         .iter()
@@ -167,7 +167,7 @@ fn usage_detail_presentation_stale_keeps_buckets_and_one_detail() {
         .collect();
     assert_eq!(detail_rows.len(), 1, "exactly one Detail row");
     assert_eq!(detail_rows[0].display_label, "upstream 503");
-    // The Detail row is last and the last-good bucket survives.
+
     assert_eq!(
         presentation.rows.last().map(|r| r.row_id.as_str()),
         Some("detail")
@@ -200,9 +200,9 @@ fn usage_detail_presentation_amp_daily_and_bounds() {
     };
     let daily_row = by_id("bucket:0");
     assert_eq!(daily_row.display_label, "61% left · Resets daily");
-    // No fabricated exact reset timestamp or paid-plan label.
+
     assert!(!daily_row.display_label.contains('('));
-    // Credit bound stays in source order after Daily.
+
     assert_eq!(by_id("bucket:1").display_label, "$4.76");
 }
 
@@ -247,12 +247,11 @@ fn usage_detail_presentation_grok_bounds_no_provider_path() {
 
 #[test]
 fn quota_pace_label_appends_runout_when_behind_pace() {
-    // time_left=53%, delta=-5; elapsed=470, used=52; 48*470/52=433.85 -> 434s -> "7m"; 434 < 530.
     assert_eq!(
         quota_pace_label(Some(48), Some(10_530), Some(1_000), 10_000).expect("pace"),
         "5% in deficit · Runs out in 7m"
     );
-    // Weekly-realistic 7-day window: 48*284401/52 = 262524s ~ 3d; 262524 < 320399.
+
     assert_eq!(
         quota_pace_label(Some(48), Some(320_399), Some(604_800), 0).expect("pace"),
         "5% in deficit · Runs out in 3d"
@@ -261,7 +260,6 @@ fn quota_pace_label_appends_runout_when_behind_pace() {
 
 #[test]
 fn quota_pace_label_no_runout_when_ahead_of_pace() {
-    // run-out would be 90*400/10 = 3600 >= 600 -> no segment.
     assert_eq!(
         quota_pace_label(Some(90), Some(600), Some(1_000), 0).expect("pace"),
         "30% in reserve"
@@ -270,7 +268,6 @@ fn quota_pace_label_no_runout_when_ahead_of_pace() {
 
 #[test]
 fn quota_pace_label_no_runout_when_nothing_used() {
-    // used == 0 -> returns without dividing (no division by zero).
     assert_eq!(
         quota_pace_label(Some(100), Some(500), Some(1_000), 0).expect("pace"),
         "50% in reserve"
@@ -279,7 +276,6 @@ fn quota_pace_label_no_runout_when_nothing_used() {
 
 #[test]
 fn quota_pace_label_no_runout_at_window_start() {
-    // elapsed == 0 -> no segment even though delta = -40.
     assert_eq!(
         quota_pace_label(Some(60), Some(1_000), Some(1_000), 0).expect("pace"),
         "40% in deficit"
@@ -288,28 +284,26 @@ fn quota_pace_label_no_runout_at_window_start() {
 
 #[test]
 fn quota_pace_label_runout_iff_behind_clock_boundary() {
-    // reset_at=500, window=1000, now=0.
-    // delta=0 -> On pace; run-out 50*500/50=500, not strictly < 500 -> bare.
     assert_eq!(
         quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace"),
         "On pace"
     );
-    // delta=+1 (ahead, in band); 51*500/49=520.4 -> 520 >= 500 -> bare.
+
     assert_eq!(
         quota_pace_label(Some(51), Some(500), Some(1_000), 0).expect("pace"),
         "On pace"
     );
-    // delta=-1 (behind, in band); 49*500/51=480.4 -> 480s -> "8m"; 480 < 500.
+
     assert_eq!(
         quota_pace_label(Some(49), Some(500), Some(1_000), 0).expect("pace"),
         "On pace · Runs out in 8m"
     );
-    // delta=-2 (band edge); 48*500/52=461.5 -> 462s -> "7m".
+
     assert_eq!(
         quota_pace_label(Some(48), Some(500), Some(1_000), 0).expect("pace"),
         "On pace · Runs out in 7m"
     );
-    // delta=-3 (first deficit token); 47*500/53=443.4 -> 443s -> "7m".
+
     assert_eq!(
         quota_pace_label(Some(47), Some(500), Some(1_000), 0).expect("pace"),
         "3% in deficit · Runs out in 7m"
@@ -318,7 +312,6 @@ fn quota_pace_label_runout_iff_behind_clock_boundary() {
 
 #[test]
 fn quota_pace_label_runout_depleted_bucket() {
-    // used=100, elapsed=500, run-out=0 < 500 -> trivially precedes reset.
     assert_eq!(
         quota_pace_label(Some(0), Some(500), Some(1_000), 0).expect("pace"),
         "50% in deficit · Runs out in <1m"
@@ -327,8 +320,6 @@ fn quota_pace_label_runout_depleted_bucket() {
 
 #[test]
 fn quota_pace_label_exact_projection_precedes_reset_before_rounding() {
-    // Exact 49*536/51 = 514.98… < 515; display rounding is 515 (would fail if
-    // rounded seconds were compared to reset seconds).
     assert_eq!(
         quota_pace_label(Some(49), Some(10_515), Some(1_051), 10_000).expect("pace"),
         "On pace · Runs out in 8m"
@@ -337,7 +328,6 @@ fn quota_pace_label_exact_projection_precedes_reset_before_rounding() {
 
 #[test]
 fn quota_pace_label_exact_clock_equality_ignores_float_drift() {
-    // 7*1000 == 70*100 -> projection reaches reset exactly -> no run-out segment.
     let label = quota_pace_label(Some(7), Some(70), Some(1_000), 0).expect("pace");
     assert!(!label.contains("Runs out"), "unexpected run-out: {label}");
 }

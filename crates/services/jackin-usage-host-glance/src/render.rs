@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Host label and row render helpers.
 
 use jackin_usage_host_accounts::{self as accounts, AccountLifecycle, HostAccountDescriptor};
 use jackin_usage_host_presentation::{
@@ -15,19 +14,14 @@ use jackin_usage_provider_core::{
     usage_identity_presentation, usage_status_storage_label,
 };
 
-/// Driving bucket for compact/overview labels: min remaining + its reset epoch.
 #[derive(Debug, Clone, Copy)]
 pub struct DrivingBucket {
     pub remaining: u8,
     pub resets_at: Option<i64>,
 }
 
-/// Hard cap for burn-first status-bar chips (SB-3 / SB-14). Never more than three.
 pub const STATUS_BAR_MAX_CHIPS: usize = 3;
 
-/// SB-17 rank keys for ascending sort: **soonest reset first**, then **higher
-/// remaining %** (invert remaining so ascending puts larger headroom first).
-/// Missing `resets_at` sorts last on the time key.
 #[must_use]
 pub fn status_bar_rank_key(remaining: u8, resets_at: Option<i64>) -> (i64, u8) {
     let time_key = resets_at.unwrap_or(i64::MAX);
@@ -35,7 +29,6 @@ pub fn status_bar_rank_key(remaining: u8, resets_at: Option<i64>) -> (i64, u8) {
     (time_key, remaining_key)
 }
 
-/// Min-`remaining_percent` bucket (same selection as the legacy compact label).
 pub fn driving_bucket_from_view(view: &FocusedUsageView) -> Option<DrivingBucket> {
     let mut best: Option<(u8, Option<i64>)> = None;
     for bucket in &view.buckets {
@@ -53,7 +46,6 @@ pub fn driving_bucket_from_view(view: &FocusedUsageView) -> Option<DrivingBucket
     })
 }
 
-/// Model-scoped bucket label when the driving bucket has no status slot.
 pub fn drive_label_prefix(view: &FocusedUsageView, remaining: u8) -> Option<&str> {
     view.buckets
         .iter()
@@ -73,11 +65,6 @@ pub fn selected_account_unavailable_view(surface: HostSurfaceId) -> FocusedUsage
     view
 }
 
-/// A view is auto-detected when it carries affirmative credential evidence (a
-/// non-empty `credential_origin` that is not a `"needs …"` placeholder, even
-/// under `Unsupported` status) or at least one bucket with a numeric/formatted
-/// quota field. Bucket labels, pace/status prose, and non-Fresh status alone
-/// are never evidence.
 pub fn view_is_auto_detected(view: &FocusedUsageView) -> bool {
     let origin_affirmative = view
         .account
@@ -98,9 +85,6 @@ pub fn view_is_auto_detected(view: &FocusedUsageView) -> bool {
     origin_affirmative || bucket_evidence
 }
 
-/// Select the required semantic glance bucket: Weekly for the six non-Amp
-/// providers and Daily for Amp. Never a Spend/Session/min-remaining or label
-/// match — one provider's missing slot yields `–`, never a whole-list failure.
 pub fn glance_bucket(
     surface: HostSurfaceId,
     view: &FocusedUsageView,

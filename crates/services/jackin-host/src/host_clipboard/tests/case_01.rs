@@ -20,31 +20,31 @@ async fn non_trigger_does_not_probe_clipboard() {
 #[test]
 fn split_paste_requires_a_start_marker_and_partitions_the_read() {
     let e = b"".as_slice();
-    // Clean bracketed paste: empty prefix/suffix, body between markers.
+
     assert_eq!(
         split_paste(&bracketed("/tmp/x.png")),
         Some((e, b"/tmp/x.png".as_slice(), e))
     );
-    // Trailing bytes after the end marker become the suffix.
+
     let mut trailing = bracketed("/tmp/x.png");
     trailing.extend_from_slice(b"\x1b[<0;1;1M");
     assert_eq!(
         split_paste(&trailing),
         Some((e, b"/tmp/x.png".as_slice(), b"\x1b[<0;1;1M".as_slice()))
     );
-    // Leading typed bytes before the start marker become the prefix.
+
     let mut leading = b"ab".to_vec();
     leading.extend_from_slice(&bracketed("/tmp/x.png"));
     assert_eq!(
         split_paste(&leading),
         Some((b"ab".as_slice(), b"/tmp/x.png".as_slice(), e))
     );
-    // Open paste (start marker, end not yet arrived): tail is the body.
+
     assert_eq!(
         split_paste(b"\x1b[200~/tmp/x.png"),
         Some((e, b"/tmp/x.png".as_slice(), e))
     );
-    // No start marker — typed input is never treated as a paste.
+
     assert_eq!(split_paste(b"/tmp/x.png"), None);
 }
 
@@ -53,7 +53,7 @@ fn looks_like_image_path_gates_to_absolute_image_files() {
     assert!(looks_like_image_path("/Users/me/shot.png"));
     assert!(looks_like_image_path("\"/Users/me/my shot.jpeg\""));
     assert!(looks_like_image_path("file:///Users/me/shot.gif"));
-    // Not an image, not absolute, or multi-line — all forward as text.
+
     assert!(!looks_like_image_path("/Users/me/notes.txt"));
     assert!(!looks_like_image_path("relative/shot.png"));
     assert!(!looks_like_image_path("/Users/me/a.png\n/Users/me/b.png"));
@@ -83,11 +83,6 @@ async fn pasted_path_stages_real_image_and_forwards_everything_else() {
     assert_eq!(staged.0.format, ClipboardImageFormat::Png);
     assert_eq!(staged.0.bytes, b"\x89PNG\r\n\x1a\npayload");
 
-    // Bug 9: a `Cmd+V` whose read is a whole image path but NOT bracketed (the
-    // terminal didn't wrap it — the symptom where the raw host path landed in the
-    // prompt) still stages. Typing can't deliver a full path in one raw-mode read,
-    // so a single read that is exactly one real image path is unambiguously a
-    // paste/drop, not keystrokes.
     let raw_path = path.display().to_string();
     let unbracketed = read_image_from_pasted_path(raw_path.as_bytes())
         .await
@@ -96,7 +91,6 @@ async fn pasted_path_stages_real_image_and_forwards_everything_else() {
     assert_eq!(unbracketed.0.format, ClipboardImageFormat::Png);
     assert_eq!(unbracketed.0.bytes, b"\x89PNG\r\n\x1a\npayload");
 
-    // A non-image path, a missing file, and prose all forward as text.
     let notes = temp.path().join("notes.txt");
     std::fs::write(&notes, b"hello").unwrap();
     assert!(
@@ -139,8 +133,6 @@ async fn pasted_path_resolves_shell_escaped_spaces() {
 
 #[tokio::test]
 async fn pasted_path_rejects_image_extension_with_non_image_content() {
-    // The extension gate is cheap; magic bytes are the real authority. A
-    // `.png` whose bytes are not an image must not stage.
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("spoof.png");
     std::fs::write(&path, b"this is plain text, not an image").unwrap();
@@ -170,8 +162,6 @@ async fn pasted_path_stages_file_url_image() {
 
 #[tokio::test]
 async fn pasted_path_stages_open_paste_missing_end_marker() {
-    // A paste whose end marker has not arrived on this read still stages from
-    // the start-marker tail (the split-across-reads start case).
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("shot.png");
     std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
@@ -313,8 +303,6 @@ fn bounded_reader_kills_and_drops_output_over_the_cap() {
     let path = temp.path().join("payload.bin");
     std::fs::write(&path, b"0123456789").unwrap();
 
-    // Exactly at the cap is kept; one byte over is dropped (the child is killed
-    // rather than draining an unbounded payload).
     assert_eq!(
         read_command_stdout_bounded(Path::new("/bin/cat"), [path.as_os_str()], 10, "text")
             .unwrap()
@@ -334,14 +322,12 @@ fn bounded_reader_maps_empty_and_failed_commands_to_none() {
     let empty = temp.path().join("empty.bin");
     std::fs::write(&empty, b"").unwrap();
 
-    // Success with empty stdout → None (an empty clipboard is "nothing", not "").
     assert!(
         read_command_stdout_bounded(Path::new("/bin/cat"), [empty.as_os_str()], 10, "text")
             .unwrap()
             .is_none()
     );
-    // Non-zero exit → None even with bytes on stdout (exercises the
-    // `!status.success()` arm independently of the empty-output arm).
+
     assert!(
         read_command_stdout_bounded(
             Path::new("/bin/sh"),
@@ -356,7 +342,6 @@ fn bounded_reader_maps_empty_and_failed_commands_to_none() {
 
 #[test]
 fn bounded_reader_propagates_spawn_failure_as_error() {
-    // A missing program is a real error, not an empty-clipboard `None`.
     read_command_stdout_bounded(
         Path::new("/nonexistent/jackin-no-such-binary"),
         Vec::<&OsStr>::new(),

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Instance-status writes and attach-outcome records for instance manifests.
-
 use jackin_core::JackinPaths;
 use jackin_instance::{InstanceIndex, InstanceManifest, InstanceStatus};
 use jackin_runtime_isolation::isolation::finalize::AttachOutcome;
@@ -43,8 +41,7 @@ pub fn record_instance_attach_outcome(
     outcome: AttachOutcome,
 ) -> anyhow::Result<()> {
     let state_dir = paths.data_dir.join(container_name);
-    // Missing manifest is a legitimate no-op; corrupt manifest is
-    // logged so the attach-outcome record is not silently dropped.
+
     let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) else {
         return Ok(());
     };

@@ -1,4 +1,4 @@
-// Client-safe path helpers. Keep server-only collection loading in source.ts.
+
 export function splatToSlugs(splat: string | undefined, stripSuffix?: string) {
   const segments = splat?.split('/').filter(Boolean) ?? []
   const last = segments.length - 1

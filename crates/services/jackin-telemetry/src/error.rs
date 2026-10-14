@@ -1,15 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Privacy-safe error capture at semantic ownership boundaries.
-
 use crate::{Attr, FieldSet, Rejection, Value, emit_event, event, schema};
 
-/// An error whose semantic owner has already emitted its typed telemetry.
-///
-/// The original error remains available through [`TelemetryError::downcast_ref`]
-/// for operator-facing reporting. Re-owning this carrier is idempotent:
-/// the first semantic owner and its bounded type remain authoritative.
 pub struct TelemetryError {
     source: Box<dyn std::any::Any + Send + Sync>,
     display: fn(&dyn std::any::Any, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
@@ -43,11 +36,6 @@ impl std::fmt::Display for TelemetryError {
 
 impl std::error::Error for TelemetryError {}
 
-/// Record one typed product error without formatting or exporting the error value.
-///
-/// The operation owner remains responsible for completing its span with the same
-/// error type. Keeping that responsibility explicit prevents an error handled by
-/// an inner scope from incorrectly poisoning a successful outer operation.
 pub fn record_error(error_type: schema::enums::ErrorType) -> Result<(), Rejection> {
     let attrs = [
         Attr {
@@ -62,12 +50,6 @@ pub fn record_error(error_type: schema::enums::ErrorType) -> Result<(), Rejectio
     emit_event(&event::ERROR_TYPED, FieldSet::new(&attrs, None))
 }
 
-/// Record a handled failure that preserved the outer operation's success.
-///
-/// This is a governed warning without an error body. Its fixed bounded error
-/// type makes every recovered failure observable without formatting the source
-/// error. It must not be used for a terminal failure; the semantic owner records
-/// those through [`record_error`].
 pub fn record_recovered_degradation() -> Result<(), Rejection> {
     let attrs = [
         Attr {
@@ -82,11 +64,6 @@ pub fn record_recovered_degradation() -> Result<(), Rejection> {
     emit_event(&event::OPERATION_WARN, FieldSet::new(&attrs, None))
 }
 
-/// Records an `Err` as governed OpenTelemetry and returns an owned carrier.
-///
-/// The source error is never formatted during telemetry capture. Applying this
-/// method again to a propagated [`TelemetryError`] preserves the first owner
-/// without emitting a duplicate event.
 pub trait ResultTelemetryExt<T, E> {
     fn record_telemetry_error(
         self,

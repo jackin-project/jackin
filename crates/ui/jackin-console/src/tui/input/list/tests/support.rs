@@ -119,7 +119,7 @@ pub(super) fn list_state_selecting_ws(
     let mut config = AppConfig::default();
     config.workspaces.insert("demo".into(), ws);
     let mut state = ManagerState::from_config(&config, tmp.path());
-    state.selected = 1; // force selection onto the saved workspace row
+    state.selected = 1;
     state
         .mount_info_cache
         .refresh_mounts(&config.workspaces["demo"].mounts);

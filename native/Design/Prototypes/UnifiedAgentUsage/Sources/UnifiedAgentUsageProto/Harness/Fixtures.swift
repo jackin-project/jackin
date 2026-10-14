@@ -89,8 +89,8 @@ enum ProtoFixtures {
         }
     }
 
-    /// Every previewable scenario, grouped for the in-prototype Scenario menu.
-    /// Launch contract names stay identical — the menu only re-drives them.
+
+
     static let scenarioMenu: [(title: String, names: [String])] = [
         ("Everyday", ["F02", "F01", "F03", "F25"]),
         ("Quota pressure", ["F04", "F05", "F22"]),
@@ -106,9 +106,9 @@ enum ProtoFixtures {
         ),
     ]
 
-    /// One-line human description per scenario — surfaced as the Scenario
-    /// menu item subtitle/tooltip so a code like "F24-f11" is never the only
-    /// label. Mirrors the `### Fxx —` headings in Fixtures.md.
+
+
+
     static let scenarioDescriptions: [String: String] = [
         "F00": "No providers detected — empty state with add-provider prompt",
         "F01": "Single provider, healthy quota",
@@ -148,7 +148,7 @@ enum ProtoFixtures {
         "F29": "Rate limited with backoff, last-good rows",
     ]
 
-    // MARK: Core records
+
 
     static let codexPersonal = ProtoAccount(
         key: "codex-personal", label: "personal@example.test", plan: "Plus",
@@ -194,8 +194,8 @@ enum ProtoFixtures {
                 display: "88% left · Resets in 3d", primaryValue: "88% left",
                 resetLabel: "Resets in 3d", meter: 88, state: .current,
                 pace: "On pace"),
-            // Spend-control lane from the same /wham/usage payload
-            // (individual_limit) — a quota-bound money cap, not spend tracking.
+
+
             ProtoQuotaWindow(
                 stableID: "bucket:monthly-credit-pool", label: "Monthly credit pool",
                 category: .longRange, periodTag: "mo",
@@ -379,8 +379,8 @@ enum ProtoFixtures {
             accounts: usable ? [claudePersonal] : [], state: state, error: error)
     }
 
-    /// Seven desktop providers in frozen canonical order; Codex carries two
-    /// accounts so the default scenario previews multi-account presentation.
+
+
     static func catalog(
         codexState: ProtoState = .current, codexActivity: String? = nil,
         kimiUnavailable: Bool = false
@@ -412,7 +412,7 @@ enum ProtoFixtures {
         ]
     }
 
-    // MARK: Scenarios
+
 
     static func projection(
         _ scenario: String, providers: [ProtoProvider], statusRows: [String],
@@ -707,8 +707,8 @@ enum ProtoFixtures {
             selectedAccount: "minimax-default")
     }
 
-    /// Multi-account rich: Codex three accounts, Claude two — the canonical
-    /// deduplicated account graph across plan tiers and states.
+
+
     static func f25() -> ProtoProjection {
         projection(
             "F25",
@@ -745,7 +745,7 @@ enum ProtoFixtures {
             selectedAccount: "codex-personal")
     }
 
-    /// needs_login: credential present but expired/revoked — re-auth required.
+
     static func f26() -> ProtoProjection {
         projection(
             "F26",
@@ -759,7 +759,7 @@ enum ProtoFixtures {
             statusRows: ["claude"], selectedProvider: "claude")
     }
 
-    /// needs_secret: no API key discovered anywhere for a key-only provider.
+
     static func f27() -> ProtoProjection {
         projection(
             "F27",
@@ -772,8 +772,8 @@ enum ProtoFixtures {
             statusRows: ["zai"], selectedProvider: "zai")
     }
 
-    /// unsupported: credential exists but exposes no quota surface
-    /// (presence-only, e.g. an OpenAI API key without a ChatGPT subscription).
+
+
     static func f28() -> ProtoProjection {
         projection(
             "F28",
@@ -786,8 +786,8 @@ enum ProtoFixtures {
             statusRows: ["codex"], selectedProvider: "codex")
     }
 
-    /// Rate limited: provider 429 with a Retry-After deadline; last-good rows
-    /// stay visible under the backoff marker.
+
+
     static func f29() -> ProtoProjection {
         projection(
             "F29",

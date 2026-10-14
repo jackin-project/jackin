@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker IPC client.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -29,11 +28,6 @@ use crate::{
 };
 use nix::unistd::geteuid;
 
-/// Small synchronous client. Each operation uses one bounded frame/connection.
-///
-/// A client also carries one monitoring screen's subscription set (see
-/// `view`). Cloning forks that set: the clone starts with the same observed
-/// generations but later (un)subscribes diverge.
 #[derive(Debug)]
 pub struct UsageBrokerClient {
     pub(crate) socket_path: PathBuf,
@@ -59,7 +53,6 @@ impl Clone for UsageBrokerClient {
 }
 
 impl UsageBrokerClient {
-    /// Attach to an already-running broker socket.
     #[must_use]
     pub fn at(socket_path: PathBuf, build_id: String) -> Self {
         Self {
@@ -76,7 +69,6 @@ impl UsageBrokerClient {
         client
     }
 
-    /// Attach to the current Capsule's per-container relay.
     #[must_use]
     pub fn scoped_relay() -> Self {
         Self::at(
@@ -85,7 +77,6 @@ impl UsageBrokerClient {
         )
     }
 
-    /// Read one account generation without provider work.
     pub fn current(
         &self,
         capability: UsageAccountCapability,
@@ -93,7 +84,6 @@ impl UsageBrokerClient {
         self.execute(UsageBrokerOperation::Current { capability })
     }
 
-    /// Read one exact account capability through a scoped relay.
     pub fn current_for_capability(
         &self,
         capability: UsageAccountCapability,
@@ -101,7 +91,6 @@ impl UsageBrokerClient {
         self.execute(UsageBrokerOperation::CurrentForCapability { capability })
     }
 
-    /// Request or join one account generation.
     pub fn refresh(
         &self,
         capability: UsageAccountCapability,
@@ -115,7 +104,6 @@ impl UsageBrokerClient {
         })
     }
 
-    /// Request or join one exact account capability through a scoped relay.
     pub fn refresh_for_capability(
         &self,
         capability: UsageAccountCapability,
@@ -129,7 +117,6 @@ impl UsageBrokerClient {
         })
     }
 
-    /// Wait for one named generation. This does not release broker ownership on timeout.
     pub fn join(
         &self,
         capability: UsageAccountCapability,
@@ -144,7 +131,6 @@ impl UsageBrokerClient {
         })
     }
 
-    /// Wait for one exact capability generation through a scoped relay.
     pub fn join_for_capability(
         &self,
         capability: UsageAccountCapability,
@@ -159,7 +145,6 @@ impl UsageBrokerClient {
         })
     }
 
-    /// Execute one already-authorized broker operation.
     pub fn execute(
         &self,
         operation: UsageBrokerOperation,
@@ -167,9 +152,6 @@ impl UsageBrokerClient {
         self.execute_with_scope(operation, None)
     }
 
-    /// Execute one operation with the immutable launch proof supplied by the
-    /// host relay. The caller cannot replace this with Capsule input because
-    /// the relay owns the client invocation.
     pub fn execute_scoped(
         &self,
         operation: UsageBrokerOperation,
@@ -178,11 +160,6 @@ impl UsageBrokerClient {
         self.execute_with_scope(operation, Some(scope))
     }
 
-    /// Submit one host-only monitor operation over the passive broker socket.
-    ///
-    /// This method never starts the broker, resolves credentials, or performs
-    /// provider work. Callers that need a service must activate it explicitly
-    /// through the host lifecycle API first.
     pub fn monitor(&self, request: MonitorOperation) -> Result<MonitorReply, MonitorIssue> {
         let watch_timeout = match &request {
             MonitorOperation::Watch { timeout_ms, .. } => {
@@ -226,11 +203,6 @@ impl UsageBrokerClient {
         }
     }
 
-    /// Resolve one Capsule launch against discovery owned by the host broker.
-    ///
-    /// The source facts are secret-free. This call may inspect config and
-    /// credentials inside an already-running provider broker, so it is a
-    /// launch operation and never starts the broker implicitly.
     pub fn resolve_relay_capabilities(
         &self,
         scope_label: &str,
@@ -305,12 +277,10 @@ impl UsageBrokerClient {
         }
     }
 
-    /// Read the latest canonical publication without dispatching provider work.
     pub fn current_projection(&self) -> Result<UsageProjectionV1, UsageCoordinationError> {
         self.execute_projection(UsageBrokerOperation::CurrentProjection)
     }
 
-    /// Request or join one broker-owned canonical projection refresh.
     pub fn request_refresh(
         &self,
         observed_projection_id: Option<String>,
@@ -322,7 +292,6 @@ impl UsageBrokerClient {
         })
     }
 
-    /// Join one immutable canonical publication without cancelling shared work.
     pub fn join_publication(
         &self,
         projection_id: String,

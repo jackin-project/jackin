@@ -1,19 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Meta Muse CLI (`muse`) adapter.
-
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{AgentRuntime, AgentStatePaths, looks_like_version};
 
-// No verified standalone installer exists for Muse (it ships via host
-// package managers with no documented container-side URL), so the
-// fallback fails closed with an actionable error instead of inventing
-// a download URL. Host-side binary prefetch is the only install path.
 const FALLBACK_INSTALL_COMMAND: &str = "echo 'muse: no verified standalone installer; install Meta Muse on the host so binary prefetch can find it' >&2; exit 1";
 
-/// [`crate::agent::runtime::AgentRuntime`] adapter for Muse.
 #[derive(Debug)]
 pub(crate) struct MuseRuntime;
 
@@ -45,8 +38,6 @@ RUN set -euxo pipefail && \\
     }
 
     fn fallback_install_block(&self) -> String {
-        // Deliberately not the shared retry-loop block: retrying a
-        // fail-closed error would only burn ~15s of sleeps.
         format!(
             "\
 USER agent
@@ -61,7 +52,6 @@ RUN {FALLBACK_INSTALL_COMMAND}
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
         match mode {
-            // Verified in `muse login --help`: META_API_KEY overrides login.
             AuthForwardMode::ApiKey => Some(crate::env_model::META_API_KEY_ENV_NAME),
             AuthForwardMode::Sync | AuthForwardMode::Ignore | AuthForwardMode::OAuthToken => None,
         }
@@ -77,19 +67,14 @@ RUN {FALLBACK_INSTALL_COMMAND}
 
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
-            // XDG config layout (NOT ~/.muse): auth.json with
-            // schema_version 2 holds identity fields; the secret itself
-            // lives in the Keychain (service `ai.meta.dev.credentials`,
-            // account `meta`).
             credential_dir: ".config/muse",
-            config_dir: None, // auth.json + settings.json both under .config/muse
+            config_dir: None,
             credential_file: Some(".config/muse/auth.json"),
-            folder_env_var: None, // no MUSE_HOME observed
+            folder_env_var: None,
         }
     }
 
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
-        // `muse --version` returns e.g. "1.3.0".
         raw.split_whitespace()
             .find(|token| looks_like_version(token))
     }
