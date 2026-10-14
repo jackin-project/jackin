@@ -5354,6 +5354,7 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "hex",
+ "jackin-isolation",
  "jackin-usage-store-backend",
  "serde",
  "serde_json",

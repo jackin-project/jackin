@@ -8,6 +8,7 @@
 mod model;
 mod service;
 mod store;
+mod verify;
 
 #[cfg(test)]
 mod tests;
@@ -23,6 +24,17 @@ pub use service::{
 pub use store::{
     ArtifactRef, CheckpointRecord, EvidenceRecord, NewCommand, NewEffect, RunStore, RunTransition,
     SessionAttachment, StoredCommand, StoredEffect, StoredRun, StoredSession,
+};
+pub use verify::{
+    BoundedOutput, CandidateEvidence, CandidateRef, Decision, DeliveryGate, FailingCheck,
+    FeedbackInput, HostReadiness, InputOwnership, MAX_FEEDBACK_BYTES, MAX_REVIEW_BYTES,
+    MAX_REVIEW_CORRECTIONS, MAX_TEST_EXCERPT_BYTES, MAX_TEST_OUTPUT_BYTES, NoAgentCredentials,
+    PreparedTestWorker, RepairDelivery, ReviewExpectation, ReviewFinding, ReviewResult,
+    ReviewStatus, ReviewWorkerSpec, SessionIdentity, Severity, TestExecution, TestPolicy,
+    TestResult, TestWorkerSpec, VerificationOutcome, admit_repair_delivery, build_feedback,
+    correction_allowed, decide_candidate, persist_test_output, prepare_test_worker,
+    read_review_bytes, record_review_evidence, record_test_evidence, review_acceptable,
+    run_test_command, stage_repair_feedback, summarize_test_failure, validate_review,
 };
 
 /// Machine-readable workflow failure.
