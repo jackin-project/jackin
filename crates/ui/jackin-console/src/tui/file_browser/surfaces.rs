@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Per-surface file-browser outcome executors.
 
 use crate::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState, FolderListing};
 use crate::tui::effect::FileBrowserEffectContext;
@@ -28,9 +27,6 @@ pub(crate) fn execute_editor_file_browser_outcome(
     };
     match outcome {
         FileBrowserOutcome::Commit(path) => {
-            // Auth source-folder picks must hold the selected agent's
-            // credential structure. Reject a wrong folder inline and keep
-            // the picker open rather than saving an unusable path.
             if target == FileBrowserTarget::AuthFormSourceFolder
                 && let Err(reason) = auth_source_folder_validator(
                     editor
@@ -79,7 +75,6 @@ pub(crate) fn execute_prelude_file_browser_outcome(
             prelude.modal = None;
             prelude.last_browser_cwd = browser_cwd;
             prelude.accept_mount_src(path);
-            // FileBrowser commit advances the wizard to `mount-dst-choice`.
             prelude.wizard.next();
             let src = prelude
                 .pending_mount_src

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker-owned refresh-time discovery.
 
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -11,10 +10,6 @@ use jackin_usage_discovery::{
 };
 use jackin_usage_host_credentials::ProviderCredentialEnvResolver;
 
-/// Resolves the current host catalog inside the broker for an explicit refresh.
-///
-/// Consumers send only a refresh request. This object keeps config discovery,
-/// credential resolution, and identity validation in the broker process.
 pub(crate) struct BrokerCatalogRefresh {
     scope: UsageDiscoveryScope,
     resolver: Arc<dyn ProviderCredentialEnvResolver>,
@@ -33,8 +28,6 @@ impl BrokerCatalogRefresh {
         }
     }
 
-    /// Serialize a catalog scan with its broker-owned catalog mutation. This
-    /// keeps a slow launch scan from publishing over a newer explicit scan.
     pub(crate) fn with_discovery<T>(
         &self,
         action: impl FnOnce(ValidatedUsageDiscovery) -> Result<T, UsageCoordinationError>,
@@ -60,8 +53,6 @@ impl BrokerCatalogRefresh {
     }
 }
 
-/// Confirm an empty catalog once before it can revoke previously known
-/// capabilities. Every retry invokes a fresh broker-owned scan.
 pub(crate) fn discover_confirming_empty(
     mut discover_once: impl FnMut() -> Result<ValidatedUsageDiscovery, UsageCoordinationError>,
 ) -> Result<ValidatedUsageDiscovery, UsageCoordinationError> {

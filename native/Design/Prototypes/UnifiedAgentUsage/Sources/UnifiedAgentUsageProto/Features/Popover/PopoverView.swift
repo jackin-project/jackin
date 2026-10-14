@@ -1,9 +1,8 @@
 import SwiftUI
 
-// Popover mirrors the incumbent PopoverRoot: brand header, grouped Form
-// content (identity, Limits, Details, Provider status), fixed controls row.
 
-/// Focused-provider glance hosted by the real system `NSPopover`.
+
+
 struct PopoverView: View {
     static let contentSize = CGSize(width: 380, height: 520)
 
@@ -81,10 +80,6 @@ struct PopoverView: View {
             set: { store.selectAccount($0, for: provider) })
     }
 
-    // Functional controls in a transient surface: real Liquid Glass button
-    // styles (macOS 26.0). One prominent action only — Open Usage, the
-    // row's primary. Known macOS 26 defect: .glass buttons show no hover
-    // state outside a toolbar (fixed in 27); verified live.
     private var controls: some View {
         HStack(spacing: JackinSpace.sm) {
             GlassEffectContainer(spacing: JackinSpace.xs) {
@@ -135,4 +130,4 @@ struct PopoverView: View {
     }
 }
 
-/// Settings mirrors the incumbent grouped Form over fixture-backed state.
+

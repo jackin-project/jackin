@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `OpenCode` Go subscription-limit adapter logic (see `lib.rs`).
-//!
-//! The response does not expose a durable non-secret account identity, and
-//! per-model quota or Zen balance fields are never invented: unknown payload
-//! fields render nothing.
-
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
@@ -20,8 +14,6 @@ use std::path::Path;
 
 const OPENCODE_USAGE_URL: &str = "https://opencode.ai/zen/go/v1/usage";
 
-// No `Debug`: this carries the live Go API key and must never be formatted
-// into a log or error.
 #[derive(Deserialize)]
 struct OpenCodeAuthEntry {
     #[serde(rename = "type")]
@@ -35,9 +27,6 @@ pub struct OpenCodeQuota {
     pub rate_limited: bool,
 }
 
-/// Typed `zen/go/v1/usage` failure: a key problem (401 / `AuthError`) needs a
-/// login, while a valid key without a Go subscription (403 / `EntitlementError`)
-/// is an honest unsupported state — never conflated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpenCodeUsageError {
     Key(String),
@@ -74,12 +63,6 @@ impl OpenCodeUsageError {
     }
 }
 
-/// Classify a non-2xx `zen/go/v1/usage` failure. The in-band error type wins
-/// over the status code: `{error: {type: "EntitlementError"}}` is an
-/// entitlement failure even on an unexpected status, and `AuthError` is a key
-/// failure. Pure so the 403-vs-key distinction is unit-testable without I/O.
-/// (Research §16: a valid key without Go entitlement gets a distinct 403 —
-/// the taxonomy mirrors the server, it is not inferred.)
 pub fn classify_opencode_http_error(status: u16, body: &str) -> OpenCodeUsageError {
     let error_type = serde_json::from_str::<serde_json::Value>(body)
         .ok()
@@ -163,10 +146,6 @@ pub fn fetch_opencode_usage(path: &Path) -> Result<OpenCodeQuota, OpenCodeUsageE
         .map_err(OpenCodeUsageError::Schema)
 }
 
-/// Tolerant used-percent resolution: `percent`, then the `usagePercent` /
-/// `usage_percent` spellings, then a `used` / `limit` fallback. `1` means 1%,
-/// never 100% (research §16: the first-party Go route reports 0–100
-/// percents, not fractions).
 fn opencode_window_percent(window: &serde_json::Value) -> Option<f64> {
     window
         .get("percent")
@@ -187,9 +166,6 @@ fn opencode_window_percent(window: &serde_json::Value) -> Option<f64> {
         })
 }
 
-/// Tolerant reset resolution: ISO `resetsAt` / `resetAt` / `reset_at` /
-/// `resets_at`, then `now + resetInSec` variants. Monthly anchors the
-/// subscription anniversary — no duration is invented here.
 fn opencode_window_reset(window: &serde_json::Value, now: i64) -> Option<i64> {
     window
         .get("resetsAt")
@@ -244,9 +220,6 @@ pub fn parse_opencode_usage(value: serde_json::Value, now: i64) -> Result<OpenCo
         }
         let reset_at = opencode_window_reset(window, now)
             .ok_or_else(|| format!("OpenCode {label} reset timestamp is invalid"))?;
-        // Over-cap is a valid reading, not a schema error: the raw figure
-        // stays in the label (`101% used`) while only the bar clamps to 0
-        // remaining (T02). One over-cap window must never fail the others.
         #[expect(
             clippy::cast_sign_loss,
             reason = "floored at 0.0 and clamped to 100.0 before cast"
@@ -270,8 +243,6 @@ pub fn parse_opencode_usage(value: serde_json::Value, now: i64) -> Result<OpenCo
     })
 }
 
-/// Over-cap label preserving the raw provider figure (`101% used`) — the
-/// Muse/Codex lanes render the same form.
 fn opencode_used_label(used_percent: f64) -> String {
     if used_percent.fract() == 0.0 {
         format!("{used_percent:.0}% used")

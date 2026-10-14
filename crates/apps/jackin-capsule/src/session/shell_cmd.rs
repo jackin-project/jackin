@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Shell command construction and capability env sanitation.
 
 use super::EXPLICIT_CAPABILITY_ENV_NAMES;
 #[cfg(not(test))]
@@ -9,9 +8,6 @@ use std::path::Path;
 
 use portable_pty::CommandBuilder;
 
-/// Build a `CommandBuilder` for an interactive shell session.
-///
-/// See `build_agent_command` for the `cwd` rationale.
 #[must_use]
 pub fn build_shell_command(
     env_passthrough: &[(String, String)],
@@ -25,10 +21,6 @@ pub fn build_shell_command(
     for name in jackin_core::account_env_names() {
         cmd.env_remove(name);
     }
-    // Shells have no instance home: restore the daemon's container `HOME`
-    // (`/home/agent`, container-controlled rather than operator-controlled)
-    // so the shell and its tools resolve the shared container home instead
-    // of running with no home at all.
     if let Ok(home) = std::env::var("HOME") {
         cmd.env("HOME", home);
     }
@@ -54,9 +46,6 @@ pub(crate) fn remove_ambient_capability_env(cmd: &mut CommandBuilder) {
     }
 }
 
-/// Build the internal root-supervisor wrapper command. The wrapper validates
-/// the identity against the launch config, installs Landlock, drops to the
-/// slot UID, and only then executes the requested program.
 pub(crate) fn isolated_command(
     identity: jackin_protocol::SessionIdentity,
     instance: Option<&str>,
@@ -64,9 +53,6 @@ pub(crate) fn isolated_command(
 ) -> CommandBuilder {
     #[cfg(test)]
     {
-        // Session unit tests run on the host, where the container-only capsule
-        // binary and entrypoint paths do not exist. The production path below
-        // is exercised by the dedicated process-isolation boundary tests.
         let _ = (identity, instance);
         CommandBuilder::new(program)
     }
@@ -78,10 +64,6 @@ pub(crate) fn isolated_command(
     }
 }
 
-/// Exact argv passed to the capsule root supervisor for one session. Kept
-/// pure so tests can prove the admitted identity is actually wired into the
-/// production spawn command even though host-side PTY tests bypass the
-/// container-only wrapper.
 pub(crate) fn isolated_wrapper_args(
     identity: jackin_protocol::SessionIdentity,
     instance: Option<&str>,
@@ -106,13 +88,6 @@ pub(crate) fn shell_executable() -> std::ffi::OsString {
     "/bin/sh".into()
 }
 
-/// Apply the stable pane terminal environment. The active outer terminal is
-/// reported per attach through the Capsule protocol; pane PTYs keep a
-/// conservative baseline so a running session can be reattached from Ghostty,
-/// Kitty, iTerm, Warp, or any other xterm-compatible client without retaining
-/// assumptions from the terminal that launched the container. `COLORTERM`
-/// intentionally advertises jackin❯'s 24-bit color path without tying the pane
-/// to a host-specific terminfo entry.
 pub(crate) fn apply_terminal_env(cmd: &mut CommandBuilder) {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -123,8 +98,6 @@ pub(crate) fn apply_terminal_env(cmd: &mut CommandBuilder) {
     }
 }
 
-/// Inject only the account selected for this pane — the env of one instance
-/// config ID — after ambient credentials were stripped.
 pub(crate) fn apply_account_env(
     command: &mut CommandBuilder,
     instance: &str,
@@ -145,14 +118,6 @@ pub(crate) fn apply_account_env(
         else {
             return;
         };
-        // `config::validate_agent_credentials` is the authoritative launch
-        // gate. Keep the same closed agent policy here as a second boundary
-        // so a hand-built credential envelope cannot inject a foreign
-        // provider key even if it bypasses config loading.
-        // NOTE: this capsule-side surface string (credential routing) is a
-        // different concept from the usage-side `provider_surface()`
-        // (quota/discovery ownership); both derive from
-        // `HostSurfaceId::from_provider_alias`, so they compose.
         if entry.agent != command_agent {
             return;
         }

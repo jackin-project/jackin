@@ -1,23 +1,3 @@
-//! Workspace dependency-direction check — tier-graph model.
-//!
-//! Every workspace member has a declared tier (`TIERS`); production edges
-//! must point at a
-//! *strictly lower* tier, so a new crate gets a rule automatically by
-//! appearing in `TIERS`. Dev-dependencies may point anywhere except into
-//! a production+dev cycle (tracked by `DEV_CYCLE_ALLOWLIST` with
-//! shrink-only stale-row enforcement). An explicit DFS cycle check over
-//! production edges fails first when the graph is not a DAG.
-//!
-//! Tiers are graph-derived longest-path depths (2026-07-09, refreshed
-//! when `jackin-test-support` landed). Re-derive with
-//! `cargo xtask lint arch --dump` before renumbering.
-//!
-//! ```sh
-//! cargo xtask lint arch
-//! cargo xtask lint arch --strict
-//! cargo xtask lint arch --dump
-//! ```
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
@@ -26,13 +6,6 @@ use clap::Args;
 use crate::docs::repo_root;
 use crate::report::{self, FormatArgs};
 
-/// Architecture tiers. Lower = more foundational. A production dependency
-/// must point at a strictly lower tier; dev-dependencies may point anywhere
-/// except into a production+dev cycle. Derived from the measured dependency
-/// graph; `lint arch --dump` prints the live graph.
-///
-/// `pub(crate)` so the headers gate (plan 016) can cross-check crate
-/// ownership headers against this table.
 pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin-core", 0),
     ("jackin-telemetry", 0),
@@ -183,26 +156,14 @@ pub(crate) const TIERS: &[(&str, u8)] = &[
     ("jackin", 9),
 ];
 
-/// Grandfathered production+dev cycles. Each entry is a dev-edge
-/// `(from, to)` that closes a cycle with production edges and is allowed
-/// until the underlying debt is fixed. Stale rows (cycle no longer
-/// present) fail the gate and must be removed.
-///
-/// Empty after plan 025 moved fakes into `jackin-test-support` (the old
-/// `jackin-isolation → jackin-runtime` DEBT-devdep-cycle is gone).
 const DEV_CYCLE_ALLOWLIST: &[(&str, &str)] = &[];
 
 #[derive(Args, Debug)]
 pub(crate) struct LintArchArgs {
     #[command(flatten)]
     output: FormatArgs,
-    /// Print the parsed dep graph (with tier annotations) without checking
-    /// the rules. Useful for debugging the gate and re-deriving `TIERS`.
     #[arg(long)]
     dump: bool,
-    /// Fail on violations. Without this flag the gate prints violations
-    /// but exits 0 (legacy informational mode). Umbrella `lint --strict`
-    /// and CI pass `--strict`.
     #[arg(long)]
     strict: bool,
 }
@@ -217,8 +178,6 @@ fn emit(line: &str) {
     }
 }
 
-/// Run the dependency-direction gate. `strict` fails on violations;
-/// non-strict reports and exits 0. The umbrella `cargo xtask lint` uses this.
 pub(crate) fn check(strict: bool) -> Result<()> {
     run(LintArchArgs {
         output: FormatArgs::default(),
@@ -241,9 +200,7 @@ pub(crate) fn run(args: LintArchArgs) -> Result<()> {
 
 fn run_inner(args: LintArchArgs) -> Result<()> {
     let root = repo_root()?;
-    // Turso sole-owner is an architecture boundary (roadmap item 8).
     crate::container_paths_gate::check_turso_sole_owner(&root)?;
-    // Plan 019: env-pilot curated `pub mod` surface (grows as crates narrow).
     crate::ratchet::check_curated_pub_mods(&root)?;
     check_tui_ownership(&root)?;
     let metadata = read_metadata(&root)?;
@@ -277,7 +234,6 @@ fn run_inner(args: LintArchArgs) -> Result<()> {
             if d.kind.as_deref() == Some("dev") {
                 dev.insert(d.name.clone());
             } else {
-                // Keep normal + build deps under the production rule.
                 prod.insert(d.name.clone());
             }
         }
@@ -441,10 +397,6 @@ fn check_rust_tree_excludes(
     Ok(())
 }
 
-/// Pure rule evaluation. Extracted so unit tests need no cargo invocation.
-///
-/// Returns a sorted list of problem strings. Each failure message names the
-/// fix instruction so agents can act without reading the gate source.
 pub(crate) fn evaluate(
     tiers: &BTreeMap<&str, u8>,
     prod_edges: &BTreeMap<String, BTreeSet<String>>,
@@ -454,7 +406,6 @@ pub(crate) fn evaluate(
 ) -> Vec<String> {
     let mut problems = Vec::new();
 
-    // 1. Completeness — every workspace member must appear in TIERS.
     for name in members {
         if !tiers.contains_key(name.as_str()) {
             problems.push(format!(
@@ -463,8 +414,6 @@ pub(crate) fn evaluate(
         }
     }
 
-    // 4. Cycle check over production edges (fires before tier-order so a
-    // cycle is reported with a path rather than a cascade of tier fails).
     if let Some(cycle_path) = find_prod_cycle(prod_edges) {
         problems.push(format!(
             "production dependency cycle: {} — production graph must be a DAG; break one of these edges",
@@ -472,10 +421,9 @@ pub(crate) fn evaluate(
         ));
     }
 
-    // 2. Production rule: tier(to) < tier(from).
     for (from, tos) in prod_edges {
         let Some(&from_tier) = tiers.get(from.as_str()) else {
-            continue; // already reported as missing-tier
+            continue;
         };
         for to in tos {
             let Some(&to_tier) = tiers.get(to.as_str()) else {
@@ -489,8 +437,6 @@ pub(crate) fn evaluate(
         }
     }
 
-    // 3. Dev rule: allow upward, but fail on prod+dev cycles not allowlisted.
-    // Also fail on stale allowlist rows (cycle no longer present).
     let mut active_dev_cycles: BTreeSet<(&str, &str)> = BTreeSet::new();
     for (from, tos) in dev_edges {
         for to in tos {
@@ -521,7 +467,6 @@ pub(crate) fn evaluate(
     problems
 }
 
-/// DFS cycle detection over production edges. Returns one cycle path if found.
 fn find_prod_cycle(prod_edges: &BTreeMap<String, BTreeSet<String>>) -> Option<Vec<String>> {
     #[derive(Clone, Copy, PartialEq)]
     enum Color {
@@ -593,7 +538,6 @@ fn find_prod_cycle(prod_edges: &BTreeMap<String, BTreeSet<String>>) -> Option<Ve
     None
 }
 
-/// Whether a directed path exists from `start` to `end` over production edges.
 fn prod_path_exists(
     prod_edges: &BTreeMap<String, BTreeSet<String>>,
     start: &str,
@@ -620,9 +564,6 @@ fn prod_path_exists(
     false
 }
 
-/// Minimal `cargo metadata` v1 schema. Avoids pulling the `cargo_metadata`
-/// crate (which has a wider API surface than we need). We pluck only the
-/// fields we read; serde ignores the rest.
 #[derive(serde::Deserialize)]
 struct Metadata {
     packages: Vec<Package>,

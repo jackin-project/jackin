@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Refresh request methods.
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::TrySendError;
@@ -17,7 +16,6 @@ use super::{
 };
 
 impl UsageCoordinator {
-    /// Read current state without dispatching provider work.
     pub fn current(
         &self,
         capability: &UsageAccountCapability,
@@ -37,13 +35,9 @@ impl UsageCoordinator {
             .accounts
             .get(capability)
             .ok_or_else(unavailable_error)?;
-        // Revocation clears all materialized provider data before a read can
-        // observe the account, while retaining only its non-sensitive status.
         Ok(generation_view(&entry.envelope))
     }
 
-    /// Start or join one generation. A stale observed generation always adopts
-    /// the winner and cannot queue a second force refresh.
     pub fn request_refresh(
         &self,
         capability: &UsageAccountCapability,
@@ -54,9 +48,6 @@ impl UsageCoordinator {
         self.request_refresh_with_scope(capability, observed_generation, force, now_epoch, None)
     }
 
-    /// Start one refresh whose provider work must use the supplied immutable
-    /// launch source proof. The proof travels with the generation job so a
-    /// later sibling binding cannot authorize a different refresh authority.
     pub fn request_refresh_scoped(
         &self,
         capability: &UsageAccountCapability,
@@ -183,7 +174,6 @@ impl UsageCoordinator {
         }
     }
 
-    /// Issue one request per unique canonical account.
     pub fn request_refresh_all(
         &self,
         requests: impl IntoIterator<Item = (UsageAccountCapability, u64)>,
@@ -199,9 +189,6 @@ impl UsageCoordinator {
             .collect()
     }
 
-    /// Select the periodic cadence tier for one account. A due account stays
-    /// due; otherwise the next poll moves earlier when the new cadence is
-    /// shorter. Never dispatches provider work.
     pub fn set_activity(
         &self,
         capability: &UsageAccountCapability,

@@ -84,9 +84,6 @@ fn hello_without_capability_override_tail_is_rejected() {
 
 #[test]
 fn hello_env_value_over_cap_rejected_by_encoder() {
-    // Encoder gate must reject a single env value larger than
-    // MAX_HELLO_ENV_VALUE so a buggy producer cannot smuggle a
-    // megabyte-sized env entry past MAX_HELLO_ENV.
     let big = "v".repeat(MAX_HELLO_ENV_VALUE + 1);
     let err = encode_client(ClientFrame::Hello {
         rows: 24,
@@ -105,21 +102,16 @@ fn hello_env_value_over_cap_rejected_by_encoder() {
 
 #[test]
 fn hello_env_value_over_cap_rejected_by_decoder() {
-    // Wire-level counterpart: a hand-crafted payload claiming
-    // value_len > MAX_HELLO_ENV_VALUE must be rejected before
-    // any read_string allocates the actual bytes.
     let mut payload = Vec::new();
-    payload.extend_from_slice(&24u16.to_be_bytes()); // rows
-    payload.extend_from_slice(&80u16.to_be_bytes()); // cols
-    payload.push(0u8); // spawn_kind = None
-    payload.extend_from_slice(&0u16.to_be_bytes()); // agent_len = 0
-    payload.extend_from_slice(&1u16.to_be_bytes()); // env_count = 1
-    payload.extend_from_slice(&3u16.to_be_bytes()); // key_len = 3
+    payload.extend_from_slice(&24u16.to_be_bytes());
+    payload.extend_from_slice(&80u16.to_be_bytes());
+    payload.push(0u8);
+    payload.extend_from_slice(&0u16.to_be_bytes());
+    payload.extend_from_slice(&1u16.to_be_bytes());
+    payload.extend_from_slice(&3u16.to_be_bytes());
     let bogus_value_len = u32::try_from(MAX_HELLO_ENV_VALUE + 1).expect("fits u32");
     payload.extend_from_slice(&bogus_value_len.to_be_bytes());
     payload.extend_from_slice(b"PWD");
-    // No need to supply the value bytes; the cap check fires before
-    // read_string reaches into the buffer.
     let err = decode_client(TAG_HELLO, payload)
         .expect_err("over-cap env value length must be rejected at decode");
     let msg = format!("{err:#}");
@@ -155,9 +147,6 @@ fn read_client_frame_eof_after_tag_returns_none() {
         .unwrap();
     runtime.block_on(async {
         let (mut a, mut b) = UnixStream::pair().unwrap();
-        // Tag is treated as already-peeked; write nothing else, then
-        // close. The reader should hit EOF inside the length read
-        // and return Ok(None), not Err.
         a.shutdown().await.unwrap();
         drop(a);
         let result = read_client_frame(&mut b, TAG_INPUT).await.unwrap();
@@ -177,9 +166,6 @@ fn hello_rejects_unknown_color_presence_byte() {
         context: None,
     })
     .expect("hello encode");
-    // Both colors are None and precede the six capability override bytes and
-    // length-prefixed telemetry context.
-    // Corrupt the fg presence byte to an undefined discriminant.
     let mut payload = bytes[5..].to_vec();
     let context_wire_len = 2 + serde_json::to_vec(&None::<TelemetryContext>).unwrap().len();
     let fg_presence = payload.len() - 8 - context_wire_len;
@@ -190,7 +176,6 @@ fn hello_rejects_unknown_color_presence_byte() {
         "unexpected error: {err:#}"
     );
 
-    // Same body, bg label: bg is immediately before override bytes.
     let mut payload = bytes[5..].to_vec();
     let bg_presence = payload.len() - 7 - context_wire_len;
     payload[bg_presence] = 7;
@@ -203,14 +188,11 @@ fn hello_rejects_unknown_color_presence_byte() {
 
 #[test]
 fn decode_client_rejects_truncated_payloads_without_panic() {
-    // For every known client tag, a deliberately-too-short payload must not panic.
     for tag in 0u8..=40 {
-        // 0-byte and 1-byte payloads exercise the length-prefix / field readers.
         drop(decode_client(tag, Vec::new()));
         drop(decode_client(tag, vec![0x00]));
         drop(decode_client(tag, vec![0xFF, 0xFF, 0xFF, 0xFF]));
     }
-    // The point is no panic; reaching here is the assertion.
 }
 
 #[test]
@@ -220,7 +202,6 @@ fn decode_server_rejects_truncated_payloads_without_panic() {
         drop(decode_server(tag, vec![0x00]));
         drop(decode_server(tag, vec![0xFF, 0xFF, 0xFF, 0xFF]));
     }
-    // Server tags live in the 0x80+ range; cover those too.
     for tag in 0x80u8..=0x8f {
         drop(decode_server(tag, Vec::new()));
         drop(decode_server(tag, vec![0x00]));
@@ -230,18 +211,13 @@ fn decode_server_rejects_truncated_payloads_without_panic() {
 
 #[test]
 fn decode_rejects_unknown_tags() {
-    // 0xFE is not a defined client or server frame tag.
     decode_client(0xFE, Vec::new()).unwrap_err();
     decode_server(0xFE, Vec::new()).unwrap_err();
 }
 
 #[test]
 fn truncated_valid_frame_fails_closed() {
-    // Welcome requires a 4-byte body; lopping a byte off a valid encoding
-    // must fail closed (Err), never panic. TAG_OUTPUT would tolerate a
-    // shorter body by design, so Welcome is the load-bearing case.
     let frame = encode_server(ServerFrame::Welcome { session_count: 7 });
-    // frame = [tag, len(4 bytes BE), body…]
     let tag = frame[0];
     assert!(frame.len() > 5, "encoded welcome must carry a body");
     let body = &frame[5..frame.len() - 1];
@@ -300,7 +276,6 @@ fn clipboard_image_error_variants_roundtrip() {
         match decoded {
             ClientFrame::ClipboardImageError(got) => {
                 assert_eq!(got.reason_code(), original.reason_code());
-                // Other preserves the free-form message; static kinds use canonical text.
                 if matches!(original, ClipboardImageError::Other(_)) {
                     assert_eq!(got, original);
                 } else {

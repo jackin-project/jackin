@@ -1,9 +1,3 @@
-//! Minimal host-daemon lifecycle foundation.
-//!
-//! This module intentionally owns only the empty daemon shell: socket binding,
-//! request/response framing, status, and shutdown. Reactive adapters are added
-//! by later plans.
-
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};

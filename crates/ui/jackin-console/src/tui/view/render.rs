@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Top-level console frame rendering.
 
 use super::{
     ConsoleMainFramePlan, ConsoleModalRenderPlan, console_main_frame_plan,
@@ -70,8 +69,6 @@ pub fn render(
     }
 
     if has_modal_overlay(state) {
-        // The backdrop must not cover the reserved footer — hints stay visible
-        // there (the footer is inviolable).
         let footer_h = reserved_footer_height(state, config, area);
         render_modal_backdrop(frame, modal_backdrop_area(area, footer_h));
     }
@@ -102,8 +99,6 @@ pub fn render(
                 ..
             } = &state.stage
             {
-                // ConfirmState is a top-level field on the variant, not wrapped
-                // in Modal::Confirm, so render it directly.
                 let modal_area = delete_confirm_area(area);
                 crate::tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
@@ -114,8 +109,6 @@ pub fn render(
                 ..
             } = &state.stage
             {
-                // The two-line prompt is taller than ConfirmDelete's
-                // single line, so allocate more rows for the modal.
                 let modal_area = purge_confirm_area(area);
                 crate::tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
@@ -168,9 +161,6 @@ pub fn render(
     }
 
     if let Some(help) = &state.keyboard_help {
-        // The help overlay never coexists with another modal (input dispatch
-        // precedence), so it draws its own backdrop here rather than widening
-        // `has_modal_overlay`.
         let footer_h = reserved_footer_height(state, config, area);
         render_modal_backdrop(frame, modal_backdrop_area(area, footer_h));
         let system = termrock::style::DesignSystem::default();

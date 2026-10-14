@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Dialog hint-span builders.
 
 use termrock::widgets::HintSpan;
 

@@ -9,7 +9,6 @@ fn unterminated_osc_does_not_grow_unbounded() {
     parser.parse(b"\x1b]52;c;");
     let junk = vec![b'A'; MAX_ESC_SEQ_LEN + 256];
     parser.parse(&junk);
-    // Cap fires; a fresh sequence resyncs.
     let events = parser.parse(b"\x1b[A");
     assert_eq!(events, vec![InputEvent::Data(b"\x1b[A".to_vec())]);
 }

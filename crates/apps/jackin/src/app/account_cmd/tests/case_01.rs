@@ -7,9 +7,6 @@ use super::*;
 fn fresh_config_scan_reports_startup_imports_and_rescan_reports_zero() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    // Discoverable evidence BEFORE the first load, so startup bootstrap
-    // imports it (the ambient process env may import more — the test only
-    // requires the fixture import to be reported).
     let claude_dir = paths.home_dir.join(".claude");
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(
@@ -18,7 +15,6 @@ fn fresh_config_scan_reports_startup_imports_and_rescan_reports_zero() {
     )
     .unwrap();
 
-    // First process lifetime: fresh load imports, scan reports them.
     let (_config, startup) = AppConfig::load_or_init_detailed(&paths).unwrap();
     assert!(startup.fresh_install);
     assert!(
@@ -32,7 +28,6 @@ fn fresh_config_scan_reports_startup_imports_and_rescan_reports_zero() {
         "fresh-config scan must report the startup import, got {first}"
     );
 
-    // Second process lifetime: steady state, nothing new anywhere.
     let (_config, startup) = AppConfig::load_or_init_detailed(&paths).unwrap();
     assert!(startup.added.is_empty());
     let second = scan(&paths, &startup).unwrap();
@@ -117,7 +112,6 @@ fn scan_reference_variable_prints_only_validated_references() {
             model: None,
         },
     };
-    // 1Password item IDs never reach operator output.
     assert_eq!(scan_reference_variable(&op_ref), None);
 }
 
@@ -139,7 +133,6 @@ fn scan_imports_discovered_profiles_once_with_bootstrap_naming() {
     let config = AppConfig::load_or_init(&paths).unwrap();
     assert_eq!(config.accounts["default-claude"].name, "Claude default");
 
-    // Second scan dedupes: no suffixed clones.
     handle(AccountCommand::Scan, &config, &paths, &startup_bootstrap()).unwrap();
     let config = AppConfig::load_or_init(&paths).unwrap();
     assert!(

@@ -1,26 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! The only writer to the attach socket.
-//!
-//! Every byte that reaches the attached client flows through this type:
-//! composed frames via [`ClientWriter::write_frame`] (wrapped in `?2026`
-//! synchronized-output brackets so the outer terminal applies them
-//! atomically), and out-of-band sequences — OSC passthrough, clipboard
-//! writes, pointer shapes, window titles, mode prefaces — via
-//! [`ClientWriter::enqueue_out_of_band`], which buffers them and flushes only
-//! at frame boundaries, never mid-frame. Protocol frames (`Welcome`,
-//! `Shutdown`) go through [`ClientWriter::send_frame`]. Nothing else may hold
-//! the socket sender; the interleaving class of stale-cell defects is gone by
-//! construction (invariants I2 and I3 of the capsule rendering plan).
-
 use tokio::sync::mpsc;
 
 use crate::protocol::attach::{ServerFrame, encode_server};
 
-/// Begin synchronized update — the outer terminal buffers everything until
-/// the matching end so the frame applies atomically. Terminals that do not
-/// support mode 2026 ignore both markers by spec.
 const SYNC_BEGIN: &[u8] = b"\x1b[?2026h";
 const SYNC_END: &[u8] = b"\x1b[?2026l";
 
@@ -28,14 +12,10 @@ const SYNC_END: &[u8] = b"\x1b[?2026l";
 pub(crate) struct ClientWriter {
     tx: Option<mpsc::UnboundedSender<Vec<u8>>>,
     completion_tx: Option<mpsc::UnboundedSender<crate::attach_protocol::AttachResponseCompletion>>,
-    /// Sequences waiting for the next frame boundary.
     out_of_band: Vec<Vec<u8>>,
 }
 
 impl ClientWriter {
-    /// Wire a freshly attached client. Clears the dead-send latch; queued
-    /// out-of-band bytes from the previous client are dropped — they were
-    /// addressed to a terminal that no longer exists.
     pub(crate) fn attach(&mut self, tx: mpsc::UnboundedSender<Vec<u8>>) {
         self.tx = Some(tx);
         self.completion_tx = None;
@@ -51,8 +31,6 @@ impl ClientWriter {
         self.completion_tx = Some(completion_tx);
     }
 
-    /// Drop the sender, returning it so detach paths can send their final
-    /// `Shutdown` on a writer-free channel.
     pub(crate) fn take(&mut self) -> Option<mpsc::UnboundedSender<Vec<u8>>> {
         self.out_of_band.clear();
         self.completion_tx = None;
@@ -67,7 +45,6 @@ impl ClientWriter {
         !self.out_of_band.is_empty()
     }
 
-    /// Queue bytes that are not cell content for the next frame boundary.
     pub(crate) fn enqueue_out_of_band(&mut self, bytes: Vec<u8>) {
         if bytes.is_empty() {
             return;
@@ -75,9 +52,6 @@ impl ClientWriter {
         self.out_of_band.push(bytes);
     }
 
-    /// Send a composed frame: queued out-of-band bytes first, then the frame
-    /// wrapped in `?2026` brackets, all in one socket write so nothing can
-    /// interleave. An empty frame degenerates to an out-of-band flush.
     pub(crate) fn write_frame(&mut self, frame: Vec<u8>) {
         if frame.is_empty() {
             self.flush_out_of_band();
@@ -99,7 +73,6 @@ impl ClientWriter {
         self.send_encoded(encode_server(ServerFrame::Output(buf)));
     }
 
-    /// Flush queued out-of-band bytes without a frame.
     pub(crate) fn flush_out_of_band(&mut self) {
         if self.out_of_band.is_empty() {
             return;
@@ -112,8 +85,6 @@ impl ClientWriter {
         self.send_encoded(encode_server(ServerFrame::Output(buf)));
     }
 
-    /// Send a non-terminal protocol frame. Pending out-of-band terminal bytes
-    /// flush first so OSC/mode side effects keep their original ordering.
     pub(crate) fn send_protocol_frame(&mut self, frame: ServerFrame) {
         self.flush_out_of_band();
         self.send_encoded(encode_server(frame));
@@ -150,8 +121,6 @@ impl ClientWriter {
     }
 
     fn log_emission(bytes: &[u8]) {
-        // Metrics always; detail scan is a single linear pass (acceptable on
-        // the emit path — render_allocation budgets cover this).
         let metrics = scan_emitted_frame(bytes);
         jackin_diagnostics::record_frame(
             metrics.bytes as u64,
@@ -164,8 +133,6 @@ impl ClientWriter {
 #[cfg(test)]
 mod tests;
 
-/// Emitted-byte counters used to catch render regressions now that Ratatui's
-/// diff is no longer forced into a full repaint every frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct EmittedFrameMetrics {
     pub(crate) bytes: usize,
@@ -180,9 +147,6 @@ pub(crate) struct EmittedFrameMetrics {
     pub(crate) full_frame_repaint: bool,
 }
 
-/// Scan an emitted frame for the diagnostic fingerprint a render bug leaves.
-/// The scan is over our own trusted output, so the few lines of hand parsing
-/// are cheaper than a dependency.
 pub(crate) fn scan_emitted_frame(bytes: &[u8]) -> EmittedFrameMetrics {
     scan_emitted_frame_with_geometry(bytes, None)
 }
@@ -267,10 +231,6 @@ pub(crate) fn scan_emitted_frame_with_geometry(
                 continue;
             }
         } else if matches!(bytes[i], 0x20..=0x7e) {
-            // Printable ASCII only: a cheap repaint-density proxy, not an exact
-            // cell count. Multi-byte glyphs (CJK/emoji/box-drawing borders) are
-            // not counted, so `full_frame_repaint` is a heuristic — it can read
-            // false on a glyph-heavy full repaint.
             metrics.painted_cells += 1;
         }
         i += 1;

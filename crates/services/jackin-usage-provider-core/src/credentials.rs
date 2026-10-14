@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential selection and identity resolution.
 
 use std::fs;
 
@@ -9,16 +8,6 @@ use std::path::{Path, PathBuf};
 use jackin_core::UsageCredentialOwner;
 use jackin_telemetry::ResultTelemetryExt as _;
 
-/// Resolve a credential from an ordered candidate list, returning the first path
-/// that yields a usable value via `load` together with that winning path. Used
-/// by Amp for its single file credential; the home-first / handoff-last ordering
-/// it encodes — the agent's own home location(s) first (the live source of truth
-/// the agent reads and refreshes), then the runtime-forwarded `/jackin/<provider>/`
-/// handoff as the last-resort fallback — is the same ordering `resolve_identity`
-/// applies for the dual-concern providers (Claude, Codex), so credential order is
-/// uniform across providers. The winning path is returned so the `Auth:` origin
-/// can name the file that actually produced the credential instead of re-`stat`ing
-/// and guessing.
 pub fn first_credential_with_path<T>(
     paths: &[PathBuf],
     load: impl Fn(&Path) -> Option<T>,
@@ -32,8 +21,6 @@ pub fn first_credential<T>(paths: &[PathBuf], load: impl Fn(&Path) -> Option<T>)
     first_credential_with_path(paths, load).map(|(_, value)| value)
 }
 
-/// Read and parse a JSON credential/config file, distinguishing expected
-/// absence from a present-but-broken typed telemetry error.
 pub fn read_json_file(path: &Path) -> Option<serde_json::Value> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
@@ -47,11 +34,6 @@ pub fn read_json_file(path: &Path) -> Option<serde_json::Value> {
         .ok()
 }
 
-/// Resolve a provider credential (with the winning path, for the `Auth:`
-/// origin) and its account label in one home-first walk, reading and parsing
-/// each candidate file at most once. `extract_credential` pulls the token from a
-/// parsed file; `extract_label` pulls the account email/label. The walk stops as
-/// soon as both are found, so a later candidate never re-reads a resolved file.
 pub fn resolve_identity<T>(
     candidates: &[PathBuf],
     extract_credential: impl Fn(&serde_json::Value) -> Option<T>,
@@ -64,8 +46,6 @@ pub fn resolve_identity<T>(
     (result, label)
 }
 
-/// Like `resolve_identity` but also extracts a third field in the same walk,
-/// avoiding a second pass over the candidate files.
 pub fn resolve_identity_with_extra<T>(
     candidates: &[PathBuf],
     extract_credential: impl Fn(&serde_json::Value) -> Option<T>,
@@ -97,7 +77,6 @@ pub fn resolve_identity_with_extra<T>(
     (credential, label, extra)
 }
 
-/// Canonical provider usage key for one credential owner.
 pub fn canonical_usage_key(owner: UsageCredentialOwner) -> &'static str {
     match owner {
         UsageCredentialOwner::Claude => jackin_core::ANTHROPIC_API_KEY_ENV_NAME,
@@ -115,10 +94,6 @@ pub fn canonical_usage_key(owner: UsageCredentialOwner) -> &'static str {
     }
 }
 
-/// Normalize launch aliases to the provider route that controls refresh
-/// semantics. API-key aliases share their owner's route; OAuth and Grok
-/// deployment credentials remain distinct because the provider adapter treats
-/// them differently.
 pub fn dispatch_key_for_route(owner: UsageCredentialOwner, governed_name: &str) -> &'static str {
     match owner {
         UsageCredentialOwner::Claude

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings env modal openers.
 
 use crate::tui::screens::settings::update as settings_update;
 

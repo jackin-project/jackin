@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Role load pipeline: public entry points and the full launch-to-attach sequence.
-
 use crate::instance::{InstanceManifest, InstanceStatus, RoleState};
 use jackin_config::AppConfig;
 use jackin_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
@@ -200,8 +198,6 @@ async fn await_operator_env(
     }
 }
 
-// Public launch boundary: exactly one launch operation owns all restore and
-// rebuild recursion performed by `load_role_inner`.
 pub fn load_role<'a>(
     paths: &'a JackinPaths,
     config: &'a mut AppConfig,
@@ -226,10 +222,6 @@ pub fn load_role<'a>(
 
     Box::pin(
         async move {
-            // Programmatic launches are validated at the public boundary: every
-            // decision the interactive path would prompt for must already be
-            // supplied, and a missing one fails here rather than reaching a
-            // dialog the caller has no terminal for.
             let result = match opts.validate_programmatic(config, selector) {
                 Ok(()) => {
                     let merged = with_extra_mounts(workspace, &opts.extra_mounts);
@@ -258,10 +250,6 @@ pub fn load_role<'a>(
     )
 }
 
-/// Append a programmatic launch's ad-hoc mounts to the resolved workspace.
-///
-/// Returns `None` when there is nothing to add, so an interactive launch keeps
-/// using the workspace it was handed rather than a clone of it.
 fn with_extra_mounts(
     workspace: &jackin_config::ResolvedWorkspace,
     extra: &[jackin_config::MountConfig],
@@ -271,16 +259,12 @@ fn with_extra_mounts(
     }
     let mut merged = workspace.clone();
     for mount in extra {
-        // Last writer wins on a destination collision, matching the CLI's
-        // `--mount` override of a saved workspace mount.
         merged.mounts.retain(|existing| existing.dst != mount.dst);
         merged.mounts.push(mount.clone());
     }
     Some(merged)
 }
 
-// Boxed internal future permits related-role rebuild recursion without
-// reopening the public launch telemetry boundary.
 fn load_role_inner<'a>(
     paths: &'a JackinPaths,
     config: &'a mut AppConfig,
@@ -374,15 +358,8 @@ pub(super) async fn teardown_recreate_container(
     Ok(())
 }
 
-// Moved to jackin_runtime_launch_supported_agents::supported_agents (S7
-// split 96); the item re-export keeps every
-// `launch::resolve_supported_agents_for_console` path stable.
 pub use jackin_runtime_launch_supported_agents::supported_agents::resolve_supported_agents_for_console;
 
-/// Instrument the full launch pipeline so every stage appears as a child span
-/// in the governed trace and its events carry real `span_id` correlation.
-/// Prefix each validation error with its source tag (`config`/`workspace`/
-/// `role`/`merged`) for the operator-facing message.
 pub(super) fn tag_errors<E: std::fmt::Display>(tag: &str, errors: Vec<E>) -> Vec<String> {
     errors
         .into_iter()
@@ -390,7 +367,6 @@ pub(super) fn tag_errors<E: std::fmt::Display>(tag: &str, errors: Vec<E>) -> Vec
         .collect()
 }
 
-/// Validate one source's docker grants, tagged for the operator-facing message.
 pub(super) fn tagged_grant_errors(
     tag: &str,
     grants: &crate::runtime::docker_profile::DockerGrants,
@@ -398,8 +374,6 @@ pub(super) fn tagged_grant_errors(
     tag_errors(tag, crate::runtime::docker_profile::validate_grants(grants))
 }
 
-/// Bail with the standard "docker grants validation failed" message when any
-/// tagged errors were collected; no-op otherwise.
 pub(super) fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
     if errors.is_empty() {
         return Ok(());
@@ -722,14 +696,6 @@ fn mark_construct_ready(steps: &mut super::StepCounter) {
     steps.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
 }
 
-/// Auth mode for the launch breadcrumb only: per-instance modes are
-/// authoritative and resolve later in orchestrate.
-///
-/// A single-account selection resolves directly. When several accounts
-/// support the launch agent (a multi-instance launch), no single account
-/// resolves, so the breadcrumb falls back to the launch agent's first
-/// admitted instance from [`jackin_config::resolve_launch`]. A launch
-/// that admits no instance for the agent reports `Ignore`.
 fn breadcrumb_auth_mode(
     config: &AppConfig,
     agent: jackin_core::Agent,
@@ -798,11 +764,6 @@ pub(crate) async fn load_role_with(
         .contains_key(workspace.name.as_str())
         .then(|| WorkspaceName::parse(&workspace.name))
         .transpose()?;
-    // NotFound is a new capsule under the saved name, so model and effort
-    // reach launch. Removing, Dead, and every live state still fail here:
-    // claim_known_container_name refuses a name that still exists, and an
-    // existing container cannot take a new model. validate_explicit_restore_options
-    // stays strict for that attach.
     if absent_container_can_apply_model_and_effort(docker, opts).await? {
         validate_absent_rebuild_restore_options(paths, opts)?;
     } else {
@@ -840,25 +801,17 @@ pub(crate) async fn load_role_with(
         .transpose()?;
     let config = account_config.as_mut().unwrap_or(config);
 
-    // Pre-launch garbage collection is independent from git identity probes.
     let ((), git) = tokio::join!(
         crate::runtime::cleanup::gc_orphaned_resources(paths, docker),
         crate::runtime::identity::load_git_identity(runner)
     );
 
-    // `app::run` claims the first-entry boundary immediately before a real
-    // launch so the two-screen intro only plays from an empty construct. Direct
-    // test/internal callers still need the elapsed-time marker for the last-exit
-    // outro, so this idempotently writes one if the app layer did not.
     crate::runtime::universe::mark_start(
         paths,
         crate::runtime::universe::StartKind::ResumeExisting,
     )
     .await;
 
-    // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
-    // not a name. Recover the name by matching workdir, mirroring the
-    // identification rule used by `jackin workspace show`.
     let workspace_name = config
         .workspaces
         .contains_key(workspace.name.as_str())
@@ -883,14 +836,7 @@ pub(crate) async fn load_role_with(
     let role_key = selector.key();
     let selected_agent_before_role = opts.agent.or(workspace.default_agent);
     let mut early_restore_agent = None;
-    // Typed early current-role scan (launch-speed 008c): reused later so the
-    // common path does not re-inspect current-role candidates.
     let mut early_current_scan = super::EarlyCurrentRestoreScan::NotRun;
-    // A launch option that changes runtime configuration must not take the
-    // attach/start/recreate fast paths. Those return before the option reaches
-    // the new capsule, silently reusing a role with different model, effort,
-    // account, image, environment, mount, or security settings. The same
-    // compatibility predicate guards the later restore decision below.
     let early_restore_container = if opts.restore_container_base.is_none()
         && current_role_reuse_is_compatible(opts)
     {
@@ -1044,10 +990,6 @@ pub(crate) async fn load_role_with(
                     None
                 }
                 None => {
-                    // Unselected scan found no single-agent hit. When the role
-                    // also has no is_restore_candidate manifests, stash
-                    // ScannedUnselectedEmpty so a later selected agent skips a
-                    // pure-waste current-role re-inspect (008c residual).
                     let role_empty = !super::restore::matching_current_role_manifests(
                         paths,
                         workspace_name.as_deref(),
@@ -1099,7 +1041,6 @@ pub(crate) async fn load_role_with(
         opts.restore_role_source_git.as_deref(),
     )?;
 
-    // Step 1: Resolve role identity (clone or update repo)
     steps.next("Resolving role identity").await?;
 
     let mut confirm_repo_removal = || confirm_cached_repo_removal(&mut steps);
@@ -1142,7 +1083,6 @@ pub(crate) async fn load_role_with(
         );
     })?;
 
-    // Trust gate: prompt the operator before running an untrusted third-party role
     let newly_trusted = ensure_role_trust(
         config,
         selector,
@@ -1151,9 +1091,6 @@ pub(crate) async fn load_role_with(
         confirm_trust_for_test,
     )?;
 
-    // Do not release the caller-bound lease until all pre-admission work has
-    // been checked. A direct writer may bypass the advisory lock; fail before
-    // handing the config tree to the trust writer in that case.
     initial_account_revision.ensure_current(paths)?;
     drop(initial_account_revision);
     let persisted_config = persist_new_role_trust(
@@ -1170,11 +1107,6 @@ pub(crate) async fn load_role_with(
             None,
         );
     }
-    // Reacquire against the exact persisted caller snapshot. The launch config
-    // may carry an ephemeral account/configuration selection, so bind to the
-    // preselection snapshot unless the trust editor returned the new persisted
-    // snapshot explicitly. An unbound acquire would accept a direct writer's
-    // intervening generation and continue with stale in-memory inputs.
     let persisted_snapshot = persisted_config.as_ref().unwrap_or(&admission_config);
     let account_revision =
         super::account_identity::AccountConfigRevision::acquire_bound(paths, persisted_snapshot)?;
@@ -1193,8 +1125,6 @@ pub(crate) async fn load_role_with(
     )?;
     super::validate_agent_supported(selector, &validated_repo.manifest, agent)?;
 
-    // Branch trust gate: fires even for already-trusted roles because the
-    // operator trusted the default branch, not this unreviewed PR branch.
     confirm_role_branch(
         opts.role_branch.as_deref(),
         selector,
@@ -1203,21 +1133,12 @@ pub(crate) async fn load_role_with(
         confirm_branch_for_test,
     )?;
 
-    // Pinned role SHA from the stored launch recipe (D7/Tier 3).  Set in the
-    // `RecreateCurrentRole` arm below when the manifest has a recorded SHA.
     let mut restore_pinned_sha: Option<String> = None;
     let restore_container = if early_restore_container.is_some() {
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
         Some(container.clone())
     } else if !current_role_reuse_is_compatible(opts) {
-        // The early scan was skipped because this launch carries an effective
-        // override (rebuild, selection, model, effort, profile, environment,
-        // or mount). Without this matching guard, candidate resolution could
-        // still return a current-role start/recreate decision and silently
-        // discard the caller's launch settings. Leave `restore_container`
-        // `None` so the normal pipeline applies them; container-name collision
-        // handling keeps an already-running session intact.
         None
     } else {
         let restore_candidate = super::resolve_restore_candidate_reusing_early(
@@ -1258,8 +1179,6 @@ pub(crate) async fn load_role_with(
             }
             super::RestoreResolution::RecreateCurrentRoleWithHandle(container_handle) => {
                 let container = container_handle.name().to_owned();
-                // D7: extract pinned recipe so Tier 3 rebuild uses the original
-                // role SHA rather than current HEAD of the cached repo.
                 let container_state = paths.data_dir.join(&container);
                 if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
                     restore_pinned_sha = stored.role_git_sha;
@@ -1269,8 +1188,6 @@ pub(crate) async fn load_role_with(
                 Some(container)
             }
             super::RestoreResolution::RecreateCurrentRole(container) => {
-                // D7: extract pinned recipe so Tier 3 rebuild uses the original
-                // role SHA rather than current HEAD of the cached repo.
                 let container_state = paths.data_dir.join(&container);
                 if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
                     restore_pinned_sha = stored.role_git_sha;
@@ -1279,7 +1196,6 @@ pub(crate) async fn load_role_with(
                 Some(container)
             }
             super::RestoreResolution::RestoreCurrentRole(container) => {
-                // D7: same pinned-SHA extraction as RecreateCurrentRole.
                 let container_state = paths.data_dir.join(&container);
                 if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
                     restore_pinned_sha = stored.role_git_sha;
@@ -1337,12 +1253,7 @@ pub(crate) async fn load_role_with(
                     }
                 }
             }
-            // D21: operator deleted a candidate from the launch dialog.
-            // Purge its state then fall through to StartFresh (None).
             super::RestoreResolution::PurgeAndRestartFresh(container) => {
-                // Best-effort: a failed purge leaves stale state the next prune
-                // reaps, but trace it so a delete-then-launch that didn't clean
-                // up is diagnosable rather than silent.
                 if let Err(_error) = crate::runtime::cleanup::purge_container_state(
                     paths, &container, docker, runner,
                 )
@@ -1356,8 +1267,6 @@ pub(crate) async fn load_role_with(
     };
 
     let mut git_pull_join: Option<DeferredGitPull> = None;
-    // D7: skip git pull when restoring — restore replays the pinned recipe;
-    // pulling would advance the role repo past the pinned SHA.
     if restore_container.is_none() && workspace.git_pull_on_entry {
         let sources = super::git_pull_sources(workspace);
         if sources.is_empty() {
@@ -1396,8 +1305,6 @@ pub(crate) async fn load_role_with(
                     print_results: false,
                 });
             } else {
-                // Run the blocking git pulls on a blocking-pool thread so the
-                // single-threaded executor is never parked on the join.
                 let debug = opts.debug;
                 let git_program = git_pull_program(opts);
                 let handle = jackin_telemetry::spawn::joined_blocking(move || {
@@ -1423,14 +1330,8 @@ pub(crate) async fn load_role_with(
             claim_container_name(paths, workspace_typed.as_ref(), selector, docker).await?
         }
     };
-    // The container base is the launch's identity: a programmatic caller waits
-    // for it, and it is locked here, before any further phase can fail.
     opts.record_launched_instance(&container_name);
 
-    // Preliminary panel name only. The authoritative, commit-tagged image name
-    // (`jk_<role>:<sha>`) is resolved in the image decision below, which is the
-    // single place that runs the role-SHA git capture — the launch path does not
-    // pay for an extra `git rev-parse` just to render the panel up front.
     let image_tag = opts.role_branch.as_deref().map_or_else(
         || image_name(selector, None),
         |b| image_name_for_branch(selector, b, None),
@@ -1451,14 +1352,8 @@ pub(crate) async fn load_role_with(
         "trusted source",
     );
 
-    // Generic operator values can resolve concurrently. Account credentials
-    // have their own per-agent resolver and never enter the container-wide env.
     let operator_env = defer_operator_env(config, selector, workspace_name.as_deref(), opts);
 
-    // Decide whether the selected image is already runnable before touching
-    // manifest/GitHub env. Operator-env reads are already running in the
-    // background so op:// latency can overlap local image verification and any
-    // build work that follows.
     let rebuild = opts.rebuild;
     mark_construct_ready(&mut steps);
     let repo_lock = Some(repo_lock);
@@ -1480,31 +1375,12 @@ pub(crate) async fn load_role_with(
         "resolving launch credentials",
     );
 
-    // Resolve operator env layers (global / role / workspace /
-    // workspace × role) before manifest env. Operator-provided values
-    // preseed matching manifest variables, so a configured value does
-    // not ask the operator the same question again.
-    //
-    // The operator env resolver takes two injection seams:
-    //   * `op_runner`  — resolves `op://...` references (production:
-    //     `OpCli::new()`; tests: a mock `OpRunner` constructed directly).
-    //   * `host_env`   — resolves `$NAME` / `${NAME}` references
-    //     (production: `|name| std::env::var(name).ok()`; tests: a
-    //     closure over a `BTreeMap` seeded by the test).
-    //
-    // Both seams are carried on `LoadOptions` as optional fields. When
-    // unset (the production default), `resolve_operator_env` is called,
-    // which wires in the real `OpCli` and the real host env. When set
-    // (tests only), `resolve_operator_env_with` is called with the
-    // supplied seams, so tests never need to mutate `std::env` and the
-    // crate-level `unsafe_code = "forbid"` lint stays intact.
     let auth_workspace = workspace_name
         .as_deref()
         .and_then(|n| WorkspaceName::parse(n).ok());
     let auth_mode = breadcrumb_auth_mode(config, agent, auth_workspace.as_ref(), &role_key)?;
     let operator_env = await_operator_env(operator_env).await?;
 
-    // Resolve env vars (interactive prompts happen here, before build)
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Credentials,
         "manifest_env",
@@ -1546,11 +1422,6 @@ pub(crate) async fn load_role_with(
         }
     };
 
-    // Overlay the operator env map on top of the manifest env: operator
-    // wins on conflicts (so a workspace-scoped `OPERATOR_TOKEN` overrides
-    // a manifest default, which is the whole point of letting operators
-    // supply env at launch time). Reserved names are filtered out in
-    // the docker-run construction below.
     let mut merged_vars: Vec<(String, String)> = manifest_resolved.vars;
     for (k, v) in &operator_env {
         if let Some(slot) = merged_vars.iter_mut().find(|(mk, _)| mk == k) {
@@ -1559,9 +1430,6 @@ pub(crate) async fn load_role_with(
             merged_vars.push((k.clone(), v.clone()));
         }
     }
-    // Programmatic env last: a caller that pre-supplied a value did so instead
-    // of answering a prompt, so it outranks both the manifest default and the
-    // operator layer (validation already rejected reserved names).
     for (k, v) in &opts.env {
         anyhow::ensure!(
             !jackin_env::is_account_env(k),
@@ -1575,21 +1443,11 @@ pub(crate) async fn load_role_with(
     }
     inject_workspace_mise_env(&mut merged_vars, workspace);
 
-    // On-demand credential bindings (jackin-exec). These were filtered out of
-    // launch-time resolution above (never `op read` at launch); here we surface
-    // only their NAMES to the agent via `JACKIN_EXEC_BINDINGS` — an
-    // always-available var the entrypoint turns into a system-prompt block. The
-    // full (name, kind, source) triples flow host-side to the credential
-    // resolver via `capsule_config.exec_bindings` below.
     let exec_ws = workspace_name
         .as_deref()
         .and_then(|n| WorkspaceName::parse(n).ok());
     let mut exec_bindings =
         jackin_env::collect_on_demand_bindings(config, Some(role_key.as_str()), exec_ws.as_ref());
-    // Pre-approved bindings from a programmatic caller stand in for the
-    // interactive credential picker, which is the only other way an on-demand
-    // binding is approved (D-082). A caller-supplied binding replaces the
-    // config-collected one of the same name.
     for binding in &opts.on_demand_bindings {
         anyhow::ensure!(
             !jackin_env::is_account_env(&binding.name),
@@ -1607,11 +1465,6 @@ pub(crate) async fn load_role_with(
     }
     let resolved_env = jackin_env::ResolvedEnv { vars: merged_vars };
 
-    // Launch-time diagnostic: emit a single compact line summarising
-    // the operator env that will be injected. In normal mode we show
-    // counts only ("3 refs resolved"); in --debug mode we show each
-    // key → layer/reference kind ("OPERATOR_TOKEN: op://Personal/...
-    // from workspace \"big-monorepo\"") — never values.
     if !operator_env.is_empty() {
         let diag_ws = workspace_name
             .as_deref()
@@ -1629,7 +1482,6 @@ pub(crate) async fn load_role_with(
         "resolved",
     );
 
-    // D7: capture recipe fields before image_decision is consumed by match below.
     let recipe_role_git_sha = image_decision.role_git_sha();
     let recipe_base_image_ref = image_decision.base_image_ref().map(ToOwned::to_owned);
 
@@ -1640,10 +1492,6 @@ pub(crate) async fn load_role_with(
         | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. } => None,
     };
 
-    // Validate the selected backend up front, before any container-lifecycle
-    // work (DinD sidecar, network, certs) runs — a config typo fails closed
-    // here instead of after paying for Docker provisioning. `Backend` is `Copy`,
-    // so the dispatch below reads the cached value.
     let backend = super::resolve_backend(config, workspace_name.as_deref())?;
 
     let load_result: anyhow::Result<String> =
@@ -1704,10 +1552,6 @@ pub(crate) async fn load_role_with(
                     stage: failed_stage,
                 })
                 .await;
-            // Stop the cockpit render task and release the rich surface before
-            // the exit warp writes to the terminal. A pre-attach failure returns
-            // before the success path's pre-handoff teardown runs, so without
-            // this the background task keeps drawing frames over the warp.
             steps.finish_progress();
             super::render_exit(paths, docker).await;
             Err(final_error)
@@ -1715,10 +1559,6 @@ pub(crate) async fn load_role_with(
     }
 }
 
-/// Whether an existing current-role container can satisfy this launch intent.
-/// Any option that changes the effective runtime, credentials, image, mounts,
-/// or environment must reach the normal launch pipeline so
-/// it cannot be silently dropped by a restore/start fast path.
 fn current_role_reuse_is_compatible(opts: &super::LoadOptions) -> bool {
     !opts.rebuild
         && !opts.force
@@ -1736,9 +1576,6 @@ fn current_role_reuse_is_compatible(opts: &super::LoadOptions) -> bool {
         && opts.restore_role_source_git.is_none()
 }
 
-/// `true` only when the named container is gone and the caller set model or
-/// effort without any other explicit-restore override. The inspect is what
-/// distinguishes a new capsule from an attach.
 async fn absent_container_can_apply_model_and_effort(
     docker: &impl DockerApi,
     opts: &super::LoadOptions,
@@ -1767,8 +1604,6 @@ fn explicit_restore_has_non_model_override(opts: &super::LoadOptions) -> bool {
         || !opts.extra_mounts.is_empty()
 }
 
-/// Same attach checks as [`validate_explicit_restore_options`], except model
-/// and effort are allowed. Called only after the named container is `NotFound`.
 fn validate_absent_rebuild_restore_options(
     paths: &JackinPaths,
     opts: &super::LoadOptions,
@@ -1800,11 +1635,6 @@ fn validate_absent_rebuild_restore_options(
     Ok(())
 }
 
-/// Exact-container restore is an attach/start operation, so launch-changing
-/// options cannot be applied to an already existing container. Fail before
-/// inspecting or starting it rather than silently dropping the caller's
-/// requested agent, account, model, effort, image, profile, environment, or
-/// mounts.
 fn validate_explicit_restore_options(
     paths: &JackinPaths,
     opts: &super::LoadOptions,
@@ -1872,10 +1702,6 @@ pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
     }
 }
 
-/// D9: purge per-instance data and the index row inline on
-/// a clean terminal outcome so no manual prune is needed. If the purge itself
-/// fails, fall back to stamping `CleanExited` so the next prune removes the row.
-/// Shared by the clean-exit and `NotFound` arms.
 pub(super) async fn purge_or_mark_clean_exited(
     paths: &JackinPaths,
     container_name: &str,

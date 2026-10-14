@@ -1,13 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Sidebar input facts and instance queries.
 
 use super::{SidebarScrollFocus, agents_block_agent_count_for_config};
 
 use crate::mount_info_cache::MountInfoCache;
 
-/// Shared facts for the right-pane sidebar body. Root adapters supply concrete
-/// workspace/config rows; crate-owned layout helpers consume the generic shape.
 #[derive(Debug)]
 pub struct SidebarInputs<'a, Mount, WorkspaceConfig, GlobalMountRow, MountInfoCache> {
     pub workdir: &'a str,
@@ -31,9 +28,6 @@ pub type ConfigSidebarInputs<'a> = SidebarInputs<
     MountInfoCache,
 >;
 
-/// Facts needed to build the config-backed workspace preview sidebar. Root
-/// supplies only root-specific counts and selected rows; the layout crate owns
-/// the reusable sidebar input assembly.
 #[derive(Debug)]
 pub struct ConfigSidebarSelectionInputs<'a> {
     pub workdir: &'a str,

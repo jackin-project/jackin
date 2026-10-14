@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Foreground reconnect finalization and resource release.
 
 use crate::instance::{InstanceManifest, InstanceStatus};
 
@@ -87,8 +86,6 @@ pub(crate) async fn finalize_reconnected_foreground_session_with_handle(
     );
     crate::runtime::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
-    // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
-    // recorded in exit-action.json; the host only executes it — no host dialog.
     let mut prompt = crate::isolation::finalize::ExitActionPrompt {
         state_dir: paths.data_dir.join(container_name).join("state"),
     };

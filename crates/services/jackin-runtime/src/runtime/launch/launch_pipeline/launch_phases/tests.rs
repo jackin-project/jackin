@@ -1,5 +1,3 @@
-//! Suite A: grant-failure ordering + mid-pipeline `FailedSetup` cleanup.
-
 use super::*;
 
 use crate::instance::{DockerResources, InstanceManifest, NewInstanceManifest};

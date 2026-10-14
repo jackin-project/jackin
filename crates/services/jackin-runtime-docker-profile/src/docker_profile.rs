@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Docker security profile resolution and Docker flag emission.
-//!
-//! Shared serde schema types live in `jackin-core`; this module owns runtime
-//! behavior such as grant validation, effective grants, and launch flags.
-
 pub use jackin_core::{
     DindGrant, DockerGrants, DockerSecurityProfile, NetworkGrant, ParseProfileError,
 };

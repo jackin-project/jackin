@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Op-picker test stub runners.
 
 use super::*;
 
@@ -85,10 +84,6 @@ impl BlockingRunner {
 }
 
 impl OpStructRunner for BlockingRunner {
-    // Test fixture: intentionally blocks on a condvar until the test
-    // releases the gate. The lock is held across the wait loop and
-    // dropped via explicit `drop` once we exit, which is the shape
-    // clippy's `significant_drop_tightening` lint actually wants.
     fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
         let (lock, cv) = &*self.gate;
         let mut released = lock.lock().unwrap();

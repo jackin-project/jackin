@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared footer fragments: tab-bar + content footer builders + the
-//! `append_save_and_escape` / `append_open_in_github` helpers used by
-//! every screen footer.
-
 use termrock::{keymap::glyph, widgets::HintSpan};
 
 use crate::tui::keymap::{
@@ -19,14 +15,12 @@ pub fn tab_bar_footer_items(
     dirty_change_count: Option<usize>,
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
-        // UNREGISTERABLE(multi-key-display-group): combined prev/next tab display; EDITOR_TAB_BAR_KEYMAP splits these into separate PrevTab (←/⇤) and NextTab (→) entries.
         super::key_span(glyph::LEFT_RIGHT),
         HintSpan::Text("switch tab"),
     ];
     if enter_content {
         items.extend([
             HintSpan::GroupSep,
-            // Both EDITOR_TAB_BAR_KEYMAP and SETTINGS_TAB_BAR_KEYMAP use the same glyph.
             super::key_span(EDITOR_TAB_BAR_KEYMAP.glyph_for(EditorTabBarAction::FocusContent)),
             HintSpan::Text("enter content"),
         ]);
@@ -43,7 +37,6 @@ pub fn content_footer_items(
     dirty_change_count: Option<usize>,
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
-        // Both EDITOR_CONTENT_KEYMAP and SETTINGS_*_TAB_KEYMAP use the same ↑↓ glyph.
         super::key_span(EDITOR_CONTENT_KEYMAP.glyph_for(EditorContentAction::MoveUp)),
         HintSpan::Text("navigate"),
     ];
@@ -64,9 +57,6 @@ pub fn content_footer_items(
     items
 }
 
-/// `? help` — appended by every *stage* footer builder. Modal/picker footers
-/// must not call this: an open modal owns `?` as typed input, so the help
-/// overlay is unreachable there (input dispatch precedence).
 pub(super) fn append_keyboard_help_hint(items: &mut Vec<HintSpan<'static>>) {
     items.extend([
         HintSpan::Sep,
@@ -82,7 +72,6 @@ pub(super) fn append_open_in_github(items: &mut Vec<HintSpan<'static>>, has_gith
     if has_github_url {
         items.extend([
             HintSpan::Sep,
-            // UNREGISTERABLE(workspace-mount-no-keymap): used by workspace-mount rows which have no backing keymap; global-mount callers use SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP directly.
             super::key_span("O"),
             HintSpan::Text("open in GitHub"),
         ]);

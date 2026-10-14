@@ -313,7 +313,6 @@ async fn activated_entry_allows_exit_before_the_owned_launch_lease_drops() {
     assert!(marker_path(&authority(&paths)).exists());
     let (_, exit) = observe_exit(&paths, &docker).await.unwrap();
     assert!(matches!(exit, ExitClaim::Claimed { .. }));
-    // The app/options object is still alive through foreground exit rendering.
     assert_eq!(claim.start_kind(), StartKind::FreshConstruct);
     drop(claim);
     assert!(!marker_path(&authority(&paths)).exists());
@@ -362,8 +361,6 @@ async fn cancelled_worker_result_drops_its_owned_pending_entry() {
             })?
         };
         created_tx.send(()).unwrap();
-        // Hold the completed owned value outside the file lock until the
-        // caller cancels its wait for this worker's result.
         release_rx.recv().unwrap();
         Ok(claim)
     }));

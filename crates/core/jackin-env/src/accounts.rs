@@ -1,18 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Resolve credentials exclusively from assigned accounts.
-
 use crate::{OpRunner, resolve_env_value};
 use jackin_config::{AccountConfig, AccountCredential, AppConfig};
 use jackin_core::{Agent, WorkspaceName};
 use jackin_protocol::{AgentCredentialEnv, InstanceCredentialEnv};
 use std::collections::{BTreeMap, BTreeSet};
 
-// Codex/OpenCode consume the selected model from their private configuration,
-// not from the credential environment. The CLI model override is applied
-// after credentials are resolved, so the environment phase needs a
-// non-empty validation marker when no instance-level model exists yet.
 const DEFERRED_MODEL: &str = "__jackin_model_deferred__";
 
 fn account_for_credential_resolution(
@@ -36,10 +30,6 @@ fn account_for_credential_resolution(
     account
 }
 
-/// Return the exact persisted credential declarations selected for one launch
-/// instance. The launcher uses this alongside the resolved values to build a
-/// source-identity fence; resolution itself remains in this module so the
-/// model-dependent routing rules cannot drift between staging and proofing.
 pub fn credential_env_declarations_for_instance(
     config: &AppConfig,
     instance: &jackin_config::ResolvedInstance,
@@ -54,22 +44,11 @@ pub fn credential_env_declarations_for_instance(
     )
 }
 
-/// Environment names owned by account selection, including endpoint routing.
 #[must_use]
 pub fn is_account_env(name: &str) -> bool {
     jackin_core::is_account_env(name)
 }
 
-/// Resolve credentials for the admitted launch instances.
-///
-/// Instances are already authorized by [`jackin_config::resolve_launch`};
-/// `_workspace`/`_role` only preserve the launch-stage call shape. Each
-/// instance receives its own credential map keyed by its verbatim
-/// `config_id`, including when several instances share one agent.
-///
-/// # Errors
-/// Returns an error for unknown accounts, incompatible agent/provider
-/// combinations, on-demand or empty credentials, and unavailable secrets.
 pub fn resolve_instance_env_with<R, H>(
     config: &AppConfig,
     instances: &[jackin_config::ResolvedInstance],

@@ -1,18 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Pane-resize paths: keyboard ratio nudge and drag-resize hit testing.
 
 use super::{Direction, PaneTree, Rect, SplitOrient, clamp_split_ratio, ratio_to_cells};
 
 impl PaneTree {
-    /// Nudge the split ratio of the nearest split whose orientation
-    /// matches `dir`. Walks the tree to find the deepest split that
-    /// contains `leaf_id` on the side we want to grow / shrink, then
-    /// adjusts its ratio by `delta` (positive = grow current pane,
-    /// negative = shrink). Clamps to `[0.05, 0.95]` so neither child
-    /// can collapse to zero cols / rows. Non-finite `delta` (NaN, ±∞)
-    /// is rejected up front because `f32::clamp` on NaN returns NaN —
-    /// a NaN ratio cast as `u16` collapses one child of the split.
     #[expect(
         clippy::excessive_nesting,
         reason = "Pane-tree resize walker: nested `if crosses_this` + signed- \
@@ -29,11 +20,6 @@ impl PaneTree {
             Self::HSplit { left, right, ratio } => {
                 let left_has = left.all_ids().contains(&leaf_id);
                 if matches!(dir, Direction::Left | Direction::Right) {
-                    // Only adjust this split's ratio when the
-                    // requested direction crosses *this* split. If
-                    // the leaf and the direction's target are both
-                    // inside `left`, recurse — let the deeper split
-                    // own the resize.
                     let crosses_this = if left_has {
                         matches!(dir, Direction::Right)
                     } else {
@@ -74,13 +60,6 @@ impl PaneTree {
         }
     }
 
-    /// Walk the tree looking for a split whose interior boundary the
-    /// operator clicked. With no inter-pane gap the boundary
-    /// occupies two adjacent cells (the right border of the first
-    /// child and the left border of the second); either is accepted.
-    /// Returns `(path, orient, split_rect)` so the daemon can save
-    /// enough state to re-apply the drag without re-walking on each
-    /// motion event.
     #[must_use]
     pub fn border_at(
         &self,
@@ -143,13 +122,6 @@ impl PaneTree {
         }
     }
 
-    /// Set the ratio of the split node at `path` (steps: `0` = left/top
-    /// child, `1` = right/bottom). Returns `true` when the path
-    /// resolved to a split. Used by the mouse-drag resize handler
-    /// after `border_at` records the path.
-    ///
-    /// Non-finite values are rejected (NaN survives `f32::clamp`; a
-    /// NaN ratio cast to `u16` collapses one child of the split).
     pub fn set_ratio_at(&mut self, path: &[u8], new_ratio: f32) -> bool {
         if !new_ratio.is_finite() {
             return false;

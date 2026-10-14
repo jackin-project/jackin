@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Role image decisions and local build args.
 
 use super::published::{
     PublishedImageFreshness, published_image_freshness, published_image_is_stale,
@@ -23,18 +22,6 @@ use super::{
 };
 
 pub fn local_image_build_args() -> Vec<&'static str> {
-    // Runtime image builds consume local-only base tags such as
-    // `jk_<role>__base:<sha>` and PR-local construct images, so they must
-    // run against the host image store of the daemon jackin launches
-    // against. Plain `docker build` (with DOCKER_BUILDKIT=1 from
-    // `docker_build_env`) does exactly that: it always uses the ambient
-    // endpoint — the same DOCKER_HOST-or-active-context resolution the API
-    // client uses — with the Docker driver, regardless of the current
-    // buildx builder. Forcing `--builder default`/`--context default`
-    // instead breaks every non-default context (OrbStack has no `default`
-    // socket) and can land images in a daemon the launcher never talks to.
-    // Attestations stay off: local single-platform loads have no
-    // provenance consumer.
     vec!["build", "--provenance", "false", "--sbom", "false"]
 }
 
@@ -52,15 +39,10 @@ pub async fn decide_role_image(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     rebuild: bool,
     branch_override: Option<&str>,
-    pinned_sha: Option<&str>, // D7: skips git rev-parse HEAD when Some
+    pinned_sha: Option<&str>,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<ImageDecision> {
-    // Resolve the role-repo HEAD SHA up front: it is both the image *tag* (so
-    // each role commit gets its own immutable image instead of overwriting a
-    // mutable `:latest`) and an input to the published-image staleness checks
-    // below. The recipe-hash / construct labels still decide reuse-vs-rebuild
-    // within a tag — only the name carries the SHA.
     let head_sha = role_git_sha_for_recipe(cached_repo, pinned_sha, runner).await;
     let image = branch_override.map_or_else(
         || image_name(selector, head_sha.as_deref()),

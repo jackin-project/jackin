@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Snapshot reads and row decoding.
 
 #[cfg(test)]
 use std::path::Path;
@@ -55,9 +54,6 @@ pub fn focused_usage_view(
                 .and_then(|value| u8::try_from(value.clamp(0, 100)).ok()),
             reset_label: row.reset_label.clone(),
             resets_at: row.resets_at,
-            // The headline is persisted as `status_bar_label`, so the slot tag is
-            // not stored; a store-restored bucket carries none and the live
-            // refresh re-tags it.
             status_slot: None,
             pace_label: row.pace_label.clone(),
             status: usage_status_from_label(&row.status),
@@ -74,9 +70,6 @@ pub fn focused_usage_view(
         account: FocusedAccountHeader {
             provider_label: provider,
             account_label: first.account_label.clone(),
-            // username + credential_origin are live-snapshot fields, not
-            // persisted in the store yet; a store-restored header gets them
-            // on the next refresh.
             username: None,
             plan_label: first.plan_label.clone(),
             credential_origin: None,

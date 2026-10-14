@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-// GENERATED from registry/ — do not hand-edit. Regenerate: cargo xtask telemetry-registry --generate.
 
-// registry: instrument=counter; unit={event}; attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,gen_ai.agent.name:required
 pub const AGENT_STATE_FLAPS: &str = "agent.state.flaps";
 pub const AGENT_STATE_FLAPS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: AGENT_STATE_FLAPS,
@@ -56,7 +54,6 @@ pub const AGENT_STATE_FLAPS_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=counter; unit={event}; attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,gen_ai.agent.name:required
 pub const AGENT_STATE_STUCK: &str = "agent.state.stuck";
 pub const AGENT_STATE_STUCK_DEF: super::MetricMetadata = super::MetricMetadata {
     name: AGENT_STATE_STUCK,
@@ -110,7 +107,6 @@ pub const AGENT_STATE_STUCK_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=counter; unit={transition}; attributes=agent.state:required,agent.status.confidence:required,agent.status.source:required,gen_ai.agent.name:required
 pub const AGENT_STATE_TRANSITIONS: &str = "agent.state.transitions";
 pub const AGENT_STATE_TRANSITIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: AGENT_STATE_TRANSITIONS,
@@ -164,7 +160,6 @@ pub const AGENT_STATE_TRANSITIONS_DEF: super::MetricMetadata = super::MetricMeta
         },
     ],
 };
-// registry: instrument=histogram; unit=s; attributes=background.cycle.name:required,error.type:recommended,outcome:required
 pub const BACKGROUND_CYCLE_DURATION: &str = "background.cycle.duration";
 pub const BACKGROUND_CYCLE_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: BACKGROUND_CYCLE_DURATION,
@@ -209,7 +204,6 @@ pub const BACKGROUND_CYCLE_DURATION_DEF: super::MetricMetadata = super::MetricMe
         },
     ],
 };
-// registry: instrument=counter; unit={cycle}; attributes=background.cycle.name:required,error.type:recommended,outcome:required
 pub const BACKGROUND_CYCLES: &str = "background.cycles";
 pub const BACKGROUND_CYCLES_DEF: super::MetricMetadata = super::MetricMetadata {
     name: BACKGROUND_CYCLES,
@@ -252,7 +246,6 @@ pub const BACKGROUND_CYCLES_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=updowncounter; unit={decision}; attributes=cache.name:required
 pub const CACHE_DECISION_ACTIVE: &str = "cache.decision.active";
 pub const CACHE_DECISION_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CACHE_DECISION_ACTIVE,
@@ -273,7 +266,6 @@ pub const CACHE_DECISION_ACTIVE_DEF: super::MetricMetadata = super::MetricMetada
         ],
     }],
 };
-// registry: instrument=histogram; unit=s; attributes=cache.name:required,cache.result:required
 pub const CACHE_DECISION_DURATION: &str = "cache.decision.duration";
 pub const CACHE_DECISION_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CACHE_DECISION_DURATION,
@@ -304,7 +296,6 @@ pub const CACHE_DECISION_DURATION_DEF: super::MetricMetadata = super::MetricMeta
         },
     ],
 };
-// registry: instrument=counter; unit={decision}; attributes=cache.name:required,cache.result:required
 pub const CACHE_DECISIONS: &str = "cache.decisions";
 pub const CACHE_DECISIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CACHE_DECISIONS,
@@ -333,7 +324,6 @@ pub const CACHE_DECISIONS_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=histogram; unit=s; attributes=cli.command.name:required,error.type:recommended,outcome:required
 pub const CLI_DURATION: &str = "cli.duration";
 pub const CLI_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CLI_DURATION,
@@ -477,7 +467,6 @@ pub const CLI_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=counter; unit={failure}; attributes=cli.command.name:required,error.type:recommended,outcome:required
 pub const CLI_FAILURES: &str = "cli.failures";
 pub const CLI_FAILURES_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CLI_FAILURES,
@@ -619,7 +608,6 @@ pub const CLI_FAILURES_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=counter; unit={invocation}; attributes=cli.command.name:required,error.type:recommended,outcome:required
 pub const CLI_INVOCATIONS: &str = "cli.invocations";
 pub const CLI_INVOCATIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CLI_INVOCATIONS,
@@ -761,7 +749,6 @@ pub const CLI_INVOCATIONS_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=updowncounter; unit={connection}; attributes=connection.peer.type:required
 pub const CONNECTION_ACTIVE: &str = "connection.active";
 pub const CONNECTION_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CONNECTION_ACTIVE,
@@ -783,7 +770,6 @@ pub const CONNECTION_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
         ],
     }],
 };
-// registry: instrument=counter; unit={attempt}; attributes=connection.peer.type:required,error.type:recommended,outcome:required
 pub const CONNECTION_ATTEMPTS: &str = "connection.attempts";
 pub const CONNECTION_ATTEMPTS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CONNECTION_ATTEMPTS,
@@ -826,7 +812,6 @@ pub const CONNECTION_ATTEMPTS_DEF: super::MetricMetadata = super::MetricMetadata
         },
     ],
 };
-// registry: instrument=histogram; unit=s; attributes=connection.peer.type:required,error.type:recommended,outcome:required
 pub const CONNECTION_DURATION: &str = "connection.duration";
 pub const CONNECTION_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: CONNECTION_DURATION,
@@ -871,7 +856,6 @@ pub const CONNECTION_DURATION_DEF: super::MetricMetadata = super::MetricMetadata
         },
     ],
 };
-// registry: instrument=histogram; unit=s; attributes=db.operation.name:required
 pub const DB_CLIENT_OPERATION_DURATION: &str = "db.client.operation.duration";
 pub const DB_CLIENT_OPERATION_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: DB_CLIENT_OPERATION_DURATION,
@@ -891,7 +875,6 @@ pub const DB_CLIENT_OPERATION_DURATION_DEF: super::MetricMetadata = super::Metri
         ],
     }],
 };
-// registry: instrument=histogram; unit={token}; attributes=gen_ai.operation.name:required,gen_ai.provider.name:required,gen_ai.token.type:required
 pub const GEN_AI_CLIENT_TOKEN_USAGE: &str = "gen_ai.client.token.usage";
 pub const GEN_AI_CLIENT_TOKEN_USAGE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: GEN_AI_CLIENT_TOKEN_USAGE,
@@ -934,7 +917,6 @@ pub const GEN_AI_CLIENT_TOKEN_USAGE_DEF: super::MetricMetadata = super::MetricMe
         },
     ],
 };
-// registry: instrument=updowncounter; unit={execution}; attributes=launch.stage.name:required,launch.target.kind:required
 pub const LAUNCH_STAGE_ACTIVE: &str = "launch.stage.active";
 pub const LAUNCH_STAGE_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: LAUNCH_STAGE_ACTIVE,
@@ -969,7 +951,6 @@ pub const LAUNCH_STAGE_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata
         },
     ],
 };
-// registry: instrument=histogram; unit=s; attributes=error.type:recommended,launch.stage.name:required,launch.target.kind:required,outcome:required
 pub const LAUNCH_STAGE_DURATION: &str = "launch.stage.duration";
 pub const LAUNCH_STAGE_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: LAUNCH_STAGE_DURATION,
@@ -1025,7 +1006,6 @@ pub const LAUNCH_STAGE_DURATION_DEF: super::MetricMetadata = super::MetricMetada
         },
     ],
 };
-// registry: instrument=counter; unit={execution}; attributes=error.type:recommended,launch.stage.name:required,launch.target.kind:required,outcome:required
 pub const LAUNCH_STAGE_EXECUTIONS: &str = "launch.stage.executions";
 pub const LAUNCH_STAGE_EXECUTIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: LAUNCH_STAGE_EXECUTIONS,
@@ -1079,7 +1059,6 @@ pub const LAUNCH_STAGE_EXECUTIONS_DEF: super::MetricMetadata = super::MetricMeta
         },
     ],
 };
-// registry: instrument=updowncounter; unit={attempt}; attributes=job.type:required
 pub const PREWARM_ACTIVE: &str = "prewarm.active";
 pub const PREWARM_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: PREWARM_ACTIVE,
@@ -1094,7 +1073,6 @@ pub const PREWARM_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
         allowed_values: &["image_prewarm", "sidecar_prewarm"],
     }],
 };
-// registry: instrument=histogram; unit=s; attributes=error.type:recommended,job.type:required,outcome:required
 pub const PREWARM_DURATION: &str = "prewarm.duration";
 pub const PREWARM_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: PREWARM_DURATION,
@@ -1132,7 +1110,6 @@ pub const PREWARM_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=counter; unit={job}; attributes=job.type:required
 pub const PREWARM_JOBS: &str = "prewarm.jobs";
 pub const PREWARM_JOBS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: PREWARM_JOBS,
@@ -1147,7 +1124,6 @@ pub const PREWARM_JOBS_DEF: super::MetricMetadata = super::MetricMetadata {
         allowed_values: &["image_prewarm", "sidecar_prewarm"],
     }],
 };
-// registry: instrument=counter; unit=s; attributes=cpu.mode:required
 pub const PROCESS_CPU_TIME: &str = "process.cpu.time";
 pub const PROCESS_CPU_TIME_DEF: super::MetricMetadata = super::MetricMetadata {
     name: PROCESS_CPU_TIME,
@@ -1162,7 +1138,6 @@ pub const PROCESS_CPU_TIME_DEF: super::MetricMetadata = super::MetricMetadata {
         allowed_values: &["user", "system"],
     }],
 };
-// registry: instrument=updowncounter; unit=By; attributes=
 pub const PROCESS_MEMORY_USAGE: &str = "process.memory.usage";
 pub const PROCESS_MEMORY_USAGE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: PROCESS_MEMORY_USAGE,
@@ -1172,7 +1147,6 @@ pub const PROCESS_MEMORY_USAGE_DEF: super::MetricMetadata = super::MetricMetadat
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=gauge; unit=s; attributes=
 pub const PROCESS_UPTIME: &str = "process.uptime";
 pub const PROCESS_UPTIME_DEF: super::MetricMetadata = super::MetricMetadata {
     name: PROCESS_UPTIME,
@@ -1182,7 +1156,6 @@ pub const PROCESS_UPTIME_DEF: super::MetricMetadata = super::MetricMetadata {
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=updowncounter; unit={request}; attributes=rpc.method:required
 pub const RPC_ACTIVE: &str = "rpc.active";
 pub const RPC_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: RPC_ACTIVE,
@@ -1225,7 +1198,6 @@ pub const RPC_ACTIVE_DEF: super::MetricMetadata = super::MetricMetadata {
         ],
     }],
 };
-// registry: instrument=histogram; unit=s; attributes=error.type:recommended,outcome:required,rpc.method:required
 pub const RPC_DURATION: &str = "rpc.duration";
 pub const RPC_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: RPC_DURATION,
@@ -1291,7 +1263,6 @@ pub const RPC_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=counter; unit={request}; attributes=error.type:recommended,outcome:required,rpc.method:required
 pub const RPC_REQUESTS: &str = "rpc.requests";
 pub const RPC_REQUESTS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: RPC_REQUESTS,
@@ -1355,7 +1326,6 @@ pub const RPC_REQUESTS_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=counter; unit={rejection}; attributes=telemetry.rejection.reason:required,telemetry.signal:required
 pub const TELEMETRY_REJECTIONS: &str = "telemetry.rejections";
 pub const TELEMETRY_REJECTIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: TELEMETRY_REJECTIONS,
@@ -1385,7 +1355,6 @@ pub const TELEMETRY_REJECTIONS_DEF: super::MetricMetadata = super::MetricMetadat
         },
     ],
 };
-// registry: instrument=counter; unit={validation}; attributes=
 pub const TELEMETRY_VALIDATE: &str = "telemetry.validate";
 pub const TELEMETRY_VALIDATE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: TELEMETRY_VALIDATE,
@@ -1395,7 +1364,6 @@ pub const TELEMETRY_VALIDATE_DEF: super::MetricMetadata = super::MetricMetadata 
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=counter; unit={move}; attributes=
 pub const TERMINAL_CURSOR_MOVES: &str = "terminal.cursor.moves";
 pub const TERMINAL_CURSOR_MOVES_DEF: super::MetricMetadata = super::MetricMetadata {
     name: TERMINAL_CURSOR_MOVES,
@@ -1405,7 +1373,6 @@ pub const TERMINAL_CURSOR_MOVES_DEF: super::MetricMetadata = super::MetricMetada
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=counter; unit={event}; attributes=
 pub const TERMINAL_INPUT_MOUSE: &str = "terminal.input.mouse";
 pub const TERMINAL_INPUT_MOUSE_DEF: super::MetricMetadata = super::MetricMetadata {
     name: TERMINAL_INPUT_MOUSE,
@@ -1415,7 +1382,6 @@ pub const TERMINAL_INPUT_MOUSE_DEF: super::MetricMetadata = super::MetricMetadat
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=counter; unit=By; attributes=stream.direction:required
 pub const TERMINAL_IO_BYTES: &str = "terminal.io.bytes";
 pub const TERMINAL_IO_BYTES_DEF: super::MetricMetadata = super::MetricMetadata {
     name: TERMINAL_IO_BYTES,
@@ -1430,7 +1396,6 @@ pub const TERMINAL_IO_BYTES_DEF: super::MetricMetadata = super::MetricMetadata {
         allowed_values: &["input", "output"],
     }],
 };
-// registry: instrument=counter; unit={cell}; attributes=
 pub const TERMINAL_RENDER_CELLS: &str = "terminal.render.cells";
 pub const TERMINAL_RENDER_CELLS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: TERMINAL_RENDER_CELLS,
@@ -1440,7 +1405,6 @@ pub const TERMINAL_RENDER_CELLS_DEF: super::MetricMetadata = super::MetricMetada
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=histogram; unit=s; attributes=
 pub const TERMINAL_RENDER_DURATION: &str = "terminal.render.duration";
 pub const TERMINAL_RENDER_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: TERMINAL_RENDER_DURATION,
@@ -1452,7 +1416,6 @@ pub const TERMINAL_RENDER_DURATION_DEF: super::MetricMetadata = super::MetricMet
     ],
     attributes: &[],
 };
-// registry: instrument=counter; unit={frame}; attributes=
 pub const TERMINAL_RENDER_FRAMES: &str = "terminal.render.frames";
 pub const TERMINAL_RENDER_FRAMES_DEF: super::MetricMetadata = super::MetricMetadata {
     name: TERMINAL_RENDER_FRAMES,
@@ -1462,7 +1425,6 @@ pub const TERMINAL_RENDER_FRAMES_DEF: super::MetricMetadata = super::MetricMetad
     boundaries: &[],
     attributes: &[],
 };
-// registry: instrument=counter; unit={action}; attributes=ui.action.name:required
 pub const UI_ACTIONS: &str = "ui.actions";
 pub const UI_ACTIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_ACTIONS,
@@ -1506,7 +1468,6 @@ pub const UI_ACTIONS_DEF: super::MetricMetadata = super::MetricMetadata {
         ],
     }],
 };
-// registry: instrument=histogram; unit=s; attributes=app.widget.id:required
 pub const UI_FOCUS_DURATION: &str = "ui.focus.duration";
 pub const UI_FOCUS_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_FOCUS_DURATION,
@@ -1523,7 +1484,6 @@ pub const UI_FOCUS_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
         allowed_values: &[],
     }],
 };
-// registry: instrument=counter; unit={crossing}; attributes=app.screen.id:required
 pub const UI_JANK: &str = "ui.jank";
 pub const UI_JANK_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_JANK,
@@ -1545,7 +1505,6 @@ pub const UI_JANK_DEF: super::MetricMetadata = super::MetricMetadata {
         ],
     }],
 };
-// registry: instrument=histogram; unit=s; attributes=app.screen.id:required
 pub const UI_RENDER_DURATION: &str = "ui.render.duration";
 pub const UI_RENDER_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_RENDER_DURATION,
@@ -1569,7 +1528,6 @@ pub const UI_RENDER_DURATION_DEF: super::MetricMetadata = super::MetricMetadata 
         ],
     }],
 };
-// registry: instrument=histogram; unit=s; attributes=app.screen.id:required,ui.transition.reason:required
 pub const UI_SCREEN_DWELL: &str = "ui.screen.dwell";
 pub const UI_SCREEN_DWELL_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_SCREEN_DWELL,
@@ -1611,7 +1569,6 @@ pub const UI_SCREEN_DWELL_DEF: super::MetricMetadata = super::MetricMetadata {
         },
     ],
 };
-// registry: instrument=counter; unit={transition}; attributes=app.screen.id:required,ui.transition.reason:required
 pub const UI_TRANSITIONS: &str = "ui.transitions";
 pub const UI_TRANSITIONS_DEF: super::MetricMetadata = super::MetricMetadata {
     name: UI_TRANSITIONS,

@@ -114,9 +114,6 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         Some(ImageInvalidationReason::ConstructImageChanged)
     );
 
-    // Only the minimal kept labels report a precise, component-specific reason.
-    // Every other recipe input now invalidates via the master recipe hash
-    // (RecipeHashChanged) — see `recipe_diagnostic_labels`.
     for (label, reason) in [
         (
             LABEL_IMAGE_ROLE_GIT_SHA,
@@ -203,8 +200,6 @@ plugins = []
             base_image: "docker.io/myorg/my-role:latest".to_owned(),
         }
     );
-    // HEAD SHA is resolved up front (it is the image tag); the only command on
-    // the missing-image path is that git capture.
     assert!(
         runner.recorded.iter().all(|c| c.contains("rev-parse HEAD")),
         "missing-image path should run only the role-SHA git capture; got: {:?}",

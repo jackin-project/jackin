@@ -1,22 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Process-wide [`StandaloneDialogSink`] installed at CLI startup.
-//!
-//! `jackin_core::error_popup` / `jackin_core::exit_dialog_with_inspect`
-//! route through a global port-trait sink. The sink impl forwards to the
-//! same standalone dialog renderers that `jackin_runtime::progress`
-//! historically called directly. Keeping the impl in `jackin-launch`
-//! preserves the L0 (port) → L3 (impl) Branch-by-Abstraction layout that
-//! the rest of the codebase applies to `BuildLogSink`, the operator notice sink,
-//! and `OperatorNoticeSink`.
-//!
-//! The renderer only needs [`LaunchHostTerminal::is_debug_mode`] during
-//! the standalone dialog path — `reveal_file` / `open_file` are only
-//! called from the live launch UI, never from the post-attach surface —
-//! so the embedded host terminal here forwards a minimal subset and a
-//! default for everything else.
-
 use std::io::Write;
 
 use jackin_core::LaunchHostTerminal;
@@ -25,11 +9,6 @@ use jackin_core::StandaloneDialogSink;
 use crate::progress::standalone_error_popup;
 use crate::progress::standalone_exit_dialog_with_inspect;
 
-/// Inline [`LaunchHostTerminal`] used inside the standalone dialog sink.
-///
-/// Only `is_debug_mode` is consulted by the standalone dialog renderers;
-/// the other methods exist to satisfy the trait and are not invoked by
-/// the post-attach / cancellation paths.
 #[derive(Debug)]
 struct SinkHostTerminal;
 
@@ -86,8 +65,6 @@ impl LaunchHostTerminal for SinkHostTerminal {
 
 static SINK_HOST_TERMINAL: SinkHostTerminal = SinkHostTerminal;
 
-/// Single process-wide [`StandaloneDialogSink`] impl backed by the
-/// standalone dialog renderers.
 #[derive(Debug)]
 struct JackinStandaloneDialogSink;
 
@@ -131,11 +108,6 @@ impl StandaloneDialogSink for JackinStandaloneDialogSink {
 
 static SINK: JackinStandaloneDialogSink = JackinStandaloneDialogSink;
 
-/// Install the process-wide [`StandaloneDialogSink`]. Idempotent —
-/// [`jackin_core::set_global_dialog_sink`] keeps the first install.
-///
-/// Call this once at CLI startup, before any code path that may invoke
-/// the post-attach exit dialog or error popup.
 pub fn install() {
     jackin_core::set_global_dialog_sink(&SINK);
 }

@@ -170,7 +170,7 @@ These verdicts are reasoned from ecosystem norms plus the verified facts below; 
 There are two integration paths for `cargo-deny`, and they pull in different directions:
 
 - **Upstream-canonical: `EmbarkStudios/cargo-deny-action@v2`** — the documented canonical CI integration, a single step after `actions/checkout` with the binary bundled by the action (`@v2` currently ships cargo-deny 0.19.x). Lowest friction, but installs a tool *outside* `mise`.
-- **Project-consistent: install via `mise`, run the binary directly** — jackin❯ mise-only CI tool-install rule in <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> requires every CI tool to come from <RepoFile path="mise.toml">mise.toml</RepoFile>, like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
+- **Project-consistent: install via `mise`, run the binary directly** — jackin❯'s mise-only CI tool-install rule requires every CI tool to come from <RepoFile path="mise.toml">mise.toml</RepoFile>, like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
 
 **Recommendation: the mise path**, to honour the project's tool-install rule and keep one tool-install mechanism. The `cargo-deny-action` is noted as the upstream-canonical alternative, explicitly *not* adopted because it bypasses `mise`. The current <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> has no `deny` job; introduce the required capability in the workflow generator, then select it through <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile>. The following is a proposed job shape, not an instruction to edit generated YAML:
 

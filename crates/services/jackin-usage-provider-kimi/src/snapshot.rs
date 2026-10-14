@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Kimi` snapshot entry point and identity.
 
 use jackin_protocol::control::{FocusedUsageView, UsageSnapshotStatus};
 use jackin_usage_provider_core::{
@@ -48,9 +47,6 @@ pub fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsage
                 ),
             ]
         });
-    // One Kimi billing identity can fund the Kimi, Claude and Codex clients;
-    // surface the stable subject (email/id) plus membership plan so the broker
-    // can dedup observations by (service + billing subject), never by client.
     let (account_label, username, plan_label) = provider_usage
         .as_ref()
         .map(kimi_account_identity)
@@ -89,8 +85,6 @@ pub fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsage
     })
 }
 
-/// Stable billing identity shared across every client one Kimi account funds:
-/// `(account_label, username, plan_label)`.
 pub(crate) fn kimi_account_identity(
     usage: &KimiUsageResponse,
 ) -> (String, Option<String>, Option<String>) {
@@ -122,10 +116,6 @@ pub(crate) fn kimi_account_identity(
     (account_label, username, plan_label)
 }
 
-/// Map a `user.membership.level` to its display plan. The `LEVEL_*` →
-/// tempo-name mapping is only valid when `version` is absent or
-/// `GOODS_VERSION_V1`; any other goods version passes the raw level through
-/// humanized rather than risking a wrong plan name.
 pub(crate) fn kimi_membership_plan(level: &str, version: Option<&str>) -> String {
     if version.is_some_and(|version| version != "GOODS_VERSION_V1") {
         return humanize_plan_label(&level.to_ascii_lowercase());

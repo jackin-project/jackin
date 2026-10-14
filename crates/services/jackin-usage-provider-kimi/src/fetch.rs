@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Kimi` API usage fetch and endpoint resolution.
 
 use jackin_usage_provider_core::{
     env_value, normalize_url_or_host, provider_http_client, provider_request,
@@ -39,8 +38,6 @@ pub fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
     )
 }
 
-/// Code API usages URL honoring the `KIMI_CODE_BASE_URL` override. Any base
-/// carrying a `.../coding[/v1]` path resolves to `.../coding/v1/usages`.
 pub(crate) fn resolve_kimi_usages_url() -> String {
     kimi_usages_url_from_base(env_value("KIMI_CODE_BASE_URL").as_deref())
 }

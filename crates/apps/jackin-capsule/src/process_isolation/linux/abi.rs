@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Landlock ABI constants, capability constants, and syscall structs.
 
 use std::path::PathBuf;
 
@@ -34,9 +33,6 @@ pub(crate) const LANDLOCK_ABI_RESOLVE_UNIX: libc::c_long = 9;
 pub(crate) const TRAVERSE: u64 = ACCESS_EXECUTE;
 pub(crate) const READ_FILE_ONLY: u64 = ACCESS_EXECUTE | ACCESS_READ_FILE;
 pub(crate) const READ_ONLY: u64 = READ_FILE_ONLY | ACCESS_READ_DIR;
-// `std::process::Stdio::null()` opens the null device read/write even
-// when it is used for stdin. Keep the device tree read-only and grant
-// only this exact character device the file I/O needed by that primitive.
 pub(crate) const NULL_DEVICE: u64 = READ_FILE_ONLY | ACCESS_WRITE_FILE;
 pub(crate) const WRITABLE: u64 = ACCESS_WRITE_FILE
     | ACCESS_REMOVE_DIR
@@ -54,10 +50,6 @@ pub(crate) const FULL: u64 = READ_ONLY | WRITABLE;
 pub(crate) const FULL_WITH_UNIX: u64 = FULL | ACCESS_RESOLVE_UNIX;
 pub(crate) const READ_ONLY_WITH_UNIX: u64 = READ_ONLY | ACCESS_RESOLVE_UNIX;
 
-// Pass only the ABI-1 prefix to create_ruleset. ABI 3 accepts this
-// prefix, and this boundary does not use the later network/scoped fields;
-// passing the full newer struct would make ABI-3 support depend on the
-// kernel accepting fields introduced after the advertised ABI.
 #[repr(C)]
 pub(crate) struct RulesetAttr {
     pub(crate) handled_access_fs: u64,
@@ -97,8 +89,6 @@ pub(crate) fn access_for_abi(access: u64, abi: libc::c_long) -> u64 {
     }
 }
 
-// `WRITABLE` stays test-only. The other Landlock masks are already visible
-// to the Linux tests through the parent module.
 pub(crate) mod support {
     #[cfg(test)]
     pub(crate) const WRITABLE: u64 = super::WRITABLE;

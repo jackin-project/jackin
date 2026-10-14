@@ -4,7 +4,6 @@
 import JackinUsageBridge
 import SwiftUI
 
-/// Native provider/account hierarchy for the Overview destination.
 public struct OverviewListView: View {
     public let groups: [PresentationStore.ProviderGroupRow]
     @Binding public var selectedRowID: String?

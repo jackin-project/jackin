@@ -103,9 +103,6 @@ impl TelemetryImports {
     }
 
     fn record_alias_path(&mut self, local: &str, source: &str) {
-        // `use crate_name::{self, Item}` imports the existing crate name; it
-        // does not create an alias edge. Recording `crate_name -> crate_name`
-        // makes every path through that import look cyclic to the resolver.
         if local == source {
             return;
         }
@@ -154,19 +151,9 @@ impl TelemetryImports {
                 .map_or((candidate.as_str(), None), |(head, tail)| {
                     (head, Some(tail))
                 });
-            // A local module and a `use`-imported value may share a spelling.
-            // Qualified paths resolve the module namespace, so do not rewrite
-            // a known module head through an unrelated value re-export. Keep
-            // unqualified aliases and paths without a local module fully
-            // expanded so renamed telemetry APIs and cyclic aliases remain
-            // fail-closed.
             let local_module_path = tail.is_some() && self.modules.contains(head);
             if let Some(targets) = self.aliases.get(head).filter(|_| !local_module_path) {
                 if !alias_path.insert(head.to_owned()) {
-                    // Prefix substitutions preserve the suffix. Tracking the
-                    // path-local alias graph node, rather than the expanding
-                    // candidate string, detects cycles such as
-                    // `a -> b` and `b -> a::nested`.
                     unresolved_cycle = true;
                     continue;
                 }
@@ -576,7 +563,6 @@ fn source_module(path: &str) -> Option<Vec<String>> {
     let parts = path.split('/').collect::<Vec<_>>();
     let crates = parts.iter().position(|part| *part == "crates")?;
     let src = parts[crates + 2..].iter().position(|part| *part == "src")? + crates + 2;
-    // crates/<group>/<package>/src/... — the package dir is two below crates/.
     let mut module = vec![parts.get(crates + 2)?.replace('-', "_")];
     let relative = &parts[src + 1..];
     for (index, part) in relative.iter().enumerate() {

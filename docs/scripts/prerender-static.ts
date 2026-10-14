@@ -9,7 +9,6 @@ const outDir = join(root, '.output', 'public')
 const host = '127.0.0.1'
 const port = 4173
 const origin = `http://${host}:${port}`
-// OG image rendering is CPU and memory intensive; keep the local preview server's request fan-out bounded.
 const requestConcurrency = Math.min(8, availableParallelism())
 
 function docsSlugs(dir = contentRoot): string[] {

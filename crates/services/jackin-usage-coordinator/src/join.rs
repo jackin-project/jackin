@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Generation join and load methods.
 
 use std::time::{Duration, Instant};
 
@@ -16,7 +15,6 @@ use super::{
 };
 
 impl UsageCoordinator {
-    /// Wait for one named generation. A wait timeout never changes ownership.
     pub fn join_generation(
         &self,
         capability: &UsageAccountCapability,

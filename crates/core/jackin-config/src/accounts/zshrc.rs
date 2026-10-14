@@ -1,68 +1,34 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Static literal-only `.zshrc`/shell-env importer.
-//!
-//! Parses `VAR=...` assignments (with optional `export`/`typeset`/`declare`
-//! prefixes and simple single/double quoting) for account-relevant variables
-//! only. Anything dynamic — command substitutions, function calls, `op read`
-//! invocations, or expansions that cannot be resolved without running a shell —
-//! is reported as a typed [`UnresolvedEntry`] instead of a value.
-//!
-//! This importer never executes anything: it spawns no shells, no helpers, and
-//! reads no process state. Consumers resolve [`UnresolvedEntry`] values with
-//! the operator. Parsing is total, so there is no `ConfigResult` surface here;
-//! file loading stays with the caller (`ConfigError::Io` on failure).
-//!
-//! Later assignments win: a repeated literal overwrites the earlier value,
-//! while unresolved entries accumulate in source order.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use super::{WrapperSpec, XdgRoots};
 use jackin_core::{Agent, OpRef, parse_op_reference};
 
-/// Why a shell assignment could not be resolved to a static literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UnresolvedKind {
-    /// `$(...)`, `` `...` ``, or `<(...)` command substitution.
     CommandSubstitution,
-    /// Substitution invoking a shell function defined in the same source.
     FunctionCall,
-    /// Substitution invoking the 1Password CLI (`op read ...`).
     OpRead,
-    /// `$VAR`, `${VAR}`, `$((...))`, leading `~`, globs, appends, or arrays.
     UnresolvableExpansion,
 }
 
-/// One account-relevant assignment that needs operator attention.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnresolvedEntry {
-    /// 1-based number of the logical source line.
     pub line: usize,
-    /// Assigned variable name.
     pub name: String,
-    /// Dynamic construct class.
     pub kind: UnresolvedKind,
-    /// Short source snippet of the offending construct (truncated).
     pub detail: String,
 }
 
-/// Result of [`parse_zshrc_source`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ZshrcImport {
-    /// Resolved literal values for account-relevant variables.
     pub values: BTreeMap<String, String>,
-    /// Dynamic constructs found in account-relevant assignments, in order.
     pub unresolved: Vec<UnresolvedEntry>,
 }
 
-/// Whether a variable name is relevant to account import.
-///
-/// Matches config-dir overrides (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), XDG
-/// roots, `*_API_KEY`/`*_BASE_URL` families and their aliases, model
-/// variables, profile names, and the Claude OAuth token.
 pub fn is_account_relevant(name: &str) -> bool {
     const EXACT: &[&str] = &[
         "CLAUDE_CONFIG_DIR",
@@ -95,10 +61,6 @@ pub fn is_account_relevant(name: &str) -> bool {
     .any(|suffix| name.ends_with(suffix))
 }
 
-/// Parse shell source into literal values plus typed unresolved entries.
-///
-/// Only account-relevant assignments (see [`is_account_relevant`]) are
-/// reported; every other line is ignored, even when dynamic.
 pub fn parse_zshrc_source(source: &str) -> ZshrcImport {
     let logicals = logical_lines(source);
     let functions = collect_function_names(&logicals);
@@ -112,13 +74,11 @@ pub fn parse_zshrc_source(source: &str) -> ZshrcImport {
     import
 }
 
-/// One dynamic construct found inside an assignment value.
 struct Detection {
     kind: UnresolvedKind,
     detail: String,
 }
 
-/// Join physical lines into backslash-continued logical lines with start numbers.
 fn logical_lines(source: &str) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut current = String::new();
@@ -146,7 +106,6 @@ fn logical_lines(source: &str) -> Vec<(usize, String)> {
     out
 }
 
-/// Whether the line ends in an odd run of backslashes (line continuation).
 fn has_continuation(line: &str) -> bool {
     let mut count = 0;
     for c in line.chars().rev() {
@@ -159,7 +118,6 @@ fn has_continuation(line: &str) -> bool {
     count % 2 == 1
 }
 
-/// Collect `name() ...` / `function name ...` definitions for call classification.
 fn collect_function_names(logicals: &[(usize, String)]) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for (_, logical) in logicals {
@@ -203,7 +161,6 @@ fn collect_function_names(logicals: &[(usize, String)]) -> BTreeSet<String> {
     names
 }
 
-/// Strip a `#` comment; `#` is literal inside quotes and mid-word.
 fn strip_comment(line: &str) -> String {
     let mut out = String::new();
     let mut single = false;
@@ -247,7 +204,6 @@ fn strip_comment(line: &str) -> String {
     out
 }
 
-/// Split a logical line on unquoted `;` statement separators.
 fn split_statements(code: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
@@ -297,13 +253,6 @@ fn split_statements(code: &str) -> Vec<String> {
     out
 }
 
-/// Split a statement on whitespace outside quotes; quotes stay in the words.
-///
-/// Hand-rolled deliberately: the words feed the `UnresolvedKind`
-/// classifier below, which needs the original quoting to tell substitution
-/// from literal text. Quote-stripping tokenizers (`shell-words`) have an
-/// API-awkward-for-this-call-site contract, and no crate classifies
-/// `UnresolvedKind` — so this splitter stays local (ENGINEERING.md escape).
 fn split_words(statement: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
@@ -365,7 +314,6 @@ fn split_words(statement: &str) -> Vec<String> {
     out
 }
 
-/// Parse one statement's assignment words into the import result.
 fn parse_statement(
     statement: &str,
     line: usize,
@@ -425,7 +373,6 @@ fn parse_statement(
     }
 }
 
-/// Declaration keywords skipped before assignments (`export FOO=...`).
 fn is_decl_keyword(word: &str) -> bool {
     matches!(
         word,
@@ -433,12 +380,10 @@ fn is_decl_keyword(word: &str) -> bool {
     )
 }
 
-/// Flag words skipped before assignments (`typeset -x FOO=...`).
 fn is_flag_word(word: &str) -> bool {
     (word.starts_with('-') || word.starts_with('+')) && word.len() > 1 && !word.contains('=')
 }
 
-/// Split a word on the first unquoted `=` into name and raw value.
 fn split_assignment(word: &str) -> Option<(String, String)> {
     let mut name = String::new();
     let mut value: Option<String> = None;
@@ -475,7 +420,6 @@ fn split_assignment(word: &str) -> Option<(String, String)> {
     value.map(|v| (name, v))
 }
 
-/// Strip a `+=` append marker from an assignment name.
 fn strip_append(raw_name: String) -> (String, bool) {
     if raw_name.ends_with('+') {
         let mut name = raw_name;
@@ -486,7 +430,6 @@ fn strip_append(raw_name: String) -> (String, bool) {
     }
 }
 
-/// Whether the name is a valid shell identifier.
 fn is_identifier(name: &str) -> bool {
     let mut chars = name.chars();
     match chars.next() {
@@ -496,7 +439,6 @@ fn is_identifier(name: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Unquote a raw value; any dynamic construct voids the literal.
 fn analyze_value(raw: &str, functions: &BTreeSet<String>) -> (Option<String>, Vec<Detection>) {
     let mut literal = String::new();
     let mut detections = Vec::new();
@@ -610,8 +552,6 @@ fn analyze_value(raw: &str, functions: &BTreeSet<String>) -> (Option<String>, Ve
     }
 }
 
-/// Handle one `$...` construct: substitutions and expansions void the
-/// literal, while a bare `$` stays literal.
 fn analyze_dollar(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
     functions: &BTreeSet<String>,
@@ -665,7 +605,6 @@ fn analyze_dollar(
     }
 }
 
-/// Capture a balanced bracket run into a detail snippet.
 fn capture_balanced(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
     open: char,
@@ -710,7 +649,6 @@ fn capture_balanced(
     detail
 }
 
-/// Capture a backquote run (with backslash escapes) into a detail snippet.
 fn capture_backtick(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
     let mut detail = String::from("`");
     let mut escaped = false;
@@ -731,7 +669,6 @@ fn capture_backtick(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Str
     detail
 }
 
-/// Capture `$NAME` / `$9` into a detail snippet (`$` already consumed).
 fn capture_dollar_name(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
     let mut detail = String::from("$");
     if chars.peek().is_some_and(char::is_ascii_digit) {
@@ -751,7 +688,6 @@ fn capture_dollar_name(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> 
     detail
 }
 
-/// Capture a leading `~` / `~user` into a detail snippet (`~` already consumed).
 fn capture_tilde(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
     let mut detail = String::from("~");
     while let Some(&c) = chars.peek() {
@@ -765,7 +701,6 @@ fn capture_tilde(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String
     detail
 }
 
-/// Classify a captured substitution by its invoked command.
 fn classify_command(captured: &str, functions: &BTreeSet<String>) -> UnresolvedKind {
     let inner = captured
         .strip_prefix("$(")
@@ -789,7 +724,6 @@ fn classify_command(captured: &str, functions: &BTreeSet<String>) -> UnresolvedK
     }
 }
 
-/// Truncate a detail snippet to a stable short length.
 fn truncate_detail(detail: String) -> String {
     const MAX_CHARS: usize = 64;
     if detail.chars().count() <= MAX_CHARS {
@@ -801,98 +735,43 @@ fn truncate_detail(detail: String) -> String {
     }
 }
 
-/// Agent-attributed configuration directory from a config-dir override.
-///
-/// Maps onto `AccountCredential::Profile { agent, directory }`: the consumer
-/// pairs the candidate with a provider to seed a profile account. Only
-/// absolute paths are extracted (relative values cannot seed a profile).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectoryCandidate {
-    /// Agent owning this directory's storage format.
     pub agent: Agent,
-    /// Absolute configuration directory.
     pub directory: PathBuf,
-    /// Source variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`).
     pub source_var: String,
 }
 
-/// Parsed `op read ...` invocation behind one secret variable.
-///
-/// Maps onto `EnvValue::OpRef`: the consumer stores the reference as an
-/// `ApiKey`/`OAuthToken` value. Carries the reference only, never the
-/// resolved secret.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpReadCandidate {
-    /// Assigned variable name.
     pub var: String,
-    /// 1-based number of the logical source line.
     pub line: usize,
-    /// Parsed 1Password reference (`op` URI, display `path`, account pin).
     pub reference: OpRef,
 }
 
-/// Shell-function call site behind one variable.
-///
-/// Maps onto [`WrapperSpec`]: the consumer stores the spec at the
-/// agent-invoked-via-wrapper schema home on the agent configuration built
-/// from this variable's account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrapperCallSite {
-    /// Assigned variable name.
     pub var: String,
-    /// 1-based number of the logical source line.
     pub line: usize,
-    /// Parsed wrapper identity plus call-site arguments.
     pub spec: WrapperSpec,
 }
 
-/// Model/endpoint group gathered from one variable stem.
-///
-/// Groups every `*MODEL*`, `*_PROFILE*`, and `*_BASE_URL` (plus `_API_BASE` /
-/// `_API_URL`) literal by the lowercased first `_`-separated segment of the
-/// variable name (`MOONSHOT_MODEL` + `MOONSHOT_BASE_URL` → `moonshot`). Maps
-/// onto `AccountCredential::ApiKey { model, base_url }` defaults and the
-/// matching `AgentConfiguration` overrides. Consumers match the lowercased
-/// stem against the canonical provider slug; legacy agent aliases are not
-/// normalized here. Model IDs and endpoint URLs are not secrets; key/token
-/// literals never enter a profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelProfile {
-    /// Lowercased canonical provider slug (`moonshot`, `anthropic`, …).
     pub name: String,
-    /// Explicit model identifier, if the group carries one.
     pub model: Option<String>,
-    /// Endpoint override, if the group carries one.
     pub base_url: Option<String>,
 }
 
-/// Typed extraction over a [`ZshrcImport`] that a consumer can apply.
-///
-/// Built purely from parsed literals and unresolved snippets: no shell is
-/// sourced, no substitution is executed, and no secret helper runs. The plan
-/// carries references and paths only — never resolved secret values or key
-/// literals. Variables that fail to parse (truncated snippets, relative
-/// directories, unparseable `op://` URIs) are skipped here and stay visible
-/// in [`ZshrcImport::unresolved`] for operator resolution.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ZshrcImportPlan {
-    /// Config-dir overrides, sorted by source variable.
     pub directories: Vec<DirectoryCandidate>,
-    /// Complete absolute XDG triple, mappable to `XdgRoots` on an Amp
-    /// profile; `None` unless data/config/cache are all present.
     pub xdg_roots: Option<XdgRoots>,
-    /// Parsed `op read` invocations, in source order.
     pub op_refs: Vec<OpReadCandidate>,
-    /// Shell-function call sites, in source order.
     pub wrappers: Vec<WrapperCallSite>,
-    /// Model/endpoint groups, sorted by name.
     pub models: Vec<ModelProfile>,
 }
 
-/// Build the typed [`ZshrcImportPlan`] for a parsed import.
-///
-/// Total and side-effect-free: every extraction is a pure function of
-/// `import.values` and `import.unresolved`.
 pub fn import_plan(import: &ZshrcImport) -> ZshrcImportPlan {
     ZshrcImportPlan {
         directories: extract_directories(&import.values),
@@ -925,13 +804,11 @@ pub fn import_plan(import: &ZshrcImport) -> ZshrcImportPlan {
     }
 }
 
-/// Config-dir override variables attributed to their owning agent.
 const CONFIG_DIR_VARS: &[(&str, Agent)] = &[
     ("CLAUDE_CONFIG_DIR", Agent::Claude),
     ("CODEX_HOME", Agent::Codex),
 ];
 
-/// Collect absolute config-dir overrides as agent-attributed candidates.
 fn extract_directories(values: &BTreeMap<String, String>) -> Vec<DirectoryCandidate> {
     let mut out: Vec<DirectoryCandidate> = CONFIG_DIR_VARS
         .iter()
@@ -952,7 +829,6 @@ fn extract_directories(values: &BTreeMap<String, String>) -> Vec<DirectoryCandid
     out
 }
 
-/// Collect the XDG triple when all three roots are present and absolute.
 fn extract_xdg_roots(values: &BTreeMap<String, String>) -> Option<XdgRoots> {
     let data = PathBuf::from(values.get("XDG_DATA_HOME")?);
     let config = PathBuf::from(values.get("XDG_CONFIG_HOME")?);
@@ -967,10 +843,8 @@ fn extract_xdg_roots(values: &BTreeMap<String, String>) -> Option<XdgRoots> {
     })
 }
 
-/// Endpoint suffixes that mark a variable as carrying a base URL.
 const ENDPOINT_SUFFIXES: &[&str] = &["_BASE_URL", "_API_BASE", "_API_URL"];
 
-/// Whether the variable can join a [`ModelProfile`] group.
 fn is_modelish(name: &str) -> bool {
     name.contains("MODEL")
         || ENDPOINT_SUFFIXES.iter().any(|s| name.ends_with(s))
@@ -978,7 +852,6 @@ fn is_modelish(name: &str) -> bool {
         || name.ends_with("_PROFILE_NAME")
 }
 
-/// Group modelish literals by lowercased first-segment stem.
 fn extract_model_profiles(values: &BTreeMap<String, String>) -> Vec<ModelProfile> {
     let mut groups: BTreeMap<String, Vec<(&String, &String)>> = BTreeMap::new();
     for (name, value) in values {
@@ -1020,15 +893,6 @@ fn extract_model_profiles(values: &BTreeMap<String, String>) -> Vec<ModelProfile
         .collect()
 }
 
-/// Parse an `OpRead` detail snippet into an [`OpRef`].
-///
-/// Accepts `$(op read ...)` / backquote forms with an optional `sudo` / `env`
-/// / `command` prefix, global `--account <id>` / `--account=<id>` flags in any
-/// position, and one `op://vault/item/[section/]field` argument (quoting
-/// honored). The display `path` breadcrumb is rebuilt from the URI segments;
-/// the URI may carry IDs rather than names, so the consumer treats it as a
-/// snapshot. Returns `None` for truncated snippets, non-`read` invocations,
-/// and URIs rejected by [`parse_op_reference`].
 fn parse_op_read(detail: &str) -> Option<OpRef> {
     if detail.contains('\u{2026}') {
         return None;
@@ -1091,11 +955,6 @@ fn parse_op_read(detail: &str) -> Option<OpRef> {
     })
 }
 
-/// Parse a `FunctionCall` detail snippet into a [`WrapperSpec`].
-///
-/// The invoked function name becomes `identity`; remaining words (quoting
-/// honored) become `args`. Returns `None` for truncated snippets and empty
-/// invocations.
 fn parse_wrapper_call(detail: &str) -> Option<WrapperSpec> {
     if detail.contains('\u{2026}') {
         return None;
@@ -1111,7 +970,6 @@ fn parse_wrapper_call(detail: &str) -> Option<WrapperSpec> {
     })
 }
 
-/// Strip the outer `$(...)` / `` `...` `` substitution markers.
 fn strip_substitution(detail: &str) -> Option<&str> {
     if let Some(inner) = detail.strip_prefix("$(").and_then(|s| s.strip_suffix(')')) {
         return Some(inner);
@@ -1125,9 +983,6 @@ fn strip_substitution(detail: &str) -> Option<&str> {
     None
 }
 
-/// Split words honoring single/double quotes and backslash escapes.
-/// Returns `None` for malformed snippets (e.g. unterminated quotes);
-/// callers treat that as "not a parseable invocation".
 fn split_shell_words(text: &str) -> Option<Vec<String>> {
     shell_words::split(text).ok()
 }

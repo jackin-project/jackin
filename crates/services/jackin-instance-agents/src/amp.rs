@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Amp credential provisioning and source helpers.
 
 use jackin_instance_credentials::AuthProvisionOutcome;
 
@@ -30,7 +29,6 @@ pub fn lock_amp_source_dir(source: &Path) -> anyhow::Result<Option<auth_director
     }
 }
 
-/// Require a non-empty credential file named `name` directly inside `dir`.
 #[cfg(not(unix))]
 pub fn require_credential_file(
     dir: &Path,
@@ -61,17 +59,6 @@ pub fn require_credential_file(
     }
 }
 
-/// Provision Amp's host-side `secrets.json` per the chosen mode.
-///
-/// Source: `~/.local/share/amp/secrets.json` (`XDG_DATA`). The
-/// `XDG_CONFIG` `~/.config/amp/settings.json` is preferences only
-/// and never holds the token.
-///
-/// `mounted_secrets_json` is `None` when the bind mount must be
-/// skipped. `Sync` with no host file preserves any prior role-state
-/// file so an in-container login isn't silently dropped.
-/// `OAuthToken` is parser-rejected; the defensive arm wipes + logs
-/// so a bypass is loud rather than silent.
 pub fn provision_amp_auth(
     secrets_json: &Path,
     mode: AuthForwardMode,

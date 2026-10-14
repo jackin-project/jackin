@@ -190,7 +190,6 @@ impl LaunchCoreFixture {
         let selector = RoleSelector::new(None, "agent-smith");
         let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
         seed_valid_role_repo(&cached_repo.repo_dir);
-        // Codex-only role: single agent so load path needs no multi-agent dialog.
         std::fs::write(
             cached_repo.repo_dir.join("jackin.role.toml"),
             r#"version = "v1alpha3"
@@ -250,9 +249,6 @@ agents = ["codex"]
         let container_name = "jk-harness-agentsmith".to_owned();
         let image = "jk_agent-smith:harness".to_owned();
 
-        // Match launch suite `fake_docker_for_clean_attached_exit`: empty
-        // inspect_queue (NotFound default is fine for pre-attach / post-exit
-        // probes that tolerate missing containers) + session inventory probes.
         let docker = FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
                 String::new(),
@@ -300,11 +296,6 @@ agents = ["codex"]
         self
     }
 
-    /// Plant a valid envelope so early `prepare_instance` migration passes;
-    /// the finalize-phase corruption is scheduled separately (after
-    /// migration, before `finalize_clean_exit` reads the envelope) so
-    /// post-success finalization fails while cleanup is still armed (proves
-    /// cleanup-before-error at the pipeline boundary).
     pub(super) fn plant_valid_isolation_for_finalize_error(&self) -> PathBuf {
         let state = self.paths.data_dir.join(&self.container_name);
         let iso_dir = state.join(".jackin");

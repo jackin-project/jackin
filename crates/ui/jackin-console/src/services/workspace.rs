@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console-owned workspace and mount helpers.
-
 use jackin_config::{
     AppConfig, GlobalMountRow, MountConfig, MountIsolation, find_sensitive_mounts,
 };
@@ -27,9 +25,6 @@ pub fn shared_mount_config(
     }
 }
 
-/// Mirror the merge order `AppConfig::edit_workspace` uses to build the
-/// post-edit mount list, so source-drift checks evaluate the same shape that
-/// will land on disk.
 #[must_use]
 pub fn prospective_workspace_mounts(
     current: &[MountConfig],

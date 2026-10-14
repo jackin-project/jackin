@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Token usage recording.
 
 use jackin_core::Agent;
 use jackin_telemetry::{Attr, Value, histogram, metric, schema};
@@ -32,7 +31,6 @@ pub(crate) fn token_usage_delta(
                     .saturating_sub(previous.cache_write_tokens),
             ),
         Agent::Codex | Agent::Opencode | Agent::Grok => 0,
-        // No readers yet, so no separate cached-input accounting.
         Agent::Antigravity
         | Agent::Gemini
         | Agent::Cursor
@@ -83,8 +81,6 @@ pub(crate) const fn provider_name(agent: Agent) -> Option<schema::enums::GenAiPr
         Agent::Antigravity | Agent::Gemini => Some(GenAiProviderName::Google),
         Agent::Cursor => Some(GenAiProviderName::Cursor),
         Agent::Muse => Some(GenAiProviderName::Meta),
-        // Omp/Hermes route arbitrary providers per session; no single
-        // attribution until the readers report the routed provider.
         Agent::Omp | Agent::Hermes => None,
     }
 }

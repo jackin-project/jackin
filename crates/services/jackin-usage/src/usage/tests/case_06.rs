@@ -22,7 +22,6 @@ fn codex_access_token_parsed_from_refresh_response() {
         codex_access_token_from_response(&value).as_deref(),
         Some("new-token")
     );
-    // Missing / empty token yields None so the caller falls back to NeedsLogin.
     assert!(codex_access_token_from_response(&serde_json::json!({})).is_none());
     assert!(codex_access_token_from_response(&serde_json::json!({ "access_token": "" })).is_none());
 }
@@ -39,7 +38,6 @@ fn codex_oauth_credentials_carry_refresh_token() {
     let creds = codex_oauth_from_value(&value).expect("codex credentials");
     assert_eq!(creds.access_token, "at-1");
     assert_eq!(creds.refresh_token.as_deref(), Some("rt-1"));
-    // A static API key has nothing to refresh.
     let api = codex_oauth_from_value(&serde_json::json!({ "OPENAI_API_KEY": "sk-x" }))
         .expect("api key credentials");
     assert!(api.refresh_token.is_none());

@@ -8,9 +8,6 @@ fn first_credential_uses_home_first_then_handoff_fallback() {
     let dir = tempfile::tempdir().expect("tempdir");
     let home = dir.path().join("home.credentials.json");
     let handoff = dir.path().join("handoff.credentials.json");
-    // Home present but WITHOUT a usable token — the proven in-container
-    // failure mode — so resolution must fall through to the forwarded
-    // handoff rather than dropping to the impoverished CLI path.
     fs::write(&home, r#"{"oauthAccount":{"emailAddress":"a@b.c"}}"#).expect("write home");
     fs::write(
         &handoff,
@@ -26,7 +23,6 @@ fn first_credential_uses_home_first_then_handoff_fallback() {
             .as_ref()
             .is_some_and(|c| { c.access_token.as_str() == "handoff-token" })
     );
-    // A valid home token wins over the handoff (home is the source of truth).
     fs::write(&home, r#"{"claudeAiOauth":{"accessToken":"home-token"}}"#).expect("rewrite home");
     let resolved = first_credential(&[home, handoff], load_claude_oauth_credentials);
     assert!(
@@ -38,10 +34,6 @@ fn first_credential_uses_home_first_then_handoff_fallback() {
 
 #[test]
 fn codex_rpc_maps_spark_windows_and_reset_credits() {
-    // Mirrors the live `account/rateLimits/read` response: the main "codex"
-    // limit is Session/Weekly; a separate "…Codex-Spark" entry under
-    // rateLimitsByLimitId carries the Spark windows; rateLimitResetCredits
-    // carries the manual-reset count.
     let body = r#"{
             "rateLimits": {"limitId": "codex",
                 "primary": {"usedPercent": 7, "windowDurationMins": 300, "resetsAt": 1782396144},
@@ -72,6 +64,5 @@ fn codex_rpc_maps_spark_windows_and_reset_credits() {
     assert!(labels.contains(&"Codex Spark 5-hour".to_owned()));
     assert!(labels.contains(&"Codex Spark Weekly".to_owned()));
     assert!(labels.contains(&"Limit Reset Credits".to_owned()));
-    // The main "codex" limit must not be duplicated as an extra limit.
     assert_eq!(labels.iter().filter(|l| l.as_str() == "Session").count(), 1);
 }

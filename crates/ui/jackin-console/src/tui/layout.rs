@@ -1,20 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Layout utilities shared across console screens: header/content/footer
-//! heights, seam geometry, and scrollbar axis constants.
-//!
-//! Not responsible for: split percentage state (see `split`) or rendering
-//! any widget.
-
 pub const LIST_HEADER_HEIGHT: u16 = 2;
 pub const LIST_FOOTER_HEIGHT: u16 = 2;
-/// Minimum terminal width where the list/details seam is draggable.
 pub const MIN_DRAGGABLE_WIDTH: u16 = 40;
 pub const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 1;
 pub const MOUSE_VERTICAL_SCROLL_STEP: i16 = 1;
 pub const SCREEN_HEADER_HEIGHT: u16 = 3;
-/// Half-width of the list/details seam hit-region.
 pub const SEAM_HIT_SLACK: u16 = 1;
 pub const TAB_STRIP_HEIGHT: u16 = 2;
 
@@ -24,13 +16,11 @@ pub enum ScrollbarAxis {
     Vertical,
 }
 
-/// Compute the seam column for a percentage split and total terminal width.
 #[must_use]
 pub const fn split_seam_column(pct: u16, width: u16) -> u16 {
     width.saturating_mul(pct) / 100
 }
 
-/// `true` when `column` is inside the list/details seam hit-region.
 #[must_use]
 pub const fn near_seam(column: u16, seam_x: u16) -> bool {
     let lo = seam_x.saturating_sub(SEAM_HIT_SLACK);
@@ -38,11 +28,8 @@ pub const fn near_seam(column: u16, seam_x: u16) -> bool {
     column >= lo && column <= hi
 }
 
-/// Return `(left_x, left_width, right_x, right_width)` using Ratatui's
-/// percentage layout arithmetic.
 #[must_use]
 pub fn horizontal_split_pane_dims(pct: u16, total_width: u16) -> (u16, u16, u16, u16) {
-    // Same upstream layout carrier as the render path (`split_list_columns`).
     let layout = crate::tui::split::split_panel_group_layout(
         ratatui::layout::Rect {
             x: 0,
@@ -68,8 +55,6 @@ pub const fn list_body_area(term_size: ratatui::layout::Rect) -> ratatui::layout
     }
 }
 
-/// Return the visual list row index under a mouse position, excluding the
-/// left pane border, seam column, top border, and bottom border.
 #[must_use]
 pub const fn list_content_visual_index_at(
     col: u16,
@@ -89,7 +74,6 @@ pub const fn list_content_visual_index_at(
     Some((row - content_top) as usize)
 }
 
-/// Derive a new split percentage from a drag anchor and current mouse column.
 #[must_use]
 pub fn split_pct_from_drag(anchor_pct: u16, anchor_x: u16, mouse_col: u16, width: u16) -> u16 {
     let delta_cols = i32::from(mouse_col) - i32::from(anchor_x);
@@ -178,8 +162,6 @@ pub fn apply_scrollbar_drag(
                 1,
                 u16::try_from(scroll_viewport_height(area)).unwrap_or(u16::MAX),
             );
-            // User-driven position change: the pausing setter, not the
-            // cursor-reveal one.
             scroll.set_offset_y(offset);
         }
     }
@@ -237,8 +219,6 @@ pub const fn point_in_rect(col: u16, row: u16, area: ratatui::layout::Rect) -> b
         && row < area.y.saturating_add(area.height)
 }
 
-/// Map a pointer inside a bordered scrollable content block to the visual row
-/// exposed by that block's scrolled content.
 #[must_use]
 pub fn bordered_content_hit_at_position<T>(
     area: ratatui::layout::Rect,
@@ -279,24 +259,17 @@ pub const fn is_horizontally_scrollable(area: ratatui::layout::Rect, content_wid
     termrock::scroll::is_scrollable(content_width, scroll_viewport_width(area))
 }
 
-/// Center a dialog at a stable preferred width derived from `pct_w` of a 160-col
-/// reference terminal. The dialog holds that width when the outer area is at least
-/// that wide, and shrinks gracefully (min-margin 4) only when the terminal is too
-/// narrow. This prevents dialogs from rescaling proportionally on every resize.
 #[must_use]
 pub fn centered_rect_fixed(
     outer: ratatui::layout::Rect,
     pct_w: u16,
     rows: u16,
 ) -> ratatui::layout::Rect {
-    // Preferred = pct_w% of a 160-col reference — stable on any terminal ≥ that.
     const REFERENCE_COLS: u16 = 160;
     let preferred = REFERENCE_COLS.saturating_mul(pct_w) / 100;
     centered_rect_preferred(outer, preferred, rows)
 }
 
-/// Center a dialog at `preferred_w` columns, shrinking only when the outer area is
-/// too narrow to fit `preferred_w` with a 4-column side margin.
 #[must_use]
 pub fn centered_rect_preferred(
     outer: ratatui::layout::Rect,

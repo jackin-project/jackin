@@ -268,7 +268,6 @@ pub(super) fn assert_detail_group_rows(detail: &str) {
             "provider: provider maintenance (prov_maint)",
         ],
     );
-    // No invented values: absent money/tiers/expiry/renewal/reset render nothing.
     assert!(
         !detail.contains("remaining"),
         "unreported remaining must not render:\n{detail}"

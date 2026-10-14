@@ -1,4 +1,3 @@
-// docs/components/landing/loopData.tsx
 import type { ReactNode } from 'react';
 
 export interface LoopFrame {

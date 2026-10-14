@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Hardline agent flows with focus and lease handling.
 
 use jackin_core::{CommandRunner, ContainerHandle};
 use jackin_docker::docker_client::DockerApi;
@@ -24,10 +23,6 @@ pub async fn hardline_agent(
     hardline_agent_with_focus(paths, container_name, None, docker, runner).await
 }
 
-/// Same as `hardline_agent` but threads a host-supplied pane focus id.
-///
-/// The console preview navigation calls this with the
-/// operator-selected pane so the reconnect lands inside that pane.
 pub async fn hardline_agent_with_focus(
     paths: &JackinPaths,
     container_name: &str,
@@ -151,9 +146,6 @@ pub(crate) async fn hardline_docker_agent_with_focus_with_lease(
 ) -> anyhow::Result<()> {
     validate_current_account_admission(paths, container_name, admission_lease)
         .map_err(mark_reconnect_admission_failure)?;
-    // Reconcile keep_awake right before reconnect. The attach blocks on the
-    // capsule exec until the session ends, so the post-hardline reconcile in
-    // the app layer would fire too late.
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     let attach_outcome = reconnect_or_create_session_with_container_handle_with_lease(
         paths,
@@ -166,10 +158,6 @@ pub(crate) async fn hardline_docker_agent_with_focus_with_lease(
         entry_claim,
     )
     .await;
-    // A clean last-session shutdown surfaces as a non-zero attach result (the
-    // capsule client hits the socket close as `early eof`). Preserve that one
-    // known transport race, but never swallow admission or generation errors
-    // while the lifecycle inspect still says the container is running.
     if let Err(error) = attach_outcome {
         if error.is::<crate::runtime::launch::GenerationLeaseViolation>()
             || error.is::<ReconnectAdmissionFailure>()

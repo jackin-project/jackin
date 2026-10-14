@@ -1,18 +1,10 @@
-//! Shared form row / section view models for editor and settings screens.
-//!
-//! Names the data shape view builders pass around so both screens share
-//! section rendering without multi-param state generics on every helper.
-
 use ratatui::text::Line;
 
 use crate::tui::components::editor_rows::{FieldEmphasis, labeled_field_line};
 
-/// One labeled value row in a form section (editor general / settings general).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldRow {
-    /// Column label shown to the left of the value.
     pub label: String,
-    /// Display string for the current value.
     pub value: String,
 }
 
@@ -26,17 +18,11 @@ impl FieldRow {
     }
 }
 
-/// Vertical list of [`FieldRow`]s with a single cursor for highlight.
-///
-/// Produced by both the workspace-editor general tab and the settings general
-/// tab; pure line builders consume this so render paths stay free of the full
-/// multi-param `EditorState` / `SettingsState` type trains.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormSection {
     pub rows: Vec<FieldRow>,
     pub cursor: usize,
     pub show_cursor: bool,
-    /// Label column width for `labeled_field_line` rendering.
     pub label_width: usize,
 }
 
@@ -51,7 +37,6 @@ impl FormSection {
         }
     }
 
-    /// Render rows using the shared labeled-field helper.
     #[must_use]
     pub fn lines(&self) -> Vec<Line<'static>> {
         self.rows
@@ -71,7 +56,6 @@ impl FormSection {
             .collect()
     }
 
-    /// Content width of the widest row (cursor gutter + padded label + value).
     #[must_use]
     pub fn content_width(&self) -> usize {
         self.rows
@@ -90,7 +74,6 @@ impl FormSection {
     }
 }
 
-/// Scroll offsets + focus flag for a tab panel (shared by editor/settings tabs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TabPanelView {
     pub scroll_x: u16,

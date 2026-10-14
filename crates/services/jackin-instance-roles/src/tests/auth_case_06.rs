@@ -111,7 +111,6 @@ fn sync_mode_overwrites_existing() {
     let paths = JackinPaths::for_tests(temp.path());
     let manifest = simple_manifest(&temp);
 
-    // First run with host auth
     seed_host_auth(&temp);
     let (state, outcome1) = RoleState::prepare(
         &paths,
@@ -128,19 +127,16 @@ fn sync_mode_overwrites_existing() {
     .unwrap();
     assert_eq!(outcome1, AuthProvisionOutcome::Synced);
 
-    // Simulate container modifying its own .claude.json
     std::fs::write(
         state.claude_account_json().unwrap(),
         r#"{"container":"data"}"#,
     )
     .unwrap();
 
-    // Update host credentials
     let updated_creds = r#"{"claudeAiOauth":{"accessToken":"new","refreshToken":"new"}}"#;
     std::fs::write(temp.path().join(".claude/.credentials.json"), updated_creds).unwrap();
     drop(state);
 
-    // Second run: should overwrite with host content
     let (state2, outcome2) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -169,7 +165,6 @@ fn switching_from_sync_to_ignore_revokes_forwarded_credentials() {
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 
-    // First run: sync mode writes credentials
     let (state, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -186,7 +181,6 @@ fn switching_from_sync_to_ignore_revokes_forwarded_credentials() {
     assert!(state.claude_credentials_json().unwrap().exists());
     drop(state);
 
-    // Operator switches to ignore — credentials must be wiped
     let (state2, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -211,7 +205,6 @@ fn switching_from_sync_to_ignore_revokes_forwarded_credentials() {
 fn token_mode_writes_onboarding_skeleton_and_no_credentials() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    // Seed host auth — token mode must NOT copy it.
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 
@@ -229,8 +222,6 @@ fn token_mode_writes_onboarding_skeleton_and_no_credentials() {
     )
     .unwrap();
 
-    // Skeleton tells Claude CLI to skip the interactive login wizard;
-    // actual auth comes from CLAUDE_CODE_OAUTH_TOKEN in the env.
     assert_eq!(
         std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
         r#"{"hasCompletedOnboarding":true}"#
@@ -246,12 +237,9 @@ fn token_mode_writes_onboarding_skeleton_and_no_credentials() {
 fn api_key_mode_wipes_credentials_and_writes_empty_json() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    // Seed host auth — api_key mode must NOT copy it.
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 
-    // First run: sync mode writes credentials we'll then need to verify
-    // get wiped under api_key.
     let (state, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -304,7 +292,6 @@ fn switching_from_sync_to_token_revokes_forwarded_credentials() {
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 
-    // First run: sync mode writes credentials
     let (state, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -321,9 +308,6 @@ fn switching_from_sync_to_token_revokes_forwarded_credentials() {
     assert!(state.claude_credentials_json().unwrap().exists());
     drop(state);
 
-    // Operator switches to token — credentials must be wiped and
-    // .claude.json reset to skeleton so Claude Code skips the login
-    // wizard and authenticates exclusively via CLAUDE_CODE_OAUTH_TOKEN.
     let (state2, outcome) = RoleState::prepare(
         &paths,
         "jk-agent-smith",

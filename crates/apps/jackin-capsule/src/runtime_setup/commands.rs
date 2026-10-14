@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Command execution and process-request helpers.
 
 use std::ffi::OsStr;
 
@@ -73,7 +72,6 @@ pub(crate) fn runtime_setup_request(
 }
 
 pub(crate) fn run_optional_command(program: &str, args: &[&str]) -> bool {
-    // Use the shared telemetry resolver rather than parsing controls privately.
     let verbose = matches!(
         jackin_diagnostics::telemetry_level(false),
         jackin_diagnostics::TelemetryLevel::Debug | jackin_diagnostics::TelemetryLevel::Trace

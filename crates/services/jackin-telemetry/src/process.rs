@@ -1,13 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Privacy-safe process telemetry vocabulary.
-
 use std::path::Path;
 
 use crate::schema::enums::ProcessExecutableName;
 
-/// Classify a program by basename into the closed process vocabulary.
 #[must_use]
 pub fn classify_executable(program: &Path) -> ProcessExecutableName {
     let executable = program
@@ -45,8 +42,6 @@ pub fn classify_executable(program: &Path) -> ProcessExecutableName {
         "muse" => ProcessExecutableName::Muse,
         "omp" => ProcessExecutableName::Omp,
         "hermes" => ProcessExecutableName::Hermes,
-        // Bare `agent` stays Other: it is both the Grok Build alias and
-        // the Cursor installer default, so the basename is ambiguous.
         _ => ProcessExecutableName::Other,
     }
 }

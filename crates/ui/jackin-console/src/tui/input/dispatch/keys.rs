@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Top-level key dispatcher.
 
 use super::super::InputOutcome;
 use super::super::editor::{EditorModalOutcome, handle_editor_key, handle_editor_modal};
@@ -94,9 +93,6 @@ pub fn handle_key(
         ConsoleInputDispatchPlan::SettingsAuthDialog => {}
         ConsoleInputDispatchPlan::CreatePreludeModal => {}
         ConsoleInputDispatchPlan::Stage(route) => {
-            // `?` opens the keyboard-help overlay from every stage. Only the
-            // Stage arm consults it: any open modal/picker owns `?` as typed
-            // input (dispatch precedence above routes those keys first).
             if crate::tui::run::should_open_keyboard_help(key) {
                 state.keyboard_help = Some(termrock::widgets::KeyboardHelpState::modal());
                 return Ok(InputOutcome::Continue);
@@ -126,8 +122,6 @@ pub fn handle_key(
         }
     }
 
-    // Capture `op_available` and the session-scoped op_cache before modal
-    // borrows so commit paths can build source/op pickers.
     let op_available = state.op_available;
     let op_cache = Rc::clone(&state.op_cache);
     let term_size = state.cached_term_size;
@@ -186,8 +180,6 @@ pub fn handle_key(
         }
         state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
 
-        // After modal handling, check if an exit intent was signalled by
-        // the SaveDiscardCancel modal.
         let intent = if let ManagerStage::Editor(editor) = &state.stage {
             editor.exit_after_save
         } else {
@@ -196,11 +188,6 @@ pub fn handle_key(
         if let Some(intent) = intent {
             match intent {
                 ExitIntent::Save => {
-                    // Route through the two-phase save: ConfirmSave opens
-                    // first; the eventual commit is the one that exits.
-                    // Pass `exit_on_success = true` so that, if the operator
-                    // picks Save in the confirm dialog and the write
-                    // succeeds, we bounce out to the workspace list.
                     if let ManagerStage::Editor(e) = &mut state.stage {
                         e.exit_after_save = None;
                     }
@@ -337,20 +324,6 @@ pub fn handle_key(
                 return Ok(InputOutcome::Continue);
             }
         }
-        // After the modal handler runs, the prelude is in one of three states:
-        // - still in a modal (user pressed a non-commit/cancel key): continue
-        // - modal cleared + completed() Some: wizard done → transition to Editor
-        // - modal cleared + completed() None: wizard cancelled → back to List
-        //
-        // `completed()` checks every required field together and
-        // returns the owned (name, ws) pair so we don't need a
-        // separate `pending_name.is_some()` flag plus an
-        // `expect("prelude complete")` to keep the two invariants
-        // in sync.
-        // `WorkspaceConfig` is several hundred bytes once auth /
-        // canonical-slot fields are populated, so box the
-        // success carrier — `Complete` was already the only
-        // payload variant.
         let (status, completed) = if let ManagerStage::CreatePrelude(p) = &state.stage {
             let completed = p.completed().map(Box::new);
             (

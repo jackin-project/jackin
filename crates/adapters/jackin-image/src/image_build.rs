@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Image-build pipeline helpers — `docker build` env, build-context stats,
-//! Dockerfile token/sha detection, buildkit step parsing, compact warning
-//! line formatting.
-//!
-//! Architecture Invariant: L1 application crate module. Depends on `jackin-core`
-//! (`CommandRunner`), `jackin-diagnostics`.
-
 use std::collections::HashMap;
 
 use anyhow::Context as _;
@@ -55,11 +48,6 @@ pub fn docker_info_uses_containerd_store(info: &str) -> Option<bool> {
 }
 
 pub fn docker_build_env() -> Vec<(String, String)> {
-    // BuildKit is required, not optional: the generated Dockerfiles use
-    // `COPY --link --chmod=` and `--mount=type=secret`, all BuildKit-only.
-    // Gating it on a github token left token-less builds on the legacy
-    // builder, which rejects `--chmod` ("the --chmod option requires
-    // BuildKit") and fails the derived-image build.
     vec![
         ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
         ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),

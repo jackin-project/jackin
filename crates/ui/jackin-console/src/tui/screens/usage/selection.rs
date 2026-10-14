@@ -1,14 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage list selection and navigation.
 
 use super::{UsageAccount, UsageScreenState, UsageSort};
 
 impl UsageScreenState {
-    /// Canonical-account indices in display order after the current filter
-    /// and sort. Selection positions address this list: position 0 is
-    /// Overview, position `p > 0` is `visible[p - 1]`. The default
-    /// provider/all view is the identity order baked in by `from_projection`.
     #[must_use]
     pub fn visible_order(&self) -> Vec<usize> {
         let mut order: Vec<usize> = (0..self.accounts.len())
@@ -30,11 +25,6 @@ impl UsageScreenState {
         order
     }
 
-    /// Re-anchor `selected` by stable id after a sort/filter change, so the
-    /// operator's row follows the account instead of the position. A row
-    /// hidden by the filter parks on Overview with its id kept, so clearing
-    /// the filter restores it. Always resets scroll: old offsets are
-    /// meaningless once the list reorders.
     pub(crate) fn reanchor_after_view_change(&mut self) {
         let order = self.visible_order();
         match &self.selected_id {
@@ -49,9 +39,6 @@ impl UsageScreenState {
         self.scroll = 0;
     }
 
-    /// `selected` position of the most-constrained visible account: lowest
-    /// known remaining percent, ties to the soonest reset. Accounts that
-    /// report no percent never win — unknown quota is not zero quota.
     #[must_use]
     pub fn most_constrained_selected(&self) -> Option<usize> {
         let order = self.visible_order();
@@ -69,9 +56,6 @@ impl UsageScreenState {
             .map(|(pos, _)| pos.saturating_add(1))
     }
 
-    /// Jump selection to the most-constrained visible account. Returns false
-    /// — posting an inline notice instead of moving — when there is nothing
-    /// to compare: no accounts, an empty filter result, or no known percents.
     pub fn jump_to_most_constrained(&mut self) -> bool {
         if let Some(selected) = self.most_constrained_selected() {
             self.selected = selected;

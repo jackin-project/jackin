@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ManagerState` construction from config.
 
 use ratatui::layout::Rect;
 use std::cell::RefCell;
@@ -18,9 +17,6 @@ use super::super::{
 use jackin_env::OpCache;
 
 impl ManagerState<'_> {
-    /// Allocates a fresh empty cache and assumes `op` unavailable —
-    /// production reset paths use the `_with_cache_and_op` variant to
-    /// preserve the `ConsoleState`-owned cache.
     pub fn from_config(config: &AppConfig, cwd: &std::path::Path) -> Self {
         Self::from_config_with_cache(config, cwd, Rc::new(RefCell::new(OpCache::default())))
     }

@@ -1,18 +1,3 @@
-//! End-to-end smoke for the programmatic (`LoadOptions`) launch surface.
-//!
-//! Drives `jackin_runtime::runtime::load_role` directly — no CLI, no PTY, no
-//! `script(1)` — with every launch decision pre-supplied: role selector, agent,
-//! registered account ID, model, effort, env, pre-approved on-demand bindings,
-//! mounts, and force. The launch must run to a started container without
-//! opening a single dialog and hand back the instance identity, which the test
-//! verifies through `jackin status --format json`.
-//!
-//! Uses an isolated config, a local role, and a synthetic account. A non-TTY
-//! launch leaves the instance running; the test queries it through the real
-//! CLI with the same isolated paths, then removes the container.
-
-// Expects only apply when the e2e feature compiles the body; without it the
-// crate is empty and unfulfilled-expect would fail `cargo clippy -p jackin`.
 #![cfg_attr(
     feature = "e2e",
     expect(
@@ -30,7 +15,6 @@ use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::BollardDockerClient;
 use jackin_runtime::runtime::{self, LoadOptions};
 
-/// Instance marker retained in captured test output for diagnostics.
 const INSTANCE_ID_MARKER: &str = "LOAD_OPTIONS_INSTANCE_ID";
 const ROLE: &str = "load-options-e2e";
 
@@ -43,9 +27,6 @@ fn docker_available() -> bool {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn load_options_launch() {
-    // The programmatic API reads the runtime override from process env. Spawn
-    // this test with an isolated override instead of mutating the async test
-    // process's environment. This matches the DinD CLI harness's image choice.
     const CHILD_MARKER: &str = "JACKIN_E2E_LOAD_OPTIONS_CHILD";
     if std::env::var_os(CHILD_MARKER).is_none() {
         let image = std::env::var("JACKIN_E2E_CONSTRUCT_IMAGE")
@@ -79,8 +60,6 @@ async fn load_options_launch() {
     let mut config = AppConfig::load_or_init(&paths).expect("synthetic config must load");
     let selector = RoleSelector::parse(ROLE).expect("role selector must parse");
 
-    // A workspace that is not one of the operator's projects: an empty scratch
-    // directory bind-mounted at /workspace.
     let workdir = tempfile::tempdir().expect("workspace tempdir");
     let host_src = workdir
         .path()
@@ -102,7 +81,6 @@ async fn load_options_launch() {
         mount_heal: jackin_config::MountHealReport::default(),
     };
 
-    // Every decision pre-supplied; nothing here may open a dialog.
     let mut opts = LoadOptions::programmatic(Agent::Claude);
     opts.force = true;
     opts.selection = Some(jackin_core::LaunchSelection::Account("e2e-claude".into()));
@@ -198,8 +176,6 @@ fn seed_launch_fixture(paths: &JackinPaths, role: &std::path::Path) -> anyhow::R
         "e2e requires a locally built Linux JACKIN_CAPSULE_BIN"
     );
     std::fs::create_dir_all(role)?;
-    // Role sources stay version-pinned. The runtime's JACKIN_CONSTRUCT_IMAGE
-    // override selects the locally built e2e image after source validation.
     std::fs::write(
         role.join("Dockerfile"),
         jackin_manifest::BASE_DOCKERFILE_FROM,

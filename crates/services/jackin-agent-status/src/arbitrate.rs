@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pure arbitration from collected evidence to one raw agent state.
-
 use std::borrow::Borrow;
 use std::time::Instant;
 
@@ -62,12 +60,6 @@ pub fn arbitrate(
         if snapshot.process.foreground_returned_to_shell {
             summary.notes.push(EvidenceNote::ForegroundReturnedToShell);
         }
-        // Process exit / foreground-return-to-shell is a definitive idle, not an
-        // inferred one: publish immediately (Strong) so the done transition lands
-        // on this tick, before the daemon clears runtime authority for an exiting
-        // session. Weak here would route through the debounce idle-confirmation
-        // path, which the same-tick authority clear then starves — the pane would
-        // fall to Unknown instead of Done.
         return finish(
             RawAgentState::Idle,
             AgentStatusConfidence::Strong,
@@ -116,10 +108,6 @@ pub fn arbitrate(
     }
 
     if snapshot.screen.strong && snapshot.screen.state == Some(RawAgentState::Blocked) {
-        // A strong Blocked match is a dialog visible on the live screen right now
-        // — the rule packs match the bottom region, not scrollback — so it is
-        // current ground truth and overrides a runtime authority that may be
-        // reporting a now-superseded Working/Idle.
         return finish(
             RawAgentState::Blocked,
             AgentStatusConfidence::Strong,
@@ -158,11 +146,6 @@ pub fn arbitrate(
             summary,
         );
     }
-    // OSC 9;4 progress-clear is a done-ish *hint*, never authoritative idle: a
-    // single clear edge enters at Weak confidence so the debounce policy still
-    // requires IDLE_CONFIRMATIONS consecutive evaluations (and CPU-quiet) before
-    // publishing idle. Promoting it to Strong here would bypass that and flip a
-    // still-working agent to idle on one progress edge.
     if snapshot.process.foreground_is_agent && snapshot.osc.progress_cleared_at.is_some() {
         return finish(
             RawAgentState::Idle,
@@ -193,9 +176,6 @@ pub fn arbitrate(
 }
 
 fn authority_confidence(authority: &AuthorityEvidence) -> AgentStatusConfidence {
-    // Daemon-mapped runtime-event authority, graded by lifecycle coverage:
-    // Complete (e.g. OpenCode's full event stream) is the most trusted semantic
-    // source; Partial coverage cannot author at full confidence.
     match authority.grade {
         AuthorityGrade::Complete => AgentStatusConfidence::Authoritative,
         AuthorityGrade::Partial => AgentStatusConfidence::Strong,
@@ -214,7 +194,6 @@ fn finish(
     summary
 }
 
-/// Attention priority used for tab/workspace roll-up.
 pub fn attention_priority(state: AgentState) -> u8 {
     match state {
         AgentState::Blocked => 4,
@@ -225,7 +204,6 @@ pub fn attention_priority(state: AgentState) -> u8 {
     }
 }
 
-/// Roll up a collection of session states to the most attention-worthy.
 pub fn roll_up_states<I>(states: I) -> AgentState
 where
     I: IntoIterator,

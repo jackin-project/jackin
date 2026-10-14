@@ -4,9 +4,6 @@
 use crate::lease::MAX_CLAUDE_KEYCHAIN_PAYLOAD_BYTES;
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Fixed, value-free facts about a rejected Keychain payload. Every field name
-/// and enum value is defined by this type; payload strings and unknown keys are
-/// never copied into the diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ClaudeCredentialPayloadDiagnostic {
     payload_bytes: usize,
@@ -236,8 +233,6 @@ fn raw_subscription_kinds(oauth: &ClaudePayloadRawOAuth<'_>) -> ClaudePayloadSub
     }
 }
 
-/// Describe a failed payload without exposing values. Check the size before
-/// parsing so oversized Keychain data cannot cause diagnostic allocations.
 pub fn diagnose_claude_profile_payload(bytes: &[u8]) -> ClaudeCredentialPayloadDiagnostic {
     let payload_bytes = bytes.len();
     let mut diagnostic = ClaudeCredentialPayloadDiagnostic {

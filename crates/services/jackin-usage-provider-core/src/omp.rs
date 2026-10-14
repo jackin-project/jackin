@@ -9,23 +9,11 @@
     )
 )]
 
-//! `omp` (oh-my-pi) attribution adapter.
-//!
-//! omp is a local aggregator CLI, not a billed provider: it has no single
-//! identity or usage endpoint. Usage is attributed to underlying provider
-//! accounts via per-provider collectors; native pool filters/counters are
-//! routing state and must never become an independent subscription budget.
-//! The auth-broker pool file (`OMP_AUTH_BROKER_ACCOUNT_POOL_FILE`) is
-//! trusted-client routing, not server authorization, and must never gate
-//! selected-accounts-only admission.
-
 use super::{
     FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus,
     UsageSource, status_bar_quota_labels,
 };
 
-/// Usage attributed to one underlying provider account. The collector buckets
-/// pass through unchanged — omp adds no budget of its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OmpAttribution {
     pub(crate) provider: String,
@@ -45,18 +33,12 @@ pub(crate) fn omp_attribute(
     }
 }
 
-/// Native pool routing state (filters/counters) is never quota: mapping it
-/// always yields zero buckets, so no independent subscription budget can form
-/// from omp-local counters.
 pub(crate) fn omp_pool_routing_buckets(_routing: &serde_json::Value) -> Vec<QuotaBucketView> {
     Vec::new()
 }
 
-/// Broker pool-file environment variable: trusted-client routing only.
 pub(crate) const OMP_AUTH_BROKER_ACCOUNT_POOL_FILE: &str = "OMP_AUTH_BROKER_ACCOUNT_POOL_FILE";
 
-/// Always `false`: the broker pool file is routing, not authorization, and
-/// must never gate selected-accounts-only admission.
 pub(crate) fn omp_broker_pool_is_authorization() -> bool {
     false
 }

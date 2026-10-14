@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `MaterializeWorkspace` input and workspace materialization.
 
 use crate::runtime::launch::launch_pipeline::launch_phases::{
     InstancePrepared, TrustSeeded, WorkspaceMaterialized,

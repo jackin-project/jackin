@@ -42,8 +42,6 @@ fn readonly_mount_renders_ro_mode() {
 
 #[test]
 fn secrets_tab_defaults_to_masked() {
-    // `new_edit` leaves `unmasked_rows` empty, so every plain-text
-    // value renders masked by default.
     let editor = editor_with_workspace_env();
     assert!(
         editor.unmasked_rows.is_empty(),
@@ -79,9 +77,6 @@ fn secrets_tab_unmasked_shows_literal_value() {
 
 #[test]
 fn secrets_tab_collapsed_agent_omits_key_rows() {
-    // `secrets_expanded` is empty by default (set by `new_edit`), so
-    // the role section header renders but its `LOG_LEVEL` key row
-    // does not.
     let editor = editor_with_agent_override();
     assert!(editor.secrets_expanded.is_empty());
     let dump = render_to_dump(&editor);
@@ -166,22 +161,9 @@ fn secrets_flat_rows_sequence_is_canonical() {
         ..WorkspaceConfig::default()
     };
     let mut editor = EditorState::new_edit("ws".into(), ws);
-    // Expand agent-a, leave agent-b collapsed.
     editor.secrets_expanded.insert("agent-a".into());
 
     let rows = editor.secrets_flat_rows();
-    // Expected sequence:
-    //  0  WorkspaceKeyRow("ALPHA")
-    //  1  WorkspaceKeyRow("BETA")
-    //  2  SectionSpacer
-    //  3  WorkspaceAddSentinel
-    //  4  SectionSpacer
-    //  5  AgentHeader { role: "agent-a", expanded: true }
-    //  6  AgentKeyRow { role: "agent-a", key: "KEY" }
-    //  7  SectionSpacer
-    //  8  AgentAddSentinel("agent-a")
-    //  9  SectionSpacer
-    // 10  AgentHeader { role: "agent-b", expanded: false }
     assert_eq!(rows.len(), 11, "unexpected row count: {rows:?}");
     assert!(matches!(&rows[0], SecretsRow::WorkspaceKeyRow(k) if k == "ALPHA"));
     assert!(matches!(&rows[1], SecretsRow::WorkspaceKeyRow(k) if k == "BETA"));
@@ -266,8 +248,6 @@ fn op_row_breadcrumb_render_three_segment() {
         !dump.contains("op://"),
         "op:// scheme prefix must not appear in the breadcrumb; dump:\n{dump}"
     );
-    // Mask glyph must not appear on OpRef rows even though
-    // editor defaults to all-masked.
     assert!(
         editor.unmasked_rows.is_empty(),
         "default state is all-masked; OpRef rows must still bypass masking"
@@ -299,8 +279,6 @@ fn op_row_breadcrumb_render_four_segment_with_section() {
     editor.active_field = FieldFocus::Row(0);
 
     let dump = render_to_dump(&editor);
-    // All four components must appear, in order, with the arrow
-    // glyph between the section and the field.
     assert!(
         dump.contains("Personal"),
         "vault must render; dump:\n{dump}"
@@ -318,8 +296,6 @@ fn op_row_breadcrumb_render_four_segment_with_section() {
         dump.contains("\u{2192}"),
         "arrow glyph must precede the field; dump:\n{dump}"
     );
-    // The account-prefix branch is dead — no email-style rendering
-    // for 4-segment refs.
     assert!(
         !dump.contains('@'),
         "4-segment refs must not render an account email prefix; dump:\n{dump}"

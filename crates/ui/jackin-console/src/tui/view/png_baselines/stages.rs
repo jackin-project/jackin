@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Stage and screen baseline builders.
 #![cfg(test)]
 
 use super::*;
@@ -121,5 +120,3 @@ pub(crate) fn keyboard_help() -> (ManagerState<'static>, AppConfig, PathBuf) {
     state.keyboard_help = Some(termrock::widgets::KeyboardHelpState::modal());
     (state, config, cwd)
 }
-
-// ── Modal constructors (all 18 `ConsoleModal` variants) ────────────────────

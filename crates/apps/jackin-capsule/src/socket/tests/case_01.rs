@@ -5,11 +5,7 @@ use super::*;
 
 #[tokio::test]
 async fn read_control_msg_rejects_oversize_length_prefix() {
-    // Length prefix claims 5 MiB (> 4 MiB cap). Reader must bail
-    // rather than allocate the buffer.
     let (mut a, mut b) = UnixStream::pair().unwrap();
-    // Length = 5 MiB, as a 4-byte BE u32 split across `first_byte`
-    // (0x00) + the 3-byte suffix `read_control_msg` reads itself.
     let len_bytes = (5u32 * 1024 * 1024).to_be_bytes();
     a.write_all(&len_bytes[1..]).await.unwrap();
     a.shutdown().await.unwrap();
@@ -55,30 +51,11 @@ async fn read_control_msg_decodes_unknown_variant_for_forward_compat() {
 
 #[tokio::test]
 async fn start_listener_caps_concurrent_clients_at_max() {
-    // Hard regression guard for `MAX_CONCURRENT_CLIENTS`. Without
-    // the cap, any in-uid process can flood the attach channel
-    // and starve the legitimate operator. The over-cap connection
-    // must drop on the server side without ever landing in `rx`.
-    //
-    // Negative-delivery assertions go through `limiter`
-    // directly (`available_permits == 0` after saturation) rather
-    // than real-wall-clock `timeout()` checks against `rx.recv()`
-    // — the wall-clock approach passed on loaded CI runners
-    // simply because the daemon hadn't been scheduled within the
-    // timeout window, masking real cap regressions. Reading the
-    // semaphore is cap-sensitive instead of timing-sensitive.
     let tmp = tempfile::tempdir().expect("tempdir");
     let parent = tmp.path().join("run");
     let socket_path = parent.join("jackin.sock");
     let (mut rx, limiter) = start_listener_at_with_limiter(&socket_path).expect("bind");
 
-    // Hold every accepted stream + permit so the semaphore stays
-    // saturated. Dropping the permit would let the next accept
-    // proceed and invalidate the assertion.
-    //
-    // Per-iteration `connect().await` then `rx.recv()` assumes
-    // the unbounded mpsc preserves FIFO order of accepts — held
-    // today and contract-stable across tokio versions.
     let mut held: Vec<(UnixStream, tokio::sync::OwnedSemaphorePermit)> = Vec::new();
     let mut client_streams: Vec<UnixStream> = Vec::new();
     for i in 0..MAX_CONCURRENT_CLIENTS {
@@ -98,12 +75,6 @@ async fn start_listener_caps_concurrent_clients_at_max() {
         "after saturating the cap, no permits should remain"
     );
 
-    // Cap is now at MAX. The next connect should be accepted by
-    // the kernel but dropped on the server side. Yield to the
-    // tokio scheduler so the accept loop processes the over-cap
-    // connect, then check the semaphore: it must still report 0
-    // (no permit acquired) because `try_acquire_owned` failed and
-    // the loop continued without delivering to `rx`.
     let over_cap_client = UnixStream::connect(&socket_path)
         .await
         .expect("kernel-side connect");
@@ -122,7 +93,6 @@ async fn start_listener_caps_concurrent_clients_at_max() {
         other => panic!("rx must not deliver beyond MAX_CONCURRENT_CLIENTS; got: {other:?}"),
     }
 
-    // Releasing one permit must let a fresh attach through.
     drop(held.pop().expect("drop one held permit"));
     let new_client = UnixStream::connect(&socket_path)
         .await
@@ -142,9 +112,6 @@ async fn start_listener_caps_concurrent_clients_at_max() {
 
 #[tokio::test]
 async fn start_listener_locks_socket_and_parent_dir_to_owner_only() {
-    // Hard regression guard for the socket's defense-in-depth file-mode
-    // contract. Protocol peer authentication remains mandatory because
-    // session processes retain CAP_DAC_OVERRIDE.
     let tmp = tempfile::tempdir().expect("tempdir");
     let parent = tmp.path().join("run");
     let socket_path = parent.join("jackin.sock");

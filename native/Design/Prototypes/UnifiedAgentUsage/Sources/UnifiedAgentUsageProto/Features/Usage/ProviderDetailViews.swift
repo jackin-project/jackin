@@ -20,10 +20,6 @@ struct ProviderDetailView: View {
     }
 }
 
-/// Shared content projection for the Usage detail and transient popover.
-///
-/// Each host supplies its system-owned List/Form material; this view owns the
-/// content once so labels, ordering, states, and actions cannot drift.
 struct ProviderDetailSections: View {
     let store: ProtoStore
     let provider: ProtoProvider
@@ -290,8 +286,6 @@ struct ProviderDetailSections: View {
     }
 }
 
-/// Raised technical dossier panel. The native window/popover remains the
-/// structural glass host; authored quota content stays opaque and precise.
 private struct TechnicalPanel<Content: View>: View {
     let title: String
     let detail: String
@@ -393,11 +387,8 @@ private struct CompactLimitRow: View {
     }
 }
 
-/// One limit-window row — shared by the Usage-window detail and the popover
-/// so both surfaces render the same Rust-owned fields identically (DRY).
 struct LimitRowView: View {
     let window: ProtoQuotaWindow
-    /// Accessibility identifier prefix (`usage.limit` / `popover.limit`).
     var identifierPrefix = "usage.limit"
 
     var body: some View {
@@ -454,8 +445,6 @@ struct LimitRowView: View {
     }
 }
 
-/// A readable account fact, deliberately stacked instead of compressed into a
-/// small two-column table. Long provider values receive the full content width.
 private struct DetailFactItem: View {
     let icon: String
     let label: String

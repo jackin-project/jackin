@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Last-session exit flow and dirty-exit modal entry.
 
 use std::sync::Arc;
 
@@ -12,8 +11,6 @@ use crate::tui::update::FullRedrawReason;
 
 use super::Multiplexer;
 
-/// Build the read-only Inspect rows for the dirty-exit modal: a section header
-/// per dirty repo followed by its `<status> <path>` change rows.
 pub(crate) fn build_exit_inspect_rows(
     repos: &[crate::exit_assess::DirtyRepo],
 ) -> Arc<[InspectRow]> {
@@ -28,23 +25,10 @@ pub(crate) fn build_exit_inspect_rows(
     rows.into()
 }
 
-/// Handle the last live session exiting. Returns `true` when the daemon should
-/// exit and `false` to keep the event loop running — either because a dirty-exit
-/// modal was just opened, or because the modal flow is already in progress
-/// (re-entry guard). With policy `ask` and dirty isolated work the modal is
-/// shown (no teardown); otherwise the container drains and exits, preserving the
-/// original non-clean-exit reason.
 pub(crate) async fn handle_last_session_exit(
     mux: &mut Multiplexer,
     reason: Option<String>,
 ) -> bool {
-    // Called from two sites: the session-exit event handler (once, on last-session
-    // exit) and the client-frame handler (on every frame while no sessions remain).
-    // The guard below handles the client-frame re-entry case: if a dialog is already
-    // open (modal, Inspect view, or New-tab picker launched from "Start a new agent")
-    // the dirty-exit flow is already active. Re-entering would push a fresh modal
-    // and re-run the git assessment on every keypress, resetting selection to 0 —
-    // so the operator could never move past the first row. Defer until resolved.
     use super::ports::{ExitDisposition, PORTS, PersistencePort};
     if PORTS.last_session_exit(&mux.control) == ExitDisposition::Defer {
         return false;
@@ -55,9 +39,6 @@ pub(crate) async fn handle_last_session_exit(
             true
         }
         crate::exit_assess::ExitDecision::DrainWithAction(action) => {
-            // Policy keep/discard: record the action for the host, no prompt.
-            // Write failure is logged but does not block exit — a configured
-            // policy path cannot stall indefinitely waiting for a broken fs.
             if let Err(error) = crate::exit_assess::write_exit_action(action) {
                 let _warning = jackin_telemetry::record_recovered_degradation();
                 crate::output::stderr_line(format_args!(

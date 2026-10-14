@@ -5,8 +5,6 @@ use super::*;
 
 #[test]
 fn edit_workspace_rejects_leaving_pre_existing_violation() {
-    // A workspace already containing a rule-C violation. An unrelated edit
-    // (e.g., adding an allowed role) should be blocked by the post-check.
     use crate::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
     let mut config = AppConfig::default();
@@ -307,12 +305,10 @@ bogus = true
 fn resolve_github_mode_layered_precedence() {
     use crate::{WorkspaceConfig, WorkspaceRoleOverride};
     let mut cfg = AppConfig::default();
-    // Default — Sync
     assert_eq!(
         resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Sync
     );
-    // Global only
     cfg.github = Some(GithubAuthConfig {
         auth_forward: GithubAuthMode::Ignore,
         env: BTreeMap::new(),
@@ -321,7 +317,6 @@ fn resolve_github_mode_layered_precedence() {
         resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Ignore
     );
-    // Workspace overrides global
     let ws = WorkspaceConfig {
         workdir: "/x".into(),
         github: Some(GithubAuthConfig {
@@ -335,7 +330,6 @@ fn resolve_github_mode_layered_precedence() {
         resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Token
     );
-    // Role override wins
     let ov = WorkspaceRoleOverride {
         github: Some(GithubAuthConfig {
             auth_forward: GithubAuthMode::Sync,

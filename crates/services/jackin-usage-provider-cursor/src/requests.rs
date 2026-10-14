@@ -1,12 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Cursor` request usage fetch and buckets.
 
 use super::cursor_rest_get;
 use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
 use jackin_usage_provider_core::{bucket, compact_count, json_number};
 
-/// Request allowance (`/api/usage?user=`): used/total request counts.
 #[derive(Debug, Clone)]
 pub struct CursorRequestUsage {
     pub(crate) used: i64,
@@ -23,11 +21,6 @@ pub fn fetch_cursor_request_usage(
 }
 
 pub fn parse_cursor_request_usage(value: &serde_json::Value) -> Option<CursorRequestUsage> {
-    // Model-keyed (`gpt-4`, …): scan top-level objects for a request counter.
-    // Multi-model responses are pinned, not arbitrary: the alphabetically
-    // first model key carrying a counter wins, so the pick is deterministic
-    // regardless of JSON/map iteration order. (Summing across models would
-    // risk double-counting one shared allowance.)
     let entry = value
         .as_object()?
         .iter()

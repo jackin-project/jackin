@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EditorState` auth-form focus and persistence.
 
 use super::super::super::{AuthRow, EditorState, FieldFocus};
 
@@ -25,7 +24,6 @@ impl<
         PendingOpCommit,
     >
 {
-    /// Toggle assignment or cycle an explicit binding through compatible assigned accounts.
     pub fn edit_account_row(&mut self, config: &jackin_config::AppConfig, clear: bool) {
         let FieldFocus::Row(index) = self.active_field;
         let rows = self.auth_flat_rows(config);

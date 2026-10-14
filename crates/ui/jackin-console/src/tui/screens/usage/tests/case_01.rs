@@ -5,8 +5,6 @@ use super::*;
 
 #[test]
 fn summary_window_selects_first_ranked_metered_limit() {
-    // D30: long-range outranks session and other regardless of provider
-    // order; unmetered windows never qualify; ties break to provider order.
     let mut account = test_account("antigravity", "a", "pilot");
     account.windows = vec![
         UsageWindow {

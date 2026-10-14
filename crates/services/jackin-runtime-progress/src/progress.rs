@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host wiring for launch progress: re-exports presentation types from
-//! `jackin-launch` and installs host-terminal/desktop adapters.
-//!
-//! Not responsible for rendering or product composition tests — those live in
-//! `jackin-launch` (`progress` + `tui`). This module only bridges host I/O
-//! (clipboard, reveal/open, diagnostics compact lines) into the launch surface.
-
 use std::io::Write;
 
 pub use jackin_core::LaunchCancelled;
@@ -112,11 +105,6 @@ pub fn prelaunch_select_choice(
     )
 }
 
-/// Standalone forced-choice picker with a `context` block above the options.
-///
-/// For callers that run after the launch progress surface has been torn down
-/// — the post-attach worktree-cleanup prompt. Enters its own rich surface (or
-/// draws into the host guard's screen when one is active).
 pub fn standalone_select_with_context(
     title: &str,
     context: &[PromptContextLine],
@@ -131,8 +119,6 @@ pub fn standalone_select_with_context(
     )
 }
 
-/// Standalone error popup for launch-adjacent failures that need operator
-/// acknowledgement in the same rich surface.
 pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> {
     jackin_launch::progress::standalone_error_popup(
         title,
@@ -142,7 +128,6 @@ pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> 
     )
 }
 
-/// D23/D24 standalone exit dialog with inspect support.
 pub fn standalone_exit_dialog_with_inspect(
     title: &str,
     context: &[PromptContextLine],
@@ -159,7 +144,6 @@ pub fn standalone_exit_dialog_with_inspect(
     )
 }
 
-/// D23/D21 standalone launch dialog with delete-in-place support.
 pub fn standalone_launch_dialog(
     title: &str,
     candidates: &[jackin_core::LaunchCandidate],

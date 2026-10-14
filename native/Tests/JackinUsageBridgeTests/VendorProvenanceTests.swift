@@ -3,18 +3,12 @@
 
 import XCTest
 
-/// Vendored Apple agent knowledge must never appear without provenance.
-///
-/// Xcode 26.6 (17F113) ships no exportable skill documents, so the standing
-/// state is: vendor tree absent, blocker recorded in native/README.md. If a
-/// future shipping Xcode exposes a documented export, the tree must arrive
-/// with a provenance record in the same change.
 final class VendorProvenanceTests: XCTestCase {
     private var nativeRoot: URL {
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // Tests/JackinUsageBridgeTests
-            .deletingLastPathComponent()  // Tests
-            .deletingLastPathComponent()  // native
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 
     func testVendorTreeIsAbsentOrFullyProvenanced() throws {

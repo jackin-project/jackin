@@ -1,13 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `agent_status`.
 use super::*;
 
 #[test]
 fn confidence_orders_weakest_to_strongest() {
-    // The debounce policy compares confidences with `>=` / `<`, so this order
-    // is load-bearing.
     assert!(AgentStatusConfidence::Unknown < AgentStatusConfidence::Weak);
     assert!(AgentStatusConfidence::Weak < AgentStatusConfidence::Strong);
     assert!(AgentStatusConfidence::Strong < AgentStatusConfidence::Authoritative);

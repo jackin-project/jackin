@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `runtime/launch.rs`: load pipeline behavioral verification.
 #![expect(
     unused_qualifications,
     reason = "documented residual allow; prefer expect when site is lint-true"

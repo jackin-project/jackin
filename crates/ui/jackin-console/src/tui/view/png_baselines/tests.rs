@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! PNG baseline tests: inventory rot guard, zero-tolerance compare/bless, and
-//! the compare-mode-never-writes structural guard (harness lives in the
-//! parent module).
-
 use super::*;
 
 #[test]
@@ -68,18 +64,15 @@ fn png_baselines_compare_mode_never_writes() {
     let cases = inventory();
     let case = &cases[0];
     let rendered = render_case(case);
-    // Missing baseline in compare mode: error naming the screen…
     let err =
         check_case(case, dir.path(), false, &rendered).expect_err("missing baseline must fail");
     assert!(err.contains(case.id), "error names the screen: {err}");
-    // …and no filesystem write happened.
     assert!(
         fs::read_dir(dir.path()).unwrap().next().is_none(),
         "compare mode must never write"
     );
 }
 
-/// Export candidate frames to an isolated review directory; never bless baselines.
 #[test]
 #[ignore = "manual review artifact export"]
 fn export_account_review_frames() {

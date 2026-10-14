@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Swap journal read/write and removal classification.
 
 use super::{
     FailurePoint, MAX_JOURNAL_BYTES, SwapJournal, TargetLock, entry_stat, fsync_directory,
@@ -103,12 +102,6 @@ pub fn unlink_entry(parent: &File, name: &CStr, label: &str) -> anyhow::Result<(
     }
 }
 
-/// How `remove_tree` must treat one directory entry, matched on exact
-/// `S_IFMT` bits. `SFlag::contains` on whole file-type flags over-matches
-/// (`S_IFLNK` contains the `S_IFREG` bit), which previously routed symlinks
-/// into the regular-file writability check — and `lstat` mode bits on a
-/// symlink are meaningless (Linux always reports `0777`, macOS `0755`), so
-/// legitimate Linux trees were rejected as group-writable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TreeEntryKind {
     Directory,

@@ -460,9 +460,9 @@ fn registry_generation_is_deterministic_and_covers_dotted_commands() {
         .find(|(path, _)| path.ends_with("schema/events.rs"))
         .map(|(_, contents)| contents)
         .expect("event output must exist");
-    assert!(events.contains("app.crash.id:recommended"));
-    assert!(events.contains("exception.stacktrace:recommended"));
-    assert!(events.contains("app.jank.frame_count:recommended"));
+    assert!(events.contains("name: \"app.crash.id\","));
+    assert!(events.contains("name: \"exception.stacktrace\","));
+    assert!(events.contains("name: \"app.jank.frame_count\","));
     assert!(events.contains("severity: super::EventSeverity::Warn"));
     for path in ["event_defs.rs", "operation_defs.rs", "metric_defs.rs"] {
         let facade = first

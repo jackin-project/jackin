@@ -4,32 +4,22 @@
 import AppKit
 import SwiftUI
 
-/// Official provider logomarks (template PDF) for status bar, popover plates, and Usage chrome.
-///
-/// **LG-P1–P4 / FB1-6:** status bar uses `NSImage.isTemplate = true` monochrome silhouettes.
-/// Popover/Usage may place the same mark on a brand-tinted plate (white template glyph).
-/// Masters + provenance: `Resources/ProviderMarks/PROVENANCE.md`.
 @MainActor
 public enum ProviderMarks {
-    /// Load official mark as template `NSImage` for menu-bar / monochrome use.
     public static func templateImage(forIconKey iconKey: String) -> NSImage? {
         loadPDF(named: iconKey, template: true)
     }
 
-    /// SwiftUI image of the official mark (template rendering for mono; pair with plate for color).
     public static func swiftUIImage(forIconKey iconKey: String) -> Image? {
         guard let ns = templateImage(forIconKey: iconKey) else { return nil }
         return Image(nsImage: ns)
     }
 
-    /// Whether a bundled official mark exists for this key.
     public static func hasMark(forIconKey iconKey: String) -> Bool {
         templateImage(forIconKey: iconKey) != nil
     }
 
     private static func loadPDF(named name: String, template: Bool) -> NSImage? {
-        // Prefer **PNG with alpha** (black glyph, transparent bg) so plates don't
-        // fill solid white from opaque PDF paper. PDF is fallback only.
         for url in candidateURLs(named: name, extensions: ["png", "pdf"]) {
             guard let image = NSImage(contentsOf: url) else { continue }
             let copy = image.copy() as? NSImage ?? image

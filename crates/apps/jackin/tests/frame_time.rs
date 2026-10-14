@@ -1,13 +1,3 @@
-//! Frame-time threshold test for the host console render path.
-//!
-//! Runs one console frame at 220×50 and asserts it completes within the
-//! 60 Hz budget (16 ms). This runs in `cargo nextest` / CI so regressions
-//! are caught without the variance of a full criterion statistical run.
-//!
-//! The threshold is intentionally generous (16 ms vs ~0.3 ms actual) so CI
-//! runners with variable load don't produce false failures. For exact timing
-//! run `cargo bench --bench console_frame -p jackin`.
-
 use std::time::Instant;
 
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
@@ -15,7 +5,6 @@ use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 use jackin::console::adapter::{ManagerState, prepare_for_render, render};
 use jackin_config::AppConfig;
 
-/// 60 Hz = ~16.7 ms per frame; 16 ms is the hard ceiling.
 const FRAME_BUDGET_MS: u128 = 16;
 
 #[test]
@@ -31,8 +20,6 @@ fn console_list_frame_220x50_completes_within_60hz_budget() {
     let backend = TestBackend::new(area.width, area.height);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    // Warm-up render — prime allocations so the measured pass is not dominated
-    // by first-time malloc cost.
     {
         let mut state = ManagerState::from_config(&config, cwd);
         prepare_for_render(&mut state, &config, cwd, area);
@@ -41,7 +28,6 @@ fn console_list_frame_220x50_completes_within_60hz_budget() {
             .unwrap();
     }
 
-    // Measured render.
     let mut state = ManagerState::from_config(&config, cwd);
     prepare_for_render(&mut state, &config, cwd, area);
     let start = Instant::now();

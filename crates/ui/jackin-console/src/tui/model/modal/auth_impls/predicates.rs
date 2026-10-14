@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ConsoleModal` auth predicate methods.
 
 use super::super::ConsoleModal;
 use crate::tui::components::modal_overlay::{

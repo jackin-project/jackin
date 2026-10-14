@@ -11,7 +11,6 @@ fn enter_on_git_repo_opens_prompt() {
     std::fs::create_dir_all(repo.join(".git")).unwrap();
 
     let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-    // Index 0 is `..`; advance to `repo`.
     handle_with_services(&mut state, key(KeyCode::Down));
     let outcome = handle_with_services(&mut state, key(KeyCode::Enter));
     match outcome {
@@ -48,9 +47,6 @@ fn enter_on_git_repo_with_origin_sets_url() {
 
 #[test]
 fn resolve_git_url_returns_none_for_non_github_origin() {
-    // Non-github remote (gitlab here) must yield `None` so the
-    // `O open` keystroke is not advertised — the launcher only
-    // speaks github web URLs.
     let tmp = tempdir().unwrap();
     let repo = tmp.path().join("gitlab-repo");
     std::fs::create_dir_all(&repo).unwrap();
@@ -105,8 +101,8 @@ fn enter_in_navigates_into_subdir() {
 
     let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
     handle_with_services(&mut state, key(KeyCode::Down));
-    handle_with_services(&mut state, key(KeyCode::Enter)); // open prompt
-    handle_with_services(&mut state, key(KeyCode::Tab)); // MountHere -> EnterIn
+    handle_with_services(&mut state, key(KeyCode::Enter));
+    handle_with_services(&mut state, key(KeyCode::Tab));
     assert_eq!(state.pending_git_focus, GitPromptFocus::EnterIn);
 
     let outcome = handle_with_services(&mut state, key(KeyCode::Enter));
@@ -193,7 +189,6 @@ fn o_shortcut_without_url_is_silent_noop() {
 
     let outcome = handle_with_services(&mut state, key(KeyCode::Char('o')));
     assert!(matches!(outcome, FileBrowserOutcome::Continue));
-    // Prompt still open, focus unchanged.
     assert!(state.pending_git_prompt.is_some());
     assert_eq!(state.pending_git_focus, focus_before);
 }
@@ -208,8 +203,6 @@ fn o_shortcut_with_url_returns_open_request_and_keeps_prompt_open() {
     let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
     handle_with_services(&mut state, key(KeyCode::Down));
     handle_with_services(&mut state, key(KeyCode::Enter));
-    // Force a URL into state for the test; the real handler would have
-    // populated this via `resolve_git_url` when origin is a GitHub URL.
     state.pending_git_url = Some("file:///tmp/definitely-not-real".to_owned());
 
     let outcome = handle_with_services(&mut state, key(KeyCode::Char('O')));
@@ -218,7 +211,6 @@ fn o_shortcut_with_url_returns_open_request_and_keeps_prompt_open() {
         FileBrowserOutcome::OpenGitUrl(url) if url == "file:///tmp/definitely-not-real"
     ));
     assert!(state.pending_git_prompt.is_some());
-    // URL stays on state — O doesn't dismiss the prompt.
     assert_eq!(
         state.pending_git_url.as_deref(),
         Some("file:///tmp/definitely-not-real"),
@@ -252,7 +244,6 @@ fn git_prompt_hint_includes_open_segment_when_url_is_present() {
         rendered.contains("open"),
         "hint should mention 'open' when URL resolved: {rendered:?}"
     );
-    // Still preserves the other segments + trailing cancel.
     assert!(rendered.contains('M'));
     assert!(rendered.contains('P'));
     assert!(rendered.contains("C/Esc"));

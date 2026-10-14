@@ -1,8 +1,5 @@
 import SwiftUI
 
-// Canonical fixture records from native/Design/UnifiedAgentUsage/Fixtures.md
-// (revision recorded in SIGNOFF.md). Strings here stand in for immutable
-// Rust-owned display input; the prototype changes layout only.
 
 enum ProtoState: String, Sendable {
     case current, warning, danger, depleted, stale, refreshing, unavailable
@@ -61,17 +58,10 @@ struct ProtoQuotaWindow: Identifiable, Sendable {
     var supplementalValue: String? = nil
     let meter: Int?
     let state: ProtoState
-    /// Rust-owned pace phrase (QuotaBucketDto.pace_label): even-burn delta or
-    /// exhaustion projection, limits-only — never cost data.
     var pace: String? = nil
-    /// Untouched window ("Not started" in OpenUsage terms): full quota, zero
-    /// consumption — distinct from merely healthy.
     var notStarted = false
     var id: String { stableID }
 
-    /// The status bar surfaces long-range windows only — the quota that
-    /// expires wholesale, so the user can spend it before it lapses.
-    /// Hour-range windows (five-hour, session) stay in window surfaces.
     var isLongRange: Bool { category == .longRange }
 
     var accessibilitySummary: String {
@@ -86,8 +76,6 @@ struct ProtoQuotaWindow: Identifiable, Sendable {
     }
 }
 
-/// Semantic order supplied by the fixture projection. Production receives the
-/// equivalent order from Rust and never recovers it from display text.
 enum ProtoQuotaCategory: Int, Sendable {
     case longRange
     case model
@@ -136,12 +124,10 @@ struct ProtoProvider: Identifiable, Sendable {
     var summaryRemainingLeft: String? { summaryPercent.map { "\($0)% left" } }
     var summaryRemainingUsed: String? { summaryPercent.map { "\(100 - $0)% used" } }
 
-    /// Icon key matches the bundled official provider mark names.
     var iconKey: String { key }
     var fallbackGlyph: String { String(name.prefix(1)) }
     var isRefreshing: Bool { state == .refreshing }
 
-    /// One Rust-owned activity phrase for identity rows.
     var activityLabel: String {
         if let activityText { return activityText }
         switch state {
@@ -157,16 +143,12 @@ struct ProtoProvider: Identifiable, Sendable {
         }
     }
 
-    /// Compact reset countdown for the dual-stack status-item title.
     var compactResetLabel: String? {
         guard let summaryReset else { return nil }
         guard summaryReset.hasPrefix("Resets in ") else { return nil }
         return String(summaryReset.dropFirst("Resets in ".count))
     }
 
-    /// Window driving the status summary: the long-range window whose meter
-    /// matches the summary percent, else the first long-range window.
-    /// Hour-range windows never drive the status bar.
     var summaryWindow: ProtoQuotaWindow? {
         let longRange = accounts.flatMap(\.windows).filter(\.isLongRange)
         if let percent = summaryPercent,

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential traits, states, and core impls.
 
 use crate::tui::components::TextInputState;
 
@@ -23,7 +22,6 @@ pub trait AuthCredential: Clone + std::fmt::Debug + PartialEq + Eq {
     fn from_op_ref(value: Self::Ref) -> Self;
 }
 
-/// What the user has supplied in the credential block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CredentialInput<R> {
     None,
@@ -61,11 +59,6 @@ pub fn auth_panel_title(kind_label: &str) -> String {
     format!(" {kind_label} ")
 }
 
-/// `AuthCredentialRef` impl for `jackin_core::OpRef`.
-///
-/// Lives here (where the trait is defined) rather than in the binary crate
-/// to satisfy the orphan rule — both the trait and the type are external to
-/// the binary but this crate defines the trait.
 impl AuthCredentialRef for jackin_core::OpRef {
     fn path(&self) -> &str {
         &self.path
@@ -76,7 +69,6 @@ impl AuthCredentialRef for jackin_core::OpRef {
     }
 }
 
-/// `AuthCredential` impl for `jackin_core::EnvValue`.
 impl AuthCredential for jackin_core::EnvValue {
     type Ref = jackin_core::OpRef;
 

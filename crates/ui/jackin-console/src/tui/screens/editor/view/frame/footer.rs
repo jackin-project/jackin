@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor contextual footer items and scroll axes.
 
 use ratatui::layout::Rect;
 use termrock::widgets::HintSpan;

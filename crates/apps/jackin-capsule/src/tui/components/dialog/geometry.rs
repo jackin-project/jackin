@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Geometry and scroll helpers for read-only dialogs extracted from the
-//! coordinator. `box_rect` stays in coordinator per plan.
-
 use super::hint::{
     confirm_hint, export_file_hint, flat_picker_hint, info_dialog_hint, palette_hint, picker_hint,
     read_only_hint, rename_hint, usage_empty_hint, usage_hint,
@@ -12,9 +9,6 @@ use super::{Dialog, GithubContextView};
 use termrock::widgets::HintSpan;
 
 impl Dialog {
-    /// Mutable body-scroll state for the read-only info dialogs whose content
-    /// can overflow (`ContainerInfo`, `GitHubContext`). `None` for dialogs that do
-    /// not scroll. Lets the daemon route mouse-wheel events to the dialog body.
     pub(crate) fn body_scroll_mut(&mut self) -> Option<&mut termrock::scroll::DialogScroll> {
         match self {
             Self::ContainerInfo { scroll, .. }
@@ -63,9 +57,6 @@ impl Dialog {
                 state
             };
             if let Self::GitHubContext { scroll, .. } | Self::Usage { scroll, .. } = self {
-                // Usage clamps against the same body+lines the renderer uses, with
-                // a rect whose viewport excludes the tab strip (Bug 2); other
-                // dialogs clamp against the box rect directly.
                 let (content_width, content_height, clamp_rect) = if is_usage {
                     crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state)
                 } else {
@@ -104,8 +95,6 @@ impl Dialog {
                 rect,
             );
         } else if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
-            // Mirror clamp_scroll's Usage/GitHubContext geometry: Usage uses the
-            // same body+lines viewport (excludes the tab strip) the renderer uses.
             let is_usage = matches!(self, Self::Usage { .. });
             let state = if matches!(self, Self::GitHubContext { .. }) {
                 let Some(state) = self.github_context_state(github) else {
@@ -128,14 +117,6 @@ impl Dialog {
         termrock::scroll::ScrollAxes::none()
     }
 
-    /// Footer hint spans for this dialog. Rendered by the multiplexer
-    /// compositor near the bottom chrome so every dialog follows the same
-    /// hint contract without competing with the branch/container status row.
-    ///
-    /// `axes` reflects the dialog body's *actual* per-axis overflow (computed
-    /// by the caller from the rendered snapshot + rect), so the scrollable info
-    /// dialogs advertise only the scroll direction(s) the operator can move —
-    /// never both axes when the body fits one.
     pub(crate) fn footer_hint_spans(
         &self,
         github: Option<&GithubContextView<'_>>,
@@ -177,10 +158,6 @@ impl Dialog {
             Self::Usage { view, .. } if view.tabs.is_empty() => usage_empty_hint(axes),
             Self::Usage { .. } => usage_hint(axes),
             Self::ConfirmAction { .. } => confirm_hint(),
-            // No filter input on either: the modal is a fixed choice list and
-            // Inspect is a read-only scroll list. Reuse the shared no-filter
-            // "select" hint and read-only hint rather than the picker's
-            // "type filter" / "launch" wording.
             Self::ExitDirty { .. } => flat_picker_hint(),
             Self::ExitInspect { .. } => read_only_hint(),
         }

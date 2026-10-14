@@ -5,8 +5,6 @@ use super::*;
 
 #[test]
 fn cap_output_truncates_on_char_boundary() {
-    // 'é' is 2 bytes, placed so byte index 10 falls mid-codepoint. Capping
-    // at 10 must round down to a boundary (9) instead of panicking.
     let mut s = "a".repeat(9) + "é" + &"b".repeat(20);
     cap_output(&mut s, 10);
     assert!(s.starts_with("aaaaaaaaa"));
@@ -35,9 +33,6 @@ fn redact_pem_redacts_block_and_counts() {
 
 #[test]
 fn selected_refs_wire_shape_is_stable() {
-    // The host (jackin-runtime exec_host) deserializes this exact JSON via the
-    // shared `jackin_protocol::CredRequest`/`ExecBinding`. A field rename breaks
-    // credential resolution silently, so pin the on-the-wire shape here.
     let state = ExecPickerState {
         command: "gh".to_owned(),
         args: vec![],
@@ -108,14 +103,10 @@ fn exec_command_uses_control_request_codec() {
 
 #[tokio::test]
 async fn execute_command_redacts_secret_straddling_1mib_cap() {
-    // The redact-before-cap ordering exists so a secret straddling the 1 MiB
-    // output cap can't have its tail truncated and leak its verbatim prefix.
-    // Drive >1 MiB of output via a file (a 1 MiB argv arg exceeds MAX_ARG_STRLEN),
-    // with the secret positioned to straddle the boundary.
     const MAX: usize = 1024 * 1024;
     let secret = "S3CR3T-STRADDLE-TOKEN";
     let mut payload = "a".repeat(MAX - 5);
-    payload.push_str(secret); // starts at MAX-5, ends past MAX
+    payload.push_str(secret);
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(file.path(), &payload).unwrap();
 
@@ -130,7 +121,6 @@ async fn execute_command_redacts_secret_straddling_1mib_cap() {
     .unwrap();
     assert_eq!(code, 0);
     assert!(!stdout.contains(secret));
-    // Not even a prefix survives — the straddle bug would leave "S3CR3T-...".
     assert!(!stdout.contains("S3CR3T"));
     assert_eq!(redacted, 1);
 }

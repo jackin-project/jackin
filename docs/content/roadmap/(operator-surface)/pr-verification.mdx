@@ -12,7 +12,7 @@ title: "Workspace-Native PR Verification"
 
 Rust verification lives in the generated <RepoFile path=".github/workflows/ci.yml" /> (`rust-jackin-dev` job, with task coverage selected by the plan job): it formats, lints, builds, tests, and checks Rust documentation for `jackin-dev` on PRs, `main` pushes, and merge groups. This is Rust verification, not four-target packaging or release validation. The old dedicated `jackin-dev.yml` pipeline (four-target builds, version-bump gate, release publishing, Homebrew formula PRs) was removed in the velnor-workflow regeneration; re-adding automated `jackin-dev` releases is open.
 
-`jackin-dev pr sync` is the adopted standard: <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> documents it as the Checkout block's first step, ahead of any smoke command, specifically because launches resolve whichever binary comes first on `PATH` and miss the PR's container-side changes without the capsule export running first.
+`jackin-dev pr sync` is the adopted standard: it runs as the Checkout block's first step, ahead of any smoke command, specifically because launches resolve whichever binary comes first on `PATH` and miss the PR's container-side changes without the capsule export running first.
 
 ## Remaining work
 

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console side-effect adapters.
-
 pub(super) mod agents {
     pub(crate) async fn resolve_supported_for_console(
         paths: &jackin_core::JackinPaths,
@@ -101,7 +99,6 @@ pub(super) mod role_load {
 pub(super) mod workspace_save {
     use jackin_console::tui::runtime::BlockingSubscription;
 
-    /// Start the Docker-backed drift check for an edited workspace.
     pub(crate) fn start_drift_check(
         paths: jackin_core::JackinPaths,
         workspace_name: String,
@@ -127,7 +124,6 @@ pub(super) mod workspace_save {
         )
     }
 
-    /// Start cleanup for isolated mount records removed by a workspace save.
     pub(crate) fn start_isolation_cleanup(
         paths: jackin_core::JackinPaths,
         records: Vec<jackin_runtime::isolation::state::IsolationRecord>,

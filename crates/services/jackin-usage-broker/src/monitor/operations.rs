@@ -32,7 +32,6 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 impl MonitorStore {
-    /// Open the private host-broker monitor store below `data_dir`.
     pub(crate) fn open(data_dir: &Path) -> Result<Self, MonitorIssue> {
         let directory = storage::open_store_dir(data_dir)?;
         let state = if let Some(state) = storage::load(&directory)? {
@@ -56,7 +55,6 @@ impl MonitorStore {
         })
     }
 
-    /// Apply one monitor operation using the caller's clock value.
     pub(crate) fn operate(
         &self,
         operation: MonitorOperation,
@@ -114,7 +112,6 @@ impl MonitorStore {
         }
     }
 
-    /// Apply one canonical provider projection without performing a refresh.
     #[expect(
         clippy::excessive_nesting,
         reason = "projection observation walks provider, account, and destination before one commit"
@@ -168,7 +165,6 @@ impl MonitorStore {
         Ok(())
     }
 
-    /// Reconcile active monitor decisions against current local evidence.
     pub(crate) fn tick(&self, now_epoch: i64) -> Result<(), MonitorIssue> {
         let mut guard = self.lock();
         let mut staged = guard.clone();
@@ -186,15 +182,11 @@ impl MonitorStore {
         Ok(())
     }
 
-    /// Whether the service still owns any non-stopped monitor.
     #[must_use]
     pub(crate) fn has_active(&self) -> bool {
         active_monitor_count(&self.lock()) > 0
     }
 
-    /// Source capability IDs authorized for the experimental Claude collector.
-    /// Only current, confirmed bindings attached to active opted-in monitors
-    /// whose source matches this process's foreground source grant collection.
     #[must_use]
     pub(crate) fn collection_accounts(&self) -> Vec<String> {
         let Some(configured_source) = self.experimental_collector_source() else {
@@ -235,10 +227,6 @@ impl MonitorStore {
             .collect()
     }
 
-    /// Serialize a collector snapshot and its coordinator admission against
-    /// Stop and binding-source revocation. The callback must only perform
-    /// bounded admission work; it must not call another method that acquires
-    /// this gate or wait for provider completion.
     pub(crate) fn with_collection_admission<T>(&self, admit: impl FnOnce(&[String]) -> T) -> T {
         let _admission = self.lock_collector_admission();
         let source_ids = self.collection_accounts();
@@ -278,8 +266,6 @@ impl MonitorStore {
             .load(Ordering::SeqCst)
     }
 
-    /// Configure the source capability selected by this foreground service.
-    /// The value is ephemeral and does not prove credential or provider health.
     pub(crate) fn set_experimental_collector_source(&self, source: Option<String>) {
         let _admission = self.lock_collector_admission();
         *self
@@ -302,7 +288,6 @@ impl MonitorStore {
             .clone()
     }
 
-    /// Earliest persisted evidence-expiry or reset-grace wake.
     #[must_use]
     pub(crate) fn next_wake(&self) -> Option<i64> {
         next_wake_for(&self.lock())
@@ -562,8 +547,6 @@ impl MonitorStore {
                 None,
             ));
         }
-        // Keep lock ordering consistent with service-status and collector
-        // account reads, which acquire the ephemeral source before state.
         let configured_source = config
             .experimental_collector
             .then(|| self.experimental_collector_source())
@@ -572,9 +555,6 @@ impl MonitorStore {
         let mut staged = guard.clone();
         let now_epoch = effective_now(staged.last_now_epoch, now_epoch);
 
-        // Revalidate the source mapping, consent, and foreground lease before
-        // returning even an idempotent replay. A reused start key cannot
-        // restore authority that a later binding revision revoked.
         if config.experimental_collector {
             let binding = resolve_scope_binding(&staged, &config.scope, config.provider)?.clone();
             if !binding.operator_confirmed {
@@ -979,9 +959,6 @@ impl MonitorStore {
         timeout_ms: u64,
         now_epoch: i64,
     ) -> Result<MonitorReply, MonitorIssue> {
-        // Reconcile durable evidence ages before a fresh attach can observe the
-        // event log. In particular, a broker restart past the evidence TTL must
-        // persist a blocked decision before returning the prior runnable event.
         self.tick(now_epoch)?;
         let timeout_ms = timeout_ms.min(MONITOR_WATCH_TIMEOUT_CAP_MS);
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);

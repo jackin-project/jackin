@@ -1,4 +1,3 @@
-// docs/components/landing/InstallBlock.tsx
 import { EarlyDevelopmentNotice } from './EarlyDevelopmentNotice';
 
 export function InstallBlock() {

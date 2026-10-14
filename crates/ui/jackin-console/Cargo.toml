@@ -40,8 +40,6 @@ toml = { workspace = true }
 tracing.workspace = true
 
 [features]
-# Optional explicit feature for consumers; tests get `test-support` via
-# the dev-dependency above so `cargo nextest run -p jackin-console` works.
 test-support = ["jackin-config/test-support"]
 
 [lints]

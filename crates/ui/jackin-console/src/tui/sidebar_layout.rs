@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pure sidebar rectangle allocation for the workspace list preview pane.
 mod blocks;
 mod inputs;
 mod layout;

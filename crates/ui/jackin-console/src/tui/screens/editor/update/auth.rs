@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor auth row plans.
 
 use super::super::model::{AuthRow, EditorTab};
 use crate::tui::screens::settings::model::AuthFormTarget;

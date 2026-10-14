@@ -11,8 +11,6 @@ fn clear_screen_during_selection_overlay_converges_after_clear() {
     }
     let pane = mux.visible_panes().into_iter().next().expect("one pane");
 
-    // Drag a selection so composition routes through the Ratatui path
-    // (the direct-patch tier refuses while a selection is active).
     let press_row = pane.inner.row + 2;
     let press_col = pane.inner.col + 1;
     dispatch_and_compose(
@@ -34,10 +32,8 @@ fn clear_screen_during_selection_overlay_converges_after_clear() {
         },
     );
 
-    // The program clears its screen while the selection overlay is active.
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[2J\x1b[H$ ");
 
-    // Release and click once to clear the selection overlay.
     dispatch_and_compose(
         &mut mux,
         &mut client,
@@ -94,7 +90,6 @@ fn selection_residue_cleared_after_copy_click() {
             col: press_col + 8,
             button: 0,
         },
-        // The follow-up click clears the highlight.
         InputEvent::MousePress {
             row: press_row,
             col: press_col,
@@ -257,8 +252,6 @@ fn dsr_cursor_report_clamps_phantom_column() {
     let frame = mux.compose_pending_frame();
     client.apply(&frame);
 
-    // Fill the first row to the last column: the cursor enters the
-    // deferred-wrap state whose internal column is cols (0-based phantom).
     let fill = "x".repeat(usize::from(cols));
     feed_and_compose(&mut mux, &mut client, 1, fill.as_bytes());
     feed_and_compose(&mut mux, &mut client, 1, b"\x1b[6n");
@@ -274,8 +267,6 @@ fn dsr_cursor_report_clamps_phantom_column() {
 
 #[test]
 fn osc_color_query_answers_with_the_attached_terminal_palette() {
-    // Codex's startup probe: it paints no backgrounds at all until OSC 11
-    // is answered, so the reply must carry the attach client's real colors.
     let mut mux = single_pane_tab_mux();
     let pane = mux.visible_panes().into_iter().next().expect("one pane");
     let (session, mut input_rx) = test_session(pane.inner.rows, pane.inner.cols);
@@ -302,7 +293,6 @@ fn decscusr_reconciles_per_pane_and_never_forwards_raw() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, b"hello");
 
-    // The agent picks a bar cursor; the next frame reconciles it.
     if let Some(session) = mux.session_supervisor.sessions.get_mut(sid) {
         session.feed_pty(b"\x1b[5 q");
         let passthrough = session.drain_passthrough();
@@ -321,7 +311,6 @@ fn decscusr_reconciles_per_pane_and_never_forwards_raw() {
     client.apply(&frame);
     assert_frame_conformance(&mut mux, &client, "after DECSCUSR");
 
-    // Unchanged style: no re-assertion on the next frame.
     feed_and_compose(&mut mux, &mut client, sid, b" world");
     mux.invalidate(FullRedrawReason::PtyOutput);
     let next = mux.compose_pending_frame();
@@ -370,7 +359,6 @@ fn render_perf_probe() {
 
 #[test]
 fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
-    // Zero live panes — exactly the dirty-exit modal scenario.
     let mut mux = test_mux(30, 100);
     mux.dialog_push(Dialog::new_exit_dirty(
         vec!["holla   1 changed".to_owned()],
@@ -378,7 +366,6 @@ fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
     ));
     assert_eq!(exit_dirty_selected_value(&mux), 0);
 
-    // Down arrow, as the input parser hands it to handle_input.
     mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
     assert_eq!(
         exit_dirty_selected_value(&mux),
@@ -389,7 +376,6 @@ fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
     mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
     assert_eq!(exit_dirty_selected_value(&mux), 2);
 
-    // Up arrow walks back.
     mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x41]));
     assert_eq!(exit_dirty_selected_value(&mux), 1);
 }

@@ -55,9 +55,6 @@ fn rename_tab_esc_dismisses() {
 
 #[test]
 fn rename_tab_consumes_q_as_input_not_dismiss() {
-    // `q` is a dismiss key for list-style dialogs but must be
-    // accepted as input inside the rename-tab buffer — otherwise
-    // operators can't type the letter into their tab name.
     let mut d = Dialog::RenameTab {
         tab_idx: 0,
         input: termrock::widgets::TextInputState::new("a"),
@@ -134,9 +131,6 @@ fn container_info_enter_flips_copied_flag_for_render_feedback() {
 
 #[test]
 fn container_info_enter_does_not_dismiss_dialog() {
-    // Operator copies once and expects to read the badge before
-    // dismissing themselves — handle_key must NOT return Dismiss
-    // for Enter.
     let mut d = container_info_fixture();
     let action = d.handle_key(b"\r", None);
     assert!(
@@ -160,7 +154,6 @@ fn container_info_enter_copies_container_name() {
 fn container_info_click_on_id_row_copies_container_name() {
     let mut d = container_info_fixture();
     let (row, col, _, _) = d.box_rect(40, 100);
-    // Click the value (the cyan link), not the label column.
     match d.handle_click(row + 2, col + 22, 40, 100, None) {
         DialogAction::CopyToClipboard(payload) => {
             assert_eq!(payload, "jk-abc123-thearchitect");

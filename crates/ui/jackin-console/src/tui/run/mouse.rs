@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Clickability and mouse-layer plans.
 
 use ratatui::layout::Rect;
 
@@ -33,10 +32,6 @@ pub struct ConsoleClickabilityFacts {
     pub stage: ConsoleClickStageFacts,
 }
 
-// Mouse parity matrix row 16 carve-out: the pointer-shape cue stays
-// consumer code — upstream hit regions carry geometry only, no
-// clickability classification. Facts derive from the same hit geometry
-// the dispatch path uses.
 #[must_use]
 pub const fn console_clickable_at(facts: ConsoleClickabilityFacts) -> bool {
     if !facts.pointer_supported {

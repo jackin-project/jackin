@@ -1,5 +1,3 @@
-//! Construction and background-load completion for the 1Password picker.
-
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -88,10 +86,6 @@ impl OpPickerState {
         state
     }
 
-    /// Async (not synchronous in the constructor) so a network-stalled
-    /// or biometric-blocked `op` doesn't freeze the TUI render loop.
-    /// Cache hits and misses both route through one-shot subscriptions so
-    /// `poll_load` stays the single completion path.
     pub fn start_account_load(&mut self) {
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
         let request = OpPickerLoadRequest::Accounts;
@@ -129,9 +123,6 @@ impl OpPickerState {
         }
     }
 
-    /// Stage advances at request time (not result time) so the
-    /// loading-panel breadcrumb reflects the in-flight load, not the
-    /// previous stage. Filter cleared for the new pane.
     pub fn start_vault_load(&mut self, account_id: Option<String>) {
         self.stage = OpPickerStage::Vault;
         self.filter_buf.clear();
@@ -231,8 +222,6 @@ impl OpPickerState {
         crate::selected_entity_id_or_default(self.selected_item.as_ref(), |item| item.id.as_str())
     }
 
-    /// Public so the outer console event loop can drain pending
-    /// results every tick; keeps the picker responsive without keystrokes.
     pub fn poll_load(&mut self) -> bool {
         let Some(rx) = self.rx.as_mut() else {
             return false;
@@ -363,7 +352,6 @@ impl OpPickerState {
         }
     }
 
-    /// Discard any in-flight load result and force the picker into `Ready`.
     pub fn cancel_in_flight_load(&mut self) {
         self.rx = None;
         self.load_state = OpLoadState::Ready;

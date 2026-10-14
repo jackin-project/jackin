@@ -1,19 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Prefix-mode command keymap: chords dispatched after the prefix key.
 
 use crate::tui::input::{ArrowDir, PrefixCommand};
 use termrock::input::{KeyBinding, KeyChord, KeyCode, Keymap, Visibility};
 
-/// Static binding table for prefix-mode commands.
-///
-/// After the prefix key is consumed, the next keystroke is looked up here.
-/// This table drives both `prefix_binding` dispatch and the prefix cheat-sheet
-/// in `main_view_hint` (shown when `prefix_awaiting == true`).
-///
-/// Palette toggle (`space`/`:`) is included as `Internal` — it's redundant
-/// when already in prefix mode (operator can always dismiss and open palette),
-/// but listed for dispatch completeness.
 pub(crate) static PREFIX_COMMAND_KEYMAP_BINDINGS: &[KeyBinding<PrefixCommand>] = &[
     KeyBinding::borrowed(
         &[KeyChord::plain(KeyCode::Char('c'))],
@@ -36,7 +26,6 @@ pub(crate) static PREFIX_COMMAND_KEYMAP_BINDINGS: &[KeyBinding<PrefixCommand>] =
         Visibility::Shown,
         None,
     ),
-    // h — primary focus nav; grouped glyph advertises all four directions.
     KeyBinding::borrowed(
         &[KeyChord::plain(KeyCode::Char('h'))],
         PrefixCommand::MoveFocus(ArrowDir::Left),
@@ -44,7 +33,6 @@ pub(crate) static PREFIX_COMMAND_KEYMAP_BINDINGS: &[KeyBinding<PrefixCommand>] =
         Visibility::Shown,
         Some("h/j/k/l"),
     ),
-    // j, k, l — dispatch but do not produce hint spans.
     KeyBinding::borrowed(
         &[KeyChord::plain(KeyCode::Char('j'))],
         PrefixCommand::MoveFocus(ArrowDir::Down),
@@ -139,7 +127,6 @@ pub(crate) static PREFIX_COMMAND_KEYMAP_BINDINGS: &[KeyBinding<PrefixCommand>] =
         Visibility::Internal,
         None,
     ),
-    // JumpTab 0-9 — register as Internal since full list is not hint-bar-friendly
     KeyBinding::borrowed(
         &[KeyChord::plain(KeyCode::Char('0'))],
         PrefixCommand::JumpTab(0),

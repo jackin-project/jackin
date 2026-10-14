@@ -7,7 +7,6 @@ use super::{
     omp_attribute, omp_attributed_view, omp_broker_pool_is_authorization, omp_pool_routing_buckets,
 };
 
-/// Sanitized broker pool-routing fixture: routing state only, no secrets.
 const OMP_POOL_ROUTING_FIXTURE: &str = r#"{
     "pools": [
         {"provider": "anthropic", "filter": "pro", "in_flight": 2, "served": 41},

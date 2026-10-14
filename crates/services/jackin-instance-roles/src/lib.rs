@@ -1,9 +1,3 @@
-//! jackin-instance-roles: role-state orchestration for role containers.
-//!
-//! [`RoleState`] preparation dispatch across agents and bindings. Depends on
-//! `jackin-instance-agents` (provisioners) and `jackin-instance-credentials`
-//! (substrate); `jackin-instance` re-exports this API for compatibility.
-
 mod prepare;
 mod provision;
 mod role_state;

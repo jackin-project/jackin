@@ -26,7 +26,6 @@ impl PairedTestClock {
         self.state.lock().unwrap().wall_epoch
     }
 
-    /// Advance wall and monotonic time by the same whole-second interval.
     pub(super) fn advance_to_epoch(&self, wall_epoch: i64) {
         let mut state = self.state.lock().unwrap();
         assert!(

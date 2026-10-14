@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Role state and environment preparation.
 
 use crate::runtime::launch::launch_pipeline::emit_auth_provision_launch_plan;
 use crate::runtime::launch::launch_pipeline::launch_phases::{EnvironmentResolved, TrustSeeded};
@@ -135,8 +134,6 @@ where
         &instances,
         &credentials,
     )?;
-    // Auth prewarm mutates paths that the foreground launch may mount.
-    // Complete it before RoleState acquires mount leases.
     if let Err(error) = prewarm_sibling_auth_before_admission(
         paths,
         container_name,

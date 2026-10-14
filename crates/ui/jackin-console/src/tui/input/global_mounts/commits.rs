@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings text and picker commits.
 
 use super::{
     SettingsModalOutcome, apply_global_mount_add_text, env_text_modal, set_settings_env_value_typed,
@@ -184,10 +183,6 @@ pub(crate) fn commit_settings_env_scope_picker(
             let plan = settings_env_new_key_text_plan(scope);
             let input_state =
                 settings_env_key_input_state(&env.pending, &plan.scope, plan.label, "");
-            // Don't stash the just-committed ScopePicker as
-            // the Text modal's parent — Esc on Text would
-            // pop back into a consumed picker. Start the
-            // child modal with an empty parent chain.
             env.open_sub_modal(SettingsModal::EnvText {
                 target: plan.target,
                 pending_value: None,

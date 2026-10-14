@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Create-prelude states and summaries.
 
 use super::panel;
 use ratatui::{
@@ -54,8 +53,6 @@ pub fn create_prelude_workdir_pick_state<M: crate::tui::components::workdir_pick
     crate::tui::components::workdir_pick::WorkdirPickState::from_mounts(mounts)
 }
 
-/// Compact running-instances badge (3 rows: border + count line + border).
-/// Cyan border and text distinguish live state from config panels.
 pub fn render_compact_instances_summary(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -95,8 +92,6 @@ pub fn render_compact_instances_summary(
     );
 }
 
-/// Right-pane description shown when cursor is on the "+ New workspace"
-/// sentinel. It summarizes what a saved workspace records and why to create it.
 pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
     let rows = Layout::default()
         .direction(Direction::Vertical)

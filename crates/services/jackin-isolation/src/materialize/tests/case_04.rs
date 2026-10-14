@@ -5,9 +5,6 @@ use super::*;
 
 #[tokio::test]
 async fn adopt_aborts_when_worktree_prune_fails() {
-    // Prune failure must short-circuit before `worktree add`,
-    // otherwise the add proceeds against an inconsistent admin
-    // index and risks corrupting state.
     let repo = make_repo_root();
     let data = tempfile::TempDir::new().unwrap();
     let container_dir = data.path().join("jackin-x");

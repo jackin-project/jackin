@@ -4,8 +4,6 @@ import AppKit
 enum UnifiedAgentUsageProtoMain {
     static func main() {
         let config = ProtoConfig.parse(CommandLine.arguments)
-        // Unknown scenario names (including the F18/F19/F24 matrix headings)
-        // fail loudly here, before any window exists.
         let projection = ProtoFixtures.load(config.scenario)
         let store = ProtoStore(projection: projection)
         let app = NSApplication.shared

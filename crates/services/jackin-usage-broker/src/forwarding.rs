@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential forwarding requirements.
 
 use std::collections::BTreeSet;
 
@@ -8,9 +7,6 @@ use jackin_usage_discovery::{ValidatedCredentialBinding, ValidatedCredentialSour
 
 use crate::{ForwardedUsageSources, ForwardingRequirement, credential_scope_has_matching_proof};
 
-/// Compare the authority that a refresh would actually use. Launch aliases
-/// may differ, but canonical identity, semantic dispatch, opaque handle, and
-/// source material must agree before proofs can combine.
 pub(crate) fn refresh_authority_equivalent(
     left: &ValidatedCredentialBinding,
     right: &ValidatedCredentialBinding,
@@ -46,8 +42,6 @@ pub(crate) fn refresh_authority_equivalent(
     }
 }
 
-/// Select an unscoped refresh only when the whole group has one refresh
-/// authority. This prevents background work from depending on vector order.
 pub(crate) fn unscoped_refresh_binding(
     bindings: &[ValidatedCredentialBinding],
 ) -> Option<ValidatedCredentialBinding> {
@@ -126,8 +120,6 @@ pub(crate) fn forwarding_requirement(
             material: material.clone(),
         },
         ValidatedCredentialSource::Capability => ForwardingRequirement::Capability,
-        // Unpollable bindings carry no host source to forward; like
-        // capability-only bindings, they stay host-local.
         ValidatedCredentialSource::Unpollable => ForwardingRequirement::Capability,
     }
 }

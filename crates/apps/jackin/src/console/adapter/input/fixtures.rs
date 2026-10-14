@@ -3,8 +3,6 @@
 
 #![cfg(test)]
 
-//! Test support helpers for `console::tui::input` (extracted from `tui.rs`).
-
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin_config::{MountConfig, MountIsolation};
 

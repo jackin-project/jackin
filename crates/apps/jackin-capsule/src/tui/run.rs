@@ -1,16 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capsule TUI event loop: drives the ratatui render loop, processes input
-//! bytes from the attach protocol, and dispatches effects to the daemon.
-//!
-//! Not responsible for: daemon-side session management or PTY I/O — those
-//! live in `daemon` and `pty`; this module is the client-side attach loop.
-//!
-//! Key invariant: `run_client` owns the raw terminal for its entire lifetime;
-//! `enter_attach_terminal` installs cleanup via drop guard so the host
-//! terminal is always restored even on panic or early return.
-
 use std::io::Write;
 
 use anyhow::{Context, Result};
@@ -30,16 +20,6 @@ fn telemetry_context() -> Option<Box<jackin_protocol::TelemetryContext>> {
     Some(Box::new(context))
 }
 
-/// Connect to the running daemon and run the interactive attach client.
-///
-/// `spawn_request` is set by `docker exec ... jackin-capsule new`;
-/// the first Hello frame asks the daemon to create that session before
-/// completing attach. Plain attach (operator-initiated reattach)
-/// passes `None`.
-/// # Errors
-///
-/// Returns an error when terminal setup, socket connection, protocol I/O, or
-/// attach handling fails.
 pub async fn run_client(
     spawn_request: Option<SpawnRequest>,
     focus_session: Option<u64>,
@@ -51,9 +31,6 @@ pub async fn run_client(
 
     let mut tokio_stdin = tokio::io::stdin();
     let mut terminal = ClientTerminal::from_env();
-    // Query before connecting: once the Hello lands, every stdin byte
-    // forwards to the daemon as pane input, so a reply arriving later would
-    // land in the focused agent's PTY as keystrokes.
     let host_colors = jackin_protocol::host_terminal::query_host_terminal_colors(
         terminal.term.as_deref(),
         &mut tokio_stdin,
@@ -80,7 +57,6 @@ pub async fn run_client(
         .await
         .context("sending attach Hello frame")?;
     if !host_colors.leftover_input.is_empty() {
-        // Keystrokes typed during the color query window.
         let msg = encode_client(ClientFrame::Input(host_colors.leftover_input))
             .context("encoding pre-attach Input frame")?;
         stream

@@ -108,8 +108,6 @@ fn failure_popup_outside_click_acknowledges() {
         jackin_version: "jackin 0.0.0-test",
     };
 
-    // The top-left corner is outside the centered popup → acknowledge failure
-    // through the same path as Enter/Esc (FailureAcknowledged).
     handle_cockpit_mouse_down(&mut view, ctx, 1, 1);
 
     assert!(
@@ -122,8 +120,6 @@ fn failure_popup_outside_click_acknowledges() {
 fn failure_popup_inside_non_target_click_is_swallowed() {
     let mut view = crate::tui::update::initial_view();
     view.failure = Some(failure_failure());
-    // A build-log line is present so we can prove the swallowed click does not
-    // fall through to build-log/container-info behavior.
     view.build_log_lines = vec!["short".to_owned()];
     let area = Rect::new(0, 0, 96, 24);
     let terminal = RecordingTerminal::new();
@@ -136,9 +132,6 @@ fn failure_popup_inside_non_target_click_is_swallowed() {
 
     let failure = view.failure.as_ref().expect("failure set");
     let rect = failure_popup_block_rect(area, failure, "jk-run-test", true);
-    // A point inside the popup border (top border row) that is not a copyable
-    // value cell: it must be swallowed, not acknowledged and not routed to a
-    // background overlay.
     let inside_col = rect.x.saturating_add(2);
     let inside_row = rect.y;
     handle_cockpit_mouse_down(&mut view, ctx, inside_col, inside_row);
@@ -208,12 +201,10 @@ fn is_ctrl_c_only_matches_ctrl_c() {
         KeyCode::Char('c'),
         KeyModifiers::CONTROL
     ))));
-    // Ctrl+Q is not a hard cancel — it must not match.
     assert!(!is_ctrl_c(&Event::Key(KeyEvent::new(
         KeyCode::Char('q'),
         KeyModifiers::CONTROL
     ))));
-    // Plain 'c' (no modifier) is just input.
     assert!(!is_ctrl_c(&Event::Key(KeyEvent::new(
         KeyCode::Char('c'),
         KeyModifiers::NONE
@@ -249,8 +240,6 @@ fn quit_confirm_esc_dismisses_and_closes() {
 
 #[test]
 fn quit_confirm_enter_confirms_exit_prompt() {
-    // The exit confirmation is the one Confirm variant whose default focus is
-    // Yes; destructive confirmations still default to No.
     let mut view = quit_confirm_view();
     let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(out, QuitConfirmOutcome::Confirmed);
@@ -262,7 +251,6 @@ fn quit_confirm_focus_toggle_keeps_dialog_open() {
     let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(out, QuitConfirmOutcome::Pending);
     assert!(view.quit_confirm.is_some(), "Tab only toggles focus");
-    // After toggling away from the exit prompt's focused Yes, Enter dismisses.
     let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(out, QuitConfirmOutcome::Dismissed);
 }

@@ -85,7 +85,7 @@ Roadmap-named ownership boundaries used to group invariants:
 
 ## Test seams
 
-- **Echo-back PTY harness** — `VirtualClient` / recorded PTY fixtures (`recorded_pty_fixtures_keep_screen_equal_to_model`); see TESTING.md render-conformance notes.
+- **Echo-back PTY harness** — `VirtualClient` / recorded PTY fixtures (`recorded_pty_fixtures_keep_screen_equal_to_model`).
 - **Attach client channel** — `mux.client.attach(tx)` + `attach_drained_client` for single-client frame observation.
 - **Control-socket entry** — control request/reply helpers in `daemon/control.rs` exercised by control_* tests.
 - **Clock** — `jackin_core::clock::{Clock, ManualClock}` for clipboard expiry (plan 024).

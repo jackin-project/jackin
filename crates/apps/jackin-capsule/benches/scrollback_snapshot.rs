@@ -1,15 +1,3 @@
-//! Scrollback content-snapshot benchmark.
-//!
-//! `pane_content_from_damagegrid` materializes retained scrollback + live
-//! screen into owned `RowSnapshot`s. Link-hover resolution only needs a
-//! handful of rows; the range-scoped API bounds the allocation. This bench
-//! compares full-range vs narrow-range on a deep scrollback grid so plan 026's
-//! win is measurable.
-//!
-//! ```sh
-//! cargo bench --bench scrollback_snapshot -p jackin-capsule -- --quick
-//! ```
-
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -20,10 +8,8 @@ use termpane::DamageGrid;
 
 const SCREEN_ROWS: u16 = 40;
 const SCREEN_COLS: u16 = 120;
-/// Near the 10k retained-scrollback bound used by the capsule.
 const SCROLLBACK_ROWS: usize = 8_000;
 const VIEWPORT_COLS: u16 = SCREEN_COLS;
-/// Hover/click window: single content row (see `mouse_input` resolver).
 const NARROW_WINDOW: usize = 1;
 
 fn make_deep_scrollback_grid() -> DamageGrid {
@@ -44,8 +30,6 @@ fn bench_scrollback_snapshot(c: &mut Criterion) {
     let grid = make_deep_scrollback_grid();
     let filled = grid.scrollback_len();
     let total = filled.saturating_add(usize::from(SCREEN_ROWS));
-    // Anchor near the middle of scrollback — worst-case full materialization
-    // vs a 1-row window around a hover target.
     let anchor = filled / 2;
     let narrow = anchor..anchor.saturating_add(NARROW_WINDOW);
 

@@ -192,8 +192,6 @@ fn modified_url_hover_renders_visible_target_without_forwarding_to_pty() {
         InputEvent::MousePress {
             row: inner.row,
             col: inner.col + 7,
-            // SGR passive motion + Alt. Ghostty reported this shape during
-            // Phase 0 preflight for Option-hover in a mouse-disabled pane.
             button: 43,
         },
     )

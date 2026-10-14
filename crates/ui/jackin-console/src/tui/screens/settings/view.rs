@@ -1,24 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Settings screen view helpers.
-//!
-//! Composition copy-adapted from the upstream `patterns/settings_screen.rs`
-//! recipe (composition reference, never a type dependency — no
-//! `termrock::patterns` import):
-//!
-//! - tab bar (General, Mounts, Environments, Auth, Trust) = the recipe's
-//!   category navigation (`SettingsRegion::Nav`),
-//! - tab bodies = the recipe's form sections (`SettingsRegion::Body`),
-//! - dirty cue = the recipe's modified-field cue (pre-existing; not
-//!   restyled),
-//! - footer hint bar = chrome-only (like the recipe's Footer region, which
-//!   the key cycle never enters).
-//!
-//! The focus cycle follows the recipe's `focus_order()` pattern: one ordered
-//! region chain (`settings_focus_order` in `update.rs`) that the shell key
-//! plan walks. The recipe's Search region and its `KeybindingRecorder` /
-//! `ThemePicker` integrations are deliberately not copy-adapted (N4).
 use super::model::{
     GlobalMountConfirm, GlobalMountTextTarget, SettingsEnvConfig, SettingsEnvScope,
     SettingsEnvTextTarget, SettingsTab,

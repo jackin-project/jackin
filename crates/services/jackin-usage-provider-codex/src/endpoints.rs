@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Codex` endpoint resolution.
 
 use jackin_telemetry::ResultTelemetryExt as _;
 use jackin_usage_provider_core::parse_chatgpt_base_url;

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Focused-pane byte delivery, exec-picker entry, and wheel handling.
 
 use super::super::{
     Dialog, FullRedrawReason, Multiplexer, encode_wheel_cursor_fallback,
@@ -58,10 +57,6 @@ impl Multiplexer {
         self.send_bytes_to_focused_pane(&paste)
     }
 
-    /// Open the `jackin-exec` credential picker for a `command`, stashing the
-    /// control reply channel so confirm/cancel can answer it later. Built from
-    /// the workspace's on-demand bindings (carried on the launch config); the
-    /// container only ever sees binding names + sources, never resolved values.
     pub(crate) fn begin_exec_picker(
         &mut self,
         command: String,
@@ -69,9 +64,6 @@ impl Multiplexer {
         reply_tx: tokio::sync::oneshot::Sender<crate::attach_protocol::ControlResponse>,
         operation: Option<jackin_telemetry::operation::OperationGuard>,
     ) {
-        // Supersede any picker already in flight: deny its deferred reply (so
-        // that client gets an answer instead of a closed socket) and drop its
-        // now-stale dialog so confirm/cancel can't act on it.
         if let Some(prev) = self.control.pending_exec_reply.take() {
             prev.send(jackin_protocol::control::ServerMsg::ExecDenied {
                 reason: "superseded by a newer jackin-exec request".to_owned(),
@@ -91,16 +83,8 @@ impl Multiplexer {
         self.invalidate(FullRedrawReason::DialogChange);
     }
 
-    /// Wheel input for the focused pane or an open dialog: dialog scroll
-    /// capture, pane-mouse forwarding, cursor-fallback encoding, or
-    /// scrollback scrolling.
     pub(crate) fn apply_wheel_action(&mut self, row: u16, col: u16, button: u8) {
         if self.dialog_open() {
-            // A scrollable read-only dialog (Debug info, GitHub context)
-            // captures the wheel so its body scrolls. Wheel button bits:
-            // bit0 = forward (down / right), bit1 = native horizontal
-            // wheel, bit2 = Shift (terminals that map a horizontal
-            // trackpad swipe onto a shifted vertical wheel).
             let axes = self
                 .dialog_top()
                 .map(|dialog| {
@@ -151,9 +135,6 @@ impl Multiplexer {
             return;
         }
         let moved = session.scroll_by(delta);
-        // Every wheel step that moved the offset repaints body and
-        // footer together — including the offset→0 return to live
-        // (D2).
         if moved {
             self.invalidate(wheel_scrollback_redraw_reason());
         }

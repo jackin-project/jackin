@@ -62,7 +62,6 @@ fn classify_target_name_with_no_slash() {
 
 #[test]
 fn classify_target_relative_with_slash() {
-    // Contains `/` so treated as path
     let result = classify_target("sub/dir");
     assert!(matches!(result, TargetKind::Path { .. }));
 }
@@ -333,7 +332,6 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
     let state_dir = paths.data_dir.join(&manifest.container_base);
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-    // inspect returns Running → indexed candidate is live
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             jackin_docker::docker_client::ContainerState::Running,

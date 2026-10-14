@@ -83,8 +83,6 @@ fn repo_scan_stays_within_resolvable_inputs() {
             .strip_prefix(&root)
             .expect("source under root")
             .to_path_buf();
-        // Empty scope: every literal resolves in-scope; only genuinely
-        // unresolvable inputs set `unknown`.
         scan_source_inputs(&source, &relative, Path::new(""), None, None, &mut inputs);
     }
     assert!(
@@ -148,8 +146,6 @@ fn lock_union_comment_only_change_stays_empty() {
 
 #[test]
 fn manifest_union_staged_only_breaking_edit_widens() {
-    // Staged-only structural edit, worktree reverted to HEAD: HEAD↔worktree
-    // alone is empty, but the staged pair is unprovable so the union widens.
     let head = b"[workspace]\nmembers = []\n[workspace.dependencies]\nserde = \"1\"\n";
     let staged =
         b"[workspace]\nmembers = [\"crates/a\"]\n[workspace.dependencies]\nserde = \"1\"\n";

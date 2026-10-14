@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Complete multi-target release archive production for one crate.
-
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -27,19 +25,14 @@ pub(crate) enum ArchivePackage {
 
 #[derive(Args, Debug)]
 pub(crate) struct ReleaseArchivesArgs {
-    /// Crate whose complete release target set will be produced.
     #[arg(long, value_enum)]
     package: ArchivePackage,
-    /// Version embedded in the release binaries.
     #[arg(long)]
     version: String,
-    /// Optional version segment included in each archive filename.
     #[arg(long)]
     archive_version: Option<String>,
-    /// Directory receiving archives and their sidecars.
     #[arg(long, default_value = "dist")]
     output_dir: PathBuf,
-    /// Emit only the archive and checksum for an internal CI artifact.
     #[arg(long)]
     checksum_only: bool,
 }
@@ -97,15 +90,11 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
         .transpose()?;
 
     let targets = targets(args.package);
-    // Sequential targets: full core count per target (no divide-by-N).
     let jobs_per_target = jobs_per_target(1);
     for target in targets {
         prepare_target(target.rust)?;
     }
 
-    // Build targets one-at-a-time. Parallel zigbuild/mold peaks open enough
-    // files to hit ProcessFdQuotaExceeded on multi-slot Velnor hosts (each
-    // target already uses `jobs_per_target` cores internally).
     for target in targets {
         build(
             args.package,
@@ -246,10 +235,6 @@ fn build(
     command.env("CARGO_TARGET_DIR", target_dir);
     command.env("JACKIN_VERSION_OVERRIDE", version);
     if package == ArchivePackage::Jackin {
-        // The host binary's dependency graph can otherwise feed the Zig Apple
-        // linker more than 1,500 objects and exceed a container's descriptor
-        // quota. A single release codegen unit also produces the intended
-        // fully optimized distribution binary.
         command.env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1");
     }
     command.env("ZIG_GLOBAL_CACHE_DIR", &zig_cache.global);

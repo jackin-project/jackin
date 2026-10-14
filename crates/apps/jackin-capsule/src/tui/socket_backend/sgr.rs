@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! SGR escape encoding: color, underline metadata, and number writers.
 
 use ratatui::style::Color;
 
@@ -24,9 +23,7 @@ pub(crate) const fn term_color(color: TermColor) -> Color {
 pub(crate) fn write_color_sgr(buf: &mut Vec<u8>, color: Color, is_bg: bool) {
     let base = if is_bg { 40u8 } else { 30u8 };
     match color {
-        Color::Reset => {
-            // Let the reset at the top of apply_style handle it.
-        }
+        Color::Reset => {}
         Color::Black => push_sgr(buf, base),
         Color::Red => push_sgr(buf, base + 1),
         Color::Green => push_sgr(buf, base + 2),
@@ -54,14 +51,12 @@ pub(crate) fn write_color_sgr(buf: &mut Vec<u8>, color: Color, is_bg: bool) {
     }
 }
 
-/// `5;<idx>m` tail of an indexed-color SGR, after the `38;`/`48;`/`58;` opener.
 pub(crate) fn push_indexed_color_tail(buf: &mut Vec<u8>, idx: u8) {
     buf.extend_from_slice(b"5;");
     push_number(buf, u32::from(idx));
     buf.push(b'm');
 }
 
-/// `2;<r>;<g>;<b>m` tail of a truecolor SGR, after the `38;`/`48;`/`58;` opener.
 pub(crate) fn push_rgb_color_tail(buf: &mut Vec<u8>, r: u8, g: u8, b: u8) {
     buf.extend_from_slice(b"2;");
     push_number(buf, u32::from(r));

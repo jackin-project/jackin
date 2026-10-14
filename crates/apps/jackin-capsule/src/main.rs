@@ -1,8 +1,3 @@
-//! jackin-capsule: in-container capsule daemon, sessions, and TUI.
-//!
-//! **Architecture Invariant:** T8.
-//! Entry point: [`daemon`] — capsule daemon module the binary runs.
-
 use anyhow::Result;
 use jackin_capsule::{config, daemon, exec, runtime_setup};
 use jackin_telemetry::ResultTelemetryExt as _;
@@ -23,11 +18,6 @@ pub(crate) use argv::is_daemon_entrypoint_args;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-/// CLI for `jackin-capsule`.
-///
-/// Mode is determined by:
-/// - PID == 1 → daemon mode (supervisor + multiplexer + socket control plane)
-/// - PID != 1 → client mode (connect to daemon, run interactive UI)
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -38,18 +28,10 @@ async fn main() -> Result<()> {
         return runtime_setup::run_prepare_commit_msg_hook(&args[1..]);
     }
 
-    // `jackin-exec` (argv0 symlink) and `jackin-capsule exec …` are always
-    // client-side credential execs, never the daemon. Check before the daemon
-    // gate below so an inherited `JACKIN_CAPSULE_FORCE_DAEMON` in the
-    // apple-container VM env cannot capture this invocation into daemon mode.
     if let Some(exec_args) = exec_invocation(&args) {
         return exec::run(exec_args).await;
     }
 
-    // Daemon mode when PID 1 (Docker backend, capsule is the entrypoint) or when
-    // the apple-container `JACKIN_CAPSULE_FORCE_DAEMON` marker applies to *this*
-    // invocation (see `forced_daemon_mode` — the env is inherited by
-    // `container exec` children, so it cannot mark the entrypoint on its own).
     let is_pid1 = std::process::id() == 1 || forced_daemon_mode(&args);
 
     if is_pid1 {

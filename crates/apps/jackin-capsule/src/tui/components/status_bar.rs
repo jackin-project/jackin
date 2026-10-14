@@ -1,55 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Status bar component: renders the per-pane tab strip and global capsule
-//! status line at the top of the host terminal (rows 0–1).
-//!
-//! Not responsible for: tab lifecycle or focus state mutation — caller passes
-//! snapshot state and receives a rendered byte buffer.
-//!
-//! Key invariant: tab cell sizing uses `termrock::widgets::lay_out_tabs` so the
-//! capsule and host console TUI cannot drift on cell widths or click regions.
-
-/// Status bar state and click-region planner for rows 0–1 of the host terminal.
-///
-/// The actual renderer is the Ratatui `StatusBarWidget` in `chrome.rs`. This
-/// type stores stable capsule state (container labels, prefix mode) and derives
-/// click regions from the same `status_bar_plan` the widget uses to paint.
-/// The visible shape mirrors the jackin console TUI's tab strip:
-///
-/// - Row 0: ` jackin❯ ` brand pill, then tab cells.
-/// - Row 1: a thick `━` underline beneath the active tab cell only;
-///   blank elsewhere. The underline carries the operator's focus
-///   signal — the same pattern the console uses below "General /
-///   Mounts / Roles / Environments / Auth."
-///
-/// Inactive tab cells get a subtle dark-grey background so they stand
-/// out against the terminal's default-black background. The active tab
-/// uses a slightly lifted graphite background instead of the brand
-/// green, so it stays distinct from the ` jackin❯ ` brand pill, plus
-/// the row-1 white underline.
-///
-/// Layout columns come from `termrock::widgets::lay_out_tabs`, so the
-/// console TUI and the multiplexer cannot drift on cell sizing /
-/// click-region maths.
 use crate::tui::layout::Tab;
 use crate::tui::model::{MuxMode, VisibleAgentState};
 
-/// Column width in terminal cells for a label, measured with
-/// `unicode-width`. Saturates to `u16::MAX` for absurdly wide labels
-/// rather than wrapping. `lay_out_tabs` uses the same crate; routing
-/// every per-label width through this helper keeps the renderer and
-/// the click-region maths from drifting on CJK / emoji / combining
-/// marks.
 fn display_cols(s: &str) -> u16 {
     u16::try_from(termrock::text::display_cols(s)).unwrap_or(u16::MAX)
 }
 
 const BRAND_TEXT: &str = " jackin❯ ";
-const BRAND_PAD_COLS: u16 = 1; // single space between brand pill and first tab
+const BRAND_PAD_COLS: u16 = 1;
 const TAB_GLYPH_PLACEHOLDER: &str = " X";
 
-/// Rows the status bar occupies. Content rect starts at row 2.
 pub const STATUS_BAR_ROWS: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,16 +34,8 @@ pub struct StatusBar {
     pub hint_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
     pub prefix_enabled: bool,
-    /// Full role-container name (`jk-<short>-<workspace>-<role>`).
-    /// Consumed by the `ContainerInfo` modal and copy action.
     pub identity_label: String,
-    /// Short instance id rendered in the bottom context row.
     pub instance_id_label: String,
-    /// The role key from Capsule launch config. Stored separately so
-    /// the `ContainerInfo` modal can name it explicitly without
-    /// re-deriving it from the container-name suffix (which is the
-    /// lossy short form `thearchitect`, not the canonical
-    /// `the-architect` selector the operator typed).
     pub role: String,
 }
 
@@ -142,8 +96,6 @@ impl StatusBar {
         self.prefix_enabled = enabled;
     }
 
-    /// Return `true` when the (1-based) click at `(row, col)` falls
-    /// inside the right-side menu button.
     #[must_use]
     pub fn hint_at(&self, row: u16, col: u16) -> bool {
         if row != 1 {
@@ -155,7 +107,6 @@ impl StatusBar {
         }
     }
 
-    /// Return the tab index clicked at column `c` (1-based), if any.
     #[must_use]
     pub fn tab_at_col(&self, c: u16) -> Option<usize> {
         self.tab_regions
@@ -163,13 +114,6 @@ impl StatusBar {
             .position(|&(start, end)| c >= start && c < end)
     }
 
-    /// Set the tab + menu click regions from an already-computed plan.
-    ///
-    /// Hit-testing reads `tab_regions` / `hint_region`. The Ratatui compositor
-    /// builds one [`StatusBarPlan`] per frame and shares it with both
-    /// `StatusBarWidget` (paint) and this method (hit-testing), so the bar is
-    /// never laid out more than once per frame and the painted cells and click
-    /// regions cannot disagree.
     pub fn set_click_regions_from_plan(&mut self, plan: &StatusBarPlan) {
         self.tab_regions = plan
             .cells
@@ -180,7 +124,6 @@ impl StatusBar {
     }
 }
 
-/// One laid-out tab cell, resolved name + state glyph, in 0-based columns.
 #[derive(Debug)]
 pub(crate) struct StatusTabCell {
     pub(crate) start_col0: u16,
@@ -190,21 +133,12 @@ pub(crate) struct StatusTabCell {
     pub(crate) glyph: TabGlyph,
 }
 
-/// Geometry for the whole status bar (row 0): which tab cells fit, where the
-/// right-side menu button sits, and whether an overflow `›` is needed. The
-/// single source of truth shared by the Ratatui `StatusBarWidget` (which
-/// paints it) and `StatusBar::refresh_click_regions` (which turns it into
-/// click regions) so the two cannot drift on column maths.
 #[derive(Debug)]
 pub struct StatusBarPlan {
     pub(crate) cells: Vec<StatusTabCell>,
     pub(crate) hint_text: String,
     pub(crate) hint_cols: u16,
-    /// 1-based start column of the menu button, or `None` when there is no
-    /// room for it without overlapping the brand pill.
     pub(crate) hint_start: Option<u16>,
-    /// 1-based column for the overflow `›` indicator, set only when at least
-    /// one tab was clipped past the right edge.
     pub(crate) overflow_col: Option<u16>,
 }
 
@@ -215,9 +149,6 @@ pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> &'static str {
     }
 }
 
-/// Lay out row 0 of the status bar. This is the single source of truth for
-/// both `StatusBarWidget` painting and `StatusBar::refresh_click_regions`, so
-/// a click region computed from this plan lands on the cell the widget drew.
 #[must_use]
 pub fn status_bar_plan(
     cols: u16,
@@ -228,7 +159,7 @@ pub fn status_bar_plan(
 ) -> StatusBarPlan {
     let hint_text = button_text_for(prefix_mode);
     let hint_cols = display_cols(hint_text);
-    let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
+    let reserve_right: u16 = hint_cols + 2;
 
     let resolved: Vec<(String, TabGlyph, bool)> = tabs
         .iter()
@@ -288,7 +219,6 @@ pub fn status_bar_plan(
     }
 }
 
-/// State glyph the status-bar paints in the rightmost slot of a tab cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TabGlyph {
     Blocked,
@@ -310,10 +240,6 @@ impl From<VisibleAgentState> for TabGlyph {
     }
 }
 
-/// Resolve the base name + state glyph for a tab. The caller builds
-/// the full display label by reserving the sep + glyph slots; the
-/// glyph is painted separately so its colour can differ from the
-/// surrounding tab foreground.
 fn tab_label(tab: &Tab, states: &[(u64, VisibleAgentState)]) -> (String, TabGlyph) {
     let ids = tab.tree.all_ids();
     let state = ids

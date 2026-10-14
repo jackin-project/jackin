@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Rendering helper types and functions for the capsule multiplexer.
-
 use crate::pull_request::PullRequestInfo;
 
 use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
@@ -23,7 +21,6 @@ pub(crate) const fn hovered_menu(target: Option<HoverTarget>) -> bool {
     matches!(target, Some(HoverTarget::Menu))
 }
 
-/// Dialog snapshot with its bounding rect — factored out to keep `CapsuleRatatuiFrame` readable.
 pub(crate) type DialogFrameSnapshot = (DialogRatatuiSnapshot, (u16, u16, u16, u16));
 
 #[derive(Debug)]
@@ -43,9 +40,6 @@ pub(crate) enum PaneScreen<'a> {
 #[derive(Clone)]
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
-    /// Row-0 layout computed once per frame and shared by the status-bar
-    /// widget (paint), the tab tooltip, and the compositor's click-region
-    /// refresh, so the bar is laid out once rather than per consumer.
     pub(crate) status_plan: &'a crate::tui::components::status_bar::StatusBarPlan,
     pub(crate) term_cols: u16,
     pub(crate) term_rows: u16,
@@ -61,8 +55,6 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) menu_hovered: bool,
     pub(crate) selection: Option<crate::tui::selection::SelectionState>,
     pub(crate) selection_copied: bool,
-    /// Per-pane scrollbar inputs `(session_id, offset, filled)`. A pane with
-    /// `filled > 0` gets a thumb painted on its right border.
     pub(crate) scrollbars: &'a [(u64, usize, usize)],
     pub(crate) branch: Option<&'a str>,
     pub(crate) usage_status_label: Option<&'a str>,
@@ -74,15 +66,8 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) main_scroll_axes: termrock::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
     pub(crate) dialog_hint_spans: Option<&'a [termrock::widgets::HintSpan<'a>]>,
-    /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
-    /// Forwarded to the hint builder so the palette-key glyph reflects the
-    /// operator's `JACKIN_PALETTE_KEY` setting.
     pub(crate) palette_key: u8,
-    /// Transient host clipboard image paste result. Painted in the content
-    /// toast area so it cannot overwrite status rows or bottom chrome.
     pub(crate) clipboard_image_notice: Option<&'a str>,
-    /// Host-open target under an Alt/Ctrl hover in a mouse-disabled pane.
-    /// Painted through the compositor so the PTY never receives hover text.
     pub(crate) link_hover_notice: Option<&'a str>,
 }
 
@@ -103,8 +88,6 @@ fn render_link_hover_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_
 
 fn render_notice_toast(frame: &mut Frame<'_>, area: RatatuiRect, message: &str) {
     let theme = termrock::style::DesignSystem::default();
-    // Full TermRock toast contract: severity border role, bottom-left anchor
-    // under the status strip, and theme-derived text — no product local chrome.
     frame.render_widget(
         termrock::widgets::Toast::new(&theme, message, termrock::widgets::Severity::Success)
             .anchor(termrock::widgets::Anchor::BottomLeft)
@@ -113,10 +96,6 @@ fn render_notice_toast(frame: &mut Frame<'_>, area: RatatuiRect, message: &str) 
     );
 }
 
-/// Paint the hovered tab's codename as a dark-bg + phosphor-green pill on the
-/// row directly below the tab strip, left-aligned with the tab cell. Ratatui
-/// `Buffer::set_string` clips to the buffer area, so an out-of-range column or
-/// a too-long codename cannot overflow the frame.
 fn apply_tab_codename_tooltip(
     buf: &mut ratatui::buffer::Buffer,
     plan: &crate::tui::components::status_bar::StatusBarPlan,
@@ -127,8 +106,6 @@ fn apply_tab_codename_tooltip(
     let Some(cell) = plan.cells.get(hovered_idx) else {
         return;
     };
-    // Row index 2 (0-based): one row below the tab strip (row 0) and the
-    // active-tab underline (row 1).
     let tooltip_row = crate::tui::components::status_bar::STATUS_BAR_ROWS;
     let pill = format!(" {codename} ");
     buf.set_string(
@@ -148,7 +125,6 @@ fn apply_tab_codename_tooltip(
     );
 }
 
-/// Format a `label: error` string.
 pub(crate) fn spawn_failure_message(agent_label: &str, error: impl std::fmt::Display) -> String {
     format!("{agent_label}: {error:#}")
 }
@@ -172,9 +148,6 @@ pub(crate) fn pane_limit_failure_message(max_sessions: usize) -> String {
     format!("pane limit reached ({max_sessions}); close some panes before opening more")
 }
 
-/// Forwarded to the operator's outer terminal via `send_output` from the
-/// `CopyToClipboard` dialog action. The OSC 52 byte encoding and terminal
-/// compatibility notes live with the canonical typed `TermRock` encoder.
 pub(crate) fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     termrock::osc::encode_clipboard(termrock::osc::ClipboardWrite {
         selection: termrock::osc::ClipboardSelection::Clipboard,

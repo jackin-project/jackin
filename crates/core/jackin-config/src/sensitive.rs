@@ -1,19 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Detect sensitive host paths (`~/.ssh`, `~/.aws`, etc.) in mount sources.
-//!
-//! Pure classification against normalized path components — no filesystem
-//! access or operator I/O. Callers provide optional canonicalization through
-//! [`normalize_sensitive_mount_sources`] before classification.
-
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
 use crate::schema::MountConfig;
 
-/// Component paths that identify credential stores. Exact paths, descendants,
-/// and paths containing one of these component runs are sensitive.
 const SENSITIVE_SUFFIXES: &[(&str, &str)] = &[
     (".ssh", "SSH keys and configuration"),
     (".aws", "AWS credentials and configuration"),
@@ -28,18 +20,12 @@ const SENSITIVE_SUFFIXES: &[(&str, &str)] = &[
     (".config/op", "1Password CLI configuration"),
 ];
 
-/// A mount source that matched a sensitive path pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SensitiveMount {
-    /// Host mount source that matched a sensitive suffix.
     pub src: String,
-    /// Human-readable reason (e.g. "SSH keys and configuration").
     pub reason: String,
 }
 
-/// Resolve tilde/relative/dot components, then let an I/O-owning caller supply
-/// a canonical path when the source exists. The callback keeps filesystem I/O
-/// outside this validation crate; `None` preserves the normalized path.
 #[must_use]
 pub fn normalize_sensitive_mount_sources<F>(
     mounts: &[MountConfig],
@@ -61,7 +47,6 @@ where
         .collect()
 }
 
-/// Return any mounts whose source path matches a known sensitive pattern.
 pub fn find_sensitive_mounts(mounts: &[MountConfig]) -> Vec<SensitiveMount> {
     let mut hits = Vec::new();
     for mount in mounts {

@@ -1,21 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capture host git user.name/email for in-container git defaults, and expose
-//! the fixed root-supervisor identity used by the capsule boundary.
-//!
-//! All reads are best-effort: missing git config or id failures produce empty
-//! strings rather than hard errors.
-
 use jackin_core::CommandRunner;
 
-/// `--user` value for Docker/container lifecycle commands. PID 1 must be
-/// root: it is the only process allowed to read staged credentials and it
-/// launches each PTY through the per-instance UID + Landlock wrapper.
 pub const CAPSULE_SUPERVISOR_USER: &str = "0:0";
 
-/// The host operator's effective UID, used to build runtime
-/// `libnss-extrausers` entries. `None` on non-unix hosts.
 #[cfg(unix)]
 pub fn host_uid() -> Option<u32> {
     Some(nix::unistd::geteuid().as_raw())
@@ -34,7 +23,6 @@ pub struct GitIdentity {
 
 #[cfg(any(test, feature = "test-support"))]
 impl GitIdentity {
-    /// Test fixture constructor for `LaunchCore` boundary harnesses.
     pub fn for_tests(user_name: &str, user_email: &str) -> Self {
         Self {
             user_name: user_name.to_owned(),

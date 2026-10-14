@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace-list key handling.
 
 use super::super::InputOutcome;
 use super::{
@@ -69,9 +68,6 @@ pub fn handle_list_key(
     };
     match plan {
         WorkspaceListKeyPlan::Exit => Ok(InputOutcome::ExitJackin),
-        // Left/Right arrows: tree expand/collapse when the selected row owns
-        // that direction, otherwise horizontal scroll if the focused list
-        // overflows. h/l remain alternate horizontal-scroll keys.
         WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta } => {
             handle_list_left_right(state, config, cwd, delta);
             Ok(InputOutcome::Continue)

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Global-mounts tab key handling.
 
 use super::{
     confirm_modal, dispatch_manager, open_edit_text, open_global_mount_scope_picker,
@@ -167,7 +166,6 @@ pub(crate) fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEve
         Some(SettingsGlobalMountsTabAction::EditScope) => {
             open_edit_text(state, GlobalMountTextTarget::Scope);
         }
-        // Context check failed (Delete with mount_count == 0) or no binding.
         Some(_) | None => {}
     }
 }

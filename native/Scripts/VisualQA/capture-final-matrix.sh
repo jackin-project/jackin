@@ -1,5 +1,4 @@
 #!/bin/bash
-# Regenerate the branch-head native verification matrix from one validated app bundle.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd -P)

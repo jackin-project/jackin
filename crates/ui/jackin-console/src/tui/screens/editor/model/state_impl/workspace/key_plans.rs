@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EditorState` per-tab action key plans.
 
 use super::super::super::{
     EditorAuthActionKeyPlan, EditorEscapeKeyPlan, EditorFieldSelectionKeyPlan,

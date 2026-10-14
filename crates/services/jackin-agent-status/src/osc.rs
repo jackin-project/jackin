@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Persistent decoding of terminal status evidence, independent of PTY reads.
-
-/// Completed OSC 133 shell integration marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OscShellMark {
     PromptStart,
@@ -12,7 +9,6 @@ pub enum OscShellMark {
     CommandFinished { exit_code: Option<i32> },
 }
 
-/// Status evidence emitted only after a complete BEL or ESC-backslash terminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OscStatusEvent {
     Shell(OscShellMark),
@@ -29,14 +25,6 @@ enum State {
     OscEscape,
 }
 
-/// Per-session decoder for OSC 133 and OSC 9;4.
-///
-/// Retains at most 64 payload bytes. Oversized or cancelled sequences produce
-/// no evidence. Only seven-bit ESC ] introducers and BEL / ESC-backslash
-/// terminators are recognized; C1 bytes are opaque. An ESC followed by anything
-/// other than backslash abandons the unfinished OSC and starts a new escape.
-/// As in the grid parser, ESC also abandons other terminal strings. Unlike the
-/// grid's OSC dispatch, an unfinished OSC never becomes status evidence.
 #[derive(Debug)]
 pub struct OscStatusDecoder {
     state: State,
@@ -57,7 +45,6 @@ impl Default for OscStatusDecoder {
 }
 
 impl OscStatusDecoder {
-    /// Decode every completed event in wire order, preserving partial state.
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<OscStatusEvent> {
         let mut events = Vec::new();
         for &byte in bytes {
@@ -154,7 +141,6 @@ fn parse_payload(payload: &[u8]) -> Option<OscStatusEvent> {
         }
         b"9" if fields.next()? == b"4" => {
             let state = fields.next()?;
-            // Preserve existing handling of reserved single-digit states.
             match state {
                 [digit] if digit.is_ascii_digit() => Some(OscStatusEvent::Progress(digit - b'0')),
                 _ => None,

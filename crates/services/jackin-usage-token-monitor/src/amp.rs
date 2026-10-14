@@ -1,15 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! JSON reader for Amp thread files.
-//!
-//! Reads `~/.local/share/amp/threads/*.json`.
-
 use super::{PollStatus, TokenSession, json_u64};
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> PollStatus {
-    // Amp keeps thread files flat directly under `threads/` — top level only
-    // (max_depth 0), so unrelated nested JSON never inflates the spend total.
     let Ok(files) =
         super::find_provider_files(&["/home/agent/.local/share/amp/threads"], "json", 0)
     else {
@@ -19,7 +13,6 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> PollStatus {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(content) else {
             return;
         };
-        // Thread JSON: array of messages, each may have usage metadata.
         let Some(messages) = val
             .as_array()
             .or_else(|| val.get("messages").and_then(|m| m.as_array()))

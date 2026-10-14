@@ -1,10 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Hardline agent start and container reachability gates.
-//!
-//! The running-state gate lives in
-//! `jackin_runtime_attach_running_gate` (S7 split 107),
-//! re-exported below.
 
 use jackin_core::{CommandRunner, ContainerHandle};
 use jackin_docker::docker_client::DockerApi;
@@ -18,9 +13,6 @@ use super::{
     validate_recorded_role_handle,
 };
 
-// Moved to jackin_runtime_attach_running_gate::running_gate (S7 split
-// 107); the item re-export keeps every
-// `attach::require_container_running` path stable.
 pub(crate) use jackin_runtime_attach_running_gate::running_gate::require_container_running;
 
 pub(crate) async fn start_or_hardline_agent(
@@ -150,9 +142,6 @@ pub(crate) async fn start_or_hardline_agent_with_known_container(
     }
 }
 
-/// Verify the container is reachable (running/paused/restarting).
-/// Returns `Ok(())` when reachable, `Err` otherwise.
-/// `stopped_hint` is the trailing clause of the "is stopped" error, e.g. "restart it before opening a shell".
 pub(crate) async fn require_container_reachable(
     paths: &JackinPaths,
     container_name: &str,

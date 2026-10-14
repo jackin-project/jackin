@@ -149,11 +149,6 @@ fn with_event_arrays(fields: &FieldSet<'_>, emit: impl FnOnce()) {
     });
 }
 
-/// Supplies registered array attributes to the synchronous tracing log bridge.
-///
-/// The tracing value model has no array variant, so the standard appender would
-/// otherwise flatten these values through `Debug`. The bridge consumes this
-/// handoff while it is processing the same event on the emitting thread.
 #[doc(hidden)]
 pub fn take_pending_event_arrays() -> PendingEventArrays {
     PENDING_EVENT_ARRAYS.with(|slot| slot.borrow_mut().take().unwrap_or_default())
@@ -260,7 +255,6 @@ fn event_enabled(def: &EventDef) -> bool {
     }
 }
 
-/// Emit a governed event whose body is formatted only after its level is enabled.
 pub fn emit_event_display(
     def: &'static EventDef,
     attrs: &[Attr<'_>],

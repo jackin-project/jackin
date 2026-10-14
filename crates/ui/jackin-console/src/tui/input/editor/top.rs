@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor top-level key dispatch.
 
 use crossterm::event::KeyEvent;
 
@@ -26,10 +25,6 @@ pub(crate) fn dispatch_editor_top_level(
         };
     }
 
-    // Tab-bar navigation keys (Left/BackTab, Right, Tab/Down/j/J) are intercepted when
-    // the tab bar has focus. Other keys (Enter, h/H/l/L, Up/k/K, etc.) fall through to
-    // the content keymap even when the tab bar is focused — matching the original
-    // `editor_top_level_key_plan` behavior where these guards were not exhaustive.
     if tab_bar_focused && let Some(action) = bridged_keymap_action(&EDITOR_TAB_BAR_KEYMAP, event) {
         return match action {
             EditorTabBarAction::PrevTab => {
@@ -50,7 +45,6 @@ pub(crate) fn dispatch_editor_top_level(
         };
     }
 
-    // Content-mode (and tab-bar fall-through): Char(_) wildcard falls through.
     match bridged_keymap_action(&EDITOR_CONTENT_KEYMAP, event) {
         Some(EditorContentAction::MoveUp) => EditorTopLevelKeyPlan::MoveField { delta: -1 },
         Some(EditorContentAction::MoveDown) => EditorTopLevelKeyPlan::MoveField { delta: 1 },
@@ -77,7 +71,6 @@ pub(crate) fn dispatch_editor_top_level(
         }
         Some(EditorContentAction::CheckImmediate) => EditorTopLevelKeyPlan::CheckImmediateAction,
         None => {
-            // Char(_) wildcard: any printable character triggers immediate-action check.
             if matches!(key.code, KeyCode::Char(_)) {
                 EditorTopLevelKeyPlan::CheckImmediateAction
             } else {

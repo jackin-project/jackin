@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `MiniMax` fetch plans, endpoints, and HTTP fetch.
 
 use jackin_usage_provider_core::{
     env_value, epoch_seconds_from_maybe_ms, normalize_url_or_host, provider_http_client,
@@ -13,8 +12,6 @@ use super::{
     resolve_minimax_region_from,
 };
 
-/// Ordered fetch candidates for one product plus the region and host label
-/// the fetch actually targets.
 #[derive(Debug, Clone)]
 pub(crate) struct MiniMaxFetchPlan {
     pub(crate) urls: Vec<String>,
@@ -72,8 +69,6 @@ pub(crate) fn minimax_fetch_plan_from(
     let region = resolve_minimax_region_from(region_env, None);
     let base = region.api_host();
     let urls = match product {
-        // Region-pinned subset of the documented candidates: a credential is
-        // never sent cross-region because the first request failed.
         MiniMaxKeyProduct::TokenPlan => resolve_minimax_remains_urls_from(None, None)
             .into_iter()
             .filter(|url| minimax_region_from_value(url) == region)
@@ -182,8 +177,6 @@ pub fn resolve_minimax_remains_urls_from(
     urls
 }
 
-/// Iterate URLs in order, returning the first success or the last fetch
-/// error. Extracted so fan-out order is unit-testable without provider I/O.
 pub fn first_minimax_usage<T, F>(urls: Vec<String>, mut fetch: F) -> Result<T, String>
 where
     F: FnMut(&str) -> Result<T, String>,
@@ -198,9 +191,6 @@ where
     Err(last_error.unwrap_or_else(|| "MiniMax usage endpoint unavailable".to_owned()))
 }
 
-/// Governed telemetry path template for a `MiniMax` remains URL. Known
-/// endpoints map to their static path; arbitrary override URLs collapse to
-/// `"/custom"` so operator-provided paths never leak into telemetry.
 pub fn minimax_operation_path(url: &str) -> &'static str {
     if url.ends_with("/v1/token_plan/remains") {
         "/v1/token_plan/remains"
@@ -230,10 +220,6 @@ pub fn minimax_reset_epoch(end: Option<i64>, remains_time: Option<i64>, now: i64
     })
 }
 
-/// `remains_time` is a remaining-duration, not an epoch. Live values arrive in
-/// milliseconds (`14_400_000` = 4h); values above a million can only be
-/// milliseconds (a million seconds already exceeds any interval/weekly
-/// window), so they are normalized — seconds pass through.
 pub(crate) fn minimax_duration_seconds(duration: i64) -> i64 {
     if duration > 1_000_000 {
         duration / 1000

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch progress, prompt, and summary helpers.
-
 #[expect(
     missing_debug_implementations,
     reason = "StepCounter owns a LaunchProgress whose terminal and diagnostics handles do not expose useful Debug output."
@@ -36,12 +34,6 @@ impl StepCounter {
     }
 
     pub async fn next(&mut self, text: &str) -> anyhow::Result<()> {
-        // Step boundaries are cancellation checkpoints. Long blocking ops are
-        // each raced against the token via the progress `while_waiting` seam,
-        // but the quick async work *between* them (docker inspects, cache
-        // probes) is not individually raced; bailing here bounds how long a
-        // Ctrl+C can go unobserved to a single step. The bail unwinds through
-        // the pipeline's normal `Err` cleanup, same as any leaf race.
         if self.is_cancelled() {
             return Err(jackin_core::LaunchCancelled::err());
         }
@@ -59,9 +51,6 @@ impl StepCounter {
         Ok(())
     }
 
-    /// `true` once the operator has hit Ctrl+C / Ctrl+Q on the rich launch
-    /// surface. Always `false` in the headless (no-progress) path, where
-    /// cancellation is the OS's SIGINT rather than the cockpit's token.
     pub fn is_cancelled(&self) -> bool {
         self.progress
             .as_ref()
@@ -174,10 +163,6 @@ impl StepCounter {
         telemetry.complete(outcome, error_type);
     }
 
-    /// Stop the rich loading surface's render task and clear
-    /// `rich_surface_active`. Call this before handing the terminal to an
-    /// interactive `docker exec -it` session, otherwise the capsule attach
-    /// can't own the PTY and hangs.
     pub fn finish_progress(&mut self) {
         if let Some(progress) = self.progress.as_mut() {
             progress.finish();
@@ -335,10 +320,6 @@ pub fn launch_target_label(
     )
 }
 
-/// Human-readable lines for the mounts whose host source differs from the
-/// container destination. Same-path mounts (the current-directory launch
-/// case) carry no information for the operator and are omitted entirely, so
-/// a directory launch shows no mount line at all.
 pub fn launch_mount_lines(workspace: &jackin_config::ResolvedWorkspace) -> Vec<String> {
     workspace
         .mounts

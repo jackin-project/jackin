@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Hover, selection, and scroll application.
 
 use super::workspace_unclamped_scroll_plan;
 

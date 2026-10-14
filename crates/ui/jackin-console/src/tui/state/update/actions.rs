@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Manager action recording and telemetry.
 
 use super::ManagerMessage;
 
@@ -163,5 +162,3 @@ pub(crate) const fn action_of(
         | ManagerMessage::Settings(_) => None,
     }
 }
-
-// ── Helpers ────────────────────────────────────────────────────────────────

@@ -1,8 +1,3 @@
-//! jackin-oppicker: pure 1Password op-picker planning (no I/O).
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`OpPickerPlan`] — pure picker planning result.
-
 mod adapters;
 pub mod input;
 pub mod load;
@@ -17,8 +12,6 @@ pub use adapters::{
 
 pub use state::{LoadResult, OpPickerState};
 
-/// Concrete selection type for the picker: all five type parameters are bound
-/// to `jackin-core` types already available in this crate.
 pub type OpPickerCoreSelection = OpPickerSelection<
     jackin_core::OpRef,
     jackin_core::OpAccount,
@@ -53,12 +46,9 @@ pub fn section_name_input_state<'a>(initial: impl Into<String>) -> TextInputStat
     TextInputState::new("Section name", initial)
 }
 
-/// Browse-only vs. creation-enabled picker mode.
 #[derive(Debug, Clone)]
 pub enum OpPickerMode {
-    /// Pick an existing field only.
     Browse,
-    /// Enable item/field/section creation rows and naming sub-stages.
     Create {
         item_name_default: String,
         field_label_default: String,
@@ -96,7 +86,6 @@ impl OpPickerStage {
     }
 }
 
-/// Which creation path entered the field-label sub-stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldLabelOrigin {
     NewItem,
@@ -136,8 +125,6 @@ pub fn probe_load_error_state(message: impl Into<String>) -> OpLoadState {
     OpLoadState::Error(classify_probe_error_message(message))
 }
 
-/// Classify a process/probe failure carried as `anyhow::Error`, preferring a
-/// typed [`jackin_core::OpProbeError`] source when present.
 pub fn probe_load_error_from_anyhow(error: &anyhow::Error) -> OpLoadState {
     OpLoadState::Error(classify_probe_error(error))
 }
@@ -305,7 +292,6 @@ pub fn selected_entity_label_or_empty<'a, Entity>(
     selected_entity.map_or("", label)
 }
 
-/// Background load completion routed back into the picker.
 #[derive(Debug)]
 pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
     Accounts(anyhow::Result<Vec<Account>>),
@@ -314,7 +300,6 @@ pub enum OpPickerLoadResult<Account, Vault, Item, Field> {
     Fields(anyhow::Result<jackin_core::OpItemDetail<Field>>),
 }
 
-/// Typed request for external 1Password metadata loading.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpPickerLoadRequest {
     Accounts,
@@ -332,8 +317,6 @@ pub enum OpPickerLoadRequest {
     },
 }
 
-/// Typed pending load request emitted by picker state and executed by the
-/// owning non-TUI service adapter.
 #[derive(Debug)]
 pub struct OpPickerPendingLoad<LoadResult, LoadRequest, Runner> {
     pub cached: Option<LoadResult>,
@@ -341,12 +324,9 @@ pub struct OpPickerPendingLoad<LoadResult, LoadRequest, Runner> {
     pub runner: Runner,
 }
 
-/// What the operator chose when the picker commits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
-    /// An existing field was chosen.
     Existing(Reference),
-    /// Create a brand-new item in the vault.
     NewItem {
         account: Option<Account>,
         vault: Vault,
@@ -354,7 +334,6 @@ pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
         section: Option<OpSectionTarget>,
         field_label: String,
     },
-    /// Write/append a field in an existing item.
     EditItemField {
         account: Option<Account>,
         vault: Vault,
@@ -367,28 +346,24 @@ pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
 pub use jackin_core::{
     OpAccount as OpPickerAccount, OpSection, OpSectionTarget, OpVault as OpPickerVault,
 };
-/// Re-exported from `jackin-core` — canonical definitions live there so
-/// `jackin-env` no longer depends on `jackin-console` for data types.
 pub use jackin_core::{OpField as OpPickerField, OpItem as OpPickerItem};
 
-/// Session-scoped metadata cache for picker drill-down panes.
 pub type OpPickerCache =
     jackin_core::OpCache<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
 
-/// A single row in the field-picker display list.
 #[derive(Debug, Clone)]
 pub enum FieldDisplayRow {
-    /// A collapsible section header identified by opaque section ID.
     SectionHeader {
         section_id: String,
         name: String,
         field_count: usize,
     },
-    /// A selectable field row. The index points into the filtered fields.
-    Field { field_idx: usize },
-    /// `+ New field` creation row.
+
+    Field {
+        field_idx: usize,
+    },
+
     NewFieldSentinel,
-    /// `+ New section` creation row.
     NewSectionSentinel,
 }
 
@@ -416,10 +391,7 @@ pub struct OpPickerFieldRef<'a> {
     pub id: &'a str,
     pub label: &'a str,
     pub reference: &'a str,
-    /// Exact section ID from the item detail response, when present.
-    /// Otherwise, the reference segment is resolved against item metadata.
     pub section_id: Option<&'a str>,
-    /// Human label joined from the field's opaque section ID.
     pub section_label: Option<&'a str>,
 }
 
@@ -972,9 +944,6 @@ pub struct BuiltOpPickerRef {
     pub empty_reference_with_sibling_refs: bool,
 }
 
-/// Multi-account titles lead with the chosen account's email so the
-/// operator can see which account they're drilling into; single-account
-/// titles omit it.
 pub fn breadcrumb_title(
     stage: OpPickerStage,
     multi_account: bool,
@@ -1011,9 +980,6 @@ pub fn breadcrumb_title(
     }
 }
 
-/// Classify a probe `anyhow::Error` via typed [`jackin_core::OpProbeError`]
-/// when attached as a source; falls back to substring matching for
-/// stringified transports.
 pub fn classify_probe_error(error: &anyhow::Error) -> OpPickerError {
     if let Some(probe) = error.downcast_ref::<jackin_core::OpProbeError>() {
         return match probe {
@@ -1023,8 +989,6 @@ pub fn classify_probe_error(error: &anyhow::Error) -> OpPickerError {
             jackin_core::OpProbeError::NotSignedIn { .. } => {
                 OpPickerError::Fatal(OpPickerFatalState::NotSignedIn)
             }
-            // Timeout has no dedicated picker fatal state; same GenericFatal
-            // path the substring classifier used for timeout wording.
             jackin_core::OpProbeError::Timeout { .. } | jackin_core::OpProbeError::Other { .. } => {
                 OpPickerError::Fatal(OpPickerFatalState::GenericFatal {
                     message: error.to_string(),
@@ -1035,9 +999,6 @@ pub fn classify_probe_error(error: &anyhow::Error) -> OpPickerError {
     classify_probe_error_message(error.to_string())
 }
 
-/// Fallback classifier for string-only transports (and unit tests). Prefer
-/// [`classify_probe_error`] when an `anyhow::Error` is available so typed
-/// sources win over message wording.
 pub fn classify_probe_error_message(message: impl Into<String>) -> OpPickerError {
     let message = message.into();
     if message.contains("failed to spawn") {
@@ -1052,8 +1013,6 @@ pub fn classify_probe_error_message(message: impl Into<String>) -> OpPickerError
     }
 }
 
-/// Human-readable section label for a picker row. Duplicate labels get an
-/// opaque-ID suffix so sections remain distinct to the operator.
 pub fn section_display_label(section: &OpSection, sections: &[OpSection]) -> String {
     let label = if section.label.is_empty() {
         "(unnamed section)"
@@ -1109,9 +1068,6 @@ fn section_label_for_field(section_id: &str, reference: &str, sections: &[OpSect
     format!("{label} [{id_prefix}]")
 }
 
-/// Resolve the section segment from a field reference against the selected
-/// item's metadata. Opaque IDs are authoritative; labels are accepted only
-/// when they identify one distinct section ID.
 fn section_for_reference_segment<'a>(
     section_segment: &str,
     sections: &'a [OpSection],
@@ -1136,8 +1092,6 @@ fn section_for_reference_segment<'a>(
     matching_section
 }
 
-/// Keep an explicit field section ID. When it is absent, infer the opaque ID
-/// only from an exact section ID or a unique case-insensitive metadata label.
 fn resolved_field_section_id(
     section_id: Option<&str>,
     reference: &str,
@@ -1150,9 +1104,6 @@ fn resolved_field_section_id(
     section_for_reference_segment(&section_segment, sections).map(|section| section.id.clone())
 }
 
-/// Fill missing field section IDs from item metadata before the picker caches
-/// or displays a field. A section-bearing reference that cannot resolve to one
-/// section is invalid picker metadata and must not be treated as a root field.
 pub(crate) fn normalize_field_section_ids(
     fields: &mut [OpPickerField],
     sections: &[OpSection],
@@ -1177,8 +1128,6 @@ pub(crate) fn normalize_field_section_ids(
     Ok(())
 }
 
-/// Build field rows using opaque section IDs for grouping and scoping.
-/// Returned `field_idx` values index into the filtered field list.
 pub fn field_display_rows_for_picker(
     mode: &OpPickerMode,
     filter: &str,
@@ -1311,10 +1260,6 @@ pub fn filtered_fields<'a>(filter: &str, fields: &'a [OpPickerField]) -> Vec<&'a
         .collect()
 }
 
-/// Build the committed `op://` value and display path from the picker
-/// cache values. Known IDs supply URI segments; a missing section ID resolves
-/// from item metadata by exact ID or unique case-insensitive label. Human-
-/// readable labels stay in the separately escaped local display path.
 pub fn build_op_picker_ref<'a>(
     vault: OpPickerVaultRef<'a>,
     selected_item: OpPickerItemRef<'a>,
@@ -1340,9 +1285,6 @@ pub fn build_op_picker_ref<'a>(
         jackin_core::parse_op_reference(field.reference).and_then(|parts| parts.section);
     let section_id = resolved_field_section_id(field.section_id, field.reference, sections);
     if field.section_id.is_some() || canonical_section.is_some() {
-        // A reference that names a section must resolve to an opaque ID before
-        // it can be committed. Never fall back to a four-segment URI using a
-        // human label or silently drop the section.
         let section_id = section_id.as_deref()?;
         let section_name = field
             .section_label

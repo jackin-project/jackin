@@ -1,15 +1,3 @@
-// Single generator for the jackin❯ logo. One geometry source (brand-geometry.ts)
-// → one set of assets, used everywhere:
-//   - public/brand/jackin-wordmark.svg  ← the canonical logo, imported by
-//     BrandMark and used as the TOC wordmark. The word is OUTLINED (JetBrains
-//     Mono Bold → vector paths) and the chevron is the ❯ vector path, so the
-//     single file renders identically as inline SVG, <img>, or background —
-//     with no dependence on a loaded webfont.
-//   - public/brand/jackin-monogram.svg, *.png, favicon.svg/.ico, app icons.
-//   - native/Resources/Brand/*.svg for appearance-adaptive desktop identity.
-//
-// Logo style: transparent background, white "jackin" (bold), green ❯ chevron.
-// To change the mark, edit this file or brand-geometry.ts and rerun `gen-brand`.
 
 import { Resvg } from '@resvg/resvg-js'
 import ImageResponse from '@takumi-rs/image-response'
@@ -25,16 +13,10 @@ const WHITE = '#ffffff'
 const GREEN = '#5cf07a'
 const DARK = '#0a0a0a'
 const GREY = '#9ca8a1'
-// Light-surface variant: dark word + the SAME brand-green chevron as dark mode
-// (#5cf07a) + darker byline, for the logo on white chrome (docs header/sidebar,
-// landing footer) in light mode. Only the word darkens for contrast; the chevron
-// stays the canonical brand green.
 const DARK_WORD = '#15181c'
 const GREY_DARK = '#5d6460'
 const round = (n: number) => Math.round(n * 100) / 100
 
-// The canonical lockup: outlined word + ❯ chevron, transparent background.
-// With `byline`, a small grey "by tailrocks" (also outlined) sits beneath it.
 function wordmarkSvg(
   word: string,
   fontSize: number,
@@ -45,18 +27,18 @@ function wordmarkSvg(
 ): string {
   const w = outlineWord(word, fontSize, wordColor)
   const left = round(w.width + wordChevronGap(fontSize))
-  const cy = round(w.capCenter + fontSize * 0.06) // nudge chevron down from the cap center
+  const cy = round(w.capCenter + fontSize * 0.06)
   const c = chevron(fontSize, left, cy)
   let width = c.right
   let height = round(Math.max(w.bottom, cy + chevronHeight(fontSize) / 2))
   let bylineMarkup = ''
   if (byline) {
     const bf = Math.round(fontSize * 0.28)
-    const by = outlineWord('by tailrocks', bf, bylineColor, interFont) // sans subtext, not the mono mark
-    // Tuck the byline right under the letters (off the baseline, not the "j"
-    // descender) so it almost touches the word.
+    const by = outlineWord('by tailrocks', bf, bylineColor, interFont)
+
+
     const baseline = round(w.baseline + 0.18 * bf + by.baseline)
-    const bylineX = round(w.inkRight - by.inkRight) // ink right edge aligns with the end of "n"
+    const bylineX = round(w.inkRight - by.inkRight)
     bylineMarkup = `\n  ${placeWord(by, bylineX, baseline)}`
     height = round(Math.max(height, baseline + (by.bottom - by.baseline)))
   }
@@ -68,7 +50,6 @@ function wordmarkSvg(
 `
 }
 
-// Square app icon: outlined "j" + chevron centered on a filled square.
 function faviconSvg(size: number): string {
   const fontSize = round(size * 0.46)
   const w = outlineWord('j', fontSize, WHITE)
@@ -76,10 +57,8 @@ function faviconSvg(size: number): string {
   const contentW = w.width + gap + chevron(fontSize, 0, 0).right
   const startX = round((size - contentW) / 2)
   const cy = round(size / 2)
-  // Baseline so the "j" cap is vertically centered on the square.
   const baseline = round(cy + (font.capHeight / 2) * (fontSize / font.unitsPerEm))
   const wg = placeWord(w, startX, baseline)
-  // Nudge the chevron down off the cap center, same as the wordmark lockup.
   const c = chevron(fontSize, round(startX + w.width + gap), round(cy + fontSize * 0.06))
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
   <rect width="${size}" height="${size}" fill="${DARK}"/>
@@ -95,17 +74,10 @@ const pub = join(root, 'public')
 mkdirSync(brandDir, { recursive: true })
 mkdirSync(nativeBrandDir, { recursive: true })
 
-// 1. Canonical wordmark + monogram (outlined SVG). Used by BrandMark and the TOC.
-// Guarantee, by rasterizing the result, that the byline's right edge lines up
-// with the end of the "n" (the actual rendered pixels — not font metrics, which
-// can lie). Throws if the two right edges differ by more than `tolUnits`. This
-// would have caught the scale-rounding bug that pushed the byline ~30 units out.
 function assertBylineAligned(svg: string, tolUnits = 3) {
   const vbW = Number(svg.match(/viewBox="0 0 ([0-9.]+)/)?.[1])
   const { pixels, width, height } = new Resvg(svg, { fitTo: { mode: 'width', value: 2000 } }).render()
   const toVb = (px: number) => (px / width) * vbW
-  // Classify pixels by color, not position: white = word, grey = byline, green =
-  // chevron (ignored). Robust to chevron size / byline vertical placement.
   let wordRight = -1
   let bylineRight = -1
   for (let y = 0; y < height; y++) {
@@ -131,9 +103,6 @@ function assertBylineAligned(svg: string, tolUnits = 3) {
   console.log(`✓ byline aligned to the word (Δ ${delta.toFixed(2)} units)`)
 }
 
-// Wordmark — carries the "by tailrocks" byline; shown on every logo (header,
-// sidebar, landing nav, TOC, footer). The lockup is kept as an explicit alias
-// for surfaces that opt in via BrandMark's byline prop.
 const wordmark = wordmarkSvg('jackin', 200, WHITE, GREEN, true)
 assertBylineAligned(wordmark)
 writeFileSync(join(brandDir, 'jackin-wordmark.svg'), wordmark)
@@ -144,8 +113,6 @@ const monogram = wordmarkSvg('j', 200, WHITE, GREEN, false)
 writeFileSync(join(brandDir, 'jackin-monogram.svg'), monogram)
 console.log('wrote public/brand/jackin-monogram.svg')
 
-// Light-surface variant (dark word + accent chevron) for white chrome in light
-// mode. Same geometry as the white wordmark, so no separate alignment assert.
 const wordmarkOnlight = wordmarkSvg('jackin', 200, DARK_WORD, GREEN, true, GREY_DARK)
 writeFileSync(join(brandDir, 'jackin-wordmark-onlight.svg'), wordmarkOnlight)
 console.log('wrote public/brand/jackin-wordmark-onlight.svg')
@@ -153,8 +120,6 @@ writeFileSync(join(brandDir, 'jackin-lockup-onlight.svg'), wordmarkOnlight)
 console.log('wrote public/brand/jackin-lockup-onlight.svg')
 const monogramOnlight = wordmarkSvg('j', 200, DARK_WORD, GREEN, false)
 
-// Native desktop consumes generated vectors from the same geometry. Names state
-// the destination appearance, not a different mark variant.
 for (const [name, svg] of [
   ['JackinWordmarkDark.svg', wordmark],
   ['JackinWordmarkLight.svg', wordmarkOnlight],
@@ -165,11 +130,9 @@ for (const [name, svg] of [
   console.log(`wrote native/Sources/JackinDesktop/Resources/Brand/${name}`)
 }
 
-// 2. Favicon (outlined, renders without a webfont).
 writeFileSync(join(pub, 'favicon.svg'), faviconSvg(512))
 console.log('wrote public/favicon.svg')
 
-// 3. PNG rasters via Takumi (embeds the bold font, so text is exact).
 function wordmarkElement(word: string, fontSize: number, withBg: boolean, byline = false) {
   const chev = chevronSvg(fontSize, GREEN)
   const row = React.createElement(
@@ -200,8 +163,8 @@ function wordmarkElement(word: string, fontSize: number, withBg: boolean, byline
             fontSize: Math.round(fontSize * 0.28),
             fontWeight: 500,
             color: GREY,
-            marginTop: -Math.round(fontSize * 0.06), // tuck up under the letters
-            // Ink right edge aligns with the end of the word (past chevron + side-bearing).
+            marginTop: -Math.round(fontSize * 0.06),
+
             alignSelf: 'flex-end',
             marginRight: Math.round(chev.width + wordChevronGap(fontSize) + (w.width - w.inkRight)),
           },
@@ -252,7 +215,6 @@ for (const [name, word] of [['jackin-wordmark', 'jackin'], ['jackin-monogram', '
   console.log(`wrote public/brand/${name}.png (${png.byteLength.toLocaleString()} bytes)`)
 }
 
-// 4. App-icon bundle.
 async function iconPng(size: number): Promise<Buffer> {
   return renderPng(wordmarkElement('j', Math.round(size * 0.5), true), size, size)
 }

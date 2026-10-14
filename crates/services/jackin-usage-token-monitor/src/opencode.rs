@@ -1,7 +1,3 @@
-//! `SQLite` reader for `OpenCode` token usage, via the crate's store-backend
-//! chokepoint (workspace-standard turso client, never `rusqlite`). Reads
-//! `opencode.db`'s `message` table incrementally by `rowid`.
-
 use super::{PollStatus, TokenSession};
 use jackin_telemetry::ResultTelemetryExt as _;
 use jackin_usage_store_backend::{self, DbOperation, connect_local, params};
@@ -27,9 +23,6 @@ pub(crate) async fn poll_session(session: &mut TokenSession) -> PollStatus {
     )
     .await
     .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError) else {
-        // Pre-v1.2 OpenCode stored messages as JSON files, not SQLite; a missing
-        // `message` table lands here. Reading that legacy format is not yet
-        // implemented — treat as "no new data".
         return PollStatus::Degraded;
     };
 

@@ -1,23 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pure workspace-list row sizing helpers.
-//!
-//! Spec carve-out (plan 009): the horizontal char-precise scroll half
-//! (`list_names_content_width`, `clamp_list_names_scroll`, the
-//! `*_scroll_axes` and row-width fns) has no upstream analogue —
-//! `VirtualListState` windows item rows, not character columns — so it
-//! stays hand-rolled here. The vertical window moved to
-//! `VirtualListState` in the workspaces view.
-
 use ratatui::layout::Rect;
 
 use termrock::scroll::ScrollAxes;
 
 use crate::tui::screens::workspaces::model::ManagerListRow;
 
-/// Backing data an instance row needs to size its label: id, role, and status
-/// (status drives the `[state]` tag width for failed/stopped instances — D15).
 type InstanceRowWidthFacts = (String, String, jackin_core::InstanceStatus);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -28,8 +17,6 @@ pub struct ListColumns {
 
 #[must_use]
 pub fn split_list_columns(area: Rect, left_pct: u16) -> ListColumns {
-    // Rects come from the upstream resizable-panel-group layout carrier
-    // (seamless mode); see `tui::split::split_panel_group_layout`.
     let layout = crate::tui::split::split_panel_group_layout(area, left_pct);
     ListColumns {
         names: layout.panels[0].area,
@@ -209,8 +196,6 @@ pub fn instance_row_width(
     status: jackin_core::InstanceStatus,
     selected_with_cursor: bool,
 ) -> usize {
-    // Width must match the rendered label, including the `[state]` tag that
-    // failed/stopped instances carry (D15).
     let label = crate::tui::screens::workspaces::view::workspace_instance_list_label(
         &instance_id.to_string(),
         role_key,

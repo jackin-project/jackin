@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Descriptor-relative path traversal and open primitives.
 
 use super::run_source_open_hook;
 
@@ -36,10 +35,6 @@ pub fn nix_error(error: Errno, action: &str) -> anyhow::Error {
     anyhow::Error::new(error).context(action.to_owned())
 }
 
-/// Normalize only lexical aliases. Accepted paths become absolute so the
-/// lock identity is shared by relative and absolute spellings; symlinks
-/// are deliberately not resolved here and are rejected by descriptor
-/// traversal instead.
 pub(crate) fn normalize_path(path: &Path) -> anyhow::Result<PathBuf> {
     let mut normalized = if path.is_absolute() {
         PathBuf::new()

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! List-pane geometry used outside the renderer.
-
 use ratatui::layout::Rect;
 
 pub use crate::tui::sidebar_layout::{

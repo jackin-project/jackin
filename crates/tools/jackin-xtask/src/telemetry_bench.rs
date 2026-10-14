@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Reviewed Criterion baseline capture and comparison for governed telemetry.
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -36,13 +34,10 @@ const SOURCES: &[(&str, &str)] = &[
 
 #[derive(Args, Debug)]
 pub(crate) struct TelemetryBenchArgs {
-    /// Capture Criterion medians into the current-results file before comparing.
     #[arg(long)]
     capture: bool,
-    /// Override the reviewed baseline JSON.
     #[arg(long, default_value = BASELINE)]
     baseline: PathBuf,
-    /// Override the current-results JSON.
     #[arg(long, default_value = CURRENT)]
     current: PathBuf,
 }

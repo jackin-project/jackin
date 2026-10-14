@@ -94,9 +94,6 @@ fn stale_sessions_are_pruned_without_lowering_the_account_reset_watermark() {
         .expect("ingest within the session cap");
     }
 
-    // A unique seventeenth session arrives after all prior account sessions
-    // expired. The old reset watermark must survive pruning and reject its
-    // stale lower reset instead of turning that row into quota evidence.
     let stale_reset = observation("session-new", 1_000, reset - 1);
     ingest(
         &store,

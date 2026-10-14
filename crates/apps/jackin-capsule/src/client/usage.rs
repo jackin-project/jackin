@@ -1,25 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage account listing and verification.
 
 use super::request_control;
 use anyhow::Result;
 
 use crate::protocol::control::{AccountUsageSnapshotView, ClientMsg, ServerMsg};
 
-/// # Errors
-///
-/// Returns an error when the usage broker request or JSON serialization fails.
 pub async fn run_usage_accounts() -> Result<()> {
     let accounts = usage_accounts().await?;
     crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&accounts)?));
     Ok(())
 }
 
-/// # Errors
-///
-/// Returns an error when the usage broker request fails or any account check
-/// reports a failure.
 pub async fn run_usage_verify() -> Result<()> {
     let accounts = usage_accounts().await?;
     let checks = verify_usage_accounts(&accounts);
@@ -153,8 +145,6 @@ pub(crate) fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> boo
 }
 
 pub(crate) fn usage_provider_matches(needle: &str, provider: &str) -> bool {
-    // Interchangeable provider/agent labels: a match needs one member of a group
-    // on each side. Bidirectional and extensible — add a group, not two arms.
     pub(crate) const SYNONYMS: &[&[&str]] = &[
         &["openai", "codex"],
         &["anthropic", "claude"],

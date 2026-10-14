@@ -234,9 +234,6 @@ fn prompt_agent_for_launch_clear_pending_drops_input() {
 
 #[test]
 fn committed_role_prompt_restores_pending_plan_on_resolve_error() {
-    // Resolution failures surface as an in-TUI popup with the console
-    // staying alive, so the taken plan must be restored — otherwise the
-    // still-visible role picker silently stops working.
     let (temp, config) = unresolvable_mount_config();
     let mut state = new_console_state(&AppConfig::default(), temp.path()).unwrap();
     store_pending_launch_plan(&mut state, LoadWorkspaceInput::Saved("ws".into()));

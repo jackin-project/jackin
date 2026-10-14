@@ -60,8 +60,6 @@ fn enter_on_palette_emits_command() {
 
 #[test]
 fn coalesced_typing_builds_palette_filter() {
-    // Scripted input arrives as one multi-byte `Data` chunk — every
-    // printable byte must land in the filter, not drop as a no-op.
     let mut d = palette();
     assert_eq!(d.handle_key(b"spl", None), DialogAction::Redraw);
     let Dialog::CommandPalette {
@@ -85,8 +83,6 @@ fn coalesced_filter_then_confirm_emits_matching_command() {
 
 #[test]
 fn coalesced_escape_chunk_stays_noop() {
-    // Chunks holding ESC keep whole-chunk dispatch so escape sequences
-    // stay atomic: filter untouched, no confirm, no dismiss.
     let mut d = palette();
     assert_eq!(d.handle_key(b"ab\x1b[Z", None), DialogAction::Redraw);
     let Dialog::CommandPalette {
@@ -137,13 +133,6 @@ fn enter_on_agent_picker_emits_spawn() {
 
 #[test]
 fn agent_picker_shell_slot_emits_none_agent() {
-    // Layout for `picker(vec!["claude"])` is:
-    //   0: Section("agents")    — non-selectable
-    //   1: Agent(claude)        ← initial selected (skipped past Section)
-    //   2: Section("shells")    — non-selectable
-    //   3: Shell                ← Enter emits agent=None
-    // Arrow Down from index 1 must skip the Section at index 2 and
-    // land directly on the Shell row at index 3.
     let mut d = picker(vec!["claude"]);
     d.handle_key(b"\x1b[B", None);
     match d.handle_key(b"\r", None) {
@@ -154,13 +143,10 @@ fn agent_picker_shell_slot_emits_none_agent() {
 
 #[test]
 fn picker_arrow_down_skips_section_label() {
-    // Direct check: from the last-agent index, Down lands on the
-    // first selectable past the "shells" section header, not on
-    // the header itself.
     let mut d = picker(vec!["claude", "codex"]);
-    // Walk past both agents (selected 1 → 2 → expected 4 = Shell).
-    d.handle_key(b"\x1b[B", None); // 1 → 2
-    d.handle_key(b"\x1b[B", None); // 2 → 4 (skips Section at 3)
+
+    d.handle_key(b"\x1b[B", None);
+    d.handle_key(b"\x1b[B", None);
     let Dialog::AgentPicker { selected, .. } = &d else {
         unreachable!()
     };
@@ -169,15 +155,9 @@ fn picker_arrow_down_skips_section_label() {
 
 #[test]
 fn picker_enter_on_section_label_is_noop() {
-    // Defensive: an out-of-band selected value pointing at a
-    // Section row must not synthesise a SpawnAgent. Real flows
-    // can't get there (arrows step past sections, click on a
-    // section returns Consume), but a stale `selected` after a
-    // filter pass that left only sections behind must degrade
-    // to Redraw.
     let mut d = Dialog::AgentPicker {
         agents: vec!["claude".to_owned()],
-        selected: 0, // points at Section("agents")
+        selected: 0,
         intent: PickerIntent::NewTab,
         filter: String::new(),
     };
@@ -187,8 +167,6 @@ fn picker_enter_on_section_label_is_noop() {
 #[test]
 fn click_outside_dialog_dismisses() {
     let mut d = palette();
-    // Click in the top-left corner is reliably outside the centred
-    // box even on tiny terminals.
     assert_eq!(d.handle_click(0, 0, 40, 100, None), DialogAction::Dismiss);
 }
 
@@ -196,9 +174,6 @@ fn click_outside_dialog_dismisses() {
 fn clickable_at_reports_container_info_copy_target() {
     let d = container_info_fixture();
     let (row, col, _, _) = d.box_rect(40, 100);
-    // Click the value column (the cyan link), not the label: the shared
-    // component's hit-zone is the value text. Value starts past the widest
-    // label ("jackin-capsule").
     assert!(d.clickable_at(row + 2, col + 22, 40, 100, None));
     assert!(!d.clickable_at(row + 3, col + 22, 40, 100, None));
     assert!(!d.clickable_at(0, 0, 40, 100, None));
@@ -222,9 +197,6 @@ fn clickable_at_skips_agent_picker_section_labels() {
 #[test]
 fn palette_typing_filters_items_and_resets_selection() {
     let mut d = palette_with(3, String::new());
-    // Type "split" — narrows to the single "Split pane" item +
-    // resets selection to 0. The directional choice lives in the
-    // SplitDirectionPicker sub-dialog opened on confirm.
     for &c in b"split" {
         d.handle_key(&[c], None);
     }
@@ -245,11 +217,6 @@ fn palette_typing_filters_items_and_resets_selection() {
 
 #[test]
 fn palette_split_opens_split_direction_picker_via_dialog_action() {
-    // Confirming "Split pane" in the menu produces
-    // `DialogAction::Command(PaletteCommand::Split)` — the daemon
-    // turns that into a new SplitDirectionPicker dialog. Lock the
-    // action shape so a refactor that flips the chain inadvertently
-    // (e.g. directly emitting SplitDirection) gets caught.
     let mut d = palette();
     for &c in b"split" {
         d.handle_key(&[c], None);
@@ -266,7 +233,6 @@ fn split_direction_picker_enter_emits_split_direction() {
         selected: 0,
         filter: String::new(),
     };
-    // selected = 0 → first item = Right
     match d.handle_key(b"\r", None) {
         DialogAction::SplitDirection(dir) => assert_eq!(dir, SplitDirection::Right),
         other => panic!("expected SplitDirection(Right), got {other:?}"),
@@ -305,9 +271,6 @@ fn palette_enter_after_filter_emits_matching_command() {
     for &c in b"close" {
         d.handle_key(&[c], None);
     }
-    // "close" matches the top-level Close command; the daemon
-    // decides whether to confirm directly or open the target
-    // picker based on the active tab's pane count.
     match d.handle_key(b"\r", None) {
         DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Close),
         other => panic!("expected Close, got {other:?}"),
@@ -350,9 +313,6 @@ fn palette_backspace_pops_filter_char_and_resets_selection() {
 
 #[test]
 fn palette_q_types_into_filter_does_not_dismiss() {
-    // Pre-filter dialogs dismissed on `q`; now `q` is a filter
-    // character because the dialog is type-to-filter. Esc remains
-    // the dismiss key.
     let mut d = palette();
     assert_eq!(d.handle_key(b"q", None), DialogAction::Redraw);
     let Dialog::CommandPalette { filter, .. } = &d else {
@@ -363,11 +323,6 @@ fn palette_q_types_into_filter_does_not_dismiss() {
 
 #[test]
 fn picker_typing_sh_narrows_to_shells_section_plus_shell_row() {
-    // Filter "sh" excludes every agent label but keeps the literal
-    // "shell" word — so the rendered list collapses to just the
-    // shells section header + the Shell row. The shells header
-    // stays visible so the operator's eye reads "this is a Shell,
-    // not a stray agent."
     let mut d = picker(vec!["claude", "codex", "kimi"]);
     for &c in b"sh" {
         d.handle_key(&[c], None);
@@ -388,7 +343,6 @@ fn picker_typing_cla_filters_to_claude() {
     for &c in b"cla" {
         d.handle_key(&[c], None);
     }
-    // Enter on filtered list[0] = claude
     match d.handle_key(b"\r", None) {
         DialogAction::SpawnAgent { agent, .. } => {
             assert_eq!(agent.as_deref(), Some("claude"));

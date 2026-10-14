@@ -8,17 +8,14 @@ fn sync_does_not_rewrite_config_when_already_current() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
 
-    // First load creates the file
     AppConfig::load_or_init(&paths).unwrap();
     let mtime_before = std::fs::metadata(&paths.config_file)
         .unwrap()
         .modified()
         .unwrap();
 
-    // Small delay so mtime would differ if rewritten
     wait_for_mtime_tick();
 
-    // Second load should not rewrite
     AppConfig::load_or_init(&paths).unwrap();
     let mtime_after = std::fs::metadata(&paths.config_file)
         .unwrap()
@@ -255,7 +252,6 @@ fn load_is_idempotent_when_builtins_already_synced() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
 
-    // Bootstrap once so builtins are synced and file stabilizes.
     AppConfig::load_or_init(&paths).unwrap();
     let mtime_before = std::fs::metadata(&paths.config_file)
         .unwrap()
@@ -264,7 +260,6 @@ fn load_is_idempotent_when_builtins_already_synced() {
 
     wait_for_mtime_tick();
 
-    // Second load on a stable file must not rewrite.
     AppConfig::load_or_init(&paths).unwrap();
     let mtime_after = std::fs::metadata(&paths.config_file)
         .unwrap()

@@ -1,59 +1,37 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Phase-frozen jackin❯ runtime contracts retained beside active surface adapters.
-//!
-//! Capsule and Launch use the shared view, draw, focus, and update-result APIs.
-//! `Component`, `Subscription`, and `SubscriptionPoll` remain in the facade
-//! pending their owning phases; Capsule's only `Component` impl has no call
-//! site, and no workspace package currently consumes the facade's
-//! `Subscription` / `SubscriptionPoll` pair. Console defines a separate
-//! `SubscriptionPoll` in its own `tui::runtime`. The `jackin-oppicker` crate owns
-//! its load polling through `LoadPoll` and `LoadSubscription`.
-
 use ratatui::{CompletedFrame, Frame, Terminal, backend::Backend, layout::Rect};
 
 mod focus;
 
 pub use focus::{SurfaceFocus, SurfaceFocusTarget};
 
-/// The result of polling a jackin❯-owned external value source once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubscriptionPoll<Event> {
-    /// A value is ready.
     Ready(Event),
-    /// The source has no value yet.
     Pending,
-    /// The source cannot produce another value.
     Closed,
 }
 
-/// Non-blocking source of application-owned values.
 pub trait Subscription {
-    /// Value produced by the source.
     type Output;
 
-    /// Poll the source once without blocking.
     fn poll_next(&mut self) -> SubscriptionPoll<Self::Output>;
 }
 
-/// Whether an application update requires another frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dirty {
-    /// No frame is required.
     Clean,
-    /// Render another frame.
     Redraw,
 }
 
 impl Dirty {
-    /// Whether another frame is required.
     #[must_use]
     pub const fn is_dirty(self) -> bool {
         matches!(self, Self::Redraw)
     }
 
-    /// Combine two redraw decisions.
     #[must_use]
     pub const fn merge(self, other: Self) -> Self {
         if self.is_dirty() || other.is_dirty() {
@@ -64,11 +42,9 @@ impl Dirty {
     }
 }
 
-/// Uninhabited effect type for update paths without effects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoEffect {}
 
-/// Product redraw decision and effects produced by one update.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[must_use]
 pub struct UpdateResult<Effect = NoEffect> {
@@ -77,7 +53,6 @@ pub struct UpdateResult<Effect = NoEffect> {
 }
 
 impl<Effect> UpdateResult<Effect> {
-    /// Produce no effects and request no frame.
     pub const fn clean() -> Self {
         Self {
             dirty: Dirty::Clean,
@@ -85,7 +60,6 @@ impl<Effect> UpdateResult<Effect> {
         }
     }
 
-    /// Produce no effects and request another frame.
     pub const fn redraw() -> Self {
         Self {
             dirty: Dirty::Redraw,
@@ -93,7 +67,6 @@ impl<Effect> UpdateResult<Effect> {
         }
     }
 
-    /// Request another frame with one product effect.
     pub fn with_effect(effect: Effect) -> Self {
         Self {
             dirty: Dirty::Redraw,
@@ -101,24 +74,20 @@ impl<Effect> UpdateResult<Effect> {
         }
     }
 
-    /// Combined redraw decision.
     pub const fn dirty(&self) -> Dirty {
         self.dirty
     }
 
-    /// Whether another frame is required.
     #[must_use]
     pub const fn is_dirty(&self) -> bool {
         self.dirty.is_dirty()
     }
 
-    /// Product effects emitted by this update.
     #[must_use]
     pub fn effects(&self) -> &[Effect] {
         &self.effects
     }
 
-    /// Combine redraw state and preserve both effect sequences.
     pub fn merge(mut self, other: Self) -> Self {
         self.dirty = self.dirty.merge(other.dirty);
         self.effects.extend(other.effects);
@@ -126,19 +95,14 @@ impl<Effect> UpdateResult<Effect> {
     }
 }
 
-/// Product input-to-message adapter used by an existing surface loop.
 pub trait Component<Event, Message> {
-    /// Translate one input into an optional product message.
     fn handle_event(&mut self, event: &Event) -> Option<Message>;
 }
 
-/// Product model-to-frame adapter used by an existing surface loop.
 pub trait View<Model> {
-    /// Render the model into the supplied product-owned area.
     fn render(&self, model: &Model, frame: &mut Frame<'_>, area: Rect);
 }
 
-/// Render a product view and its surface-local overlay in one terminal draw.
 pub fn drive_frame<'a, B, Model, V, F>(
     terminal: &'a mut Terminal<B>,
     view: &V,
@@ -157,7 +121,6 @@ where
     })
 }
 
-/// Render through a surface-provided callback in one terminal draw.
 pub fn drive_render<B, F>(
     terminal: &mut Terminal<B>,
     render: F,

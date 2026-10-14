@@ -7,16 +7,6 @@ use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::sync::Arc;
 
-/// Bind a command to an opened directory without resolving its pathname.
-///
-/// The command must have no pathname cwd. The descriptor is duplicated above
-/// standard-stream descriptors before fork, so child stdio setup cannot replace
-/// it even if the supplied descriptor was stdin/stdout/stderr. CLOEXEC closes
-/// the duplicate during exec; command drop closes the parent's copy.
-///
-/// # Errors
-/// Rejects pathname cwd, non-directory descriptors, and descriptor duplication
-/// failures. A child fchdir failure is reported by `Command::spawn`.
 #[expect(
     unsafe_code,
     reason = "sole audited Unix pre_exec boundary; callback invokes only async-signal-safe fchdir"
@@ -35,11 +25,11 @@ pub fn current_dir(command: &mut Command, directory: Arc<File>) -> io::Result<()
         ));
     }
     let descriptor = rustix::io::fcntl_dupfd_cloexec(directory.as_ref(), 3)?;
-    // SAFETY: The callback only calls fchdir (async-signal-safe) and converts
-    // its errno to io::Error without allocation. No locks, allocation, cwd
-    // pathname lookup, Arc operations, or destructor run in the callback.
-    // Capturing OwnedFd keeps it valid until spawn completes. Duplication above
-    // fd 2 prevents the child's standard-stream setup from replacing it.
+
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "pre_exec fchdir restores the pinned working directory descriptor in the child"
+    )]
     unsafe {
         command.pre_exec(move || rustix::process::fchdir(&descriptor).map_err(io::Error::from));
     }

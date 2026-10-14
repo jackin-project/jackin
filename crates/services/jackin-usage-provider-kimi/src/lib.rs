@@ -1,19 +1,3 @@
-//! jackin-usage-provider-kimi: `Kimi` usage snapshot collection.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`kimi_snapshot`] — `Kimi` usage snapshot.
-//!
-//! Response families (see `ref-contracts-B.md` §1):
-//!
-//! * Code API `GET {base}/coding/v1/usages`: `usage` summary + `limits[]`
-//!   rate windows + `usages` rolling/weekly/monthly pools object +
-//!   `user.membership.level` + `version`.
-//! * Web gateway `BillingService/GetUsages`: `usages` list with a
-//!   `FEATURE_CODING` entry (same `detail`/`limits[]` shapes).
-//! * Local server `GET /api/v1/oauth/usage`: `summary`/`limits` plus the
-//!   Extra Usage wallet (`KimiLocalUsage`); `/api/v1/oauth/userinfo` carries
-//!   the shared billing identity also present as Code API `user`.
-
 #![expect(
     dead_code,
     reason = "provider-adapter fixtures remain testable while production dispatch is broker-only"

@@ -5,8 +5,6 @@ use super::*;
 
 #[test]
 fn confirm_save_defaults_to_cancel_focus() {
-    // Default = Cancel so Enter on a freshly-opened dialog never fires
-    // the save arm (TUI design decisions: confirmation dialog rule).
     let s = sample_state();
     assert_eq!(s.focus, ConfirmSaveFocus::Cancel);
 }
@@ -27,7 +25,6 @@ fn confirm_save_tab_cycles_cancel_save() {
 #[test]
 fn confirm_save_left_cycles_reverse() {
     let mut s = sample_state();
-    // Starts at Cancel; Left toggles to Save.
     s.handle_key(key(KeyCode::Left));
     assert_eq!(s.focus, ConfirmSaveFocus::Save);
     s.handle_key(key(KeyCode::Left));
@@ -44,7 +41,6 @@ fn confirm_save_focus_uses_button_focus_ring() {
 
 #[test]
 fn confirm_save_enter_on_cancel_returns_cancel() {
-    // Default focus = Cancel, so Enter fires Cancel immediately.
     let mut s = sample_state();
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
@@ -54,9 +50,8 @@ fn confirm_save_enter_on_cancel_returns_cancel() {
 
 #[test]
 fn confirm_save_enter_on_save_commits_save_choice() {
-    // Tab once (Cancel -> Save) then Enter commits Save.
     let mut s = sample_state();
-    s.handle_key(key(KeyCode::Tab)); // Cancel -> Save
+    s.handle_key(key(KeyCode::Tab));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Commit(SaveChoice::Save)
@@ -66,8 +61,8 @@ fn confirm_save_enter_on_save_commits_save_choice() {
 #[test]
 fn confirm_save_s_shortcut_commits_save() {
     let mut s = sample_state();
-    // Rotate focus first to prove the shortcut is focus-independent.
-    s.handle_key(key(KeyCode::Tab)); // Cancel -> Save
+
+    s.handle_key(key(KeyCode::Tab));
     assert!(matches!(
         s.handle_key(key(KeyCode::Char('s'))),
         ModalOutcome::Commit(SaveChoice::Save)
@@ -173,7 +168,6 @@ fn required_height_accounts_for_chrome() {
         Line::from("two"),
         Line::from("three"),
     ]);
-    // 3 content lines + 6 chrome rows (2 borders + leading + spacer + buttons + trailing)
     assert_eq!(required_height(&s), 9);
 }
 

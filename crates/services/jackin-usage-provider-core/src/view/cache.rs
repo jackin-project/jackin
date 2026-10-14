@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `UsageCache` view methods.
 
 use super::super::{
     CachedUsage, FocusedUsageView, UsageCache, UsageRefreshTarget, UsageSnapshotStatus,
@@ -13,7 +12,6 @@ use super::{
 };
 
 impl UsageCache {
-    /// Adopt one host-broker generation without executing provider work locally.
     pub fn adopt_broker_generation(
         &mut self,
         target: &UsageRefreshTarget,
@@ -70,7 +68,6 @@ impl UsageCache {
         );
     }
 
-    /// Preserve last-good quota while surfacing a typed relay/broker failure.
     pub fn adopt_broker_error(
         &mut self,
         target: &UsageRefreshTarget,
@@ -101,9 +98,6 @@ impl UsageCache {
 }
 
 impl UsageCache {
-    /// Focused snapshot for an exact canonical account id (tab selection).
-    /// `None` when no admitted snapshot carries the id; the caller falls back
-    /// to label resolution only for empty ids (old payloads).
     pub fn focused_snapshot_for_account_id(&self, account_id: &str) -> Option<FocusedUsageView> {
         let mut view = self
             .snapshots
@@ -122,9 +116,6 @@ impl UsageCache {
         Some(view)
     }
 
-    /// Broker-namespace account id behind an exact tab id, recovered from the
-    /// owning cache entry's broker key. `None` for unknown ids and for
-    /// non-broker entries (legacy keys carry no capability).
     pub fn broker_account_id_for_tab_id(&self, tab_id: &str) -> Option<String> {
         self.snapshots
             .iter()

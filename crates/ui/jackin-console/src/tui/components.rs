@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console-local reusable TUI components.
-
 pub mod agent_choice;
 pub mod auth_panel;
 pub mod brand_header;

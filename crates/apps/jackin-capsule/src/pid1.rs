@@ -1,20 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! PID 1 responsibilities inside the container: reap orphaned child processes
-//! and forward signals to managed children.
-//!
-//! Not responsible for: spawning agent processes (see `session`) or daemon
-//! lifecycle (see `daemon`).
-//!
-//! Key invariant: every child registered via `register_managed_child` must
-//! be reaped; unregistered orphans are reaped without SIGCHLD delivery.
-
-/// PID 1 zombie reaping and signal forwarding.
-///
-/// Linux: when a process whose parent has exited becomes an orphan, it is
-/// re-parented to PID 1. PID 1 MUST call waitpid to reap those zombies or
-/// they accumulate in the process table. Tokio does not do this automatically.
 use nix::sys::signal::{SigSet, Signal};
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
@@ -40,11 +26,6 @@ pub fn register_managed_child(pid: u32) {
             children.insert(pid);
         }
         Err(_poisoned) => {
-            // Poisoned mutex: every subsequent register/unregister silently
-            // no-ops, and `is_managed_child` returns false for live pids —
-            // the PID-1 reaper then races session owners for their children
-            // (the exact bug `reap_zombies_does_not_steal_registered_session_child`
-            // pins). Surface so the operator can restart the daemon.
             record_panic_error();
         }
     }
@@ -76,17 +57,7 @@ fn is_managed_child(pid: Pid) -> bool {
     }
 }
 
-/// PID 1 zombie reaper. tokio's signal handler cannot cover this
-/// because grandchildren of the daemon (agent-spawned helpers) re-parent
-/// to PID 1 on parent death and only the init process can reap them.
-/// Call once at startup; intentionally never joined — the thread dies
-/// with PID 1.
 pub fn install_sigchld_reaper() {
-    // Block SIGCHLD in the main thread; the dedicated reaper thread uses
-    // sigwait so it wakes only on SIGCHLD without racing with tokio's signal
-    // machinery. thread_block failure is a programming error (invalid
-    // sigset) — expect rather than silently drop so the daemon does
-    // not start with a half-installed handler.
     let mut mask = SigSet::empty();
     mask.add(Signal::SIGCHLD);
     if let Err(_error) = mask.thread_block() {
@@ -100,11 +71,6 @@ pub fn install_sigchld_reaper() {
         let mut sigset = SigSet::empty();
         sigset.add(Signal::SIGCHLD);
         loop {
-            // Block until SIGCHLD arrives. sigwait can return EINTR
-            // on signal-handler interrupt — sleep briefly so a tight
-            // loop does not hammer the kernel queue, then retry. A
-            // non-EINTR error is unexpected (corrupt sigset, ENOSYS
-            // on a stripped kernel) and warrants a typed error.
             match sigset.wait() {
                 Ok(_) => reap_zombies(),
                 Err(nix::errno::Errno::EINTR) => {
@@ -148,14 +114,6 @@ pub(crate) fn reap_zombies() {
 #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
 fn reap_zombies_linux() {
     let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
-    // WNOWAIT leaves a peeked child waitable, so waitid(Id::All) keeps
-    // returning the same managed pid head-of-queue. Track skipped pids
-    // and break only when the kernel re-presents one we already saw —
-    // that means every remaining zombie is managed and orphans behind
-    // them (if any) cannot be reached via Id::All peek.
-    // Lazy: most SIGCHLD wakes find no zombies (ECHILD on the first
-    // waitid). Skipping the HashSet allocation in that path keeps the
-    // per-signal cost flat.
     let mut skipped: Option<HashSet<i32>> = None;
     loop {
         match waitid(Id::All, flags) {
@@ -181,9 +139,6 @@ fn reap_zombies_linux() {
                     }
                 }
             }
-            // ECHILD already matched above. Any other errno indicates a
-            // kernel/libc bug (EINVAL, EFAULT) we cannot recover from —
-            // export a typed error, then break to avoid spinning.
             Err(_error) => {
                 record_io_error();
                 break;

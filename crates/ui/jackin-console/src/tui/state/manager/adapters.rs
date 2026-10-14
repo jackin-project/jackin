@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ManagerState` screen-trait adapters.
 
 use crate::tui::model::{
     ConsoleManagerStageState, LaunchAccountPickerManagerState, LaunchAgentPromptManagerState,

@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Compose Claude Code's existing statusline command with bounded local usage
-//! observation. This module only proposes settings JSON; it never writes the
-//! settings file or starts Claude Code.
-
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::io::Read;
@@ -15,12 +11,6 @@ const MAX_SETTINGS_BYTES: usize = 1024 * 1024;
 const MAX_LEGACY_COMMAND_BYTES: usize = 16 * 1024;
 const MAX_COMPOSED_COMMAND_BYTES: usize = 64 * 1024;
 
-/// Add bounded usage ingestion after a Claude Code statusline command.
-///
-/// The returned merge patch contains only `statusLine`, preserving its options
-/// and replacing its command. If settings have no `statusLine`, the patch adds
-/// a command that consumes input without rendering output before ingesting.
-/// This function fails closed when it cannot preserve an existing command.
 #[expect(
     clippy::disallowed_methods,
     reason = "bounded synchronous settings input is read only by this operator CLI, outside render/runtime threads"
@@ -244,7 +234,6 @@ if len(captured) <= MAX_INPUT_BYTES:
 sys.exit(0)
 "#;
 
-/// Quote one argument for the POSIX-compatible shell command Claude Code runs.
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }

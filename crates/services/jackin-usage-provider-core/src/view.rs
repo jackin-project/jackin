@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! View-building and rendering helpers shared by all providers.
-//!
-//! Carved out of `usage.rs` for the file-size ratchet. Items in this module
-//! are `pub(crate)` so the coordinator (`usage.rs`) can re-export them.
-
 mod cache;
 mod compose;
 mod meta;

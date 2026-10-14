@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded UI state tracking. Screens and widget focus are events plus metrics,
-//! never lifetime spans.
-
 use std::{cell::RefCell, collections::VecDeque, time::Instant};
 
 use uuid::Uuid;
@@ -34,8 +31,6 @@ impl Drop for ActionParent {
     }
 }
 
-/// Retain a reducer-owned action through its synchronous follow-up effects and
-/// the immediate action-triggered frame.
 pub fn remember_action_parent(guard: crate::operation::OperationGuard) {
     PENDING_ACTIONS.with(|parents| {
         parents.borrow_mut().push_back(ActionParent(Some(guard)));
@@ -52,8 +47,6 @@ pub fn has_pending_actions() -> bool {
     PENDING_ACTIONS.with(|parents| !parents.borrow().is_empty())
 }
 
-/// Run reducer follow-up effects under the semantic action that requested
-/// them, while leaving completion to the single action-triggered frame.
 pub fn in_pending_action_scope<T>(operation: impl FnOnce() -> T) -> T {
     PENDING_ACTIONS.with(|parents| match parents.borrow().back() {
         Some(parent) => parent.in_scope(operation),
@@ -61,10 +54,6 @@ pub fn in_pending_action_scope<T>(operation: impl FnOnce() -> T) -> T {
     })
 }
 
-/// Record an immediate semantic action that does not own reducer follow-up.
-///
-/// Async launch and exit outcomes use this path so no operation guard can
-/// survive across their await or loop-exit boundary.
 pub fn record_action(
     action: schema::enums::UiActionName,
     screen: schema::enums::ScreenId,
@@ -75,8 +64,6 @@ pub fn record_action(
     }
 }
 
-/// Start a bounded semantic UI action for an owner that must retain causality
-/// through synchronous effects or one immediate render.
 pub fn start_action(
     action: schema::enums::UiActionName,
     screen: schema::enums::ScreenId,
@@ -113,7 +100,6 @@ pub fn start_action(
     guard
 }
 
-/// Record one bounded UI frame. Continuous rendering remains metric-only.
 pub fn record_render(screen: schema::enums::ScreenId, elapsed_seconds: f64) {
     let attrs = [Attr {
         key: schema::attrs::std_attrs::APP_SCREEN_ID,

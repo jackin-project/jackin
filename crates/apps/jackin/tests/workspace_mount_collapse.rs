@@ -8,9 +8,6 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::{TempDir, tempdir};
 
-/// Creates an isolated jackin environment: temp HOME with a pre-populated
-/// workspace config. Returns the tempdir (keep alive for the duration of the
-/// test) and the host directories used for mount sources.
 struct Env {
     _temp: TempDir,
     home: std::path::PathBuf,
@@ -119,9 +116,6 @@ fn workspace_create_workdir_parent_does_not_collapse_child_mount() {
 
 #[test]
 fn workspace_create_rejects_duplicate_destination() {
-    // Two `--mount` entries with the same explicit `dst` must fail loudly
-    // at the validator (`workspace::mounts.rs`'s "duplicate mount
-    // destination" bail) rather than silently collapsing one of them.
     let env = setup_env();
     jackin(&env)
         .args([
@@ -142,10 +136,6 @@ fn workspace_create_rejects_duplicate_destination() {
 
 #[test]
 fn workspace_create_accepts_src_colon_dst_spec() {
-    // `--mount src:/dst` should parse and persist the explicit container
-    // path. Pre-existing tests only exercise the `src` and `src:ro`
-    // shapes — this pins the third documented form. `--workdir` matches
-    // the explicit dst so the workdir-vs-dst validator is satisfied.
     let env = setup_env();
     jackin(&env)
         .args([
@@ -169,9 +159,6 @@ fn workspace_create_accepts_src_colon_dst_spec() {
 
 #[test]
 fn workspace_create_rejects_duplicate_name() {
-    // Creating a workspace with a name that already exists must fail
-    // loudly — silently overwriting the existing config would lose the
-    // operator's prior mount/env/workdir setup.
     let env = setup_env();
     jackin(&env)
         .args([
@@ -242,11 +229,7 @@ fn workspace_edit_with_yes_collapses_children_under_new_parent() {
         .args(["workspace", "show", "test"])
         .assert()
         .success()
-        // proj-alpha must appear as a mount source after collapse
         .stdout(predicate::str::contains("proj-alpha"))
-        // sub-b was a mount that got collapsed — must not appear in the mount table
-        // (sub-a is the workdir so it still appears in the Workdir row; we only
-        // verify it is gone as a standalone mount by checking sub-b is absent)
         .stdout(predicate::str::contains("sub-b").not());
 }
 
@@ -313,7 +296,6 @@ fn workspace_edit_fails_on_child_under_existing_parent() {
 fn workspace_edit_non_tty_without_yes_bails() {
     let env = setup_env();
     create_workspace_with_children(&env, "test");
-    // assert_cmd does not attach a TTY by default — stdin is not a terminal.
     jackin(&env)
         .args([
             "workspace",

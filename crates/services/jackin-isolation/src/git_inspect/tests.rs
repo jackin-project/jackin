@@ -4,8 +4,6 @@
 use super::{changed_files_sync, head_content_sync, parse_porcelain, working_content_sync};
 use std::process::{Command, Stdio};
 
-/// Run a git subcommand in `dir`, asserting success. Used only by the
-/// end-to-end fixtures below.
 fn git(dir: &std::path::Path, args: &[&str]) {
     let status = Command::new("git")
         .args(["-C", dir.to_str().unwrap()])
@@ -17,8 +15,6 @@ fn git(dir: &std::path::Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed");
 }
 
-/// Regression: the sync helpers must pipe stdout, else `wait_with_output`
-/// returns an empty buffer and every worktree falsely reports zero changes.
 #[test]
 fn changed_files_sync_reports_real_edits_against_a_repo() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -29,7 +25,6 @@ fn changed_files_sync_reports_real_edits_against_a_repo() {
     std::fs::write(dir.join("tracked.txt"), b"original\n").unwrap();
     git(dir, &["add", "."]);
     git(dir, &["commit", "-q", "-m", "init"]);
-    // Modify the tracked file and add an untracked one.
     std::fs::write(dir.join("tracked.txt"), b"changed\n").unwrap();
     std::fs::write(dir.join("untracked.txt"), b"new\n").unwrap();
 
@@ -47,7 +42,6 @@ fn changed_files_sync_reports_real_edits_against_a_repo() {
         "untracked file must be reported: {changed:?}"
     );
 
-    // HEAD vs working content must come back non-empty (the piped-stdout fix).
     assert_eq!(
         head_content_sync(dir.to_str().unwrap(), "tracked.txt").as_deref(),
         Some("original\n")
@@ -56,7 +50,6 @@ fn changed_files_sync_reports_real_edits_against_a_repo() {
         working_content_sync(dir.to_str().unwrap(), "tracked.txt").as_deref(),
         Some("changed\n")
     );
-    // A path absent from HEAD (untracked) has no HEAD content.
     assert_eq!(
         head_content_sync(dir.to_str().unwrap(), "untracked.txt"),
         None

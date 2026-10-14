@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Validated source accumulation.
 
 use crate::{
     AccountAccumulator, ProfileValidation, UsageDiscoveryDiagnostic, UsageDiscoveryIssue,
@@ -36,15 +35,13 @@ pub(crate) fn accumulate_validated_source(
                 .unwrap_or_default(),
             _ => String::new(),
         };
-        let entry = accounts.entry(identity.clone()).or_insert_with(|| {
-            // Unreachable: the strong target accumulates first and always
-            // mints its account. The fallback keeps the merge total.
-            AccountAccumulator {
+        let entry = accounts
+            .entry(identity.clone())
+            .or_insert_with(|| AccountAccumulator {
                 label,
                 provenance: BTreeSet::new(),
                 source_ids: BTreeSet::new(),
-            }
-        });
+            });
         entry.provenance.extend(provenance.iter().cloned());
         entry.source_ids.insert(source_id.clone());
         bindings.push(ValidatedCredentialBinding {
@@ -73,12 +70,7 @@ pub(crate) fn accumulate_validated_source(
                     account_label
                         .as_ref()
                         .filter(|label| !label.trim().is_empty())
-                        .map(|_| {
-                            // A label is presentation evidence only. Keep
-                            // source identity when the provider did not
-                            // return a stronger canonical subject.
-                            CanonicalAccountSubject::SourceCapability(capability_id.clone())
-                        })
+                        .map(|_| CanonicalAccountSubject::SourceCapability(capability_id.clone()))
                 });
             let Some(subject) = subject else {
                 bindings.push(ValidatedCredentialBinding {

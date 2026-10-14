@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Control socket transport: connect, request, and framed replies.
 
 use anyhow::{Context, Result};
 
@@ -10,8 +9,6 @@ use tokio::net::UnixStream;
 use crate::protocol::control::{ClientMsg, ControlRequest, ServerMsg, frame as control_frame};
 use crate::socket::SOCKET_PATH;
 
-/// Connect to the daemon control socket and send one length-prefixed request,
-/// returning the open stream so the caller can read (or ignore) the reply.
 pub(crate) async fn connect_and_send(
     request: &ClientMsg,
 ) -> Result<(
@@ -139,9 +136,6 @@ pub(crate) fn control_response_matches(request: &ClientMsg, response: &ServerMsg
     )
 }
 
-/// Read one framed reply, or `None` when the peer closed the connection at a
-/// frame boundary. Only the subscription reader needs the distinction: for a
-/// one-shot RPC a missing reply is always an error.
 pub(crate) async fn read_control_reply_or_eof(
     stream: &mut UnixStream,
 ) -> Result<Option<ServerMsg>> {
@@ -165,7 +159,6 @@ pub(crate) async fn read_control_body(
     len_buf: [u8; 4],
 ) -> Result<ServerMsg> {
     let len = u32::from_be_bytes(len_buf) as usize;
-    // Mirror the daemon-side cap in `socket::read_control_msg`.
     pub(crate) const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
     if len > MAX_CONTROL_REPLY {
         anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");

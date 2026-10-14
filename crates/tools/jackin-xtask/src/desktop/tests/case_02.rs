@@ -118,9 +118,6 @@ fn cadence_tasks_define_the_canonical_graph() {
     reason = "the test captures mise shim stderr and is not a render or runtime thread"
 )]
 fn mise_project_exec(root: &std::path::Path, args: &[&str], missing: &str) -> std::process::Output {
-    // CI runs nextest under `mise --no-config`, which exports MISE_NO_CONFIG and
-    // hides the repository cargo shim. Remove that override so this process loads
-    // the checked-in mise.toml.
     let mut command = std::process::Command::new("mise");
     command
         .args(args)

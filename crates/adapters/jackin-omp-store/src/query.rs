@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Secret-free identities and exact credential rows for OMP's auth store.
-
 use std::time::Instant;
 
 use rusqlite::{Connection, OptionalExtension, types::ValueRef};
@@ -26,7 +24,6 @@ const AUTH_CREDENTIALS_COLUMNS: [(&str, &str, i64, i64); MAX_COLUMNS] = [
     ("updated_at", "INTEGER", 1, 0),
 ];
 
-/// One active OMP credential row, represented only by its provider and row ID.
 #[derive(Clone, PartialEq, Eq)]
 pub struct OmpAccount {
     pub(crate) id: i64,
@@ -35,12 +32,10 @@ pub struct OmpAccount {
 }
 
 impl OmpAccount {
-    /// Provider key stored in `auth_credentials.provider`.
     pub fn entry(&self) -> &str {
         &self.entry
     }
 
-    /// Stable source-row selector, not an OMP display profile.
     pub fn profile(&self) -> &str {
         &self.profile
     }
@@ -52,12 +47,9 @@ impl std::fmt::Debug for OmpAccount {
     }
 }
 
-/// Exact provider/account identity used to select one row for a role.
 #[derive(Clone, PartialEq, Eq)]
 pub struct OmpSelector {
-    /// Exact provider key in the source database.
     pub entry: String,
-    /// `row:<id>` from the same source database.
     pub profile: Option<String>,
 }
 
@@ -67,8 +59,6 @@ impl std::fmt::Debug for OmpSelector {
     }
 }
 
-/// Selected OMP credential data. It never implements `Debug` and its JSON
-/// payload is zeroized when the selection is dropped.
 pub(crate) struct OmpCredential {
     pub(crate) id: i64,
     pub(crate) provider: String,
@@ -79,9 +69,6 @@ pub(crate) struct OmpCredential {
     pub(crate) updated_at: i64,
 }
 
-/// Enumerate active rows from the exact OMP v7 schema without returning or
-/// retaining credential JSON. The `SQLite` connection is a private captured
-/// copy and has already been given resource limits and a progress deadline.
 pub(crate) fn enumerate(
     connection: &Connection,
     deadline: Instant,
@@ -105,15 +92,12 @@ pub(crate) fn enumerate(
             entry: credential.provider.clone(),
             profile: row_profile(credential.id),
         });
-        // The query only needs row identity. Drop the temporary, zeroized
-        // payload rather than retaining credentials during discovery.
         drop(credential);
     }
     check_deadline(deadline)?;
     Ok(accounts)
 }
 
-/// Read one selected active row from the same immutable captured image.
 pub(crate) fn selected_credential(
     connection: &Connection,
     account: &OmpAccount,

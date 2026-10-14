@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings lines and content metrics.
 
 use super::{ConsoleSettingsState, env_state_lines, trust_state_lines};
 

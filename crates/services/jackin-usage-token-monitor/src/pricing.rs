@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Static pricing table for token cost estimation.
-//!
-//! Used when a JSONL/SQLite record does not include a pre-calculated costUSD.
-//! APPROXIMATE — last updated 2026-06-04. Prices in USD per 1M tokens.
-
-/// Pricing for a specific model.
 #[derive(Debug, Clone)]
 pub(crate) struct ModelPrice {
     pub(crate) input_per_1m: f64,
@@ -15,8 +9,6 @@ pub(crate) struct ModelPrice {
     pub(crate) cache_write_per_1m: f64,
 }
 
-/// Estimate cost in USD from token counts using the static pricing table.
-/// Returns `None` when the model is not in the table.
 pub(crate) fn estimate_cost_usd(
     model: &str,
     input_tokens: u64,
@@ -33,7 +25,6 @@ pub(crate) fn estimate_cost_usd(
 }
 
 fn model_price(model: &str) -> Option<ModelPrice> {
-    // Prices as of 2026-06-04 (APPROXIMATE).
     let price = match model {
         m if m.contains("claude-opus-4") => ModelPrice {
             input_per_1m: 15.0,

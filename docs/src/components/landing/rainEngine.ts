@@ -1,20 +1,17 @@
-// docs/components/landing/rainEngine.ts
 
-// Exact char pool from src/tui.rs line 76-77
+
 export const RAIN_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*<>{}[]|/\\~';
 
-// Exact palette from src/tui.rs lines 13-19 + age_to_color (lines 55-64)
 export function ageToColor(age: number): string | null {
-  if (age === 0)  return 'rgb(255,255,255)';   // WHITE — leader
-  if (age <= 2)   return 'rgb(180,255,180)';   // pale green
-  if (age <= 5)   return 'rgb(0,255,65)';      // PHOSPHOR_GREEN
-  if (age <= 10)  return 'rgb(0,200,50)';      // mid green
-  if (age <= 16)  return 'rgb(0,140,30)';      // PHOSPHOR_DIM
-  if (age <= 24)  return 'rgb(0,80,18)';       // PHOSPHOR_DARK
+  if (age === 0)  return 'rgb(255,255,255)';
+  if (age <= 2)   return 'rgb(180,255,180)';
+  if (age <= 5)   return 'rgb(0,255,65)';
+  if (age <= 10)  return 'rgb(0,200,50)';
+  if (age <= 16)  return 'rgb(0,140,30)';
+  if (age <= 24)  return 'rgb(0,80,18)';
   return null;
 }
 
-// Mutation probability from src/tui.rs lines 67-74
 export function shouldMutate(age: number, rng: () => number = Math.random): boolean {
   const roll = rng() * 100;
   if (age <= 2)  return roll < 30;
@@ -61,7 +58,6 @@ export function createRainState(cols: number, rows: number, rng: () => number = 
 }
 
 export function tickRain(state: RainState, rng: () => number = Math.random): void {
-  // Age all cells
   for (let r = 0; r < state.rows; r++) {
     const row = state.grid[r];
     for (let c = 0; c < state.cols; c++) {
@@ -76,7 +72,6 @@ export function tickRain(state: RainState, rng: () => number = Math.random): voi
     }
   }
 
-  // Advance columns
   for (let c = 0; c < state.cols; c++) {
     const col = state.columns[c];
     if (!col.active) {

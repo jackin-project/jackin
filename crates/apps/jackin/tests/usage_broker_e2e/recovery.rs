@@ -28,11 +28,6 @@ fn usage_broker_killed_owner_recovers_once_without_a_herd() -> Result<()> {
     owner.kill()?;
     let _owner_status = owner.wait()?;
 
-    // Backdate both persisted timestamps together so this process-level
-    // recovery test does not sleep for Claude's full five-minute attempt
-    // floor. They use the same fake-clock premise, while production keeps the
-    // provider invocation timestamp as the floor authority. Unit tests cover
-    // the real restart floor boundary without changing persisted time.
     let recovery_now = epoch_now();
     let account_store = FileAccountStateStore::under_data_dir(&root.join("data"));
     let mut abandoned = account_store

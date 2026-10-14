@@ -1,58 +1,27 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Role manifest re-exports and filesystem helpers.
-//!
-//! Serde types (`RoleManifest`, etc.) live in `jackin-core`. This module
-//! re-exports them and provides I/O helpers (`load_role_manifest`, migration
-//! validation) that depend on `toml_edit`, `jackin-config` migrations, and
-//! `jackin-core` `env_model`.
-//!
-//! Not responsible for: filesystem validation (`repo.rs`), or env-var
-//! resolution (`operator_env.rs`).
-
 use crate::repo_contract::MANIFEST_FILENAME;
 use anyhow::Context;
-/// Env var name for the `DinD` hostname injected into role containers.
 pub use jackin_core::JACKIN_DIND_HOSTNAME_ENV_NAME;
-/// Env var name of the in-container jackin❯ sentinel (`JACKIN`).
 pub use jackin_core::JACKIN_ENV_NAME;
-/// Value written to [`JACKIN_ENV_NAME`].
 pub use jackin_core::JACKIN_ENV_VALUE;
 use std::path::Path;
 
-/// Per-role Amp configuration table.
 pub use jackin_core::AmpConfig;
-/// Per-role Claude Code configuration.
 pub use jackin_core::ClaudeConfig;
-/// Claude Code marketplace entry declared in the role manifest.
 pub use jackin_core::ClaudeMarketplaceConfig;
-/// Per-role Codex configuration.
 pub use jackin_core::CodexConfig;
-/// Declaration of one role-level environment variable.
 pub use jackin_core::EnvVarDecl;
-/// One hook path entry with label and in-image filename.
 pub use jackin_core::HookEntry;
-/// Optional setup/source/preflight hook paths.
 pub use jackin_core::HooksConfig;
-/// Git identity (`user.name`) from the role manifest.
 pub use jackin_core::IdentityConfig;
-/// Per-role Kimi configuration.
 pub use jackin_core::KimiConfig;
-/// Optional role-level Docker security settings (manifest `docker` table).
 pub use jackin_core::ManifestDockerConfig;
-/// Non-fatal manifest validation warning.
 pub use jackin_core::ManifestWarning;
-/// Per-role `OpenCode` configuration.
 pub use jackin_core::OpencodeConfig;
-/// Top-level role manifest parsed from `jackin.role.toml`.
 pub use jackin_core::RoleManifest;
 
-/// Load and validate a `jackin.role.toml` from `repo_dir`.
-///
-/// # Errors
-/// Returns an error if the file cannot be read, parsed, or fails version/
-/// agent-consistency validation.
 pub fn load_role_manifest(repo_dir: &Path) -> anyhow::Result<RoleManifest> {
     let manifest_path = repo_dir.join(MANIFEST_FILENAME);
     let contents = std::fs::read_to_string(&manifest_path)

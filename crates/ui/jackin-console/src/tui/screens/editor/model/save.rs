@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor save-flow and target types.
 
 use super::SecretsScopeTag;
 
@@ -8,11 +7,7 @@ use super::SecretsScopeTag;
 pub struct PendingSaveCommit<M> {
     pub effective_removals: Vec<String>,
     pub final_mounts: Option<Vec<M>>,
-    /// True when the operator has already confirmed isolated-state cleanup
-    /// for source drift in this save cycle.
     pub delete_isolated_acknowledged: bool,
-    /// True after the acknowledged cleanup worker has completed; the final
-    /// write pass can then skip drift re-check and cleanup.
     pub isolated_cleanup_complete: bool,
 }
 

@@ -34,8 +34,6 @@ fn agent_picker_opens_when_multiple_agents_available() -> Result<()> {
     Ok(())
 }
 
-/// `default_role` set on the workspace must preselect that role in the
-/// inline picker instead of launching without confirmation.
 #[test]
 fn agent_picker_opens_with_default_agent_preselected() -> Result<()> {
     let temp = tempdir()?;
@@ -73,7 +71,6 @@ fn agent_picker_opens_with_default_agent_preselected() -> Result<()> {
     Ok(())
 }
 
-/// Exactly one eligible role skips the picker and returns the role directly.
 #[test]
 fn agent_picker_opens_when_single_eligible_agent() -> Result<()> {
     let temp = tempdir()?;
@@ -100,9 +97,6 @@ fn agent_picker_opens_when_single_eligible_agent() -> Result<()> {
     Ok(())
 }
 
-/// `Enter` on the picker commits the selected role — `tui::handle_key`
-/// returns `InputOutcome::LaunchWithAgent(role)` so `run_console` can
-/// resolve the workspace and break the event loop.
 #[test]
 fn agent_picker_enter_commits_launch() -> Result<()> {
     use jackin::console::adapter::InputOutcome;
@@ -127,8 +121,6 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
     let ConsoleStage::Manager(ms) = &mut state.stage;
     assert!(ms.inline_role_picker.is_some());
 
-    // Enter on the picker — selection defaults to index 0
-    // (BTreeMap ordering of role keys).
     let outcome = handle_key(ms, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     match outcome {
         InputOutcome::LaunchWithAgent(role) => {
@@ -147,8 +139,6 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
     Ok(())
 }
 
-/// `Esc` on the picker closes the modal and returns `Continue` — the
-/// operator stays on the manager list with an unchanged selection.
 #[test]
 fn agent_picker_esc_closes_modal() -> Result<()> {
     use jackin::console::adapter::InputOutcome;
@@ -185,5 +175,3 @@ fn agent_picker_esc_closes_modal() -> Result<()> {
     );
     Ok(())
 }
-
-// ── Duplicate-env-key live-validation tests ──────────────────────────

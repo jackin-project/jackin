@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![cfg(not(test))]
-//! Validated-repo image prewarm and refresh.
 
 use jackin_core::Agent;
 use jackin_core::CommandRunner;

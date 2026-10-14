@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage publication age and issues.
 
 use super::{UsageScreenState, issue_text, past_age_label};
 

@@ -5,7 +5,6 @@ import Foundation
 import JackinUsageBindings
 import JackinUsageBridge
 
-/// CLT-safe proof that native presentation consumes finished Rust fields.
 @main
 struct DesktopParityMatrixHarness {
     static func main() {

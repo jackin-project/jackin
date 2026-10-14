@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Auth line building and rendering.
 
 use super::{
     AUTH_LABEL_COL_WIDTH, AuthLineRow, AuthSourceDisplay, AuthSourceFolderDisplay,

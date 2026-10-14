@@ -32,22 +32,14 @@ fn with_cwd<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
     f()
 }
 
-/// Bootstrap a fresh, empty config file for a ConfigEditor-based test.
-///
-/// Returns a temp dir (kept alive for the test's duration) and the
-/// corresponding `JackinPaths`.
 fn bootstrap_paths() -> (tempfile::TempDir, JackinPaths) {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-    // Write a minimal valid config so ConfigEditor::open succeeds.
     std::fs::write(&paths.config_file, "").unwrap();
     (temp, paths)
 }
 
-/// Simulates `jackin workspace create jackin --workdir jackin --mount sibling-project`
-/// from a parent directory. Both relative workdir and mount must be resolved to
-/// absolute paths so that `create_workspace` validation passes.
 #[test]
 fn workspace_create_resolves_relative_workdir_and_mounts() {
     let (_temp_home, paths) = bootstrap_paths();
@@ -88,9 +80,6 @@ fn workspace_create_resolves_relative_workdir_and_mounts() {
     assert!(ws.mounts.iter().all(|m| m.src.starts_with('/')));
 }
 
-/// Simulates `jackin workspace create jackin --workdir . --mount ../jackin-agent-smith`
-/// from inside the project directory. Dot-workdir and parent-relative mount must both
-/// resolve to clean absolute paths.
 #[test]
 fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
     let (_temp_home, paths) = bootstrap_paths();
@@ -135,9 +124,6 @@ fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
     assert!(mount.src.ends_with("/jackin-agent-smith"));
 }
 
-/// Simulates `jackin workspace create my-app --workdir /tmp/app` without
-/// `--mount`. Workdir is only the start path now, so at least one explicit
-/// mount is required.
 #[test]
 fn workspace_create_requires_explicit_mount() {
     let (_temp_home, paths) = bootstrap_paths();
@@ -166,8 +152,6 @@ fn workspace_create_requires_explicit_mount() {
     );
 }
 
-/// Simulates `jackin workspace create monorepo --workdir /workspace
-/// --mount /tmp/src:/workspace`. The workdir must not add any implicit mount.
 #[test]
 fn workspace_create_uses_only_explicit_mounts() {
     let (_temp_home, paths) = bootstrap_paths();
@@ -204,7 +188,6 @@ fn workspace_create_uses_only_explicit_mounts() {
     assert_eq!(ws.mounts[0].dst, "/workspace");
 }
 
-/// An explicit workdir mount should be preserved exactly as supplied.
 #[test]
 fn workspace_create_preserves_explicit_workdir_mount() {
     let (_temp_home, paths) = bootstrap_paths();
@@ -218,7 +201,7 @@ fn workspace_create_preserves_explicit_workdir_mount() {
     let all_mounts = vec![workspace::MountConfig {
         src: expanded_workdir.clone(),
         dst: expanded_workdir.clone(),
-        readonly: true, // user chose read-only
+        readonly: true,
         isolation: jackin_core::MountIsolation::Shared,
     }];
 
@@ -240,8 +223,6 @@ fn workspace_create_preserves_explicit_workdir_mount() {
     assert!(ws.mounts[0].readonly, "original mount properties preserved");
 }
 
-/// Simulates `jackin workspace edit jackin --mount sibling-dev` where the mount
-/// is a relative directory name. The resolved mount must pass validation.
 #[test]
 fn workspace_edit_resolves_relative_mount() {
     let (_temp_home, paths) = bootstrap_paths();
@@ -254,7 +235,6 @@ fn workspace_edit_resolves_relative_mount() {
 
     let workdir_abs = workdir_dir.display().to_string();
 
-    // Create workspace first
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .create_workspace(
@@ -273,7 +253,6 @@ fn workspace_edit_resolves_relative_mount() {
         .unwrap();
     editor.save().unwrap();
 
-    // Now edit it
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     let result = with_cwd(temp.path(), || {
         let mount = parse_mount_spec_resolved("jackin-dev").unwrap();
@@ -294,8 +273,6 @@ fn workspace_edit_resolves_relative_mount() {
     assert!(ws.mounts[1].src.ends_with("/jackin-dev"));
 }
 
-/// Simulates `jackin workspace edit my-app --no-workdir-mount` to remove the
-/// auto-mounted workdir after workspace creation.
 #[test]
 fn workspace_edit_no_workdir_mount_removes_auto_mount() {
     let (_temp_home, paths) = bootstrap_paths();
@@ -309,7 +286,6 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
     let workdir_abs = workdir_dir.display().to_string();
     let extra_abs = extra_dir.display().to_string();
 
-    // Create workspace with auto-mounted workdir + an extra mount
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .create_workspace(
@@ -340,7 +316,6 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
         2
     );
 
-    // Now remove the workdir auto-mount
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     editor2
         .edit_workspace(
@@ -358,7 +333,6 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
     assert_eq!(ws.mounts[0].dst, workdir_abs + "/extra");
 }
 
-/// `--no-workdir-mount` on edit should fail if there is no auto-mounted workdir.
 #[test]
 fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
     let (_temp_home, paths) = bootstrap_paths();
@@ -369,7 +343,6 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
 
     let src_abs = src_dir.display().to_string();
 
-    // Create workspace that was originally made with --no-workdir-mount
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
         .create_workspace(

@@ -3,11 +3,11 @@ ARG TIRITH_VERSION=0.3.3
 ARG MISE_VERSION=2026.7.12
 ARG STARSHIP_VERSION=1.22.1
 
-# shellfirm has no Debian package, so build it from source in a throwaway Rust
-# stage (the documented cargo-install fallback) and copy only the binary into
-# the final image. Building inside Docker — rather than prebuilding on the host —
-# keeps it off the host's mise/cargo-binstall environment and produces the
-# binary for the target image architecture.
+
+
+
+
+
 FROM rust:1.97.0-trixie@sha256:b92b8c8574f8f3b207fcb0912fb3e2de4041580b5934d90312d53938c9a038a9 AS shellfirm-builder
 
 ARG SHELLFIRM_VERSION
@@ -27,10 +27,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG UID=1000
 
-# Install core system packages. zsh is the default login shell for
-# the `agent` user; fish is installed alongside as an opt-in
-# alternative (`fish` from zsh, or `chsh -s /usr/bin/fish agent`).
-# Both shells get Starship prompt + auto-title configs baked below.
+
+
+
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     bash \
@@ -63,22 +63,22 @@ RUN apt-get update && \
            /var/cache/apt/* \
            /tmp/*
 
-# Resolve the `agent` user/group by the runtime host UID/GID. The image bakes
-# `agent` at UID 1000, but containers run as the host operator's UID/GID
-# (`docker run --user`) so host-owned bind-mounts are transparently writable.
-# libnss-extrausers reads extra passwd/group files (bind-mounted at runtime) so
-# `getpwuid(host_uid)` resolves to `agent` with HOME=/home/agent and host GIDs
-# can resolve when the base image has no matching group. See
-# /reference/runtime/user-identity/.
+
+
+
+
+
+
+
 RUN sed -ri 's/^(passwd:.*)$/\1 extrausers/; s/^(group:.*)$/\1 extrausers/' /etc/nsswitch.conf && \
     install -d -m 0755 /var/lib/extrausers && \
     : > /var/lib/extrausers/passwd && \
     : > /var/lib/extrausers/group
 
-# Configure git-lfs
+
 RUN git lfs install
 
-# Install tirith
+
 ARG TIRITH_VERSION
 ARG TARGETARCH
 RUN case "${TARGETARCH}" in \
@@ -98,10 +98,10 @@ RUN case "${TARGETARCH}" in \
     cd / && \
     rm -rf "${workdir}"
 
-# Install the pinned mise release directly. Avoid the `mise.run | sh` pipe:
-# it can block without emitting BuildKit progress when a version invalidates
-# this layer. The release archive and its published checksum are both fetched
-# with bounded retries, so failures are visible and terminate promptly.
+
+
+
+
 ARG MISE_VERSION
 RUN test -n "${MISE_VERSION}" || { echo "MISE_VERSION build arg is required" >&2; exit 1; } && \
     case "${TARGETARCH}" in \
@@ -125,7 +125,7 @@ RUN test -n "${MISE_VERSION}" || { echo "MISE_VERSION build arg is required" >&2
     rm -rf "${workdir}" && \
     mise --version
 
-# Install Docker CLI, Buildx, and Compose plugins
+
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
     chmod a+r /etc/apt/keyrings/docker.asc && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list && \
@@ -136,7 +136,7 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings
            /var/cache/apt/* \
            /tmp/*
 
-# Install GitHub CLI
+
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       -o /etc/apt/keyrings/githubcli-archive-keyring.gpg && \
     chmod a+r /etc/apt/keyrings/githubcli-archive-keyring.gpg && \
@@ -149,10 +149,10 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /var/cache/apt/* \
            /tmp/*
 
-# Create runtime user. No baked sudoers — sudo is provisioned at runtime via
-# `docker exec --user root jackin-capsule sudo-provision`, only for profiles
-# that grant it (JACKIN_SUDO=1). The `sudo` package stays installed so the
-# grant can write /etc/sudoers.d/agent at launch.
+
+
+
+
 RUN useradd -m -u "$UID" -g 0 -s /bin/zsh agent && \
     chmod 0775 /home/agent && \
     install -d -m 0775 -o agent -g 0 /home/agent/.claude /home/agent/.codex /home/agent/.jackin
@@ -160,9 +160,9 @@ RUN useradd -m -u "$UID" -g 0 -s /bin/zsh agent && \
 RUN printf 'umask 0002\n' > /etc/jackin-build-env
 ENV BASH_ENV=/etc/jackin-build-env
 
-# Install starship from a pinned GitHub release tarball. The curl|sh installer
-# is fragile under bash -o pipefail (BASH_VERSION leaks to the piped sh) and
-# can fail opaquely when the CDN returns non-script content.
+
+
+
 ARG STARSHIP_VERSION
 RUN test -n "${STARSHIP_VERSION}" || { echo "STARSHIP_VERSION build arg is required" >&2; exit 1; } && \
     case "${TARGETARCH}" in \
@@ -185,8 +185,8 @@ RUN test -n "${STARSHIP_VERSION}" || { echo "STARSHIP_VERSION build arg is requi
     rm -rf "${workdir}" && \
     starship --version
 
-# Default to a UTF-8 locale so shell prompts and CLI output render correctly,
-# including `docker exec` sessions that bypass the jackin runtime entrypoint.
+
+
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
@@ -194,17 +194,17 @@ USER agent
 
 ENV PATH="/home/agent/.local/share/mise/shims:/home/agent/.local/bin:${PATH}"
 
-# Install oh-my-zsh and plugins
+
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/home/agent/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 
 COPY --chown=agent:0 --chmod=0664 zshrc /home/agent/.zshrc
 
-# Fish config — opt-in alternative shell. Same Starship prompt and
-# auto-title behaviour as zsh so the operator's pane border title
-# does not regress when switching shells.
-# install -d creates /home/agent/.config/ here so the starship.toml
-# COPY below does not auto-create it as root-owned.
+
+
+
+
+
 RUN install -d -o agent -g 0 -m 0775 /home/agent/.config /home/agent/.config/fish
 COPY --chown=agent:0 --chmod=0664 fish-config.fish /home/agent/.config/fish/config.fish
 COPY --chown=agent:0 --chmod=0664 starship.toml /home/agent/.config/starship.toml

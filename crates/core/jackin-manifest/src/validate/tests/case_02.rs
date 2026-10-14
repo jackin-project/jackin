@@ -356,7 +356,6 @@ prompt = "Value (use ${other.THING} for other):"
     let manifest = load_role_manifest(temp.path()).unwrap();
     let warnings = validate_role_manifest(&manifest).unwrap();
 
-    // ${other.THING} is not an env. ref, so no error or warning
     assert!(warnings.is_empty());
 }
 

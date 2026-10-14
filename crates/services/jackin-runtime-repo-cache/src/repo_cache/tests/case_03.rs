@@ -5,9 +5,6 @@ use super::*;
 
 #[tokio::test]
 async fn register_agent_repo_rejects_stale_non_git_directory() {
-    // A pre-existing directory at the cache slot that is *not* a
-    // git repo must bail rather than overwrite or skip — the
-    // operator likely has unsynced work there.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -32,7 +29,6 @@ async fn register_agent_repo_rejects_stale_non_git_directory() {
             .contains("cached role path exists but is not a git repository"),
         "expected stale-non-git bail, got: {err}"
     );
-    // Operator's file remains untouched.
     assert_eq!(
         std::fs::read_to_string(cached_dir.join("README")).unwrap(),
         "operator's lost work\n"
@@ -78,9 +74,6 @@ fn repo_lock_reacquires_in_the_same_process_without_deadlocking() {
         "a same-process re-acquire must share the first open file description"
     );
 
-    // Dropping every handle releases the flock and clears the registry entry,
-    // so the next launch in this process takes a fresh lock rather than
-    // reviving a dead one.
     drop(second);
     drop(first);
     let third = acquire_repo_lock_blocking(&lock_path).expect("acquisition after release");

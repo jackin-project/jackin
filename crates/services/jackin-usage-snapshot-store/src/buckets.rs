@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![cfg(test)]
-//! Bucket ordering and label mapping.
 
 use std::collections::HashMap;
 
@@ -34,12 +33,8 @@ pub(crate) fn usage_bucket_order(provider: &str, label: &str) -> usize {
     } else if provider_matches("amp", &provider) {
         &["Amp Free", "Credits", "Individual credits"]
     } else if provider_matches("zai", &provider) || provider_matches("glm", &provider) {
-        // F9: short/active window first (operator override of CodexBar's
-        // Tokens, MCP, 5-hour order).
         &["5-hour", "Tokens", "MCP"]
     } else if provider_matches("kimi", &provider) {
-        // F10: rate (short/active) window on top, then Weekly (operator
-        // override of CodexBar's Weekly, Rate Limit order).
         &["Rate Limit", "Weekly"]
     } else if provider_matches("minimax", &provider) {
         &["General · 5h", "General · Weekly", "Video"]
@@ -99,9 +94,6 @@ pub(crate) fn normalize_provider_label(value: &str) -> String {
 pub(crate) fn usage_provider_tabs_from_rows(
     rows: &[StoredAccountUsageSnapshot],
 ) -> Vec<jackin_protocol::control::UsageProviderTab> {
-    // One tab per distinct stored account, keyed by the stable
-    // `account_key_hash`; the newest fetch wins per account. Same-provider
-    // accounts never collapse, and an empty store stays empty.
     let mut latest: HashMap<&str, &StoredAccountUsageSnapshot> = HashMap::new();
     for row in rows {
         latest

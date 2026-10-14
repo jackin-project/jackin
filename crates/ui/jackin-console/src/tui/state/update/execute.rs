@@ -1,12 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Op-commit validation and URL opening.
 
 use super::{ManagerMessage, update_manager};
 
 use super::super::{ManagerStage, ManagerState, Modal};
 
-/// Wire up an OP reference commit-validation subscription into manager state.
 pub fn execute_op_commit_validation(
     state: &mut ManagerState<'_>,
     op_ref: jackin_core::OpRef,
@@ -24,7 +22,6 @@ pub fn execute_op_commit_validation(
     }
 }
 
-/// Open a URL in the system browser; on failure route error popup to the active stage.
 pub fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {
     match crate::services::browser::open_url(url) {
         Ok(()) => false,
@@ -35,7 +32,6 @@ pub fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {
     }
 }
 
-/// Apply a URL-open failure to manager state (opens an error popup).
 pub fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
     use crate::tui::components::error_popup;
     match &mut state.stage {

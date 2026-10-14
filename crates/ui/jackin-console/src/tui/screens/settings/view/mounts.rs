@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Mounts tab lines.
 
 use super::{render_settings_screen, settings_footer_items, settings_frame_areas};
 
@@ -126,10 +125,6 @@ pub fn clamp_mounts_scroll_x_for_frame(
     scroll: &mut termrock::widgets::ScrollAreaState,
 ) {
     let areas = settings_frame_areas(area, 2);
-    // Clamp the X axis only, exactly as the retired raw-offset helper did:
-    // Y dims stay pinned so `clamp` can never touch the vertical offset.
-    // The pinned viewport is 1, not 0 — upstream `max_offset(_, 0)` is 0,
-    // which would clamp the vertical offset to zero.
     scroll.set_content_size(u16::try_from(content_width).unwrap_or(u16::MAX), u16::MAX);
     scroll.set_viewport(
         u16::try_from(termrock::scroll::viewport_width(areas.body)).unwrap_or(u16::MAX),
@@ -138,7 +133,6 @@ pub fn clamp_mounts_scroll_x_for_frame(
     scroll.clamp();
 }
 
-/// Concrete adapter: render the settings screen for a concrete `SettingsState`.
 pub fn render_settings_with_footer(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -150,11 +144,6 @@ pub fn render_settings_with_footer(
     });
 }
 
-/// Concrete adapter: compose settings footer items for a concrete `SettingsState`.
-///
-/// Gives modals priority over screen items, so whatever is active on-screen
-/// gets the footer real-estate. The generic `settings_footer_items` handles
-/// per-screen hint routing; this function layers modal items on top.
 #[must_use]
 pub fn settings_screen_footer_for_state(
     state: &crate::tui::state::SettingsState<'_>,

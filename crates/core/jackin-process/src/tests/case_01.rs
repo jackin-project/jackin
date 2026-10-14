@@ -51,9 +51,6 @@ async fn no_timeout_waits_for_fast_command() {
 
 #[tokio::test]
 async fn retry_eventually_succeeds() {
-    // First attempt uses a failing program shape; retry policy alone is
-    // exercised with always-false then we assert attempts were made via
-    // max_retries with false (all fail).
     let result = exec_async(&ExecRequest::new("false", None::<&str>).retry(RetryPolicy {
         max_retries: 2,
         delay: Duration::from_millis(1),
@@ -299,7 +296,6 @@ async fn default_capture_budget_is_finite() {
 async fn timeout_owns_descendants_after_direct_child_exits() {
     let path =
         std::env::temp_dir().join(format!("jackin-process-descendant-{}", std::process::id()));
-    // Preserve the input pipe before POSIX async lists replace fd 0 with null.
     let script = "exec 3<&0; sleep 30 <&3 & printf '%s:%s' $$ $! > \"$1\"; exit 0";
     let mut request = ExecRequest::new("sh", ["-c", script, "fixture", path.to_str().unwrap()])
         .timeout(Duration::from_millis(150));
@@ -309,8 +305,6 @@ async fn timeout_owns_descendants_after_direct_child_exits() {
     let (parent, descendant) = pids.split_once(':').unwrap();
     let parent: u32 = parent.parse().unwrap();
     let descendant: u32 = descendant.parse().unwrap();
-    // Adopted descendants are reaped by the OS. Allow its reaper to run,
-    // while the direct child must already be reaped when exec returns.
     let parent_absent = !process_exists(parent);
     let mut descendant_absent = !process_exists(descendant);
     for _ in 0..100 {

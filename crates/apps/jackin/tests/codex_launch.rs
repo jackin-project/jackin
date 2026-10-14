@@ -60,8 +60,6 @@ fn codex_workspace(repo_dir: &Path) -> ResolvedWorkspace {
 }
 
 fn assert_cached_agent_install_blocks(dockerfile: &str) {
-    // This direct build-context helper call does not pass agent install
-    // recipes. The full launch path prepares and bakes supported agents.
     assert!(
         !dockerfile.contains("agent-binaries"),
         "direct build context must not stage agent binaries without install recipes; got: {dockerfile}"
@@ -202,8 +200,6 @@ model = "gpt-5"
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = codex_workspace(&repo_dir);
-    // Capture queue (role-specific, after 4-slot preamble):
-    //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let docker = FakeDockerClient::default();
 
@@ -220,7 +216,6 @@ model = "gpt-5"
     .unwrap();
 
     let build_cmd = recorded_docker_build(&runner);
-    // No published_image and no --rebuild → workspace mode; --pull is omitted
     assert!(!build_cmd.contains("--pull"), "{build_cmd}");
 
     let (container_name, spec) = launched_role_container(&docker);
@@ -249,9 +244,6 @@ model = "gpt-5"
             0o600
         );
     }
-    // Model overrides are handed to Capsule PID 1 and applied when it spawns
-    // each PTY. Classic attach is bound to the created daemon ID; when the
-    // ambient shell has host-attach enabled, the client path is socket-based.
     if !jackin_runtime::runtime::host_attach::host_attach_enabled(&paths) {
         assert!(
             docker
@@ -270,9 +262,6 @@ model = "gpt-5"
     assert_eq!(capsule_config.agents.get("codex-main").unwrap(), "codex");
     assert_eq!(capsule_config.models.get("codex-main").unwrap(), "gpt-5");
     assert_eq!(capsule_config.models.len(), 1);
-    // Multi-agent role (`agents = ["claude", "codex"]`) admits only the
-    // configured launch instance (Codex); unadmitted manifest agents get
-    // neither credentials nor capsule config entries.
     let codex_config = std::fs::read_to_string(
         paths
             .data_dir
@@ -351,8 +340,6 @@ plugins = []
         git_pull_on_entry: false,
         mount_heal: jackin_config::MountHealReport::default(),
     };
-    // Capture queue (role-specific, after 4-slot preamble):
-    //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let docker = FakeDockerClient::default();
     let opts = LoadOptions {

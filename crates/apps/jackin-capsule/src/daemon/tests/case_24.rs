@@ -35,8 +35,6 @@ fn session_send_reports_a_closed_writer_instead_of_claiming_delivery() {
     let mut mux = single_pane_tab_mux();
     let (session, input_rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
     mux.session_supervisor.sessions.insert(1, session);
-    // The writer task owns the receiver; dropping it is exactly the state a
-    // session is in between process exit and the daemon reaping it.
     drop(input_rx);
 
     let reply = control_reply_for_request(
@@ -60,9 +58,6 @@ fn session_send_reports_a_closed_writer_instead_of_claiming_delivery() {
 fn session_send_records_input_recency_but_never_authors_state() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _input_rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
-    // A pane latched on `Blocked` by evidence arbitration. Input is recency
-    // evidence only — the same rule the keyboard path follows — so the state
-    // must survive the send unchanged and wait for the next arbitration tick.
     session.state = crate::protocol::AgentState::Blocked;
     let before_input_at = session.last_input_at;
     mux.session_supervisor.sessions.insert(1, session);
@@ -100,7 +95,6 @@ fn events_subscription_opens_with_a_baseline_record_per_live_session() {
     assert_eq!(baseline.session, 1);
     assert_eq!(baseline.seq, 0);
     assert_eq!(baseline.agent.as_deref(), Some("codex"));
-    // The stream reports the arbitrated state as-is; it never recomputes it.
     assert_eq!(baseline.state, crate::protocol::AgentState::Working);
     assert_eq!(baseline.kind, SessionEventKind::Subscribed);
 }
@@ -130,8 +124,6 @@ fn a_status_tick_publishes_the_working_transition_the_host_waits_on() {
     let mut events = subscribe_events(&mut mux, None);
     drop(next_event(&mut events));
 
-    // Exactly what the tick loop does: diff the state vectors it captured
-    // around `advance_status` and fan the difference out.
     let now = Instant::now();
     mux.session_supervisor
         .sessions
@@ -160,8 +152,6 @@ fn a_status_tick_publishes_the_working_transition_the_host_waits_on() {
 fn an_unchanged_status_tick_publishes_no_state_record() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
-    // Push the last output well outside the activity window so the quiet tick
-    // is genuinely silent rather than merely free of state records.
     session.last_output_at = Instant::now()
         .checked_sub(Duration::from_mins(1))
         .expect("a minute before now is representable");
@@ -180,8 +170,6 @@ fn an_unchanged_status_tick_publishes_no_state_record() {
 
 #[test]
 fn session_send_then_status_tick_is_observable_end_to_end_in_process() {
-    // The in-process shape of the host integration test: subscribe, send text
-    // into a running session, then let the status tick report the transition.
     let mut mux = single_pane_tab_mux();
     let (session, mut input_rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
     mux.session_supervisor.sessions.insert(1, session);

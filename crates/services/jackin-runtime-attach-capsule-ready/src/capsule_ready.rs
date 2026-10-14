@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Capsule daemon readiness waits and `dind` warmup waits.
 
 use anyhow::Context as _;
 
@@ -122,9 +121,6 @@ pub async fn wait_for_dind(
     pub(crate) const INITIAL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
     pub(crate) const MAX_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-    // Shared spinner helper: it suppresses its own stderr output while the
-    // rich launch cockpit owns the screen, so the sidecar stage shows only
-    // in the rail rather than streaming "Waiting for ..." over the frame.
     jackin_runtime_spin_wait::spin_wait::spin_wait_ramped(
         "Waiting for Docker-in-Docker to be ready",
         MAX_ATTEMPTS,

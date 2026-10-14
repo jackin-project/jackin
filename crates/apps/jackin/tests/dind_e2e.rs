@@ -1,11 +1,3 @@
-//! End-to-end smoke that drives `jackin load` against a real Docker daemon
-//! with proxy env declared in role config, then asserts the launched agent
-//! container's environment carries the `DinD` hostname in both `NO_PROXY`
-//! and `no_proxy`. Regression guard for the proxy-routed `DinD`-handshake
-//! bug fixed in `src/runtime/launch.rs`.
-
-// Expects only apply when the e2e feature compiles the body; without it the
-// crate is empty and unfulfilled-expect would fail `cargo clippy -p jackin`.
 #![cfg_attr(
     feature = "e2e",
     expect(
@@ -66,7 +58,6 @@ const SLOW_EXIT_ROLE_KEY: &str = "jackin-e2e/slow-exit";
 const SLOW_EXIT_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__slow-exit";
 const TESTCONTAINERS_SMOKE_OK: &str = "TESTCONTAINERS_SMOKE=ok";
 
-/// Fail before the interactive launch if Cargo did not build the broker binary.
 fn require_broker_sibling(jackin: &str) {
     let broker_sibling = std::path::Path::new(jackin)
         .parent()
@@ -90,10 +81,6 @@ fn require_broker_sibling(jackin: &str) {
     );
 }
 
-/// RAII cleanup so the test's Docker resources are removed even if an
-/// assertion or `script(1)` invocation panics. Without this, a flaky run
-/// leaks a container/network/volume and the next run fails on name
-/// collision — turning a transient failure into a sticky red CI.
 struct E2eRoleCleanup {
     role_key: &'static str,
     container_prefix: &'static str,
@@ -137,11 +124,6 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
 
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", ROLE_KEY, &target, "--agent", "claude"];
-    // The Dockerfile pins FROM to 0.1-trixie (versioned, as required by
-    // jackin-role validate). That tag doesn't exist until the first construct CI
-    // build runs after this PR lands. Override with the published floating tag
-    // so the E2E build succeeds in CI while the Dockerfile stays correctly
-    // pinned for validation purposes.
     let construct_image = e2e_construct_image();
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
     let report_path = workspace_dir.join("jackin-e2e-report.txt");
@@ -166,10 +148,6 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         },
     );
 
-    // The capsule multiplexer is a full-screen renderer, so agent stdout is a
-    // terminal transcript, not a stable report channel. The fake agent writes
-    // the same report into the bound workspace; the PTY remains only the launch
-    // driver.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let report = std::fs::read_to_string(&report_path).unwrap_or_else(|error| {
@@ -184,10 +162,6 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         "agent did not emit {REPORT_BEGIN} marker\nreport:\n{report}\n{}",
         e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
-    // REPORT_END proves the report block completed. Without this check a
-    // partial transcript (agent crashed mid-print, PTY truncation) would
-    // still satisfy the contains-substring asserts below on whatever
-    // happened to land before the cut.
     assert!(
         report.contains(REPORT_END),
         "agent did not emit {REPORT_END} marker — report is truncated\nreport:\n{report}\n{}",
@@ -205,9 +179,6 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     assert!(report.contains("DOCKER_CERT_PATH=/jackin/run/dind-certs/client"));
     assert!(report.contains(&format!("JACKIN_DIND_HOSTNAME={dind_hostname}")));
     assert!(report.contains(&format!("TESTCONTAINERS_HOST_OVERRIDE={dind_hostname}")));
-    // Both casings carry the merged list — operator's localhost,127.0.0.1
-    // must reach tools that read either uppercase NO_PROXY (Go runtime) or
-    // lowercase no_proxy (curl, Python requests, wget).
     let merged = format!("NO_PROXY=localhost,127.0.0.1,{dind_hostname}");
     let merged_lower = format!("no_proxy=localhost,127.0.0.1,{dind_hostname}");
     assert!(report.contains(&merged), "missing {merged}\n{report}");
@@ -246,9 +217,6 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::create_dir_all(&workspace_dir).unwrap();
-    // The container runs as the host (test-runner) UID/GID via `--user` on
-    // docker run, so the agent writes its report into the test-owned workspace
-    // dir with no special permissions.
 
     seed_sentinel_role_repo(&role_source);
     write_sentinel_config(&config_dir.join("config.toml"), &role_source);

@@ -1,17 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Files-backend exact ref deletion without pathname-based Git mutations.
-//! Git writers are excluded with the ordinary loose and packed ref locks.
-//! Every filesystem operation is relative to a pinned, no-follow descriptor.
-//! A removed entry is quarantined and checked *after* moving it: an unexpected
-//! concurrent replacement is restored exclusively, or retained for recovery.
-//! HEAD and unrelated reflogs are never touched. Callers must positively establish the
-//! `files` backend before preparing this transaction.
-//! The isolated actor must be stopped and the private transaction namespace
-//! must remain trusted. Git locks exclude Git writers, not hostile raw writes
-//! by processes with our UID.
-
 use std::fs::File;
 use std::io::{Read as _, Write as _};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
@@ -60,9 +49,6 @@ struct Reflog {
     snapshot: Snapshot,
 }
 
-/// A durable transaction journal. Conventional Git lock paths are hard links
-/// to staged owner records here, so a crash never leaves an unidentifiable
-/// empty `.lock` file. The lease flock distinguishes live owners from crashes.
 struct RecoveryDir {
     root: OwnedFd,
     name: String,
@@ -193,9 +179,6 @@ impl Lock {
     ) -> anyhow::Result<Self> {
         let (candidate_name, file, identity, marker) =
             recovery.create_lock_candidate(parent, &name)?;
-        // Finish every fallible operation before exposing the owner record at
-        // a Git lock path. Otherwise an FD clone error could strand a lock
-        // whose recovery candidate the journal then removes on drop.
         let recovery_fd = recovery.fd.as_fd().try_clone_to_owned()?;
         let recovery_name = recovery.name.clone();
         let candidate_path = candidate_name.clone();
@@ -280,9 +263,6 @@ impl Lock {
             self.recovery_name
         );
         unlinkat(&self.parent, self.name.as_str(), UnlinkatFlags::NoRemoveDir)?;
-        // Persist disappearance of the conventional lock before removing
-        // its journaled hard-link witness. A crash can then always identify
-        // any lock path that survived.
         sync_directory(self.parent.as_fd())?;
         unlinkat(
             &self.recovery_fd,
@@ -302,10 +282,6 @@ impl Drop for Lock {
     }
 }
 
-/// Reclaim only a lock that is an exact hard link to a recorded Jackin owner
-/// file and whose journal lease is no longer held. Unknown Git lock files stay
-/// untouched. The old journal remains on disk as evidence if it contains
-/// displaced ref or reflog data from an interrupted commit.
 fn reclaim_abandoned_lock(
     root: BorrowedFd<'_>,
     parent: BorrowedFd<'_>,
@@ -405,9 +381,6 @@ fn reclaim_abandoned_lock(
     Ok(true)
 }
 
-/// Holds all checkout HEAD locks and the associated durable journal. Cleanup
-/// takes this before any async Git inventory and moves it into the ref
-/// transaction, so a checkout cannot change after it has been admitted.
 pub(crate) struct CheckoutInventory {
     locks: Vec<Lock>,
     recovery: RecoveryDir,
@@ -430,9 +403,6 @@ impl CheckoutInventory {
         Ok(())
     }
 
-    /// Keep Git's per-worktree `locked` marker present until refs and the
-    /// registration are removed. An existing regular marker already prevents
-    /// pruning; malformed or linked metadata fails closed.
     pub(crate) fn lock_registration(&mut self, parent: BorrowedFd<'_>) -> anyhow::Result<()> {
         if let Some(existing) = read_regular(parent, "locked")? {
             if !existing.bytes.starts_with(b"jackin-git-lock-v1\t") {
@@ -485,9 +455,6 @@ impl CommittedRefDeletion {
         Ok(())
     }
 
-    /// Release the target worktree's lock files immediately before removing
-    /// its registration. The branch ref is already absent while its ref locks
-    /// remain held, so it cannot be checked out in the handoff window.
     pub(crate) fn release_registration(
         &mut self,
         registration: BorrowedFd<'_>,
@@ -508,8 +475,6 @@ impl CommittedRefDeletion {
         Ok(())
     }
 
-    /// Release checkout/ref locks only after cleanup removes the target
-    /// registration, while its journal and state record still authorize retry.
     pub(crate) fn finish(mut self) -> anyhow::Result<()> {
         while let Some(lock) = self.locks.pop() {
             lock.release()?;
@@ -519,8 +484,6 @@ impl CommittedRefDeletion {
     }
 }
 
-/// Prepare before deleting the worktree. Both Git locks remain held until
-/// commit or drop. Missing parents are created using no-follow descriptor walks.
 #[cfg(test)]
 pub(crate) fn prepare(
     git: BorrowedFd<'_>,
@@ -554,7 +517,6 @@ pub(crate) fn prepare_with_checkout(
         parent = child;
     }
     let leaf = parts[parts.len() - 1].to_owned();
-    // Same lock order as Git's files backend: loose, then packed.
     locks.push(Lock::acquire(
         &mut recovery,
         parent.as_fd(),
@@ -609,7 +571,6 @@ pub(crate) fn prepare_with_checkout(
         })
     };
     let packed_candidate = if packed_oid.is_some() {
-        // Prove filesystem exchange support before deleting the worktree.
         let candidate = prepare_candidate(
             recovery.fd.as_fd(),
             &packed_without_ref,
@@ -643,7 +604,6 @@ impl PreparedRefDeletion {
             lock.verify()?;
         }
         self.verify_snapshots()?;
-        // No files to delete: the held locks prove an absent ref remains absent.
         if self.loose.is_none() && self.packed_candidate.is_none() && self.reflog.is_none() {
             return Ok(CommittedRefDeletion {
                 locks: self.locks,
@@ -692,9 +652,6 @@ impl PreparedRefDeletion {
                 self.git.as_fd(),
                 "packed-refs",
             )?;
-            // Exchange preserves the displaced entry without a missing-table gap.
-            // Never remove an unexpected displaced object or overwrite a newer
-            // entry by attempting a speculative rollback.
             verify_snapshot(recovery, "packed-candidate", self.packed.as_ref())
                 .context("packed refs changed during exchange; displaced entry retained")?;
             verify_snapshot(self.git.as_fd(), "packed-refs", Some(candidate))?;
@@ -844,8 +801,6 @@ fn quarantine(
 }
 
 fn restore(source: BorrowedFd<'_>, name: &str, recovery: BorrowedFd<'_>, saved: &str) {
-    // linkat does not follow a symlink source and refuses an occupied destination.
-    // If restoration fails, preserve the moved entry in the recovery directory.
     if linkat(recovery, saved, source, name, AtFlags::empty()).is_ok() {
         best_effort_unlink(recovery, saved, UnlinkatFlags::NoRemoveDir);
     }

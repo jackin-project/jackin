@@ -143,7 +143,6 @@ fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
         .build_op_ref_on_commit(&field)
         .expect("fixture IDs form a valid secret reference");
 
-    // CLI path: 3-segment input, but field.reference has "Security"
     let stub = ParityStub::new()
         .with_vault("Private", "v_uuid")
         .with_item("v_uuid", "Claude", "i_uuid", "")
@@ -271,11 +270,9 @@ fn keyboard_selection_wraps_at_both_ends() {
     s.vaults = vec![vault("A"), vault("B"), vault("C")];
     s.vault_list_state.set_active(Some(0));
 
-    // Up from the first row wraps to the last.
     let outcome = s.handle_key(key(KeyCode::Up));
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(s.vault_list_state.active().copied(), Some(2));
-    // Down past the last row wraps to the first.
     let outcome = s.handle_key(key(KeyCode::Down));
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(s.vault_list_state.active().copied(), Some(0));
@@ -287,11 +284,9 @@ fn wheel_selection_clamps_at_both_ends() {
     s.vaults = vec![vault("A"), vault("B"), vault("C")];
     s.vault_list_state.set_active(Some(2));
 
-    // Wheel past the last row stays on the last.
     assert!(!s.scroll_selection(1));
     assert_eq!(s.vault_list_state.active().copied(), Some(2));
     s.vault_list_state.set_active(Some(0));
-    // Wheel above the first row stays on the first.
     assert!(!s.scroll_selection(-1));
     assert_eq!(s.vault_list_state.active().copied(), Some(0));
     assert!(s.scroll_selection(1));
@@ -317,13 +312,11 @@ fn filter_edit_resets_selection_to_first_filtered_row() {
     s.vaults = vec![vault("Work"), vault("Personal"), vault("Travel")];
     s.vault_list_state.set_active(Some(1));
 
-    // Narrowing to a one-row projection selects that row.
     let outcome = s.handle_key(key(KeyCode::Char('W')));
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(s.filter_buf, "W");
     assert_eq!(s.vault_list_state.active().copied(), Some(0));
 
-    // Clearing the filter restores the full list with first-row selection.
     let outcome = s.handle_key(key(KeyCode::Backspace));
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert!(s.filter_buf.is_empty());
@@ -346,8 +339,6 @@ fn cached_load_resolves_on_first_poll_and_clears_slot() {
 #[test]
 fn worker_load_reports_pending_until_delivery_then_clears_slot() {
     let mut s = picker_ready();
-    // Gate the worker on a channel so the Pending poll is deterministic
-    // (no sleep): the worker blocks until the test releases it.
     let (gate_tx, gate_rx) = std::sync::mpsc::channel::<()>();
     s.attach_load_receiver(jackin_oppicker::spawn_named_worker_subscription(
         "jackin-op-picker-load-test",

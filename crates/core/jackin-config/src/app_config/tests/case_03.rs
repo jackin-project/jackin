@@ -86,12 +86,6 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 #[test]
 fn deserializes_agent_with_slash_in_name_using_quoted_keys() {
-    // The spec calls out `[roles."chainargos/agent-jones".env]`
-    // and `[workspaces.<ws>.roles."chainargos/agent-jones".env]`
-    // as the TOML shape for third-party role selectors that
-    // include a `/`. Standard TOML quoted keys suffice — this
-    // test locks in that shape so a future refactor does not
-    // accidentally require un-quoted identifiers.
     let toml_str = r#"
 [roles."chainargos/agent-jones"]
 git = "https://github.com/chainargos/jackin-agent-jones.git"

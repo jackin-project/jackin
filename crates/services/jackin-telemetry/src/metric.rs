@@ -184,14 +184,6 @@ impl Drop for MeterReservation {
     }
 }
 
-/// Owns the installed facade instruments for one meter-provider lifecycle.
-///
-/// Detaching or dropping the installation removes the provider-bound facade and
-/// clears its bounded-series registry. Dropping the installation also releases
-/// the retained handles, allowing a later provider to be installed in the same
-/// process without retaining state from the retired provider. If a direct drop
-/// cannot acquire the reader fence immediately, it fails closed and preserves
-/// the generation instead of waiting unboundedly or allowing overlap.
 #[must_use = "the meter installation must live as long as its meter provider"]
 #[derive(Debug)]
 pub struct MeterInstallation {
@@ -200,16 +192,6 @@ pub struct MeterInstallation {
 }
 
 impl MeterInstallation {
-    /// Detach the facade from the active provider while retaining its handles
-    /// until this installation is dropped.
-    ///
-    /// The write fence waits, up to `deadline`, for every in-flight metric
-    /// operation that acquired the facade read lock. Calls that begin after
-    /// the detach observe an empty facade and become no-ops instead of
-    /// recording into a retiring provider.
-    /// The generation remains active until the installation is dropped, so a
-    /// replacement provider cannot be installed while the retired handles are
-    /// still owned by this lease.
     pub fn detach_before(&mut self, deadline: Instant) -> Result<(), MeterDetachError> {
         self.detach_inner(deadline, || {})
     }
@@ -267,9 +249,6 @@ impl Drop for MeterInstallation {
         }
 
         if let Some(retired) = self.retired_instruments.take() {
-            // Keep generation ownership until the retired handles are gone.
-            // Otherwise a new provider can reserve between unlocking state
-            // and dropping the old instruments.
             drop(retired);
             state.active_generation = None;
             return;
@@ -301,12 +280,7 @@ impl Drop for MeterInstallation {
                 drop(state);
                 drop(retired);
             }
-            Err(std::sync::TryLockError::WouldBlock) => {
-                // Drop cannot report a fence timeout. Leave the facade and
-                // generation installed in this terminal state; a replacement
-                // provider must be rejected rather than overlap a writer that
-                // still owns the retiring facade.
-            }
+            Err(std::sync::TryLockError::WouldBlock) => {}
         }
     }
 }

@@ -116,8 +116,6 @@ async fn spawn_keeps_provider_route_with_same_agent_instance_and_account() {
 
     for (session, (instance_id, account_id, label, endpoint, uid)) in sessions.iter().zip(slots) {
         assert_eq!(session.label, label);
-        // `Session.agent` stores the stable instance configuration ID, not
-        // the shared executable slug (`codex`).
         assert_eq!(session.agent.as_deref(), Some(instance_id));
         assert_eq!(session.account_id.as_deref(), Some(account_id));
         assert_eq!(session.identity.uid, uid);
@@ -354,7 +352,6 @@ async fn read_error_breaks_without_exited_event() {
         ..Default::default()
     };
     let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
-    // Reader should break without Exited; give tasks a moment then try_recv.
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert!(
         event_rx.try_recv().is_err(),

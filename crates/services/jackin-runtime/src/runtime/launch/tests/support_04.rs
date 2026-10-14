@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Name-lock child-process harness (relocated from
-//! `launch_slot/tests` by S7 split 77: the suite pins hub
-//! `cleanup` behavior, so it stays hub-side).
-
 #![cfg(unix)]
 
 use std::io::{BufRead as _, Write as _};
@@ -52,7 +48,6 @@ pub(super) fn read_child_reports(
 ) {
     for line in std::io::BufReader::new(stdout).lines() {
         let Ok(line) = line else { break };
-        // libtest may prepend the helper test's name to its first line.
         if let Some((_, report)) = line.split_once(REPORT)
             && sender.send(report.to_owned()).is_err()
         {

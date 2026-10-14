@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Session finalization, sidecar polling, and launch failure handling.
 
 use crate::runtime::launch::launch_pipeline::launch_phases::SessionFinalized;
 

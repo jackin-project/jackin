@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared HTTP helpers for binary acquisition.
-//!
-//! `agent_binary` and `capsule_binary` both fetch small release metadata over
-//! HTTP and download multi-MB binaries from Range-supporting CDNs. This module
-//! owns the reqwest text-GET client, the GET-to-`String` shape, and the
-//! fast-down parallel-download pipeline (which builds its own client) so the
-//! two callers stay in lockstep — tuning the chunk count or timeout happens
-//! here once.
-
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -25,26 +16,13 @@ use fast_down::{
 };
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT as USER_AGENT_HEADER};
 
-/// Deadline for a small metadata/API GET (latest version, manifest, `.sha256`).
 const TEXT_GET_TIMEOUT: Duration = Duration::from_secs(30);
-/// Connection-establishment deadline shared by every client here.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-/// Overall ceiling for one parallel binary download. fast-down classifies every
-/// bounded-range chunk error as recoverable and retries with no attempt cap, so
-/// without this a persistently-failing CDN loops forever and wedges the launch.
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(5);
-/// Parallel chunk connections per download.
 const DOWNLOAD_CONCURRENCY: usize = 8;
 
-/// `User-Agent` sent on every HTTP request.
-///
-/// GitHub's API rejects UA-less requests at the edge with HTTP 403 ("Request
-/// forbidden by administrative rules") before any auth or rate-limit logic
-/// runs — reqwest does not set a default UA — so leaving this off silently
-/// breaks Codex/Opencode release metadata even when a valid `gh` token is attached.
 pub const USER_AGENT: &str = concat!("jackin/", env!("JACKIN_VERSION"));
 
-/// Build a reqwest client carrying `headers` as defaults.
 pub fn http_client(headers: HeaderMap) -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .user_agent(USER_AGENT)
@@ -63,8 +41,6 @@ fn default_http_client() -> Result<&'static reqwest::Client> {
         .map_err(|error| DockerError::HttpClientBuild(error.clone()).into())
 }
 
-/// GET `url` with `client`, erroring on a non-success status, and return the
-/// body as text.
 pub async fn get_text(client: &reqwest::Client, url: &str) -> Result<String> {
     let resp = client
         .get(url)
@@ -84,33 +60,16 @@ pub async fn get_text(client: &reqwest::Client, url: &str) -> Result<String> {
         .with_context(|| format!("{url} body is not valid UTF-8"))
 }
 
-/// GET `url` with a default (header-less) client and return the body as text.
 pub async fn fetch_text(url: &str) -> Result<String> {
     get_text(default_http_client()?, url).await
 }
 
-/// Download `url` to `dest` using fast-down parallel chunks.
-///
-/// Work-stealing across `DOWNLOAD_CONCURRENCY` connections with mmap writes. All
-/// CDNs jackin❯ pulls from support Range requests; bail fast if one somehow does
-/// not. Creates `dest`'s parent directory when missing. Bounded by
-/// `DOWNLOAD_TIMEOUT` — completeness/integrity of the result is the caller's
-/// SHA-256 check, since the mmap pre-sizes the file (a dropped chunk leaves a
-/// zeroed hole, not a short file).
 pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
-    // TLS/proxy posture, bound once so the prefetch client and the chunk puller
-    // share one auditable security default instead of restating bare positional
-    // `false`s at two call sites.
     let proxy = Proxy::System;
     let accept_invalid_certs = false;
     let accept_invalid_hostnames = false;
 
     let parsed = reqwest::Url::parse(url).with_context(|| format!("invalid URL {url}"))?;
-    // No auth headers: every download URL is a public CDN asset (GitHub release
-    // browser_download_url, Claude/Amp/Kimi CDNs), unlike the rate-limited
-    // GitHub API metadata path that carries a Bearer token. UA is set for the
-    // same reason as the metadata client — bot/WAF rules at some CDNs reject
-    // UA-less clients.
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT_HEADER, HeaderValue::from_static(USER_AGENT));
     let client = build_client(
@@ -156,9 +115,6 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
         accept_invalid_hostnames,
         cookie_store: false,
         file_id: info.file_id,
-        // resp: None — every chunk (including the first) issues its own ranged
-        // GET rather than reusing the prefetch body; prefetch is consumed only
-        // for the size + Range-support probe above.
         resp: None,
         available_ips: Arc::from([]),
         max_redirects: 10,
@@ -180,12 +136,6 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
             max_speculative: 3,
         },
     );
-    // Drain the event stream, then await the writer — bounded by an overall
-    // deadline. A persistently-failing chunk retries forever (every bounded
-    // range is classified recoverable), so both the drain and the join can hang
-    // indefinitely; the timeout + abort is the only ceiling. Per-chunk errors
-    // are recoverable and high-frequency, so they are intentionally not emitted
-    // as telemetry. The bounded download operation records only its final outcome.
     let drive = async {
         let mut flush_error = None;
         while let Ok(event) = result.event_chain().recv().await {

@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Render a `DamageGrid` snapshot into the host terminal at a pane rectangle.
-//! Cursor positioning is offset by the pane's origin so the agent's
-//! `(0, 0)` lands at `(dest_row, dest_col)`.
-
 use std::io::Write;
 use std::ops::Range;
 
@@ -16,11 +12,6 @@ pub struct CellSnapshot {
     pub width: u16,
 }
 
-/// Render/selection projection derived from `DamageGrid`.
-///
-/// This is not a second terminal model. It preserves cell widths for
-/// scrollback text selection and operator-facing screen dumps until those
-/// callers can consume `GridSnapshot` / dirty spans directly.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RowSnapshot {
     pub cells: Vec<CellSnapshot>,
@@ -36,11 +27,6 @@ impl RowSnapshot {
         out
     }
 
-    /// Each cell with its inclusive display-column range. Word-boundary
-    /// walks need column geometry (wide cells span two columns) and the
-    /// cell text together. Width-0 cells are dropped after the column
-    /// accumulation: their inclusive range would be inverted (or alias
-    /// column 0), and no display column maps to them.
     #[must_use]
     pub fn display_cells(&self) -> Vec<DisplayCell<'_>> {
         let mut col = 0u16;
@@ -59,7 +45,6 @@ impl RowSnapshot {
     }
 }
 
-/// A pane cell paired with the inclusive display columns it occupies.
 #[derive(Clone, Copy, Debug)]
 pub struct DisplayCell<'a> {
     pub start_col: u16,
@@ -74,23 +59,6 @@ pub enum PaneBodyDim {
     Inactive,
 }
 
-/// Paint the scrollbar thumb onto the pane's right border column
-/// (`outer_col + outer_cols - 1`) on top of the box's `│` characters.
-/// Only thumb rows are emitted: non-thumb rows keep the box border
-/// underneath so the scrollbar reads as a textured border, not as a
-/// duplicate vertical line. `filled == 0` suppresses the call
-/// entirely so alternate-screen TUIs and fresh primary-screen panes
-/// keep their full border.
-///
-/// Thumb height is proportional to viewport / total; thumb position
-/// represents the slice of history the operator is looking at
-/// (bottom row → live tail, top row → oldest scrollback line). This is the
-/// PTY/DamageGrid tail-relative scrollbar exception: raw ANSI emission cannot
-/// use ratatui's `FixedScrollbar`, but it still uses the shared
-/// `tail_vertical_thumb` geometry.
-/// Thumb colour is phosphor-green for focused panes, gray for the
-/// rest — matches the surrounding border so focus and chrome
-/// agree.
 #[expect(
     clippy::too_many_arguments,
     reason = "documented residual allow; prefer expect when site is lint-true"
@@ -105,35 +73,21 @@ pub fn draw_scrollbar(
     filled: usize,
     focused: bool,
 ) {
-    // Bail on zero-width / zero-height panes before doing any
-    // arithmetic. `pane_col + pane_cols - 1` would underflow u16 when
-    // pane_cols == 0; saturating_add+saturating_sub keep arithmetic
-    // total even for runaway resize ticks where pane geometry briefly
-    // hits zero.
     if pane_cols == 0 || pane_rows < 2 {
         return;
     }
-    // Constrain the track to the pane's interior rows so the
-    // top-right `┐` and bottom-right `┘` corners stay intact. Without
-    // this guard the thumb overwrote one of the corners whenever the
-    // scrollback was at the live tail (or the top), producing the
-    // visible "scrollbar sticks out past the pane" symptom.
     let interior_rows = pane_rows.saturating_sub(2);
     let Some(thumb) = termrock::scroll::tail_vertical_thumb(interior_rows, filled, offset) else {
         return;
     };
     let col = pane_col.saturating_add(pane_cols).saturating_sub(1);
 
-    // Active pane uses TermRock scroll-thumb accent; inactive panes use the
-    // inactive border role so thumbs match Panel border semantics.
     let thumb_color = if focused {
         crate::tui::ansi::role_rgb(termrock::style::Role::ScrollThumb)
     } else {
         crate::tui::ansi::role_rgb(termrock::style::Role::Border)
     };
 
-    // Thumb rows are 0-based relative to the interior; skip the top
-    // border row by adding 1 to `pane_row`.
     let track_start_row = pane_row + 1;
     for r in 0..thumb.len {
         let _unused = write!(
@@ -149,7 +103,6 @@ pub fn draw_scrollbar(
     buf.extend_from_slice(RESET.as_bytes());
 }
 
-/// Snapshot a single row from a `DamageGrid` into a `RowSnapshot`.
 #[must_use]
 pub fn snapshot_damagegrid_row(
     grid: &termpane::DamageGrid,
@@ -179,9 +132,6 @@ pub fn snapshot_damagegrid_row(
     RowSnapshot { cells }
 }
 
-/// Build a content-coordinate snapshot: retained scrollback rows oldest-first,
-/// followed by the current live screen. Selection copy uses this so a range can
-/// span outside the currently visible viewport.
 #[must_use]
 pub fn pane_content_from_damagegrid(
     grid: &termpane::DamageGrid,
@@ -193,14 +143,6 @@ pub fn pane_content_from_damagegrid(
     pane_content_range_from_damagegrid(grid, viewport_cols, 0..total)
 }
 
-/// Content-coordinate snapshot of a half-open row range.
-///
-/// Index 0 of the returned vec is content row `content_rows.start` (after
-/// clamping). Callers that need absolute content coordinates keep the range
-/// start and map `rows[i]` → content row `content_rows.start + i`.
-///
-/// Used by per-mouse-event link resolution so a single anchor row does not
-/// materialize the entire retained scrollback (up to the 10k-row bound).
 #[must_use]
 pub fn pane_content_range_from_damagegrid(
     grid: &termpane::DamageGrid,
@@ -220,10 +162,6 @@ pub fn pane_content_range_from_damagegrid(
 
     let mut snapshot = Vec::with_capacity(end - start);
 
-    // Scrollback portion: content indices [0, filled) map 1:1 onto the
-    // oldest-first scrollback store. `scrollback_rows_at_offset(offset, n)`
-    // returns rows starting at store index `filled - offset` — request
-    // offset = filled - sb_start so the first returned row is content `sb_start`.
     let sb_start = start.min(filled);
     let sb_end = end.min(filled);
     if sb_start < sb_end {
@@ -234,7 +172,6 @@ pub fn pane_content_range_from_damagegrid(
         }
     }
 
-    // Live-screen portion: content indices [filled, filled + screen_rows).
     let screen_start = start.saturating_sub(filled);
     let screen_end = end.saturating_sub(filled);
     let screen_limit = usize::from(screen_rows);
@@ -248,7 +185,6 @@ pub fn pane_content_range_from_damagegrid(
     snapshot
 }
 
-/// Build a `RowSnapshot` from a raw slice of `termpane::Cell`s.
 fn snapshot_damagegrid_cells(cells: &[termpane::Cell], cols_to_draw: u16) -> RowSnapshot {
     let mut out = Vec::with_capacity(cols_to_draw as usize);
     let mut col = 0u16;

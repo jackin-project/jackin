@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Cleanup handle resolution for recorded state.
 
 use jackin_core::JackinPaths;
 use jackin_instance::{DockerResources, InstanceManifest};
@@ -8,7 +7,6 @@ use jackin_instance::{DockerResources, InstanceManifest};
 use jackin_core::ContainerHandle;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 
-/// One immutable authority snapshot for the complete destructive preflight.
 pub async fn resolve_cleanup_handles_for_state(
     paths: &JackinPaths,
     container_name: &str,
@@ -56,8 +54,6 @@ pub async fn resolve_cleanup_handles_for_state(
     Ok((resources, role, dind))
 }
 
-/// Resolve only identities belonging to the recorded launch. A name lookup
-/// checks absence/replacement; it can never establish ownership.
 pub async fn resolve_role_handle_for_state(
     paths: &JackinPaths,
     container_name: &str,

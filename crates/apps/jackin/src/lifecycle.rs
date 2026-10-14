@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Product-binary invocation policy and bounded CLI lifecycle telemetry.
-
 use std::time::Instant;
 
 use jackin_telemetry::schema::enums::{AppMode, CliCommandName, ErrorType, OutcomeValue};
@@ -149,9 +147,6 @@ pub fn classify_parse_error(error: &clap::Error) -> ResultClassification {
     }
 }
 
-/// Record a bounded invocation for a product-binary parse outcome before clap
-/// terminates the process. Help and version are successful `help` invocations;
-/// malformed input is a failed `help` invocation with `config_error`.
 #[must_use]
 pub fn record_parse_outcome(
     lifecycle: ProductLifecycle,

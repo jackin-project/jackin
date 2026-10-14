@@ -29,10 +29,6 @@ fn recorded_runtime_turn_sequences_map_to_expected_states() {
 
 #[test]
 fn claude_and_codex_hooks_are_identity_only() {
-    // Decision 0a: every Claude/Codex lifecycle hook event refreshes
-    // freshness only (Heartbeat) and never authors state. Only Claude's
-    // SessionEnd is an identity edge (Clear). This is what prevents the
-    // post-Stop SubagentStop/recap from reviving an idle pane.
     for runtime in ["claude", "codex"] {
         let mut state = SourceGateState::default();
         for name in [
@@ -52,18 +48,15 @@ fn claude_and_codex_hooks_are_identity_only() {
                 "runtime={runtime} event={name} must be identity-only"
             );
         }
-        // State never moved off the default; no spurious pending permission.
         assert!(!state.pending_permission);
         assert_eq!(state.subagents_active, 0);
     }
-    // Unknown notification types are still freshness-only.
     let mut state = SourceGateState::default();
     assert_eq!(
         map_event(&event("claude", "Notification:auth_success"), &mut state),
         GateEffect::Heartbeat
     );
     assert!(!state.pending_permission);
-    // The one carry-through identity edge: Claude SessionEnd clears.
     assert_eq!(
         map_event(
             &event("claude", "SessionEnd"),
@@ -151,8 +144,6 @@ fn codex_app_server_turn_events_author_flagged_complete_authority() {
 
 #[test]
 fn permission_stop_stays_blocked_until_resolved() {
-    // Canonical gating logic (runtime-agnostic): a turn-complete while a
-    // permission is pending stays Blocked, suppressed.
     let mut state = SourceGateState::default();
     assert_eq!(
         map_event(&event("opencode", "permission-requested"), &mut state),
@@ -229,7 +220,6 @@ fn enrich_claude_notification_from_payload_subtype() {
             notes: Vec::new(),
         }
     );
-    // Bare Notification without payload stays un-enriched (Ignore via map).
     assert_eq!(
         enrich_event_name("claude", "Notification", None),
         "Notification"

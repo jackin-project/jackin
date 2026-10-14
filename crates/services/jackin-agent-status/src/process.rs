@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Linux /proc-based foreground process identity detection.
-//!
-//! Uses the `procfs` crate to read process metadata and determine which
-//! agent binary owns the terminal's foreground process group. Called from
-//! the 1Hz ticker in `daemon.rs` to validate hook authority and provide
-//! a fallback detection signal.
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -42,7 +35,6 @@ mod procfs {
                 Err(())
             }
 
-            // Stub mirrors the Linux `procfs` Process API surface so call sites stay shared.
             pub(crate) fn stat(&self) -> Result<Stat, ()> {
                 match *self {}
             }
@@ -62,19 +54,13 @@ mod procfs {
     }
 }
 
-/// Information about a single process read from /proc.
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
     pub pid: u32,
-    /// Process group ID.
     pub pgid: u32,
-    /// Terminal foreground process group ID.
     pub tpgid: i32,
-    /// Command line arguments, split on NUL bytes.
     pub cmdline: Vec<String>,
-    /// Resolved exe symlink path.
     pub exe_path: Option<PathBuf>,
-    /// comm field (capped at 15 chars by kernel).
     pub comm: String,
 }
 
@@ -84,17 +70,10 @@ pub struct ProcessCpuSample {
     pub sampled_at: Instant,
 }
 
-/// Whether `/proc` physics can be sampled on this platform. Only Linux exposes
-/// the `/proc` fields the detectors read; elsewhere the `procfs` shim returns
-/// nothing. Callers use this to distinguish "physics unavailable" (no evidence)
-/// from "process gone" (a real exit) — the watchdog must never demote on the
-/// former.
 pub const fn physics_available() -> bool {
     cfg!(target_os = "linux")
 }
 
-/// Reads process info for `pid` from /proc. Returns `None` when the
-/// process doesn't exist or required fields are unreadable.
 pub fn read_process_info(pid: u32) -> Option<ProcessInfo> {
     let process = procfs::process::Process::new(pid as i32).ok()?;
     let stat = process.stat().ok()?;
@@ -201,8 +180,6 @@ pub fn descendant_process_count(root_pid: u32) -> u32 {
     let Ok(iter) = procfs::process::all_processes() else {
         return 0;
     };
-    // Feed (pid, ppid) pairs straight from /proc; the helper owns the single
-    // parent->children map build so it stays unit-testable with synthetic input.
     let parents = iter.filter_map(|proc_result| {
         let stat = proc_result.ok()?.stat().ok()?;
         (stat.pid > 0 && stat.ppid > 0).then_some((
@@ -232,7 +209,6 @@ fn descendant_process_count_from_parents(
     count
 }
 
-/// Scan all processes in `/proc` and return those with `pgrp == target_pgid`.
 pub fn pids_in_pgrp(target_pgid: u32) -> Vec<u32> {
     let Ok(iter) = procfs::process::all_processes() else {
         return Vec::new();
@@ -248,12 +224,7 @@ pub fn pids_in_pgrp(target_pgid: u32) -> Vec<u32> {
     pids
 }
 
-/// Map a process basename to the canonical agent slug enum, or `None` when it
-/// is not a recognized agent binary.
 fn agent_from_name(name: &str) -> Option<Agent> {
-    // Binary names that differ from the canonical slug map here; everything
-    // else maps by `Agent`'s own slug parser. Bare `agent` stays unrecognized:
-    // it is both the Grok Build alias and the Cursor installer default.
     let slug = match name {
         "claude-code" => "claude",
         "agy" => "antigravity",
@@ -362,11 +333,7 @@ fn wrapped_agent_from_argv(exe_name: &str, cmdline: &[String]) -> Option<Agent> 
     agent_from_wrapped_path(script)
 }
 
-/// Identify the agent running in `proc`. Returns `None` when no recognized
-/// agent is found.
 pub fn identify_agent(info: &ProcessInfo) -> Option<Agent> {
-    // Prefer the exe basename: it is the full binary name, unlike `comm` which
-    // the kernel truncates to 15 chars (so a longer agent name would be missed).
     if let Some(ref exe) = info.exe_path {
         let exe_name = exe.file_name()?.to_string_lossy();
         if let Some(agent) = agent_from_name(exe_name.as_ref()) {
@@ -380,35 +347,25 @@ pub fn identify_agent(info: &ProcessInfo) -> Option<Agent> {
         }
     }
 
-    // Fall back to the (15-char-truncated) comm when the exe path is unreadable.
     agent_from_name(info.comm.as_str())
 }
 
-/// What owns the terminal's foreground process group. A `pgid` is present
-/// exactly when a group exists — an invariant the previous
-/// `Option<(Option<Agent>, u32)>` left to the caller to decode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForegroundGroup {
-    /// No foreground process group (`tpgid <= 0`).
     None,
-    /// A foreground group exists but holds no recognized agent (e.g. a shell).
     Unrecognized { pgid: u32 },
-    /// A recognized agent owns the foreground group.
     Agent { agent: Agent, pgid: u32 },
 }
 
 impl ForegroundGroup {
-    /// A recognized agent owns the foreground.
     pub fn is_agent(self) -> bool {
         matches!(self, Self::Agent { .. })
     }
 
-    /// A foreground process group exists at all (agent or not).
     pub fn has_group(self) -> bool {
         !matches!(self, Self::None)
     }
 
-    /// The foreground process group id, when one exists.
     pub fn pgid(self) -> Option<u32> {
         match self {
             Self::None => None,
@@ -417,10 +374,6 @@ impl ForegroundGroup {
     }
 }
 
-/// Given the child PID of a session's root process, determine what agent
-/// currently owns the terminal's foreground process group. `root_info` is the
-/// already-read `/proc` info for the child PID, so the caller (which read it for
-/// its own physics sample) does not pay a second stat+exe+cmdline read here.
 pub fn detect_foreground_agent(root_info: &ProcessInfo) -> ForegroundGroup {
     if root_info.tpgid <= 0 {
         return ForegroundGroup::None;

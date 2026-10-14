@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Parsed 1Password breadcrumb model shared by console geometry and views.
-
 #[must_use]
 pub fn breadcrumb_display_width(parts: &jackin_core::OpBreadcrumbParts) -> usize {
     let mut width = text_width(&parts.vault) + text_width(" / ") + text_width(&parts.item);

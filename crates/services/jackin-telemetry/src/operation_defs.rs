@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-// GENERATED from registry/ — do not hand-edit. Regenerate: cargo xtask telemetry-registry --generate.
 
 pub const APP_SHUTDOWN: SpanDef = SpanDef::generated(&schema::spans::APP_SHUTDOWN_DEF);
 pub const APP_STARTUP: SpanDef = SpanDef::generated(&schema::spans::APP_STARTUP_DEF);

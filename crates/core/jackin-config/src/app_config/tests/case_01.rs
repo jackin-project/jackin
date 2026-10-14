@@ -300,10 +300,6 @@ fn edit_workspace_rejects_upsert_with_readonly_mismatch_vs_existing_child() {
 
 #[test]
 fn edit_workspace_accepts_pre_collapsed_upsert_that_replaces_children() {
-    // CLI's job is to pre-collapse. Here we simulate it: instead of
-    // upserting just the parent (which would leave children as redundants
-    // and fail the post-condition), the CLI removes the children via
-    // remove_destinations AND upserts the parent in the same edit.
     use crate::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
     let mut config = AppConfig::default();

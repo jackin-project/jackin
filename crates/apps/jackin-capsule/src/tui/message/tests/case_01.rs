@@ -95,9 +95,6 @@ fn dialog_captures_mouse_press_and_release() {
 
 #[test]
 fn dialog_lets_wheel_events_through_for_body_scroll() {
-    // Regression: a dialog must NOT swallow wheel events — they scroll the
-    // dialog body. Vertical (64/65) and horizontal (66/67) wheel buttons both
-    // become Action::Wheel even while a dialog captures input.
     let context = InputDispatchContext {
         dialog_captures_input: true,
         branch_context_hit: false,

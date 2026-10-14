@@ -5,13 +5,6 @@ use super::*;
 
 #[test]
 fn documented_delta_balance_value_and_uncapped_spend() {
-    // Limit-only balances (the Grok prepaid seam): the console window value
-    // is blank (the projection falls back to `used_label` only) while the
-    // capsule shows "$5.00" via its balance seam. Used-only money yields a
-    // cap-less console spend group ("uncapped · spent $8.30" — pinned in the
-    // render smoke test). Disposition: RECORDED — projection-owned
-    // (`value_label` fallback; slot-blind spend-group emission); the console
-    // cannot recover either from its inputs.
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "xai",
         display_name: "xAI",
@@ -49,12 +42,6 @@ fn documented_delta_balance_value_and_uncapped_spend() {
 
 #[test]
 fn documented_delta_model_scope_capsule_gap() {
-    // Console groups carry model/pool scope ("scope: pool credits-pool" —
-    // pinned in the detail render); capsule buckets and detail rows have no
-    // scope surface. (Related: the console detail pane has no username row
-    // while capsule does — the projection never carries `username`.)
-    // Disposition: RECORDED — `QuotaBucketView` lacks scope axes and the
-    // projection drops `username`; both need protocol changes.
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "antigravity",
         display_name: "Antigravity",
@@ -105,10 +92,6 @@ fn documented_delta_model_scope_capsule_gap() {
 
 #[test]
 fn parity_overage_magnitude_matches_raw_money() {
-    // $150 against a $100 cap: both surfaces read raw 150 through the same
-    // shared money-ratio rule — console "150% used" (plus the raw note,
-    // pinned in the render smoke test) and capsule "150% used" — and both
-    // meters read empty (nothing left).
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "anthropic",
         display_name: "Anthropic",
@@ -130,11 +113,6 @@ fn parity_overage_magnitude_matches_raw_money() {
 
 #[test]
 fn parity_meter_percent_inputs_agree() {
-    // Every console window meter equals the capsule bucket meter — spend
-    // included, overage included (both read empty at 150% used). Rendered
-    // glyphs match statically: the console `meter_line` and the capsule
-    // full-width meter both draw `█`/`░` (the capsule's intermediate `·`
-    // empty cell never reaches the screen).
     let providers = parity_mega_providers();
     let defs = providers
         .iter()
@@ -169,10 +147,6 @@ fn parity_meter_percent_inputs_agree() {
 
 #[test]
 fn documented_delta_error_buckets_carry_no_percent() {
-    // The quota-driven console color and the severity-driven capsule accent
-    // can only disagree on error-status buckets that still carry a percent;
-    // no harness error/login/unsupported bucket does (adapters omit percents
-    // there). Disposition: RECORDED residual with fixture evidence.
     let providers = parity_mega_providers();
     let (_, views_by_provider) = parity_projection(&providers, Vec::new(), Vec::new());
     for view in views_by_provider.iter().flatten() {
@@ -192,7 +166,6 @@ fn documented_delta_error_buckets_carry_no_percent() {
             }
         }
     }
-    // The auth and error fixtures carry no buckets at all.
     let auth_view = parity_view(&parity_auth_account());
     assert!(auth_view.buckets.is_empty());
     let error_view = parity_view(&parity_error_account());
@@ -201,8 +174,6 @@ fn documented_delta_error_buckets_carry_no_percent() {
 
 #[test]
 fn parity_console_render_smoke_overview() {
-    // Renderer-private strings pinned end to end: every scenario provider,
-    // both unresolved rows, the notice, and the projection issue.
     let screen = parity_mega_screen(PARITY_NOW);
     let text = parity_render_text(screen.clone(), 150, 240, PARITY_NOW);
     let repeated = parity_render_text(screen, 150, 240, PARITY_NOW);
@@ -211,7 +182,6 @@ fn parity_console_render_smoke_overview() {
         "fixed-clock parity render must be repeatable"
     );
     for expected in [
-        // Antigravity two-family fixture.
         "Antigravity · pilot@example.test",
         "Gemini · 5h",
         "73% left",
@@ -226,29 +196,24 @@ fn parity_console_render_smoke_overview() {
         "Plan: Antigravity Pro",
         "Credits: $12.50",
         "expires in 30d",
-        // Duplicate provider accounts plus overage.
         "Anthropic · work@example.test",
         "Anthropic · personal@example.test",
         "150% used",
         "raw used 150%",
-        // Cursor groups and exact money units.
         "Cursor · cursor-user",
         "Billing cycle",
         "Spend (actual) spend: cap $100.00 · spent $45.20 · remaining $54.80",
         "Credits spend: uncapped · spent $8.30",
         "API rate limit: limit 100 · remaining 20 · per minute",
         "resets in 1m",
-        // Legit-zero exhaustion.
         "OpenAI · zero@example.test",
         "0% left",
         "quota: exhausted",
-        // Stale partial failure with retry + provider issue + unknown.
         "xAI · partial@example.test",
         "stale · updated 25m ago",
         "rate limited by provider (rate_limited) · retry in 5m",
         "provider: provider responding slowly (provider_slow) · retry in 10m",
         "quota: unknown",
-        // Unsupported / auth-expired / hard-error states.
         "MiniMax · mm-user",
         "quota: unsupported",
         "Z.AI · zai-user",
@@ -258,11 +223,9 @@ fn parity_console_render_smoke_overview() {
         "Kimi · kimi-user",
         "usage request timed out (timeout) · retry in 2m",
         "usage response malformed (malformed)",
-        // Legit-zero spend with missing identity fields.
         "OpenCode · ",
         "100% left",
         "Tokens spend: cap $100.00 · spent $0.00 · remaining $100.00",
-        // Unresolved rows, notice, and projection issue.
         "Unresolved (anthropic:key)",
         "needs login · authentication required",
         "Unresolved (openai:second)",
@@ -278,7 +241,6 @@ fn parity_console_render_smoke_overview() {
 
 #[test]
 fn parity_console_render_smoke_detail_scopes() {
-    // Group scope lines only render in the account detail pane.
     let mut screen = parity_mega_screen(PARITY_NOW);
     screen.selected = 1;
     screen.detail = true;
@@ -318,9 +280,6 @@ fn parity_console_render_smoke_detail_scopes() {
             "work detail must contain {expected:?}:\n{text}"
         );
     }
-    // The projection never carries `username`: the console detail pane has
-    // no username row while the capsule keeps one (protocol gap, noted in
-    // the parity report).
     assert!(
         !text.contains("work-user"),
         "console detail must not invent a username row:\n{text}"

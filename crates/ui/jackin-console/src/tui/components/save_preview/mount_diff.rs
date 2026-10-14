@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Mount diff, auth changes, and collapse lines.
 
 use super::SettingsEnvPreview;
 use crate::tui::auth_config::env_display_map_without_auth_credentials;

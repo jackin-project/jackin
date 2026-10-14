@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Brand-crop suite: inventory guard (crop count == non-modal stage-view
-//! count), zero-tolerance compare/bless, and the render-twice pipeline
-//! identity guard. Harness lives in the parent module.
-
 use super::*;
 
 #[test]

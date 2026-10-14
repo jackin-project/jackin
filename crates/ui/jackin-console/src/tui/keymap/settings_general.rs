@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings general-tab keymap.
 
 use termrock::input::KeyCode;
 
@@ -12,7 +11,6 @@ pub(crate) enum SettingsGeneralTabAction {
     MoveDown,
     Toggle,
     Save,
-    /// Caller resolves: if dirty → `ConfirmDiscard`, else `ReturnToList`.
     Back,
 }
 
@@ -82,5 +80,3 @@ pub(crate) static SETTINGS_GENERAL_TAB_KEYMAP_BINDINGS: &[KeyBinding<SettingsGen
 ];
 pub(crate) static SETTINGS_GENERAL_TAB_KEYMAP: Keymap<SettingsGeneralTabAction> =
     Keymap::from_static(SETTINGS_GENERAL_TAB_KEYMAP_BINDINGS);
-
-// ── Settings Env tab ──────────────────────────────────────────────────────────

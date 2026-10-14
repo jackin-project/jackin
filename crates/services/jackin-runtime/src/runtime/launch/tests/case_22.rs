@@ -60,7 +60,6 @@ async fn load_agent_injects_global_operator_env_literal() {
     crate::runtime::stubs::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
-    // Seed a config.toml with a global operator env map.
     std::fs::write(
         &paths.config_file,
         format!(

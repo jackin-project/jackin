@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-/// CLT-safe checks for the production navigation and grouped DTO adapters.
 
 import Foundation
 import JackinUsageBridge

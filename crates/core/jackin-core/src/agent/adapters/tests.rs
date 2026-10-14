@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Phase 1 correctness gate: `Agent::runtime()` must produce byte-identical
-//! output to the existing direct `Agent` methods.  If any adapter drifts from
-//! the canonical enum behavior these tests catch it.
-
 use crate::agent::Agent;
 use crate::auth::AuthForwardMode;
 
@@ -99,12 +95,10 @@ fn runtime_fallback_install_command_matches_agent() {
 fn state_paths_have_sensible_structure() {
     for agent in Agent::ALL {
         let paths = agent.runtime().state_paths();
-        // Credential dirs should not be empty.
         assert!(
             !paths.credential_dir.is_empty(),
             "Agent::{agent:?}: credential_dir must not be empty"
         );
-        // If a file is named, it should be under the dir.
         if let Some(file) = paths.credential_file {
             assert!(
                 file.starts_with(paths.credential_dir),

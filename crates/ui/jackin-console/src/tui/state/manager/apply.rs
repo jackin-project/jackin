@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ManagerState` mount-refresh application.
 
 use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use jackin_config::AppConfig;

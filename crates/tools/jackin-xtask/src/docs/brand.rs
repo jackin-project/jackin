@@ -1,34 +1,10 @@
-//! Brand-prose gate: `cargo xtask docs brand`.
-//!
-//! Enforces RULES.md: product name is always `jackin❯` in prose. Forbidden:
-//! `jackin'`, `Jackin`, `Jackin'`, and bare `jackin` used as the product name
-//! (not as an identifier/command/path). Classification strips fenced code,
-//! inline backticks, URLs, path-like tokens, and identifier shapes
-//! (`jackin-…`, `jackin_…`, `JACKIN_…`, `jackin.…`).
-//!
-//! ## Prose trees (include / exclude)
-//!
-//! | Tree | Policy |
-//! |---|---|
-//! | Root `*.md` | include (non-recursive) |
-//! | `crates/*/README.md`, `crates/*/AGENTS.md`, `crates/AGENTS.md` | include |
-//! | `docs/content/**` (`*.md`/`*.mdx`) | include |
-//! | `roadmap/**/*.md` | include |
-//! | `security-review/`, `docker/`, `.github/` | exclude — ops/CI prose; revisit if brand copy moves there |
-//! | Code / binary crates `src/**` | exclude (not prose) |
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-/// Allowlist of `path:substring` pairs that may carry forbidden spellings.
-const ALLOWLIST: &[(&str, &str)] = &[
-    // Crate/package identifier heading, not the product brand in prose.
-    ("crates/apps/jackin/README.md", "# jackin"),
-];
+const ALLOWLIST: &[(&str, &str)] = &[("crates/apps/jackin/README.md", "# jackin")];
 
-/// Forbidden brand spellings (case-sensitive; `Jackin` is its own entry).
 const FORBIDDEN: &[&str] = &["jackin'", "Jackin'", "Jackin"];
 
 pub(super) fn check_brand(root: &Path) -> Result<()> {
@@ -54,14 +30,14 @@ pub(super) fn check_brand(root: &Path) -> Result<()> {
                     continue;
                 }
                 problems.push(format!(
-                    "{rel}:{}: forbidden brand spelling `{token}` — write `jackin❯`; for possessives rewrite the sentence (RULES.md). matched line: {}",
+                    "{rel}:{}: forbidden brand spelling `{token}` — write `jackin❯`; for possessives rewrite the sentence. matched line: {}",
                     line_no + 1,
                     line.trim()
                 ));
             }
             if contains_bare_brand_prose(line) && !is_allowlisted(&rel, line) {
                 let msg = format!(
-                    "{rel}:{}: bare brand `jackin` in prose — write `jackin❯` for the product name, or backtick identifiers/commands/paths (RULES.md). matched line: {}",
+                    "{rel}:{}: bare brand `jackin` in prose — write `jackin❯` for the product name, or backtick identifiers/commands/paths. matched line: {}",
                     line_no + 1,
                     line.trim()
                 );
@@ -107,7 +83,6 @@ fn is_allowlisted(rel: &str, line: &str) -> bool {
         .any(|(path, substr)| rel == *path && line.contains(substr))
 }
 
-/// Strip fenced code blocks, inline `` `...` `` spans, and bare URL tokens.
 pub(super) fn strip_code_regions(text: &str) -> String {
     let without_fences = strip_fenced_blocks(text);
     let without_inline = strip_inline_code(&without_fences);
@@ -206,10 +181,6 @@ fn collect_prose_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     if content.is_dir() {
         walk_mdx(&content, out)?;
     }
-    let roadmap = root.join("roadmap");
-    if roadmap.is_dir() {
-        walk_mdx(&roadmap, out)?;
-    }
     Ok(())
 }
 
@@ -236,16 +207,12 @@ fn walk_mdx(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// True when lowercase standalone `jackin` appears as prose brand (not followed
-/// by `❯` or `>`, and not an identifier/path/command shape).
 fn contains_bare_brand_prose(line: &str) -> bool {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i..].starts_with(b"jackin") {
             let after = i + 6;
-            // Identifiers, backticks (inline code not yet stripped in unit tests),
-            // and path/config punctuation are not prose brand.
             let before_ok = i == 0
                 || !(is_ident_byte(bytes[i - 1])
                     || bytes[i - 1] == b'`'

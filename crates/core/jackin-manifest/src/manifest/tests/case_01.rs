@@ -279,7 +279,6 @@ plugins = []
 
 #[test]
 fn rejects_old_manifest_using_provider_overrides() {
-    // Removed provider settings are rejected regardless of manifest version.
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
@@ -303,8 +302,6 @@ model = "minimax/MiniMax-M3"
 
 #[test]
 fn rejects_old_manifest_using_docker_settings() {
-    // A pre-v1alpha6 manifest that uses the role [docker] block is rejected
-    // with a migrate hint, since the feature did not exist at that version.
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),

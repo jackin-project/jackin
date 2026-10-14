@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings save preview types and builders.
 
 use super::settings_save_lines;
 use std::collections::BTreeMap;
@@ -101,9 +100,6 @@ pub fn build_settings_save_lines<MountModal, EnvModal, AuthModal, ErrorPopup, Pe
     settings_save_lines(&settings_save_preview(settings))
 }
 
-/// Toggle pair (git coauthor trailer + DCO enforcement) that the settings
-/// dialog captures at edit time. Bundled so the parent `SettingsGeneralPreview`
-/// keeps the `struct_excessive_bools` clippy gate quiet.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SettingsGeneralToggles {
     pub coauthor_trailer: bool,

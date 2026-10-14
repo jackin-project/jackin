@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Hardline instance inspection and state descriptions.
 
 use jackin_instance::{InstanceManifest, RegistrationState};
 
@@ -18,9 +17,6 @@ pub async fn inspect_hardline_instance(
     docker: &impl DockerApi,
 ) -> anyhow::Result<String> {
     let state_dir = paths.data_dir.join(container_name);
-    // `--inspect` is the operator's recovery tool. Distinguish "no
-    // manifest yet" (pre-restore) from "manifest unreadable" (torn
-    // JSON) so the render below does not lie about the latter.
     let manifest_result: Result<Option<InstanceManifest>, String> =
         InstanceManifest::read_optional(&state_dir).map_err(|e| e.to_string());
     let manifest = manifest_result.as_ref().ok().and_then(Option::as_ref);

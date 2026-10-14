@@ -1,9 +1,6 @@
-//! Per-cell rendering utilities shared by launch-local animated components.
-
 use ratatui::style::Style;
 use ratatui::text::Span;
 
-/// Coalesce per-cell `(char, Style)` pairs into the fewest spans.
 pub(crate) fn coalesce_cells<I>(cells: I) -> Vec<Span<'static>>
 where
     I: IntoIterator<Item = (char, Style)>,

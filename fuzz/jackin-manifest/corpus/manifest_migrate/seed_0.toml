@@ -1,4 +1,3 @@
-# Sample role manifest carried through the legacy migration chain.
 
 dockerfile = "Dockerfile"
 agents = ["claude"]

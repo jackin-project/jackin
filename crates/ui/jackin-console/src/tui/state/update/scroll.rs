@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor and settings scroll plans.
 
 use crate::tui::screens::editor::update::{
     editor_tab_horizontal_scroll_plan, editor_workspace_mounts_horizontal_scroll_plan,

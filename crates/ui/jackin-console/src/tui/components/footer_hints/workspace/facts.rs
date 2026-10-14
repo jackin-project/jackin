@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace-list footer facts and mode resolver.
 
 use termrock::scroll::ScrollAxes;
 
@@ -134,8 +133,6 @@ pub const fn workspace_list_footer_facts(
         selected_instance_is_live: facts.selected_instance_is_live,
         selected_saved_workspace: row_facts.selected_saved_workspace,
         selected_new_workspace: row_facts.selected_new_workspace,
-        // Surface the `W` prewarm hint exactly when a saved workspace is
-        // selected — the only row for which `W` dispatches PrewarmNamed.
         show_prewarm: row_facts.selected_saved_workspace,
         show_expand: facts.show_expand,
         show_collapse: facts.show_collapse,

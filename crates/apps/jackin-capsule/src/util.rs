@@ -1,20 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared utilities for the capsule: bounded file reads, child-process
-//! helpers, and small formatting utilities used across modules.
-//!
-//! Not responsible for: protocol encoding, session management, or rendering.
-
 use std::io::Read;
 use std::path::Path;
 use std::process::Child;
 use std::time::{Duration, Instant};
 
-/// Cap reads against text metadata files so a corrupt or hostile file
-/// cannot pin daemon memory while parsing branch state or hostnames.
-/// `label` is a static tag so governed DEBUG events traces name which call site
-/// hit the cap or failed.
 #[must_use]
 pub fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
     #[expect(
@@ -39,26 +30,13 @@ pub fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
 
 const COMMAND_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
-/// Outcome of polling a spawned `Child` to completion with a deadline.
-/// Callers translate this into their own result/Option/bool shape.
 pub(crate) enum WaitOutcome {
     Exited(std::process::ExitStatus),
-    /// The kernel reaped the child out from under us (PID 1's zombie
-    /// reaper inside Capsule, or a sibling thread's `waitpid`). The
-    /// exit status is lost; callers that captured stdout/stderr should
-    /// trust those pipes, and presence-probes can treat the spawn
-    /// itself as proof the executable exists.
     Reaped,
-    /// Timed out before the child finished. The helper has already
-    /// attempted `kill()` + `wait()` (best-effort) before returning.
     TimedOut,
-    /// `try_wait` itself returned a non-`ECHILD` error.
     Failed,
 }
 
-/// Poll `child.try_wait()` at `COMMAND_PROBE_POLL_INTERVAL` until it
-/// finishes, the kernel reaps it, the deadline fires, or `try_wait`
-/// itself errors.
 pub(crate) fn wait_child_with_timeout(child: &mut Child, timeout: Duration) -> WaitOutcome {
     let started = Instant::now();
     loop {
@@ -104,15 +82,8 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
     );
     let status = match wait_child_with_timeout(&mut child, timeout) {
         WaitOutcome::Exited(status) => Some(status),
-        // Status is lost; trust the stdout pipe (callers like the
-        // Container info dialog would otherwise show empty fields for
-        // healthy git/gh commands).
         WaitOutcome::Reaped => None,
         WaitOutcome::TimedOut => {
-            // Joining the reader is bounded: kill() (inside the helper)
-            // closed the pipe, so read_to_end returns quickly. Without
-            // the join the OS-thread is leaked across every timeout
-            // firing.
             drop(stdout_reader.join());
             operation.complete_timeout();
             return None;

@@ -1,23 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console-owned subscription wiring for the console TUI.
-//!
-//! The frame path renders through a direct `Terminal::draw` in
-//! `crates/apps/jackin/src/console/adapter/run.rs` (the run loop stays
-//! surface-owned). This module keeps the console's blocking-subscription
-//! machinery.
-
 use std::future::Future;
 
-/// Console frame pacer: the upstream `Presenter` owns the draw decision
-/// (dirty coalescing + backpressure state) and a `FrameClock` samples
-/// monotonic time once per loop turn to feed it.
-///
-/// The zero min-interval keeps pre-adoption pacing byte-identical — a frame
-/// draws exactly when one is owed. The `TickLadder` rungs (12/30/60 fps)
-/// carry no 20 Hz rung, so the 50 ms animation interval in `terminal.rs`
-/// stays the product cadence driving `mark_dirty`.
 #[derive(Debug)]
 pub struct ConsoleFramePacer {
     presenter: termrock::runtime::Presenter,
@@ -25,7 +10,6 @@ pub struct ConsoleFramePacer {
 }
 
 impl ConsoleFramePacer {
-    /// A pacer owing its first frame, with no throttle between draws.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -35,27 +19,22 @@ impl ConsoleFramePacer {
         }
     }
 
-    /// Sample the frame clock once at the top of a loop turn.
     pub fn tick(&mut self) -> termrock::runtime::FrameTick {
         self.clock.tick()
     }
 
-    /// Content changed; a frame is owed.
     pub const fn mark_dirty(&mut self) {
         self.presenter.mark_dirty();
     }
 
-    /// Whether a frame is owed at `now` (a [`Self::tick`] timestamp).
     pub fn should_draw(&self, now: termrock::runtime::Instant) -> bool {
         self.presenter.should_draw(now)
     }
 
-    /// Take ownership of the frame: clears dirty, marks in-flight.
     pub const fn begin_draw(&mut self, now: termrock::runtime::Instant) {
         self.presenter.begin_draw(now);
     }
 
-    /// Frame reached the wire; release backpressure.
     pub const fn end_draw(&mut self, now: termrock::runtime::Instant) {
         self.presenter.end_draw(now);
     }
@@ -67,15 +46,10 @@ impl Default for ConsoleFramePacer {
     }
 }
 
-/// Console-owned blocking-subscription poll tri-state (re-homed from the
-/// retired facade contract).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubscriptionPoll<T> {
-    /// The worker finished and yielded its value.
     Ready(T),
-    /// The worker is still running.
     Pending,
-    /// The worker was dropped without yielding a value.
     Closed,
 }
 
@@ -85,7 +59,6 @@ enum BlockingSource<T> {
     Ready(termrock::runtime::ReadySubscription<T>),
 }
 
-/// A one-shot blocking worker's receiver: poll it until it yields or closes.
 #[derive(Debug)]
 pub struct BlockingSubscription<T>(BlockingSource<T>);
 
@@ -101,8 +74,6 @@ impl<T> BlockingSubscription<T> {
                 termrock::runtime::ReadySubscriptionPoll::Ready(value) => {
                     SubscriptionPoll::Ready(value)
                 }
-                // `ReadySubscriptionPoll` is non-exhaustive; every non-Ready
-                // arm means the one-shot value is gone.
                 _ => SubscriptionPoll::Closed,
             },
         }

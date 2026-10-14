@@ -1,8 +1,3 @@
-//! jackin-telemetry: schema authority and governed OpenTelemetry facade.
-//!
-//! **Architecture Invariant:** T0.
-//! Entry point: [`OperationGuard`] — bounded operations backed by the closed registry.
-
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
@@ -41,5 +36,4 @@ pub use operation::{
 };
 pub use retry::record_retry_scheduled;
 
-/// The only tracing target accepted for governed product telemetry.
 pub const TELEMETRY_TARGET: &str = "jackin_telemetry";

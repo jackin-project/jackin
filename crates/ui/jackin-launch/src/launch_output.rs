@@ -1,20 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `LaunchTuiOutputSink`: adapter from the `LaunchOutputSink` port (in
-//! jackin-core) to this crate's product-owned output and animation helpers.
-//!
-//! `jackin-runtime` obtains the singleton via `progress::launch_output()`
-//! (self-owned static, exactly as it owns `host_terminal()`). This keeps
-//! the production call sites in runtime free of presentation details.
-
 use std::future::Future;
 use std::pin::Pin;
 
 use jackin_core::LaunchOutputSink;
 
-/// Zero-sized adapter; forwards the four launch output side-effects to the
-/// presentation crate's helpers (`print_deploying`, `step_fail`, `warp_*`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LaunchTuiOutputSink;
 

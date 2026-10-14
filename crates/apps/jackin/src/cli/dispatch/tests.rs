@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `dispatch`.
 use super::*;
 use clap::Parser;
 
@@ -26,10 +25,6 @@ fn size_check_accepts_large() {
 fn bare_jackin_on_tty_runs_console_implicitly() {
     let cli = Cli::try_parse_from(["jackin"]).unwrap();
     let action = classify(cli, true);
-    // `debug` matched with `..`: env-backed (`JACKIN_DEBUG`), so its
-    // default depends on the runner's env. What this test pins is
-    // routing — `bare jackin` on a TTY classifies as implicit
-    // RunConsole — not the debug default.
     assert!(matches!(
         action,
         Action::RunConsole {
@@ -64,8 +59,6 @@ fn bare_jackin_without_tty_prints_help_silently() {
 fn console_subcommand_routes_to_console_runner() {
     let cli = Cli::try_parse_from(["jackin", "console"]).unwrap();
     let action = classify(cli, true);
-    // See `bare_jackin_on_tty_runs_console_implicitly` for why
-    // `debug` is matched with `..`.
     assert!(matches!(
         action,
         Action::RunConsole {
@@ -105,8 +98,6 @@ fn non_console_subcommand_passes_through() {
 
 #[test]
 fn non_console_subcommand_passes_through_even_without_tty() {
-    // Non-interactive shell scripts must still be able to run
-    // subcommands like `jackin exile` without hitting the TTY gate.
     let cli = Cli::try_parse_from(["jackin", "exile"]).unwrap();
     let action = classify(cli, false);
     assert!(matches!(action, Action::RunCommand(cmd) if *cmd == Command::Exile));
@@ -116,7 +107,6 @@ fn non_console_subcommand_passes_through_even_without_tty() {
 fn console_requires_tty_error_mentions_tty_and_size() {
     assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("TTY"));
     assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("40x15"));
-    // The jackin❯ brand spelling rule applies to user-visible strings.
     assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("jackin❯"));
 }
 

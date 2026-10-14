@@ -241,9 +241,6 @@ fn rejects_conflicting_workspace_edit_default_agent_flags() {
 
 #[test]
 fn rejects_conflicting_workspace_edit_keep_awake_flags() {
-    // Mutual exclusion at the CLI parser level — the user must not
-    // be able to ask jackin to both opt in and opt out in one
-    // invocation. clap enforces this via `conflicts_with`.
     let err = Cli::try_parse_from([
         "jackin",
         "workspace",

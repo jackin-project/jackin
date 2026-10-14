@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch cockpit footer helpers.
-
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -57,10 +55,6 @@ pub fn footer_regions(
     StatusBar::new(&left, &right, &theme).regions(area)
 }
 
-/// The status-bar activity text: the current step with an upper-cased first
-/// word and a trailing ellipsis (`wiring private network` -> `Wiring private
-/// network...`). The live build/step detail lives only here, never inside the
-/// box.
 #[must_use]
 pub fn format_activity(status: &str) -> String {
     let trimmed = status
@@ -83,12 +77,7 @@ pub fn render_footer(
     debug_mode: bool,
 ) {
     let instance = footer_instance(view);
-    // The invocation id rides the status bar only in --debug, in amber, so the
-    // operator is never unsure whether they are in a debug run; the blue
-    // instance-id chip always shows once the container is named.
     let debug_chip = debug_mode.then_some(run_id);
-    // Fade the bar up from black over the first ~30 frames so it appears
-    // gradually with the rain rather than popping in.
     #[expect(
         clippy::cast_precision_loss,
         reason = "documented residual allow; prefer expect when site is lint-true"
@@ -195,7 +184,6 @@ pub fn launch_overlay_chrome_areas(area: Rect, debug_mode: bool) -> BottomChrome
     }
 }
 
-/// The container's short instance id once the container is named, else empty.
 #[must_use]
 pub fn footer_instance(view: &LaunchView) -> String {
     view.identity

@@ -1,46 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-// Test-only by `#![cfg(test)]` (not a gated `mod` decl): the audit parser
-// must never become a production launch or usage candidate.
 #![cfg(test)]
-
-//! Minimal read-only `SQLite` parser shared by the store enumerators.
-//!
-//! Scoped `ENGINEERING.md` waiver of the turso-only rule: turso 0.7.2 has
-//! no read-only/immutable open (`Builder::build` takes no flags), so opening
-//! the live third-party databases (`.omp`, `opencode`) through turso would
-//! open them read-write, risking `-shm`/`-journal` side effects and locks
-//! against another app's live state. The readers therefore parse the file
-//! format directly with no third-party database code. Re-check on turso
-//! upgrade. The reader understands rowid table b-trees (interior pages,
-//! leaf pages, and overflow chains) plus enough of the `sqlite_schema`
-//! table and `CREATE TABLE` definitions to locate one table and map its
-//! columns.
-//!
-//! WAL handling: when the database header selects WAL mode and a sibling
-//! `-wal` image is supplied, committed frames are overlaid onto an in-memory
-//! page image. Nothing is ever written back: no checkpoint, no `-shm`
-//! creation, no migration. Frame checksums are not validated; salt or shape
-//! mismatches fail closed with [`StoreError::Malformed`].
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::StoreError;
 
-/// Maximum b-tree depth followed before treating the image as corrupt.
 const MAX_BTREE_DEPTH: u32 = 32;
 
-/// Sibling `-wal` path for a database file. Appends the suffix; the
-/// extension is preserved (`agent.db` pairs with `agent.db-wal`).
 pub(crate) fn wal_sibling_path(db_path: &Path) -> PathBuf {
     let mut name = db_path.as_os_str().to_owned();
     name.push("-wal");
     PathBuf::from(name)
 }
 
-/// In-memory database page image with committed WAL frames overlaid.
 #[derive(Debug)]
 pub(crate) struct SqliteImage {
     usable: usize,
@@ -48,7 +23,6 @@ pub(crate) struct SqliteImage {
 }
 
 impl SqliteImage {
-    /// Load a database image, overlaying `wal` when the header selects WAL.
     pub(crate) fn load(db: &[u8], wal: Option<&[u8]>) -> Result<Self, StoreError> {
         let magic: &[u8] = b"SQLite format 3\0";
         if db.get(..16) != Some(magic) {
@@ -82,7 +56,6 @@ impl SqliteImage {
         Ok(Self { usable, pages })
     }
 
-    /// Read every row of the rowid table rooted at `root`, in rowid order.
     pub(crate) fn walk_table(&self, root: u32) -> Result<Vec<TableRow>, StoreError> {
         let mut rows = Vec::new();
         let mut visited = BTreeSet::new();
@@ -150,8 +123,6 @@ impl SqliteImage {
         Ok(())
     }
 
-    /// Resolve one cell pointer. Pointers are page-relative, so page 1
-    /// pointers clear the 100-byte database header before indexing the area.
     fn cell_at(area: &[u8], base: usize, offset: usize) -> Result<&[u8], StoreError> {
         let pointer = usize::from(read_u16(area, offset)?);
         let start = pointer.checked_sub(base).ok_or(StoreError::Malformed)?;
@@ -229,11 +200,6 @@ impl SqliteImage {
     }
 }
 
-/// Overlay committed WAL frames onto the page image.
-///
-/// Only frames at or before the last commit marker are applied; a torn
-/// trailing frame is ignored. The page vector may grow: WAL frames can extend
-/// the database, but never beyond the frames actually present.
 fn apply_wal(pages: &mut Vec<Vec<u8>>, page_size: usize, wal: &[u8]) -> Result<(), StoreError> {
     if wal.is_empty() {
         return Ok(());
@@ -293,32 +259,22 @@ fn apply_wal(pages: &mut Vec<Vec<u8>>, page_size: usize, wal: &[u8]) -> Result<(
     Ok(())
 }
 
-/// One decoded rowid-table row.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TableRow {
-    /// Row identifier; walks yield rows in ascending order.
     pub(crate) rowid: i64,
-    /// Column values in table-definition order.
     pub(crate) values: Vec<SqlValue>,
 }
 
-/// Minimal `SQLite` value surface: enough for text credentials.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum SqlValue {
-    /// SQL NULL.
     Null,
-    /// Signed integer.
     Int(i64),
-    /// IEEE-754 float.
     Float(f64),
-    /// UTF-8 text.
     Text(String),
-    /// Raw blob.
     Blob(Vec<u8>),
 }
 
 impl SqlValue {
-    /// Borrow the value when it is text.
     pub(crate) fn as_text(&self) -> Option<&str> {
         match self {
             Self::Text(value) => Some(value),
@@ -326,7 +282,6 @@ impl SqlValue {
         }
     }
 
-    /// Copy the value when it is an integer.
     pub(crate) fn as_int(&self) -> Option<i64> {
         match self {
             Self::Int(value) => Some(*value),
@@ -355,7 +310,6 @@ fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, StoreError> {
     Ok(u32::from_be_bytes(quad))
 }
 
-/// Decode a `SQLite` varint, returning the value and bytes consumed.
 fn read_varint(bytes: &[u8], offset: usize) -> Result<(u64, usize), StoreError> {
     let mut value: u64 = 0;
     for index in 0..8_usize {
@@ -371,7 +325,6 @@ fn read_varint(bytes: &[u8], offset: usize) -> Result<(u64, usize), StoreError> 
     Ok(((value << 8) | u64::from(byte), 9))
 }
 
-/// Decode one record payload into column values.
 fn parse_record(payload: &[u8]) -> Result<Vec<SqlValue>, StoreError> {
     let (header_len, mut at) = read_varint(payload, 0)?;
     let header_len = usize::try_from(header_len).map_err(|_| StoreError::Malformed)?;
@@ -448,7 +401,6 @@ fn read_serial_value(
     }
 }
 
-/// Read a big-endian signed integer of `len` bytes with sign extension.
 fn read_int(payload: &[u8], at: usize, len: usize) -> Result<i64, StoreError> {
     if !(1..=8).contains(&len) {
         return Err(StoreError::Malformed);
@@ -463,9 +415,6 @@ fn read_int(payload: &[u8], at: usize, len: usize) -> Result<i64, StoreError> {
     Ok(value)
 }
 
-/// Locate table `name` in decoded `sqlite_schema` rows.
-///
-/// Returns the root page and the `CREATE TABLE` text.
 pub(crate) fn find_table_schema(schema: &[TableRow], name: &str) -> Option<(u32, String)> {
     schema.iter().find_map(|row| {
         let kind = row.values.first()?.as_text()?;
@@ -479,7 +428,6 @@ pub(crate) fn find_table_schema(schema: &[TableRow], name: &str) -> Option<(u32,
     })
 }
 
-/// Split a `CREATE TABLE` column-definition list at top-level commas.
 pub(crate) fn parse_column_names(sql: &str) -> Result<Vec<String>, StoreError> {
     let start = sql.find('(').ok_or(StoreError::Malformed)?;
     let end = sql.rfind(')').ok_or(StoreError::Malformed)?;
@@ -510,7 +458,6 @@ pub(crate) fn parse_column_names(sql: &str) -> Result<Vec<String>, StoreError> {
     Ok(columns)
 }
 
-/// Split `inner` on commas, ignoring commas inside quotes and parentheses.
 fn split_top_level(inner: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut depth = 0_usize;
@@ -550,7 +497,6 @@ fn split_top_level(inner: &str) -> Vec<&str> {
     parts
 }
 
-/// First column index whose name matches `wanted` (case-insensitive).
 pub(crate) fn find_column(columns: &[String], wanted: &[&str]) -> Option<usize> {
     wanted.iter().find_map(|name| {
         columns
@@ -559,7 +505,6 @@ pub(crate) fn find_column(columns: &[String], wanted: &[&str]) -> Option<usize> 
     })
 }
 
-/// Usable text of a value: trimmed, non-blank text or UTF-8 blob.
 pub(crate) fn text_value(value: &SqlValue) -> Option<String> {
     match value {
         SqlValue::Text(text) => (!text.trim().is_empty()).then(|| text.trim().to_owned()),

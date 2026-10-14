@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `MiniMax` snapshot entry point.
 
 use jackin_protocol::control::{FocusedUsageView, UsageSnapshotStatus};
 use jackin_usage_provider_core::{
@@ -23,7 +22,6 @@ pub fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUs
         .filter(|buckets| !buckets.is_empty())
         .unwrap_or_else(|| {
             vec![bucket(
-                // The key shape names the product even when the fetch failed.
                 match token.map(minimax_key_product) {
                     Some(MiniMaxKeyProduct::Payg) => "Balance",
                     _ => "Coding plan",

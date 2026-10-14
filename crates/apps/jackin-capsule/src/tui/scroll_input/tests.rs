@@ -33,7 +33,6 @@ fn sgr_wheel_down_increments_vertical_scroll() {
         vertical: true,
         horizontal: false,
     };
-    // bit0 set means forward, which the product adapter decodes as ScrollDown.
     assert!(apply_sgr_wheel_button(&mut scroll, 0b0001, axes));
     assert!(scroll.scroll_y > 0);
 }

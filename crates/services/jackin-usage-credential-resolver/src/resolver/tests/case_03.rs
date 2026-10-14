@@ -21,7 +21,6 @@ fn openrouter_credential_snapshot_is_supported_and_scoped_when_missing() {
 
 #[test]
 fn credential_snapshot_arms_cover_newly_wired_surfaces() {
-    // Cursor API keys cannot drive the personal dashboard: explicit gap.
     let view = provider_credential_snapshot("cursor", "CURSOR_API_KEY", "fixture-key");
     assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
     assert_eq!(view.account.provider_label, "Cursor");
@@ -30,7 +29,6 @@ fn credential_snapshot_arms_cover_newly_wired_surfaces() {
             .as_deref()
             .is_some_and(|error| error.contains("Cursor API-key"))
     );
-    // Google keys route to the real Gemini collector with the key origin.
     let view = provider_credential_snapshot("google", "GEMINI_API_KEY", "fixture-key");
     assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
     assert_eq!(view.account.provider_label, "Google");
@@ -38,7 +36,6 @@ fn credential_snapshot_arms_cover_newly_wired_surfaces() {
         view.account.credential_origin.as_deref(),
         Some("API key · env GEMINI_API_KEY")
     );
-    // Blocked surfaces keep the explicit generic fallback.
     let view = provider_credential_snapshot("meta", "META_API_KEY", "fixture-key");
     assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
     assert_eq!(view.account.provider_label, "Usage");
@@ -46,9 +43,6 @@ fn credential_snapshot_arms_cover_newly_wired_surfaces() {
 
 #[test]
 fn credential_snapshot_openrouter_arm_reads_key_quota() {
-    // Live provider read with a fixture key: `/key` rejects it, so the arm
-    // must return the collector's honest NeedsLogin/Error view — never the
-    // generic "no usage adapter" fallback, which would mean the arm is dead.
     let view = provider_credential_snapshot("openrouter", "OPENROUTER_API_KEY", "fixture-key");
     assert_ne!(view.status, UsageSnapshotStatus::Fresh);
     assert_ne!(view.status, UsageSnapshotStatus::Unsupported);
@@ -58,8 +52,6 @@ fn credential_snapshot_openrouter_arm_reads_key_quota() {
 
 #[test]
 fn grok_env_key_only_snapshot_denies_billing_without_rpc() {
-    // The configured-source arm never attempts a billing RPC on an inference
-    // key: it reports the honest billing gap with zero network.
     for (key, origin) in [
         (
             jackin_core::XAI_API_KEY_ENV_NAME,

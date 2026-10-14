@@ -71,8 +71,6 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
 
 #[test]
 fn build_workspace_choice_ignores_missing_global_mount_sources() {
-    // Global mounts merge and heal in `resolve_load_workspace`, not here:
-    // workspace selection must not fail on a wiped cache.
     let temp = tempfile::tempdir().unwrap();
     let project_dir = temp.path().canonicalize().unwrap();
     let mut config = AppConfig::default();
@@ -238,7 +236,6 @@ fn admitted_account_choices_resolve_role_default_for_agent() {
     );
     assert_eq!(admitted.first().expect("one admitted row").name, "Z");
 
-    // The same default admits nothing for an agent with no instance in it.
     let admitted = admitted_account_choices(&config, Some(&wn("demo")), "smith", Agent::Codex)
         .unwrap()
         .expect("resolution succeeds; the admitted set is just empty for Codex");
@@ -288,7 +285,6 @@ fn account_choices_for_instances_preserve_configuration_identity_and_sort() {
         "admitted rows keep full compatibility info"
     );
 
-    // Instances naming an unregistered account are skipped, never fabricated.
     let mut foreign = instances;
     foreign.push(ResolvedInstance {
         config_id: "foreign".into(),
@@ -360,8 +356,6 @@ fn resolve_committed_agent_launch_carries_admitted_accounts() {
         vec!["a-claude", "z-claude"]
     );
 
-    // An invalid default fails the commit instead of returning the
-    // eligible list.
     config.workspaces.get_mut("demo").unwrap().default_launch = Some(vec!["ghost".into()]);
     resolve_committed_agent_launch(
         &config,

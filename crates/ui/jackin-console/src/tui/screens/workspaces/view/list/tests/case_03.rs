@@ -20,7 +20,6 @@ fn preview_environments_block_lists_envs_alphabetically_with_agent_on_right() {
     ws.roles.insert("beta".into(), beta_overrides);
 
     let joined = render_env_to_string(&ws, 60, 14);
-    // No sub-headers in the flat layout.
     assert!(
         !joined.contains("All roles:"),
         "flat layout must not render `All roles:`; got {joined}"
@@ -34,7 +33,6 @@ fn preview_environments_block_lists_envs_alphabetically_with_agent_on_right() {
         "flat layout must not render `<role>:` sub-headers; got {joined}"
     );
 
-    // Find each name's y-row to pin alphabetical ordering across scopes.
     let mut api_y: Option<u16> = None;
     let mut db_y: Option<u16> = None;
     let mut debug_y: Option<u16> = None;
@@ -63,7 +61,6 @@ fn preview_environments_block_lists_envs_alphabetically_with_agent_on_right() {
          got y=({api},{db},{debug},{log})"
     );
 
-    // Role labels live on the right edge of their row.
     for row in joined.lines() {
         if row.contains("DEBUG") {
             assert!(
@@ -84,8 +81,6 @@ fn preview_environments_block_lists_envs_alphabetically_with_agent_on_right() {
 fn preview_environments_block_omits_agents_without_overrides() {
     let mut ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
     ws.env.insert("API_KEY".into(), "literal".into());
-    // Only alpha has overrides; beta is in the allowed list but
-    // has no overrides.
     let mut alpha_overrides = jackin_config::WorkspaceRoleOverride::default();
     alpha_overrides
         .env
@@ -109,7 +104,6 @@ fn preview_environments_flat_row_workspace_level_has_no_agent_label() {
     ws.env.insert("API_KEY".into(), "literal".into());
 
     let joined = render_env_to_string(&ws, 60, 4);
-    // The row containing API_KEY must not also contain "alpha".
     let api_row = joined
         .lines()
         .find(|r| r.contains("API_KEY"))
@@ -138,7 +132,6 @@ fn preview_environments_flat_row_per_agent_has_agent_label_on_right() {
         log_row.contains("alpha"),
         "per-role row must show the role name; got `{log_row}`"
     );
-    // Role name sits to the right of the key name on the same row.
     let key_pos = log_row.find("LOG_LEVEL").unwrap();
     let agent_pos = log_row.find("alpha").unwrap();
     assert!(
@@ -163,11 +156,6 @@ fn preview_environments_agent_label_has_one_cell_right_padding() {
     .unwrap();
     let buf = term.backend().buffer();
 
-    // Find the row containing TEST5; role label `agent-brown`
-    // must end one cell before the right border so the cell at
-    // x = width - 2 (i.e. the one just inside the right border
-    // at x = width - 1) is a space, and the label's last char
-    // sits at x = width - 3.
     let mut found_row: Option<u16> = None;
     for y in 0..buf.area.height {
         let row: String = (0..width).map(|x| buf[(x, y)].symbol()).collect();
@@ -178,9 +166,6 @@ fn preview_environments_agent_label_has_one_cell_right_padding() {
     }
     let y = found_row.expect("TEST5 row must render");
 
-    // Right border is at x = width - 1 (the `│` glyph).
-    // The cell immediately inside (x = width - 2) must be blank
-    // — that's the 1-cell padding the operator asked for.
     let cell_inside_border = buf[(width - 2, y)].symbol();
     assert_eq!(
         cell_inside_border,
@@ -191,8 +176,6 @@ fn preview_environments_agent_label_has_one_cell_right_padding() {
         cell_inside_border
     );
 
-    // And the role label's last char (`n` of `agent-brown`)
-    // must sit at x = width - 3 — the cell just before the pad.
     let label_last = buf[(width - 3, y)].symbol();
     assert_eq!(
         label_last,
@@ -221,7 +204,6 @@ fn preview_environments_same_key_in_workspace_and_agent_renders_two_rows() {
         2,
         "API_KEY must appear in TWO rows (workspace + alpha); got rows={api_rows:?}"
     );
-    // Workspace row first (no role label), role row second.
     assert!(
         !api_rows[0].contains("alpha"),
         "first API_KEY row must be workspace-level (no role label); got `{}`",
@@ -249,7 +231,6 @@ fn preview_environments_sorts_alphabetically_across_scopes() {
     ws.roles.insert("agent-brown".into(), brown);
 
     let joined = render_env_to_string(&ws, 60, 8);
-    // Capture the y-row of each env-key name and assert ordering.
     let mut order: Vec<(&str, usize)> = Vec::new();
     for (y, row) in joined.lines().enumerate() {
         for key in ["API_KEY", "DB_URL", "DEBUG", "LOG_LEVEL"] {
@@ -311,7 +292,6 @@ fn preview_environments_marks_op_references_with_op_marker() {
 
 #[test]
 fn preview_omits_environments_block_when_workspace_has_no_env_vars() {
-    // Empty workspace env, no role overrides.
     let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
 
     let mut cfg = AppConfig::default();

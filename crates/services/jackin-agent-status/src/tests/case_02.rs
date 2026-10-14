@@ -5,8 +5,6 @@ use super::*;
 
 #[test]
 fn report_attributes_source_by_winner_when_authority_did_not_win() {
-    // For every non-authority winner, report() maps the source from the winning
-    // channel — never Reported (that is reserved for EvidenceWinner::Authority).
     let cases = [
         (
             evidence::EvidenceWinner::Physics,

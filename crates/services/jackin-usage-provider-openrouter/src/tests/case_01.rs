@@ -182,7 +182,6 @@ fn openrouter_model_catalog_omission_is_unverified_not_rejection() {
 
 #[test]
 fn openrouter_base_url_prefers_api_url_override() {
-    // Hermetic: the pure resolver, so live env can never vacate this test.
     assert_eq!(
         openrouter_base_url_from(None, None),
         OPENROUTER_DEFAULT_BASE_URL
@@ -203,7 +202,6 @@ fn openrouter_base_url_prefers_api_url_override() {
 
 #[test]
 fn openrouter_byok_fallback_ignores_caps() {
-    // A `byok_limit` cap is not spend: the fallback must not read it.
     let quota = parse_openrouter_key_usage(
         serde_json::json!({
             "data": {
@@ -222,7 +220,6 @@ fn openrouter_byok_fallback_ignores_caps() {
             .all(|bucket| bucket.label != "BYOK spend"),
         "caps never become a spend row"
     );
-    // …while a genuinely spend-named fallback key still counts.
     let quota = parse_openrouter_key_usage(
         serde_json::json!({
             "data": {"usage_monthly": 12.5, "byok_spend_total": 3.0}
@@ -262,8 +259,6 @@ fn openrouter_snapshot_with_base_serves_key_quota_from_canned_api() {
 
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
-    // One `/key` read; `/credits` is skipped unless the key read is Fresh,
-    // and the fixture parses Fresh — so serve both.
     let server = std::thread::spawn(move || {
         for _ in 0..2 {
             let (mut stream, _) = listener.accept().unwrap();

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings modal impls.
 
 use super::{GlobalMountConfirm, SettingsModal, footer_items_for_mode};
 
@@ -71,8 +70,6 @@ where
         }
     }
 
-    /// Overlay kind for the stack entry: confirm-class blockers are alert
-    /// dialogs; behavior comes from the explicit policy, not the preset.
     #[must_use]
     pub const fn overlay_kind(&self) -> termrock::interaction::OverlayKind {
         match self {
@@ -83,9 +80,6 @@ where
         }
     }
 
-    /// Esc classification: file-browser and op-picker components spend Esc
-    /// on internal back-navigation first; every other variant cancels
-    /// outright.
     #[must_use]
     pub const fn dismiss_policy(&self) -> termrock::interaction::DismissPolicy {
         let escape = match self {
@@ -98,8 +92,6 @@ where
         crate::tui::components::modal_overlay::console_modal_dismiss_policy(escape)
     }
 
-    /// Preferred overlay size: the retired `ModalRectMode` numbers, kept
-    /// byte-identical per variant.
     #[must_use]
     pub fn overlay_size(&self, outer: ratatui::layout::Rect) -> termrock::interaction::OverlaySize {
         match self {
@@ -138,7 +130,6 @@ where
         }
     }
 
-    /// Stack-resolved modal rect.
     #[must_use]
     pub fn rect(&self, outer: ratatui::layout::Rect) -> ratatui::layout::Rect {
         modal_overlay_rect(

@@ -13,39 +13,41 @@ use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 use jackin_telemetry::spawn::JoinSetExt as _;
 
-/// `jackin prewarm` — fill jackin-owned runtime caches before launch.
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     before_help = BANNER,
     styles = HELP_STYLES,
     about = "Prewarm jackin-owned runtime caches before launch"
 )]
+#[command(
+    about = "`jackin prewarm` — fill jackin-owned runtime caches before launch.",
+    long_about = "`jackin prewarm` — fill jackin-owned runtime caches before launch."
+)]
 pub struct PrewarmArgs {
-    /// Agent runtime binary to prewarm. Repeat to choose several. Defaults to all agents.
-    #[arg(long = "agent", value_parser = parse_agent)]
+    #[arg(help = "Agent runtime binary to prewarm. Repeat to choose several. Defaults to all agents.", long_help = "Agent runtime binary to prewarm. Repeat to choose several. Defaults to all agents.", long = "agent", value_parser = parse_agent)]
     pub agents: Vec<Agent>,
     #[command(flatten)]
     pub flags: PrewarmFlags,
 
-    /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
-    #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
+    #[arg(help = "Role selector whose repo cache and/or derived image(s) should be prewarmed.", long_help = "Role selector whose repo cache and/or derived image(s) should be prewarmed.", long, conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
-    /// Saved workspace whose default role repo and/or agent image should be prewarmed.
-    #[arg(long, conflicts_with_all = ["role", "all_workspaces"])]
+    #[arg(help = "Saved workspace whose default role repo and/or agent image should be prewarmed.", long_help = "Saved workspace whose default role repo and/or agent image should be prewarmed.", long, conflicts_with_all = ["role", "all_workspaces"])]
     pub workspace: Option<String>,
 
-    /// Role git URL override for role/image prewarm. Defaults to configured role source.
-    #[arg(long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
+    #[arg(help = "Role git URL override for role/image prewarm. Defaults to configured role source.", long_help = "Role git URL override for role/image prewarm. Defaults to configured role source.", long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role_git: Option<String>,
-    /// Role branch to prewarm. Uses branch-scoped image tags.
-    #[arg(long, requires = "image")]
+    #[arg(
+        help = "Role branch to prewarm. Uses branch-scoped image tags.",
+        long_help = "Role branch to prewarm. Uses branch-scoped image tags.",
+        long,
+        requires = "image"
+    )]
     pub role_branch: Option<String>,
 }
 
 #[cfg(test)]
 mod tests;
 
-/// Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics).
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Eight orthogonal CLI flag booleans (image, daemon, roles, sidecar, \
@@ -55,30 +57,51 @@ mod tests;
               this struct flattens into."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::Args)]
+#[command(
+    about = "Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics).",
+    long_about = "Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics)."
+)]
 pub struct PrewarmFlags {
-    /// Also prewarm derived Docker image(s) for a role.
-    #[arg(long)]
+    #[arg(
+        help = "Also prewarm derived Docker image(s) for a role.",
+        long_help = "Also prewarm derived Docker image(s) for a role.",
+        long
+    )]
     pub image: bool,
-    /// Prewarm a kept Docker-in-Docker daemon for one-shot adoption by the next fresh launch.
-    #[arg(long)]
+    #[arg(
+        help = "Prewarm a kept Docker-in-Docker daemon for one-shot adoption by the next fresh launch.",
+        long_help = "Prewarm a kept Docker-in-Docker daemon for one-shot adoption by the next fresh launch.",
+        long
+    )]
     pub daemon: bool,
-    /// Also prefetch/update every configured role repo cache.
-    #[arg(long)]
+    #[arg(
+        help = "Also prefetch/update every configured role repo cache.",
+        long_help = "Also prefetch/update every configured role repo cache.",
+        long
+    )]
     pub roles: bool,
-    /// Also prewarm the Docker-in-Docker sidecar image used by fresh launches.
-    #[arg(long)]
+    #[arg(
+        help = "Also prewarm the Docker-in-Docker sidecar image used by fresh launches.",
+        long_help = "Also prewarm the Docker-in-Docker sidecar image used by fresh launches.",
+        long
+    )]
     pub sidecar: bool,
-    /// Also start a disposable Docker-in-Docker sidecar and wait for readiness.
-    #[arg(long)]
+    #[arg(
+        help = "Also start a disposable Docker-in-Docker sidecar and wait for readiness.",
+        long_help = "Also start a disposable Docker-in-Docker sidecar and wait for readiness.",
+        long
+    )]
     pub sidecar_container: bool,
-    /// Keep the prewarmed sidecar container running for future daemon/runtime reuse.
-    #[arg(long, requires = "sidecar_container")]
+    #[arg(
+        help = "Keep the prewarmed sidecar container running for future daemon/runtime reuse.",
+        long_help = "Keep the prewarmed sidecar container running for future daemon/runtime reuse.",
+        long,
+        requires = "sidecar_container"
+    )]
     pub keep_sidecar_container: bool,
-    /// Prewarm targets for every saved workspace with a default role.
-    #[arg(long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]
+    #[arg(help = "Prewarm targets for every saved workspace with a default role.", long_help = "Prewarm targets for every saved workspace with a default role.", long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]
     pub all_workspaces: bool,
-    /// Prewarm image targets for every configured role.
-    #[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]
+    #[arg(help = "Prewarm image targets for every configured role.", long_help = "Prewarm image targets for every configured role.", long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]
     pub all_roles: bool,
 }
 
@@ -353,10 +376,6 @@ async fn prewarm_role_repos(
     }
 }
 
-/// Resolve a role's git source: prefer an explicit `--role-git` override, else
-/// look it up in `config.roles[selector]`. On miss, the error suggests
-/// `--role-git` only when `suggest_role_git_flag` is set — the flag conflicts
-/// with `--workspace`/`--all-workspaces`, so the workspace path must not hint it.
 fn resolve_role_git(
     config: &AppConfig,
     selector: &RoleSelector,

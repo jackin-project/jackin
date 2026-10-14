@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Restore candidates: discovery, the launch-dialog choice, and
-//! preserved-status persistence.
-//!
-//! Split out of `jackin-runtime` (S7 split 89); the old
-//! `jackin_runtime::runtime::launch::restore::*` paths keep working through
-//! the hub shim re-export.
-
 use super::restore_resolve::RestoreResolution;
 use jackin_core::JackinPaths;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
@@ -15,11 +8,6 @@ use jackin_instance::{InstanceIndex, InstanceManifest, InstanceQuery, InstanceSt
 use jackin_runtime_launch_attach_outcome::attach_outcome::write_instance_status;
 use jackin_runtime_launch_load_options::load_options::LoadOptions;
 
-/// Build a `LaunchCandidate` for an `InstanceManifest` by reading its
-/// isolation records and pre-fetching changed file content for D24 inspect.
-///
-/// `pub` (not `pub(crate)`) so the hub `launch::restore` suite — which stays
-/// in `jackin-runtime` — keeps naming it through the hub shim re-export.
 pub fn launch_candidate_for_manifest(
     paths: &JackinPaths,
     manifest: &InstanceManifest,
@@ -54,12 +42,6 @@ pub fn launch_candidate_for_manifest(
     })
 }
 
-/// D23/D21: launch dialog with Del-to-delete and I-to-inspect (D24).
-///
-/// Builds `LaunchCandidate` objects from `candidates` + `related`, shows the
-/// picker through the live launch surface or a standalone surface, and maps
-/// the result back to `RestoreResolution`. `Delete(i)` returns
-/// `PurgeAndRestartFresh` — the caller purges then restarts fresh.
 pub fn present_restore_choice(
     progress: Option<&mut jackin_runtime_progress::progress::LaunchProgress>,
     paths: &JackinPaths,
@@ -68,7 +50,6 @@ pub fn present_restore_choice(
     candidates: Vec<InstanceManifest>,
     related: &[RelatedRestoreCandidate],
 ) -> anyhow::Result<RestoreResolution> {
-    // Build candidate list (same-role first, then related).
     let mut launch_candidates: Vec<jackin_core::LaunchCandidate> = candidates
         .iter()
         .map(|manifest| {
@@ -237,10 +218,6 @@ pub fn related_restore_load_options(
     })
 }
 
-/// Render the launch-dialog label for `manifest` (test seam shared with the
-/// hub suite; un-gated at the split-89 move like split 87's `git_program`: a
-/// `cfg(test)` fn would vanish from the leaf's non-test build that hub tests
-/// link against).
 #[expect(
     clippy::unwrap_used,
     reason = "un-gated test seam: unwrap inherited from hub cfg(test) code, reachable only from hub tests"
@@ -323,11 +300,6 @@ pub fn matching_current_role_manifests(
     )
 }
 
-/// Persist `Preserved`-tier status when `finalize_foreground_session`
-/// decides to keep the isolation state. No-op for any other decision;
-/// both the first finalize pass and the post-restart retry pass call
-/// this so a future field added under the `Preserved` arm cannot drift
-/// between them.
 pub fn write_preserved_status_if_applicable(
     decision: jackin_runtime_isolation::isolation::finalize::FinalizeDecision,
     paths: &JackinPaths,

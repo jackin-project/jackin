@@ -1,8 +1,3 @@
-//! Behavioral APIs for daemon-owned state groups.
-//!
-//! The Multiplexer coordinates these owners; invariant-preserving reads and
-//! transitions live here so new daemon state does not leak back into the shell.
-
 use super::{
     ClipboardState, ControlRouting, Dialog, LaunchEnv, PrWatch, PullRequestInfo, RenderState,
     StatusState, UsageState,

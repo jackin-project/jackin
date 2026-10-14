@@ -32,7 +32,6 @@ mod verify;
 #[cfg(test)]
 use verify::{normalize_usage_provider_label, verify_usage_accounts};
 
-/// `jackin usage` — broker-owned cached usage and durable monitor operations.
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     about = "Read broker-owned cached usage or manage durable Claude quota monitors",
@@ -40,72 +39,78 @@ use verify::{normalize_usage_provider_label, verify_usage_accounts};
         Explicit monitor and service start commands may start a local-only broker. Monitor state and policy decisions are durable.\n\
         All monitor evidence is local; statusline observations do not contain spend."
 )]
+#[command(
+    about = "`jackin usage` — broker-owned cached usage and durable monitor operations.",
+    long_about = "`jackin usage` — broker-owned cached usage and durable monitor operations."
+)]
 pub struct UsageArgs {
-    /// Instance name for Capsule account inspection, or `cache` for the host account cache
+    #[arg(
+        help = "Instance name for Capsule account inspection, or `cache` for the host account cache",
+        long_help = "Instance name for Capsule account inspection, or `cache` for the host account cache"
+    )]
     pub instance: Option<String>,
     #[command(subcommand)]
     pub scope: Option<UsageScope>,
-    /// Output format
-    #[arg(long, global = true, value_name = "FORMAT", default_value = "human")]
+    #[arg(
+        help = "Output format",
+        long_help = "Output format",
+        long,
+        global = true,
+        value_name = "FORMAT",
+        default_value = "human"
+    )]
     pub format: String,
-    /// Use an isolated jackin data directory for this usage operation
-    #[arg(long, global = true, value_name = "PATH")]
+    #[arg(
+        help = "Use an isolated jackin data directory for this usage operation",
+        long_help = "Use an isolated jackin data directory for this usage operation",
+        long,
+        global = true,
+        value_name = "PATH"
+    )]
     pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageScope {
-    /// Show cached provider account/quota buckets
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Show cached provider account/quota buckets", long_about = "Show cached provider account/quota buckets", before_help = BANNER, styles = HELP_STYLES)]
     Accounts(UsageAccountsArgs),
-    /// Verify all provider quota rows are present and trusted
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Verify all provider quota rows are present and trusted", long_about = "Verify all provider quota rows are present and trusted", before_help = BANNER, styles = HELP_STYLES)]
     Verify,
-    /// Run passive readiness checks without accessing credentials or providers
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Run passive readiness checks without accessing credentials or providers", long_about = "Run passive readiness checks without accessing credentials or providers", before_help = BANNER, styles = HELP_STYLES)]
     Doctor(UsageDoctorArgs),
-    /// Manage the local-only usage broker
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Manage the local-only usage broker", long_about = "Manage the local-only usage broker", before_help = BANNER, styles = HELP_STYLES)]
     Service(UsageServiceArgs),
-    /// Manage an unattended quota monitor
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Manage an unattended quota monitor", long_about = "Manage an unattended quota monitor", before_help = BANNER, styles = HELP_STYLES)]
     Monitor(UsageMonitorArgs),
-    /// Confirm a provider account identity binding for quota monitoring
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Confirm a provider account identity binding for quota monitoring", long_about = "Confirm a provider account identity binding for quota monitoring", before_help = BANNER, styles = HELP_STYLES)]
     Binding(UsageBindingArgs),
-    /// Approve a durable quota-monitor policy for a bound account and goal
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Approve a durable quota-monitor policy for a bound account and goal", long_about = "Approve a durable quota-monitor policy for a bound account and goal", before_help = BANNER, styles = HELP_STYLES)]
     Policy(UsagePolicyArgs),
-    /// Read the status of a durable monitor
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Read the status of a durable monitor", long_about = "Read the status of a durable monitor", before_help = BANNER, styles = HELP_STYLES)]
     Status(UsageMonitorIdArgs),
-    /// Reconcile a monitor against local evidence without provider refresh
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Reconcile a monitor against local evidence without provider refresh", long_about = "Reconcile a monitor against local evidence without provider refresh", before_help = BANNER, styles = HELP_STYLES)]
     Refresh(UsageMonitorIdArgs),
-    /// Stream new monitor events as JSON Lines
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Stream new monitor events as JSON Lines", long_about = "Stream new monitor events as JSON Lines", before_help = BANNER, styles = HELP_STYLES)]
     Watch(UsageWatchArgs),
-    /// Wait for runnable evidence for a bounded time
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Wait for runnable evidence for a bounded time", long_about = "Wait for runnable evidence for a bounded time", before_help = BANNER, styles = HELP_STYLES)]
     Wait(UsageWaitArgs),
-    /// Ingest or compose Claude Code statusline integration
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Ingest or compose Claude Code statusline integration", long_about = "Ingest or compose Claude Code statusline integration", before_help = BANNER, styles = HELP_STYLES)]
     Statusline(UsageStatuslineArgs),
-    /// Record an explicit account-bound spend baseline
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Record an explicit account-bound spend baseline", long_about = "Record an explicit account-bound spend baseline", before_help = BANNER, styles = HELP_STYLES)]
     Spend(UsageSpendArgs),
-    /// Prepare provider authentication in an attached terminal
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Prepare provider authentication in an attached terminal", long_about = "Prepare provider authentication in an attached terminal", before_help = BANNER, styles = HELP_STYLES)]
     Auth(UsageAuthArgs),
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct UsageAccountsArgs {
-    /// Also upsert returned rows into ~/.jackin/data/daemon/accounts.db.
-    ///
-    /// This is an explicit host-side write for seeding the host-global usage
-    /// cache before a long-running host daemon owns account refresh.
-    #[arg(long)]
+    #[arg(
+        help = "Also upsert returned rows into ~/.jackin/data/daemon/accounts.db.",
+        long_help = "Also upsert returned rows into ~/.jackin/data/daemon/accounts.db.
+
+This is an explicit host-side write for seeding the host-global usage cache before a long-running host daemon owns account refresh.",
+        long
+    )]
     pub sync_host_cache: bool,
 }
 
@@ -126,8 +131,12 @@ impl From<UsageProviderArg> for MonitorProvider {
 pub struct UsageDoctorArgs {
     #[arg(long, value_enum, required = true)]
     pub provider: UsageProviderArg,
-    /// Require a noninteractive readiness report
-    #[arg(long, required = true)]
+    #[arg(
+        help = "Require a noninteractive readiness report",
+        long_help = "Require a noninteractive readiness report",
+        long,
+        required = true
+    )]
     pub unattended: bool,
 }
 
@@ -139,11 +148,20 @@ pub struct UsageServiceArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageServiceCommand {
-    /// Start the local-only broker explicitly
+    #[command(
+        about = "Start the local-only broker explicitly",
+        long_about = "Start the local-only broker explicitly"
+    )]
     Start,
-    /// Stop the already-running broker
+    #[command(
+        about = "Stop the already-running broker",
+        long_about = "Stop the already-running broker"
+    )]
     Stop,
-    /// Read local broker status without starting it
+    #[command(
+        about = "Read local broker status without starting it",
+        long_about = "Read local broker status without starting it"
+    )]
     Status,
 }
 
@@ -155,11 +173,17 @@ pub struct UsageMonitorArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageMonitorCommand {
-    /// Start an observation-only monitor and the local-only broker if needed
+    #[command(
+        about = "Start an observation-only monitor and the local-only broker if needed",
+        long_about = "Start an observation-only monitor and the local-only broker if needed"
+    )]
     Observe(UsageMonitorObserveArgs),
-    /// Start dispatch guard using an already approved policy
+    #[command(
+        about = "Start dispatch guard using an already approved policy",
+        long_about = "Start dispatch guard using an already approved policy"
+    )]
     Start(UsageMonitorStartArgs),
-    /// Stop one monitor
+    #[command(about = "Stop one monitor", long_about = "Stop one monitor")]
     Stop(UsageMonitorIdArgs),
 }
 
@@ -187,11 +211,21 @@ pub struct UsageMonitorStartArgs {
 pub struct UsageMonitorObserveArgs {
     #[arg(long, value_enum, required = true)]
     pub provider: UsageProviderArg,
-    /// Unbound observer scope. If omitted, pass `--binding` and its revision.
-    #[arg(long, value_name = "ID", required_unless_present = "binding")]
+    #[arg(
+        help = "Unbound observer scope. If omitted, pass `--binding` and its revision.",
+        long_help = "Unbound observer scope. If omitted, pass `--binding` and its revision.",
+        long,
+        value_name = "ID",
+        required_unless_present = "binding"
+    )]
     pub session: Option<String>,
-    /// Previously confirmed account binding
-    #[arg(long, value_name = "ID", requires = "binding_revision")]
+    #[arg(
+        help = "Previously confirmed account binding",
+        long_help = "Previously confirmed account binding",
+        long,
+        value_name = "ID",
+        requires = "binding_revision"
+    )]
     pub binding: Option<String>,
     #[arg(long, value_name = "REVISION", requires = "binding")]
     pub binding_revision: Option<u64>,
@@ -199,8 +233,11 @@ pub struct UsageMonitorObserveArgs {
     pub idempotency_key: String,
     #[arg(long, value_name = "MODEL")]
     pub expected_model: Option<String>,
-    /// Opt into the experimental collector for a bound Claude account.
-    #[arg(long)]
+    #[arg(
+        help = "Opt into the experimental collector for a bound Claude account.",
+        long_help = "Opt into the experimental collector for a bound Claude account.",
+        long
+    )]
     pub experimental_collector: bool,
 }
 
@@ -212,7 +249,10 @@ pub struct UsageBindingArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageBindingCommand {
-    /// Confirm that one local account label represents the selected provider account
+    #[command(
+        about = "Confirm that one local account label represents the selected provider account",
+        long_about = "Confirm that one local account label represents the selected provider account"
+    )]
     Confirm(UsageBindingConfirmArgs),
 }
 
@@ -222,16 +262,27 @@ pub struct UsageBindingConfirmArgs {
     pub provider: UsageProviderArg,
     #[arg(long, value_name = "ACCOUNT", required = true)]
     pub account: String,
-    /// Opaque source capability ID reported by the foreground service status.
-    #[arg(long = "source-capability-id", value_name = "SOURCE_ID")]
+    #[arg(
+        help = "Opaque source capability ID reported by the foreground service status.",
+        long_help = "Opaque source capability ID reported by the foreground service status.",
+        long = "source-capability-id",
+        value_name = "SOURCE_ID"
+    )]
     pub source_capability_id: Option<String>,
-    /// Approve the mapped source for the experimental Claude collector.
-    #[arg(long)]
+    #[arg(
+        help = "Approve the mapped source for the experimental Claude collector.",
+        long_help = "Approve the mapped source for the experimental Claude collector.",
+        long
+    )]
     pub approve_experimental_collector: bool,
     #[arg(long, value_name = "LABEL", required = true)]
     pub operator_label: String,
-    /// Confirm this operator-supplied account binding
-    #[arg(long, required = true)]
+    #[arg(
+        help = "Confirm this operator-supplied account binding",
+        long_help = "Confirm this operator-supplied account binding",
+        long,
+        required = true
+    )]
     pub confirm: bool,
 }
 
@@ -258,7 +309,10 @@ pub struct UsagePolicyArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsagePolicyCommand {
-    /// Explicitly approve a durable policy for one bound account and goal
+    #[command(
+        about = "Explicitly approve a durable policy for one bound account and goal",
+        long_about = "Explicitly approve a durable policy for one bound account and goal"
+    )]
     Approve(UsagePolicyApproveArgs),
 }
 
@@ -272,16 +326,22 @@ pub struct UsagePolicyApproveArgs {
     pub goal: String,
     #[arg(long, value_enum, required = true)]
     pub policy: UsageMonitorPolicyArg,
-    /// SGD budget ceiling for strict-sgd, e.g. `50.25` (default `50`)
-    #[arg(long, value_name = "SGD", value_parser = parse_sgd_budget_arg)]
+    #[arg(help = "SGD budget ceiling for strict-sgd, e.g. `50.25` (default `50`)", long_help = "SGD budget ceiling for strict-sgd, e.g. `50.25` (default `50`)", long, value_name = "SGD", value_parser = parse_sgd_budget_arg)]
     pub budget_sgd: Option<String>,
     #[arg(long, value_name = "LABEL", required = true)]
     pub operator_label: String,
-    /// Confirm this persisted policy change
-    #[arg(long, required = true)]
+    #[arg(
+        help = "Confirm this persisted policy change",
+        long_help = "Confirm this persisted policy change",
+        long,
+        required = true
+    )]
     pub confirm: bool,
-    /// Acknowledge that quota-only has no SGD spend cap
-    #[arg(long)]
+    #[arg(
+        help = "Acknowledge that quota-only has no SGD spend cap",
+        long_help = "Acknowledge that quota-only has no SGD spend cap",
+        long
+    )]
     pub acknowledge_no_sgd_cap: bool,
     #[arg(long, value_name = "REVISION")]
     pub expected_revision: Option<u64>,
@@ -297,8 +357,7 @@ pub struct UsageMonitorIdArgs {
 pub struct UsageWatchArgs {
     #[arg(long, value_name = "ID", required = true)]
     pub monitor: String,
-    /// Bound watch duration; without this option, stream until interrupted
-    #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..=300))]
+    #[arg(help = "Bound watch duration; without this option, stream until interrupted", long_help = "Bound watch duration; without this option, stream until interrupted", long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..=300))]
     pub timeout_secs: Option<u64>,
 }
 
@@ -313,8 +372,7 @@ pub struct UsageWaitArgs {
     pub monitor: String,
     #[arg(long, value_enum, required = true)]
     pub until: UsageWaitCondition,
-    /// Maximum wait duration, clamped to five minutes
-    #[arg(long = "timeout-secs", default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=300))]
+    #[arg(help = "Maximum wait duration, clamped to five minutes", long_help = "Maximum wait duration, clamped to five minutes", long = "timeout-secs", default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=300))]
     pub timeout_secs: u64,
 }
 
@@ -326,9 +384,15 @@ pub struct UsageStatuslineArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageStatuslineCommand {
-    /// Ingest one bounded JSON document from stdin
+    #[command(
+        about = "Ingest one bounded JSON document from stdin",
+        long_about = "Ingest one bounded JSON document from stdin"
+    )]
     Ingest(UsageStatuslineIngestArgs),
-    /// Print a statusLine-only settings merge patch with a composed command
+    #[command(
+        about = "Print a statusLine-only settings merge patch with a composed command",
+        long_about = "Print a statusLine-only settings merge patch with a composed command"
+    )]
     Compose(UsageStatuslineComposeArgs),
 }
 
@@ -348,11 +412,21 @@ pub struct UsageStatuslineComposeArgs {
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct UsageStatuslineScopeArgs {
-    /// Ingest this callback only under its session ID from the JSON payload
-    #[arg(long, required_unless_present = "binding", conflicts_with = "binding")]
+    #[arg(
+        help = "Ingest this callback only under its session ID from the JSON payload",
+        long_help = "Ingest this callback only under its session ID from the JSON payload",
+        long,
+        required_unless_present = "binding",
+        conflicts_with = "binding"
+    )]
     pub session_only: bool,
-    /// Previously confirmed account binding
-    #[arg(long, value_name = "ID", requires = "binding_revision")]
+    #[arg(
+        help = "Previously confirmed account binding",
+        long_help = "Previously confirmed account binding",
+        long,
+        value_name = "ID",
+        requires = "binding_revision"
+    )]
     pub binding: Option<String>,
     #[arg(long, value_name = "REVISION", requires = "binding")]
     pub binding_revision: Option<u64>,
@@ -366,7 +440,10 @@ pub struct UsageSpendArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageSpendCommand {
-    /// Record a bounded JSON spend observation from an operator-supplied file
+    #[command(
+        about = "Record a bounded JSON spend observation from an operator-supplied file",
+        long_about = "Record a bounded JSON spend observation from an operator-supplied file"
+    )]
     Record(UsageSpendRecordArgs),
 }
 
@@ -376,8 +453,11 @@ pub struct UsageSpendRecordArgs {
     pub account: String,
     #[arg(long, value_name = "PATH", required = true)]
     pub file: PathBuf,
-    /// Operator attestation only; this does not prove a provider billing record
-    #[arg(long)]
+    #[arg(
+        help = "Operator attestation only; this does not prove a provider billing record",
+        long_help = "Operator attestation only; this does not prove a provider billing record",
+        long
+    )]
     pub verified: bool,
 }
 
@@ -389,7 +469,10 @@ pub struct UsageAuthArgs {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageAuthCommand {
-    /// Explicitly request interactive authentication preparation
+    #[command(
+        about = "Explicitly request interactive authentication preparation",
+        long_about = "Explicitly request interactive authentication preparation"
+    )]
     Prepare(UsageProviderArgs),
 }
 
@@ -397,13 +480,15 @@ pub enum UsageAuthCommand {
 pub struct UsageProviderArgs {
     #[arg(long, value_enum, required = true)]
     pub provider: UsageProviderArg,
-    /// Explicit Claude Keychain generic-password service name
-    #[arg(long, value_name = "SERVICE")]
+    #[arg(
+        help = "Explicit Claude Keychain generic-password service name",
+        long_help = "Explicit Claude Keychain generic-password service name",
+        long,
+        value_name = "SERVICE"
+    )]
     pub keychain_service: Option<String>,
 }
 
-/// A stable machine-readable CLI failure. `main.rs` prints `json` to stdout
-/// and uses `exit_code` instead of rendering this error to stderr.
 #[derive(Debug, thiserror::Error)]
 #[error("{json}")]
 pub struct UsageCommandExit {
@@ -491,8 +576,6 @@ fn with_data_dir(paths: &JackinPaths, data_dir: Option<&std::path::Path>) -> Jac
     paths
 }
 
-/// Bare `usage` only reads an already-published broker projection. It never
-/// starts a service, discovers accounts, resolves credentials, or refreshes.
 fn run_bare_host(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     let client =
         jackin_usage::host::UsageBrokerConfig::for_data_dir(paths.data_dir.clone()).client();
@@ -1094,10 +1177,6 @@ fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
     let deadline = args
         .timeout_secs
         .map(|timeout| Instant::now() + Duration::from_secs(timeout.min(300)));
-    // The broker treats cursor zero as a fresh attach: it reconciles the
-    // monitor and returns only the newest current event, never the retained
-    // history. Later requests continue from the cursor returned with that
-    // current snapshot, so old runnable events cannot act as current state.
     let mut sequence = 0_u64;
     loop {
         let timeout_ms = watch_timeout_ms(deadline, Instant::now());
@@ -1135,7 +1214,6 @@ fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
             }
             println!("{}", serde_json::to_string(&event)?);
         }
-        // A broker timeout ends one bounded RPC. Only the CLI deadline ends a finite watch.
         if watch_deadline_reached(deadline, Instant::now()) {
             return Ok(());
         }

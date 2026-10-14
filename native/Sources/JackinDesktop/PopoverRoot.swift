@@ -39,7 +39,6 @@ extension EnvironmentValues {
     }
 }
 
-/// Focused-provider glance hosted by the real system `NSPopover`.
 public struct PopoverRoot: View {
     public static let liveContentSize = CGSize(width: 380, height: 520)
 

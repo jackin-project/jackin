@@ -324,7 +324,6 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
 
     mux.update_pointer_shape_for_mouse(
         row.saturating_add(1),
-        // Hover the value column (the cyan link), past the widest label.
         col.saturating_add(22),
         SGR_NO_BUTTON_MOTION,
     );

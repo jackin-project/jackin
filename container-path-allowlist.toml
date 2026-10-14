@@ -1,6 +1,3 @@
-# Residual production `"/jackin` string-literal ledger + forbidden-root exceptions
-# (shrink-only). New container paths must go through jackin_core::container_paths.
-# Regenerate draft: cargo xtask lint container-paths --print-allowlist
 
 [[file]]
 path = "crates/core/jackin-core/src/container_paths.rs"
@@ -12,9 +9,6 @@ path = "crates/adapters/jackin-image/src/derived_image.rs"
 literals = 4
 note = "Dockerfile template bodies embed shell path strings; values must stay byte-identical to the image contract"
 
-# Forbidden absolute roots in production string literals (host/Docker emitters).
-# Each entry is shrink-only: remove when the path is routed through the chokepoint
-# or no longer needed.
 
 [[forbidden-roots]]
 path = "/etc/hostname"

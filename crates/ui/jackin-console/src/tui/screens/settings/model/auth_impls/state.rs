@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `SettingsAuthState` inherent methods.
 
 use super::super::{
     AccountScanOutcome, AccountScanState, AccountScanSummary, AuthKind, BTreeMap,
@@ -51,9 +50,6 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
 
     #[must_use]
     pub fn row_count(&self) -> usize {
-        // Pending accounts + "+ Add {kind}" rows + GitHub row + scan row.
-        // The scan row stays last so the GitHub index
-        // (`pending.len() + ACCOUNT_KINDS.len()`) never moves.
         self.pending.len() + ACCOUNT_KINDS.len() + 2
     }
 
@@ -101,8 +97,6 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.modals.clear();
         self.error = None;
-        // Discard orphans any in-flight scan: a stale completion must not
-        // resurrect candidates the operator just threw away.
         let generation = self.scan.generation.wrapping_add(1);
         self.scan = AccountScanState {
             generation,
@@ -252,16 +246,10 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.modals.take_current()
     }
 
-    /// Push the current auth modal onto the parent stack so a sub-modal can
-    /// open without losing the auth form's in-progress state.
     pub fn push_auth_modal(&mut self, sub_modal: Modal) {
         self.modals.open_sub(sub_modal);
     }
 
-    /// Arm a scan worker run, returning the effect the root executes.
-    /// `None` while a scan is already in flight (concurrent scans from
-    /// the UI dedupe here; concurrent scans across processes dedupe
-    /// under the config lock).
     pub fn begin_account_scan(&mut self) -> Option<SettingsEffect> {
         if self.scan.in_flight {
             return None;
@@ -273,16 +261,11 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         })
     }
 
-    /// Abandon the in-flight scan; its late completion is ignored via
-    /// the bumped generation (the worker thread itself cannot be
-    /// recalled, only orphaned).
     pub fn cancel_account_scan(&mut self) {
         self.scan.in_flight = false;
         self.scan.generation = self.scan.generation.wrapping_add(1);
     }
 
-    /// Merge a scan worker completion into the pending draft. Stale
-    /// generations are ignored; worker failures surface as panel errors.
     pub fn complete_account_scan(
         &mut self,
         generation: u64,
@@ -302,12 +285,6 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         }
     }
 
-    /// Join a scan outcome into the draft: committed accounts (already on
-    /// disk) refresh both pending and original, candidates join pending
-    /// only so Apply commits them and Cancel preserves the pre-scan
-    /// draft. IDs already present — including IDs the operator deleted
-    /// from pending — are never touched, so newer edits are never
-    /// silently overwritten.
     pub fn merge_account_scan_outcome(
         &mut self,
         outcome: &AccountScanOutcome,

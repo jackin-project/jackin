@@ -1,5 +1,3 @@
-//! Fake-port tests over the real daemon subsystem owners.
-
 use super::*;
 use crate::daemon::Dialog;
 use chrono::TimeZone;

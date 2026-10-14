@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tracks how long the operator has been "in the construct".
-//!
-//! The span runs from the launch that brought the first container up to the
-//! exit of the last one. A marker in the permanent coordination namespace
-//! holds the start instant; the exit ritual clears it to show elapsed time.
-
 use std::io::Write as _;
 use std::path::Path;
 #[cfg(test)]
@@ -83,10 +77,6 @@ fn release_marker_if_unchanged(authority: &Path, observed_generation: &str) {
     }
 }
 
-/// Claim the construct-entry boundary for an actual launch.
-///
-/// A fresh launch is one where Docker reports no running role containers and
-/// no pending claim exists for an already-starting launch.
 pub async fn claim_entry(paths: &JackinPaths, docker: &impl DockerApi) -> EntryClaim {
     let Ok(authority) = universe_authority(paths).await else {
         return EntryClaim::none(StartKind::ResumeExisting);
@@ -119,8 +109,6 @@ pub async fn claim_entry(paths: &JackinPaths, docker: &impl DockerApi) -> EntryC
             Err(_) => return EntryClaim::none(StartKind::ResumeExisting),
         }
     }
-    // Churn prevents a trustworthy empty-Docker observation, but this launch
-    // still needs its own pending lease until an actual role container exists.
     boundary_work(&authority, |authority| {
         let _lock = boundary_lock(authority)?;
         advance_generation(authority)?;
@@ -160,9 +148,6 @@ fn register_pending_entry_locked(
     Ok(Some(claim))
 }
 
-/// Record the construct's start instant. A `FreshConstruct` launch (re)writes
-/// the marker to now; a `ResumeExisting` launch only writes it if absent, so an
-/// ongoing session keeps its original start.
 pub async fn mark_start(paths: &JackinPaths, kind: StartKind) {
     let Ok(authority) = universe_authority(paths).await else {
         return;
@@ -278,8 +263,6 @@ fn write_pending_claim(authority: &Path, token: &str) -> Option<std::fs::File> {
     }
 }
 
-/// Reclaim tokens whose owning process no longer holds its advisory lease.
-/// Call only while holding the permanent boundary lock.
 fn prune_stale_pending_claims(authority: &Path) -> std::io::Result<bool> {
     let directory = pending_dir(authority);
     let parent = match jackin_runtime_coordination::coordination::open_directory_in_namespace(
@@ -377,11 +360,6 @@ fn record_exit_claim_recovery() {
     let _warning = jackin_telemetry::record_recovered_degradation();
 }
 
-/// Claim the construct-exit boundary.
-///
-/// The marker is the single-consumer close claim: whichever exit path removes
-/// it is the one that may render the rich outro. A malformed marker still
-/// grants the claim, but omits the elapsed line from the caption.
 #[must_use]
 #[cfg(any(test, feature = "test-support"))]
 pub fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
@@ -399,8 +377,6 @@ pub fn take_exit_claim(paths: &JackinPaths) -> ExitClaim {
     }
 }
 
-/// Observe Docker and claim the exit only if no launch changed the boundary
-/// while the Docker request was in flight. The file lock never crosses await.
 pub async fn observe_exit(
     paths: &JackinPaths,
     docker: &impl DockerApi,
@@ -477,8 +453,6 @@ fn take_exit_claim_locked(authority: &Path) -> ExitClaimAttempt {
         record_exit_claim_recovery();
         return ExitClaimAttempt::Complete(ExitClaim::Missing);
     }
-    // Every exit holds the same permanent lock. Read and unlink the validated
-    // marker via its pinned directory; exactly one exit can consume it.
     let content = match state_read(authority, "universe-since") {
         Ok(Some(content)) => content,
         Ok(None) => return ExitClaimAttempt::Complete(ExitClaim::Missing),

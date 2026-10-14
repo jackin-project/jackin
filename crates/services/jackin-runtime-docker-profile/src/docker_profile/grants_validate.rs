@@ -1,21 +1,23 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `GrantValidationError` and its impls.
 
 use super::{VALID_CAPABILITIES, format_bytes};
 
-/// Errors produced by [`validate_grants`] before any container is started.
 #[derive(Debug)]
 pub enum GrantValidationError {
-    /// `user = "root"` and `sudo = true` are mutually exclusive.
     RootAndSudo,
-    /// An entry in `capabilities_add` is not a recognized Linux capability.
     UnknownCapability(String),
-    /// `memory_reservation` exceeds `memory` (both provided).
-    MemoryReservationExceedsMemory { reservation: u64, memory: u64 },
-    /// A size string could not be parsed.
-    UnparsableSize { field: &'static str, value: String },
-    /// A numeric field is outside its valid range (e.g. `pids <= 0`, memory > `i64::MAX`).
+
+    MemoryReservationExceedsMemory {
+        reservation: u64,
+        memory: u64,
+    },
+
+    UnparsableSize {
+        field: &'static str,
+        value: String,
+    },
+
     ValueOutOfRange {
         field: &'static str,
         reason: &'static str,

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage metric value labels.
 
 use super::{UsageAccount, UsageMetricGroup, UsageWindow, relative_time_label, updated_age_label};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -40,9 +39,6 @@ pub(crate) fn metric_period_label(period: &UsageMetricPeriodV1) -> Option<String
     }
 }
 
-/// One percent side (`remaining` or `used`) as display text. The raw provider
-/// value rides along only when it differs from clamped geometry, so overage
-/// stays honest without duplicating equal values.
 pub(crate) fn percent_side_summary(
     clamped: Option<u8>,
     raw: Option<i32>,
@@ -64,15 +60,10 @@ pub(crate) fn window_percent_summary(
     used: Option<u8>,
     used_raw: Option<i32>,
 ) -> Option<String> {
-    // "left" matches the principal-window value labels (projection-owned)
-    // and the Capsule bucket presentation; "remaining" would be a third word
-    // for the same meaning (S4/S5 parity).
     percent_side_summary(remaining, remaining_raw, "left")
         .or_else(|| percent_side_summary(used, used_raw, "used"))
 }
 
-/// Raw-percent note for a principal window, shown only when a raw value is
-/// present and differs from the clamped geometry the bar uses.
 pub(crate) fn raw_percent_note(window: &UsageWindow) -> Option<String> {
     for (clamped, raw, word) in [
         (
@@ -91,9 +82,6 @@ pub(crate) fn raw_percent_note(window: &UsageWindow) -> Option<String> {
     None
 }
 
-/// One-line typed value summary for a metric group. `None` means the provider
-/// supplied no displayable value — callers render no value line at all rather
-/// than a fabricated zero.
 pub(crate) fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
     match &group.value {
         UsageMetricValueV1::Window {
@@ -202,8 +190,6 @@ pub(crate) fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<Str
     }
 }
 
-/// Non-secret scope labels locating a group inside its account. `None` means
-/// the provider did not scope the group on any axis.
 pub(crate) fn metric_scope_summary(scope: &UsageMetricScopeV1) -> Option<String> {
     let mut parts = Vec::new();
     for (label, word) in [
@@ -219,8 +205,6 @@ pub(crate) fn metric_scope_summary(scope: &UsageMetricScopeV1) -> Option<String>
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
-/// One sanitized issue as display text: the Rust-owned operator message with
-/// its stable code, plus a broker-owned retry time when one is present.
 pub(crate) fn issue_text(issue: &UsageIssueV1, now_epoch: i64) -> String {
     let mut text = match (
         issue.message.trim().is_empty(),
@@ -246,8 +230,6 @@ pub(crate) fn non_empty_label(label: Option<&String>) -> Option<&str> {
         .filter(|label| !label.trim().is_empty())
 }
 
-/// Operator-facing freshness age for one account. Pure over an explicit
-/// `now` so tests stay deterministic; render passes wall-clock time.
 #[must_use]
 pub fn freshness_age_label(now_epoch: i64, account: &UsageAccount) -> String {
     if account.freshness_phase == UsageFreshnessPhaseV1::Refreshing {
@@ -276,10 +258,6 @@ pub(crate) fn now_epoch() -> i64 {
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
-/// Fallback display name for an unresolved provider id. Mirrors Capsule
-/// `provider_display_label`: `Anthropic` (not `Anthropic / Claude`) and `xAI`
-/// (not `Grok`); every other well-known id already matches the Capsule
-/// spelling, and unknown ids pass through untouched.
 pub(crate) fn well_known_provider_name(provider_id: &str) -> String {
     match provider_id.to_ascii_lowercase().as_str() {
         "anthropic" | "claude" => "Anthropic".to_owned(),

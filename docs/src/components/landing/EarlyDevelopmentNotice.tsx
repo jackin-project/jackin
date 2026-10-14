@@ -1,4 +1,3 @@
-// docs/components/landing/EarlyDevelopmentNotice.tsx
 export function EarlyDevelopmentNotice() {
   return (
     <aside className="landing-dev-warning" aria-label="Active early development warning">

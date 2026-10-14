@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Client-frame dispatch, attach control, and frame coalescing.
 
 use super::super::{
     ClientFrame, ClipboardImageInsertMode, Multiplexer, Result, explicit_redraw_reason,
@@ -50,13 +49,9 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     match frame {
         ClientFrame::AttachControl(request) => handle_attach_control(mux, request),
         ClientFrame::Hello { .. } => {
-            // The initial Hello is consumed by the accept handler; any
-            // further Hello on the same connection is a protocol error.
             let _error = jackin_telemetry::record_error(RPC_ERROR);
         }
         ClientFrame::Resize { rows, cols } => {
-            // resize() records the Resize invalidation (and its wipe); the
-            // render loop composes the resized frame on the next pass.
             mux.resize(rows, cols);
         }
         ClientFrame::Input(bytes) => {
@@ -70,9 +65,7 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 mux.invalidate(explicit_redraw_reason());
             }
         }
-        ClientFrame::Command(_payload) => {
-            // Reserved for future structured commands from the host CLI.
-        }
+        ClientFrame::Command(_payload) => {}
         ClientFrame::ClipboardImage(image) => {
             mux.stage_clipboard_image_response(image);
         }
@@ -121,10 +114,6 @@ pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             mux.client_registry.detach_requested = true;
         }
         ClientFrame::FocusIn => {
-            // Forward only when no dialog is intercepting input AND
-            // the focused session actually asked for focus reports
-            // (`?1004h`). Without the gate, normal-screen shells
-            // surface `[I` as literal text at the prompt.
             if !mux.dialog_captures_input()
                 && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.session_supervisor.sessions.get(focused)
@@ -340,15 +329,6 @@ fn handle_attach_control(mux: &mut Multiplexer, request: AttachControlRequest) {
     }
 }
 
-/// Coalesce a run of consecutive `Resize` frames into the latest size and
-/// return the ordered frames the daemon must process, plus how many resizes
-/// were coalesced away.
-///
-/// A non-`Resize` frame pulled from the channel while draining is preserved and
-/// returned after the coalesced resize (previously it was silently dropped
-/// because `try_recv()` removes a frame before the `while let` pattern rejects
-/// it). Order is preserved because the stray frame may depend on the new
-/// geometry.
 pub(crate) fn coalesce_client_frames(
     first: ClientFrame,
     mut next: impl FnMut() -> Option<ClientFrame>,

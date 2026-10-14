@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-/// Closed set of launch-stage dimensions used by progress telemetry.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DiagnosticStage {
     Preflight,

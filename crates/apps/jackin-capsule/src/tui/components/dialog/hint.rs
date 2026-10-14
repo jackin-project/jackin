@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Footer hint rows for capsule dialogs.
-
 use std::borrow::Cow;
 
 use termrock::{keymap::glyph, widgets::HintSpan};
@@ -20,15 +18,6 @@ fn key_span(glyph: impl Into<Cow<'static, str>>) -> HintSpan<'static> {
     }
 }
 
-/// Derive a display glyph for a raw palette-key byte.
-///
-/// Mirrors the `Ctrl-` prefix convention of [`termrock::keymap::chord_glyph`]
-/// (`Ctrl-<UPPER>`) so the hint bar is visually consistent regardless of which
-/// key the operator configured via `JACKIN_PALETTE_KEY`. Upstream spells only
-/// the common-shortcut set and delegates every other Ctrl chord to the caller;
-/// the palette key is operator-configured to any byte, so the arms beyond that
-/// set (`0x1C` as `Ctrl-\`, the hex fallback) are deliberately caller-supplied
-/// here.
 fn format_key_glyph(byte: u8) -> String {
     match byte {
         0x01..=0x1A => format!("Ctrl-{}", (b'@' + byte) as char),
@@ -37,15 +26,6 @@ fn format_key_glyph(byte: u8) -> String {
     }
 }
 
-/// Return the appropriate hint spans for the main view (no dialog open).
-///
-/// When `prefix_awaiting` is true the operator has pressed the prefix key and
-/// a keymap-derived cheat-sheet of prefix commands replaces the normal
-/// navigation hints so discovery is possible without a manual.
-///
-/// `palette_key` is the resolved palette-key byte (`self.palette_key.unwrap_or(0x1C)`
-/// from [`crate::tui::input::InputParser`]); it drives the dynamic glyph so the
-/// hint bar stays correct when `JACKIN_PALETTE_KEY` overrides the default.
 pub(crate) fn main_view_hint(
     scrollback_active: bool,
     palette_key: u8,
@@ -53,12 +33,12 @@ pub(crate) fn main_view_hint(
     prefix_awaiting: bool,
 ) -> Vec<HintSpan<'static>> {
     if prefix_awaiting {
-        let mut spans = PREFIX_COMMAND_KEYMAP.hint_spans(); // all Shown prefix keys
+        let mut spans = PREFIX_COMMAND_KEYMAP.hint_spans();
         spans.push(HintSpan::GroupSep);
-        spans.push(HintSpan::DynKey(format_key_glyph(palette_key))); // dynamic palette key glyph
+        spans.push(HintSpan::DynKey(format_key_glyph(palette_key)));
         spans.push(HintSpan::Text("palette"));
         spans.push(HintSpan::GroupSep);
-        spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans()); // Ctrl-Q quit
+        spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans());
         return spans;
     }
     if scrollback_active {
@@ -66,7 +46,6 @@ pub(crate) fn main_view_hint(
         if !spans.is_empty() {
             spans.push(HintSpan::GroupSep);
         }
-        // UNREGISTERABLE(scrollback-modal): Esc handled by InputParser scrollback state check; no scrollback keymap exists.
         spans.push(key_span("Esc"));
         spans.push(HintSpan::Text("exit scrollback"));
         spans.push(HintSpan::GroupSep);
@@ -88,7 +67,6 @@ pub(crate) fn main_view_hint(
         spans.push(HintSpan::GroupSep);
         spans.extend(RESIZE_PANE_KEYMAP.hint_spans());
         spans.push(HintSpan::GroupSep);
-        // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
         spans.push(key_span("click"));
         spans.push(HintSpan::Text("focus pane"));
         spans.push(HintSpan::GroupSep);
@@ -97,11 +75,6 @@ pub(crate) fn main_view_hint(
     }
 }
 
-/// Shared footer for the filterable list dialogs. Every key glyph derives from
-/// [`FILTER_LIST_KEYMAP`]; the call site supplies the contextual confirm label
-/// (`"select"` vs `"launch"`) and whether the "type filter" group appears
-/// in the footer. Navigate keeps the keymap's own
-/// `"navigate"` label; cancel keeps its `"cancel"` label.
 fn filter_list_hint(confirm_label: &'static str, type_filter: bool) -> Vec<HintSpan<'static>> {
     let mut spans = Vec::with_capacity(10);
     FILTER_LIST_KEYMAP.push_spans_for(FilterListAction::NavigateUp, &mut spans);
@@ -131,9 +104,6 @@ pub(super) fn flat_picker_hint() -> Vec<HintSpan<'static>> {
     filter_list_hint("select", false)
 }
 
-/// Shared single-line text-input hint (commit + dismiss), plus an optional
-/// `trailing` affordance span. Tab rename passes "empty = auto name"; file export
-/// passes `None` because an empty export path is rejected, never auto-named.
 fn text_input_hint(trailing: Option<&'static str>) -> Vec<HintSpan<'static>> {
     let mut spans = Vec::with_capacity(if trailing.is_some() { 7 } else { 5 });
     RENAME_KEYMAP.push_spans_for(RenameAction::Save, &mut spans);
@@ -154,16 +124,10 @@ pub(super) fn export_file_hint() -> Vec<HintSpan<'static>> {
     text_input_hint(None)
 }
 
-/// Read-only info-dialog hint: copy key, the *available* scroll axes (per
-/// `axes`, omitted when the body fits), then dismiss — built from the shared
-/// `scroll_hint_spans` primitive so it never advertises a scroll direction the
-/// body cannot move. Used by both `ContainerInfo` (Debug info) and a loaded
-/// `GitHubContext`, which differ only in their copy label.
 pub(super) fn info_dialog_hint(
     copy_label: &'static str,
     axes: termrock::scroll::ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
-    // UNREGISTERABLE(info-dialog-copy): Enter selects the active copy target inline; no InfoDialog keymap registered.
     let mut spans = vec![key_span("↵"), HintSpan::Text(copy_label)];
     let scroll = termrock::scroll::scroll_hint_spans(axes);
     if !scroll.is_empty() {

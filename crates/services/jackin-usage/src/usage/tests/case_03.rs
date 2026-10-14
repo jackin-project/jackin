@@ -5,7 +5,6 @@ use super::*;
 
 #[test]
 fn codex_plan_display_name_matches_codexbar() {
-    // ported from CodexBar's CodexPlanFormatting tests.
     assert_eq!(codex_plan_display_name("pro").as_deref(), Some("Pro 20x"));
     assert_eq!(codex_plan_display_name("Pro").as_deref(), Some("Pro 20x"));
     assert_eq!(

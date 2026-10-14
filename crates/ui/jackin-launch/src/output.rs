@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Formatted terminal output helpers for launch surfaces.
-//!
-//! These helpers write status and decorative lines to stderr so the operator
-//! sees load progress and failure messages alongside the launch cockpit output.
-//! They are intentionally simple — no ratatui widgets, no raw-mode management.
 use owo_colors::OwoColorize as _;
 use std::fmt::Arguments;
 use std::io::Write as _;
@@ -38,18 +33,15 @@ fn stderr_fragment(args: Arguments<'_>) {
     drop(write!(stderr, "{args}"));
 }
 
-/// Print a dimmed red error step line to stderr.
 pub fn step_fail(msg: &str) {
     stderr_line(format_args!("       {}", msg.color(owo_rgb(ROSE))));
 }
 
-/// Clear the terminal screen via ANSI escape codes.
 pub fn clear_screen() {
     stderr_fragment(format_args!("\x1b[2J\x1b[H"));
     drop(std::io::Write::flush(&mut std::io::stderr()));
 }
 
-/// Print a hint line with a highlighted command to stdout.
 pub fn hint(prefix: &str, command: &str, suffix: &str) {
     stdout_line(format_args!(
         "{prefix}{}{suffix}",
@@ -57,7 +49,6 @@ pub fn hint(prefix: &str, command: &str, suffix: &str) {
     ));
 }
 
-/// Print a fatal error to stderr.
 pub fn fatal(msg: &str) {
     stderr_empty_line();
     let mut lines = msg.lines();
@@ -72,7 +63,6 @@ pub fn fatal(msg: &str) {
     }
 }
 
-/// Animate a "deploying" banner then clear the screen.
 pub async fn print_deploying(role_name: &str) {
     stderr_empty_line();
     stderr_line(format_args!(

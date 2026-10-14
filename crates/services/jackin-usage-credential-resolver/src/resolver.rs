@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared host credential cache behind opaque usage-discovery handles.
-
 use std::sync::Mutex;
 
 use jackin_config::{AppConfig, EnvValue};
@@ -19,17 +17,11 @@ use jackin_usage_host_credentials::{
 use jackin_usage_host_presentation::HostSurfaceId;
 use jackin_usage_provider_core::{canonical_usage_key, dispatch_key_for_route};
 
-/// Secret-source result retained only long enough to enter the opaque cache.
 pub enum ProviderCredentialSecretOutcome {
-    /// Protected value resolved.
     Resolved(String),
-    /// Declared value is absent.
     Missing,
-    /// Protected source denied access or is unavailable.
     Denied,
-    /// Declaration or resolved value is malformed.
     Malformed,
-    /// Source requires explicit operator interaction.
     InteractionRequired,
 }
 
@@ -45,11 +37,8 @@ impl std::fmt::Debug for ProviderCredentialSecretOutcome {
     }
 }
 
-/// One declaration-attributed secret-source resolution.
 pub struct ProviderCredentialSecretResolution {
-    /// Exact config declaration; used only as a cache identity.
     pub declaration: EnvValue,
-    /// Protected result. Debug is intentionally unavailable.
     pub outcome: ProviderCredentialSecretOutcome,
 }
 
@@ -63,9 +52,7 @@ impl std::fmt::Debug for ProviderCredentialSecretResolution {
     }
 }
 
-/// Host composition port for config/env/1Password resolution.
 pub trait ProviderCredentialSecretSource: Send + Sync {
-    /// Return the effective declaration without resolving protected material.
     fn lookup_declaration(
         &self,
         config: &AppConfig,
@@ -74,7 +61,6 @@ pub trait ProviderCredentialSecretSource: Send + Sync {
         entry: UsageCredentialEnvName,
     ) -> Option<EnvValue>;
 
-    /// Resolve one governed key in one effective config scope.
     fn resolve_secret(
         &self,
         config: &AppConfig,
@@ -85,9 +71,7 @@ pub trait ProviderCredentialSecretSource: Send + Sync {
 }
 
 struct CachedResolution {
-    /// Canonical provider usage identity used for cache/source attribution.
     key: String,
-    /// Exact governed key whose provider semantics must drive refresh.
     dispatch_key: String,
     owner: UsageCredentialOwner,
     declaration: EnvValue,
@@ -102,7 +86,6 @@ struct ResolverState {
     cache: Vec<CachedResolution>,
 }
 
-/// Process-scoped resolver that deduplicates secrets and exposes opaque handles.
 pub struct CachedProviderCredentialResolver<S> {
     source: S,
     state: Mutex<ResolverState>,
@@ -127,7 +110,6 @@ impl<S: Default> Default for CachedProviderCredentialResolver<S> {
 }
 
 impl<S> CachedProviderCredentialResolver<S> {
-    /// Construct with one host secret-source adapter.
     #[must_use]
     pub fn new(source: S) -> Self {
         Self {
@@ -136,7 +118,6 @@ impl<S> CachedProviderCredentialResolver<S> {
         }
     }
 
-    /// Test-only observability without exposing cached secrets.
     #[doc(hidden)]
     #[must_use]
     pub fn cached_resolution_count(&self) -> usize {
@@ -159,10 +140,6 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
         let declaration = self
             .source
             .lookup_declaration(config, workspace, role, entry)?;
-        // Discovery requests account credentials under launch-specific
-        // aliases. Keep canonical ownership separate from the exact governed
-        // dispatch key: OAuth and deployment routes can share an owner while
-        // requiring a different provider snapshot path.
         let cache_key = canonical_usage_key(entry.owner);
         let governed_name =
             jackin_usage_host_credentials::governed_name_for_account_alias(entry.name);
@@ -282,10 +259,6 @@ impl<S: ProviderCredentialSecretSource> ProviderCredentialEnvResolver
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.cache.iter().find_map(|cached| {
-                // `key` is the exact semantic provider route supplied by the
-                // binding refresh path. A canonical owner key alone is not
-                // enough: Claude OAuth and Grok deployment routes have
-                // different provider dispatch semantics.
                 (cached.dispatch_key == key && cached.handle.as_ref() == Some(handle))
                     .then(|| cached.secret.clone())
                     .flatten()

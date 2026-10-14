@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared helper functions for the `app` command dispatcher.
-
 use anyhow::Result;
 
 use jackin_config::{AppConfig, WorkspaceConfig};
@@ -12,12 +10,6 @@ use jackin_docker::docker_client::DockerApi;
 use jackin_runtime::instance;
 use jackin_runtime::runtime;
 
-/// Print mount-heal notices from launch resolution to stderr.
-///
-/// Every site that resolves a workspace for launch must call this: a
-/// skipped mount changes what the container sees, and a recreated
-/// directory explains a cold cache. Stderr keeps dry-run plans and other
-/// stdout payloads parseable.
 pub(super) fn emit_mount_heal_notices(resolved: &jackin_config::ResolvedWorkspace) {
     for line in resolved.mount_heal.notice_lines() {
         eprintln!("{line}");
@@ -99,11 +91,6 @@ struct GlobalMountRow {
     mode: String,
 }
 
-/// Render the `workspace show <name>` output as a string. Includes the info
-/// table (name/workdir/allowed/default-role), and, when there are mounts, a
-/// trailing mounts table with one row per mount. The mounts table renders the
-/// canonical lowercase isolation name (`shared`/`worktree`/`clone`) so the output
-/// matches TOML/CLI input verbatim.
 pub(super) fn render_workspace_show(
     config: &AppConfig,
     name: &str,
@@ -149,9 +136,6 @@ pub(super) fn render_workspace_show(
             },
         ),
     ];
-    // Only surface keep_awake when opted in — disabled is the default and
-    // shouldn't add noise. When enabled, the operator sees it here so a
-    // mysteriously sleepless Mac traces back to the workspace.
     if workspace.keep_awake.enabled {
         info.push(("Keep Awake", "enabled (macOS only)"));
     }
@@ -223,9 +207,6 @@ pub(super) fn render_workspace_show(
             let _unused = writeln!(out, "{table}");
         }
         jackin_config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
-            // Unscoped global mounts apply regardless of role — render
-            // them even when the role is ambiguous. Only the scoped
-            // subset depends on role selection.
             let all_rows = config.list_mount_rows();
             let unscoped: Vec<&jackin_config::GlobalMountRow> =
                 all_rows.iter().filter(|row| row.scope.is_none()).collect();

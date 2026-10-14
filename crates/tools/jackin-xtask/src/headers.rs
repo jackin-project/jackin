@@ -1,13 +1,3 @@
-//! Ownership-header gate for every workspace `lib.rs` / binary `main.rs`.
-//!
-//! Contract (first 15 `//!` lines): owns line (`//! <crate>: …`),
-//! `**Architecture Invariant:** T<n>` matching `arch::TIERS`, and
-//! `Entry point: …`.
-//!
-//! ```sh
-//! cargo xtask lint headers
-//! ```
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -60,7 +50,6 @@ fn run_inner() -> Result<()> {
     let mut problems = Vec::new();
 
     for (crate_name, path) in &roots {
-        // Workspace-excluded crates (e.g. jackin-lints) are not in TIERS.
         if !tier_map.contains_key(crate_name.as_str()) {
             continue;
         }
@@ -135,8 +124,6 @@ fn leading_doc_lines(text: &str) -> Vec<String> {
                 break;
             }
         } else if line.trim().is_empty() {
-            // blank before docs: skip; blank after docs started: keep scanning
-            // only if more `//!` follow later.
         } else {
             break;
         }
@@ -144,7 +131,6 @@ fn leading_doc_lines(text: &str) -> Vec<String> {
     docs
 }
 
-/// Pure contract check. Returns problem strings (empty = ok).
 pub(crate) fn check_header(
     crate_name: &str,
     header: &[String],

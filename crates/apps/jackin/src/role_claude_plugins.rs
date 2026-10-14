@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Claude plugin marketplace validation for role-authoring commands.
-//!
-//! Runtime image builds intentionally keep using Claude Code's own marketplace
-//! and plugin installer. This module belongs to `jackin-role`/`jackin role
-//! validate`: it proves role manifests are resolvable before a role is
-//! published or merged.
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Context;
@@ -76,10 +69,6 @@ fn fetch_marketplace_manifest(url: &str) -> anyhow::Result<String> {
         .with_context(|| format!("reading Claude marketplace manifest from {url}"))
 }
 
-/// Validate that every `[claude].plugins` reference uses
-/// `plugin@marketplace`, that each marketplace name resolves to a declared
-/// marketplace (or the official built-in marketplace), and that the fetched
-/// marketplace manifest publishes the requested plugin.
 pub(crate) fn validate_claude_plugin_marketplaces(manifest: &RoleManifest) -> anyhow::Result<()> {
     validate_claude_plugin_marketplaces_with(manifest, &GitHubRawMarketplaceResolver)
 }

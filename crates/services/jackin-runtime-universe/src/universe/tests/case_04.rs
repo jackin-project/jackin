@@ -28,7 +28,6 @@ async fn claim_entry_resumes_when_container_running() {
         claim.pending_file().unwrap().exists(),
         "joining launch owns pending coverage even when peers currently run"
     );
-    // The peer can leave while this joining launch is still preparing.
     let (_, exit) = observe_exit(&paths, &FakeDockerClient::default())
         .await
         .unwrap();
@@ -114,8 +113,6 @@ async fn idle_release_derives_its_root_from_the_owned_pending_file() {
     let second_marker = std::fs::read_to_string(marker_path(&authority(&second_paths))).unwrap();
     let second_generation = generation(&authority(&second_paths)).unwrap();
 
-    // The release API has no independent paths parameter: callers cannot mix
-    // one root's pending owner with another root's lock, generation or marker.
     release_entry_if_idle(&docker, &first).await;
     drop(first);
 
@@ -313,10 +310,6 @@ async fn pending_write_failure_keeps_no_token_release_semantics() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     paths.ensure_base_dirs().unwrap();
-    // The claim bails to a lease-less entry when pending recovery is
-    // blocked, so the ongoing-session marker comes from the pipeline's
-    // separate `mark_start` (mirrored here); release must still preserve
-    // both the marker and the blocking file.
     seed_marker(&paths, StartKind::FreshConstruct);
     std::fs::write(pending_dir(&authority(&paths)), "blocked directory").unwrap();
     let docker = FakeDockerClient::default();

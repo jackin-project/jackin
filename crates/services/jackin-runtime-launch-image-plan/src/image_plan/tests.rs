@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Projection of a decided image onto the dry-run plan. No Docker: the
-//! decision is the input here, not something these tests resolve.
-
 use super::*;
 use jackin_runtime_image::image::ImageInvalidationReason;
 

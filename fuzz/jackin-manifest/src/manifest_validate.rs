@@ -1,4 +1,3 @@
-//! Fuzz: parse-then-validate role manifests — no panic.
 #![no_main]
 use jackin_manifest::RoleManifest;
 use libfuzzer_sys::fuzz_target;

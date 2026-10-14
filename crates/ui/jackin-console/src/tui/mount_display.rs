@@ -1,19 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Mount row display data and the lines rendered for each mount block.
-//!
-//! Scroll extents are derived from the rendered lines, never recomputed: a
-//! block's `content_width` is `max_line_width(&<block>_lines(rows))` and its
-//! height is the line count. The input-side scroll clamp consumes the same
-//! values, so the clamp can never disagree with what the renderer draws — the
-//! disagreement that made the horizontal scrollbar thumb stop short of the end.
-
 use ratatui::text::{Line, Span};
 use termrock::text::leading_space_cols;
 
-/// Content width for mount blocks: line width plus leading-indent trailing pad
-/// that `Viewport` mirrors for horizontal scroll range (migration 0018).
 fn max_line_width(lines: &[Line<'_>]) -> usize {
     lines
         .iter()
@@ -31,7 +21,6 @@ use crate::tui::components::mount_rows::{
     render_global_mount_header, render_global_mount_lines, render_mount_header, render_mount_lines,
 };
 
-/// Pre-formatted mount row. `host_source` is `Some` only when src != dst.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MountDisplayRow {
     pub destination: String,
@@ -146,10 +135,6 @@ pub fn settings_global_config_mounts_content_width_with_cache(
 ) -> usize {
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
     let display_rows = format_config_mount_rows_with_cache(&mounts, cache);
-    // Width comes from the exact lines the settings tab renders, so the scroll
-    // clamp agrees with the renderer. Selection is width-invariant (the `> `
-    // and `  ` prefixes are both 2 cols), so building without a selection is
-    // safe; the sentinel row is included to match the rendered block.
     let lines = crate::tui::screens::settings::view::global_mount_lines(&display_rows, None, true);
     max_line_width(&lines)
 }
@@ -163,7 +148,6 @@ pub fn settings_global_config_mounts_content_height(
     )
 }
 
-/// Width of the `Destination` column, sized to fit the widest path plus header.
 #[must_use]
 pub fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
     rows.iter()
@@ -175,7 +159,6 @@ pub fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
         .max("Destination".len())
 }
 
-/// Dim `(none)` placeholder shown when a read-only mount block has no rows.
 fn none_placeholder_line() -> Line<'static> {
     Line::from(Span::styled(
         "  (none)",
@@ -186,8 +169,6 @@ fn none_placeholder_line() -> Line<'static> {
     ))
 }
 
-/// Canonical lines for the read-only **Mounts** block. The single source both
-/// the renderer and the scroll-extent math consume — see the module docs.
 #[must_use]
 pub fn workspace_mount_block_lines(rows: &[MountDisplayRow]) -> Vec<Line<'static>> {
     if rows.is_empty() {
@@ -203,7 +184,6 @@ pub fn workspace_mount_block_lines(rows: &[MountDisplayRow]) -> Vec<Line<'static
     lines
 }
 
-/// Canonical lines for a read-only **Global mounts** / role-global block.
 #[must_use]
 pub fn global_mount_block_lines(rows: &[MountDisplayRow]) -> Vec<Line<'static>> {
     if rows.is_empty() {

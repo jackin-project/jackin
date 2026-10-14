@@ -1,46 +1,28 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EffectiveGrants` resolution and folding.
 
 use super::{
     DindGrant, DockerGrants, DockerSecurityProfile, GB, NetworkGrant, normalize_cap,
     parse_memory_bytes,
 };
 
-/// Fully resolved grants for a launch — every dimension has a concrete value,
-/// produced by merging the profile's defaults with explicit overrides.
 #[derive(Debug, Clone)]
 pub struct EffectiveGrants {
     pub network: NetworkGrant,
-    /// Merged list of allowed hosts for the `allowlist` network tier.
     pub allowed_hosts: Vec<String>,
     pub dind: DindGrant,
-    /// Configured container username. Only `"root"` is load-bearing — it is
-    /// compared against `sudo` for the mutually-exclusive check and feeds the
-    /// network-enforcement label; the default `"agent"` is an inert sentinel.
-    /// The actual `--user` flag is the fixed root capsule-supervisor identity,
-    /// not this field. This field remains role grant metadata.
     pub user: String,
     pub sudo: bool,
     pub system_writes: bool,
-    /// Parsed hard memory limit in bytes. `None` = no limit.
     pub memory_bytes: Option<u64>,
-    /// Parsed soft memory limit in bytes. `None` = no soft limit.
     pub memory_reservation_bytes: Option<u64>,
     pub cpus: Option<f64>,
     pub pids: Option<i64>,
     pub nofile: Option<u64>,
-    /// Additional capabilities beyond the profile's base set.
     pub capabilities_add: Vec<String>,
-    /// Whether `--security-opt no-new-privileges` is applied to the container.
-    /// `true` for `hardened` and `locked`; resolved to `true` for `standard`
-    /// (WP-SUDO: sudo off by default, so `no_new_privileges` on) unless an explicit
-    /// `sudo = true` grant is active. `false` for `compat` (sudo always on).
     pub no_new_privileges: bool,
 }
 
-/// Per-profile base grants. Explicit [`DockerGrants`] are layered on top via
-/// [`apply_grants`].
 pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
     match profile {
         DockerSecurityProfile::Locked => EffectiveGrants {
@@ -76,12 +58,8 @@ pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
         DockerSecurityProfile::Standard => EffectiveGrants {
             network: NetworkGrant::Open,
             allowed_hosts: Vec::new(),
-            // WP4: DinD off by default outside `compat` (Decision 12).
-            // Enable via explicit `dind = "rootless"` or `dind = "privileged"` grant.
             dind: DindGrant::None,
             user: "agent".to_owned(),
-            // WP-SUDO: sudo is off by default outside `compat` (Decision 11).
-            // Enable via explicit `sudo = true` grant.
             sudo: false,
             system_writes: true,
             memory_bytes: Some(16 * GB),
@@ -90,7 +68,6 @@ pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
             pids: Some(2048),
             nofile: Some(8192),
             capabilities_add: Vec::new(),
-            // Resolved to `true` by apply_implicit_grants when sudo is false.
             no_new_privileges: false,
         },
         DockerSecurityProfile::Compat => EffectiveGrants {
@@ -111,12 +88,6 @@ pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
     }
 }
 
-/// Apply explicit grants on top of profile defaults. Each dimension takes the
-/// more capable of the profile default and the explicit override.
-///
-/// Grants must already have been validated by [`validate_grants`].
-/// Raise `slot` to `candidate` when it's larger (or unset). Grants only ever
-/// widen a resource ceiling, never lower it.
 pub(crate) fn raise_to_max<T: PartialOrd>(slot: &mut Option<T>, candidate: T) {
     match slot {
         Some(existing) if *existing >= candidate => {}
@@ -176,17 +147,8 @@ pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> Effecti
         }
     }
     base
-    // No implicit cap injection here: apply_grants() is a pure layering function.
-    // Injecting caps based on the merged network value would fire on every source
-    // layer, producing duplicates. apply_implicit_grants() fires once post-merge.
 }
 
-/// Layer a role manifest's docker grants onto resolved effective grants.
-///
-/// [`apply_grants`] raises dind/network/hosts/caps (never lowers); then the role
-/// may pin dind back to `None` — the **only** down-force in the grant system,
-/// which `apply_grants` cannot express. A role that forbids `DinD` must override an
-/// otherwise more-capable profile/config/workspace tier.
 pub fn fold_role_grants(effective: EffectiveGrants, role: &DockerGrants) -> EffectiveGrants {
     let mut folded = apply_grants(effective, role);
     if role.dind == Some(DindGrant::None) {

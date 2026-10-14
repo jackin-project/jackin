@@ -1,40 +1,25 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Host surface identity and descriptors.
 
 use jackin_core::Agent;
 
-/// Surfaces the host menu bar may show (excludes `Unsupported`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum HostSurfaceId {
-    /// Anthropic / `Claude`.
     Claude,
-    /// `OpenAI` / `Codex`.
     Codex,
-    /// Amp.
     Amp,
-    /// xAI / Grok Build.
     Grok,
-    /// GLM / Z.AI routed provider.
     Zai,
-    /// Kimi.
     Kimi,
-    /// `MiniMax` routed provider.
     Minimax,
-    /// `OpenCode`.
     OpenCode,
-    /// Google (Antigravity + Gemini CLI).
     Google,
-    /// Cursor.
     Cursor,
-    /// Meta (Muse).
     Meta,
-    /// `OpenRouter` (multi-provider clients only).
     OpenRouter,
 }
 
 impl HostSurfaceId {
-    /// Every host surface in stable UI order.
     pub const ALL: &'static [Self] = &[
         Self::Codex,
         Self::Claude,
@@ -50,8 +35,6 @@ impl HostSurfaceId {
         Self::OpenRouter,
     ];
 
-    /// The canonical seven-provider Desktop glance order (Capsule tab order).
-    /// `OpenCode` is intentionally excluded from the Desktop item contract.
     pub const DESKTOP_PROVIDER_ORDER: &'static [Self] = &[
         Self::Codex,
         Self::Claude,
@@ -62,7 +45,6 @@ impl HostSurfaceId {
         Self::Minimax,
     ];
 
-    /// Stable machine id (`claude`, `codex`, `zai`, …).
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
@@ -81,7 +63,6 @@ impl HostSurfaceId {
         }
     }
 
-    /// Canonical provider identity, separate from legacy agent routing ids.
     #[must_use]
     pub const fn provider_id(self) -> &'static str {
         match self {
@@ -100,7 +81,6 @@ impl HostSurfaceId {
         }
     }
 
-    /// Human label matching Capsule usage tabs.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -119,7 +99,6 @@ impl HostSurfaceId {
         }
     }
 
-    /// Two-character menu-bar prefix for the compact status item (HIG width).
     #[must_use]
     pub const fn compact_prefix(self) -> &'static str {
         match self {
@@ -138,19 +117,16 @@ impl HostSurfaceId {
         }
     }
 
-    /// Canonical provider label used by durable account-key hashing.
     #[must_use]
     pub const fn account_provider_label(self) -> &'static str {
         self.label()
     }
 
-    /// Rust-owned fallback glyph used only when the native icon cannot load.
     #[must_use]
     pub const fn fallback_glyph(self) -> &'static str {
         self.compact_prefix()
     }
 
-    /// Provider-owned usage/settings destination for Desktop actions.
     #[must_use]
     pub const fn usage_url(self) -> Option<&'static str> {
         match self {
@@ -169,7 +145,6 @@ impl HostSurfaceId {
         }
     }
 
-    /// Agent slug used by shared presentation helpers.
     #[must_use]
     pub const fn agent_slug(self) -> &'static str {
         match self {
@@ -187,7 +162,6 @@ impl HostSurfaceId {
         }
     }
 
-    /// Optional provider label for surface resolution.
     #[must_use]
     pub const fn provider_label(self) -> Option<&'static str> {
         match self {
@@ -206,16 +180,11 @@ impl HostSurfaceId {
         }
     }
 
-    /// Parse a stable id; unknown → `None`.
     #[must_use]
     pub fn from_id(id: &str) -> Option<Self> {
         Self::ALL.iter().copied().find(|surface| surface.id() == id)
     }
 
-    /// Parse an enumerated provider alias into exact ownership.
-    ///
-    /// This deliberately does not inspect [`Self::agent_slug`]: Z.AI and
-    /// `MiniMax` route through the Codex probe but never own `OpenAI` accounts.
     #[must_use]
     pub fn from_provider_alias(alias: &str) -> Option<Self> {
         let normalized = alias
@@ -240,7 +209,6 @@ impl HostSurfaceId {
         }
     }
 
-    /// Map jackin agent runtimes to their primary surface (not Z.AI/MiniMax).
     #[must_use]
     pub const fn from_agent(agent: Agent) -> Self {
         match agent {
@@ -253,25 +221,16 @@ impl HostSurfaceId {
             Agent::Antigravity | Agent::Gemini => Self::Google,
             Agent::Cursor => Self::Cursor,
             Agent::Muse => Self::Meta,
-            // Omp/Hermes are multi-provider clients with no native surface;
-            // they share the generic multi-provider surface until per-provider
-            // routing lands in the usage lane.
             Agent::Omp | Agent::Hermes => Self::OpenCode,
         }
     }
 }
 
-/// Descriptor returned to `boltffi` / CLI (no secrets).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostSurfaceDescriptor {
-    /// Stable id (`claude`).
     pub id: String,
-    /// Display label (for example `Claude`).
     pub label: String,
-    /// Agent slug used for probes.
     pub agent: String,
-    /// Provider label when set.
     pub provider: Option<String>,
-    /// Whether the surface is currently enabled for refresh/bar.
     pub enabled: bool,
 }

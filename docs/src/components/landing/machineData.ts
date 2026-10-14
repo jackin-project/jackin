@@ -1,4 +1,3 @@
-// docs/components/landing/machineData.ts
 
 export interface Mount {
   src: string;
@@ -66,10 +65,6 @@ export const orgs: Record<string, Org> = {
       'your-org/frontend-engineer': { repo: 'your-org/jackin-frontend-engineer', tools: 'Node 22, Playwright, pnpm',  plugins: 'UI · a11y' },
       'your-org/backend-engineer':  { repo: 'your-org/jackin-backend-engineer',  tools: 'Go 1.23, Postgres, grpcurl', plugins: 'API · SQL' },
     },
-    // Project-scoped allowlists: each workspace pins the role that
-    // belongs in that codebase. Loading a frontend agent against the
-    // backend repo (or vice versa) is refused, keeping roles and
-    // projects lined up without relying on operator discipline.
     workspaces: {
       'web-app': {
         workdir: '~/Projects/your-org/web-app',

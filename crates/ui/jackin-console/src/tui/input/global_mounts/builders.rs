@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings modal builders and after-event.
 
 use super::{SettingsModalOutcome, commit_text, dispatch_manager};
 
@@ -18,8 +17,6 @@ use crate::tui::state::{
     SettingsEnvTextTarget, SettingsModal,
 };
 
-/// Promote any pending error from a settings sub-tab to `settings.error_popup`,
-/// pop back to the workspace list when a handler set `exit_requested`.
 pub fn after_settings_event(state: &mut ManagerState<'_>) {
     let outcome = {
         let ManagerStage::Settings(settings) = &mut state.stage else {

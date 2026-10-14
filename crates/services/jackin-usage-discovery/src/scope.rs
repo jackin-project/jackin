@@ -1,29 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Discovery scope and credential root matrix.
 
 use jackin_usage_host_credentials::ForwardedUsageAccount;
 
 use std::path::PathBuf;
 
-/// Discovery boundary: Desktop may scan host config; Capsule sees capabilities only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UsageDiscoveryScope {
-    /// Host-wide Desktop inventory rooted at explicit operator paths.
     HostDesktop {
-        /// Directory containing `config.toml` and `workspaces/`.
         config_root: PathBuf,
-        /// Operator home used for default and tilde-relative credential roots.
         operator_home: PathBuf,
     },
-    /// Container inventory restricted to explicitly forwarded accounts.
     Capsule {
-        /// Broker/runtime-issued capabilities available inside this Capsule.
         forwarded_accounts: Vec<ForwardedUsageAccount>,
     },
 }
 
-/// Credential-root inventory for docs and debug (no secrets read).
 #[must_use]
 pub fn host_credential_root_matrix() -> Vec<HostCredentialRootRow> {
     use jackin_core::container_paths;
@@ -103,15 +95,10 @@ pub fn host_credential_root_matrix() -> Vec<HostCredentialRootRow> {
     ]
 }
 
-/// One row of the host credential matrix.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostCredentialRootRow {
-    /// Surface id.
     pub surface: &'static str,
-    /// Host path roots.
     pub host_paths: &'static str,
-    /// Environment variables.
     pub env_vars: &'static str,
-    /// Container handoff fallback.
     pub container_handoff: &'static str,
 }

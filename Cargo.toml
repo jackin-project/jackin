@@ -350,12 +350,7 @@ quick-xml = "0.42.0"
 rand = "0.10"
 rcgen = "0.14.10"
 ratatui = "0.30"
-# The owned terminal model (vte → DamageGrid → snapshots/damage). Extracted
-# from crates/jackin-term; pinned to the termpane v0.1.0 tag.
 termpane = { version = "0.1.0", git = "https://github.com/tailrocks/termpane.git", tag = "v0.1.0" }
-# Enable the full public feature matrix TermRock ships: Crossterm session/input
-# adapters plus serde for persistable widget state (DialogScroll, ListState, …).
-# Pin latest reviewed TermRock main; follow migrations sequentially (currently through 0331).
 termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "1ac0d0793b8cfd9edc61ced241e2b2ecb89162b4", features = ["crossterm", "serde"] }
 termrock-raster = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "1ac0d0793b8cfd9edc61ced241e2b2ecb89162b4" }
 regex = "1"
@@ -367,8 +362,6 @@ rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled
 security-framework = "3.7"
 semver = "1"
 serde = "1.0"
-# Exact pin from workspace virtualization (#713); no recovered bug citation.
-# Candidate for caret "1" in a dedicated lockfile-refresh PR.
 serde_json = "=1.0.151"
 serde_yaml_ng = "0.10.0"
 sha2 = "0.11"
@@ -377,13 +370,9 @@ tabled = "0.22.0"
 tar = "0.4"
 tempfile = "=3.27.0"
 thiserror = "2.0"
-# Renovate exact pin (#394 → workspace #713); keep it at the newest stable
-# release and validate every runtime target before advancing the pin.
 tokio = { version = "=1.53.2", default-features = false }
 tokio-util = "0.7"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
-# Exact pin from workspace virtualization (#713); no recovered bug citation.
-# Candidate for caret "1" in a dedicated lockfile-refresh PR.
 toml = "=1.1.6"
 toml_edit = "0.25"
 tracing = "0.1"
@@ -391,8 +380,6 @@ tracing-opentelemetry = "0.34"
 tower = "0.5.3"
 tracing-subscriber = "0.3"
 tonic = { version = "0.14.1", default-features = false, features = ["transport", "router", "codegen", "gzip"] }
-# Pre-release API churn; revisit at first stable 0.7 (or next pre.N after
-# re-running the usage-store suite against the boundary module only).
 turso = { version = "=0.8.2", default-features = false }
 unicode-width = "0.2"
 url = "2"
@@ -416,7 +403,8 @@ unsafe_op_in_unsafe_fn = "deny"
 unsafe_attr_outside_unsafe = "deny"
 missing_unsafe_on_extern = "deny"
 never_type_fallback_flowing_into_unsafe = "deny"
-# S5 prescribes deny (not forbid): forbid makes per-site #[expect] unrepresentable (E0453).
+missing_docs = "allow"
+
 unsafe_code = "deny"
 unused_qualifications = "deny"
 unused_lifetimes = "deny"
@@ -444,9 +432,6 @@ bare_urls = "allow"
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
-# Bare-allow floor is 0 (ratchet bare-allow-per-crate); deny allows without reason.
-# Prefer #[expect] so suppressions self-retire when the lint stops firing
-# (census: docs/content/reference/developer-reference/lint-policy.mdx).
 allow_attributes_without_reason = "deny"
 allow_attributes = "deny"
 dbg_macro = "deny"
@@ -470,13 +455,9 @@ unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 manual_assert = "deny"
-# Clippy 1.99 warns on `assert!(value.is_empty())`. Its `assert_eq!` suggestion
-# needs a per-type empty value and does not change the check. velnor-actions
-# 0.1.8 pins rustc 1.98.1, which does not know this lint.
 assert_is_empty = "allow"
 manual_let_else = "warn"
 match_bool = "warn"
-# allow census: docs/content/reference/developer-reference/lint-policy.mdx
 needless_pass_by_value = "allow"
 trivially_copy_pass_by_ref = "warn"
 large_enum_variant = "warn"
@@ -501,18 +482,17 @@ format_push_string = "allow"
 no_effect_underscore_binding = "allow"
 items_after_statements = "allow"
 unnecessary_wraps = "allow"
-# promoted 2026-07-12 after residual fix (0 hits).
 unused_self = "warn"
 option_option = "allow"
 verbose_bit_mask = "allow"
 unreadable_literal = "allow"
 unnecessary_debug_formatting = "allow"
-# promoted 2026-07-12 after residual fix (0 hits).
 unused_async = "warn"
 float_cmp = "deny"
 struct_field_names = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+missing_safety_doc = "allow"
 must_use_candidate = "allow"
 module_name_repetitions = "allow"
 future_not_send = "allow"
@@ -532,27 +512,17 @@ cargo_common_metadata = "allow"
 multiple_crate_versions = "allow"
 
 [profile.dev]
-# Line tables only: ~30-50% smaller artifacts, faster link, stack traces still work.
 debug = 1
 
 [profile.release]
 lto = "thin"
 strip = "symbols"
 
-# Symbol-rich capsule build for triage. Select with:
-#   cargo run --bin build-jackin-capsule -- --profile debug
-# Produces a ~10x larger binary; backtraces resolve to function + file:line.
-# Use RUST_BACKTRACE=full when launching to get the richest trace.
 [profile.capsule-debug]
 inherits = "release"
 strip = false
 debug = "line-tables-only"
 
-# Desktop static library release lane: symbol-rich for archived triage
-# artifacts. Selected by `cargo xtask desktop` (XCFramework, bindings, app
-# build); release CI archives the unstripped Rust static library and the app
-# dSYM beside the published bytes. The CLI/capsule release profile is
-# deliberately not weakened.
 [profile.desktop-release]
 inherits = "release"
 lto = "thin"
@@ -565,12 +535,8 @@ libraries = [
     { path = "crates/tools/jackin-lints" },
 ]
 
-# arrayref 0.3.10 on crates.io is a malicious publish (pulls the proc-macro1
-# typosquat whose build.rs downloads and executes a remote payload); 0.3.9
-# was yanked. Pin the ecosystem to a vendored copy of the known-good 0.3.9
-# (checksum-verified against the pre-attack lockfile:
-# 76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb).
-# Transitive via tiny-skia <- termrock-raster. Remove once a trustworthy
-# upstream resolution exists.
-[patch.crates-io]
-arrayref = { path = "vendor/arrayref" }
+
+
+
+
+

@@ -1,9 +1,3 @@
-//! jackin-instance-agents: per-agent credential provisioning.
-//!
-//! Agent provisioners, auth-source snapshot/capture, slot layout, and the
-//! subprocess-telemetry helper used while provisioning. Depends on
-//! `jackin-instance-credentials`; orchestrated by `jackin-instance-roles`.
-
 mod account_sources;
 mod agent_auth;
 mod agent_slots;

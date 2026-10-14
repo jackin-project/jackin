@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Git branch and pull-request context management for the Multiplexer.
-
 use super::{
     Arc, BranchName, GIT_BRANCH_CONTEXT_POLL_INTERVAL, GitContext, Instant, Multiplexer, Oid,
     PullRequestContextCacheEntry, PullRequestInfo, PullRequestLookupMode, PullRequestLookupOutcome,
@@ -90,10 +88,6 @@ impl Multiplexer {
         let request_id = self.pr_watch.pull_request_lookup.begin_spawn(now);
         let workdir = self.launch_env.workdir.clone();
         let branch_for_event = branch.clone();
-        // Snapshot HEAD at spawn time so the cache entry the result
-        // populates is keyed on the head the worker actually queried,
-        // not whatever `self.pr_watch.pull_request_context_head` happens to be
-        // at apply time.
         let head_for_event = self.pr_watch.pull_request_context_head.clone();
         self.spawn_context_lookup(
             jackin_telemetry::schema::enums::BackgroundCycleName::PrContext,
@@ -119,13 +113,6 @@ impl Multiplexer {
         true
     }
 
-    /// Generic worker spawn for the two background context lookups.
-    /// `work` runs the actual `git`/`gh` subprocess (off the daemon's
-    /// main thread); `to_event` maps the worker's return value into
-    /// the `SessionEvent` variant the main loop dispatches. The
-    /// Delivery and work outcomes are classified independently so a successful
-    /// lookup cannot hide a closed result channel, and a delivered failure
-    /// cannot be reported as success.
     pub(super) fn spawn_context_lookup<F, T, E, C>(
         &self,
         cycle: jackin_telemetry::schema::enums::BackgroundCycleName,
@@ -154,11 +141,6 @@ impl Multiplexer {
                 )
             }
         };
-        // Fire-and-forget worker — no `await`, no tokio context needed.
-        // Inside the daemon's `#[tokio::main]` we still route through
-        // `spawn_blocking` so the runtime accounts for blocking work;
-        // outside one (unit tests, ad-hoc tools) a plain OS thread
-        // avoids spinning up a second runtime.
         match tokio::runtime::Handle::try_current() {
             Ok(_handle) => {
                 drop(jackin_telemetry::spawn::autonomous_cycle_blocking(
@@ -195,9 +177,6 @@ impl Multiplexer {
             GitContext::Detached { head } => (None, Some(head)),
             GitContext::Branch { name, head } => (Some(name), head),
         };
-        // Steady-state polling path: (branch, head) unchanged, no chrome
-        // update needed, but the spawn-gate may still admit a refresh if
-        // the cache aged out.
         if self.pr_watch.pull_request_context_branch == branch
             && self.pr_watch.pull_request_context_head == head
         {
@@ -208,19 +187,13 @@ impl Multiplexer {
         let old_pull_request = self.pr_watch.pull_request_context.clone();
         self.pr_watch.pull_request_context_branch = branch.clone();
         self.pr_watch.pull_request_context_head = head.clone();
-        // Detached HEAD (head Some, branch None) is still a git repo; a
-        // bare `branch.is_some()` would miss the `git checkout <sha>` case.
         if (branch.is_some() || head.is_some()) && !self.launch_env.workdir_context.is_git_repo {
             self.launch_env.workdir_context.is_git_repo = true;
-            // Offload the synchronous `git` subprocess to the blocking pool so
-            // it doesn't stall the daemon's render thread (Defect 43).
             let workdir = self.launch_env.workdir.clone();
             if tokio::runtime::Handle::try_current().is_ok() {
                 drop(jackin_telemetry::spawn::autonomous_cycle_blocking(
                     jackin_telemetry::schema::enums::BackgroundCycleName::BranchContext,
                     move || {
-                        // Result discarded: the next git-branch watcher tick will
-                        // pick up the default branch via inotify or periodic poll.
                         drop(resolve_default_branch(&workdir));
                     },
                     |()| jackin_telemetry::spawn::DetachedCompletion::success(),
@@ -233,12 +206,6 @@ impl Multiplexer {
             .as_ref()
             .and_then(|branch| self.cached_pull_request_for_branch(branch, now));
 
-        // Branch/HEAD flips invalidate the in-flight `gh pr list --head <old>`
-        // worker; bumping the id makes its response fail the request_id
-        // guard at the top of `apply_pull_request_context_loaded`. The
-        // apply path also runs a second (branch, head) equality check as
-        // defense-in-depth for any future call site that bypasses this
-        // path.
         self.pr_watch.pull_request_lookup.invalidate_in_flight();
         let changed = old_branch != self.pr_watch.pull_request_context_branch
             || old_head != self.pr_watch.pull_request_context_head
@@ -248,11 +215,6 @@ impl Multiplexer {
         resized || changed
     }
 
-    /// Test-only ergonomic shim: wrap a short-name branch into a
-    /// `GitContext::Branch { head: None }` so existing tests that
-    /// don't care about head behaviour stay readable. Production code
-    /// calls `apply_git_context` directly with a fully-built
-    /// `GitContext`.
     #[cfg(test)]
     pub(super) fn apply_git_branch_context(
         &mut self,
@@ -275,28 +237,15 @@ impl Multiplexer {
         now: Instant,
     ) -> bool {
         if request_id != self.pr_watch.pull_request_lookup.request_id {
-            // `in_flight` belongs to the NEW lookup spawned during the
-            // branch flip — clearing it here lets the spawn-gate admit
-            // a third concurrent worker.
             return false;
         }
         let pre_loading = self.pull_request_context_loading();
         self.pr_watch.pull_request_lookup.in_flight = false;
         let post_loading = self.pull_request_context_loading();
-        // `in_flight` just flipped from true → false, which changes the
-        // `Resolving PR · …` ↔ `Branch · …` slot in the bottom bar even
-        // when the resolved value matches the prior cache. Track the
-        // transition explicitly so a non-`changed` exit still requests a
-        // redraw on the loading flip.
         let loading_changed = pre_loading != post_loading;
         let Some(branch) = branch else {
             return loading_changed;
         };
-        // Transient gh failures (binary missing, auth not configured,
-        // JSON parse, timeout) MUST NOT poison the 60s cache with a
-        // synthetic "no PR" answer — operators would lose a real PR
-        // for a full minute after every blip. Preserve the previous
-        // cached value; the next state-ticker tick retries.
         let pull_request = match outcome {
             PullRequestLookupOutcome::Resolved(pr) => {
                 if !self.launch_env.workdir_context.gh_available {
@@ -308,19 +257,9 @@ impl Multiplexer {
                 return loading_changed;
             }
         };
-        // Defense in depth on top of the request_id discriminator: if
-        // mux's (branch, head) drifted between spawn and apply (e.g. a
-        // future call site that mutates these fields without routing
-        // through `apply_git_context`, which bumps `request_id` via
-        // `pull_request_lookup.invalidate_in_flight`), refuse to assign
-        // or cache so we cannot stamp data against the wrong key.
         if self.pr_watch.pull_request_context_branch.as_ref() != Some(&branch)
             || self.pr_watch.pull_request_context_head != head
         {
-            // We just cleared in_flight a few lines above; schedule a
-            // fresh lookup for the current (branch, head) so the bar
-            // doesn't sit stale until the next git-branch poll happens
-            // to differ from the active mux state.
             self.maybe_spawn_pull_request_context_lookup(now);
             return loading_changed;
         }
@@ -341,11 +280,6 @@ impl Multiplexer {
         changed || loading_changed
     }
 
-    /// Drop cache entries older than the cache entry's bounded lifetime
-    /// so a session that visits many feature branches does not grow the
-    /// cache without bound. Two intervals = enough that an "I'm flipping
-    /// between two PRs" workflow keeps both warm, while monotonic growth
-    /// across hundreds of branches gets pruned.
     pub(super) fn purge_expired_pull_request_cache_entries(&mut self, now: Instant) {
         self.pr_watch
             .pull_request_context_cache
@@ -382,8 +316,6 @@ impl Multiplexer {
         mode == PullRequestLookupMode::RespectCache && self.pull_request_cache_is_fresh(branch, now)
     }
 
-    /// Current branch for the chrome bar. Daemon supplies Git/default-branch
-    /// facts; the TUI component owns the visible filtering rule.
     pub(super) fn context_bar_branch(&self) -> Option<&str> {
         let branch = self.pr_watch.pull_request_context_branch.as_deref()?;
         crate::tui::components::branch_context_bar::visible_branch(

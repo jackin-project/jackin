@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker socket serve loop and framing.
 
 use std::io::{Read, Write};
 
@@ -28,7 +27,6 @@ const MONITOR_TICK_RETRY_DELAY: Duration = Duration::from_secs(1);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ClockSample {
     wall_epoch: i64,
-    /// Monotonic elapsed time since the owning clock started.
     monotonic_elapsed: Duration,
 }
 
@@ -179,8 +177,6 @@ pub(crate) fn serve(config: ServeConfig) {
         if shutdown.load(Ordering::Acquire) {
             break;
         }
-        // Lease and idle maintenance precede accept so a queued client cannot
-        // postpone wake recovery or allow an expired owner to serve requests.
         let now = system_clock_sample(started);
         if interval_elapsed(now, last_renewal, policy.lease_renewal) {
             if !cleanup.renew() {
@@ -223,11 +219,7 @@ pub(crate) fn serve(config: ServeConfig) {
             Err(_) => break,
         }
     }
-    // Revoke the foreground collector before fencing so workers still draining
-    // the queue cannot admit another collection against this owner.
     release_foreground_collector(has_authenticated_foreground_guard, &monitor_store);
-    // Fence all remaining connections before disconnecting the queue. Workers
-    // check this gate both before handling queued streams and before dispatch.
     fenced.store(true, Ordering::Release);
     drop(connections);
     for worker in workers {
@@ -238,8 +230,6 @@ pub(crate) fn serve(config: ServeConfig) {
         drop(ticker.join());
     }
     drop(listener);
-    // Dropping the context joins admitted long polls; keep the lease locked
-    // until those workers and all synchronous connection workers are gone.
     drop(context);
     drop(cleanup);
 }
@@ -339,8 +329,6 @@ fn spawn_publisher_ticker_with_clock(
     shutdown: Arc<AtomicBool>,
     mut clock: Box<dyn TickerClock>,
 ) -> Option<std::thread::JoinHandle<()>> {
-    // Incremental publication merges completed accounts as they finish. A
-    // stalled account never blocks healthy accounts; dispatch also publishes.
     let initial_projection_id = publisher
         .current_projection()
         .ok()
@@ -395,10 +383,6 @@ fn publisher_tick_step(
         state.last_collection_check = Some(sample.monotonic_elapsed);
     }
 
-    // A provider worker can finish between ticker samples, making the
-    // coordinator idle before the final state is published. Poll terminal
-    // state at a bounded interval even while idle so publication does not
-    // depend on a later client request.
     if state.last_publish_attempt.is_none_or(|last_attempt| {
         sample.monotonic_elapsed.saturating_sub(last_attempt) >= MONITOR_TICK_RETRY_DELAY
     }) {

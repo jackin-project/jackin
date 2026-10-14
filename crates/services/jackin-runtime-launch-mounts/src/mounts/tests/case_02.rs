@@ -136,8 +136,6 @@ fn coordination_audits_reject_all_overlap_and_future_sources() {
     let coordination = home.join(".jackin-coordination");
     let state = role_state(&temp.path().join("data/instances/current"), vec![]);
     std::fs::create_dir_all(&home).unwrap();
-    // Root and descendants do not exist yet; nearest existing ancestor resolution
-    // must still reject their future source paths.
     for source in [
         &home,
         &coordination,
@@ -213,8 +211,6 @@ fn coordination_audits_reject_symlink_alias_future_and_lexical_escape() {
         &coordination.join("escape/resource"),
     );
     assert_coordinator_source_rejected(&state, &coordination, &alias.join("escape/resource"));
-    // Protected root itself may be a symlink: protect both its lexical namespace
-    // and its resolved namespace, including future descendants.
     let protected_alias = temp.path().join("protected-root-alias");
     symlink(&coordination, &protected_alias).unwrap();
     assert_coordinator_source_rejected(&state, &protected_alias, &coordination.join("future/lock"));
@@ -237,7 +233,6 @@ fn coordination_audit_preserves_exact_provider_overlay_without_coordination_exce
     let overlay = format!("{}:/home/agent/.codex/config.toml:ro", source.display());
     ensure_provider_authority_not_writable(&state, std::slice::from_ref(&overlay), &[coordination])
         .unwrap();
-    // A provider overlay exemption must never exempt an explicit protected root.
     let error = ensure_provider_authority_not_writable(&state, &[overlay], &[source])
         .expect_err("protected host roots have no overlay exemption")
         .to_string();

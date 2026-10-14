@@ -179,12 +179,7 @@ model = "gpt-5"
         .iter()
         .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
-    // No published_image and no --rebuild → workspace mode without --pull
     assert!(!build_cmd.contains("--pull"));
-    // The derived image is agent-independent and installs every supported
-    // agent. This role supports Claude (a cache-bust install), so the build
-    // consumes JACKIN_CACHE_BUST regardless of which agent was selected — the
-    // cache-bust axis is keyed on the supported set, not the launched agent.
     assert!(
         build_cmd.contains("--build-arg JACKIN_CACHE_BUST="),
         "supported set includes a cache-bust agent (claude); got: {build_cmd}"
@@ -208,8 +203,6 @@ model = "gpt-5"
         "initial instance must be passed as container argv"
     );
     assert!(!run_cmd.contains("/jackin/codex/config.toml"));
-    // Multi-agent role `agents = ["claude", "codex"]` provisions and mounts
-    // credentials only for the actively selected agent (Codex).
     assert!(!run_cmd.contains("/home/agent/.claude"));
     assert!(run_cmd.contains("/home/agent/.codex"));
     let container_name = launched_role_container_name(&runner);
@@ -341,7 +334,6 @@ model = "gpt-5"
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
 
-    // Only the selected agent (Claude) is provisioned and mounted into the container.
     assert!(run_cmd.contains("/home/agent/.claude"));
     assert!(!run_cmd.contains("/home/agent/.codex"));
 

@@ -15,26 +15,12 @@ pub struct VirtualRegions<'a> {
     pub osc_progress: Option<&'a str>,
 }
 
-/// Version of the rule-pack evaluation engine in this build. A pack may declare
-/// a `min_engine_version` higher than this to opt out of older engines that
-/// would silently misread a newer gate grammar; such packs are skipped, not
-/// mis-evaluated. Bump this when the engine gains a capability a pack can depend
-/// on (e.g. a richer gate form).
-///
-/// - v1: flat matchers + `line_regex`/`forbids_regex`.
-/// - v2: the recursive nested-gate grammar (`gate = { all/any/not/… }`). A pack
-///   using `gate` must declare `min_engine_version = 2`, so a v1 engine — which
-///   has no `gate` field and would silently drop it (serde ignores unknown keys),
-///   evaluating only the flat matchers and over-matching — skips the pack instead.
 pub const RULE_ENGINE_VERSION: u32 = 2;
 
 fn default_min_engine_version() -> u32 {
     1
 }
 
-/// Maximum nesting depth for a rule's recursive `Gate`. Packs are operator
-/// authored, so this is a fail-loudly-at-load guard against a malformed deep
-/// nest, not a security boundary; far beyond any pattern a real rule needs.
 const MAX_GATE_DEPTH: usize = 16;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,9 +28,6 @@ pub struct RulePack {
     pub schema_version: u32,
     pub agent: String,
     pub validated_versions: String,
-    /// Minimum [`RULE_ENGINE_VERSION`] this pack needs. Defaults to 1 (every
-    /// engine). A pack authored against a future engine sets this higher so
-    /// older engines skip it instead of misreading unknown gate fields.
     #[serde(default = "default_min_engine_version")]
     pub min_engine_version: u32,
     #[serde(default)]
@@ -59,10 +42,6 @@ pub struct Rule {
     pub region: Region,
     #[serde(default)]
     pub strength: RuleStrength,
-    // Matcher pattern vecs are private: they are set once by deserialize and the
-    // regex ones are compiled in lock-step by `finalize`. Keeping them out of the
-    // public API means no external code can mutate a pattern in place and silently
-    // desync it from its compiled regex (which `regex_all` would then trust).
     #[serde(default)]
     requires_all: Vec<String>,
     #[serde(default)]
@@ -71,70 +50,34 @@ pub struct Rule {
     forbids: Vec<String>,
     #[serde(default)]
     regex: Vec<String>,
-    /// Each pattern must match *some single line* of the region (existential,
-    /// anchored per line). The Herdr-borrowed disambiguator for "a spinner glyph
-    /// at the start of its own line", numbered choices, and count tokens — cases
-    /// a whole-region regex (which anchors to the joined blob) cannot express.
     #[serde(default)]
     line_regex: Vec<String>,
-    /// No pattern may match *any line* of the region (anchored negation). Lets a
-    /// rule say "blocked unless a line is a bare prompt caret", or derive idle
-    /// from an OSC title by subtraction (title present AND not the spinner title
-    /// AND not an action-required title) — `forbids` is substring-only and
-    /// cannot express an anchored pattern.
     #[serde(default)]
     forbids_regex: Vec<String>,
-    /// Recursive boolean gate, combined by logical AND with the flat matchers
-    /// above. Expresses nested `all`/`any`/`not` that the flat lists cannot — a
-    /// shared positive prefix needing its own nested OR (e.g. a hypothetical
-    /// Claude bash-permission rule: `contains "do you want to proceed?"` AND
-    /// `any` of the bash markers AND `any` numbered choice), which flattened into
-    /// one `requires_any` would leak its branches across each other and
-    /// over-match. `None` (the common case) leaves a rule on the flat matchers
-    /// alone. Gate-using packs must declare `min_engine_version = 2`.
     #[serde(default)]
     gate: Option<Gate>,
-    // Regexes compiled once by `RulePack::finalize` at load (parallel to the
-    // pattern vecs above). `matches` falls back to per-eval compilation if these
-    // are absent, so a pack that skipped finalize still matches — just slower.
     #[serde(skip)]
     compiled_regex: Vec<regex::Regex>,
     #[serde(skip)]
     compiled_line_regex: Vec<regex::Regex>,
     #[serde(skip)]
     compiled_forbids_regex: Vec<regex::Regex>,
-    // The gate's regex leaves, compiled once by `finalize` (parallel to the
-    // vecs above). `matches` falls back to the raw `Gate` (per-eval compile)
-    // when this is absent, so a pack that skipped finalize still matches — just slower.
     #[serde(skip)]
     compiled_gate: Option<CompiledGate>,
 }
 
-/// Recursive boolean gate for rules whose match logic needs nested
-/// `all`/`any`/`not` beyond the flat matcher lists. Externally tagged: each node
-/// is a one-key table — `{ all = [..] }`, `{ any = [..] }`, `{ not = {..} }`,
-/// `{ contains = ".." }`, `{ regex = ".." }`, `{ line_regex = ".." }`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Gate {
-    /// Every sub-gate must match.
     All(Vec<Gate>),
-    /// At least one sub-gate must match.
     Any(Vec<Gate>),
-    /// The sub-gate must not match.
     Not(Box<Gate>),
-    /// Case-insensitive substring present in the joined region text.
     Contains(String),
-    /// Case-insensitive regex matches the joined region text.
     Regex(String),
-    /// Case-insensitive regex matches some single line of the region.
     LineRegex(String),
 }
 
 impl Gate {
-    /// Compile every regex leaf once into a [`CompiledGate`] — the gate analogue
-    /// of the flat path's `compiled_regex`, built by `RulePack::finalize` so the
-    /// hot evaluation never compiles a pattern twice.
     fn compile(&self) -> anyhow::Result<CompiledGate> {
         Ok(match self {
             Self::All(gates) => CompiledGate::All(
@@ -156,9 +99,6 @@ impl Gate {
         })
     }
 
-    /// Per-evaluation fallback used only when a pack skipped `finalize` (mirrors
-    /// `regex_all`'s per-call compilation fallback). `region` is the raw extracted
-    /// lines; `text` is their lowercased join.
     fn eval(&self, region: &[String], text: &str) -> bool {
         match self {
             Self::All(gates) => gates.iter().all(|g| g.eval(region, text)),
@@ -172,8 +112,6 @@ impl Gate {
         }
     }
 
-    /// Number of leaf matchers in the tree — counted toward the per-rule matcher
-    /// cap so a deeply nested gate cannot evade the pathological-pack guard.
     fn leaf_count(&self) -> usize {
         match self {
             Self::All(gates) | Self::Any(gates) => gates.iter().map(Self::leaf_count).sum(),
@@ -182,12 +120,6 @@ impl Gate {
         }
     }
 
-    /// Compile-check every regex leaf at load so a broken pattern fails loudly
-    /// here instead of silently never matching at runtime; enforce the same
-    /// matcher-length cap on leaf strings; reject vacuous `all`/`any` (`all = []`
-    /// is a silent no-op, `any = []` silently makes the rule unmatchable); and
-    /// bound nesting depth so an over-nested pack fails at load rather than
-    /// recursing unbounded through `compile`/`eval`.
     fn validate(&self, rule_id: &str, depth: usize) -> anyhow::Result<()> {
         anyhow::ensure!(
             depth <= MAX_GATE_DEPTH,
@@ -214,10 +146,6 @@ impl Gate {
     }
 }
 
-/// A [`Gate`] with its regex leaves compiled once (built by `RulePack::finalize`,
-/// the gate parallel to the flat path's `compiled_regex`). `Contains` strings are
-/// pre-lowercased so the hot path matches against the already-lowercased region
-/// text with no per-call allocation.
 #[derive(Debug, Clone)]
 enum CompiledGate {
     All(Vec<CompiledGate>),
@@ -269,16 +197,8 @@ pub enum Region {
     LastPromptMarker,
     OscTitle,
     OscProgress,
-    /// Lines after the last prompt-caret line (Codex `›`). Isolates text the
-    /// agent emitted since the live prompt, so a question echoed in scrollback
-    /// above the caret cannot match.
     AfterLastPromptMarker,
-    /// Lines before the last prompt-caret line — prior conversation without the
-    /// live input line polluting matches.
     BeforeCurrentPromptMarker,
-    /// The whole recent screen, but empty when a live prompt caret is present.
-    /// A rule keyed here fires only when the agent is NOT sitting at a fresh
-    /// prompt (a self-disabling region).
     WholeRecentWithoutCurrentPromptMarker,
 }
 
@@ -321,7 +241,6 @@ pub struct RulePackRegistry {
 pub enum PackSource {
     Embedded,
     LocalDir(PathBuf),
-    /// Rejected until a cryptographic signature verifier is installed.
     SignedRemoteBundle(SignedPackBundle),
 }
 
@@ -459,8 +378,6 @@ fn load_signed_bundle(
     load_bundle_entries(packs, entries)
 }
 
-// Entry parsing is separate from authentication. Only the verified source path
-// may call it at runtime; parser unit tests exercise it without faking a signer.
 fn load_bundle_entries(
     packs: &mut HashMap<String, RulePack>,
     entries: &[SignedPackEntry],
@@ -494,8 +411,6 @@ fn load_bundle_entries(
 
 fn verify_signed_bundle(bundle: &SignedPackBundle) -> anyhow::Result<&[SignedPackEntry]> {
     let _ = bundle;
-    // No production signature verifier is installed. An identity marker cannot
-    // authenticate a signer or bind pack contents, even for operator input.
     anyhow::bail!("remote pack bundles require a production signature verifier");
 }
 
@@ -531,8 +446,6 @@ impl RulePack {
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(self.schema_version == 1, "unsupported rule schema");
         anyhow::ensure!(!self.agent.trim().is_empty(), "agent is required");
-        // Forward-compat guard: a pack built against a newer engine is skipped
-        // (the load path logs it) rather than mis-evaluated by this build.
         anyhow::ensure!(
             self.min_engine_version >= 1,
             "min_engine_version must be >= 1 in pack {}",
@@ -548,9 +461,6 @@ impl RulePack {
             !self.validated_versions.trim().is_empty(),
             "validated_versions is required"
         );
-        // validated_versions must be a real, *bounded* semver range. Runtime
-        // matching always keeps bundled packs live; the bounded range is pack
-        // provenance for capture/update review, not a daemon-side dark switch.
         let req = semver::VersionReq::parse(self.validated_versions.trim())
             .with_context(|| format!("invalid validated_versions in pack {}", self.agent))?;
         anyhow::ensure!(
@@ -595,8 +505,6 @@ impl RulePack {
             {
                 anyhow::ensure!(matcher.len() <= 512, "matcher too long in rule {}", rule.id);
             }
-            // Compile-check every regex pattern at load so a broken pattern
-            // fails loudly here instead of silently never matching at runtime.
             for matcher in rule
                 .regex
                 .iter()
@@ -610,8 +518,6 @@ impl RulePack {
         Ok(())
     }
 
-    /// Validate, sort rules by descending priority, and compile every regex
-    /// once. Run at load so evaluation does no per-tick sort or regex build.
     pub fn finalize(mut self) -> anyhow::Result<Self> {
         self.validate()?;
         self.rule
@@ -634,7 +540,6 @@ impl RulePack {
         screen_rows: &[String],
         virtuals: VirtualRegions<'_>,
     ) -> Option<RuleMatch> {
-        // `self.rule` is pre-sorted by descending priority in `finalize`.
         self.rule
             .iter()
             .find(|rule| rule.matches(screen_rows, virtuals))
@@ -646,7 +551,6 @@ impl RulePack {
         screen_rows: &[String],
         virtuals: VirtualRegions<'_>,
     ) -> Vec<RuleEvaluation> {
-        // `self.rule` is pre-sorted by descending priority in `finalize`.
         self.rule
             .iter()
             .map(|rule| rule.evaluation(screen_rows, virtuals))
@@ -654,20 +558,12 @@ impl RulePack {
     }
 }
 
-/// Build a case-insensitive regex. Used by `finalize` to compile each pattern
-/// once at load, by `validate` to compile-check patterns (so a broken pattern
-/// fails loudly at load, not silently at eval), and by `regex_all` as the
-/// per-call fallback for a pack loaded without `finalize`.
 fn build_regex(pattern: &str) -> Result<regex::Regex, regex::Error> {
     regex::RegexBuilder::new(pattern)
         .case_insensitive(true)
         .build()
 }
 
-/// Evaluate `pred` against every pattern's compiled regex. Uses the regexes
-/// `finalize` compiled when present (the production path); falls back to
-/// per-call compilation when they are absent (a pack that skipped finalize), so
-/// the result is correct either way — never a silent non-match.
 fn regex_all(
     patterns: &[String],
     compiled: &[regex::Regex],
@@ -708,17 +604,12 @@ impl Rule {
                     .iter()
                     .any(|matcher| text.contains(&matcher.to_ascii_lowercase())))
             && regex_all(&self.regex, &self.compiled_regex, |re| re.is_match(&text))
-            // line_regex: each pattern must match SOME line of the region.
             && regex_all(&self.line_regex, &self.compiled_line_regex, |re| {
                 region.iter().any(|line| re.is_match(line))
             })
-            // forbids_regex: NO pattern may match ANY line of the region.
             && regex_all(&self.forbids_regex, &self.compiled_forbids_regex, |re| {
                 !region.iter().any(|line| re.is_match(line))
             })
-            // Recursive nested gate (combined by AND with the flat matchers);
-            // absent on most rules. Prefer the finalize-compiled gate; fall back
-            // to per-eval compilation only for a pack that skipped finalize.
             && match (self.compiled_gate.as_ref(), self.gate.as_ref()) {
                 (Some(compiled), _) => compiled.eval(&region, &text),
                 (None, Some(gate)) => gate.eval(&region, &text),
@@ -779,9 +670,6 @@ impl Region {
         match self {
             Self::Bottom(n) => bottom(screen_rows, n),
             Self::BottomNonEmpty(n) => {
-                // Scan a wider window so up to `n` non-empty lines survive even
-                // when the bottom of the screen is blank, then keep the last `n`
-                // in original top-to-bottom order.
                 let non_empty: Vec<String> = bottom(screen_rows, n.saturating_mul(2))
                     .into_iter()
                     .filter(|line| !line.trim().is_empty())
@@ -847,13 +735,11 @@ impl Region {
     }
 }
 
-/// A Codex prompt-caret line: exactly `›` or starting `› ` (after trim).
 fn is_prompt_marker_line(line: &str) -> bool {
     let trimmed = line.trim_start();
     trimmed == "›" || trimmed.starts_with("› ")
 }
 
-/// Index of the last prompt-caret line, if any.
 fn last_prompt_marker(screen_rows: &[String]) -> Option<usize> {
     screen_rows
         .iter()
@@ -955,9 +841,6 @@ fn load_packs_from_dir(packs: &mut HashMap<String, RulePack>, dir: &Path) -> any
         if path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
             continue;
         }
-        // Skip-and-log a bad pack rather than failing the whole registry: one
-        // malformed operator override pack must not discard the validated
-        // embedded packs and take screen detection dark for every agent.
         match RulePack::load(&path) {
             Ok(pack) => {
                 packs.insert(pack.agent.clone(), pack);

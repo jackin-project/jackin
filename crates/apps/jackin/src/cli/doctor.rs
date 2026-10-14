@@ -9,12 +9,16 @@ use crate::cli::format::OutputFormat;
 use crate::preflight::{CheckName, CheckResult, CheckStatus, run_check};
 use jackin_core::JackinPaths;
 
-/// `jackin doctor` — run pre-flight health checks and print a status table.
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(about = "Run health checks for your jackin❯ setup")]
 pub struct DoctorArgs {
-    /// Output format (`human` or `json`)
-    #[arg(long, value_name = "FORMAT", default_value = "human")]
+    #[arg(
+        help = "Output format (`human` or `json`)",
+        long_help = "Output format (`human` or `json`)",
+        long,
+        value_name = "FORMAT",
+        default_value = "human"
+    )]
     pub format: String,
 }
 

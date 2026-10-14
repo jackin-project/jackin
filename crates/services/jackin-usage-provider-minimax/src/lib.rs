@@ -1,17 +1,3 @@
-//! jackin-usage-provider-minimax: `MiniMax` usage snapshot collection.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`minimax_snapshot`] — `MiniMax` usage snapshot.
-//!
-//! Two products, selected by key shape (see `ref-contracts-B.md` §3): Token
-//! Plan subscription keys read per-model interval/weekly remains from
-//! `GET {apiBase}/v1/token_plan/remains` (legacy fallback
-//! `.../v1/api/openplatform/coding_plan/remains`); secret `sk-api-*` keys
-//! read PAYG balances from `GET {base}/account/query_balance`. A credential
-//! is never sent to another region because the first request failed: the
-//! default region is global, and CN hosts are used only when explicitly
-//! selected.
-
 #![expect(
     dead_code,
     reason = "provider-adapter fixtures remain testable while production dispatch is broker-only"

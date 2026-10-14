@@ -201,8 +201,6 @@ fn resource_matrix_has_exact_allowlist_and_ignores_secret_env_injection() {
         ),
     ];
     for (identity, service_name, app_mode) in identities {
-        // Resource construction has no environment input. In particular, an
-        // injected HOSTNAME/OTEL_RESOURCE_ATTRIBUTES cannot affect it.
         let cgroup_requests = std::sync::atomic::AtomicUsize::new(0);
         let cgroup = || {
             cgroup_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

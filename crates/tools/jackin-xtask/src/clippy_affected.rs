@@ -1,46 +1,3 @@
-//! Run Clippy over the crates affected by worktree changes.
-//!
-//! Pre-commit hook entry point (`cargo xtask clippy-affected`):
-//!
-//! ```sh
-//! cargo xtask clippy-affected                  # lint affected members + nested packages
-//! cargo xtask clippy-affected --print-selection  # dry run: emit the selection as JSON
-//! ```
-//!
-//! # Closure model
-//!
-//! Changed paths come from `git status --porcelain` (staged, unstaged, and
-//! untracked). Under the stashing pre-commit hook the worktree collapses to
-//! the staged snapshot, so this equals the staged set; run manually it
-//! covers every worktree edit, which is what Clippy lints.
-//!
-//! Member selection reuses [`affected_crates::WorkspaceGraph`] unchanged:
-//! longest-prefix crate mapping plus transitive reverse dependents, with
-//! `Cargo.lock` / root `Cargo.toml` refinement and workspace-wide
-//! widening for toolchain, Clippy, and Cargo config. Paths that cannot
-//! affect a Rust build (`native/`, docs, `.github/`, mise config, …) are
-//! dropped before selection so Swift-only commits skip Clippy entirely.
-//!
-//! Three gaps the shared graph cannot see are closed here:
-//!
-//! * Detached (non-member) packages — `fuzz/*`, `vendor/arrayref`
-//!   — are linted via `cargo clippy --manifest-path`. A member change
-//!   pulls in nested packages with `path` dependencies into it; a nested
-//!   change pulls in members whose resolve closure names it (covers the
-//!   `[patch]`-replaced `arrayref`).
-//! * `crates/tools/jackin-lints` is excluded: it needs the nightly dylint
-//!   toolchain (its own `rust-toolchain` pin) and stable Clippy cannot
-//!   compile it. No member depends on it.
-//! * Cross-crate file inputs (`include_str!`/`include_bytes!`/`include!`
-//!   and `#[path]` reaching outside the owning crate, e.g. `docker/`
-//!   scripts or sibling-crate fixtures) are found by scanning member and
-//!   nested sources at runtime, so new ones are covered without code
-//!   changes. Only a non-literal `include_*!` input widens to the full
-//!   workspace: it compiles (via `concat!`/`env!`/…), so its target is
-//!   genuinely unknowable. Unparseable `#[path]` never compiles (Clippy
-//!   fails closed) and out-of-repo literals are unchangeable by any commit,
-//!   so both drop silently.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io::{self, Write};
@@ -55,19 +12,12 @@ use crate::fs_util;
 
 #[derive(Args)]
 pub(crate) struct ClippyAffectedArgs {
-    /// Emit the selected members and nested packages as JSON instead of
-    /// running Clippy.
     #[arg(long)]
     print_selection: bool,
 }
 
-/// Detached packages the hook must never lint: nightly-only (dylint) and
-/// unbuildable under the stable hook toolchain.
 const NIGHTLY_ONLY_NESTED: &[&str] = &["crates/tools/jackin-lints"];
 
-/// Exact Clippy flags shared with CI (velnor per-unit commands in
-/// `.github/ci/project.toml` and the `lint` partition of `cargo xtask ci`,
-/// which runs them workspace-wide instead of per package).
 const CLIPPY_FLAGS: &[&str] = &[
     "--locked",
     "--profile",
@@ -76,34 +26,24 @@ const CLIPPY_FLAGS: &[&str] = &[
     "--all-features",
 ];
 
-/// A detached (non-workspace-member) package discovered under the repo.
 struct NestedPackage {
-    /// Workspace-relative directory containing its `Cargo.toml`.
     dir: PathBuf,
-    /// `[package] name`, for the resolve-graph reverse edge.
     name: String,
-    /// Workspace members it reaches via `path` dependencies.
     member_dependencies: BTreeSet<String>,
-    /// A `path` dependency resolved outside every known root: include this
-    /// package whenever any member is selected.
     depends_on_unknown: bool,
-    /// Nightly-only: never select, drop paths under it.
     excluded: bool,
 }
 
-/// Who owns a changed path for Clippy purposes.
 enum Owner {
     Member(PathBuf),
     Nested(usize),
 }
 
-/// Cross-boundary compile inputs: input path (workspace-relative) to owners.
 #[derive(Default)]
 struct InputOwners {
     members: BTreeMap<PathBuf, BTreeSet<String>>,
     nested: BTreeMap<PathBuf, BTreeSet<usize>>,
     unknown: bool,
-    /// Files that forced `unknown`, for diagnostics.
     unknown_sources: Vec<PathBuf>,
 }
 
@@ -177,8 +117,6 @@ fn select(
     let mut member_paths = Vec::new();
     let mut selected_nested = BTreeSet::new();
     for path in paths {
-        // Cross-boundary inputs first: an embedded doc or script can carry
-        // any extension, so this lookup runs before the docs skip below.
         if let Some(owners) = inputs.members.get(path) {
             member_paths.extend(owners.iter().map(|name| member_dir(graph, name)));
         }
@@ -190,9 +128,6 @@ fn select(
         }
         match classify(graph, nested, path) {
             None => {}
-            // Member files collapse to their root: the shared graph maps
-            // them back identically. Workspace config paths pass through
-            // verbatim for lock/manifest/wide special-casing.
             Some(Owner::Member(root)) => member_paths.push(root),
             Some(Owner::Nested(index)) => {
                 selected_nested.insert(index);
@@ -254,8 +189,6 @@ fn select(
     })
 }
 
-/// Map one changed path to its Clippy owner, or `None` when the path cannot
-/// affect a Rust build.
 fn classify(graph: &WorkspaceGraph, nested: &[NestedPackage], path: &Path) -> Option<Owner> {
     if is_excluded_nested(nested, path) {
         return None;
@@ -293,9 +226,6 @@ fn enclosing_member_root(graph: &WorkspaceGraph, path: &Path) -> Option<PathBuf>
         .cloned()
 }
 
-/// Root-level files (plus `.cargo/`) that can change a Rust build. Everything
-/// else outside member and nested roots — `native/`, docs, `.github/`,
-/// mise config, scripts — is Clippy-irrelevant.
 fn is_workspace_config(path: &Path) -> bool {
     matches!(
         path.to_string_lossy().as_ref(),
@@ -311,8 +241,6 @@ fn member_dir(graph: &WorkspaceGraph, name: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(name))
 }
 
-/// `git status --porcelain=v1 -z` fields: `XY␣path` entries, except renames
-/// and copies which append the other side as a second bare field.
 fn parse_status_porcelain(output: &[u8]) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut fields = output.split(|byte| *byte == 0);
@@ -348,10 +276,6 @@ fn repo_root() -> Result<PathBuf> {
     Ok(PathBuf::from(root.trim()))
 }
 
-/// `Cargo.lock` refinement over HEAD, index, and worktree blobs. `Ok(None)`
-/// means "unprovable": the caller widens to the full workspace. The index
-/// pair is load-bearing outside the stashing hook: a staged-only edit with
-/// the worktree reverted to HEAD must still select, not skip.
 fn worktree_lock_packages() -> Result<Option<BTreeSet<String>>> {
     let head = affected_crates::git_file("HEAD", Path::new("Cargo.lock"));
     let index = index_file(Path::new("Cargo.lock"));
@@ -372,14 +296,10 @@ fn worktree_workspace_dependencies() -> Result<Option<BTreeSet<String>>> {
     Ok(union_workspace_dependency_changes(&head, &index, &worktree))
 }
 
-/// Staged (`:path`) blob; a path missing from the index errors so the
-/// caller widens.
 fn index_file(path: &Path) -> Result<Vec<u8>> {
     affected_crates::git_file("", path)
 }
 
-/// Union of HEAD↔index and index↔worktree lock diffs. Either pair
-/// unparseable widens (`None`): an unprovable scope must never skip.
 fn union_lock_changes(head: &[u8], index: &[u8], worktree: &[u8]) -> Option<BTreeSet<String>> {
     let head_index = affected_crates::changed_lock_packages_from_contents(head, index).ok()?;
     let index_worktree =
@@ -387,8 +307,6 @@ fn union_lock_changes(head: &[u8], index: &[u8], worktree: &[u8]) -> Option<BTre
     Some(head_index.into_iter().chain(index_worktree).collect())
 }
 
-/// Union of HEAD↔index and index↔worktree workspace-dependency diffs.
-/// Either pair structural or unparseable widens (`None`).
 fn union_workspace_dependency_changes(
     head: &[u8],
     index: &[u8],
@@ -495,8 +413,6 @@ fn enclosing_member_name(graph: &WorkspaceGraph, path: &Path) -> Option<String> 
         .and_then(|(id, _)| graph.member_name(id).map(str::to_owned))
 }
 
-/// Scan member and nested `.rs` sources for file inputs that cross the
-/// owning root (`include_str!`/`include_bytes!`/`include!`, `#[path]`).
 fn collect_cross_boundary_inputs(
     root: &Path,
     graph: &WorkspaceGraph,
@@ -559,8 +475,6 @@ fn collect_scope_inputs(
     Ok(())
 }
 
-/// Textual scan: every `include_*!(…)` / `#[path = …]` literal that resolves
-/// outside `scope` is recorded; anything unresolvable sets `unknown` (wide).
 fn scan_source_inputs(
     source: &str,
     file: &Path,
@@ -591,7 +505,6 @@ fn scan_source_inputs(
                     inputs,
                 );
         } else if let Some(rest) = source[index..].strip_prefix("#[path") {
-            // `#[pathname = …]` is not the module attribute; skip it.
             if rest.starts_with(|char: char| char.is_whitespace() || char == '=') {
                 index += "#[path".len()
                     + consume_path_attribute(rest, file, scope, member, nested_index, inputs);
@@ -604,10 +517,6 @@ fn scan_source_inputs(
     }
 }
 
-/// Consume the delimiter after an `include_*!`; returns bytes advanced
-/// within `rest`. Macro text without a following delimiter is a mention in
-/// prose, a comment, or a string fragment — skipped silently. A delimiter
-/// followed by anything but a plain string literal widens the selection.
 fn consume_include(
     rest: &str,
     file: &Path,
@@ -640,8 +549,6 @@ fn consume_path_attribute(
     nested_index: Option<usize>,
     inputs: &mut InputOwners,
 ) -> usize {
-    // Unlike `include_*!`, a non-literal `#[path = …]` never compiles, so
-    // Clippy fails closed on it and silent recovery is sound here.
     let trimmed = skip_trivia(rest);
     let Some(after_equals) = trimmed.strip_prefix('=') else {
         return 0;
@@ -656,8 +563,6 @@ fn consume_path_attribute(
     }
 }
 
-/// Skip whitespace and comments (nesting block comments); unterminated
-/// input consumes the rest, which then fails to parse as an invocation.
 fn skip_trivia(mut source: &str) -> &str {
     loop {
         let trimmed = source.trim_start_matches(|char: char| char.is_whitespace());
@@ -698,10 +603,6 @@ fn skip_block_comment(source: &str) -> Option<&str> {
     None
 }
 
-/// Parse a `"…"` or raw `r"…" | r#"…"# | …` literal; `None` on
-/// non-literals. Every literal form that compiles in `#[path = …]` /
-/// `include_*!` position must parse here: the `#[path]` consumer relies on
-/// `None` meaning "never compiles" to skip silently instead of widening.
 fn parse_string_literal(source: &str) -> Option<(String, usize)> {
     let bytes = source.as_bytes();
     if bytes.first() == Some(&b'r') {
@@ -729,10 +630,6 @@ fn parse_string_literal(source: &str) -> Option<(String, usize)> {
     None
 }
 
-/// Parse `r` + `#`* + `"` … `"` + `#`*; `None` on byte strings
-/// (`rb"…"`, `br"…"`) and unterminated literals. Byte strings never
-/// compile in path/include position, so rejecting them keeps the
-/// `#[path]` silent-skip sound while `include_*!` widens.
 fn parse_raw_string_literal(source: &str) -> Option<(String, usize)> {
     let bytes = source.as_bytes();
     let mut hashes = 0;
@@ -749,7 +646,6 @@ fn parse_raw_string_literal(source: &str) -> Option<(String, usize)> {
         let closes = bytes[index] == b'"'
             && after <= bytes.len()
             && bytes[index + 1..after].iter().all(|byte| *byte == b'#')
-            // A longer hash run means this quote is literal content.
             && bytes.get(after) != Some(&b'#');
         if closes {
             return Some((source[content_start..index].to_owned(), after));
@@ -759,10 +655,6 @@ fn parse_raw_string_literal(source: &str) -> Option<(String, usize)> {
     None
 }
 
-/// Push one `\\` escape starting at `index` (the char after the
-/// backslash); returns the index after the escape, or `None` when the
-/// escape is malformed. Malformed escapes never compile, so `None`
-/// keeps both consumers sound (silent skip / widen respectively).
 fn push_escape(source: &str, literal: &mut String, index: usize) -> Option<usize> {
     let bytes = source.as_bytes();
     match bytes.get(index) {
@@ -797,8 +689,6 @@ fn push_escape(source: &str, literal: &mut String, index: usize) -> Option<usize
         Some(b'x') => {
             let digits = source.get(index + 1..index + 3)?;
             let value = u8::from_str_radix(digits, 16).ok()?;
-            // `\x80`+ never compiles in a `str` literal; reject it so the
-            // `#[path]` silent-skip stays sound.
             if value > 0x7F {
                 return None;
             }
@@ -818,13 +708,11 @@ fn push_escape(source: &str, literal: &mut String, index: usize) -> Option<usize
             Some(index + 1 + 1 + close + 1)
         }
         Some(b'\n') => {
-            // Line continuation: skip the newline and leading whitespace.
             let rest = source.get(index + 1..)?;
             let skipped = rest.len() - rest.trim_start().len();
             Some(index + 1 + skipped)
         }
         Some(b'\r') => {
-            // `\` + CRLF is also a line continuation.
             let rest = source.get(index + 1..)?.strip_prefix('\n')?;
             let skipped = rest.len() - rest.trim_start().len();
             Some(index + 2 + skipped)
@@ -849,8 +737,6 @@ fn record_literal(
     if resolved.starts_with(scope) {
         return;
     }
-    // Escaping the repo root (or an empty literal, which never compiles):
-    // no commit can affect the outcome, so drop rather than widen.
     if resolved.components().next().is_none()
         || matches!(resolved.components().next(), Some(Component::ParentDir))
     {
@@ -868,7 +754,6 @@ fn record_literal(
     }
 }
 
-/// Lexical `..`/`.` resolution without touching the filesystem (symlink-safe).
 fn normalize(path: &Path) -> PathBuf {
     let mut parts: Vec<Component<'_>> = Vec::new();
     for component in path.components() {

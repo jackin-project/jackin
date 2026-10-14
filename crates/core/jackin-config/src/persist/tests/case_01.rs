@@ -9,8 +9,6 @@ fn publication_journal_with_zero_completed_renames_recovers_on_open() {
     let paths = JackinPaths::for_tests(temp.path());
     AppConfig::load_or_init(&paths).unwrap();
 
-    // Simulate kill -9 after the journal fsync but before the first rename:
-    // staged tmps plus journal on disk, zero renames completed.
     let global_before = std::fs::read_to_string(&paths.config_file).unwrap();
     let new_global = journal_global_with_marker(&global_before);
     let beta_path = paths.workspaces_dir.join("beta.toml");
@@ -50,7 +48,6 @@ fn publication_journal_with_zero_completed_renames_recovers_on_open() {
     assert_eq!(std::fs::read_to_string(&beta_path).unwrap(), beta_contents);
     assert!(!journal_path.exists());
     assert_no_staged_files(&paths);
-    // Recovered tree passes full load-time validation.
     AppConfig::load_or_init(&paths).unwrap();
 }
 
@@ -65,8 +62,6 @@ fn publication_journal_first_rename_only_completes_writes_and_deletes() {
     std::fs::write(&alpha_path, journal_workspace_toml("/workspace/alpha")).unwrap();
     std::fs::write(&beta_path, journal_workspace_toml("/workspace/beta")).unwrap();
 
-    // Simulate kill -9 after the first rename with a delete still pending:
-    // global new, alpha staged, beta awaiting deletion.
     let global_before = std::fs::read_to_string(&paths.config_file).unwrap();
     let new_global = journal_global_with_marker(&global_before);
     let new_alpha = journal_workspace_toml("/workspace/alpha-new");
@@ -120,7 +115,6 @@ fn recover_pending_publication_is_idempotent() {
     );
     assert!(!journal_path.exists());
 
-    // Second run sees no journal and changes nothing.
     recover_pending_publication(&paths.config_file).unwrap();
     assert_eq!(
         std::fs::read_to_string(&paths.config_file).unwrap(),
@@ -161,7 +155,6 @@ fn recover_pending_publication_rejects_corrupt_journal() {
 
     let err = AppConfig::load_or_init(&paths).unwrap_err();
     assert!(err.to_string().contains("corrupt"), "{err:#}");
-    // Recovery never touches a journal it cannot parse.
     assert_eq!(
         std::fs::read(&journal_path).unwrap(),
         b"not = [valid toml".to_vec()
@@ -251,10 +244,6 @@ fn config_lock_timeout_uses_injected_clock_without_sleeping() {
 
 #[test]
 #[cfg(unix)]
-// Re-spawns the test binary as a lock-holding child that must die with a
-// real OS signal; process spawning and kernel flock semantics are outside
-// what Miri models (posix spawn attributes are unsupported), so skip under
-// Miri.
 #[cfg_attr(miri, ignore)]
 fn config_lock_process_death_releases_ownership() {
     const CHILD_PATH: &str = "JACKIN_CONFIG_LOCK_TEST_CHILD";
@@ -303,9 +292,6 @@ fn crash_between_renames_recovered_on_next_write_lock() {
     let (temp, config, workspace) = staged_config_tree();
     let journal = publication_journal_path(&config);
 
-    // Simulate `kill -9` after the first of two renames: journal durable,
-    // one rename applied, `Drop` cleanup skipped via `forget` (a dead
-    // process runs no destructors).
     let mut writes = vec![
         stage_atomic_write(&config, "global-new").unwrap(),
         stage_atomic_write(&workspace, "ws-new").unwrap(),
@@ -316,12 +302,10 @@ fn crash_between_renames_recovered_on_next_write_lock() {
     let _leaked = std::mem::ManuallyDrop::new(writes);
     let _leaked = std::mem::ManuallyDrop::new(deletes);
 
-    // The skew the journal exists to repair: global-new, workspace-old.
     assert_eq!(std::fs::read_to_string(&config).unwrap(), "global-new");
     assert_eq!(std::fs::read_to_string(&workspace).unwrap(), "ws-old");
     assert!(journal.exists());
 
-    // The next writer rolls the journal forward before observing the tree.
     drop(acquire_config_write_lock(&config).unwrap());
 
     assert_eq!(std::fs::read_to_string(&config).unwrap(), "global-new");
@@ -360,8 +344,6 @@ fn failed_commit_restores_originals_and_clears_journal() {
         stage_atomic_write(&workspace, "ws-new").unwrap(),
     ];
     let mut deletes = Vec::new();
-    // Deterministic rename failure: the second staged file vanishes before
-    // commit, so the first rename must be rolled back in-process.
     std::fs::remove_file(&writes[1].tmp).unwrap();
 
     let _error = commit_staged_config(&journal, &mut writes, &mut deletes).unwrap_err();

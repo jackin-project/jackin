@@ -57,8 +57,6 @@ fn summary_wrapped_and_empty_wins_over_legacy() {
 
 #[test]
 fn summary_live_command_shape_parses() {
-    // The live CLI nests groups under `command.data` — same pools as the
-    // bare shape, not a legacy fallback.
     let live = r#"{"command": {"data": {"groups": [{"buckets": [
         {"bucketId": "gemini-5h", "remainingFraction": 0.5, "resetTime": "2026-09-17T14:00:00Z"},
         {"bucketId": "3p-weekly", "remainingFraction": 0.9, "resetTime": "2026-09-21T00:00:00Z"}
@@ -84,7 +82,6 @@ fn summary_absent_fraction_is_unknown_not_depleted() {
     .expect("parses");
     assert_eq!(usage.pools.len(), 1);
     assert_eq!(usage.pools[0].remaining_percent, None);
-    // …and renders as a "No data" detail row, never 0% (exhausted).
     let buckets = antigravity_buckets(&usage, 1_781_728_000);
     assert_eq!(buckets.len(), 1);
     assert_eq!(buckets[0].label, "Gemini · 5h");
@@ -127,7 +124,6 @@ fn legacy_collapses_to_worst_fraction_per_family() {
     let usage = parse_antigravity_usage_output(LEGACY_FIXTURE).expect("legacy parses");
     assert!(usage.legacy_fallback);
     assert!(usage.identity.is_none());
-    // Worst Gemini fraction (0.2) wins over 0.7; internal/empty/available-only dropped.
     assert_eq!(usage.pools.len(), 2);
     let buckets = antigravity_buckets(&usage, 1_781_728_000);
     assert_eq!(buckets.len(), 4);
@@ -135,7 +131,6 @@ fn legacy_collapses_to_worst_fraction_per_family() {
     assert_eq!(buckets[0].remaining_percent, Some(20));
     assert_eq!(buckets[1].label, "Other models · 5h");
     assert_eq!(buckets[1].remaining_percent, Some(55));
-    // 5h-only: weekly reads "No data".
     assert_eq!(buckets[2].label, "Gemini · Weekly");
     assert_eq!(buckets[2].pace_label.as_deref(), Some("No data"));
     assert_eq!(buckets[2].remaining_percent, None);
@@ -225,8 +220,6 @@ fn snapshot_status_needs_quota_signal_not_just_parse() {
 
 #[test]
 fn gated_snapshot_reports_unsupported_without_running_usage() {
-    // Cannot control the installed agy here; assert the view constructor's
-    // contract directly: gated errors become typed placeholder buckets.
     let view = antigravity_status_view(
         "antigravity",
         None,

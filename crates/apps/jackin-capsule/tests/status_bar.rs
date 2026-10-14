@@ -3,8 +3,6 @@
 
 use jackin_capsule::tui::components::chrome::StatusBarWidget;
 use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar, status_bar_plan};
-/// Status bar layout regressions: brand pill, tab click regions,
-/// menu hint, overflow indicator.
 use jackin_capsule::tui::layout::Tab;
 use jackin_capsule::tui::model::VisibleAgentState;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
@@ -117,7 +115,6 @@ fn tab_click_region_includes_state_glyph_width() {
     let states = vec![(7u64, VisibleAgentState::Done)];
     let (bar, _) = draw(80, &tabs, 0, &states, None, PrefixMode::Idle);
     let (start, end) = bar.tab_regions[0];
-    // Cell layout: 1 pad + name(5) + 1 sep + 1 glyph + 1 pad = 9 cols.
     assert_eq!(end - start, 9);
 }
 
@@ -134,8 +131,6 @@ fn prefix_mode_swap_changes_menu_hint() {
 
 #[test]
 fn overflow_indicator_appears_when_tabs_exceed_width() {
-    // Tabs of label "AAAAA" plus separator. With cols=30 only a handful
-    // fit, so we should see the overflow `›` rendered.
     let tabs: Vec<Tab> = (0..10)
         .map(|i| Tab::new_single(format!("Tab{i:02}"), u64::try_from(i).unwrap_or(0), "test"))
         .collect();

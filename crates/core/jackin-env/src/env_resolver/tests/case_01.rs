@@ -253,9 +253,6 @@ fn operator_override_wins_over_skipped_dependency_cascade() {
     branch.depends_on = vec!["env.PROJECT".to_owned()];
     decls.insert("BRANCH".to_owned(), branch);
 
-    // PROJECT is skipped, which would normally cascade-skip BRANCH — but
-    // BRANCH carries an operator override. The override check runs before
-    // the dep-skipped check, so the override survives the cascade.
     let prompter = MockPrompter::new(vec![PromptResult::Skipped]);
     let overrides = BTreeMap::from([("BRANCH".to_owned(), "hotfix".to_owned())]);
     let resolved = resolve_env_with_overrides(&decls, &prompter, &overrides).unwrap();
@@ -325,7 +322,6 @@ fn interpolates_multiple_refs_in_one_field() {
 
     let titles = prompter.captured_titles.borrow();
     let defaults = prompter.captured_defaults.borrow();
-    // LABEL is the second prompt (PROJECT is first, TEAM is static)
     assert_eq!(titles[1], "Label for backend/api:");
     assert_eq!(defaults[1], Some("backend/api".to_owned()));
 }
@@ -334,7 +330,6 @@ fn interpolates_multiple_refs_in_one_field() {
 fn resolved_values_containing_dollar_brace_are_not_re_interpolated() {
     let mut decls = BTreeMap::new();
 
-    // User types a value that looks like an interpolation placeholder
     decls.insert("A".to_owned(), interactive_text("Enter A:"));
     decls.insert("B".to_owned(), static_var("secret"));
 
@@ -348,12 +343,10 @@ fn resolved_values_containing_dollar_brace_are_not_re_interpolated() {
     };
     decls.insert("C".to_owned(), c);
 
-    // User enters a value that looks like an interpolation ref
     let prompter = MockPrompter::new(vec![PromptResult::Value("${env.B}".to_owned())]);
 
     let resolved = resolve_env(&decls, &prompter).unwrap();
 
-    // C should be "prefix-${env.B}-suffix" (literal), NOT "prefix-secret-suffix"
     let c_value = resolved.vars.iter().find(|(k, _)| k == "C").unwrap();
     assert_eq!(c_value.1, "prefix-${env.B}-suffix");
 }

@@ -1,5 +1,3 @@
-//! Tests for OSC passthrough policy.
-
 use super::*;
 
 fn policy_with(pairs: &[(&str, &str)]) -> OscPolicy {

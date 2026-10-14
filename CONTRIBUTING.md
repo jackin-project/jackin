@@ -42,11 +42,9 @@ boundary.
 What runs on every commit (see `hk.pkl` for the exact commands — each
 mirrors the CI definition it cites):
 
-- `fmt`: `mise exec -- mbx +1.99.0 fmt --check` (workspace; fix: `mise exec -- mbx +1.99.0 fmt`)
-- `clippy`: `mise exec -- mbx +1.99.0 xtask clippy-affected` — Clippy with the exact CI flags
-  over the affected closure (changed crates + reverse dependents +
-  detached fuzz/arrayref packages + cross-crate file inputs; widens to
-  the workspace when unprovable)
+- `cargo_fmt` (hk builtin): `cargo fmt --check` over the workspace (fix: `cargo fmt`)
+- `cargo_clippy` (hk builtin): workspace-wide `cargo clippy`, the same scope
+  CI lints (`mise exec -- mbx +1.99.0 xtask ci --only lint`)
 - `actionlint`: workflows (`*.yml` only, matching CI)
 - `swiftlint`, `swift-format`: `native/**` on macOS; skipped elsewhere
 
@@ -76,9 +74,7 @@ repository and build outputs after terminating its tool process group. Review
 patches remain until the author removes them. Bypass with `HK=0 git commit`
 (emergencies only).
 
-Two intentional divergences from CI: hook Clippy is closure-scoped while
-CI lints the workspace (same flags; full coverage stays in CI /
-`mise exec -- mbx +1.99.0 xtask ci --only lint`), and `hk check --all` scopes Clippy by `git status`
+One intentional divergence from CI: `hk check --all` scopes steps by `git status`
 (skips green on a clean tree). The global install
 (`hk install --global --mise`) is GUI-robust but forces `--staged`,
 which disables stashing — hence the repo-owned bootstrap above. Do not
@@ -168,4 +164,4 @@ mise exec -- mbx +1.99.0 xtask ci --fast
 
 Local builds outside CI default to the package version for `JACKIN_VERSION` / `JACKIN_CAPSULE_VERSION` so each commit does not invalidate every build-meta consumer and capsule cache entry. GitHub Actions sets `CI`, so release, preview, construct, and CI builds still stamp the real `<version>+<sha>`. Set `JACKIN_VERSION_OVERRIDE=<value>` only when you need an explicit local version.
 
-Fmt fail → `mise exec -- mbx +1.99.0 fmt`, then re-check with `mise exec -- mbx +1.99.0 fmt --check`. See [TESTING.md](TESTING.md).
+Fmt fail → `mise exec -- mbx +1.99.0 fmt`, then re-check with `mise exec -- mbx +1.99.0 fmt --check`.

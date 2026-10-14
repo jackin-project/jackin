@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Config boundary, overlap, and instance admission validation.
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
@@ -17,9 +16,6 @@ pub(crate) fn is_strict_descendant(path: &str, root: &str) -> bool {
     path != root && jackin_core::container_paths::path_is_ancestor_or_equal(&root, &path)
 }
 
-/// Resolve an existing container path through symlinks and normalize paths
-/// that are not present yet. A path that exists but cannot be canonicalized is
-/// rejected by the caller rather than being treated as a harmless alias.
 pub(crate) fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
     anyhow::ensure!(path.is_absolute(), "container path must be absolute");
     let normalized = jackin_core::container_paths::normalize_path(path);
@@ -30,8 +26,6 @@ pub(crate) fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
     }
 }
 
-/// Reject a cwd whose recursive workspace grant could cover capsule state,
-/// agent-private homes, or an admitted private mount destination.
 pub(crate) fn validate_workdir_boundary(config: &CapsuleConfig) -> Result<()> {
     let lexical_workdir = jackin_core::container_paths::normalize_path(Path::new(&config.workdir));
     let workdir = normalize_existing_path(&lexical_workdir)?;
@@ -47,10 +41,6 @@ pub(crate) fn validate_workdir_boundary(config: &CapsuleConfig) -> Result<()> {
     Ok(())
 }
 
-/// Aux git dirs live under `/jackin/host` by construction
-/// (`/jackin/host/<dst>/.git`), a subtree the workspace boundary policy can
-/// never admit. Admit exactly strict descendants of that root so in-container
-/// git can follow the worktree gitdir pointer; anything else fails closed.
 pub(crate) fn validate_worktree_git_target(target: &str) -> Result<()> {
     anyhow::ensure!(
         !target.split('/').any(|component| component == ".."),
@@ -158,11 +148,6 @@ pub(crate) fn validate_instance(
             "instance {instance:?} has an invalid XDG cache path"
         );
     }
-    // Amp/OpenCode export their data directory through XDG_DATA_HOME, but
-    // persist settings under a sibling `.config/<agent>` directory. The
-    // host mounts both roots for the same slot; admit only the exact
-    // adapter-defined sibling rather than widening the allowlist to all
-    // of `/home/agent`.
     let paired_xdg_config_root = config
         .agent_for_instance(instance)
         .and_then(jackin_core::Agent::from_slug)

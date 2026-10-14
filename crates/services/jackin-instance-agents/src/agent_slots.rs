@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Dedicated-provisioner agent slot methods.
 
 use crate::{
     InstanceAuthBinding, ProvisionedInstanceAuth, agent_slot_dirs, slot_home_rel, slot_layout,
@@ -35,8 +34,6 @@ pub fn provision_claude_slot(
     let claude_home_dir = home_dir.join(&layout.home_rel);
     std::fs::create_dir_all(&claude_dir)?;
     std::fs::create_dir_all(&claude_home_dir)?;
-    // 0o600 because the Claude CLI may later persist OAuth state
-    // into this file once the container runs.
     let claude_account_home = claude_home_dir.join(".claude.json");
     jackin_instance_credentials::create_private_file_if_absent(&claude_account_home, b"{}")?;
     let account_json = claude_dir.join("account.json");

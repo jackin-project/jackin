@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspace subcommand dispatch — extracted from `app::run` to keep mod.rs focused.
-
 use anyhow::Result;
 
 use crate::cli::{self, WorkspaceCommand};
@@ -26,8 +24,6 @@ struct WorkspaceCreateParams {
     git_pull: bool,
 }
 
-/// CLI field bundle for `workspace edit` — keeps handler signatures under
-/// clippy's argument thresholds while preserving arm behavior.
 #[expect(
     clippy::struct_excessive_bools,
     reason = "mirrors clap flags on WorkspaceCommand::Edit; grouping would obscure CLI parity"
@@ -191,8 +187,6 @@ fn handle_workspace_create(paths: &JackinPaths, params: WorkspaceCreateParams) -
             .iter()
             .map(|r| jackin_core::shorten_home(&r.child.src))
             .collect();
-        // Parent paths in a single create are all the same set; pick
-        // the first for the summary headline.
         let parent = jackin_core::shorten_home(&plan.collapsed[0].covered_by.src);
         eprintln!(
             "collapsed {} redundant mount(s) under {parent}: {}",
@@ -348,9 +342,6 @@ fn prepare_workspace_edit(
     params: &WorkspaceEditParams,
 ) -> Result<PreparedWorkspaceEdit> {
     let name = params.name.as_str();
-    // Map paired flags to Option<bool>: None = no change.
-    // Mutual exclusion is enforced at parse time by clap's
-    // `conflicts_with`, so at most one of the two is true.
     let git_pull_change = if params.git_pull {
         Some(true)
     } else if params.no_git_pull {
@@ -382,7 +373,6 @@ fn prepare_workspace_edit(
         params.no_workdir_mount,
     )?;
 
-    // Reject pre-existing violations unless --prune.
     if !plan.pre_existing_collapses.is_empty() && !params.prune {
         let details: Vec<String> = plan
             .pre_existing_collapses
@@ -408,8 +398,6 @@ fn prepare_workspace_edit(
         .chain(plan.pre_existing_collapses.iter())
         .collect();
 
-    // If there are any collapses to apply, prompt (or bail on
-    // non-TTY without --yes).
     if !all_collapses.is_empty() && !params.assume_yes {
         crate::prompt::require_interactive_stdin(
             "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively",
@@ -464,8 +452,6 @@ fn summarize_workspace_edit(
         .chain(prepared.plan.pre_existing_collapses.iter())
         .collect();
 
-    // Collect what changed for the summary (preserves the existing
-    // summary output, plus collapse lines).
     let mut changes: Vec<String> = Vec::new();
     if let Some(w) = &params.workdir {
         changes.push(format!("workdir → {}", jackin_core::shorten_home(w)));
@@ -553,9 +539,6 @@ async fn apply_workspace_edit(
         current_ws,
     } = prepared;
 
-    // Build the prospective mount list (mirrors edit_workspace's
-    // merge order) so we can check for source drift on any mount
-    // that has preserved isolated state on disk.
     let mut prospective_mounts: Vec<workspace::MountConfig> = current_ws
         .mounts
         .iter()
@@ -576,10 +559,6 @@ async fn apply_workspace_edit(
             prospective_mounts.push(upsert.clone());
         }
     }
-    // Drift detection only needs Docker when isolation records
-    // exist. Connecting first ensures the daemon is reachable
-    // before we query it; skip the connection entirely when there
-    // is nothing to check (common in fresh or test environments).
     let wn = WorkspaceName::parse(name).map_err(anyhow::Error::from)?;
     let has_records =
         jackin_runtime::isolation::state::list_records_for_workspace(&paths.data_dir, &wn)
@@ -684,7 +663,6 @@ fn handle_workspace_prune(
         .require_workspace(&WorkspaceName::parse(&name).map_err(anyhow::Error::from)?)?
         .clone();
 
-    // All existing mounts; nothing new.
     let plan = workspace::plan_collapse(&current_ws.mounts, &[])?;
     if plan.removed.is_empty() {
         println!("Workspace {name:?} has no redundant mounts.");

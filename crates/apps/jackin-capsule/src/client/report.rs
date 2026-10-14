@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Runtime hook event reporting command.
 
 use super::{connect_and_send, flag_value, read_control_reply};
 use anyhow::{Context, Result};
@@ -9,18 +8,6 @@ use tokio::io::AsyncReadExt;
 
 use crate::protocol::control::{ClientMsg, ServerMsg};
 
-/// Forward a runtime hook/plugin event to the daemon for the current session.
-///
-/// Invoked as `jackin-capsule report-event --event <name> [--payload-stdin]`
-/// from a container-local hook/plugin. Reads the agent-only
-/// `JACKIN_SESSION_ID`,
-/// `JACKIN_STATUS_SOURCE`, `JACKIN_AGENT_RUNTIME` from the spawn env. Always
-/// exits 0 — a reporter must never break the agent's hook — so all failures are
-/// logged and swallowed.
-/// # Errors
-///
-/// This function currently returns \`Ok(())\`; reporter failures are recorded
-/// and swallowed so the agent hook cannot be interrupted.
 pub async fn run_report_event(args: &[String]) -> Result<()> {
     drop(
         try_report_event(args)
@@ -39,9 +26,6 @@ pub(crate) async fn try_report_event(args: &[String]) -> Result<()> {
     let source_id = std::env::var("JACKIN_STATUS_SOURCE").context("JACKIN_STATUS_SOURCE unset")?;
     let runtime = std::env::var("JACKIN_AGENT_RUNTIME").context("JACKIN_AGENT_RUNTIME unset")?;
 
-    // Drain stdin when asked so the hook's pipe never breaks. The daemon uses
-    // the payload to enrich bare Claude `Notification` events into typed
-    // `Notification:<subtype>` keys for gating (plan 009b).
     let payload = if args.iter().any(|a| a == "--payload-stdin") {
         let mut buf = String::new();
         let _read = tokio::io::stdin().read_to_string(&mut buf).await;

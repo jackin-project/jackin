@@ -1,9 +1,6 @@
-//! Typed isolation materialize/cleanup/state errors.
-
 use jackin_core::MountIsolation;
 use std::path::PathBuf;
 
-/// Failures from mount materialization, isolation state, and purge cleanup.
 #[derive(Debug, thiserror::Error)]
 pub enum IsolationError {
     #[error("isolated mount `{dst}` cannot be readonly (isolation = {isolation})")]

@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-/// Descriptor-relative auth directory transactions.
-///
-/// The destination parent and source root are opened once, every component is
-/// traversed with `O_NOFOLLOW`, and all mutations use the pinned descriptors.
-/// The journal is written and synced before each rename boundary so a retry can
-/// complete or roll back an interrupted swap without retaining an old tree.
 #[cfg(unix)]
 use std::sync::atomic::AtomicU64;
 

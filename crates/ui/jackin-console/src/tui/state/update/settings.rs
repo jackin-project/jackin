@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings selection moves and toggles.
 
 use crate::tui::screens::settings::update::settings_tab_move_plan;
 

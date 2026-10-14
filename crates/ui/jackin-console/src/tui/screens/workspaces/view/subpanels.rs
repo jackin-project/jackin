@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace env and mount subpanels.
 
 use super::{env_row_line, panel};
 use ratatui::{
@@ -26,8 +25,6 @@ pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_displa
         ),
         Span::raw(workdir_display.to_owned()),
     ])];
-    // Same padded viewport as the sibling subpanels so every block's content
-    // column agrees (SUBPANEL_CONTENT_INDENT from the Panel body column).
     let mut scroll = termrock::scroll::DialogScroll::default();
     frame.render_stateful_widget(
         termrock::widgets::Viewport::new(&lines, &theme)

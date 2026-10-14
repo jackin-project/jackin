@@ -44,8 +44,6 @@ fn launch_container_info_renders_from_footer_chip_state() {
 
 #[test]
 fn failure_copy_target_at_ignores_non_copyable_rows() {
-    // The message row is non-copyable; a click on its y at the value
-    // column must return None.
     let area = Rect::new(0, 0, 80, 24);
     let failure = launch_failure();
     let run_id = "jk-run-x";
@@ -53,8 +51,6 @@ fn failure_copy_target_at_ignores_non_copyable_rows() {
     let body_area = bottom_chrome_areas(area).body;
     let rect = failure_popup_rect_for_rows(body_area, &rows);
     let run_id_rect = failure_popup_value_rect(rect, &rows, FailureCopyTarget::RunId).unwrap();
-    // Rows: message=0, stage=1, run id=2. The message row sits two rows
-    // above the run-id row in the body.
     let message_y = run_id_rect.y.saturating_sub(2);
     assert_eq!(
         failure_copy_target_at(area, &failure, run_id, true, run_id_rect.x, message_y, None),
@@ -65,9 +61,6 @@ fn failure_copy_target_at_ignores_non_copyable_rows() {
 
 #[test]
 fn failure_copy_payload_sources_value_from_rows() {
-    // Single source of truth: the copied value must equal what the
-    // renderer would show, sourced from `failure_popup_rows`. Re-deriving
-    // here would drift if the row builder ever reformats paths.
     let failure = launch_failure();
     let run_id = "jk-run-payload";
     assert_eq!(
@@ -89,12 +82,7 @@ fn failure_popup_renders_copyable_rows_and_copied_badge() {
         .unwrap();
     let rendered = format!("{:?}", terminal.backend().buffer());
 
-    for needle in [
-        "run id",
-        run_id,
-        "✓",          // canonical badge next to the row whose target is `failure_copied`
-        "copy value", // footer hint
-    ] {
+    for needle in ["run id", run_id, "✓", "copy value"] {
         assert!(
             rendered.contains(needle),
             "rendered failure popup must contain {needle:?}; got {rendered}",

@@ -1,9 +1,3 @@
-//! jackin-instance-credentials: credential substrate for role containers.
-//!
-//! Outcome types, journaled auth-directory transactions, and secure path
-//! primitives shared by the agent provisioners. Leaf crate: depends only on
-//! `jackin-core`/`jackin-config` plus external crates.
-
 pub mod auth_directory;
 mod error;
 mod limits;

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate canary-only SQLite WAL fixtures with the system sqlite3 module."""
 
 from pathlib import Path
@@ -84,9 +83,6 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="jackin-omp-fixtures-") as temp:
         root = Path(temp)
 
-        # Main-file stale credential plus two actual SQLite commits retained
-        # in the WAL. Capture both sides of a real TRUNCATE checkpoint for the
-        # deterministic checkpoint/reset interleaving test.
         database = root / "omp-current.db"
         connection = connect(database)
         connection.execute(SCHEMA)
@@ -115,8 +111,6 @@ def main() -> None:
             raise RuntimeError("checkpoint fixture does not contain the committed database image")
         connection.close()
 
-        # New table and row remain entirely in a real WAL, including the
-        # sqlite_schema/page-one update.
         schema_database = root / "omp-schema-wal-only.db"
         schema_connection = connect(schema_database)
         schema_connection.execute(SCHEMA)
@@ -133,9 +127,6 @@ def main() -> None:
             raise RuntimeError("schema-only WAL fixture is missing its credential")
         schema_connection.close()
 
-        # Force a long old generation, checkpoint it, and commit a shorter
-        # current generation. Append the old frames after the current commit
-        # to model a SQLite WAL reset that retains stale trailing frames.
         reused_database = root / "omp-reused.db"
         reused_connection = connect(reused_database)
         reused_connection.execute(SCHEMA)
@@ -171,11 +162,6 @@ def main() -> None:
         )
         reused_connection.close()
 
-        # Checkpoint a selected credential into the main DB while retaining a
-        # previous generation in the WAL. A cache-limited uncommitted writer
-        # spills frames into a reset generation; old frames remain after its
-        # current uncommitted prefix. SQLite readers must keep the committed
-        # main-DB value and ignore both frame groups.
         spill_database = root / "omp-reused-uncommitted.db"
         spill_connection = connect(spill_database)
         spill_connection.execute(
@@ -242,9 +228,6 @@ def main() -> None:
         spill_connection.rollback()
         spill_connection.close()
 
-    # The host SQLite emits 0x377f0682 on little-endian systems. Re-encode the
-    # actual multi-commit WAL with the separately specified 0x377f0683 byte
-    # order so both checksum branches use real SQLite page/frame content.
     if struct.unpack_from(">I", pre_checkpoint_wal, 0)[0] != 0x377F0682:
         raise RuntimeError("expected system SQLite to emit little-endian WAL checksums")
     (OUT / "omp-real-current-big-endian.db").write_bytes(pre_checkpoint_db)

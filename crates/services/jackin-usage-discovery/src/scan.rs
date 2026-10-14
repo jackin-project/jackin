@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Account source scanning and enumeration.
 
 use crate::{
     CandidateAccumulator, CredentialSourceKey, UsageDiscoveryCatalog, UsageDiscoveryDiagnostic,
@@ -21,7 +20,6 @@ use std::path::Path;
 
 use jackin_usage_host_presentation::HostSurfaceId;
 
-/// Discover and pre-deduplicate every source authorized by `scope`.
 pub fn discover_usage_sources(
     scope: &UsageDiscoveryScope,
     env_resolver: &dyn ProviderCredentialEnvResolver,
@@ -70,8 +68,6 @@ pub(crate) fn discover_forwarded_sources(
         let Some(surface) = HostSurfaceId::from_id(&account.surface_id) else {
             continue;
         };
-        // Every known surface reaches Capsules: `DESKTOP_PROVIDER_ORDER` is
-        // the Swift glance contract only, not forwarded admission.
         if !HostSurfaceId::ALL.contains(&surface) {
             continue;
         }
@@ -92,15 +88,6 @@ pub(crate) fn discover_forwarded_sources(
     materialize_catalog(None, candidates, Vec::new())
 }
 
-/// Discovery-isolated alias for one governed registry entry.
-///
-/// Operator-env attribution retains out every account-governed name, so an
-/// account credential presented to a CLI-side secret source under its
-/// governed key resolves to `Missing` while broker-side sources (which read
-/// `config.env` directly) resolve it. Presenting the one isolated
-/// declaration under a non-governed alias keeps both resolvers on the same
-/// declaration; the governed name is still recorded on the discovered source
-/// for refresh routing and forwarding.
 pub(crate) fn usage_account_alias_entry(
     entry: UsageCredentialEnvName,
     canonical_owner: UsageCredentialOwner,
@@ -136,8 +123,6 @@ pub(crate) fn usage_account_alias_entry(
     }
 }
 
-/// Registry entries are the sole discovery authority. Workspace references add
-/// provenance; they never cause an ambient profile or environment scan.
 pub(crate) fn enumerate_registered_accounts(
     config: &AppConfig,
     operator_home: &Path,
@@ -160,8 +145,6 @@ pub(crate) fn enumerate_registered_accounts(
             None
         };
 
-        // Profile discovery remains the baseline path. It does not need an
-        // env route and must not invoke the protected env resolver.
         if let AccountCredential::Profile {
             agent, directory, ..
         } = &account.credential
@@ -235,10 +218,6 @@ pub(crate) fn enumerate_registered_accounts(
                 ));
                 continue;
             };
-            // Resolve the account's exact declaration through one
-            // discovery-only alias. Operator-env attribution strips governed
-            // names, so putting the governed key directly in this isolated
-            // config would incorrectly report a valid account as missing.
             let mut isolated = AppConfig {
                 env: config.env.clone(),
                 ..AppConfig::default()

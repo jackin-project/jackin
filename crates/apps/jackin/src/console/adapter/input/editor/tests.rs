@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `editor` input handlers.
-//! Editor-stage tests: tab cycling, modal dispatch, role allow/default
-//! bindings, and mount-row readonly toggle.
-
 use super::super::fixtures::{key, mount};
 
 use super::{

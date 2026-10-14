@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! View merging and freshness.
 
 use std::collections::BTreeMap;
 
@@ -10,15 +9,8 @@ use jackin_protocol::usage_broker::{
     UsageProviderV1,
 };
 
-/// Server-side incremental publisher. Cheap to clone; all state is shared.
 use super::{AccountIdentityMetadata, account_for_view};
 
-/// Rebuild provider/account rows from per-account generation views.
-///
-/// Providers and accounts are rebuilt in settled `(surface_id, account_id)`
-/// order with canonical ranks. Existing provider issues remain attached,
-/// including diagnostic-only provider rows. Projection-level `unresolved`,
-/// `issues`, and the catalog revision are preserved untouched.
 pub fn merge_views(
     projection: &mut UsageProjectionV1,
     views: &[UsageGenerationView],

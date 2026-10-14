@@ -31,9 +31,6 @@ fn feed_while_scrolled_keeps_view_anchored() {
 
 #[test]
 fn cursor_reconciliation_hides_cursor_while_scrolled() {
-    // Frame-model contract (§3.4): the cursor is hidden whenever the view is
-    // not live, re-shown at the VT position when it is — derived per frame,
-    // no assertion site outside the encoder.
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
     let mut mux = single_pane_tab_mux();
     let pane = mux.visible_panes().into_iter().next().expect("one pane");
@@ -83,10 +80,6 @@ fn cursor_reconciliation_hides_cursor_while_scrolled() {
 
 #[test]
 fn mode_reconciliation_resets_agent_modes_on_focus_swap() {
-    // The reconciliation replaces the focus_swap_reset + current_mode_state
-    // pair: swapping focus from a pane with bracketed paste, application
-    // cursor, and a kitty push to a plain pane must switch each mode off,
-    // while the client-owned mouse/focus/alt-screen modes stay untouched.
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
     let mut mux = split_tab_mux();
     let panes = mux.visible_panes();
@@ -153,7 +146,6 @@ fn scrollbar_click_jumps_scrollback() {
     let track_top = pane.outer.row + 1;
     let track_bottom = pane.outer.row + pane.outer.rows - 2;
 
-    // Click the top of the track → jump to the oldest retained rows.
     let frame = handle_input_frame(
         &mut mux,
         InputEvent::MousePress {
@@ -173,7 +165,6 @@ fn scrollbar_click_jumps_scrollback() {
         "top-of-track click must jump to the top of history"
     );
 
-    // Click the bottom of the track → back to the live tail.
     let frame = handle_input_frame(
         &mut mux,
         InputEvent::MousePress {

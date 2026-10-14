@@ -80,7 +80,6 @@ describe('rewriteLinks', () => {
     expect(out).toContain(
       '<RepoFile path="crates/core/jackin-core/src/lib.rs">`lib.rs`</RepoFile>',
     )
-    // Directory links resolve to the paired .rs module file.
     expect(out).toContain(
       '<RepoFile path="crates/core/jackin-core/src/agent.rs">agent</RepoFile>',
     )

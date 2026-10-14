@@ -74,12 +74,8 @@ pub(crate) struct ApiRun {
     head_repository: Option<ApiRunRepository>,
     #[serde(default)]
     workflow_id: Option<u64>,
-    /// GitHub's `name` is the workflow run name (`run-name`, or the
-    /// workflow's `name` when no `run-name` is declared). The jobs API binds
-    /// its `workflow_name` to this value.
     #[serde(default)]
     name: Option<String>,
-    /// A display label retained separately from the run identity.
     #[serde(default)]
     pub(crate) display_title: Option<String>,
     #[serde(default)]
@@ -883,10 +879,6 @@ fn classify_outcome(
     if matches!(conclusion.as_str(), "skipped" | "neutral") {
         return OutcomeClass::Inapplicable;
     }
-    // A run conclusion without any attempt jobs is incomplete API evidence,
-    // including a misleading `success` conclusion. Treat it as an
-    // infrastructure/data-collection failure so the denominator cannot turn
-    // an absent job list into green.
     if jobs.is_empty() {
         return OutcomeClass::Infrastructure;
     }

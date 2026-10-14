@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Concrete console state type bindings.
 
 use super::{
     AuthFormFocus, FileBrowserTarget, GenericAuthRow, MountInfoCache, SecretsScopeTag,
@@ -24,26 +23,18 @@ use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::components::workdir_pick::WorkdirPickState;
 use crate::tui::op_picker::OpPickerState;
 
-/// Console-owned Usage route state: the persistent screen plus its
-/// visibility. Grouped so `ManagerState` stays under the excessive-bools
-/// budget and the two fields move together.
 #[derive(Debug, Default)]
 pub struct UsageRouteState {
-    /// Focus/scroll/refresh state, created on first open and kept alive so
-    /// the heartbeat keeps refreshing while the route is offscreen.
     pub screen: Option<UsageScreenState>,
-    /// Whether the Usage route is currently visible.
     pub visible: bool,
 }
 
-/// Root effect vocabulary bound to concrete lower-crate types.
 pub type ManagerEffect = crate::tui::effect::ConsoleManagerEffect<
     jackin_core::RoleSelector,
     jackin_config::RoleSource,
     jackin_core::OpRef,
 >;
 
-/// Concrete workspace-save effect parameterized with lower-crate types.
 pub type WorkspaceSaveEffect = crate::tui::effect::WorkspaceSaveEffect<
     MountConfig,
     PendingSaveCommit,
@@ -51,13 +42,6 @@ pub type WorkspaceSaveEffect = crate::tui::effect::WorkspaceSaveEffect<
     WorkspaceConfig,
 >;
 
-// ── Concrete refresh snapshot type ──────────────────────────────────────────
-
-/// Concrete instance-refresh snapshot parameterized with lower-crate types.
-///
-/// The type alias lives here so both `ManagerState` field types and
-/// the root binary's `ManagerMessage` binding can reference the same
-/// concrete shape without spelling it out everywhere.
 pub type ManagerInstanceRefreshSnapshot = crate::tui::subscriptions::InstanceRefreshSnapshot<
     jackin_core::InstanceIndexEntry,
     jackin_core::SessionRecord,
@@ -67,16 +51,6 @@ pub type ManagerInstanceRefreshSnapshot = crate::tui::subscriptions::InstanceRef
 pub type ManagerConfigSaveResult =
     crate::tui::subscriptions::ConfigSaveResult<AppConfig, jackin_config::RoleSource>;
 
-// ── Type aliases ────────────────────────────────────────────────────────────
-
-/// Provider picker bound to its follow-up context.
-///
-/// The context is whatever the next step needs: the target `container`
-/// (existing-instance "new session" flow) or the `RoleSelector` (initial
-/// workspace launch). Carries the resolved `Provider` list so a selection
-/// cannot reference a provider/env pair that drifted from its label; the
-/// index is clamped by `move_up` / `move_down` and read back through
-/// `selected_provider`.
 pub type AccountPickerState<C> =
     GenericAccountPickerState<C, jackin_core::Agent, crate::services::launch::AccountChoice>;
 pub type AgentChoiceState =
@@ -194,5 +168,3 @@ pub type Modal<'a> = crate::tui::model::ConsoleModal<
 >;
 
 pub type CreatePreludeState<'a> = crate::tui::model::ConsoleCreatePreludeState<Modal<'a>>;
-
-// ── ManagerState ────────────────────────────────────────────────────────────

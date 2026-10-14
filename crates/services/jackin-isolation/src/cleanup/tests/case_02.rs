@@ -40,9 +40,6 @@ async fn real_git_cleanup_removes_owned_registration_and_preserves_host_head() {
 
 #[tokio::test]
 async fn real_git_gone_upstream_is_clean_without_remote_reachability() {
-    // Policy: `[gone]` upstream means merged-and-pruned; assess treats the
-    // worktree as clean without any remote-reachability proof. Pinned by
-    // jackin-core `upstream_gone_is_treated_as_merged_clean`.
     let repo = TempDir::new().unwrap();
     let container = TempDir::new().unwrap();
     let rec = real_record(repo.path(), container.path()).await;

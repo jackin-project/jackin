@@ -62,24 +62,11 @@ pub(super) fn line_text(line: &ratatui::text::Line<'_>) -> String {
 
 pub(super) fn mode_col_start(line: &ratatui::text::Line<'_>) -> usize {
     let s = line_text(line);
-    // The Mode column is the first two-letter "rw"/"ro" after the gap,
-    // or the literal "Mode" for the header. Scan for the first non-space
-    // character after the gap-of-two-spaces that follows the path.
-    // Simpler: find the offset of the two-space gap before Mode.
-    // Header: "  Path<pad>  Mode<pad>Type"
-    // Data:   "  path<pad>  rw<pad>type"
-    // In both cases the left edge of "Mode"/"rw" is exactly 2 + path_w + 2
-    // from the start — we recover it by scanning for the first non-space
-    // char at position >= 4 (past the left gutter + at least one path char).
-    // Instead, just look for the substring "  M" (Mode header) or "  r"
-    // (data row, always "rw"/"ro" starting with r).
     for (i, c) in s.chars().enumerate() {
         if i < 4 {
             continue;
         }
         if c == 'M' || c == 'r' {
-            // Make sure this is preceded by the two-space gap — the first
-            // such occurrence past the left gutter is the column boundary.
             let prev_two: String = s.chars().skip(i.saturating_sub(2)).take(2).collect();
             if prev_two == "  " {
                 return i;

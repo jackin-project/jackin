@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `OpenRouter` endpoint resolution and API fetch.
 
 use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_usage_provider_core::ProviderError;
@@ -19,9 +18,6 @@ pub fn openrouter_base_url() -> String {
     )
 }
 
-/// Pure base-URL resolution: `OPENROUTER_API_URL` wins over
-/// `OPENROUTER_BASE_URL`, blank inputs fall through to the next candidate.
-/// The hermetic seam tests use so live env can never vacate assertions.
 pub fn openrouter_base_url_from(api_url: Option<&str>, base_url: Option<&str>) -> String {
     [api_url, base_url]
         .into_iter()
@@ -79,8 +75,6 @@ pub fn openrouter_key_error_status(error: &ProviderError) -> UsageSnapshotStatus
     }
 }
 
-/// `/credits` never fails the snapshot: every outcome (including the typed 403
-/// management-scope mismatch) is a value, so `/key` rows always survive it.
 pub fn fetch_openrouter_credits(base_url: &str, key: &str) -> OpenRouterCreditsOutcome {
     provider_request(
         jackin_telemetry::schema::enums::ProviderName::Openrouter,
@@ -108,8 +102,6 @@ pub fn fetch_openrouter_credits(base_url: &str, key: &str) -> OpenRouterCreditsO
     .unwrap_or_else(OpenRouterCreditsOutcome::Unavailable)
 }
 
-/// Catalog validation never errors: any fetch failure degrades to `Unverified`
-/// (a stale catalog must not reject a configured model).
 pub fn fetch_openrouter_model_check(base_url: &str, model_id: &str) -> OpenRouterModelCheck {
     let unverified = |reason: String| OpenRouterModelCheck::Unverified {
         model_id: model_id.to_owned(),

@@ -11,11 +11,8 @@ jackin❯, start at [Concepts](/getting-started/concepts/) and the
 
 <Aside type="note">
 **This page is the canonical module map for jackin❯.** When module
-structure changes, this page is updated in the same PR — see the
-"Code ↔ Docs Cross-Reference" table in <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile>.
-<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> itself is a short, agent-facing pointer that
-covers the multi-repo ecosystem and the per-PR docs contract; it
-sends readers here for the actual module-level detail.
+structure changes, this page is updated in the same PR — the
+"Code ↔ Docs Cross-Reference" table below is the per-PR docs contract.
 </Aside>
 
 ## Repository layout
@@ -340,8 +337,7 @@ into a single module:
 ## Code ↔ docs cross-reference
 
 When a code change affects user-visible behaviour, the matching docs
-page must change in the same PR. The full table lives at the bottom of
-<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile>; the most common pairings are:
+page must change in the same PR. The most common pairings are:
 
 | Code change in | Update docs in |
 |---|---|
@@ -384,8 +380,6 @@ first:
 
 - <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> — house rules (apply equally to humans and agents).
 - <RepoFile path="CONTRIBUTING.md">CONTRIBUTING.md</RepoFile> — contribution flow, DCO sign-off, branch naming, merge policy, and Conventional Commits format.
-- <RepoFile path="TESTING.md">TESTING.md</RepoFile> — how to run the test suite.
-- <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> — agent-facing pointer covering the multi-repo ecosystem and the per-PR docs contract; the detailed module map this page surfaces is the source of truth.
 
 The [Roadmap](/roadmap/) is the catalogue of in-flight and
 planned design work. When picking up a task, the matching roadmap

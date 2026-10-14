@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor tab, focus, and navigation plans.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorTab {

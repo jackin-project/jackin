@@ -358,8 +358,6 @@ fn settings_auth_selection_and_kind_entry_update_state() {
         &jackin_config::AppConfig::default(),
     ));
 
-    // Select the GitHub row explicitly: the scan row sits last, so a
-    // clamp-to-end move no longer lands on GitHub.
     let github_row = settings_github_row(&state);
     update_manager(
         &mut state,

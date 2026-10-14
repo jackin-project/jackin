@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Metric groups.
 
 use jackin_core::account_key_hash;
 use jackin_protocol::control::{
@@ -14,16 +13,6 @@ use jackin_protocol::usage_broker::{
 
 use super::project_window;
 
-/// Build typed metric groups from the existing provider view.
-///
-/// One window group mirrors each quota bucket; monetary buckets additionally
-/// yield a spend-cap group carrying the structured [`Money`] amounts; a
-/// provider plan label yields a plan group. Groups reuse the view's fetched
-/// timestamp for their own observed/fetched/last-success epochs: current views
-/// report transport completion only, so observation time equals fetch time and
-/// last success is set exactly when the view holds usable data. Scope labels,
-/// balances, token totals, and rate limits stay unset until provider
-/// collectors supply them; nothing is inferred.
 pub fn metric_groups_for_view(
     canonical_account_id: &str,
     view: &jackin_protocol::control::FocusedUsageView,
@@ -82,7 +71,6 @@ pub fn group_rank(rank: usize) -> Result<u32, String> {
     u32::try_from(rank).map_err(|_| "metric group rank overflow".to_owned())
 }
 
-/// Per-group timestamps from a view that reports transport completion only.
 pub fn group_epochs(view_fetched_at: i64, usable: bool) -> (Option<i64>, Option<i64>) {
     let observed = Some(view_fetched_at);
     let last_success = usable.then_some(view_fetched_at);
@@ -181,14 +169,12 @@ pub fn project_plan_group(
         last_success_at_epoch,
         phase,
         is_stale: phase == UsageFreshnessPhaseV1::Stale,
-        // Plan metadata carries no quota notion.
         quota_state: UsageQuotaStateV1::NotApplicable,
         value: UsageMetricValueV1::Plan {
             plan_label: Some(plan_label.to_owned()),
             tier: None,
         },
         reset_at_epoch: None,
-        // No renewal signal exists in current provider views.
         renews_at_epoch: None,
         issues: Vec::new(),
     })
@@ -228,10 +214,6 @@ pub fn group_period(status_slot: Option<StatusSlot>) -> UsageMetricPeriodV1 {
     }
 }
 
-/// Remaining spend from a monetary bucket. Checked subtraction on compatible
-/// denominations only; over-spend clamps at zero here because a Money amount
-/// cannot express negative remaining, while the over-100% raw percent on the
-/// sibling window payload preserves the overage magnitude.
 pub fn spend_remaining(bucket: &QuotaBucketView) -> Option<Money> {
     let used = bucket.used_money.as_ref()?;
     let limit = bucket.limit_money.as_ref()?;
@@ -246,9 +228,6 @@ pub fn spend_remaining(bucket: &QuotaBucketView) -> Option<Money> {
     ))
 }
 
-/// Quota state for a spend-cap group from its money ratio. A missing or
-/// unusable cap is [`UsageQuotaStateV1::Unknown`], never fabricated credit;
-/// an uncapped tracker is [`UsageQuotaStateV1::NotApplicable`].
 pub fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
     match bucket.status {
         UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::NeedsSecret => {
@@ -260,8 +239,6 @@ pub fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => {
             match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
                 (Some(used), Some(limit)) => spend_ratio_state(used, limit),
-                // Spend without a cap is uncapped tracking; a cap without
-                // spend leaves the ratio unknown.
                 (Some(_), None) => UsageQuotaStateV1::NotApplicable,
                 _ => UsageQuotaStateV1::Unknown,
             }
@@ -269,7 +246,6 @@ pub fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
     }
 }
 
-/// Quota state from a spend/cap money ratio with checked math.
 pub fn spend_ratio_state(used: &Money, limit: &Money) -> UsageQuotaStateV1 {
     if used.currency != limit.currency || used.exponent != limit.exponent || limit.amount_minor <= 0
     {

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Console screen stage routing.
 
 use crate::tui::model::ConsoleManagerStageRoute;
 
@@ -25,8 +24,6 @@ pub struct MainScreenState {
     pub list_modal_open: bool,
 }
 
-/// Bare `q` exits directly only from the plain workspace list. Other screens
-/// or overlays use the quit confirmation flow.
 #[must_use]
 pub const fn is_main_screen(state: MainScreenState) -> bool {
     state.workspace_list && !state.list_modal_open
@@ -55,8 +52,6 @@ pub const fn console_screen_stage_for_route(route: ConsoleManagerStageRoute) -> 
     }
 }
 
-/// Which diagnostics screen owns the visible console stage. Confirm dialogs
-/// overlay the workspace list, so their telemetry remains attached to `List`.
 #[must_use]
 pub const fn diagnostics_screen_for_stage(
     stage: ConsoleScreenStage,

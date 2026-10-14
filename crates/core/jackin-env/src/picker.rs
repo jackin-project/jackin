@@ -5,24 +5,16 @@ use crate::op_cli::OpCli;
 use jackin_core::FieldTarget;
 use jackin_core::OpRef;
 
-/// Re-exported from `jackin-env` — canonical definitions live there.
 use crate::op_struct::OpStructRunner;
 
-/// Production [`OpStructRunner`] backed by the default [`OpCli`].
 pub fn default_op_struct_runner() -> std::sync::Arc<dyn OpStructRunner + Send + Sync> {
     std::sync::Arc::new(OpCli::new())
 }
 
-/// Re-exported from `jackin-core` — canonical definitions live there so
-/// `jackin-env` no longer depends on `jackin-console` for data types.
 pub use jackin_core::{OpAccount, OpField, OpItem, OpVault};
 
-/// Picker cache over 1Password account/vault/item/field metadata.
 pub type OpCache = jackin_core::OpCache<OpAccount, OpVault, OpItem, OpField>;
 
-// Accept either `id` or `account_uuid` so the probe works against
-// current and older op CLI shapes. `email` / `url` default to empty
-// because older `op` versions may omit them.
 #[derive(serde::Deserialize)]
 pub(crate) struct RawOpAccount {
     #[serde(alias = "account_uuid")]
@@ -43,7 +35,6 @@ pub(crate) struct RawOpVault {
 pub(crate) struct RawOpItem {
     pub(crate) id: String,
     pub(crate) title: String,
-    // Missing on secure notes and other non-login item types.
     #[serde(default)]
     pub(crate) additional_information: String,
 }
@@ -63,14 +54,6 @@ pub(crate) struct RawOpSection {
     pub(super) label: String,
 }
 
-// SAFETY: 'value' is intentionally absent from this struct. The picker is a
-// metadata browser; serde must not deserialize secret values into memory.
-// Any change adding a `value` field here breaks the picker's trust model.
-//
-// `reference` IS deserialized: the string `op://...` that 1Password's
-// CLI emits per field is metadata, not a credential. The picker uses it as
-// fallback section identity when section metadata is absent; known IDs and
-// labels are otherwise kept separate when building the final reference.
 #[derive(serde::Deserialize)]
 pub(crate) struct RawOpField {
     pub(super) id: String,
@@ -143,10 +126,6 @@ impl From<RawOpField> for OpField {
     }
 }
 
-/// Slug a 1Password section label into a deterministic section id:
-/// lowercase, collapse each run of non-alphanumeric characters into a
-/// single `_`, and trim leading/trailing `_`. Empty results fall back
-/// to `"section"` so the id is always a valid non-empty identifier.
 pub(crate) fn op_section_id(label: &str) -> String {
     let mut id = String::with_capacity(label.len());
     let mut pending_underscore = false;
@@ -168,7 +147,6 @@ pub(crate) fn op_section_id(label: &str) -> String {
     }
 }
 
-/// Keep selected IDs exact; allocate a fresh ID for a newly typed label.
 fn target_section_id(
     item: &serde_json::Value,
     section: Option<&jackin_core::OpSectionTarget>,
@@ -225,7 +203,6 @@ fn target_section_id(
     }
 }
 
-/// Preserve and validate selected IDs before piping the edited item to `op`.
 fn existing_field_section_id(
     item: &serde_json::Value,
     target: &FieldTarget,
@@ -241,7 +218,6 @@ fn existing_field_section_id(
         .as_array()
         .and_then(|fields| fields.iter().find(|field| field["id"].as_str() == Some(id)))
     else {
-        // The usual stale-id error is raised by `apply_field_edit` below.
         return Ok(None);
     };
     let field_id = field["id"].as_str().unwrap_or_default();
@@ -260,8 +236,6 @@ fn existing_field_section_id(
     {
         section_id
     } else if let Some(section_segment) = reference_section.as_deref() {
-        // A reference may contain either an opaque section ID or a label.
-        // Resolve it against item metadata before reusing it in an edit.
         let sections = item["sections"].as_array().ok_or_else(|| {
             anyhow::anyhow!(
                 "field id {id:?} has section segment {section_segment:?}, but item section metadata is unavailable; re-open the picker to refresh and retry"
@@ -313,8 +287,6 @@ fn existing_field_section_id(
     Ok(Some(section_id.to_owned()))
 }
 
-/// Creation identity is the pair (section, label). Exact field IDs remain
-/// global identities for an existing selection.
 pub(crate) fn matches_field_target(
     field: &serde_json::Value,
     target: &FieldTarget,
@@ -328,17 +300,6 @@ pub(crate) fn matches_field_target(
     }
 }
 
-/// Apply a single concealed-field edit to a parsed `op item get` JSON
-/// value in place, ready to pipe back to `op item edit`.
-///
-/// [`FieldTarget::Existing`] is located by its exact op id, so a same-
-/// labeled field in another section is never clobbered, and the field's
-/// existing `section` is left untouched — overwriting a value must not
-/// re-parent the field (GUI-created section ids are opaque, not the
-/// `label` slug). A stale id (gone since it was picked) bails loudly
-/// rather than appending a stray field. [`FieldTarget::New`] places a new
-/// `CONCEALED` field (overwriting a same-label field in the selected section),
-/// in `section` when one is supplied, registering that section if missing.
 pub(crate) fn apply_field_edit(
     item: &mut serde_json::Value,
     target: &FieldTarget,
@@ -363,9 +324,6 @@ pub(crate) fn apply_field_edit(
         target_section_id(item, section)?
     } else {
         if matches!(section, Some(jackin_core::OpSectionTarget::Existing(_))) {
-            // A caller-supplied existing section ID is still input to the
-            // reference pipeline even when an existing field keeps its own
-            // section. Validate it before any remote mutation.
             target_section_id(item, section)?;
         }
         existing_field_section_id(item, target)?
@@ -409,20 +367,12 @@ pub(crate) fn apply_field_edit(
             field["value"] = serde_json::Value::String(value.to_owned());
             field["type"] = serde_json::Value::String("CONCEALED".to_owned());
         }
-        // A specific field id was requested but is gone (renamed/deleted in
-        // 1Password since it was picked, or read from a stale cache). Fail
-        // loudly instead of appending a stray label-named field — the
-        // read-back would then miss the id and error anyway, but only after
-        // mutating the operator's item.
         (None, FieldTarget::Existing { id, .. }) => anyhow::bail!(
             "field id {id:?} not found in the item — it may have been renamed or deleted in \
              1Password since it was picked; re-open the picker to refresh and retry"
         ),
         (None, FieldTarget::New { .. }) => {
             let mut field = serde_json::json!({
-                // Per the 1Password JSON-template contract, an empty id asks
-                // the CLI to generate a unique field ID. Labels are not
-                // globally unique because separate sections may reuse them.
                 "id": "",
                 "label": label,
                 "type": "CONCEALED",
@@ -436,8 +386,6 @@ pub(crate) fn apply_field_edit(
         }
     }
 
-    // Register the section only when a new field was actually placed in
-    // it; an overwrite never creates or moves sections.
     if appended_in_section
         && let (Some(id), Some(jackin_core::OpSectionTarget::NewLabel(label))) =
             (section_id.as_deref(), section)
@@ -466,11 +414,6 @@ pub(crate) struct AppliedFieldEdit {
     pub(crate) existing_field_id: Option<String>,
 }
 
-/// Locate the edited field in the JSON `op item edit` returns and build its
-/// `OpRef`. [`FieldTarget::Existing`] matches by the exact id (stable across
-/// the edit); a same-label existing [`FieldTarget::New`] keeps its preflighted
-/// ID, while a new field is located by section id and label after `op` assigns
-/// its ID. The URI always uses IDs; breadcrumb labels use local path escaping.
 pub(crate) fn resolve_edited_field_ref(
     updated: &serde_json::Value,
     target: &FieldTarget,
@@ -513,9 +456,6 @@ pub(crate) fn resolve_edited_field_ref(
         )
     })?;
 
-    // The edit target IDs were validated before the mutating CLI call. Keep
-    // those stable identities for existing entities; only a newly generated
-    // field ID must be learned from the CLI response.
     let vid = vault_id;
     let iid = item_id;
     let fid = existing_field_id

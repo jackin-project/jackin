@@ -1,7 +1,3 @@
-// The launch-contract harness. Copy into Sources/<Feature>Proto/ and keep
-// the contract intact: --tr-scenario, --tr-appearance, --tr-window,
-// --tr-reduce, --tr-backdrop. Feature code supplies the scenarios and the
-// root view; nothing here is feature-specific.
 
 import AppKit
 import SwiftUI
@@ -77,7 +73,6 @@ enum ProtoConfigError: Error, Equatable {
 @MainActor
 final class ProtoDelegate: NSObject, NSApplicationDelegate {
     let config: ProtoConfig
-    /// Feature hook: installs scenario UI before the readiness tick loop.
     var onLaunch: ((NSApplication) -> Void)?
     private var backdrop: NSWindow?
     private var lastFrame: CGRect = .zero
@@ -88,8 +83,6 @@ final class ProtoDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         onLaunch?(NSApp)
-        // Defaults leak across runs (table column autosave, restoration);
-        // a deterministic prototype starts clean every launch.
         if let bundleID = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bundleID)
         }
@@ -103,15 +96,9 @@ final class ProtoDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tick() {
-        // Match only normal-level windows: an unfiltered lookup grabs the
-        // backdrop, clamps it, and announces the wrong window number.
         guard
             let window = NSApp.windows.first(where: { $0.isVisible && $0.level == .normal })
         else { return }
-        // The backdrop is created only after the main window exists — a
-        // delegate-created window before SwiftUI scene setup suppresses
-        // WindowGroup window creation entirely. Ordering holds: it exists
-        // before TR-READY is announced.
         if backdrop == nil, let color = config.backdrop {
             let screen = NSScreen.main!.frame
             let back = NSWindow(
@@ -127,8 +114,6 @@ final class ProtoDelegate: NSObject, NSApplicationDelegate {
             window.isRestorable = false
         }
         NSApp.activate(ignoringOtherApps: true)
-        // Announce readiness only after geometry holds still twice — the
-        // capture harness waits for this line.
         if window.frame == lastFrame {
             stableTicks += 1
             if stableTicks == 2 {

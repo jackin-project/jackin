@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pre-flight health checks for `jackin doctor` and load/hardline dispatch.
-//!
-//! Each check runs asynchronously and returns a `CheckResult` with a status
-//! and a human-readable hint for fixing failures. The `preflight` function
-//! runs a slice of check names, fails on any `Fail`, and returns `Ok(())`
-//! when all pass or warn.
 use jackin_docker::docker_client::DockerApi;
 use owo_colors::OwoColorize;
 use std::path::Path;
@@ -14,7 +8,6 @@ use std::path::Path;
 #[cfg(test)]
 mod tests;
 
-/// Status of a single doctor check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CheckStatus {
     Ok,
@@ -34,7 +27,6 @@ impl CheckStatus {
     }
 }
 
-/// Result of one doctor check.
 #[derive(Debug, Clone)]
 pub(crate) struct CheckResult {
     pub(crate) name: &'static str,
@@ -81,7 +73,6 @@ impl CheckResult {
     }
 }
 
-/// Named checks that can be run individually or in a preflight slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CheckName {
     DockerDaemon,
@@ -116,7 +107,6 @@ impl CheckName {
         ]
     }
 
-    /// Minimal set of checks run as a pre-flight gate before `load` / `hardline`.
     pub(crate) const fn preflight_required() -> &'static [Self] {
         &[
             Self::DockerDaemon,
@@ -127,7 +117,6 @@ impl CheckName {
     }
 }
 
-/// Run a single check and return its result.
 pub(crate) async fn run_check(check: CheckName, paths: &jackin_core::JackinPaths) -> CheckResult {
     match check {
         CheckName::DockerDaemon => check_docker_daemon().await,
@@ -145,10 +134,6 @@ pub(crate) async fn run_check(check: CheckName, paths: &jackin_core::JackinPaths
     }
 }
 
-/// Run a pre-flight subset and fail with an error if any check fails.
-///
-/// Warnings are printed but do not block execution. Failures print the hint
-/// and return `Err`.
 pub(crate) async fn preflight(
     checks: &[CheckName],
     paths: &jackin_core::JackinPaths,
@@ -184,8 +169,6 @@ pub(crate) async fn preflight(
         }
     }
     if !failures.is_empty() {
-        // Emit a structured JackinError for Docker-daemon failures so the
-        // E001 error block fires at the entry point.
         if failures.contains(&"docker_daemon") {
             return Err(crate::error::JackinError::DockerDaemonUnreachable {
                 source: anyhow::anyhow!(
@@ -203,21 +186,16 @@ pub(crate) async fn preflight(
     Ok(())
 }
 
-// ── Individual check implementations ────────────────────────────────────────
-
 async fn check_docker_daemon() -> CheckResult {
     match jackin_docker::docker_client::BollardDockerClient::connect() {
-        Ok(docker) => {
-            // Verify the daemon is actually reachable without scanning containers.
-            match docker.ping().await {
-                Ok(()) => CheckResult::ok("docker_daemon", "Docker daemon reachable"),
-                Err(e) => CheckResult::fail(
-                    "docker_daemon",
-                    format!("Docker daemon connected but not responding: {e:#}"),
-                    "Start Docker Desktop / OrbStack / run `colima start` / check `DOCKER_HOST`",
-                ),
-            }
-        }
+        Ok(docker) => match docker.ping().await {
+            Ok(()) => CheckResult::ok("docker_daemon", "Docker daemon reachable"),
+            Err(e) => CheckResult::fail(
+                "docker_daemon",
+                format!("Docker daemon connected but not responding: {e:#}"),
+                "Start Docker Desktop / OrbStack / run `colima start` / check `DOCKER_HOST`",
+            ),
+        },
         Err(e) => CheckResult::fail(
             "docker_daemon",
             format!("Cannot connect to Docker daemon: {e:#}"),
@@ -227,8 +205,6 @@ async fn check_docker_daemon() -> CheckResult {
 }
 
 async fn report_docker_version() -> CheckResult {
-    // Use `docker version --format '{{.Server.Version}}'` via subprocess since
-    // we don't expose a version endpoint on the DockerApi trait.
     let request =
         jackin_process::ExecRequest::new("docker", ["version", "--format", "{{.Server.Version}}"]);
     match crate::process_telemetry::exec_async(&request).await {
@@ -276,7 +252,6 @@ fn docker_version_command_failure_result(exit_code: Option<i32>, stderr: &str) -
 }
 
 fn check_disk_space(paths: &jackin_core::JackinPaths) -> CheckResult {
-    // Check that the jackin data directory has ≥1 GiB free.
     let dir = paths.data_dir.parent().unwrap_or(&paths.data_dir);
     match available_bytes(dir) {
         Some(bytes) if bytes < 1_073_741_824 => CheckResult::warn(
@@ -301,7 +276,6 @@ fn check_config_dir(config_dir: &Path) -> CheckResult {
             format!("Run: mkdir -p {}", config_dir.display()),
         );
     }
-    // Check writability by attempting a temp file.
     let probe = config_dir.join(".jackin_probe");
     match std::fs::write(&probe, b"") {
         Ok(()) => {
@@ -384,7 +358,6 @@ fn check_op_cli() -> CheckResult {
 }
 
 fn check_mise() -> CheckResult {
-    // mise is only required in source checkouts, not for installed binaries.
     let in_checkout = Path::new(".mise.toml").exists() || Path::new(".tool-versions").exists();
     if !in_checkout {
         return CheckResult::skip("mise", "Not in a source checkout — mise not required");
@@ -410,10 +383,6 @@ fn check_mise() -> CheckResult {
 
 fn check_clock_skew() -> CheckResult {
     use std::time::{SystemTime, UNIX_EPOCH};
-    // We can only check the local clock against itself; a meaningful skew
-    // check requires an NTP query. For now, verify the system clock is after
-    // late 2023 (Unix epoch 1,700,000,000 ≈ November 2023) as a sanity
-    // check for wildly wrong clocks.
     let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(d) => d.as_secs(),
         Err(_) => {
@@ -476,7 +445,6 @@ async fn check_orphaned_containers(paths: &jackin_core::JackinPaths) -> CheckRes
 }
 
 fn check_stale_isolation(paths: &jackin_core::JackinPaths) -> CheckResult {
-    // Look for isolation.json files that reference worktrees that no longer exist.
     use jackin_runtime::isolation::state::read_records;
 
     let state_dir = &paths.data_dir;
@@ -502,9 +470,6 @@ fn check_stale_isolation(paths: &jackin_core::JackinPaths) -> CheckResult {
     }
 }
 
-// ── Disk space ────────────────────────────────────────────────────────────────
-
-/// Return available bytes for the filesystem containing `path`.
 fn available_bytes(path: &Path) -> Option<u64> {
     fs4::available_space(path).ok()
 }

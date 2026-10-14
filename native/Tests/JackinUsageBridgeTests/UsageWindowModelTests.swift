@@ -6,12 +6,6 @@ import XCTest
 
 @testable import JackinUsageBridge
 
-/// Executes the pure `UsageWindowModel` with opaque sentinel strings so the
-/// Usage window's order/selection/action behavior is proven without depending on
-/// any Rust wording (Rust/FFI tests own the real Amp/Grok strings).
-///
-/// No formatting
-/// logic is duplicated here.
 final class UsageWindowModelTests: XCTestCase {
     private func glance(
         _ surfaceId: String, headline: String = "H"
@@ -215,7 +209,6 @@ final class UsageWindowModelTests: XCTestCase {
         )
         guard let content = model.content else { return XCTFail("missing provider content") }
         let row = content.detail.rows[0]
-        // Rendered order is leading-then-trailing per line, preserving vector order.
         let flattened = row.layoutLines.flatMap { [$0.leading, $0.trailing].compactMap { $0 } }
         XCTAssertEqual(
             flattened,
@@ -455,8 +448,6 @@ final class UsageWindowModelTests: XCTestCase {
     }
 
     func testSentinelRowsTransmittedUnchanged() {
-        // Opaque sentinels standing in for Amp/Grok Rust strings: the model must
-        // pass them through byte-for-byte with no reformatting.
         let ampDaily = detailRow(
             "bucket:0",
             kind: .bucket,

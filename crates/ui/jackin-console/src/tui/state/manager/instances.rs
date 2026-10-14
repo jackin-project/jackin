@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ManagerState` effects and instance queries.
 
 use super::super::{ManagerEffect, ManagerState, active_instances_matching};
 
@@ -13,10 +12,6 @@ impl ManagerState<'_> {
         std::mem::take(&mut self.pending_effects)
     }
 
-    // ── Tree navigation helpers ────────────────────────────────────
-
-    /// Instances that appear in the tree for workspace `ws_idx` — only
-    /// `Active` / `Running` containers are shown.
     #[must_use]
     pub fn workspace_active_instances(
         &self,
@@ -67,7 +62,6 @@ impl ManagerState<'_> {
             .is_some()
     }
 
-    /// Instances in the tree for the "Current directory" synthetic row.
     #[must_use]
     pub fn current_dir_active_instances(&self) -> Vec<&jackin_core::InstanceIndexEntry> {
         let current_dir = self.current_dir.as_str();
@@ -81,8 +75,6 @@ impl ManagerState<'_> {
         active_instances_matching(&self.instances, query).collect()
     }
 
-    /// All instances shown in the tree for workspace `ws_idx` — live and
-    /// failed/stopped alike, everything except `Purged` / `Superseded` (D15).
     #[must_use]
     pub fn workspace_visible_instances(
         &self,
@@ -133,8 +125,6 @@ impl ManagerState<'_> {
             .is_some()
     }
 
-    /// Tree instances for the synthetic "Current directory" row — live and
-    /// failed/stopped alike, everything except `Purged` / `Superseded` (D15).
     #[must_use]
     pub fn current_dir_visible_instances(&self) -> Vec<&jackin_core::InstanceIndexEntry> {
         let current_dir = self.current_dir.as_str();

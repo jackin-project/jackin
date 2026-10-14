@@ -10,13 +10,9 @@ enum SidebarSelection: Hashable, Sendable {
     case account(provider: String, account: String)
 }
 
-/// Stands in for the Rust-owned PresentationStore: every value change here is
-/// an accepted/rejected mutation round-trip, never optimistic local state.
 @MainActor
 @Observable
 final class ProtoStore {
-    /// Swappable at runtime by the Scenario menu — one projection swap redraws
-    /// every surface and rebuilds the status items (shell observes this).
     private(set) var projection: ProtoProjection
     private(set) var percentStyle: PercentStyle = .left
     private(set) var refreshFloorMinutes = 5
@@ -28,7 +24,6 @@ final class ProtoStore {
     private var acceptedFloorRevision = 0
     private var issuedFloorRevision = 40
 
-    // Settings surface state (fixture-backed mock; no persistence).
     var displayMode: DisplayMode = .strip
     var pinnedSurfaceKey = ""
     var stripMax = 3
@@ -58,8 +53,6 @@ final class ProtoStore {
 
     var chrome: ProtoChrome { projection.chrome }
 
-    /// Scenario-menu drive: swap the whole fixture projection and reset the
-    /// selection surface state the old projection owned.
     func loadScenario(_ name: String) {
         let previousSidebar = resolvedSidebar
         let previousAccounts = accountSelection
@@ -95,7 +88,6 @@ final class ProtoStore {
         return .account(provider: providerKey, account: accountKey)
     }
 
-    /// A removed/disabled provider or account normalizes here, not in a view.
     var resolvedSidebar: SidebarSelection {
         switch sidebar {
         case .provider(let key):
@@ -135,8 +127,6 @@ final class ProtoStore {
         accountSelection[provider.key] = key
     }
 
-    /// Sidebar navigation: account rows carry the account selection with
-    /// them so detail, popover, and status item follow one source of truth.
     func navigate(to selection: SidebarSelection) {
         sidebar = selection
         sidebar = resolvedSidebar
@@ -174,17 +164,12 @@ final class ProtoStore {
 
     func statusPercent(_ provider: ProtoProvider) -> String? {
         guard let percent = provider.summaryPercent else { return nil }
-        // Bottom line is the bare percent; the top line's countdown already
-        // carries the period context. The summary itself stays driven by
-        // long-range windows only (see ProtoProvider.summaryWindow).
         switch percentStyle {
         case .left: return "\(percent)%"
         case .used: return "\(100 - percent)%"
         }
     }
 
-    /// Status-item percent tint — same severity law as the window meters:
-    /// danger/depleted red, warning orange, otherwise phosphor.
     func statusTint(_ provider: ProtoProvider) -> NSColor {
         switch provider.summaryWindow?.state ?? provider.state {
         case .danger, .depleted: JackinBrand.dangerNSColor
@@ -194,19 +179,15 @@ final class ProtoStore {
     }
 
     func setPercentStyle(_ style: PercentStyle) {
-        // F15: Rust accepts and returns the next projection with used strings.
         percentStyle = style
     }
 
     func requestRefreshFloor(_ minutes: Int) {
         switch projection.mutationScript {
         case .rejectLowFloor where minutes < 5:
-            // F16: typed recoverable rejection; accepted value never moved.
             floorError =
                 "Refresh floor of \(minutes) minute(s) rejected: minimum is 5 minutes"
         case .reorderedFloor:
-            // F17: later intent (15 min) completes before earlier intent
-            // (10 min); an older revision can never overwrite a newer one.
             issuedFloorRevision += 1
             let revision = issuedFloorRevision
             floorError = nil
@@ -225,16 +206,11 @@ final class ProtoStore {
         }
     }
 
-    /// F16: the exact failed mutation is retried verbatim beside the settings.
     func retryRefreshFloor() {
         floorError = nil
         requestRefreshFloor(1)
     }
 
-    /// Refresh intent joins existing broker work; repeated calls never fork.
-    ///
-    /// The busy window is a fixed 900 ms fixture so the spinner swap is
-    /// visible live without real probe latency.
     func refresh() {
         refreshGeneration += 1
         guard !refreshInProgress else { return }

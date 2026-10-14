@@ -44,9 +44,6 @@ fn session_event_records_roundtrip_every_kind() {
 
 #[test]
 fn state_changed_carries_the_working_transition_the_host_waits_on() {
-    // The host-side wait in the managed run is "an idle session became
-    // Working": `previous` is the old state, `state` the new one. Guard the
-    // direction so the two are never swapped on the wire.
     let json = serde_json::to_string(&SessionEventRecord {
         seq: 0,
         session: 1,

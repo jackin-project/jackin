@@ -76,8 +76,6 @@ fn workspace_list_keymap_action_and_instance_keys() {
 
 #[test]
 fn workspace_list_keymap_glyphs_match_footer_literals() {
-    // Footer builders pull glyphs from this table; assert the glyphs are the
-    // exact strings the footers expect, so dispatch and advertisement agree.
     use WorkspaceListAction::*;
     assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(NavigateUp), "↑↓");
     assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(Enter), "↵");

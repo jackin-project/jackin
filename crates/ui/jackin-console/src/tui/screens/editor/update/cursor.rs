@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor cursor and row-bound plans.
 
 use super::{EditorFieldSelectionPlan, auth_row_is_focusable, editor_max_row_for_tab};
 

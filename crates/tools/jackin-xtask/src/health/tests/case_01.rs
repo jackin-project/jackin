@@ -53,7 +53,6 @@ fn untested_large_classifier_finds_module_without_sibling_tests() {
         &"// padding line\n".repeat(LARGE_MODULE_LINES + 5),
     );
     write(&crates.join("small.rs"), "fn tiny() {}\n");
-    // With sibling tests, should not appear
     write(
         &crates.join("covered.rs"),
         &"// padding line\n".repeat(LARGE_MODULE_LINES + 5),

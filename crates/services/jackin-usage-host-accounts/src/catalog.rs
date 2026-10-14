@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Account catalog and selection persistence.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -14,11 +13,9 @@ use jackin_usage_provider_core::atomic_write_usage_json;
 use super::{AccountLifecycle, AccountProvenance, CanonicalAccountIdentity};
 use jackin_usage_host_presentation::HostSurfaceId;
 
-/// One account known for a host surface (current broker state or durable history).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostAccountDescriptor {
     pub surface_id: String,
-    /// Overview Provider cell; account children leave ownership to the parent.
     pub provider_column_label: String,
     pub account_key: String,
     pub account_label: String,
@@ -33,7 +30,6 @@ pub struct HostAccountDescriptor {
     pub remaining_label: String,
     pub headline: String,
     pub reset_label: Option<String>,
-    /// Non-optional Overview display value (`—` when unknown).
     pub reset_display_label: String,
     pub exact_reset: Option<String>,
     pub status_word: String,
@@ -42,11 +38,9 @@ pub struct HostAccountDescriptor {
     pub updated_label: String,
     pub last_error: Option<String>,
     pub dimmed: bool,
-    /// Complete combined Overview account-row announcement.
     pub accessibility_label: String,
 }
 
-/// Internal source-complete account record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountCatalogEntry {
     pub identity: CanonicalAccountIdentity,
@@ -61,7 +55,6 @@ pub struct AccountCatalogEntry {
     pub fetched_at_epoch: i64,
 }
 
-/// One materialization of every durable/shared/live source.
 #[derive(Debug, Default)]
 pub struct AccountCatalog {
     pub(crate) entries: BTreeMap<(HostSurfaceId, String), AccountCatalogEntry>,
@@ -109,7 +102,6 @@ pub(crate) fn lifecycle_rank(lifecycle: AccountLifecycle) -> u8 {
     }
 }
 
-/// Persist selected account keys: `surface_id -> account_key`.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub(crate) struct SelectedAccountsFile {
     selected: HashMap<String, String>,

@@ -197,7 +197,6 @@ fn rekor_keys_decode_and_contain_expected_id() {
         keys.contains_key("c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d"),
         "expected hex Rekor key ID not found in decoded map"
     );
-    // Confirm the key variant is ECDSA P-256, matching Sigstore production Rekor.
     let key = keys.get(SIGSTORE_REKOR_KEY_ID).unwrap();
     assert!(
         matches!(
@@ -212,36 +211,28 @@ fn rekor_keys_decode_and_contain_expected_id() {
 fn is_preview_version_matches_dev_and_preview_suffixes() {
     assert!(is_preview_version("0.6.0-dev+bf7df07"));
     assert!(is_preview_version("0.6.0-preview.411+bf7df07"));
-    // Any string containing "-dev" is preview (substring match by design).
     assert!(is_preview_version("0.6.0-developer"));
     assert!(!is_preview_version("0.6.0"));
-    // "-preview1" lacks the required trailing dot — not a preview channel version.
     assert!(!is_preview_version("0.6.0-preview1"));
 }
 
 #[test]
 fn is_allowed_signer_san_accepts_release_and_preview_workflows() {
-    // Accepted: release.yml with tag ref.
     assert!(is_allowed_signer_san(
         "https://github.com/jackin-project/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
     ));
-    // Accepted: preview.yml with branch ref.
     assert!(is_allowed_signer_san(
         "https://github.com/jackin-project/jackin/.github/workflows/preview.yml@refs/heads/main"
     ));
-    // Rejected: different workflow file in the same repo.
     assert!(!is_allowed_signer_san(
         "https://github.com/jackin-project/jackin/.github/workflows/evil.yml@refs/heads/main"
     ));
-    // Rejected: correct workflow but in a different repository.
     assert!(!is_allowed_signer_san(
         "https://github.com/attacker/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
     ));
-    // Rejected: partial path match (no trailing @ref).
     assert!(!is_allowed_signer_san(
         "https://github.com/jackin-project/jackin/.github/workflows/release.yml"
     ));
-    // Rejected: empty string.
     assert!(!is_allowed_signer_san(""));
 }
 

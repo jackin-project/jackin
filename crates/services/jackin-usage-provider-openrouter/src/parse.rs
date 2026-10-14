@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `OpenRouter` key usage and credit parsing plus credit buckets.
 
 use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
 use jackin_usage_provider_core::{
@@ -9,8 +8,6 @@ use jackin_usage_provider_core::{
 
 use super::{OpenRouterCreditsOutcome, OpenRouterCreditsResponse, OpenRouterKeyData};
 
-/// Exact dollars-to-cents conversion behind every `OpenRouter` money row.
-/// Non-finite or out-of-range values are invalid (`None`), never clamped.
 fn openrouter_cents(dollars: f64) -> Option<i64> {
     if !dollars.is_finite() {
         return None;
@@ -26,11 +23,6 @@ fn openrouter_cents(dollars: f64) -> Option<i64> {
     Some(cents as i64)
 }
 
-/// BYOK attribution stays a separate row: the first available BYOK spend field
-/// (monthly, then weekly, daily, plain), or the sum of any other `byok*`
-/// *spend* numerics. The fallback only counts keys that also name usage or
-/// spend — a `byok_limit`/`byok_remaining` cap must never be read as spend.
-/// Never merged into the key usage rows.
 fn openrouter_byok_spend(data: &serde_json::Value) -> Option<i64> {
     let object = data.as_object()?;
     for key in [
@@ -65,8 +57,6 @@ fn openrouter_byok_spend(data: &serde_json::Value) -> Option<i64> {
     found.then_some(total)
 }
 
-/// Optional key expiry (`expires_at` as ISO string or epoch number, seconds or
-/// milliseconds). Unparseable values are ignored, never fatal.
 fn openrouter_key_expiry(data: &serde_json::Value, now: i64) -> Option<String> {
     let raw = data.get("expires_at")?;
     let epoch = raw
@@ -89,8 +79,6 @@ fn openrouter_key_expiry(data: &serde_json::Value, now: i64) -> Option<String> {
     Some(format!("expires {}", expiry_label(epoch, now)))
 }
 
-/// Optional key-cap reset timestamp (`reset_at`/`resets_at` ISO). Absent on
-/// most keys — the Key Limit row then carries no reset.
 fn openrouter_key_reset(data: &serde_json::Value) -> Option<i64> {
     data.get("reset_at")
         .or_else(|| data.get("resets_at"))
@@ -115,8 +103,6 @@ pub fn parse_openrouter_key_usage(
     let key: OpenRouterKeyData = serde_json::from_value(data.clone())
         .map_err(|_| "OpenRouter key response is malformed".to_owned())?;
     let mut buckets = Vec::new();
-    // Key Limit meter: coherent cap/remaining only. A null (or non-positive)
-    // cap means no configured cap — no row at all, never an infinite bar.
     if let Some(cap) = key.limit.and_then(openrouter_cents).filter(|cap| *cap > 0) {
         let remaining = key
             .limit_remaining
@@ -146,7 +132,6 @@ pub fn parse_openrouter_key_usage(
         view.status_slot = Some(StatusSlot::Spend);
         buckets.push(view);
     }
-    // Period spend rows carry no denominator, so they never draw percentages.
     for (label, spend) in [
         ("Spent today", key.usage_daily),
         ("Spent this week", key.usage_weekly),
@@ -179,7 +164,6 @@ pub fn parse_openrouter_key_usage(
         view.used_money = Some(Money::new(byok, "USD", 2));
         buckets.push(view);
     }
-    // Without a cap the monthly spend row feeds the status-bar money headline.
     if buckets.iter().all(|bucket| bucket.status_slot.is_none())
         && let Some(monthly) = buckets
             .iter_mut()
@@ -189,8 +173,6 @@ pub fn parse_openrouter_key_usage(
     }
     Ok(OpenRouterKeyQuota {
         buckets,
-        // An omitted tier flag is unknown, never evidence of PAYG: only an
-        // explicit `false` earns the paid label.
         plan_label: match key.is_free_tier {
             Some(true) => Some("Free tier".to_owned()),
             Some(false) => Some("Pay as you go".to_owned()),
@@ -216,10 +198,6 @@ pub fn parse_openrouter_credits(
     })
 }
 
-/// Account-credits row: the meter shows remaining balance, while the spent
-/// fields retain the provider's `total_usage`. A real zero balance renders as
-/// `$0` remaining (never "No data"). The percentage meter exists only when the
-/// ceiling is positive.
 pub fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) -> QuotaBucketView {
     let balance = ceiling_cents.saturating_sub(spent_cents);
     let overage = ceiling_cents > 0 && spent_cents > ceiling_cents;

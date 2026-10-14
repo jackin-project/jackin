@@ -6,12 +6,9 @@ pub(super) struct CompletionDrop(pub(super) Option<oneshot::Sender<()>>);
 
 impl Drop for CompletionDrop {
     fn drop(&mut self) {
-        if let Some(sender) = self.0.take() {
-            // A dropped receiver means the waiter is gone; delivery is best-effort.
-            if sender.send(()).is_err() {
-                // Completion needs no delivery.
-            }
-        }
+        if let Some(sender) = self.0.take()
+            && sender.send(()).is_err()
+        {}
     }
 }
 
@@ -30,7 +27,6 @@ pub(super) async fn cancelled_before_poll(close_before_spawn: bool) {
         future_polled.store(true, Ordering::SeqCst);
         std::future::pending().await
     });
-    // current_thread guarantees the spawned task cannot poll until we yield.
     drop(reply_rx);
     tokio::time::timeout(std::time::Duration::from_secs(1), dropped_rx)
         .await

@@ -288,8 +288,6 @@ fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
         },
     ];
     let prompt = sensitive_mount_prompt(&sensitive);
-    // Every flagged path and its reason must reach the operator — a
-    // dropped hit would silently hide a credential exposure.
     for hit in &sensitive {
         assert!(prompt.contains(&hit.src), "missing src in: {prompt}");
         assert!(prompt.contains(&hit.reason), "missing reason in: {prompt}");
@@ -309,9 +307,6 @@ fn docker_build_failure_cli_error_contains_no_local_artifact_paths() {
         jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
     )
     .unwrap();
-    // The doubling this test used to pin was an artifact of the bare
-    // variant: now the stderr tail rides inside `DockerBuildFailed` and
-    // rendering passes it through once, with temp paths redacted.
     let error: anyhow::Error = jackin_docker::DockerError::DockerBuildFailed {
         stderr: "ERROR: failed to read dockerfile: open <redacted-path>: no such file".to_owned(),
     }

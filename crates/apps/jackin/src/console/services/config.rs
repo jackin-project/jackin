@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Non-TUI config persistence services.
-
 use jackin_config::GlobalMountRow;
 use jackin_config::WorkspaceConfig;
 use jackin_config::{AppConfig, BootstrapReport, RoleSource};
@@ -264,12 +262,6 @@ pub(crate) fn start_settings_save(
     })
 }
 
-/// Settings save with first-run bootstrap surfaced. The pre-open
-/// consumes any installer marker and runs the initial scan under the
-/// config lock; [`save_settings`] then applies the UI diff on top of
-/// the bootstrapped config (bootstrap IDs are absent from the UI
-/// originals, so they are preserved — and the returned config carries
-/// them back to the UI refresh path).
 fn save_settings_first_run_aware(
     paths: &JackinPaths,
     input: &OwnedSettingsSaveInput,
@@ -280,12 +272,6 @@ fn save_settings_first_run_aware(
     save_settings(paths, input.as_borrowed())
 }
 
-/// Surface a first-run bootstrap report through operator diagnostics.
-/// The config-save channel carries `AppConfig` only, so the fresh
-/// flag, added IDs, and discovery issues ride the diagnostics surface
-/// instead. Secret-free: account IDs, counts, agents, error
-/// categories, and directories — never credential values or 1Password
-/// item IDs. Silent when the report is empty.
 fn emit_bootstrap_report(report: &BootstrapReport) {
     if report.fresh_install {
         let added = report.added_accounts.len();
@@ -308,11 +294,6 @@ fn emit_bootstrap_report(report: &BootstrapReport) {
     }
 }
 
-/// Spawn the Settings account-scan worker. Discovery is blocking
-/// filesystem/Keychain I/O — it must never run on the UI thread.
-/// Candidates are returned unsaved; the Accounts tab joins them into
-/// the pending draft (Apply commits, Cancel preserves). The echoed
-/// `generation` lets the scan reducer ignore orphaned completions.
 pub(crate) fn start_account_scan(
     paths: JackinPaths,
     generation: u64,
@@ -322,11 +303,6 @@ pub(crate) fn start_account_scan(
     })
 }
 
-/// Blocking scan body: open under the config lock (first-run aware),
-/// scan, drop without saving. Concurrent scans serialize on the lock;
-/// the loser dedupes against the winner's committed accounts. Error
-/// strings carry open/scan failures only (lock, IO, TOML shape) —
-/// never credential values.
 fn run_account_scan(paths: &JackinPaths) -> Result<AccountScanOutcome, String> {
     let (mut editor, open_report) =
         jackin_config::ConfigEditor::open_detailed(paths).map_err(|error| format!("{error:#}"))?;

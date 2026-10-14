@@ -1,11 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Credential-free host projection presentation and broker client APIs.
-
 mod projection;
 
-/// Subdirectory for host-owned projection preferences.
 pub(crate) const HOST_USAGE_STATE_REL: &str = "usage-menu-bar";
 
 pub use jackin_usage_broker::{

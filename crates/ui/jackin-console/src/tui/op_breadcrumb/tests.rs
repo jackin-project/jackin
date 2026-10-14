@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `op_breadcrumb`.
 use jackin_core::parse_op_breadcrumb_path;
 
 #[test]

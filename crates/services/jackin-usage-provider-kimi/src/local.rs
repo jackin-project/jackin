@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Kimi` local-server usage and token loading.
 
 use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
 use jackin_usage_provider_core::{
@@ -11,9 +10,6 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Experimental local-server usage shape (`GET /api/v1/oauth/usage`): the
-/// Extra Usage wallet. `summary`/`limits` schemas are version-specific and
-/// carried opaquely; only the wallet maps to a bucket today.
 #[derive(Debug, Deserialize)]
 pub(crate) struct KimiLocalUsage {
     pub(crate) summary: Option<serde_json::Value>,
@@ -28,9 +24,6 @@ pub(crate) struct KimiLocalError {
     pub(crate) message: Option<String>,
 }
 
-/// Unitless wallet keys whose scale was never evidenced: a major-unit value
-/// under one of these would render 100x off as [`Money`], so hits render as
-/// unknown-scale labels, never money (F06 currency precision).
 pub(crate) const KIMI_UNKNOWN_SCALE_KEYS: &[&str] = &[
     "remaining",
     "used",
@@ -40,19 +33,12 @@ pub(crate) const KIMI_UNKNOWN_SCALE_KEYS: &[&str] = &[
     "limit",
 ];
 
-/// Extra Usage wallet: remaining balance, wallet size, and the monthly
-/// cap/used pair, all in minor currency units. Only evidenced keys feed
-/// [`Money`] — the `*_cents` spellings plus bare `balance`/`total`; the
-/// unitless aliases land in `other` and surface as unknown-scale labels.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct KimiExtraUsage {
     #[serde(alias = "balance_cents", alias = "remaining_cents")]
     pub(crate) balance: Option<i64>,
     #[serde(alias = "total_cents")]
     pub(crate) total: Option<i64>,
-    // `rename`, not `alias`: the bare unitless spellings (`monthly_cap`,
-    // `monthly_used`) must NOT bind here — they fall through to `other` as
-    // unknown-scale labels.
     #[serde(
         rename = "monthly_cap_cents",
         alias = "cap_cents",
@@ -67,8 +53,6 @@ pub(crate) struct KimiExtraUsage {
 }
 
 impl KimiExtraUsage {
-    /// First unitless-alias hit as an unknown-scale `(key, display)` pair, or
-    /// `None` when no unitless wallet key carried a finite number.
     pub(crate) fn unknown_scale_hit(&self) -> Option<(&str, String)> {
         KIMI_UNKNOWN_SCALE_KEYS.iter().find_map(|key| {
             let value = self.other.get(*key).and_then(json_number)?;
@@ -86,8 +70,6 @@ impl KimiExtraUsage {
 }
 
 impl KimiLocalUsage {
-    /// Reject an HTTP-200 body carrying an in-band error; otherwise return the
-    /// wallet (if any).
     pub(crate) fn wallet(&self) -> Result<Option<&KimiExtraUsage>, String> {
         if let Some(error) = &self.error {
             let detail = error
@@ -133,12 +115,6 @@ pub(crate) fn fetch_kimi_local_usage(
     )
 }
 
-/// Map the Extra Usage wallet to a `Spend`-slot money bucket: monthly used of
-/// the monthly cap when present, else wallet consumed (`total - balance`) of
-/// the wallet total. Currency falls back to the generic `credits` label —
-/// never an assumed fiat code. With no usable money pair, a unitless-alias
-/// hit renders as a label-only unknown-scale row (never [`Money`]); with
-/// neither, there is no bucket at all.
 pub(crate) fn kimi_extra_usage_bucket(extra: &KimiExtraUsage) -> Option<QuotaBucketView> {
     let currency = extra
         .currency
@@ -187,9 +163,6 @@ pub(crate) fn kimi_extra_usage_bucket(extra: &KimiExtraUsage) -> Option<QuotaBuc
     Some(view)
 }
 
-/// Label-only wallet row for a unitless-alias hit: the raw figure with its
-/// key, explicitly unknown-scale. No [`Money`], no percent, no headline slot —
-/// a detail row the headline ignores.
 pub(crate) fn kimi_unknown_scale_bucket(extra: &KimiExtraUsage) -> Option<QuotaBucketView> {
     let (key, display) = extra.unknown_scale_hit()?;
     Some(bucket(

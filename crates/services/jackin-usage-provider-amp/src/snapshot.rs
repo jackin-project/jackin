@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Amp` snapshot entry points.
 
 use super::{
     AmpSuccessContext, amp_view_from_usage, fetch_amp_api_usage, fetch_amp_cli_usage,
@@ -21,9 +20,6 @@ pub fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let handoff_secrets = Path::new(AMP_HANDOFF_SECRETS_PATH);
     let amp_env_key = env_value("AMP_API_KEY");
     let env_present = amp_env_key.is_some();
-    // Resolve the file key only when the env var is absent (env wins), capturing
-    // the winning path so the origin names the file that actually produced the
-    // key instead of re-`stat`ing and guessing. Home secrets first, handoff last.
     let amp_file = if env_present {
         None
     } else {
@@ -39,9 +35,6 @@ pub fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let (cli_usage, cli_error) = split_fetch(api_usage.is_none().then(fetch_amp_cli_usage));
     let provider_error = api_error.as_ref().or(cli_error.as_ref()).cloned();
     let has_auth = amp_api_key.is_some() || amp_secrets.exists() || handoff_secrets.exists();
-    // credential_origin names the file that actually produced the key (env wins
-    // first). A present-but-unparseable home `secrets.json` no longer mislabels a
-    // key that actually resolved from the handoff.
     let credential_origin = if env_present {
         Some("API key · env AMP_API_KEY".to_owned())
     } else if let Some((path, _)) = amp_file.as_ref() {
@@ -54,8 +47,6 @@ pub fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         None
     };
 
-    // Success path is one shared, credential-free view builder so the plan-label
-    // and detail-only credit contract is executable without provider I/O.
     if let Some(usage) = api_usage {
         return amp_view_from_usage(
             AmpSuccessContext {

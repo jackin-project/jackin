@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! jackin❯ container bootstrap runtime.
-//!
-//! Re-exports the public entry points consumed by `app.rs` and `console/`.
-//! Each sub-module owns one slice of the container lifecycle.
-
 pub mod apple_container;
 pub mod attach;
 pub mod backend;

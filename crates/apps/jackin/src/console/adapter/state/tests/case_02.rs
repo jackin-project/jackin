@@ -19,7 +19,6 @@ fn classify_mount_diffs_keeps_genuine_remove_add_separate() {
     }];
     let diffs = classify_mount_diffs(&original, &pending);
     assert_eq!(diffs.len(), 2);
-    // Order: pending first (Added), then original (Removed).
     assert!(matches!(diffs[0], MountDiff::Added(_)));
     assert!(matches!(diffs[1], MountDiff::Removed(_)));
 }
@@ -48,7 +47,6 @@ fn change_count_env_remove_counts_as_one() {
 #[test]
 fn change_count_agent_env_delta() {
     use jackin_config::WorkspaceRoleOverride;
-    // Seed one role with one env key.
     let mut ws = empty_ws("/a");
     let mut role_x_env = std::collections::BTreeMap::new();
     role_x_env.insert("LOG_LEVEL".into(), EnvValue::Plain("info".into()));
@@ -64,7 +62,6 @@ fn change_count_agent_env_delta() {
     let mut e = EditorState::new_edit("a".into(), ws);
     assert_eq!(e.change_count(), 0);
 
-    // Add a new key to pending.
     e.pending
         .roles
         .get_mut("agent-x")
@@ -73,7 +70,6 @@ fn change_count_agent_env_delta() {
         .insert("DEBUG".into(), EnvValue::Plain("1".into()));
     assert_eq!(e.change_count(), 1);
 
-    // Remove the original key. Net delta: 2 (one add + one remove).
     e.pending
         .roles
         .get_mut("agent-x")
@@ -87,7 +83,6 @@ fn change_count_agent_env_delta() {
 fn is_dirty_from_env_mutation() {
     use jackin_config::WorkspaceRoleOverride;
 
-    // Workspace env path.
     let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
     assert!(!e.is_dirty());
     e.pending
@@ -95,7 +90,6 @@ fn is_dirty_from_env_mutation() {
         .insert("K".into(), EnvValue::Plain("v".into()));
     assert!(e.is_dirty(), "workspace env set must make state dirty");
 
-    // Per-role env path.
     let mut e2 = EditorState::new_edit("a".into(), empty_ws("/a"));
     assert!(!e2.is_dirty());
     e2.pending.roles.insert(
@@ -126,17 +120,14 @@ fn completed_returns_none_when_name_missing() {
     p.accept_mount_src(PathBuf::from("/home/user/proj"));
     p.accept_mount_dst("/home/user/proj".into(), false);
     p.accept_workdir("/home/user/proj".into());
-    // No accept_name → completed() must be None.
     assert!(p.completed().is_none());
 }
 
 #[test]
 fn completed_returns_none_when_mount_src_missing() {
     let mut p = CreatePreludeState::new();
-    // Skip accept_mount_src and accept_mount_dst.
     p.pending_workdir = Some("/home/user/proj".into());
     p.pending_name = Some("proj".into());
-    // build_workspace fails on missing src → completed() None.
     assert!(p.completed().is_none());
 }
 
@@ -145,7 +136,6 @@ fn completed_returns_none_when_workdir_missing() {
     let mut p = CreatePreludeState::new();
     p.accept_mount_src(PathBuf::from("/home/user/proj"));
     p.accept_mount_dst("/home/user/proj".into(), false);
-    // Skip accept_workdir.
     p.pending_name = Some("proj".into());
     assert!(p.completed().is_none());
 }
@@ -202,7 +192,6 @@ fn manager_list_row_round_trip() {
         Some(ManagerListRow::NewWorkspace)
     );
 
-    // Out-of-range index returns None.
     assert_eq!(state.row_at(saved_count + 2), None);
 }
 
@@ -214,12 +203,10 @@ fn manager_selected_workspace_summary_is_none_for_synthetic_rows() {
     config.workspaces.insert("alpha".into(), empty_ws("/alpha"));
     let mut state = ManagerState::from_config(&config, cwd);
 
-    // Current directory row.
     state.selected = ManagerListRow::CurrentDirectory.to_screen_index(1).unwrap();
     assert!(state.selected_workspace_summary().is_none());
     assert!(state.is_current_dir_selected());
 
-    // Saved workspace row.
     state.selected = ManagerListRow::SavedWorkspace(0)
         .to_screen_index(1)
         .unwrap();
@@ -228,7 +215,6 @@ fn manager_selected_workspace_summary_is_none_for_synthetic_rows() {
         .expect("saved row exposes summary");
     assert_eq!(summary.name, "alpha");
 
-    // "+ New workspace" sentinel.
     state.selected = ManagerListRow::NewWorkspace.to_screen_index(1).unwrap();
     assert!(state.selected_workspace_summary().is_none());
     assert!(state.is_new_workspace_selected());
@@ -379,8 +365,6 @@ fn cycle_isolation_worktree_back_to_shared() {
 
 #[test]
 fn cycle_isolation_on_sentinel_is_noop() {
-    // Cursor on the `+ Add mount` sentinel (row == mounts.len()) — I must
-    // not mutate mounts or trigger a change.
     let mut e = editor_with_one_shared_mount();
     e.active_field = FieldFocus::Row(e.pending.mounts.len());
     let before = e.pending.mounts.clone();

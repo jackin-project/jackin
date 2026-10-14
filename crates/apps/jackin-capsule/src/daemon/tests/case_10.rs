@@ -5,19 +5,10 @@ use super::*;
 
 #[test]
 fn read_packed_git_ref_oid_does_not_cache_truncated_read() {
-    // packed-refs cap forces a synthetic-truncation scenario: write
-    // exactly PACKED_REFS_MAX_BYTES of content so read_text_bounded's
-    // length equals the cap, then mutate underlying bytes and confirm
-    // the second read sees the new value (would not, if the truncated
-    // first read had cached).
     let temp = tempfile::tempdir().unwrap();
     let packed_refs = temp.path().join("packed-refs-truncated");
-    // Pad with comment lines + a real ref entry until total length
-    // matches the cap exactly.
     let real_line = "1111111111111111111111111111111111111111 refs/heads/feat/x\n";
     let padding_per_line = "# padding to fill packed-refs to the cap byte limit aaaaaaaaaa\n";
-    // Target one byte OVER the cap so metadata.len() > cap triggers
-    // the real truncation path (not the exactly-cap edge case).
     let target_size = usize::try_from(PACKED_REFS_MAX_BYTES)
         .unwrap_or(usize::MAX)
         .saturating_add(1);
@@ -33,7 +24,6 @@ fn read_packed_git_ref_oid_does_not_cache_truncated_read() {
 
     drop(read_packed_git_ref_oid(&packed_refs, "refs/heads/feat/x"));
 
-    // Mutate same-length bytes (overwrite oid in place); mtime advances.
     let buf2 = buf.replacen(
         "1111111111111111111111111111111111111111",
         "2222222222222222222222222222222222222222",
@@ -50,11 +40,6 @@ fn read_packed_git_ref_oid_does_not_cache_truncated_read() {
 
 #[test]
 fn packed_refs_cache_eviction_bounds_entries_at_cap() {
-    // Create CAP+1 distinct packed-refs paths and read each once.
-    // After the (CAP+1)th insert, exactly CAP of the inserted
-    // paths must remain — proves both the upper bound AND that
-    // eviction removed only one entry (catches over-evict bugs
-    // where the cache would degrade to a single entry).
     let temp = tempfile::tempdir().unwrap();
     let mut paths = Vec::new();
     for i in 0..=PACKED_REFS_CACHE_MAX_ENTRIES {
@@ -77,15 +62,10 @@ fn packed_refs_cache_eviction_bounds_entries_at_cap() {
             .filter(|p| cache.contains_key(p.as_path()))
             .count()
     });
-    // The just-inserted (CAP+1)th entry MUST be present; eviction
-    // targets pre-existing entries, never the new insert.
     assert!(
         with_packed_refs_cache(|cache| cache.contains_key(paths.last().unwrap().as_path())),
         "newly-inserted entry must survive eviction"
     );
-    // Exactly one of the previously-inserted CAP entries must have
-    // been evicted: count of our tracked paths in the cache should
-    // equal CAP, not less (over-evict) or more (no-op evict).
     assert_eq!(
         count, PACKED_REFS_CACHE_MAX_ENTRIES,
         "eviction must drop exactly one entry; saw {count} surviving of CAP={PACKED_REFS_CACHE_MAX_ENTRIES}"
@@ -317,18 +297,14 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
 #[test]
 fn wheel_back_to_live_repaints_body_and_footer() {
     let mut mux = single_pane_tab_mux();
-    // Size the session to the pane so the live tail is exactly the grid.
     let pane = mux.visible_panes().into_iter().next().expect("one pane");
     let (mut session, _input_rx) = test_session(pane.inner.rows, pane.inner.cols);
     for i in 0..40 {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }
     mux.session_supervisor.sessions.insert(1, session);
-    // The encoder skips cells identical to the reset baseline (the space in
-    // "line 39"), so assert on the digit pair unique to the tail row.
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
 
-    // Park the view in history; the frame switches to the scrollback footer.
     let scrolled = handle_input_frame(
         &mut mux,
         InputEvent::MousePress {
@@ -346,18 +322,12 @@ fn wheel_back_to_live_repaints_body_and_footer() {
             .scrollback_offset(),
         3
     );
-    // The diff encoder skips cells that match the live footer, so "scrollback"
-    // may be split across a cursor-move escape. Match the prefix that is always
-    // emitted as a contiguous run.
     assert!(
         contains(&scrolled, b"exit scrollb"),
         "scrolled frame must show the scrollback footer: {:?}",
         String::from_utf8_lossy(&scrolled)
     );
 
-    // Wheel-only return to the live tail: body and footer must repaint
-    // together — the D2 regression left the scrollback view and the
-    // scrollback footer on screen here.
     let live = handle_input_frame(
         &mut mux,
         InputEvent::MousePress {

@@ -1,14 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! The `events` subscription registry: the daemon-side fan-out that turns
-//! session observations into [`ServerMsg::SessionEvent`] frames.
-//!
-//! Not responsible for: authoring agent state. The arbitrated effective state
-//! is produced once by `Session::advance_status` (the terminal-observation
-//! authority) and only *read* here. A stream that recomputed state would be a
-//! second authority, and the two would drift.
-
 use std::time::Instant;
 
 use jackin_protocol::control::{
@@ -21,27 +13,14 @@ use super::{ClientMsg, Multiplexer, Session, control_server_operation};
 const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
     jackin_telemetry::schema::enums::ErrorType::RpcError;
 
-/// Minimum gap between two [`SessionEventKind::Activity`] records for one
-/// session. A chatty agent writes to its PTY thousands of times a second; the
-/// stream reports *that* it is active on a human cadence and lets
-/// [`SessionEventRecord::last_output_ms`] carry the precise recency. State
-/// changes and exits are never throttled — those are the events a subscriber
-/// is waiting on.
 pub(crate) const ACTIVITY_REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// One open `events` connection.
 struct Subscriber {
-    /// `Some(id)` restricts the stream to one session; `None` streams all.
     filter: Option<u64>,
-    /// Per-subscription record counter, so a gap in `seq` is visible to the
-    /// peer as a dropped record rather than silently swallowed.
     seq: u64,
     tx: mpsc::UnboundedSender<ServerMsg>,
 }
 
-/// Everything one session contributes to an event record, read from the
-/// session at emit time. Keeping it a struct means adding a field to the wire
-/// record is one compile error here, not a silently-defaulted value.
 #[derive(Debug, Clone)]
 pub(crate) struct SessionObservation {
     pub(crate) session: u64,
@@ -72,12 +51,9 @@ impl SessionObservation {
     }
 }
 
-/// The daemon's set of live `events` subscriptions.
 #[derive(Default)]
 pub(crate) struct EventSubscribers {
     subscribers: Vec<Subscriber>,
-    /// When each session last had an [`SessionEventKind::Activity`] record
-    /// emitted, for [`ACTIVITY_REPORT_INTERVAL`] throttling.
     last_activity_report: std::collections::HashMap<u64, Instant>,
 }
 
@@ -90,17 +66,10 @@ impl std::fmt::Debug for EventSubscribers {
 }
 
 impl EventSubscribers {
-    /// True while at least one peer is listening. The emit sites check this
-    /// first so a container with no subscriber does no per-tick work beyond
-    /// one boolean read.
     pub(crate) fn is_empty(&self) -> bool {
         self.subscribers.is_empty()
     }
 
-    /// Register a new subscription and send it one
-    /// [`SessionEventKind::Subscribed`] baseline record per live session, so
-    /// the peer's first read is a complete picture rather than a wait for the
-    /// next change.
     pub(crate) fn subscribe(
         &mut self,
         filter: Option<u64>,
@@ -116,18 +85,12 @@ impl EventSubscribers {
                 &observation,
                 &SessionEventKind::Subscribed,
             ) {
-                // The peer hung up between connect and baseline; drop it
-                // rather than registering a dead sender.
                 return;
             }
         }
         self.subscribers.push(subscriber);
     }
 
-    /// Emit one record to every subscriber whose filter accepts the session.
-    /// Subscribers whose receiver has been dropped are reaped here — that is
-    /// the only unsubscribe path, because a control connection has no
-    /// goodbye frame.
     pub(crate) fn publish(
         &mut self,
         now: Instant,
@@ -141,9 +104,6 @@ impl EventSubscribers {
             .retain_mut(|subscriber| send_to(subscriber, now, observation, kind));
     }
 
-    /// Emit a throttled [`SessionEventKind::Activity`] record. Returns without
-    /// emitting when this session already reported activity inside
-    /// [`ACTIVITY_REPORT_INTERVAL`].
     pub(crate) fn publish_activity(&mut self, now: Instant, observation: &SessionObservation) {
         let due = self
             .last_activity_report
@@ -157,8 +117,6 @@ impl EventSubscribers {
     }
 }
 
-/// Write one record to one subscriber. Returns false when the peer is gone and
-/// the subscriber should be reaped.
 fn send_to(
     subscriber: &mut Subscriber,
     now: Instant,
@@ -169,8 +127,6 @@ fn send_to(
         .filter
         .is_some_and(|id| id != observation.session)
     {
-        // Not this subscriber's session; it stays registered and its `seq`
-        // stays dense (a filtered stream must not show phantom gaps).
         return !subscriber.tx.is_closed();
     }
     let record = observation
@@ -185,18 +141,12 @@ fn send_to(
         .is_ok()
 }
 
-/// Register a long-lived control subscription. `events` is the only one; any
-/// other message arriving on a stream channel is a client that mis-declared
-/// itself, and gets nothing — dropping `tx` closes the connection rather than
-/// leaving the peer blocked on a frame that will never come.
 pub(super) fn handle_control_subscription(
     mux: &mut Multiplexer,
     ctx: &jackin_protocol::TelemetryContext,
     msg: &ClientMsg,
     tx: mpsc::UnboundedSender<ServerMsg>,
 ) {
-    // A rejected trace correlation refuses the subscription outright, exactly
-    // as it refuses a query: dropping `tx` closes the connection.
     let Ok(operation) = control_server_operation(ctx, msg) else {
         let _error = jackin_telemetry::record_error(RPC_ERROR);
         return;
@@ -222,16 +172,11 @@ pub(super) fn handle_control_subscription(
     mux.control
         .event_subscribers
         .subscribe(session, tx, now, baseline);
-    // The subscription itself succeeded here; the stream's own lifetime is the
-    // connection task's, not this operation's.
     if let Some(operation) = operation {
         operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
     }
 }
 
-/// Read everything the event stream reports about one session. The effective
-/// state is taken as-is from the session — `Session::advance_status` is the
-/// sole authority for it, and the stream must never author a second opinion.
 pub(super) fn session_observation(id: u64, session: &Session) -> SessionObservation {
     SessionObservation {
         session: id,
@@ -243,14 +188,6 @@ pub(super) fn session_observation(id: u64, session: &Session) -> SessionObservat
     }
 }
 
-/// Fan the status tick's outcome out to `events` subscribers.
-///
-/// Diffing the before/after state vectors — rather than emitting from inside
-/// `advance_status` — is what makes the stream agree with `Status` and
-/// `Snapshot` by construction: whatever changed `Session::state` during this
-/// tick is reported, whether that was arbitration or the focused-pane
-/// acknowledge that follows it. There is one authority for state and one place
-/// that observes it.
 pub(super) fn publish_status_events(
     mux: &mut Multiplexer,
     states_before: &[(u64, AgentState)],
@@ -270,9 +207,6 @@ pub(super) fn publish_status_events(
             continue;
         };
         let observation = session_observation(*id, session);
-        // A session that appeared during this tick has no "before" entry; its
-        // baseline is the `Subscribed` record a new subscriber already got, so
-        // there is no transition to report for it here.
         if let Some(previous) = previous_state(*id).filter(|previous| previous != state) {
             mux.control.event_subscribers.publish(
                 now,
@@ -280,9 +214,6 @@ pub(super) fn publish_status_events(
                 &SessionEventKind::StateChanged { previous },
             );
         }
-        // Activity: PTY output inside the last report interval. Once a session
-        // goes quiet this predicate stops holding, so an idle pane emits
-        // nothing at all rather than a heartbeat forever.
         if now.saturating_duration_since(session.last_output_at) <= ACTIVITY_REPORT_INTERVAL {
             mux.control
                 .event_subscribers
@@ -291,7 +222,6 @@ pub(super) fn publish_status_events(
     }
 }
 
-/// Reply shape for a `session.send` that reached, or failed to reach, a PTY.
 pub(crate) const fn session_send_reply(
     session: u64,
     outcome: Result<u64, SessionSendRejection>,

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Multiplexer construction, frame sending, and clipboard-image staging.
 
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
@@ -41,18 +40,10 @@ use super::{
 };
 
 impl Multiplexer {
-    /// # Errors
-    ///
-    /// Returns an error when terminal, session, or credential initialization fails.
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> io::Result<Self> {
         Self::with_clock(rows, cols, launch_config, Arc::new(SystemClock))
     }
 
-    /// Construct a multiplexer with an injected clock (tests / deterministic
-    /// lifecycle timestamps).
-    /// # Errors
-    ///
-    /// Returns an error when terminal, session, or credential initialization fails.
     pub fn with_clock(
         rows: u16,
         cols: u16,
@@ -181,24 +172,18 @@ impl Multiplexer {
         Ok(mux)
     }
 
-    /// Wall-clock `DateTime<Utc>` from the injected clock.
     pub(crate) fn wall_now_utc(&self) -> DateTime<Utc> {
         DateTime::<Utc>::from(self.clock.now_system())
     }
 
-    /// Send a composed frame to the attached client through the single
-    /// writer. Queued out-of-band bytes flush ahead of the bracketed frame.
     pub(crate) fn send_frame(&mut self, bytes: Vec<u8>) {
         self.client_registry.client.write_frame(bytes);
     }
 
-    /// Queue bytes that are not cell content (OSC passthrough, clipboard,
-    /// pointer shapes, mode prefaces); they flush at the next frame boundary.
     pub(crate) fn send_out_of_band(&mut self, bytes: Vec<u8>) {
         self.client_registry.client.enqueue_out_of_band(bytes);
     }
 
-    /// Send a typed attach protocol frame that is not terminal output.
     pub(crate) fn send_protocol_frame(&mut self, frame: ServerFrame) {
         self.client_registry.client.send_protocol_frame(frame);
     }

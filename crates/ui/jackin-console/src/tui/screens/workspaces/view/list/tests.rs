@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `list`.
-
 use crate::tui::components::mount_rows::render_mount_lines;
 
 use crate::tui::components::mount_rows::{MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH};

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ManagerState` popups, snapshots, and animation.
 
 use crate::tui::model::ConsoleAnimationTick;
 
@@ -25,13 +24,8 @@ impl ManagerState<'_> {
         self.instance_snapshots = snapshot.snapshots;
         self.instances_refresh_interval = snapshot.next_interval;
         self.instances_last_error = None;
-        // Evict preview cursors keyed on containers that no longer have
-        // a live snapshot, otherwise the map accumulates indefinitely
-        // across container churn.
         self.preview_pane_cursor
             .retain(|key, _| self.instance_snapshots.contains_key(key));
-        // Clamp `selected` after a refresh in case an instance row that
-        // was selected has disappeared.
         self.selected = selected_index(self.selected, self.row_count());
     }
 
@@ -41,11 +35,6 @@ impl ManagerState<'_> {
         self.instance_session_errors.clear();
         self.live_instance_admissions.clear();
         self.expanded_workspaces.clear();
-        // Mirror the Ok-branch cleanup of the snapshot-derived
-        // surfaces — without this they accumulate stale entries keyed
-        // by container_base that no longer appears in the index, and
-        // `current_dir_expanded` latched against an empty instance list
-        // drifts the row count.
         self.instance_snapshots.clear();
         self.preview_pane_cursor.clear();
         self.current_dir_expanded = false;
@@ -60,10 +49,6 @@ impl ManagerState<'_> {
         }
     }
 
-    /// Force the next `refresh_instances` call to re-read disk regardless of
-    /// the throttle interval. Use after an action mutates the on-disk
-    /// instance index (Stop/Purge) so the next list draw reflects the new
-    /// state immediately instead of waiting up to `REFRESH_INTERVAL`.
     pub fn force_refresh_instances(&mut self) {
         self.instances_last_refresh = None;
         self.instances_refresh_generation =
@@ -71,8 +56,6 @@ impl ManagerState<'_> {
         self.instances_refresh_rx = None;
     }
 
-    /// Test helper: force the next `refresh_instances` call to hit disk
-    /// regardless of the throttle interval.
     pub fn force_refresh_instances_for_test(&mut self) {
         self.instances_last_refresh = None;
         self.instances_refresh_generation =

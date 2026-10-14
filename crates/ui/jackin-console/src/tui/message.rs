@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Top-level console TUI message helpers.
-//!
-//! Product-specific manager messages still live in the root crate while the
-//! workspace console owns root-only config/runtime types. Generic message
-//! carriers live here so the top-level TUI vocabulary has a home in the
-//! surface crate.
 mod actions;
 mod launch;
 mod manager;

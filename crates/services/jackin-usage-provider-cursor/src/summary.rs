@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Cursor` usage summary and stripe balance.
 
 use super::cursor_rest_get;
 use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
@@ -9,9 +8,6 @@ use jackin_usage_provider_core::{
     parse_iso_epoch, quota_pace_label, timed_bucket, with_status_slot,
 };
 
-/// Structured usage summary (`/api/usage-summary`): exact cycle bounds,
-/// percent buckets, and dollar figures. Dollar fields stay labels (scale
-/// unverified); only the cycle percent backs a meter.
 #[derive(Debug, Clone)]
 pub struct CursorUsageSummary {
     pub(crate) cycle_start: Option<i64>,
@@ -141,8 +137,6 @@ pub fn cursor_summary_buckets(summary: &CursorUsageSummary, now: i64) -> Vec<Quo
             UsageSnapshotStatus::Fresh,
         ));
     }
-    // `overall` has no documented unit: preserved raw, never interpreted as
-    // money or percent.
     if let Some(overall) = summary.overall_raw {
         buckets.push(bucket(
             "Overall",
@@ -179,7 +173,6 @@ pub fn cursor_summary_buckets(summary: &CursorUsageSummary, now: i64) -> Vec<Quo
     buckets
 }
 
-/// Stripe balance in cents (`/api/auth/stripe`): explicit minor units.
 pub fn fetch_cursor_stripe_balance(user_id: &str, token: &str) -> Result<i64, String> {
     let value = cursor_rest_get(user_id, token, "/api/auth/stripe")?;
     Ok(parse_cursor_stripe_balance(&value))
@@ -192,7 +185,3 @@ pub fn parse_cursor_stripe_balance(value: &serde_json::Value) -> i64 {
         .find(|value| value.is_finite() && *value >= 0.0)
         .map_or(0, |value| value.round() as i64)
 }
-
-// ---------------------------------------------------------------------------
-// Enterprise Admin (separate scope)
-// ---------------------------------------------------------------------------

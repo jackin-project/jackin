@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded parser for Claude Code's documented statusline fields.
-
 use serde_json::{Map, Value};
 
 use jackin_protocol::usage_monitor::{
@@ -20,11 +18,6 @@ struct ParsedClaudeCodeVersion {
     components: (u64, u64, u64),
 }
 
-/// Parse the supported Claude Code statusline JSON fields.
-///
-/// Unrelated fields, including all session cost fields, are deliberately
-/// ignored. Missing quota windows remain absent so callers cannot turn missing
-/// data into a zero-utilization observation.
 pub fn parse_statusline(bytes: &[u8]) -> Result<StatuslineObservation, MonitorIssue> {
     if bytes.len() > USAGE_MONITOR_MAX_STATUSLINE_BYTES {
         return Err(issue(
@@ -185,8 +178,6 @@ fn parse_used_percentage(value: &Value) -> Result<i32, MonitorIssue> {
             "used_percentage must be a finite number from 0 through 100",
         ));
     }
-    // Round toward greater usage. A boundary value must never be understated
-    // by binary floating-point conversion.
     let basis_points = (percentage * 100.0).ceil();
     if !(0.0..=10_000.0).contains(&basis_points) {
         return Err(issue(
@@ -353,8 +344,6 @@ mod tests {
             MonitorIssueCode::StatuslineInvalid
         );
 
-        // A pre-support version is still valid metadata when it claims no
-        // quota window.
         let input = br#"{"session_id":"session-1","version":"2.1.79"}"#;
         assert_eq!(
             parse_statusline(input)
@@ -390,8 +379,6 @@ mod tests {
         let first = parse_statusline(input).unwrap();
         let replay = parse_statusline(input).unwrap();
 
-        // The parser carries only source fields; receipt time and freshness
-        // remain the broker's responsibility.
         assert_eq!(first, replay);
     }
 

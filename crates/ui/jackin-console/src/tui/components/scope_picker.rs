@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspace-vs-specific-role choice for the Secrets-tab Add flow.
-
 use crossterm::event::{KeyCode, KeyEvent};
 
 use jackin_oppicker::ModalOutcome;
@@ -84,13 +82,12 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
         &termrock::style::DesignSystem::default(),
     );
 
-    // inner area is 3 rows (5 outer − 2 border): blank, button, blank.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // top blank
-            Constraint::Length(1), // button
-            Constraint::Length(1), // bottom blank
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
         ])
         .split(inner);
     let actions = [

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Codex` RPC response types.
 
 use super::{
     CodexCreditDetails, CodexRateLimitDetails, CodexResetCredits, CodexUsageResponse,
@@ -41,13 +40,8 @@ pub enum CodexRpcAccountDetails {
 
 #[derive(Debug, Deserialize)]
 pub struct CodexRpcRateLimitsResponse {
-    // Defaulted: a server that omits the whole object (permission/capability
-    // drift) still decodes, yielding no windows instead of no snapshot.
     #[serde(rename = "rateLimits", default)]
     pub(crate) rate_limits: CodexRpcRateLimits,
-    // Per-limit-id windows. Every entry other than the main "codex" limit
-    // (already surfaced as Session/Weekly) is an extra limit — the
-    // "…Codex-Spark" entry carries the Codex Spark 5-hour/Weekly windows.
     #[serde(rename = "rateLimitsByLimitId", default)]
     pub(crate) rate_limits_by_limit_id: BTreeMap<String, CodexRpcLimitEntry>,
     #[serde(rename = "rateLimitResetCredits")]
@@ -66,8 +60,6 @@ pub struct CodexRpcLimitEntry {
 
 #[derive(Debug, Deserialize)]
 pub struct CodexRpcResetCredits {
-    // Defaulted: a missing count reads as zero (no bucket) rather than failing
-    // the whole rate-limit decode.
     #[serde(rename = "availableCount", default)]
     pub(crate) available_count: i64,
 }
@@ -83,8 +75,6 @@ pub struct CodexRpcRateLimits {
 
 #[derive(Debug, Deserialize)]
 pub struct CodexRpcRateLimitWindow {
-    // Optional: a window without a used figure still decodes (reset/duration
-    // rows stay); the bucket just carries no used/remaining percent.
     #[serde(rename = "usedPercent")]
     pub(crate) used_percent: Option<f64>,
     #[serde(rename = "windowDurationMins")]
@@ -95,8 +85,6 @@ pub struct CodexRpcRateLimitWindow {
 
 #[derive(Debug, Deserialize)]
 pub struct CodexRpcCredits {
-    // Defaulted: a credits object with drifted/missing flags reads as
-    // no-credits (no bucket) rather than failing the whole decode.
     #[serde(rename = "hasCredits", default)]
     pub(crate) has_credits: bool,
     #[serde(default)]
@@ -130,9 +118,6 @@ impl CodexRpcUsage {
             rate_limits_by_limit_id,
             reset_credits: rpc_reset_credits,
         } = limits;
-        // Every per-limit-id entry except the main "codex" limit is an extra
-        // rate limit (e.g. Codex Spark); its primary/secondary become the
-        // "<label> 5-hour"/"Weekly" buckets in `buckets()`.
         let additional_rate_limits: Vec<CodexAdditionalRateLimit> = rate_limits_by_limit_id
             .into_values()
             .filter(|entry| entry.limit_id.as_deref() != Some("codex"))

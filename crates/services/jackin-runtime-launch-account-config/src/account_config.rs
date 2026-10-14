@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Publish selected API account settings in host-only provider authority.
-//! Only exact generated files cross into the capsule as read-only overlays.
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -126,9 +123,6 @@ mod private_config_fs {
         }
         anyhow::ensure!(saw_root, "private account config root is empty");
 
-        // The instance root is never mounted. Keeping authority outside every
-        // home/state/auth bind removes the agent's ability to exchange staged
-        // names, replace locks, or mutate published config/catalog bytes.
         let directory =
             open_child_directory(&directory, std::ffi::OsStr::new("provider-config"), true)?;
         let mut directory = open_child_directory(&directory, std::ffi::OsStr::new("home"), true)?;
@@ -144,8 +138,6 @@ mod private_config_fs {
         Ok(directory)
     }
 
-    /// Normalize only lexical aliases. Symlinks remain rejected by the
-    /// descriptor-relative `O_NOFOLLOW` walk below.
     pub(super) fn normalize_root(path: &Path) -> anyhow::Result<PathBuf> {
         let mut normalized = if path.is_absolute() {
             PathBuf::new()
@@ -276,19 +268,12 @@ mod private_config_fs {
         private_config_bounds::read(&mut file, name.as_str(), limit).map(Some)
     }
 
-    /// Move a malformed config beside the replacement without resolving any
-    /// path component or following a leaf symlink. The reserved name is
-    /// created with `O_EXCL`; `renameat` then moves the original inode into
-    /// that descriptor-relative namespace.
     #[expect(
         clippy::print_stderr,
         reason = "quarantine emits one operator-visible corrupt-config warning"
     )]
     pub(super) fn quarantine(directory: &File, name: &str, reason: &str) -> anyhow::Result<()> {
         let name = LeafName::parse(name)?;
-        // Verify the source before reserving a quarantine name. This keeps a
-        // disappearing or replaced config from being silently treated as the
-        // malformed payload we just inspected.
         drop(
             open_existing_regular(directory, name)?.with_context(|| {
                 format!("private provider config {} disappeared", name.as_str())
@@ -513,9 +498,6 @@ mod private_config_fs {
     {
         let name = LeafName::parse(name)?;
         validate_config_contents(contents, name.as_str())?;
-        // Check the current entry without following it. Renameat below cannot
-        // follow a leaf symlink, but rejecting non-regular entries also keeps
-        // malformed capsule state from being silently taken over.
         drop(open_existing_regular(directory, name)?);
         let (temp_name, mut temp_file) = create_temp_file(directory)?;
         let result = (|| {
@@ -772,9 +754,6 @@ where
     let key = account
         .resolved_credential_descriptor(Agent::Codex)?
         .env_name;
-    // `container_home_rel` is computed by the auth provisioner from the same
-    // slot layout used by mounts and the Capsule's CODEX_HOME value. Never
-    // collapse multiple admitted Codex instances onto the primary home.
     let target_home = format!("/home/agent/{}", slot.container_home_rel);
     anyhow::ensure!(
         slot.folder_target == target_home,
@@ -811,9 +790,6 @@ where
     provider.insert("env_key".into(), key.into());
     provider.insert("wire_api".into(), "responses".into());
     provider.insert("requires_openai_auth".into(), false.into());
-    // Same bricking shape as a parse failure: an existing file whose
-    // `model_providers` key is not a table. Only reachable with prior bytes
-    // (a fresh table has no such key), so quarantine and regenerate.
     if document
         .get("model_providers")
         .is_some_and(|value| !value.is_table())
@@ -860,12 +836,8 @@ where
         document.remove("model_reasoning_effort");
     }
     let config_contents = toml::to_string_pretty(&document)?.into_bytes();
-    // Apply the same bound as the reader before publishing even an immutable
-    // catalog: rejection must leave the complete previous pair untouched.
     private_config_fs::validate_config_contents(&config_contents, "config.toml")?;
     if let Some((catalog_name, catalog_contents)) = catalog_to_publish {
-        // The catalog name is content-addressed and immutable. Sync it before
-        // atomically changing config.toml, which is the pair's commit point.
         private_config_fs::publish_catalog(&directory, &catalog_name, &catalog_contents, &mut hook)
             .context("publish private Codex model metadata")?;
         mounts.push((
@@ -873,9 +845,6 @@ where
             format!("{target_home}/{catalog_name}"),
         ));
     }
-    // Docker resolves bind sources after this function returns. Bind the
-    // immutable content-addressed config, so another host launch cannot
-    // substitute a later config/catalog generation during container creation.
     let generation_name = provider_config_filename(&config_contents, "toml");
     private_config_fs::publish_immutable(
         &directory,
@@ -916,7 +885,6 @@ fn codex_catalog_filename(contents: &[u8]) -> String {
     )
 }
 
-/// Provider identifiers from `OpenCode`'s catalog; config and CLI model use the same ID.
 fn opencode_provider(
     provider: AiProvider,
 ) -> anyhow::Result<(&'static str, &'static str, &'static str)> {
@@ -948,8 +916,6 @@ fn opencode_provider(
             "@ai-sdk/openai-compatible",
             "https://opencode.ai/zen/v1",
         ),
-        // models.dev `google` provider via the AI SDK Google package; v1beta
-        // is the package default base.
         AiProvider::Google => (
             "google",
             "@ai-sdk/google",
@@ -960,10 +926,6 @@ fn opencode_provider(
             "@ai-sdk/openai-compatible",
             "https://openrouter.ai/api/v1",
         ),
-        // No OpenCode catalog provider exists for Cursor/Meta; a custom
-        // provider entry needs verified protocol/base-URL details that are
-        // still unknown (Cursor's agent endpoint is proprietary; Meta's API
-        // base is unconfirmed). Deferred to the provider-config lane.
         AiProvider::Cursor | AiProvider::Meta => anyhow::bail!(
             "{provider} accounts cannot authenticate OpenCode yet: no catalog provider entry"
         ),
@@ -980,7 +942,6 @@ pub fn opencode_model(provider: AiProvider, model: &str) -> anyhow::Result<Strin
     }
 }
 
-/// <https://opencode.ai/docs/providers>: provider options and model IDs are paired.
 #[cfg(unix)]
 fn configure_opencode(
     root: &Path,
@@ -1010,7 +971,6 @@ fn configure_opencode(
         "name": account.name, "npm": npm,
         "options": { "baseURL": base_url.unwrap_or(default_url), "apiKey": format!("{{env:{key}}}") }
     });
-    // Zen chooses a protocol per model; preserve its built-in catalog routing.
     if account.provider == AiProvider::Opencode && base_url.is_none() {
         provider
             .as_object_mut()
@@ -1076,10 +1036,6 @@ fn configure_opencode(
     )
 }
 
-/// Provider-published metadata, not guessed for custom model IDs.
-/// <https://www.kimi.com/code/docs/en/third-party-tools/codex.html>
-/// <https://docs.z.ai/devpack/tool/codex>
-/// <https://platform.minimax.io/docs/token-plan/codex>
 fn catalog_supports_effort(catalog: &serde_json::Value, effort: &str) -> bool {
     catalog["models"]
         .as_array()

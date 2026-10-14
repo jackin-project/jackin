@@ -125,9 +125,6 @@ fn usage_broker_child() -> Result<()> {
             executor,
         )
         .test_result()?;
-        // This process seam has no discovery callback, so exercise the
-        // account-generation API directly. Production publication refreshes
-        // obtain their catalog inside the broker service.
         let state = client.refresh(capability(), 0, true).test_result()?;
         assert_eq!(state.generation, 1);
         wait_until(Duration::from_secs(10), || {
@@ -145,11 +142,6 @@ fn usage_broker_child() -> Result<()> {
         root: root.clone(),
         release: None,
     });
-    // The broker lease is a process-independent authority: a killed owner's
-    // lease stays valid for its full duration, so takeover — and therefore
-    // this client's connect — legitimately fails with Unavailable until the
-    // lease expires. Retry like a real desktop client instead of assuming
-    // recovery is instantaneous.
     const ENSURE_DEADLINE: Duration = Duration::from_secs(90);
     let deadline = Instant::now() + ENSURE_DEADLINE;
     let client = loop {
@@ -250,9 +242,6 @@ fn wait_until(timeout: Duration, condition: impl Fn() -> bool) {
 fn child_broker_config(root: &Path, mode: &str) -> UsageBrokerConfig {
     let mut config = UsageBrokerConfig::for_data_dir(root.join("data"));
     if mode == "recovery" {
-        // This E2E case checks process ownership recovery, not retry duration.
-        // The test advances the persisted attempt clock after killing its
-        // fixture owner, then uses a one-second retry to stay bounded.
         config.coordinator.retry_policy.retry_base = Duration::from_secs(1);
         config.coordinator.retry_policy.retry_cap = Duration::from_secs(1);
     }

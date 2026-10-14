@@ -1,26 +1,12 @@
-//! jackin-build-meta: build-script helpers shared by jackin❯ crates.
-//!
-//! **Architecture Invariant:** T1.
-//! Entry point: [`emit_build_info`] — build-script helper shared by crates.
-
 use jackin_process::ExecRequest;
 
 const WORKSPACE_GIT_DIR_FROM_CRATE: &str = "../../.git";
 
-/// Derive the runtime version for a binary crate under `crates/<name>/`.
-///
-/// Returns the version string the caller should emit via
-/// `println!("cargo:rustc-env=<NAME>={version}")`. The name is left
-/// to the caller because each crate uses a distinct rustc-env name
-/// (`JACKIN_VERSION`, `JACKIN_CAPSULE_VERSION`, ...).
 #[must_use]
 pub fn derive_workspace_crate_version() -> String {
     derive_version(WORKSPACE_GIT_DIR_FROM_CRATE)
 }
 
-/// `git_dir_relative` is the path to the workspace `.git/` directory,
-/// relative to the crate that owns the build script. CI/release builds emit
-/// `cargo:rerun-if-changed` hooks so a new HEAD or ref triggers a rebuild.
 #[must_use]
 #[expect(
     clippy::print_stdout,
@@ -41,12 +27,6 @@ fn derive_version(git_dir_relative: &str) -> String {
 
     println!("cargo:rerun-if-changed={git_dir_relative}/HEAD");
     println!("cargo:rerun-if-changed={git_dir_relative}/refs");
-    // `git gc` / `git pack-refs` consolidates loose refs into
-    // .git/packed-refs; after that, branch-tip moves (fast-forwards,
-    // fetches) update only packed-refs and never touch .git/refs/. Watch
-    // it explicitly so the embedded version SHA stays in sync with the
-    // working checkout regardless of which storage shape the local
-    // repository uses.
     println!("cargo:rerun-if-changed={git_dir_relative}/packed-refs");
 
     let short_sha =

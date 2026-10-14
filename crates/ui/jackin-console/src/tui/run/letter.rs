@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Letter-input modal plans.
 
 use crate::tui::model::ConsoleManagerStageRoute;
 
@@ -71,11 +70,6 @@ pub const fn letter_input_modal_kind(
     }
 }
 
-/// Whether the active modal stack should receive bare letter keys.
-///
-/// The root console maps concrete modal variants into these generic facts.
-/// Keeping the consumption policy here prevents the run loop from growing a
-/// second copy of which component shapes type into filters or text inputs.
 #[must_use]
 pub const fn consumes_letter_input(state: LetterInputState) -> bool {
     modal_kind_consumes_letter_input(state.list_modal)

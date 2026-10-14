@@ -1,18 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Hover-state update helpers: container-info hover, file-browser
-//! pointer position, list-row hover targets.
-//!
-//! Matrix row 15: stage hover (tab cells, list rows, mount rows, trust
-//! rows) rides one consumer `HoverState<ConsoleHoverTarget>` held on
-//! `ManagerState`, fed per-Moved-event `HitRegion`s built from the same
-//! pure geometry fns the old scans called (so targets are identical).
-//! The container-info copy-row hover stays DetailTable-resolved: its
-//! per-row rects live inside the widget-owned `DetailTableState` (the
-//! upstream-sanctioned widget-owns-input route), and extracting them
-//! would mean touching `jackin-tui`, which this plan's scope forbids.
-
 use ratatui::layout::Position;
 use termrock::interaction::HitRegion;
 
@@ -29,8 +17,6 @@ use crate::tui::state::{
     EditorHoverTarget, EditorTab, ManagerHoverTarget, SettingsHoverTarget, SettingsTab,
 };
 
-/// Stable hover-target identity across every console stage — the `Id`
-/// type of the consumer `HoverState` on `ManagerState`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsoleHoverTarget {
     Editor(EditorHoverTarget),
@@ -81,8 +67,6 @@ pub fn container_info_copyable_row_at(
     .is_some()
 }
 
-/// Brighten the hovered copyable row in the Debug info dialog (link hover cue),
-/// mirroring the launch cockpit. No-op unless that modal is open.
 pub fn update_container_info_hover(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -107,9 +91,6 @@ pub fn update_container_info_hover(
     info.set_hovered_row(hovered);
 }
 
-/// Resolve the active file-browser modal and its state from whichever stage
-/// owns it (editor or create-prelude). Shared by the URL-row hit-test and the
-/// click handler so their modal resolution can't drift out of step.
 pub fn file_browser_modal_and_state<'a, 'b>(
     state: &'a ManagerState<'b>,
 ) -> Option<(&'a Modal<'b>, &'a FileBrowserState)> {
@@ -124,8 +105,6 @@ pub fn file_browser_modal_and_state<'a, 'b>(
     }
 }
 
-/// Whether the pointer is over a file-browser git-prompt URL row (side-effect
-/// free; does not open the URL).
 pub fn file_browser_url_row_at(
     state: &ManagerState<'_>,
     mouse: MouseEvent,
@@ -137,10 +116,6 @@ pub fn file_browser_url_row_at(
     let modal_area = modal.rect(term_size);
     fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
 }
-/// Per-Moved-event hover: rebuild the hover regions from the existing
-/// pure geometry, feed the consumer `HoverState`, then apply the cached
-/// target through the same setters the old scans used. A miss clears
-/// every stage hover (the old explicit clear arms).
 pub fn update_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
     let regions = hover_regions(state, term_size);
     let hovered = state
@@ -168,11 +143,6 @@ pub fn update_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
     update_container_info_hover(state, mouse, term_size);
 }
 
-/// Build the hover region list for the active stage. Region groups are
-/// disjoint (tab strip vs content rows), and each per-line probe calls
-/// the same position→target fn the click/cue paths use, so the hit set
-/// is byte-identical to the old scans by construction. Modal-open guards
-/// match the old scans: they empty the region list.
 fn hover_regions(state: &ManagerState<'_>, term_size: Rect) -> Vec<HitRegion<ConsoleHoverTarget>> {
     let mut regions = Vec::new();
     match &state.stage {
@@ -260,9 +230,6 @@ fn hover_regions(state: &ManagerState<'_>, term_size: Rect) -> Vec<HitRegion<Con
     regions
 }
 
-/// One region per tab cell, replicating `tab_cell_at_position`'s band
-/// (`SCREEN_HEADER_HEIGHT..+TAB_STRIP_HEIGHT`) and the upstream
-/// `lay_out_tabs` cell columns it delegates to.
 fn push_tab_regions(
     regions: &mut Vec<HitRegion<ConsoleHoverTarget>>,
     labels: &[&str],

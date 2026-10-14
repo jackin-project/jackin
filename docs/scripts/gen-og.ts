@@ -1,4 +1,3 @@
-// Generates the committed social-preview cards with Takumi.
 
 import ImageResponse from '@takumi-rs/image-response'
 import React from 'react'
@@ -18,8 +17,6 @@ const BG = '#0a0a0a'
 const TEXT = '#ffffff'
 const MUTED = '#9ca8a1'
 const ACCENT = '#5cf07a'
-// Wordmark = white "jackin" + a green chevron on the dark card, no block —
-// matching the on-site lockup (src/components/brand/brand-mark.svg).
 const CHEVRON = ACCENT
 const RAIN_COLS = 80
 const RAIN_ROWS = 24
@@ -79,8 +76,6 @@ function Rain({ width, height }: { width: number; height: number }) {
   return React.createElement('div', { style: { position: 'absolute', inset: 0, display: 'flex' } }, children)
 }
 
-// Chevron from the shared geometry (brand-geometry.ts), embedded as an <img> so
-// it's the exact same caret path used by the DOM lockup and standalone assets.
 function Chevron({ fontSize, marginLeft = 0 }: { fontSize: number; marginLeft?: number }) {
   const c = chevronSvg(fontSize, CHEVRON)
   return React.createElement('img', {
@@ -194,9 +189,6 @@ function Card({ width, height }: { width: number; height: number }) {
   )
 }
 
-// Static rain field for the committed README hero SVG. Built from the same
-// rainEngine char pool and phosphor ramp as the live site and OG cards so the
-// rain reads identically on every surface.
 function rainSvgField(width: number, height: number): string {
   const rng = seeded(0x1acc1a11)
   const state = createRainState(RAIN_COLS, RAIN_ROWS, rng)
@@ -243,8 +235,6 @@ async function generate(width: number, height: number, output: string) {
 const heroWord = outlineWord('jackin', 138, TEXT)
 const heroWordGroup = placeWord(heroWord, Math.round((586 - heroWord.width / 2) * 100) / 100, 338)
 const heroCaret = chevron(138, 842, 314)
-// Keep the banner composition, but use the canonical full-logo Inter face.
-// Outline the byline so SVG consumption cannot substitute a host font.
 const heroByline = outlineWord('by tailrocks', 26, MUTED, interFont)
 const heroBylineGroup = placeWord(heroByline, 626 - heroByline.width / 2, 446)
 const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="jackin❯ by tailrocks">

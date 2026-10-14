@@ -1,14 +1,8 @@
-//! Deterministic filesystem helpers for gate code (plan 027).
-//!
-//! Gate output must not depend on platform `readdir` order. Prefer
-//! [`read_dir_sorted`] over bare `std::fs::read_dir` in jackin-xtask gates.
-
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 
-/// Read `dir` and return directory entries sorted by file name (Unicode order).
 pub(crate) fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
     let mut entries: Vec<fs::DirEntry> = fs::read_dir(dir)
         .with_context(|| format!("reading {}", dir.display()))?
@@ -18,11 +12,6 @@ pub(crate) fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
     Ok(entries)
 }
 
-/// Resolve a workspace crate directory by package directory name.
-///
-/// Members live at `crates/<group>/<package>` (S4); the legacy flat
-/// `crates/<package>` shape is still accepted so gates keep working on
-/// synthetic fixtures and pre-move trees.
 pub(crate) fn crate_dir(root: &Path, name: &str) -> Option<std::path::PathBuf> {
     let crates_dir = root.join("crates");
     let flat = crates_dir.join(name);
@@ -42,7 +31,6 @@ pub(crate) fn crate_dir(root: &Path, name: &str) -> Option<std::path::PathBuf> {
     None
 }
 
-/// Reject bare directory iteration in xtask gate code.
 pub(crate) fn enforce_sorted_iteration(root: &Path) -> Result<()> {
     let source_root = root.join("crates/tools/jackin-xtask/src");
     let mut offenders = Vec::new();

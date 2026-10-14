@@ -1,16 +1,3 @@
-# ratchet.toml — unified shrink-only budgets (completed codebase-health Phase 7).
-# Each entry: a metric (computed by a named provider in jackin-xtask), a bound,
-# and shrink-only semantics: measured > bound fails (growth); measured < bound
-# fails telling you to tighten the bound; measured == bound is steady state.
-# `kind = "presence"` entries are allowlists: listed keys must still be violations,
-# unlisted violations fail. Regenerate any family with:
-# mbx +1.99.0 xtask lint ratchet --print <family>.
-# deny.toml exceptions and .codebook.toml are deliberately NOT folded here:
-# cargo-deny/codebook own their semantics.
-#
-# Single source of truth: legacy file-size-budget.toml / test-layout-allowlist.toml /
-# suppression-budget.toml are gone; `lint files|tests|suppressions` are shims over
-# the families below.
 
 [[family]]
 id = "file-size-production"
@@ -35,10 +22,6 @@ mode = "enforce"
 id = "bare-allow-per-crate"
 kind = "numeric"
 provider = "bare_allow_per_crate"
-# cap = 0 → every nonzero bare-allow crate must be listed (no unlisted debt).
-# 2026-07-12: production crates at measured 0. jackin-xtask keeps 1 fixture
-# string in unit tests that intentionally contains bare `#[allow(...)]` for
-# the bare-allow parser itself (`health::tests::parses_bare_allow`).
 cap = 0
 mode = "enforce"
 [[family]]
@@ -559,11 +542,9 @@ key = "dead_code@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-runtime-repo-cache"
-# Moved with repo_cache (S7 split 48): RepoLock guard-only Arc<std::fs::File> (flock releases on last drop).
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-runtime-shared-runner"
-# Moved with shared_runner (S7 split 81): SharedCommandRunner::new awaits dependency-graph launch branches.
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-usage-provider-core"
@@ -648,7 +629,6 @@ id = "agent-doc-bytes"
 kind = "numeric"
 provider = "agent_doc_bytes"
 mode = "enforce"
-# Plan 027: enforce at measured maxima (shrink-only). Cap 0 → every key must be listed.
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
@@ -1109,11 +1089,6 @@ id = "export-volume"
 kind = "numeric"
 provider = "export_volume_measured"
 mode = "artifact-ceiling"
-# Cap 0 → every measured key > 0 must be listed (no unlisted firehose).
-# Bounds are measured default-mode counts from target/telemetry-volume.json
-# (written by conformance_export_volume); regenerate after intentional growth:
-#   mbx +1.99.0 nextest run -p jackin-diagnostics --all-features -E 'test(conformance_export_volume)'
-#   mbx +1.99.0 xtask lint ratchet --print export-volume
 cap = 0
 [[family.entry]]
 key = "default_mode_logs"
@@ -1125,9 +1100,6 @@ bound = 6
 key = "default_mode_spans"
 bound = 7
 
-# dhat allocation ceilings (source: jackin-capsule perf_budgets).
-# iai-callgrind: PINNED — project CI images do not ship valgrind; re-evaluate
-# when a valgrind-capable runner is available.
 [[family]]
 id = "perf"
 kind = "numeric"
@@ -1147,9 +1119,6 @@ bound = 3
 key = "focused_borrowed_view_max_bytes"
 bound = 1024
 
-# Plan 019: public-surface growth report (shrink-only). Counts root `pub mod`
-# declarations per crate lib.rs. Growth requires regenerate + review.
-# Decision: executable growth report + reviewed baseline instead of cargo-public-api snapshots.
 [[family]]
 id = "public-surface"
 kind = "numeric"
@@ -1479,40 +1448,21 @@ key = "jackin-usage-host-runtime"
 bound = 1
 
 
-# Plan 027: suite wall-time from nextest junit. The provider reports zero when
-# no artifact exists; zero and ordinary headroom are advisory, while growth
-# beyond the ceiling fails wherever nextest emits junit.xml.
 [[family]]
 id = "suite-time"
 kind = "numeric"
 provider = "suite_time"
 mode = "enforce"
-# Cap unused for this family (path-style key). Bound is a soft ceiling for total
-# junit wall-ms (sum of time= attributes). Raise only after reviewing slow tests.
 [[family.entry]]
 key = "junit_total_ms"
 bound = 3600000
 
-# Scheduled build-time ceilings from target/build-times.json. The Hygiene lane
-# enforces these after measurement; local/PR lint reports an artifact skip.
 [[family]]
 id = "build-time"
 kind = "numeric"
 provider = "build_times"
 mode = "artifact-ceiling"
 cap = 0
-# Ceilings from Hygiene GitHub-hosted samples (runs 29396473635,
-# 29397057453, and 31887638238; latest sample run 33319391723). Wall-clock
-# varies materially on shared runners; headroom is ~25-40% above the highest
-# reviewed sample. Local samples must not set these ceilings.
-# Structural note: this family measures absolute wall-clock seconds on shared
-# runners, so single-run samples carry scheduler noise. The jackin-console
-# crate had no source changes in its growth window; its +4s is runner noise.
-# jackin-runtime incremental growth is real code cost from #944 (capsule
-# session control, programmatic launch, ~2.1k lines). Raised with headroom to
-# avoid re-tripping on noise. Flagged to velnor-actions: consider a
-# noise-tolerant provider (median of N samples) instead of single-sample
-# absolute seconds.
 [[family.entry]]
 key = "jackin-runtime.clean_s"
 bound = 220
@@ -1538,10 +1488,6 @@ bound = 14
 key = "jackin-config.incremental_s"
 bound = 3
 
-# Per-function syntax decision count. Clippy owns the absolute cognitive-
-# complexity threshold; this measured family prevents today's structurally
-# complex production functions from growing and requires new functions to stay
-# at or below the unlisted cap.
 [[family]]
 id = "rust-function-complexity"
 kind = "numeric"

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Z.AI` provider-key snapshot entry point.
 
 use jackin_protocol::control::{FocusedUsageView, UsageSnapshotStatus};
 use jackin_usage_provider_core::{

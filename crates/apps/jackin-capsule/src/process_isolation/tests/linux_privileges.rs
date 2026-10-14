@@ -72,8 +72,10 @@ fn dind_client_cert_mount_is_exactly_read_only() {
 #[test]
 fn isolated_runtime_setup_can_spawn_git_config_with_null_stdio() {
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: the production wrapper starts as root. Non-root test hosts
-    // cannot exercise its capability-preserving UID transition.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     if unsafe { libc::geteuid() } != 0 {
         return;
     }
@@ -91,20 +93,27 @@ fn isolated_runtime_setup_can_spawn_git_config_with_null_stdio() {
     let (read_fd, write_fd) = {
         let mut fds = [0; 2];
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: `fds` points to two writable integers for pipe output.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         let pipe_status = unsafe { libc::pipe(fds.as_mut_ptr()) };
         assert_eq!(pipe_status, 0);
         (fds[0], fds[1])
     };
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: the child immediately enters the isolated probe. This test
-    // follows the same fork boundary as the sibling capability probe so a
-    // successful Landlock install cannot restrict the test harness.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     let child = unsafe { libc::fork() };
     assert!(child >= 0, "fork runtime setup probe");
     if child == 0 {
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: `read_fd` is the unused read end returned by pipe.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         unsafe {
             libc::close(read_fd)
         };
@@ -144,43 +153,60 @@ fn isolated_runtime_setup_can_spawn_git_config_with_null_stdio() {
         }
         let status = [u8::from(result.is_ok())];
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: `status` points to one initialized byte and `write_fd`
-        // is the pipe's valid write end.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         unsafe {
             libc::write(write_fd, status.as_ptr().cast(), 1)
         };
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: `write_fd` is no longer used after reporting the result.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         unsafe {
             libc::close(write_fd)
         };
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: the child must terminate without running parent-side
-        // Rust destructors after fork.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         unsafe {
             libc::_exit(i32::from(result.is_err()))
         };
     }
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: the parent owns no use for the pipe's write end.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     unsafe {
         libc::close(write_fd)
     };
     let mut status = [0u8; 1];
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: `status` points to one writable byte and `read_fd` is the
-    // pipe's valid read end.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     let bytes_read = unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) };
     assert_eq!(bytes_read, 1);
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: `read_fd` is no longer used after receiving the result.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     unsafe {
         libc::close(read_fd)
     };
     let mut wait_status = 0;
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: `wait_status` is writable and `child` is the pid returned by
-    // fork.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     let wait_result = unsafe { libc::waitpid(child, &raw mut wait_status, 0) };
     assert_eq!(wait_result, child);
     assert_eq!(status[0], 1, "isolated runtime setup probe failed");
@@ -195,11 +221,11 @@ fn isolated_runtime_setup_can_spawn_git_config_with_null_stdio() {
 )]
 fn sibling_home_read_and_write_are_denied_after_uid_drop() {
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: `geteuid` has no pointer arguments and reports this test
-    // process's effective uid.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     if unsafe { libc::geteuid() } != 0 {
-        // The production wrapper always starts as root. Non-root test
-        // hosts cannot exercise the capability-preserving UID transition.
         return;
     }
     let temp = tempfile::tempdir().expect("temporary isolation fixture");
@@ -229,19 +255,27 @@ fn sibling_home_read_and_write_are_denied_after_uid_drop() {
     let (read_fd, write_fd) = {
         let mut fds = [0; 2];
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: `fds` points to two writable integers for pipe output.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         let pipe_status = unsafe { libc::pipe(fds.as_mut_ptr()) };
         assert_eq!(pipe_status, 0);
         (fds[0], fds[1])
     };
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: `fork` is called before any Rust threads are created in the
-    // test process and the child immediately enters the isolated probe.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     let child = unsafe { libc::fork() };
     assert!(child >= 0, "fork isolation probe");
     if child == 0 {
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: `read_fd` is the unused read end returned by pipe.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         unsafe {
             libc::close(read_fd)
         };
@@ -273,14 +307,20 @@ fn sibling_home_read_and_write_are_denied_after_uid_drop() {
             let own_fd = open(&own_secret, libc::O_RDONLY);
             anyhow::ensure!(own_fd >= 0, "selected slot read denied");
             #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-            // SAFETY: `own_fd` was returned by open and is no longer used.
+            #[expect(
+                clippy::undocumented_unsafe_blocks,
+                reason = "test-only libc privilege probing with controlled fds and cleanup"
+            )]
             unsafe {
                 libc::close(own_fd)
             };
             let own_write = open(&own.join("selected-write"), libc::O_WRONLY | libc::O_CREAT);
             anyhow::ensure!(own_write >= 0, "selected slot write denied");
             #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-            // SAFETY: `own_write` was returned by open and is no longer used.
+            #[expect(
+                clippy::undocumented_unsafe_blocks,
+                reason = "test-only libc privilege probing with controlled fds and cleanup"
+            )]
             unsafe {
                 libc::close(own_write)
             };
@@ -290,15 +330,20 @@ fn sibling_home_read_and_write_are_denied_after_uid_drop() {
             );
             anyhow::ensure!(workspace_write >= 0, "workspace write denied");
             #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-            // SAFETY: `workspace_write` was returned by open and is no longer used.
+            #[expect(
+                clippy::undocumented_unsafe_blocks,
+                reason = "test-only libc privilege probing with controlled fds and cleanup"
+            )]
             unsafe {
                 libc::close(workspace_write)
             };
             let selected_auth_fd = open(&selected_auth, libc::O_RDONLY);
             anyhow::ensure!(selected_auth_fd >= 0, "selected auth read denied");
             #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-            // SAFETY: `selected_auth_fd` was returned by open and is no
-            // longer used.
+            #[expect(
+                clippy::undocumented_unsafe_blocks,
+                reason = "test-only libc privilege probing with controlled fds and cleanup"
+            )]
             unsafe {
                 libc::close(selected_auth_fd)
             };
@@ -328,43 +373,60 @@ fn sibling_home_read_and_write_are_denied_after_uid_drop() {
         }
         let status = [u8::from(result.is_ok())];
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: `status` points to one initialized byte and write_fd is
-        // the pipe's valid write end.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         unsafe {
             libc::write(write_fd, status.as_ptr().cast(), 1)
         };
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: write_fd is no longer used after reporting the result.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         unsafe {
             libc::close(write_fd)
         };
         #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        // SAFETY: the child must terminate without running parent-side
-        // Rust destructors after fork.
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "test-only libc privilege probing with controlled fds and cleanup"
+        )]
         unsafe {
             libc::_exit(i32::from(result.is_err()))
         };
     }
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: the parent owns no use for the pipe's write end.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     unsafe {
         libc::close(write_fd)
     };
     let mut status = [0u8; 1];
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: `status` points to one writable byte and `read_fd` is the
-    // pipe's valid read end.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     let bytes_read = unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) };
     assert_eq!(bytes_read, 1);
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: read_fd is no longer used after receiving the result.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     unsafe {
         libc::close(read_fd)
     };
     let mut wait_status = 0;
     #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    // SAFETY: `wait_status` is writable and `child` is the pid returned by
-    // fork.
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
     let wait_result = unsafe { libc::waitpid(child, &raw mut wait_status, 0) };
     assert_eq!(wait_result, child);
     assert_eq!(status[0], 1, "isolation probe failed inside child");
@@ -377,7 +439,11 @@ fn open(path: &Path, flags: libc::c_int) -> libc::c_int {
     let Ok(path) = std::ffi::CString::new(path.to_string_lossy().as_bytes()) else {
         return -1;
     };
-    // SAFETY: `path` is NUL-terminated and remains alive through open;
-    // the test requests a bounded mode for a possible new file.
-    unsafe { libc::open(path.as_ptr(), flags, 0o600) }
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "test-only libc privilege probing with controlled fds and cleanup"
+    )]
+    unsafe {
+        libc::open(path.as_ptr(), flags, 0o600)
+    }
 }

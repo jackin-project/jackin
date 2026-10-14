@@ -51,8 +51,6 @@ struct OverviewContentView: View {
                 .frame(maxWidth: 940)
                 .frame(maxWidth: .infinity)
             }
-            // Grouped-content stage: the gray under-page ground is what the
-            // card white contrasts against, in both appearances.
             .background(JackinStageBackground())
             .accessibilityLabel("Usage overview")
             .accessibilityIdentifier("usage.overview.grid")
@@ -60,17 +58,6 @@ struct OverviewContentView: View {
     }
 }
 
-/// One provider card in the Overview grid.
-///
-/// Content layer: standard material,
-/// no glass. Every canonical account renders as its own block — the overview
-/// never collapses multi-account providers to one row. A tap focuses the
-/// account in the sidebar detail.
-///
-/// Visual hierarchy per account block: the remaining percent is the hero
-/// (largest type, state-tinted), the identity line is secondary, the meter
-/// is a hairline with a visible track, and metadata is a single quiet
-/// caption row. Healthy states render no badge — silence means fine.
 struct ProviderCardView: View {
     let store: ProtoStore
     let provider: ProtoProvider
@@ -267,10 +254,6 @@ private struct OverviewAccountButtonStyle: ButtonStyle {
     }
 }
 
-/// Authored content boundary for the preferred overview cards.
-///
-/// This is standard opaque content material, never glass. Its compact technical
-/// radius and crisp edge separate providers without ornamental depth.
 private struct ProviderCardSurface: ViewModifier {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.jackinIncreaseContrast) private var processContrast
@@ -291,9 +274,6 @@ private struct ProviderCardSurface: ViewModifier {
     }
 }
 
-/// Calibrated quota meter: a low-radius 6pt track, state-tinted fill.
-///
-/// Content-layer drawing, not chrome — a plain deterministic bar.
 struct QuotaMeter: View {
     let percent: Int
     let tint: Color

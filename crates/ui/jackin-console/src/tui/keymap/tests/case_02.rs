@@ -198,7 +198,6 @@ fn inline_picker_shell_vim_scroll_aliases() {
 
 #[test]
 fn inline_picker_shell_q_not_exit() {
-    // q/Q must NOT be captured — they filter in the SelectList, not exit.
     assert_eq!(
         INLINE_PICKER_SHELL_KEYMAP.dispatch(KeyChord::plain(KeyCode::Char('q'))),
         None
@@ -349,7 +348,6 @@ fn bridged_dispatch_matches_direct_settings_keymaps() {
 
 #[test]
 fn bridged_dispatch_matches_direct_list_keymaps() {
-    // Ctrl-Q is bound (Quit); a bare modified arrow is not.
     let extras = [
         KeyChord::ctrl(KeyCode::Char('q')),
         KeyChord::ctrl(KeyCode::Up),
@@ -370,22 +368,18 @@ fn bridged_dispatch_ignores_release_events() {
 #[test]
 fn visibility_shown_bindings_advertise_hidden_aliases_do_not() {
     let keys = hint_keys(WORKSPACE_LIST_KEYMAP.hint_spans());
-    // Shown bindings advertise their glyph…
     for glyph in ["↑↓", "↵", "E", "D", "O", "S", "⇥", "←", "→"] {
         assert!(
             keys.iter().any(|key| key == glyph),
             "shown glyph {glyph}: {keys:?}"
         );
     }
-    // …HiddenAlias bindings carry dispatch-only chords: never advertised.
     for glyph in ["W", "R", "A", "X", "I", "T", "P"] {
         assert!(
             !keys.iter().any(|key| key == glyph),
             "hidden-alias glyph {glyph} must stay out of hints: {keys:?}"
         );
     }
-    // Visibility::Internal (Ctrl-Q quit) is derived contextually via
-    // `glyph_for`, never through the uncontextual hint list.
     assert!(
         !keys.iter().any(|key| key == "Ctrl-Q"),
         "internal binding must not self-advertise: {keys:?}"

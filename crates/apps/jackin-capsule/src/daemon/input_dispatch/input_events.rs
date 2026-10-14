@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Input-event routing, prefix/palette commands, and tab-bar focus keys.
 
 use crate::tui::components::branch_context_bar::{branch_context_bar_hit, debug_run_id_label};
 
@@ -14,12 +13,6 @@ use super::super::{
 };
 
 impl Multiplexer {
-    /// Handle a parsed input event from the client terminal. Handlers only
-    /// mutate state and record an invalidation; the render loop composes the
-    /// next frame when the generation moved.
-    /// P5: move focus onto/off the agent-tab bar, redrawing the status bar so
-    /// the active-tab underline switches between phosphor-green (focused) and
-    /// neutral white (agent content focused).
     pub(crate) fn set_tab_bar_focused(&mut self, focused: bool) {
         if self.render.tab_bar_focused != focused {
             self.render.tab_bar_focused = focused;
@@ -41,10 +34,6 @@ impl Multiplexer {
             self.apply_action(action);
         }
         if let InputEvent::Data(bytes) = event {
-            // P5: while the agent-tab bar holds focus, it captures the arrow
-            // keys (Left/Right switch tabs; Down/Esc return focus to the agent).
-            // Any other key also returns focus to the agent and is forwarded as
-            // normal input, so the operator is never trapped in the bar.
             if self.render.tab_bar_focused {
                 match tab_bar_focus_key(&bytes) {
                     Some(TabBarFocusKey::Prev) => {
@@ -68,10 +57,6 @@ impl Multiplexer {
                 self.clamp_dialog_top_scroll();
                 self.apply_action(Action::Dialog(action));
             } else {
-                // Any keyboard input from the operator returns the
-                // focused pane to the live tail. Matches the
-                // common multiplexer convention that "I'm typing
-                // again" implies "show me what's happening now."
                 self.apply_action(Action::PaneData(bytes));
             }
         } else {
@@ -112,34 +97,16 @@ impl Multiplexer {
         if let Some(action) = prefix_command_action(&cmd) {
             self.apply_action(action);
         }
-        // The prefix gesture itself invalidates (the status-bar prefix chip
-        // changes) even when the command maps to no action.
         self.invalidate(prefix_full_redraw_reason(&cmd));
     }
 
     pub(crate) fn handle_palette_command(&mut self, cmd: PaletteCommand) {
-        // Per-arm decision: sub-dialog openings push onto the dialog
-        // stack (Menu stays underneath for Esc → back); terminal
-        // actions clear the stack and run the action. No blanket
-        // clear at the top because that would prevent the sub-dialog
-        // back-navigation chain from working.
         let route = palette_command_route(cmd, self.active_tab_pane_count());
         match route {
             PaletteCommandRoute::OpenSplitDirectionPicker => {
-                // Open the SplitDirectionPicker sub-dialog. The
-                // operator picks the direction; that resolves to a
-                // `DialogAction::SplitDirection(...)` which
-                // `apply_dialog_action` chains into an `AgentPicker`
-                // carrying `PickerIntent::Split(direction)`. Final
-                // confirm spawns the new pane.
                 self.dialog_push(Dialog::new_split_direction_picker());
             }
             PaletteCommandRoute::OpenAgentPicker(intent) => {
-                // Always show the agent picker — even when the role
-                // declares a single agent. The operator must
-                // explicitly choose between that agent and a Shell;
-                // jumping straight into the agent would surprise an
-                // operator who picked "New tab" to open a shell.
                 let agents = self.launch_env.available_instances.clone();
                 self.dialog_push(Dialog::new_agent_picker(agents, intent));
             }
@@ -155,10 +122,6 @@ impl Multiplexer {
                 self.dialog_push(Dialog::new_confirm_action(kind));
             }
             PaletteCommandRoute::OpenCloseTargetPicker => {
-                // Drill-down: push the CloseTargetPicker on top
-                // of the Menu so split tabs still ask whether
-                // the operator wants the focused pane or every
-                // pane in the tab. Esc walks back to Menu.
                 self.dialog_push(Dialog::new_close_target_picker());
             }
             PaletteCommandRoute::ToggleZoom => {
@@ -245,10 +208,6 @@ impl Multiplexer {
     }
 }
 
-/// P5: keys the agent-tab-bar focus mode captures, as raw terminal byte
-/// sequences. `Prev`/`Next` are Left/Right (switch tabs); `Exit` is Down or Esc
-/// (return focus to the agent). Any other key returns `None` — it ends tab-bar
-/// focus and is forwarded to the agent as normal input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TabBarFocusKey {
     Prev,
@@ -258,9 +217,9 @@ pub(crate) enum TabBarFocusKey {
 
 pub(crate) fn tab_bar_focus_key(bytes: &[u8]) -> Option<TabBarFocusKey> {
     match bytes {
-        b"\x1b[D" | b"\x1bOD" => Some(TabBarFocusKey::Prev), // Left
-        b"\x1b[C" | b"\x1bOC" => Some(TabBarFocusKey::Next), // Right
-        b"\x1b[B" | b"\x1bOB" | b"\x1b" => Some(TabBarFocusKey::Exit), // Down / Esc
+        b"\x1b[D" | b"\x1bOD" => Some(TabBarFocusKey::Prev),
+        b"\x1b[C" | b"\x1bOC" => Some(TabBarFocusKey::Next),
+        b"\x1b[B" | b"\x1bOB" | b"\x1b" => Some(TabBarFocusKey::Exit),
         _ => None,
     }
 }

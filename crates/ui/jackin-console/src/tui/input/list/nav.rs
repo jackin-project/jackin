@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! List navigation and instance selection.
 
 use super::super::InputOutcome;
 use super::{ConcreteInstanceAction, clamp_list_scroll_after_key, dispatch_manager};
@@ -52,9 +51,6 @@ pub(crate) fn handle_preview_focused_key(
 ) -> InputOutcome {
     let Some(container) = selected_instance_container(state, ConcreteInstanceAction::Reconnect)
     else {
-        // Selection slid off an instance row while preview was open
-        // (refresh purged the entry). Clear focus and let the next
-        // input fall through to the workspace tree.
         dispatch_manager(state, ManagerMessage::ExitPreview);
         return InputOutcome::Continue;
     };

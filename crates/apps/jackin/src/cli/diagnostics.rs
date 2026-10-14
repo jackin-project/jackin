@@ -1,13 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! OTLP delivery validation command.
-
 use clap::Subcommand;
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum DiagnosticsCommand {
-    /// Emit one marked log, trace, and metric and confirm OTLP delivery
+    #[command(
+        about = "Emit one marked log, trace, and metric and confirm OTLP delivery",
+        long_about = "Emit one marked log, trace, and metric and confirm OTLP delivery"
+    )]
     Validate,
 }
 

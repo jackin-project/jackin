@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workdir path picker — choice list of mount dsts plus each ancestor.
-
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -13,7 +11,7 @@ use termrock::widgets::ListState;
 #[derive(Debug, Clone)]
 pub struct WorkdirChoice {
     pub path: String,
-    pub label: String, // e.g. "(mount dst)", "(parent)", "(root)"
+    pub label: String,
 }
 
 pub trait WorkdirMount {
@@ -27,13 +25,6 @@ pub struct WorkdirPickState {
 }
 
 impl WorkdirPickState {
-    /// Build choices: each mount dst followed by each of its ancestors
-    /// up to `/`. Deduplicated across mounts. Labels distinguish dst
-    /// vs parent vs root vs home.
-    ///
-    /// Excludes `/` and the literal parent of `$HOME` (typically `/Users`
-    /// on macOS or `/home` on Linux) as workdir choices — they're never
-    /// useful targets for a workspace workdir.
     #[expect(
         clippy::excessive_nesting,
         reason = "Workdir-picker choice builder: per-mount + per-ancestor nested \
@@ -82,8 +73,6 @@ impl WorkdirPickState {
             }
         }
 
-        // Filter out `/` and the parent-of-home (e.g. `/Users`, `/home`) —
-        // they're never useful workdir targets.
         choices.retain(|c| c.path != "/" && c.path != home_parent_str);
 
         let list_state = ListState::for_count(choices.len());
@@ -142,10 +131,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // top padding
-            Constraint::Min(1),    // list
-        ])
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(inner);
 
     if state.choices.is_empty() {
@@ -159,7 +145,6 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
         );
         return;
     }
-    // Pre-compute display paths and column width so labels line up.
     let displays: Vec<String> = state
         .choices
         .iter()
@@ -211,8 +196,6 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
     );
 }
 
-/// `WorkdirMount` impl for `jackin_config::MountConfig`.
-/// Lives here (trait definition site) to satisfy the orphan rule.
 impl WorkdirMount for jackin_config::MountConfig {
     fn dst(&self) -> &str {
         &self.dst

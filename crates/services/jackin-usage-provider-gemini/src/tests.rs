@@ -41,7 +41,6 @@ fn entitlement_flags_consumer_shutdown() {
         "consumerUnsupported": true
     });
     assert!(parse_gemini_entitlement(&flagged).consumer_unsupported);
-    // Missing tier is unknown, never consumer.
     assert!(!parse_gemini_entitlement(&serde_json::json!({})).consumer_unsupported);
 }
 
@@ -51,8 +50,6 @@ fn migration_action_only_for_consumer_signal() {
     assert!(
         gemini_migration_action(Some(&flagged)).is_some_and(|action| action.contains("2026-06-18"))
     );
-    // No entitlement, no migration — even past retirement: a bare OAuth
-    // credential may be an already-eligible managed login.
     assert!(gemini_migration_action(None).is_none());
     let clean = parse_gemini_entitlement(&serde_json::json!({
         "currentTier": {"id": "standard", "name": "Code Assist Standard"}
@@ -75,7 +72,6 @@ fn project_quotas_never_invent_denominators() {
     assert_eq!(buckets[0].remaining_percent, Some(75));
     assert_eq!(buckets[0].status_slot, None);
     assert_eq!(buckets[1].remaining_percent, Some(25));
-    // No numbers at all: visible row, no fabricated percent.
     assert_eq!(buckets[2].remaining_percent, None);
     assert!(buckets[2].used_label.is_none());
 }
@@ -83,7 +79,6 @@ fn project_quotas_never_invent_denominators() {
 #[test]
 fn snapshot_with_presence_routes_broker_evidence() {
     let now = 1_781_728_000;
-    // Discovery-proven OAuth: the typed reporting gap, never a zero balance.
     let view = gemini_snapshot_with_presence(
         "gemini",
         Some("Google"),
@@ -100,7 +95,6 @@ fn snapshot_with_presence_routes_broker_evidence() {
         Some("OAuth · configured profile")
     );
     assert!(view.last_error.is_some());
-    // Configured API key: same gap with the key origin.
     let view = gemini_snapshot_with_presence(
         "gemini",
         Some("Google"),
@@ -111,7 +105,6 @@ fn snapshot_with_presence_routes_broker_evidence() {
     );
     assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
     assert_eq!(view.account.provider_label, "Google");
-    // No evidence at all: needs secret.
     let view = gemini_snapshot_with_presence("gemini", Some("Google"), false, false, "none", now);
     assert_eq!(view.status, UsageSnapshotStatus::NeedsSecret);
 }

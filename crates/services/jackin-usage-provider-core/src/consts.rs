@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Shared provider timeouts, handoff paths, and OAuth constants.
 
 use jackin_core::container_paths;
 
@@ -21,7 +20,5 @@ pub const GROK_HANDOFF_AUTH_PATH: &str = container_paths::GROK_AUTH;
 pub const CLAUDE_HANDOFF_CREDENTIALS_PATH: &str = container_paths::CLAUDE_CREDENTIALS;
 pub const USAGE_SNAPSHOT_STORE_PATH: &str = container_paths::USAGE_SNAPSHOT_STORE;
 
-/// `OpenAI` OAuth token endpoint and the Codex CLI's public client id (the same
-/// values the CLI uses for its own refresh grant — neither is a secret).
 pub const CODEX_OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 pub const CODEX_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";

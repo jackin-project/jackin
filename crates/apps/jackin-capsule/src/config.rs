@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capsule runtime configuration: load and validate `CapsuleConfig` from the
-//! TOML file written by the host at container launch.
-//!
-//! Not responsible for: config schema definition (see `jackin-protocol`) or
-//! host-side config serialization.
-
 use anyhow::{Context, Result};
 use jackin_protocol::CapsuleConfig;
 
@@ -18,10 +12,6 @@ pub(crate) use credentials::{allowed_account_env_names, load_agent_credentials};
 pub(crate) use credentials::{parse_staged_credential, validate_agent_credentials};
 pub(crate) use validation::validate;
 
-/// # Errors
-///
-/// Returns an error when the capsule configuration cannot be read, parsed, or
-/// validated.
 pub fn load() -> Result<CapsuleConfig> {
     let contents = std::fs::read_to_string(jackin_protocol::CAPSULE_CONFIG_PATH)
         .with_context(|| format!("reading {}", jackin_protocol::CAPSULE_CONFIG_PATH))?;

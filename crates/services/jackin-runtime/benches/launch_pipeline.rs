@@ -1,9 +1,3 @@
-//! Launch-pipeline benches: suite-A helpers + end-to-end orchestration wall-time.
-//!
-//! The end-to-end scenario drives `load_role` (public entry that includes
-//! `run_launch_core`) over `FakeDockerClient` / `FakeRunner` so Criterion
-//! measures orchestration logic, not Docker I/O.
-
 use criterion::{Criterion, criterion_group, criterion_main};
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
@@ -43,8 +37,6 @@ fn grant_validation_micro(c: &mut Criterion) {
     });
 }
 
-/// End-to-end orchestration wall-time: validation → materialize/image choice →
-/// run → attach/finalization → cleanup over `FakeDocker` (plan 016 step 4).
 #[expect(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -67,7 +59,6 @@ fn pipeline_e2e_orchestration(c: &mut Criterion) {
             rt.block_on(async {
                 let temp = tempdir().expect("tempdir");
                 let paths = JackinPaths::for_tests(temp.path());
-                // Install binary stubs so image/agent resolution never hits network.
                 jackin_image::agent_binary::install_test_stub(&paths, jackin_core::Agent::Codex)
                     .expect("stub");
                 jackin_image::capsule_binary::install_test_stub(&paths).expect("capsule stub");

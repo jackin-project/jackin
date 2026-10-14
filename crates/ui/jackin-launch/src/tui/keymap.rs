@@ -1,31 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch cockpit keymaps — single source of truth for key dispatch and hint advertisement.
-//!
-//! Each keymap covers one cockpit mode (main cockpit, build log overlay, failure popup,
-//! container info). The dispatch in `subscriptions.rs` uses these tables instead of
-//! ad-hoc `KeyCode` match arms so that handled keys and advertised keys are coupled.
-
 use termrock::input::KeyCode;
 use termrock::keymap::{KeyBinding, KeyChord, Keymap, Visibility, glyph};
 use termrock::widgets::HintSpan;
 
-// ── Cockpit main ─────────────────────────────────────────────────────────────
-
-/// Top-level cockpit actions (no dialog open).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CockpitAction {
-    /// Ctrl+C: hard cancel. Intercepted before dispatch (it must win even while
-    /// a dialog is open); the binding exists so its hint derives from this table.
     HardExit,
-    /// Open the "Exit jackin❯?" quit confirmation (graceful cancel + cleanup).
     OpenQuitConfirm,
 }
 
-/// The two global cockpit keys, advertised on every cockpit surface. Both are
-/// `Shown` so [`cockpit_global_hint_spans`] is the single source for the
-/// `Ctrl-C abort · Ctrl-Q quit` group every dialog appends.
 pub static COCKPIT_KEYMAP_BINDINGS: &[KeyBinding<CockpitAction>] = &[
     KeyBinding::borrowed(
         &[KeyChord::ctrl(KeyCode::Char('c'))],
@@ -44,17 +29,11 @@ pub static COCKPIT_KEYMAP_BINDINGS: &[KeyBinding<CockpitAction>] = &[
 ];
 pub static COCKPIT_KEYMAP: Keymap<CockpitAction> = Keymap::from_static(COCKPIT_KEYMAP_BINDINGS);
 
-/// The `Ctrl-C abort · Ctrl-Q quit` global-key hint group, derived from
-/// [`COCKPIT_KEYMAP`]. Every cockpit surface (main, failure popup, build log,
-/// container info) appends this instead of hand-writing the two key spans.
 #[must_use]
 pub fn cockpit_global_hint_spans() -> Vec<HintSpan<'static>> {
     COCKPIT_KEYMAP.hint_spans()
 }
 
-// ── Build log overlay ─────────────────────────────────────────────────────────
-
-/// Keys accepted by the build-log overlay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildLogAction {
     Close,
@@ -124,8 +103,6 @@ pub static BUILD_LOG_KEYMAP_BINDINGS: &[KeyBinding<BuildLogAction>] = &[
 pub static BUILD_LOG_KEYMAP: Keymap<BuildLogAction> =
     Keymap::from_static(BUILD_LOG_KEYMAP_BINDINGS);
 
-/// Build the hint spans for the build-log overlay, gating scroll/page on whether
-/// the content overflows vertically (matching `build_log_scroll_axes`).
 pub fn build_log_hint_spans(vertical: bool) -> Vec<HintSpan<'static>> {
     use termrock::keymap::SCROLL_HINT_KEYMAP as SCROLL_KEYMAP;
     use termrock::scroll::ScrollAxes;
@@ -144,9 +121,6 @@ pub fn build_log_hint_spans(vertical: bool) -> Vec<HintSpan<'static>> {
     spans
 }
 
-// ── Failure popup ─────────────────────────────────────────────────────────────
-
-/// Keys accepted by the failure popup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureAction {
     Dismiss,
@@ -164,10 +138,6 @@ pub static FAILURE_KEYMAP_BINDINGS: &[KeyBinding<FailureAction>] = &[KeyBinding:
 )];
 pub static FAILURE_KEYMAP: Keymap<FailureAction> = Keymap::from_static(FAILURE_KEYMAP_BINDINGS);
 
-// ── Container info overlay ────────────────────────────────────────────────────
-
-/// Keys accepted by the container info overlay (excluding scroll, which is
-/// handled by `handle_key_for_axes`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContainerInfoAction {
     CopyValue,

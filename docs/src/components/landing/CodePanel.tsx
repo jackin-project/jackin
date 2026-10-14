@@ -1,4 +1,3 @@
-// docs/components/landing/CodePanel.tsx
 import { useEffect, useRef, useState } from 'react';
 
 interface Line {
@@ -72,7 +71,6 @@ export function CodePanel() {
 
     async function run() {
       while (myToken === tokenRef.current) {
-        // Clear
         while (body!.firstChild) body!.removeChild(body!.firstChild);
         for (const line of scripts[active]) {
           if (myToken !== tokenRef.current) return;

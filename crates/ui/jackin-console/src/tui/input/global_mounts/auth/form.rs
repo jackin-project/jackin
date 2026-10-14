@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings auth form opening.
 
 use crate::tui::state::AuthForm;
 use crate::tui::state::AuthFormFocus;
@@ -93,6 +92,5 @@ pub(crate) fn open_settings_auth_form(
     });
 }
 
-/// Source-folder validation callback used by the settings auth modal.
 pub(crate) type SourceFolderValidator =
     dyn Fn(Option<crate::tui::auth::AuthKind>, &std::path::Path) -> Result<(), String>;

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Antigravity` CLI usage output parsing.
 
 use jackin_usage_provider_core::{epoch_seconds_from_maybe_ms, json_number, parse_iso_epoch};
 
@@ -9,9 +8,6 @@ use super::{
     antigravity_identity_from_value, antigravity_plan_from_value,
 };
 
-/// Parse `agy -p /usage --output-format json` output. `Err` only when the text
-/// is not JSON at all; a well-formed response with no quota pools is `Ok` with
-/// empty pools (the snapshot renders an honest placeholder, never 100%).
 pub fn parse_antigravity_usage_output(text: &str) -> Result<AntigravityUsage, String> {
     let value: serde_json::Value = serde_json::from_str(text.trim())
         .map_err(|_| "Antigravity /usage output was not recognized".to_owned())?;
@@ -38,8 +34,6 @@ pub fn parse_antigravity_usage_output(text: &str) -> Result<AntigravityUsage, St
     })
 }
 
-/// Summary-bucket containers, in precedence order. `Some` (even when empty)
-/// means a summary shape is present and wins over legacy models.
 fn antigravity_summary_entries(value: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
     for groups in [
         value.get("groups"),
@@ -68,19 +62,12 @@ fn antigravity_summary_entries(value: &serde_json::Value) -> Option<Vec<serde_js
     None
 }
 
-/// Map one summary entry to a pool. Exact `bucketId` match first; otherwise a
-/// family/window keyword read of the entry id. Entries without quota identity
-/// are dropped (never fabricated into an empty-label row).
 fn antigravity_pool_from_summary_entry(entry: &serde_json::Value) -> Option<AntigravityPool> {
     let id = ["bucketId", "bucket_id", "id", "poolId", "pool", "name"]
         .into_iter()
         .filter_map(|key| entry.get(key).and_then(serde_json::Value::as_str))
         .map(str::trim)
         .find(|id| !id.is_empty())?;
-    // A summary entry with no quota signal is unknown, never depleted: the
-    // `/usage` schema is unauthenticated and unverified, so absence ⇒ 0%
-    // would invent exhaustion (F05 keeps unknown vs exhausted distinct; only
-    // an explicit depleted marker yields 0).
     let remaining_percent = antigravity_remaining_from_entry(entry);
     let reset_at = antigravity_reset_from_entry(entry);
     let (family, window) = match id {
@@ -118,9 +105,6 @@ fn antigravity_pool_from_summary_entry(entry: &serde_json::Value) -> Option<Anti
     })
 }
 
-/// Remaining percent from a quota entry: `remainingFraction` (0-1),
-/// `remainingPercent` (0-100), or an inverted used signal. `None` when the
-/// entry carries no quota signal at all.
 pub fn antigravity_remaining_from_entry(entry: &serde_json::Value) -> Option<u8> {
     let quota = entry.get("quotaInfo").unwrap_or(entry);
     for (key, is_fraction) in [
@@ -186,9 +170,6 @@ fn antigravity_reset_from_entry(entry: &serde_json::Value) -> Option<i64> {
     None
 }
 
-/// Legacy per-model quota collapsed to the worst (lowest) remaining fraction
-/// per family. Internal, empty-label, and availability-only rows are dropped:
-/// a model that only reports availability contributes no pool.
 fn antigravity_pools_from_legacy_models(value: &serde_json::Value) -> Vec<AntigravityPool> {
     let Some(models) = value.get("models").and_then(serde_json::Value::as_object) else {
         return Vec::new();
@@ -203,12 +184,9 @@ fn antigravity_pools_from_legacy_models(value: &serde_json::Value) -> Vec<Antigr
             .filter_map(|key| model.get(key).and_then(serde_json::Value::as_str))
             .map(str::trim)
             .find(|label| !label.is_empty());
-        // Empty display label (no displayName/label/model) is not a pool,
-        // even when the map key is non-empty.
         if label.is_none() {
             continue;
         }
-        // Availability-only rows carry no quota signal: skip, never invent.
         let Some(remaining) = antigravity_remaining_from_entry(model) else {
             continue;
         };

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings save execution.
 
 use super::validate_settings_env;
 use jackin_config::{AppConfig, EnvScope};
@@ -9,7 +8,6 @@ use std::collections::BTreeMap;
 use crate::tui::screens::settings::model::SettingsTrustRow;
 use jackin_core::Agent;
 
-/// Input bundle for a settings-screen save operation.
 #[derive(Debug)]
 pub struct SettingsSaveInput<'a> {
     pub mounts_original: &'a [jackin_config::GlobalMountRow],
@@ -27,7 +25,6 @@ pub struct SettingsSaveInput<'a> {
     pub git_dco: bool,
 }
 
-/// Save all settings tabs and return the reloaded config model.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "documented residual allow; prefer expect when site is lint-true"

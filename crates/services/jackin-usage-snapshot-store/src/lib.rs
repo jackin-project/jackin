@@ -1,13 +1,3 @@
-//! jackin-usage-snapshot-store: capsule-local usage snapshot cache.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`store_usage_snapshots`] — persist quota snapshots.
-//!
-//! This is a daemon-owned store under `/jackin/state/`: Capsule writes quota
-//! snapshots after provider refresh and renderers read through the daemon cache,
-//! not by opening this database. The schema mirrors the roadmap V1 account
-//! snapshot shape so the later host-daemon store can reuse the same rows.
-
 mod buckets;
 mod read;
 mod schema;

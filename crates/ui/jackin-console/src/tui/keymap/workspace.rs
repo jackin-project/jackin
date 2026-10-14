@@ -1,19 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace-list keymap.
 
 use termrock::input::KeyCode;
 
 use termrock::keymap::{KeyBinding, KeyChord, Keymap, Visibility};
 
-/// Actions resolvable from a key on the workspace-list screen.
-///
-/// The keymap resolves a key to one of these; `workspace_list_key_plan` then
-/// folds in runtime context the table cannot carry (list-scroll focus, the
-/// selected row's type) to produce the final `WorkspaceListKeyPlan`. Footer
-/// builders pull each advertised key's glyph from this same table via
-/// [`crate::tui::components::Keymap::glyph_for`], so an advertised key cannot
-/// drift from the dispatched key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkspaceListAction {
     NavigateUp,
@@ -40,14 +31,6 @@ pub(crate) enum WorkspaceListAction {
     Quit,
 }
 
-/// Authoritative keymap for the workspace list: single source for both
-/// `workspace_list_key_plan` dispatch and the workspace-row / instance-row
-/// footer glyphs in `components/footer_hints.rs`.
-///
-/// Hint labels are intentionally absent from most rows here because the same
-/// glyph carries different labels per context (`↵` = "launch" on a workspace
-/// row, "reconnect" on an instance row; `N` = "new" vs "new session"). Footers
-/// supply the contextual label and take only the glyph from this table.
 pub(crate) static WORKSPACE_LIST_KEYMAP_BINDINGS: &[KeyBinding<WorkspaceListAction>] = &[
     KeyBinding::borrowed(
         &[KeyChord::plain(KeyCode::Up)],
@@ -184,8 +167,6 @@ pub(crate) static WORKSPACE_LIST_KEYMAP_BINDINGS: &[KeyBinding<WorkspaceListActi
         Visibility::Shown,
         Some("S"),
     ),
-    // Instance-row actions. Advertised contextually (instance-row footer only),
-    // so they carry no `hint` here and are HiddenAlias for the base hint bar.
     KeyBinding::borrowed(
         &[
             KeyChord::plain(KeyCode::Char('r')),
@@ -264,9 +245,6 @@ pub(crate) static WORKSPACE_LIST_KEYMAP_BINDINGS: &[KeyBinding<WorkspaceListActi
         Visibility::Internal,
         None,
     ),
-    // Ctrl-Q is intercepted upstream by `should_open_quit_confirm`; it never
-    // reaches the list resolver (which dispatches modifier-free chords). The
-    // binding exists only so the footer can derive the `Ctrl-Q` glyph.
     KeyBinding::borrowed(
         &[KeyChord::ctrl(KeyCode::Char('q'))],
         WorkspaceListAction::Quit,
@@ -277,5 +255,3 @@ pub(crate) static WORKSPACE_LIST_KEYMAP_BINDINGS: &[KeyBinding<WorkspaceListActi
 ];
 pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> =
     Keymap::from_static(WORKSPACE_LIST_KEYMAP_BINDINGS);
-
-// ── Preview pane (workspace list → preview focus) ─────────────────────────────

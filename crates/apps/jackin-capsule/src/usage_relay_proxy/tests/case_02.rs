@@ -8,8 +8,6 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
     let (authorization, account_a) = single_session_authorization(2_001, 2_001, "account-a");
     let supervisor_pid = jackin_protocol::APPLE_CAPSULE_SUPERVISOR_PID;
 
-    // Root peer at the Apple supervisor PID with an in-launch capability is
-    // relayed to the host instead of denied.
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("usage.sock");
     let (mut host_response_writer, proxy_input) = tokio::io::duplex(64 * 1024);
@@ -58,7 +56,6 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
     assert_eq!(error_message(client.await.unwrap()), "relayed");
     proxy.abort();
 
-    // Root peer at the wrong PID fails the supervisor gate.
     let denied = denied_relay_response(
         authorization.clone(),
         supervisor(supervisor_pid),
@@ -78,8 +75,6 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
         "usage relay peer is not the Capsule supervisor"
     );
 
-    // Root peer reusing the supervisor PID with a different start time fails
-    // the supervisor gate too.
     let denied = denied_relay_response(
         authorization.clone(),
         supervisor(supervisor_pid),
@@ -94,7 +89,6 @@ async fn fused_relay_allows_apple_supervisor_and_denies_with_distinct_messages()
         "usage relay peer is not the Capsule supervisor"
     );
 
-    // Session peer presenting a foreign capability fails the capability gate.
     let denied = denied_relay_response(
         authorization,
         supervisor(supervisor_pid),
@@ -123,7 +117,6 @@ fn supervisor_binding_rejects_pid_reuse_with_different_start_time() {
     };
     let binding = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
 
-    // Same PID number, recycled by a later root process: rejected.
     let impostor = root_peer(
         DEFAULT_CAPSULE_SUPERVISOR_PID,
         Some(SUPERVISOR_START_TIME + 1),
@@ -132,7 +125,6 @@ fn supervisor_binding_rejects_pid_reuse_with_different_start_time() {
     assert!(!supervisor_peer_allows(binding, Some(impostor)));
     assert!(!authorization.authorizes(binding, Some(impostor), &operation));
 
-    // Pinned (pid, start_time) of the live supervisor: accepted.
     let legitimate = root_peer(DEFAULT_CAPSULE_SUPERVISOR_PID, Some(SUPERVISOR_START_TIME));
     assert!(binding.matches(legitimate));
     assert!(supervisor_peer_allows(binding, Some(legitimate)));
@@ -146,8 +138,6 @@ fn supervisor_binding_fails_closed_when_start_time_unknown() {
         capability: account,
     };
 
-    // Binding unverifiable at startup (`/proc` unreadable): even the exact
-    // PID is denied the supervisor path.
     let unverified = SupervisorIdentity {
         pid: DEFAULT_CAPSULE_SUPERVISOR_PID,
         start_time: None,
@@ -157,8 +147,6 @@ fn supervisor_binding_fails_closed_when_start_time_unknown() {
     assert!(!supervisor_peer_allows(unverified, Some(peer)));
     assert!(!authorization.authorizes(unverified, Some(peer), &operation));
 
-    // Peer start time unreadable at accept time: denied against a verified
-    // binding.
     let binding = supervisor(DEFAULT_CAPSULE_SUPERVISOR_PID);
     let unknown_peer = root_peer(DEFAULT_CAPSULE_SUPERVISOR_PID, None);
     assert!(!binding.matches(unknown_peer));
@@ -241,7 +229,6 @@ fn process_start_time_is_stable_for_self_and_absent_for_missing_pid() {
 #[cfg(target_os = "linux")]
 #[test]
 fn parse_proc_stat_start_time_skips_comm_with_parens_and_spaces() {
-    // pid (comm with ) paren) state ppid ... starttime(v22) ...
     let mut fields = vec!["R".to_owned()];
     fields.extend((4..=21).map(|field| field.to_string()));
     fields.push("987654".to_owned());

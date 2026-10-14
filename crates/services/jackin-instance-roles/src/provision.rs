@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Auth slot provisioning and prewarm.
 
 use crate::{PrepareResolvers, RoleState};
 use anyhow::Context;
@@ -46,13 +45,6 @@ impl RoleState {
         result
     }
 
-    /// Background-prewarm auth state for non-selected agents only.
-    ///
-    /// This intentionally skips the GitHub-auth axis and returns no launch
-    /// `RoleState`: foreground launch already prepared the selected agent and
-    /// GitHub context needed for the current `docker run`. Background sibling
-    /// prep may create/update only jackin-owned per-agent state under the
-    /// instance data dir so opening a later sibling runtime has less work.
     pub fn prewarm_auth_for_agents(
         paths: &JackinPaths,
         container_name: &str,
@@ -78,11 +70,6 @@ impl RoleState {
         Self::prewarm_auth_for_bindings(paths, container_name, &bindings, host_home)
     }
 
-    /// Background-prewarm auth state for one explicit instance binding
-    /// each. Binding-driven counterpart of
-    /// [`Self::prewarm_auth_for_agents`]; see its docs for the
-    /// skip-GitHub contract. Bindings are already resolved, so no
-    /// manifest filter applies here.
     pub fn prewarm_auth_for_bindings(
         paths: &JackinPaths,
         container_name: &str,

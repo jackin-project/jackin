@@ -642,15 +642,6 @@ version = "1.99.0"
 backend = "core:rust"
 specifiers = ["1.99.0"]
 
-[[tools.rust]]
-version = "1.99.0"
-backend = "core:rust"
-specifiers = ["1.99.0"]
-
-[tools.rust.options]
-components = "clippy,rustfmt"
-targets = "aarch64-unknown-linux-gnu,x86_64-unknown-linux-gnu"
-
 [[tools.shellcheck]]
 version = "0.11.0"
 backend = "aqua:koalaman/shellcheck"

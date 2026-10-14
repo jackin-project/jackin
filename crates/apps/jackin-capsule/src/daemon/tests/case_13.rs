@@ -80,9 +80,6 @@ fn wheel_on_container_info_unsupported_axis_does_not_scroll() {
     mux.status.status_bar.identity_label = "jk-test-container".to_owned();
     mux.open_container_info_dialog();
 
-    // The hover pass may invalidate (first pointer position over the
-    // dialog), so assert on the scroll state — the wheel on an
-    // unsupported axis must not move the body.
     drop(apply_action_frame(
         &mut mux,
         Action::Wheel {
@@ -196,9 +193,6 @@ fn bottom_context_click_opens_github_context_dialog() {
         rendered.contains(&format!("\x1b[{hint_row};")),
         "dialog hint should render in the reserved hint region: {rendered:?}"
     );
-    // Outside a debug launch the bottom branch/context bar is hidden under a
-    // dialog (commit 5f2076a6); this mux has no debug run id, so the final row
-    // must stay clear — only the dialog hint renders below the dialog.
     assert!(
         !rendered.contains(&format!("\x1b[{bottom_row};")),
         "bottom branch/context bar must be hidden under a dialog outside debug: {rendered:?}"
@@ -271,7 +265,6 @@ fn container_info_id_click_copies_and_renders_feedback() {
         &mut mux,
         InputEvent::MousePress {
             row: box_row + 1,
-            // Click the value column (the cyan link), past the widest label.
             col: box_col + 22,
             button: 0,
         },
@@ -317,12 +310,6 @@ fn command_stdout_trimmed_returns_trimmed_stdout() {
 
 #[test]
 fn command_stdout_trimmed_rejects_known_failure_status() {
-    // `sleep 0.05` keeps the child alive long enough for the
-    // try_wait poll loop to observe `Ok(None)` first and then the
-    // failing `Ok(Some(1))` exit on the next tick. Without the
-    // sleep the child can vanish between spawn and the first
-    // try_wait, which collapses the Err(ECHILD) "status lost"
-    // arm and the Ok(Some(false)) "failed" arm into one path.
     let mut command = Command::new("sh");
     command.args(["-c", "printf branch-name; sleep 0.05; exit 1"]);
 

@@ -238,9 +238,6 @@ fn finalize_compiles_regexes_used_on_the_production_path() {
          line_regex = ['^\\s*\\d+\\.\\s']\n",
     )
     .unwrap();
-    // finalize() is the production load path: it compiles every regex once into
-    // the rule, so evaluate() uses the compiled regexes (not the per-call
-    // fallback the validate-only tests above exercise).
     let pack = pack.finalize().unwrap();
     assert_eq!(pack.rule[0].compiled_line_regex.len(), 1);
 
@@ -255,9 +252,6 @@ fn finalize_compiles_regexes_used_on_the_production_path() {
 
 #[test]
 fn finalize_sorts_rules_by_descending_priority() {
-    // Lower-priority rule declared first; both match the same row. After
-    // finalize the higher-priority rule must win, proving the sort happens at
-    // load (not per evaluation).
     let pack: RulePack = toml::from_str(
         "schema_version = 1\n\
          agent = \"test\"\n\
@@ -285,10 +279,6 @@ fn finalize_sorts_rules_by_descending_priority() {
 
 #[test]
 fn gate_nested_all_any_not_matches() {
-    // Claude bash-permission shape: a shared positive prefix ("do you want to
-    // proceed?") with its OWN sub-OR (bash markers) plus a numbered-choice line,
-    // and a negative guard. Flattening this into one `requires_any` would let the
-    // branches leak and over-match — the nested gate keeps them scoped.
     let pack = toml::from_str::<RulePack>(
         r#"
 schema_version = 1
@@ -313,7 +303,6 @@ all = [
     .finalize()
     .unwrap();
 
-    // prefix + one of the OR branch + no negative -> blocked.
     let hit = vec![
         "Bash command: ls -la".to_owned(),
         "Do you want to proceed?".to_owned(),
@@ -323,14 +312,12 @@ all = [
         Some(RawAgentState::Blocked)
     );
 
-    // prefix present but NEITHER OR branch -> no match (sub-OR is scoped).
     let no_or = vec![
         "Edit file foo.rs".to_owned(),
         "Do you want to proceed?".to_owned(),
     ];
     assert!(pack.evaluate(&no_or).is_none());
 
-    // all positives but the `not` guard fires -> no match.
     let cancelled = vec![
         "Bash command: ls".to_owned(),
         "Do you want to proceed?".to_owned(),
@@ -358,8 +345,6 @@ any = [ { regex = "(unclosed" } ]
 "#,
     )
     .unwrap();
-    // The broken regex inside the gate must fail loudly at load, not silently
-    // never match at runtime.
     pack.validate().unwrap_err();
 }
 
@@ -381,6 +366,5 @@ fn gate_leaf_count_counts_toward_matcher_cap() {
          gate = {{ all = [{leaves}] }}\n"
     ))
     .unwrap();
-    // 33 gate leaves exceed the 32-matcher pathological-pack cap.
     pack.validate().unwrap_err();
 }

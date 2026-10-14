@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Single-file-credential agent slot methods.
 
 use crate::{InstanceAuthBinding, ProvisionedInstanceAuth, agent_slot_dirs, slot_layout};
 use jackin_instance_credentials::AuthProvisionOutcome;

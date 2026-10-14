@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `AppConfig` workspace CRUD impl blocks.
-
 use crate::ConfigError;
 use jackin_core::WorkspaceName;
 
@@ -12,20 +10,12 @@ use crate::schema::{WorkspaceConfig, WorkspaceEdit};
 use crate::validation::validate_workspace_config;
 
 impl AppConfig {
-    /// Return the workspace named `name`, or an `unknown workspace` error.
-    ///
-    /// Shared by every CLI and runtime site that needs to look up a saved
-    /// workspace by name and error on miss. The error message shape is
-    /// part of the CLI contract — do not change it casually.
     pub fn require_workspace(&self, name: &WorkspaceName) -> crate::ConfigResult<&WorkspaceConfig> {
         self.workspaces
             .get(name.as_str())
             .ok_or_else(|| ConfigError::UnknownWorkspace(name.as_str().to_owned()))
     }
 
-    /// Insert a new workspace after validation (prefer [`crate::ConfigEditor`] for disk writes).
-    // pub(crate): ConfigEditor::create_workspace delegates here for validation;
-    // external callers must go through ConfigEditor to ensure TOML preservation.
     pub fn create_workspace(
         &mut self,
         name: &WorkspaceName,
@@ -39,8 +29,6 @@ impl AppConfig {
         }
         validate_workspace_config(name, &workspace)?;
 
-        // Rule-C invariant: the initial mount list must be pairwise
-        // non-covering. All mounts are "new" in a create.
         let all_indexes: Vec<usize> = (0..workspace.mounts.len()).collect();
         match plan_collapse(&workspace.mounts, &all_indexes) {
             Ok(plan) if plan.removed.is_empty() => {}
@@ -62,9 +50,6 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Apply a [`WorkspaceEdit`] to a saved workspace (prefer [`crate::ConfigEditor`] for disk).
-    // pub(crate): ConfigEditor::edit_workspace delegates here for validation;
-    // external callers must go through ConfigEditor to ensure TOML preservation.
     pub fn edit_workspace(
         &mut self,
         name: &WorkspaceName,
@@ -165,13 +150,6 @@ impl AppConfig {
             workspace.default_launch = default_launch;
         }
 
-        // Rule-C invariant: after applying this edit, the mount list must be
-        // pairwise non-covering under rule C. The CLI layer pre-collapses
-        // redundants; if any remain here, the caller is buggy (non-CLI) or
-        // the workspace has a pre-existing violation that wasn't cleaned up.
-        //
-        // Re-run plan_collapse with empty new_indexes: any removal indicates
-        // a violation is present, whether freshly introduced or pre-existing.
         match plan_collapse(&workspace.mounts, &[]) {
             Ok(plan) if plan.removed.is_empty() => {}
             Ok(plan) => {
@@ -194,10 +172,6 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Remove a workspace from the in-memory map (prefer [`crate::ConfigEditor`] for disk).
-    // pub(crate): production callers use ConfigEditor::remove_workspace (which
-    // deletes the TOML table directly); this stays for the test in workspaces.rs
-    // that validates the error message shape.
     pub fn remove_workspace(&mut self, name: &WorkspaceName) -> crate::ConfigResult<()> {
         self.workspaces
             .remove(name.as_str())
@@ -205,7 +179,6 @@ impl AppConfig {
             .ok_or_else(|| ConfigError::UnknownWorkspace(name.as_str().to_owned()))
     }
 
-    /// All saved workspaces as `(name, config)` pairs.
     pub fn list_workspaces(&self) -> Vec<(&str, &WorkspaceConfig)> {
         self.workspaces
             .iter()
@@ -213,12 +186,10 @@ impl AppConfig {
             .collect()
     }
 
-    /// Insert or replace a workspace without validation (test / migration helpers).
     pub fn insert_workspace_raw(&mut self, name: &str, ws: WorkspaceConfig) {
         self.workspaces.insert(name.into(), ws);
     }
 
-    /// Run [`validate_workspace_config`] on every saved workspace.
     pub fn validate_workspaces(&self) -> crate::ConfigResult<()> {
         for (name, workspace) in &self.workspaces {
             let name = WorkspaceName::parse(name).map_err(anyhow::Error::from)?;

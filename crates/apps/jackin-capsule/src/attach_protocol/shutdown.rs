@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Attach shutdown and detach lifecycle.
 
 use crate::daemon::Multiplexer;
 use crate::protocol::attach::{ServerFrame, encode_server};
@@ -32,15 +31,6 @@ pub(crate) fn send_attached_shutdown(mux: &mut Multiplexer, reason: Option<&str>
     true
 }
 
-/// Centralised detach for the currently-attached client. Take-then-
-/// send-then-wait-then-abort, in that order, so a takeover/cancel race never
-/// leaves `attached_task = Some` with a dead `attached_out`: take the
-/// out-channel sender first (so the next frame queue allocation does
-/// not race with the old receiver), send Shutdown best-effort, give
-/// the attach task a brief writer-side drain window, then
-/// abort the attach task so its reader stops pushing into the shared
-/// `cmd_tx`. Used by SIGTERM / SIGINT shutdown, explicit detach, and
-/// `drain_and_exit`.
 pub(crate) async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
     detach_attached_task_with_reason(mux, context, None).await;
 }
@@ -51,10 +41,6 @@ pub(crate) async fn detach_attached_task_with_reason(
     reason: Option<&str>,
 ) {
     let had_sender = send_attached_shutdown(mux, reason);
-    // The latch is paired with the sender's lifetime: clearing
-    // `attached_out` invalidates the previous attach, so the next
-    // assignment (in the takeover branch of `run_daemon`) starts from
-    // a clean state regardless of which code path reassigns it.
     if had_sender {
         tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_FLUSH_GRACE_MS)).await;
     }

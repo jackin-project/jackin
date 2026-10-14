@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Claude Code adapter.
-
 use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
 use crate::env_model;
@@ -15,7 +13,6 @@ use crate::agent::runtime::{
 const FALLBACK_INSTALL_COMMAND: &str =
     bounded_fallback_curl!("https://claude.ai/install.sh", " | bash");
 
-/// [`crate::agent::runtime::AgentRuntime`] adapter for Claude Code.
 #[derive(Debug)]
 pub(crate) struct ClaudeRuntime;
 
@@ -81,11 +78,9 @@ RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache
 
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
-            // Runtime sets CLAUDE_CONFIG_DIR so metadata and credentials share
-            // this directory mount and support atomic file replacement.
             credential_dir: ".claude",
-            config_dir: None,      // all durable state under ~/.claude
-            credential_file: None, // .credentials.json and .claude.json within config dir
+            config_dir: None,
+            credential_file: None,
             folder_env_var: Some(FolderVar {
                 name: "CLAUDE_CONFIG_DIR",
                 kind: FolderVarKind::Dir,
@@ -98,7 +93,6 @@ RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache
     }
 
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
-        // `claude --version` returns e.g. "2.1.96 (Claude Code)"; take the first token.
         let token = raw.split_whitespace().next()?;
         if !looks_like_version(token) {
             return None;

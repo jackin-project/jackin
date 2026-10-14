@@ -1,26 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspace isolation drift detection: find mounts whose `src` changed
-//! while containers hold preserved isolation state.
-//!
-//! Queries `discovery::list_role_names` and `isolation::state` to
-//! classify drifted records.
-
 use anyhow::Context as _;
 
 use jackin_runtime_isolation::isolation::state::list_records_for_workspace;
 
-// Pure data type — now in jackin-core so jackin-console can use it.
 pub use jackin_core::DriftDetection;
 
-/// Classify isolation drift across every container that holds preserved
-/// state for `workspace_name`.
-///
-/// A record drifts when its mount destination is no longer present in the
-/// edited mounts, or when the new `src` differs from the `original_src`
-/// recorded at materialization time. Drifted records on running containers
-/// go into `running_containers`; the rest land in `stopped_records`.
 pub async fn detect_workspace_edit_drift(
     paths: &jackin_core::JackinPaths,
     workspace_name: &jackin_core::WorkspaceName,

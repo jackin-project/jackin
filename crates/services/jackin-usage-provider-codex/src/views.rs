@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Codex` main snapshot view builder.
 
 use jackin_protocol::control::{
     FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
@@ -24,9 +23,6 @@ pub fn codex_snapshot(
     rpc_gate: &mut ManagedCliLaunchGate,
 ) -> FocusedUsageView {
     let codex_home = env_dir_or_home("CODEX_HOME", ".codex");
-    // Home auth first, runtime-forwarded handoff last; one walk yields the
-    // credential (with its winning path, for the `Auth:` origin) and the account
-    // label, reading each file once.
     let codex_candidates = codex_auth_candidates(&codex_home);
     let (resolved, account_from_file) = resolve_identity(
         &codex_candidates,
@@ -34,8 +30,6 @@ pub fn codex_snapshot(
         codex_account_from_value,
     );
     let (oauth_path, credentials) = resolved.unzip();
-    // account_label is the email identity only; the auth source (the resolver
-    // arm that actually won) goes on `credential_origin`.
     let auth_email = credentials
         .as_ref()
         .and_then(|credentials| credentials.account_label.clone())
@@ -79,11 +73,6 @@ pub fn codex_snapshot(
     } else if quota.is_some() {
         UsageSnapshotStatus::Fresh
     } else if auth_error.is_some_and(usage_error_is_unauthorized) {
-        // The on-disk token is present but rejected (expired/revoked). Codex
-        // refreshes its own token on launch; jackin reads the token as-is, so a
-        // stale `auth.json` 401s here. Surface an honest "login" rather than a
-        // blank/stale meter — the root cause (no in-process refresh) is named in
-        // FINDINGS §9.2 E2.
         UsageSnapshotStatus::NeedsLogin
     } else {
         UsageSnapshotStatus::Stale

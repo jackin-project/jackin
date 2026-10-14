@@ -1,5 +1,3 @@
-//! Self-tests for [`ManualClock`](super::ManualClock).
-
 use super::ManualClock;
 use std::time::{Duration, SystemTime};
 

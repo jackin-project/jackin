@@ -1,26 +1,3 @@
-//! jackin-usage-provider-cursor: `Cursor` usage snapshot collection.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`cursor_snapshot`] — `Cursor` usage snapshot.
-//!
-//! `Cursor` personal allowance vs Enterprise Admin reporting.
-//!
-//! Two scopes, never mixed (see `ref-contracts-C.md` §2):
-//!
-//! * Personal (selected account token): `DashboardService` Connect RPC on
-//!   `api2.cursor.sh` (`GetCurrentPeriodUsage`, `GetPlanInfo`,
-//!   `GetCreditGrantsBalance`, `GetSandUsageStatus`) plus `cursor.com` session
-//!   REST (`/api/usage?user=`, `/api/usage-summary`, `/api/auth/stripe`).
-//!   A personal key never implies Enterprise reporting access.
-//! * Enterprise Admin (`api.cursor.com/teams/spend|filtered-usage-events`):
-//!   separate [`CursorEnterpriseScope`] with explicit admin auth; the personal
-//!   snapshot never touches admin hosts. The events API is hourly aggregated
-//!   and is never polled at the overview interval.
-//!
-//! Money discipline: actual charged amounts, estimated model cost, included
-//! quota, and credit grants are separate buckets. Estimates never back a
-//! Spend-slot headline.
-
 #![cfg_attr(
     not(test),
     expect(

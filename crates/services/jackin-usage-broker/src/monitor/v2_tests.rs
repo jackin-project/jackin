@@ -246,8 +246,6 @@ fn assert_version_only_callback_preserves_field_ages(
     session_id: &str,
     monitor_id: &str,
 ) {
-    // A version-only callback is session metadata; it must not refresh any
-    // independently received quota or model field.
     ingest(
         store,
         MonitorScope::Session {
@@ -1129,8 +1127,6 @@ fn strict_start_without_baseline_is_atomic_and_does_not_consume_its_key_or_id() 
         assert_eq!(state.next_monitor_id, 1);
     }
 
-    // The rejected attempt left both the ID counter and idempotency namespace
-    // untouched, so the same request succeeds once its prerequisite is supplied.
     record_zero_sgd_spend(&store, account_id, NOW);
     let started = start_result(&store, config, "v2-strict-needs-baseline", NOW)
         .expect("retry with a verified baseline");

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Profile identity resolution.
 
 use crate::{
     ProfileCredentialMaterial, ProfileCredentialReader, ProfileReadOutcome, ProfileValidation,
@@ -14,10 +13,6 @@ use std::path::{Path, PathBuf};
 
 use jackin_core::Agent;
 
-/// Return an opaque revision for the complete credential material read for a
-/// profile source. The path-derived source id is intentionally not enough:
-/// providers frequently rotate tokens in place without changing the profile
-/// path or account identity.
 pub(crate) fn profile_credential_revision(
     reader: &dyn ProfileCredentialReader,
     agent: Agent,
@@ -137,21 +132,10 @@ pub(crate) fn profile_identity(
         }
         Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
         Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),
-        // Antigravity wires through the host Keychain grant singleton: the
-        // CLI owns the secret, so grant presence alone mints refresh
-        // material and refresh shells out to `agy`.
         Agent::Antigravity => antigravity_profile_identity(reader),
         Agent::Gemini => gemini_profile_identity(reader, &root.join("oauth_creds.json")),
         Agent::Cursor => cursor_profile_identity(reader, root),
-        // Muse stays explicitly unwired: identity is verified locally but no
-        // material is minted — the secret lives in the platform credential
-        // store and no pollable usage fetch exists by design
-        // (`MuseKeyExchangePolicy::polling_enabled` is false), so refresh
-        // cannot dispatch.
         Agent::Muse => muse_profile_identity(reader, &root.join("auth.json")),
-        // omp stays explicitly unwired: it is an attribution-only aggregator
-        // with no native identity or usage endpoint. SQLite store presence
-        // (not content) is verified; table parsing belongs to a later lane.
         Agent::Omp => {
             if reader.exists(&root.join("agent/agent.db")) {
                 ProfileValidation::Anonymous(None)
@@ -159,16 +143,10 @@ pub(crate) fn profile_identity(
                 ProfileValidation::Missing
             }
         }
-        // Hermes stays explicitly unwired: attribution-only adapter with no
-        // Hermes-native quota API; usage needs caller-supplied underlying
-        // buckets the refresh lane cannot produce.
         Agent::Hermes => anonymous_when_present(reader, &root.join("auth.json")),
     }
 }
 
-/// File present (any JSON shape) → anonymous binding; missing/denied/
-/// malformed propagate truthfully. Used for agents whose identity
-/// extraction is deferred to the usage lane.
 pub(crate) fn anonymous_when_present(
     reader: &dyn ProfileCredentialReader,
     path: &Path,

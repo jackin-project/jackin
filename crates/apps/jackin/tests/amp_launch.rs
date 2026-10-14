@@ -20,8 +20,6 @@ use jackin_runtime::runtime::{LoadOptions, load_role};
 use tempfile::tempdir;
 
 fn assert_amp_not_staged_without_install_recipe(dockerfile: &str) {
-    // This direct build-context helper call does not pass an agent install
-    // recipe. The full launch path prepares and bakes supported agents.
     assert!(
         !dockerfile.contains("agent-binaries"),
         "direct build context must not stage an amp binary without an install recipe; got: {dockerfile}"
@@ -146,8 +144,6 @@ agents = ["amp"]
         git_pull_on_entry: false,
         mount_heal: jackin_config::MountHealReport::default(),
     };
-    // Capture queue (role-specific, after 4-slot preamble):
-    //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let docker = FakeDockerClient::default();
 
@@ -211,10 +207,6 @@ async fn amp_launch_profile_account_mounts_secrets_json_in_container() {
     install_capsule_binary_stub(&paths);
     install_agent_binary_stubs(&paths);
 
-    // Stage host ~/.local/share/amp/secrets.json under the test's fake
-    // home (paths.home_dir, which load_role consults for host-side
-    // auth state) so the Sync arm of provision_amp_auth produces a
-    // non-None mounted path.
     let amp_dir = paths.home_dir.join(".local/share/amp");
     std::fs::create_dir_all(&amp_dir).unwrap();
     std::fs::write(
@@ -300,8 +292,6 @@ agents = ["amp"]
         git_pull_on_entry: false,
         mount_heal: jackin_config::MountHealReport::default(),
     };
-    // Capture queue (role-specific, after 4-slot preamble):
-    //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let docker = FakeDockerClient::default();
 
@@ -325,7 +315,6 @@ agents = ["amp"]
         "Sync mode must mount secrets.json into the container: {:?}",
         spec.binds
     );
-    // No AMP_API_KEY in env config → no -e flag.
     assert!(
         !spec
             .env

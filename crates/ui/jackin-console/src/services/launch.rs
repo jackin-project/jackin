@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pure launch-resolution helpers for the host console.
 mod accounts;
 mod committed;
 mod dispatch;

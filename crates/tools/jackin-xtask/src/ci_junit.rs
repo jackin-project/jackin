@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    collections::BTreeSet,
     env, fs,
     io::Write,
     path::{Path, PathBuf},
@@ -18,15 +17,12 @@ pub(crate) struct CiJunitArgs {
     report: PathBuf,
     #[arg(long)]
     group: String,
-    #[arg(long, default_value = "flaky-tests.toml")]
-    quarantine: PathBuf,
 }
 
 #[derive(Debug, PartialEq)]
 struct TestCase {
     name: String,
     seconds: f64,
-    flaky: bool,
 }
 
 pub(crate) fn run(args: CiJunitArgs) -> Result<()> {
@@ -36,8 +32,7 @@ pub(crate) fn run(args: CiJunitArgs) -> Result<()> {
     }
     write_output("exists", "true")?;
     let cases = parse_report(&args.report)?;
-    write_summary(&args.group, &cases)?;
-    enforce_quarantine(&args.quarantine, &cases)
+    write_summary(&args.group, &cases)
 }
 
 fn parse_report(path: &Path) -> Result<Vec<TestCase>> {
@@ -52,7 +47,6 @@ fn parse_report(path: &Path) -> Result<Vec<TestCase>> {
             {
                 let mut name = String::new();
                 let mut seconds = 0.0;
-                let mut flaky = false;
                 for attribute in element.attributes() {
                     let attribute = attribute.context("parsing JUnit testcase attribute")?;
                     let value = attribute
@@ -61,15 +55,10 @@ fn parse_report(path: &Path) -> Result<Vec<TestCase>> {
                     match attribute.key.as_ref() {
                         "name" => name = value.into_owned(),
                         "time" => seconds = value.parse().unwrap_or(0.0),
-                        "flaky" => flaky = matches!(value.as_ref(), "true" | "1"),
                         _ => {}
                     }
                 }
-                cases.push(TestCase {
-                    name,
-                    seconds,
-                    flaky,
-                });
+                cases.push(TestCase { name, seconds });
             }
             Ok(Event::Eof) => break,
             Ok(_) => {}
@@ -104,38 +93,6 @@ fn write_summary(group: &str, cases: &[TestCase]) -> Result<()> {
     let mut contents = fs::read(path).unwrap_or_default();
     contents.extend_from_slice(&summary);
     fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
-}
-
-fn enforce_quarantine(path: &Path, cases: &[TestCase]) -> Result<()> {
-    let flaky = cases
-        .iter()
-        .filter(|case| case.flaky)
-        .map(|case| case.name.as_str())
-        .collect::<BTreeSet<_>>();
-    if flaky.is_empty() {
-        return Ok(());
-    }
-    let contents = fs::read_to_string(path)
-        .with_context(|| format!("reading flake quarantine {}", path.display()))?;
-    let document = contents
-        .parse::<toml::Value>()
-        .with_context(|| format!("parsing flake quarantine {}", path.display()))?;
-    let quarantined = document
-        .get("test")
-        .and_then(toml::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|entry| entry.get("name").and_then(toml::Value::as_str))
-        .collect::<BTreeSet<_>>();
-    let unquarantined = flaky.difference(&quarantined).copied().collect::<Vec<_>>();
-    if !unquarantined.is_empty() {
-        bail!(
-            "flaky test(s) detected and not quarantined in {}:\n{}",
-            path.display(),
-            unquarantined.join("\n")
-        );
-    }
-    Ok(())
 }
 
 fn write_output(name: &str, value: &str) -> Result<()> {

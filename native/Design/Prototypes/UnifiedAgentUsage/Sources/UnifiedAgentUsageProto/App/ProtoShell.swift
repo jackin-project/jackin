@@ -1,13 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Thin AppKit shell mirroring the incumbent hosts: retained Usage window
-/// (full-size content, transparent unified titlebar, hidden title), native
-/// split with full-height sidebar and detail top accessory, standard toolbar
-/// (`.toggleSidebar` + `.sidebarTrackingSeparator`), per-provider status items
-/// with dual-stack titles, transient popover, explicit right-click menu
-/// (`.menu` is never assigned), Settings window. SwiftUI content views lift
-/// verbatim; only this host layer is prototype-specific.
 @MainActor
 final class ProtoShell: NSObject, NSMenuDelegate {
     let store: ProtoStore
@@ -35,16 +28,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
     }
 
     func wrap<V: View>(_ view: V) -> some View {
-        // The accessibility environment keys are get-only in the macOS 26.5
-        // SDK, so process-local Reduce Motion is honored by stripping view
-        // animations here; Reduce Transparency has no SwiftUI-owned material
-        // to adapt in this design (system materials follow the real setting,
-        // proven post-signoff by visual-qa).
-        //
-        // Brand accent lives here so every hosted surface — window, popover,
-        // settings — renders selection wells, toggles, pickers, and the one
-        // prominent button in phosphor instead of system blue ("never system
-        // accentColor for jackin chrome" — BrandColors).
         view
             .tint(.jackinPhosphor)
             .accentColor(.jackinPhosphor)
@@ -58,11 +41,8 @@ final class ProtoShell: NSObject, NSMenuDelegate {
             }
     }
 
-    // MARK: Main menu
 
-    /// Mirrors the incumbent AppMainMenu: full menu citizenship — App (About,
-    /// Settings, Services, Hide, Quit), File, Edit, View (sidebar + Refresh),
-    /// Window (system windowsMenu), Help. No manual Full Screen item.
+
     private func buildMainMenu() -> NSMenu {
         let main = NSMenu()
         main.addItem(wrap(appMenu(), title: "jackin❯ desktop"))
@@ -78,8 +58,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         return main
     }
 
-    /// Prototype-only preview driver: re-runs every fixture live without a
-    /// relaunch. Not part of the product menu structure.
     private func scenarioMenu() -> NSMenu {
         let menu = NSMenu(title: "Scenario")
         for group in ProtoFixtures.scenarioMenu {
@@ -147,7 +125,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
     }
 
     private func editMenu() -> NSMenu {
-        // Target nil → first-responder chain (standard macOS Edit menu).
         let menu = NSMenu(title: "Edit")
         menu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
         let redo = menu.addItem(
@@ -219,16 +196,12 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         ])
     }
 
-    // MARK: Usage window
 
     private func makeUsageWindow() -> NSWindow {
         let split = NSSplitViewController()
         split.splitView.isVertical = true
 
         let sidebarHost = NSHostingController(rootView: wrap(SidebarView(store: store)))
-        // NSHostingController defaults to propagating SwiftUI's preferred
-        // content size; in a split view that resizes the window on every
-        // selection swap. Opt out — the split/window owns geometry.
         sidebarHost.sizingOptions = []
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarHost)
         sidebarItem.allowsFullHeightLayout = true
@@ -259,9 +232,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         window.setContentSize(config.window ?? ProtoUsageWindowMetrics.defaultContentSize)
         window.contentViewController = split
 
-        // Unified titlebar + standard AppKit split toolbar; no app-painted chrome.
-        // Title follows the selection (System Settings wayfinding): section
-        // name as title, account as subtitle.
         window.toolbarStyle = .unified
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -289,12 +259,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         toolbarController.installStandardItems(in: toolbar)
         installCenteredBrand(in: window)
 
-        // Set after contentViewController/toolbar — assigning those resets
-        // the window's size limits. Sidebar min 220 + a usable detail list
-        // is the floor; below that the design does not hold. minSize in
-        // frame units: contentMinSize alone is not honored once a split
-        // view controller owns the content. (Limits constrain interactive
-        // resize; programmatic setContentSize bypasses them by design.)
         window.contentMinSize = ProtoUsageWindowMetrics.minimumContentSize
         window.minSize =
             NSWindow.frameRect(
@@ -302,8 +266,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
                     origin: .zero, size: ProtoUsageWindowMetrics.minimumContentSize),
                 styleMask: window.styleMask
             ).size
-        // Prototype captures must not inherit AppKit's cross-display cascade
-        // position from a prior run. Production retains native restoration.
         window.center()
         observeWindowTitles(window)
         return window
@@ -327,8 +289,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         ])
     }
 
-    /// Selection-driven window title/subtitle, re-registered after every
-    /// change (withObservationTracking fires once).
     private func observeWindowTitles(_ window: NSWindow) {
         withObservationTracking {
             applyWindowTitles(window)
@@ -364,8 +324,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
             && event.modifierFlags.intersection(commandModifiers) == [.command, .control]
     }
 
-    /// Sidebar command title follows collapse state, like the incumbent;
-    /// Scenario items check the live projection.
     func menuWillOpen(_ menu: NSMenu) {
         if menu.title == "Scenario" {
             for item in menu.items {
@@ -384,7 +342,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         toggle.title = collapsed ? "Show Sidebar" : "Hide Sidebar"
     }
 
-    // MARK: Status items and popover
     private func installStatusItems() {
         reconcileStatusItems()
     }
@@ -398,8 +355,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
                 ProviderMarks.templateImage(forIconKey: provider.iconKey)
                 ?? JackinBrandIdentity.templateMonogram()
             button.imagePosition = .imageLeading
-            // System-minimum icon–title gap; default spacing leaves a
-            // loose pad the dual-stack title makes obvious.
             button.imageHugsTitle = true
             button.toolTip = provider.name
             button.setAccessibilityLabel(provider.name)
@@ -410,8 +365,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         statusItems[key] = item
     }
 
-    /// Status items follow the live projection: scenario swaps and accepted
-    /// mutations (F15) add, remove, and relabel items without a relaunch.
     private func reconcileStatusItems() {
         withObservationTracking {
             let wanted = store.projection.statusRows
@@ -450,8 +403,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Right click opens an explicit transient menu; `.menu` stays nil so the
-    /// primary click keeps sole ownership of the popover.
     private func showStatusMenu(for button: NSStatusBarButton) {
         let menu = NSMenu()
         menu.addItem(
@@ -476,10 +427,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
             self.popover = nil
             return
         }
-        // Multi-screen + activation: a status-item click does not make the
-        // app active, and on secondary displays an inactive app's transient
-        // popover can fail to present. Activate first, then make the popover
-        // window key so it is the focused surface after the click.
         NSApp.activate(ignoringOtherApps: true)
         let popover = NSPopover()
         popover.behavior = .transient
@@ -490,7 +437,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
                     store: store, provider: provider,
                     onOpenUsage: { [weak self] in
                         guard let self else { return }
-                        // Exact popover-to-Usage handoff: same provider/account.
                         if let account = store.account(for: provider),
                             provider.accounts.count > 1
                         {
@@ -508,7 +454,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         self.popover = popover
     }
 
-    // MARK: Actions
 
     @objc func showUsage() {
         guard let window = usageWindow else { return }
@@ -522,8 +467,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
 
     @objc func showSettings() {
         if settingsWindow == nil {
-            // Native resizable split settings window; sidebar material and
-            // unified titlebar remain system-owned Liquid Glass chrome.
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],

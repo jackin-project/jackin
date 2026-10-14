@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `OpenRouter` snapshot entry points.
 
 use jackin_protocol::control::{
     FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
@@ -20,7 +19,6 @@ pub fn openrouter_snapshot(agent: &str, key: Option<&str>, now: i64) -> FocusedU
     openrouter_snapshot_with_rate_limit(agent, key, now).0
 }
 
-/// Key snapshot against an explicit base.
 pub fn openrouter_snapshot_with_base(
     agent: &str,
     key: Option<&str>,
@@ -44,9 +42,6 @@ pub fn openrouter_snapshot_with_rate_limit(
     )
 }
 
-/// Snapshot boundary with an injectable key fetch. Production supplies the
-/// shared HTTP fetcher; tests can drive transport/decode failures without
-/// relying on an unreserved local port.
 pub(crate) fn openrouter_snapshot_with_key_fetch<F>(
     agent: &str,
     key: Option<&str>,
@@ -113,8 +108,6 @@ where
         },
         |quota| quota.buckets.clone(),
     );
-    // `/credits` enriches but never suppresses: a Management-scope 403 keeps
-    // the `/key` rows and surfaces as a note.
     let credits_note =
         (status == UsageSnapshotStatus::Fresh).then(|| {
             match fetch_openrouter_credits(base_url, key) {

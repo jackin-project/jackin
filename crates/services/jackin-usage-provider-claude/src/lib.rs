@@ -1,8 +1,3 @@
-//! jackin-usage-provider-claude: `Claude` / `Anthropic` usage snapshot.
-//!
-//! **Architecture Invariant:** T3.
-//! Broker-owned refreshes supply resolved OAuth material to the HTTP adapter.
-
 mod collector;
 mod credentials;
 mod keychain;

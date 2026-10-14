@@ -1,11 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Full exile helpers.
-//!
-//! The shared prune-one-directory helper lives in
-//! `jackin_runtime_cleanup_prune_dir` (S7 split 102); its hub
-//! re-export was retired by S7 split 104 once the last hub
-//! consumer moved out.
 
 use crate::instance::InstanceManifest;
 use crate::runtime::prune_output;

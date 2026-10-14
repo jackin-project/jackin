@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Console frame area types and plans.
 
 use crate::tui::model::ConsoleManagerStageRoute;
 use ratatui::layout::Rect;
@@ -12,15 +11,6 @@ pub struct WorkspaceFrameAreas {
     pub footer: Rect,
 }
 
-/// Which modal (if any) currently owns the overlay chrome.
-///
-/// R6 refactored into an enum from a 9-bool `ModalOverlayState` struct: in practice the
-/// console presents exactly one modal at a time, so the OR'd bool set was
-/// always reduced to "which one is on top" by the render layer. The enum
-/// makes that priority order explicit instead of relying on field order in
-/// a struct literal. Priority (highest first): `Status`, `List`, `Editor`,
-/// `SettingsError`, `SettingsMounts`, `SettingsEnv`, `SettingsAuth`,
-/// `CreatePrelude`, `DestructiveConfirm`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ModalOverlayState {
     #[default]

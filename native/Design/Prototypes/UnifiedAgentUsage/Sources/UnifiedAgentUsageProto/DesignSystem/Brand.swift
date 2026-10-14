@@ -30,15 +30,11 @@ extension EnvironmentValues {
     }
 }
 
-// Brand tokens, identity assets, and provider marks — lifted verbatim from
-// the incumbent implementation (Sources/JackinDesktop,
-// Sources/JackinUsageBridge/BrandColors.swift) so the prototype renders the
-// same identity. Assets are bundled under Resources/.
 
-/// jackin❯ design tokens — phosphor accent system.
-///
-/// Dark `#5CF07A` · light `#0B774E` (AA-friendly). Never system
-/// `Color.accentColor` for healthy metrics, brand mark, or selection wells.
+
+
+
+
 enum JackinBrand {
     static let phosphorDarkSRGB = (r: 0x5C / 255.0, g: 0xF0 / 255.0, b: 0x7A / 255.0)
     static let phosphorLightSRGB = (r: 0x0B / 255.0, g: 0x77 / 255.0, b: 0x4E / 255.0)
@@ -74,13 +70,6 @@ enum JackinBrand {
                 blue: phosphorLightSRGB.b, alpha: 1)
         })
 
-    /// Adaptive color table.
-    ///
-    /// Explicit semantic endpoints keep small status
-    /// text above WCAG AA against the native content grounds in both appearances.
-    /// Light grounds: stage #F3F4F1, card #FCFCFA. Dark grounds: stage
-    /// #101618, card #162022. Semantic and supporting colors adapt here,
-    /// never in a view.
     static let phosphorWashNSColor = dynamicColor(
         name: "jackinPhosphorWash",
         light: rgb(0xE3F3E7),
@@ -168,9 +157,6 @@ enum JackinBrand {
     }
 }
 
-/// Four-point spatial scale.
-///
-/// Native controls retain system-owned internal metrics.
 enum JackinSpace {
     static let xxs: CGFloat = 4
     static let xs: CGFloat = 8
@@ -180,7 +166,6 @@ enum JackinSpace {
     static let xl: CGFloat = 24
 }
 
-/// Compact type ramp for authored content; system controls keep native fonts.
 enum JackinType {
     static let heroMetric = Font.system(size: 28, weight: .semibold, design: .monospaced)
     static let detailMetric = Font.system(size: 20, weight: .semibold, design: .monospaced)
@@ -191,13 +176,11 @@ enum JackinType {
 }
 
 extension Color {
-    /// Product phosphor accent — prefer over `Color.accentColor` for jackin chrome.
     static var jackinPhosphor: Color { JackinBrand.phosphor }
     static var jackinMuted: Color { JackinBrand.muted }
     static var jackinQuiet: Color { JackinBrand.quiet }
 }
 
-/// Meter tint from row state: danger red, warning orange, otherwise phosphor.
 func meterTint(_ state: ProtoState) -> Color {
     switch state {
     case .danger, .depleted: JackinBrand.danger
@@ -206,8 +189,6 @@ func meterTint(_ state: ProtoState) -> Color {
     }
 }
 
-/// Neutral instrument tile behind a monochrome provider mark. jackin❯ owns the
-/// surrounding signal color; provider marks never sit in repeated green wells.
 struct BrandMarkChip: View {
     let iconKey: String
     var fallbackGlyph: String = ""
@@ -241,7 +222,6 @@ struct BrandMarkChip: View {
     }
 }
 
-/// Canonical generated jackin❯ identity assets for native surfaces.
 @MainActor
 enum JackinBrandIdentity {
     static func wordmark(for colorScheme: ColorScheme) -> NSImage? {
@@ -269,7 +249,6 @@ enum JackinBrandIdentity {
     }
 }
 
-/// Quiet product signature inside the sidebar's system-owned structural plane.
 struct JackinBrandSignature: View {
     @Environment(\.colorScheme) private var colorScheme
     var width: CGFloat = 76
@@ -288,9 +267,6 @@ struct JackinBrandSignature: View {
     }
 }
 
-/// The native counterpart of the shared CLI/web rain engine. Columns move at
-/// independent rates and deposit mutating ASCII glyphs through the same
-/// white-to-phosphor age ramp. Opaque cards preserve reading contrast.
 struct JackinStageBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -382,19 +358,10 @@ struct JackinStageBackground: View {
     }
 }
 
-/// Official provider logomarks (template) for status bar, popover, and Usage
-/// chrome.
-///
-/// Status bar stays template monochrome. Marks are provenance-audited
-/// against vendor brand assets — see Resources/ProviderMarks/PROVENANCE.md.
-/// Load order: vector **PDF preferred** (rsvg-rendered from official SVGs with
-/// transparent paper — resolution-independent), 512² PNG fallback. Diverges
-/// from the incumbent's PNG-first order, whose PDFs carried opaque paper.
 @MainActor
 enum ProviderMarks {
     static func templateImage(forIconKey iconKey: String) -> NSImage? {
         for ext in ["pdf", "png"] {
-            // SPM flattens `.process` resources; check subdirectory then root.
             let candidates = [
                 Bundle.module.url(
                     forResource: iconKey, withExtension: ext,

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `OpenCode` adapter.
-
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
@@ -13,7 +11,6 @@ use crate::agent::runtime::{
 const FALLBACK_INSTALL_COMMAND: &str =
     bounded_fallback_curl!("https://opencode.ai/install", " | bash");
 
-/// [`crate::agent::runtime::AgentRuntime`] adapter for `OpenCode`.
 #[derive(Debug)]
 pub(crate) struct OpencodeRuntime;
 
@@ -88,7 +85,6 @@ RUN set -euxo pipefail && \\
     }
 
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
-        // `opencode --version` returns e.g. "1.14.48" or "v1.14.48".
         let trimmed = raw.trim();
         let token = trimmed.strip_prefix('v').unwrap_or(trimmed);
         if !looks_like_version(token) {

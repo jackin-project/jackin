@@ -8,15 +8,10 @@ use jackin_docker::docker_client::RemoveImageOutcome;
 
 #[tokio::test]
 async fn gc_does_not_panic_when_list_role_names_fails_in_orphaned_networks() {
-    // Network ls succeeds (non-empty), but the docker ps to list running roles fails.
-    // gc_orphaned_networks must emit a warning and return without calling network rm.
     let mut net_labels = HashMap::new();
     net_labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-agent-smith".to_owned());
     let docker = FakeDockerClient {
-        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
-            vec![], // collect_labeled_dind: no DinD
-                    // list_role_names call inside gc_orphaned_networks will fail via fail_with
-        ])),
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![NetworkRow {
             name: "jk-agent-smith-net".to_owned(),
             labels: net_labels,
@@ -28,7 +23,7 @@ async fn gc_does_not_panic_when_list_role_names_fails_in_orphaned_networks() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         !docker
@@ -68,7 +63,7 @@ async fn prune_instances_removes_terminal_statuses_only() {
     make_instance_at(&paths, prunable, InstanceStatus::CleanExited);
     make_instance_at(&paths, kept, InstanceStatus::Crashed);
 
-    let docker = FakeDockerClient::default(); // inspect returns NotFound → allow purge
+    let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
     prune_instances(&paths, &docker, &mut runner).await.unwrap();
 
@@ -86,7 +81,6 @@ async fn prune_instances_skips_when_docker_resources_present() {
     let container = "jk-k7p9m2xq-agentsmith";
     make_instance_at(&paths, container, InstanceStatus::CleanExited);
 
-    // inspect_queue returns Running → container still exists → skip purge.
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -116,18 +110,15 @@ async fn prune_instances_is_ok_when_data_dir_absent() {
 
 #[tokio::test]
 async fn prune_instances_reconciles_stale_active_to_crashed() {
-    // D9: an Active row whose container is gone (crash mid-session) must become
-    // a Crashed restore candidate, not vanish and not stay falsely Active.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-k7p9m2xq-agentsmith";
     make_instance_at(&paths, container, InstanceStatus::Active);
 
-    let docker = FakeDockerClient::default(); // inspect → NotFound
+    let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
     prune_instances(&paths, &docker, &mut runner).await.unwrap();
 
-    // Row survives (Crashed is not prunable) and is now Crashed in both surfaces.
     assert!(paths.data_dir.join(container).exists());
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
     let entry = index
@@ -186,7 +177,6 @@ async fn prune_instances_preserves_held_and_idle_coordination_inodes() {
 
 #[tokio::test]
 async fn prune_images_skips_images_in_use_by_role_containers() {
-    // Image listed, but a role container has jackin.image label pointing to it.
     let mut image_labels = HashMap::new();
     image_labels.insert(LABEL_IMAGE_KEY.to_owned(), "jk_agent-smith".to_owned());
     let docker = FakeDockerClient {
@@ -214,20 +204,17 @@ async fn prune_images_skips_images_in_use_by_role_containers() {
 
 #[tokio::test]
 async fn prune_images_counts_rmi_in_use_error_as_skipped_not_failed() {
-    // Image passes the pre-filter (not in the in_use set from list_containers)
-    // but remove_image returns InUse. prune_images must still return Ok.
     let docker = FakeDockerClient {
         list_image_tags_queue: std::cell::RefCell::new(VecDeque::from([vec![
             "jk_agent-smith:latest".to_owned(),
         ]])),
-        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // no containers in index
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         remove_image_queue: std::cell::RefCell::new(VecDeque::from([RemoveImageOutcome::InUse])),
         ..Default::default()
     };
 
     prune_images(&docker).await.unwrap();
 
-    // rmi was attempted (image was not in the pre-filter set)
     assert!(
         docker
             .recorded
@@ -279,8 +266,6 @@ async fn prune_images_is_ok_when_no_images_found() {
 
 #[tokio::test]
 async fn prune_images_is_ok_when_rmi_fails_with_real_error() {
-    // A real Docker error (not in-use, not missing) is printed to stderr
-    // but prune_images still returns Ok — best-effort cleanup.
     let docker = FakeDockerClient {
         list_image_tags_queue: std::cell::RefCell::new(VecDeque::from([vec![
             "jk_agent-smith:latest".to_owned(),
@@ -306,9 +291,8 @@ async fn prune_images_is_ok_when_rmi_fails_with_real_error() {
 
 #[tokio::test]
 async fn prune_images_mixed_removed_and_skipped() {
-    // One image is in-use (pre-filtered via jackin.image label), one is removed.
     let mut image_labels = HashMap::new();
-    image_labels.insert(LABEL_IMAGE_KEY.to_owned(), "jk_neo".to_owned()); // no :tag → jk_neo:latest
+    image_labels.insert(LABEL_IMAGE_KEY.to_owned(), "jk_neo".to_owned());
     let docker = FakeDockerClient {
         list_image_tags_queue: std::cell::RefCell::new(VecDeque::from([vec![
             "jk_agent-smith:latest".to_owned(),
@@ -325,7 +309,6 @@ async fn prune_images_mixed_removed_and_skipped() {
 
     prune_images(&docker).await.unwrap();
 
-    // Only jk_agent-smith:latest should have had rmi attempted.
     assert!(
         docker
             .recorded
@@ -344,7 +327,6 @@ async fn prune_images_mixed_removed_and_skipped() {
 
 #[tokio::test]
 async fn prune_images_skips_when_image_disappears_between_list_and_rmi() {
-    // TOCTOU: image listed but already gone by rmi time — should be skipped, not failed.
     let docker = FakeDockerClient {
         list_image_tags_queue: std::cell::RefCell::new(VecDeque::from([vec![
             "jk_agent-smith:latest".to_owned(),
@@ -372,7 +354,7 @@ async fn prune_instances_removes_all_four_prunable_statuses() {
     make_instance_at(&paths, purged, InstanceStatus::Purged);
     make_instance_at(&paths, crashed, InstanceStatus::Crashed);
 
-    let docker = FakeDockerClient::default(); // inspect returns NotFound → allow purge
+    let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
     prune_instances(&paths, &docker, &mut runner).await.unwrap();
 

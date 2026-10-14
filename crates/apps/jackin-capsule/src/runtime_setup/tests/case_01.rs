@@ -82,7 +82,6 @@ fn apply_forwarded_credential_first_seed_reseed_and_no_clobber() {
     let forwarded = tmp.path().join("forwarded.json");
     let target = tmp.path().join("auth.json");
     fs::write(&forwarded, b"FORWARDED").expect("write forwarded");
-    // `api_key_envs: &[]` keeps the policy deterministic — no env reads.
     let spec = ForwardedCredential {
         label: "test",
         forwarded: &forwarded,
@@ -90,22 +89,17 @@ fn apply_forwarded_credential_first_seed_reseed_and_no_clobber() {
         api_key_envs: &[],
     };
 
-    // First seed with a forwarded file: seeds the target.
     apply_forwarded_credential(true, AuthMode::Sync, &spec).expect("first seed");
     assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
 
-    // Later launch with the target present: a token the agent refreshed
-    // in-container is never clobbered.
     fs::write(&target, b"REFRESHED").unwrap();
     apply_forwarded_credential(false, AuthMode::Sync, &spec).expect("no-clobber");
     assert_eq!(fs::read_to_string(&target).unwrap(), "REFRESHED");
 
-    // Later launch with the target missing but forwarded present: re-seeds.
     fs::remove_file(&target).unwrap();
     apply_forwarded_credential(false, AuthMode::Sync, &spec).expect("re-seed");
     assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
 
-    // First seed with no forwarded file and no api key: clears the stale target.
     fs::write(&target, b"STALE").unwrap();
     fs::remove_file(&forwarded).unwrap();
     apply_forwarded_credential(true, AuthMode::Sync, &spec).expect("first seed without forward");
@@ -166,8 +160,6 @@ fn capsule_auth_provision_event_is_exactly_once_bounded_and_private() {
 
 #[test]
 fn claude_paths_default_when_config_dir_unset() {
-    // Unset: credentials live inside ~/.claude, but .claude.json sits at the
-    // home root — the asymmetry jackin must preserve.
     assert_eq!(
         claude_config_dir_from(None),
         PathBuf::from("/home/agent/.claude")
@@ -180,9 +172,6 @@ fn claude_paths_default_when_config_dir_unset() {
 
 #[test]
 fn claude_paths_follow_config_dir_when_set() {
-    // Set: BOTH .credentials.json and .claude.json move inside the dir. This is
-    // the regression fix — previously .claude.json stayed at the home root and
-    // the CLI fell back to the login screen.
     let dir = "/home/agent/.claude-work";
     assert_eq!(claude_config_dir_from(Some(dir)), PathBuf::from(dir));
     assert_eq!(
@@ -304,12 +293,9 @@ fn xdg_data_home_drives_amp_and_opencode() {
 
 #[test]
 fn seed_home_dir_absent_dst_uses_atomic_rename() {
-    // When dst does not exist, seed_home_dir must create it atomically (via a
-    // staging dir + rename) and signal FirstSeed. Tests the rename path missed
-    // by the other seed tests which pre-create dst.
     let tmp = tempfile::tempdir().expect("tempdir");
     let src = tmp.path().join("src");
-    let dst = tmp.path().join("dst"); // NOT created — exercises the rename path
+    let dst = tmp.path().join("dst");
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("config.json"), b"{}").unwrap();
 
@@ -319,7 +305,6 @@ fn seed_home_dir_absent_dst_uses_atomic_rename() {
         dst.join("config.json").exists(),
         "renamed tree must contain seeded file"
     );
-    // No stale staging dirs should remain beside dst after a successful rename.
     let siblings: Vec<_> = fs::read_dir(tmp.path())
         .unwrap()
         .filter_map(std::result::Result::ok)
@@ -334,8 +319,6 @@ fn seed_home_dir_absent_dst_uses_atomic_rename() {
 
 #[test]
 fn is_dir_empty_treats_read_error_as_nonempty() {
-    // A path that does not exist causes read_dir to fail; must return false
-    // (non-empty = conservative) rather than true (empty = would trigger first-seed).
     assert!(!is_dir_empty(Path::new(
         "/nonexistent/path/that/cannot/exist"
     )));
@@ -343,11 +326,6 @@ fn is_dir_empty_treats_read_error_as_nonempty() {
 
 #[test]
 fn runtime_setup_runs_agent_setup_while_container_init_is_foreground() {
-    // A two-party Barrier proves the foreground and agent-setup closures run
-    // concurrently without a flaky bounded spin: foreground cannot pass the
-    // barrier until the spawned agent thread also reaches it, so the test only
-    // completes if both run at once. A bounded `yield_now` loop instead raced
-    // the scheduler and spuriously failed on a busy/low-core CI runner.
     let barrier = Arc::new(Barrier::new(2));
     let barrier_for_thread = Arc::clone(&barrier);
 

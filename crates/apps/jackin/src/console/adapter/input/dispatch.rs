@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Thin root adapter: binds jackin-console's generic key dispatcher to
-//! the root-binary `validate_auth_source_folder` implementation.
-
 use super::InputOutcome;
 use crate::console::adapter::state::ManagerState;
 use jackin_config::AppConfig;

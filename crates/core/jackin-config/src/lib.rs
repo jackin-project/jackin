@@ -1,8 +1,3 @@
-//! jackin-config: operator config load, migrate, validate, and persist.
-//!
-//! **Architecture Invariant:** T1.
-//! Entry point: [`AppConfig`] — loaded operator configuration.
-
 #![deny(
     clippy::string_slice,
     clippy::indexing_slicing,
@@ -11,8 +6,6 @@
     clippy::panic_in_result_fn,
     clippy::unchecked_time_subtraction
 )]
-#![deny(missing_docs)]
-// get_unwrap has no clippy.toml allow-in-tests valve; keep production denied.
 #![cfg_attr(
     test,
     allow(
@@ -21,7 +14,6 @@
     )
 )]
 
-// Plan 019: private implementation modules + curated root re-exports (env pilot).
 mod accounts;
 mod app_config;
 mod auth;

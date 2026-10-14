@@ -1,9 +1,3 @@
-//! Centralized subprocess helpers for jackin-xtask.
-//!
-//! Every xtask spawn/status/capture path routes through this module so
-//! `clippy::disallowed_methods` expects live in one place and error messages
-//! share one shape.
-
 use std::ffi::OsStr;
 use std::fs::File;
 use std::path::Path;
@@ -12,7 +6,6 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 
-/// Run `cmd` for status only. Errors name the command display string.
 pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     let display = display_command(cmd);
     let request = exec_request(cmd);
@@ -30,11 +23,6 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     }
 }
 
-/// Run a long-lived command with live stdout and stderr.
-///
-/// `BuildKit` reports cache resolution and layer progress on stderr. Capturing
-/// that stream leaves GitHub Actions silent until the build exits, which makes
-/// an otherwise healthy image build indistinguishable from a stalled job.
 pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
     let display = display_command(cmd);
     let mut request = exec_request(cmd);
@@ -49,7 +37,6 @@ pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
     }
 }
 
-/// Stream stdout into a file while inheriting stderr.
 pub(crate) fn run_stdout_file(cmd: &mut Command, path: &Path) -> Result<()> {
     let display = display_command(cmd);
     let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
@@ -65,7 +52,6 @@ pub(crate) fn run_stdout_file(cmd: &mut Command, path: &Path) -> Result<()> {
     }
 }
 
-/// Pipe one command into another and write the second command's stdout to a file.
 pub(crate) fn run_pipeline_to_file(
     producer: &mut Command,
     consumer: &mut Command,
@@ -105,21 +91,14 @@ fn bail_process(display: &str, status: std::process::ExitStatus) -> Result<()> {
     Err(anyhow!("{display} failed with {status}"))
 }
 
-/// Capture stdout as bytes. On failure, error includes trimmed stderr.
-///
-/// Routes through [`jackin_process`] when the command is a simple program+args
-/// capture with inherited env; keeps `Command::output` for complex configured
-/// commands (env/cwd/stdio already set on the builder).
 pub(crate) fn output(cmd: &mut Command) -> Result<Vec<u8>> {
     output_request(cmd, None, None)
 }
 
-/// Capture stdout with a bounded wall-clock wait.
 pub(crate) fn output_timeout(cmd: &mut Command, timeout: Duration) -> Result<Vec<u8>> {
     output_request(cmd, Some(timeout), None)
 }
 
-/// Capture stdout and stderr with wall-clock and byte limits.
 pub(crate) fn output_timeout_limited(
     cmd: &mut Command,
     timeout: Duration,
@@ -164,7 +143,6 @@ fn output_request(
     }
 }
 
-/// Build a transport request when `cmd` is a plain program+args capture.
 fn exec_request(cmd: &Command) -> jackin_process::ExecRequest {
     let program = cmd.get_program();
     if program.is_empty() {
@@ -185,17 +163,14 @@ fn exec_request(cmd: &Command) -> jackin_process::ExecRequest {
     request
 }
 
-/// Capture stdout as a lossy UTF-8 owned string.
 pub(crate) fn output_string(cmd: &mut Command) -> Result<String> {
     Ok(String::from_utf8_lossy(&output(cmd)?).into_owned())
 }
 
-/// Construct an xtask command; execution must return through this module.
 pub(crate) fn command(program: impl AsRef<OsStr>) -> Command {
     Command::new(program)
 }
 
-/// Full process `Output` (stdout+stderr+status) for callers that inspect all three.
 pub(crate) fn output_raw(cmd: &mut Command) -> Result<jackin_process::ExecResult> {
     let display = display_command(cmd);
     jackin_process::exec_sync(&exec_request(cmd)).with_context(|| format!("running {display}"))

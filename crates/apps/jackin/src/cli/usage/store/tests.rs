@@ -84,8 +84,6 @@ fn host_account_cache_exports_owned_operations_without_payloads() {
     let mut sensitive_account = account("host-cache-secret-window", 37);
     sensitive_account.account_label = "host-cache-secret@example.com".to_owned();
 
-    // With a single registered dispatcher, tracing-core can rebuild interest using only the
-    // registering thread's default. Keep a second live dispatcher so rebuilds use the registry.
     let _interest_cache_anchor = tracing::Dispatch::new(tracing_subscriber::registry());
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let runtime = tokio::runtime::Builder::new_current_thread()

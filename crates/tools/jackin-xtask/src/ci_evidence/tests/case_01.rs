@@ -148,9 +148,6 @@ fn github_run_and_jobs_decode_real_rest_identity_fields() {
     .unwrap()
     .trim()
     .to_owned();
-    // Post-#1110 the main CI workflow is velnor-actions 0.1.0 `ci.yml` (named
-    // "CI", no run-name template); ci-main.yml was deleted by main commit
-    // 6c389d38e.
     let run_payload = serde_json::json!({
         "id": 35475235267_u64,
         "repository": {"id": TARGET_REPOSITORY_ID, "full_name": TARGET_REPOSITORY},

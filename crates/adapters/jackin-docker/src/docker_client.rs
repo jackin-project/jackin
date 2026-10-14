@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `BollardDockerClient`: concrete async Docker daemon implementation.
-//!
-//! The `DockerApi` trait, pure data types (`ContainerState`, `ContainerRow`,
-//! etc.) are re-exported from `jackin-core` so all consumer crates depend on
-//! the trait, not the bollard implementation.
-//!
-//! Not responsible for: subprocess-level `docker` CLI invocations
-//! (`shell_runner.rs`), or the launch pipeline orchestration.
-
 use std::{collections::HashMap, ffi::OsStr, future::Future, sync::OnceLock};
 
 use crate::DockerError;
@@ -245,12 +236,8 @@ struct DockerContextEndpointInspect {
     skip_tls_verify: bool,
 }
 
-/// Deliberately uses `std::process::Command` instead of `ShellRunner::capture`:
-/// `connect()` is sync and called from `std::thread::scope` before any tokio
-/// runtime exists, while `ShellRunner` wraps `tokio::process::Command`.
 fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
     let env_set = docker_host_env_is_set();
-    // Skip the subprocess when DOCKER_HOST already wins per Docker CLI precedence.
     let ctx_endpoint = if env_set {
         None
     } else {
@@ -285,18 +272,10 @@ fn docker_host_env_is_set() -> bool {
     docker_host_env_is_set_from(std::env::var_os("DOCKER_HOST").as_deref())
 }
 
-/// Docker CLI treats an empty `DOCKER_HOST=` as unset and falls through to the
-/// active context. Match that here so an empty value still consults `docker context inspect`.
 fn docker_host_env_is_set_from(value: Option<&OsStr>) -> bool {
     value.is_some_and(|v| !v.is_empty())
 }
 
-/// Active Docker CLI context cannot change mid-process (`DOCKER_CONTEXT` and
-/// `currentContext` are both read once at startup), so cache the
-/// `docker context inspect` result across repeated `connect()` calls. Only
-/// successful lookups are cached — a transient subprocess failure (docker
-/// missing from PATH at first connect, slow daemon during boot) re-probes on
-/// the next call instead of locking in `None` for the process lifetime.
 fn cached_context_endpoint() -> Option<DockerContextEndpoint> {
     static CACHE: OnceLock<DockerContextEndpoint> = OnceLock::new();
     if let Some(cached) = CACHE.get() {
@@ -312,8 +291,6 @@ fn active_docker_context_endpoint() -> Option<DockerContextEndpoint> {
         "docker",
         ["context", "inspect", "--format", "{{json .}}"],
     );
-    // Pin `DOCKER_CONTEXT` so resolution survives any future Docker CLI drift,
-    // even though `docker context inspect` already honors it today.
     if let Some(ctx) = std::env::var("DOCKER_CONTEXT")
         .ok()
         .filter(|v| !v.is_empty())

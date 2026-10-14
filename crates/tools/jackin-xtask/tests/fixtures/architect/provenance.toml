@@ -1,4 +1,3 @@
-# Immutable source for jackin.role.toml.
 schema = 1
 repository = "jackin-project/jackin-the-architect"
 commit = "7db69b62f598a0971809ee4a006ad3f5477d0996"

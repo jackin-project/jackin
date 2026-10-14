@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Interrupted-swap recovery and directory publish.
 
 use super::{
     JOURNAL_SCHEMA_VERSION, SwapPhase, TargetLock, TreeEntryKind, classify_tree_entry_for_removal,
@@ -47,10 +46,6 @@ pub fn remove_tree(parent: &File, name: &CStr, label: &str) -> anyhow::Result<()
                 unlink_entry(&directory, &entry_name, "removing auth file")?;
             }
             TreeEntryKind::Symlink => {
-                // `lstat` mode bits on a symlink carry no access meaning
-                // (Linux always reports 0777, macOS 0755), so only the
-                // link's ownership is checked. `unlinkat` never follows
-                // the link, so removing it cannot touch its target.
                 anyhow::ensure!(
                     entry_stat.st_uid == geteuid().as_raw(),
                     "{label} is not owned by the current user"
@@ -185,9 +180,6 @@ pub(crate) fn cleanup_orphans(target: &TargetLock) -> anyhow::Result<()> {
     let clone = target.parent.try_clone()?;
     let mut entries = Dir::from_fd(clone.into())
         .map_err(|error| nix_error(error, "opening auth parent for orphan cleanup"))?;
-    // Transaction names created by this implementation carry the target
-    // identity. Pre-846f984 names do not, so there is no safe way to
-    // attribute those legacy trees to this target; leave them untouched.
     let new_stage_prefix = format!(".jackin-auth-stage-{}-", target.key);
     let new_previous_prefix = format!(".jackin-auth-previous-{}-", target.key);
     let new_journal_temporary_prefix = format!(".jackin-auth-journal-{}-tmp-", target.key);

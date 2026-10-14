@@ -1,5 +1,3 @@
-//! `FakeDockerClient`: an in-memory `jackin_core::DockerApi` fake.
-
 #![expect(
     clippy::expect_used,
     reason = "test support fixture setup should fail immediately with source location"
@@ -16,19 +14,9 @@ use jackin_core::{
 pub struct FakeDockerClient {
     pub recorded: std::cell::RefCell<Vec<String>>,
     pub inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
-    /// Optional state sequence for ID-bound inspections. This is separate
-    /// from name lookup state so tests can model a container exiting after
-    /// create/start without pretending a name lookup returned a replacement.
     pub inspect_by_id_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
-    /// Per-container-name inspect overrides, checked before `inspect_queue`.
-    /// Lets a test pin one container's state by name regardless of how many
-    /// other (queue-order-dependent) inspects run first.
     pub inspect_state_by_name: std::cell::RefCell<HashMap<String, ContainerState>>,
-    /// Current daemon IDs returned when a name is resolved or a container is
-    /// created. Tests can change this map to model same-name replacement.
     pub container_id_by_name: std::cell::RefCell<HashMap<String, String>>,
-    /// ID-bound lifecycle operations, retained separately from the historical
-    /// human-readable operation log.
     pub bound_operations: std::cell::RefCell<Vec<String>>,
     pub list_containers_queue: std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
     pub list_networks_queue: std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
@@ -40,13 +28,11 @@ pub struct FakeDockerClient {
     pub inspect_network_queue: std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
     pub fail_with: Vec<(String, String)>,
     pub created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
-    /// `(name, labels, internal)` — tracks networks created via `DockerApi::create_network`.
     #[expect(
         clippy::type_complexity,
         reason = "test record tuple mirrors the API signature; factoring adds indirection without clarity"
     )]
     pub created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>, bool)>>,
-    /// Optional test-only observation hook invoked for every Docker operation.
     pub operation_hook: Option<fn(&str)>,
 }
 

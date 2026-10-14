@@ -84,7 +84,6 @@ agents = ["codex"]
     .unwrap();
     let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
-    // Stage a host ~/.codex/auth.json so Sync mode succeeds.
     let host_home = temp.path().join("host_home");
     std::fs::create_dir_all(host_home.join(".codex")).unwrap();
     std::fs::write(
@@ -141,7 +140,6 @@ async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
     .unwrap();
     let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
 
-    // Two distinct host Claude profiles plus a host onboarding file.
     let host_home = temp.path().join("host_home");
     std::fs::create_dir_all(&host_home).unwrap();
     std::fs::write(host_home.join(".claude.json"), "{}").unwrap();
@@ -184,8 +182,6 @@ async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
     .unwrap();
 
     let mounts = agent_mounts(&state).unwrap();
-    // Primary keeps legacy destinations; the secondary gets suffixed
-    // home + handoff dirs.
     for expected in [
         ":/home/agent/.claude",
         ":/home/agent/.claude-claude-personal",
@@ -223,8 +219,6 @@ async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
             "Apple auth store must be read-only: {mount:?}"
         );
     }
-    // The two slots stage their own source credentials, not copies
-    // of each other.
     for (store, marker) in [
         ("claude", "work-oauth"),
         ("claude-claude-personal", "personal-oauth"),

@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! CLI dispatch: maps parsed `Cli` commands to runtime, console, workspace,
-//! and instance calls.
-//!
-//! `pub async fn run` is the binary entry point after argument parsing. Not a
-//! stable library boundary — callers are `main.rs` and tests only.
-//!
-//! Not responsible for: argument parsing (`cli/`), runtime mechanics
-//! (`runtime/`), or TUI rendering (`console/adapter/`). This module is glue.
-
 mod account_cmd;
 mod config_cmd;
 pub(crate) mod context;
@@ -71,8 +62,6 @@ async fn play_construct_intro_if_needed(
         || runtime::force_boundary_intro_enabled())
         && runtime::progress::rich_terminal_supported()
     {
-        // The intro is two screens: the opening phrase/brand screen, then the
-        // accelerating warp into the Construct.
         crate::warp::warp_intro(crate::terminal_ownership::host_screen_owned());
     }
     claim
@@ -82,10 +71,6 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     let debug = cli.debug;
     jackin_diagnostics::set_debug_mode(debug);
 
-    // Resolve the subcommand. Bare `jackin` is classified in `cli/dispatch.rs`
-    // (TTY-capable → console; otherwise silent help). When `run` is invoked
-    // with an explicit `Command::Console` (tests / direct callers), bare
-    // None still maps to console for backward compatibility.
     let command = match cli.command {
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
@@ -106,16 +91,12 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     let mut invocation =
         crate::lifecycle::InvocationTelemetry::start(lifecycle, command_name, app_mode);
 
-    // Fail fast and loud on an unsupported OTLP protocol after the lifecycle
-    // subscriber exists, so configuration failures share the one-shot harness.
     if let Some(requested) = jackin_diagnostics::unsupported_otlp_protocol() {
         let result = Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
         finish_invocation(&diagnostics, invocation, &result, suppress_cli_notices);
         return result;
     }
 
-    // The startup bootstrap report threads first-run discovery into
-    // `account scan` so a fresh-config scan prints the true imported count.
     let (mut config, startup_bootstrap) = match load_startup_config(&command, &paths) {
         Ok(loaded) => loaded,
         Err(error) => {
@@ -127,9 +108,6 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     apply_telemetry_config(&config);
     let interactive = app_mode == jackin_telemetry::schema::enums::AppMode::Interactive;
     let command_span = invocation.span();
-    // Wire compact operator output to the jackin-core port dispatcher so
-    // domain crates can call `jackin_core::emit_compact_line` without
-    // depending on the diagnostics implementation.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
     jackin_launch::install_standalone_dialog_sink();
     if debug && !suppress_cli_notices {
@@ -194,7 +172,6 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
             Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
             Command::Role(command) => crate::role_authoring::run(command),
             Command::Help { .. } => {
-                // Handled upstream in dispatch before reaching this function.
                 unreachable!(
                     "Command::Help is dispatched to Action::PrintHelp before run() is called"
                 )
@@ -215,9 +192,6 @@ fn load_startup_config(
     paths: &JackinPaths,
 ) -> Result<(AppConfig, jackin_config::BootstrapReport)> {
     match command {
-        // Role authoring is repository-local. Usage is also isolated from
-        // startup discovery so even passive commands cannot touch provider
-        // credentials, Keychain, or 1Password while loading configuration.
         Command::Role(_) | Command::Usage(_) => Ok((
             AppConfig::default(),
             jackin_config::BootstrapReport::default(),
@@ -237,8 +211,6 @@ fn finish_invocation(
     suppress_cli_notices: bool,
 ) {
     record_run_error(result);
-    // Emit per-stage duration summary before the run guard drops (Defect 47.5).
-    // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
     if !suppress_cli_notices {
         announce_run_teardown(diagnostics);
@@ -308,13 +280,6 @@ const fn service_identity(
     }
 }
 
-/// In `--debug`, surface the invocation id on the plain CLI before
-/// anything else runs — never through a rich TUI. This is identical for
-/// every command (CLI or TUI): print the invocation id the operator must keep to
-/// query the configured backend later, then, on an interactive
-/// terminal, gate on Enter so the id is read before the normal flow (rich
-/// or CLI, per terminal capability) takes over. Debug evidence itself is
-/// exported only through governed OTLP, never echoed here.
 fn announce_debug_run(diagnostics: &jackin_diagnostics::RunDiagnostics) {
     use owo_colors::OwoColorize as _;
     use std::io::{IsTerminal, Write};
@@ -402,12 +367,6 @@ fn prompt_hardline_action_with_prompt(prompt: &str) -> Result<HardlineAction> {
     Ok(options[choice].1)
 }
 
-/// Pick the agent for a new foreground session inside an existing
-/// instance, mirroring the `load` / `hardline --new` resolution order:
-/// workspace `default_agent` short-circuits the prompt; otherwise
-/// `prompt_agent_choice_if_needed` offers the manifest's supported
-/// agents; on non-TTY or single-agent roles, fall back to the
-/// workspace default or the manifest's recorded agent.
 pub(super) fn resolve_new_session_agent(
     paths: &JackinPaths,
     config: &AppConfig,
@@ -419,9 +378,6 @@ pub(super) fn resolve_new_session_agent(
         .as_deref()
         .and_then(|name| config.workspaces.get(name))
         .and_then(|ws| ws.default_agent);
-    // Prompt declined to ask → workspace default covers it, role is
-    // single-agent, or non-TTY context. Prefer the workspace default;
-    // fall back to the manifest's recorded agent.
     prompt_agent_choice_if_needed(paths, &class, workspace_default_agent)?.map_or_else(
         || {
             workspace_default_agent

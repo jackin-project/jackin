@@ -18,8 +18,6 @@ pub(super) fn cursor_credentials_fixture(home: &std::path::Path) {
 pub(super) fn poll_scan_to_ready(
     rx: &mut BlockingSubscription<(u64, Result<AccountScanOutcome, String>)>,
 ) -> (u64, Result<AccountScanOutcome, String>) {
-    // Spin (no thread sleep: banned repo-wide): the worker is local
-    // filesystem I/O and lands in milliseconds.
     for _ in 0..10_000_000 {
         match rx.poll_next() {
             SubscriptionPoll::Ready(result) => return result,

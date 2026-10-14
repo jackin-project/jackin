@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Inline and account picker handling.
 
 use super::super::InputOutcome;
 use super::dispatch_manager;
@@ -66,12 +65,6 @@ pub fn handle_inline_agent_picker(state: &mut ManagerState<'_>, key: KeyEvent) -
     }
 }
 
-/// Handle key events while the new-session agent picker is open in the left
-/// sidebar. Commit filters the stored live admission rows to the selected
-/// agent: an empty result opens an actionable error popup instead of
-/// dispatching an account-less session, a single candidate dispatches its
-/// exact instance ID directly, and several open the account picker.
-/// Cancel/Esc dismisses.
 pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some((container, picker, providers)) = state.inline_new_session_picker.as_mut() else {
         return InputOutcome::Continue;
@@ -84,9 +77,6 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
                 .filter(|account| account.agents.contains(&agent))
                 .cloned()
                 .collect();
-            // Re-sort: the open path stores id order, but any producer
-            // (tests, a future daemon-queried list) must render the same
-            // deterministic picker.
             sort_account_choices_by_id(&mut accounts);
             if accounts.is_empty() {
                 let message = new_session_no_account_message(agent, &container, state);
@@ -153,9 +143,6 @@ pub(crate) fn no_eligible_account_error_title() -> &'static str {
     "No eligible account"
 }
 
-/// Actionable zero-eligible-account text for the new-session commit: names
-/// the agent and the workspace when the target container still maps to one,
-/// otherwise the container itself.
 pub(crate) fn new_session_no_account_message(
     agent: jackin_core::Agent,
     container: &str,
@@ -173,9 +160,6 @@ pub(crate) fn new_session_no_account_message(
     no_eligible_account_message(agent, scope)
 }
 
-/// Handle key events while the inline provider picker is open (shown after
-/// agent selection when multiple providers are available). Enter commits;
-/// Esc cancels; Up/Down navigate.
 pub fn handle_inline_account_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some(picker) = state.inline_account_picker.as_mut() else {
         return InputOutcome::Continue;

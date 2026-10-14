@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Selected-account source validation and capture.
 
 use crate::{InstanceAuthBinding, xdg_root_agent};
 use anyhow::Context;
@@ -40,9 +39,6 @@ pub fn validate_selected_account_sources(
     Ok(())
 }
 
-/// Re-admit the latest selected source as one descriptor/content revision.
-/// The retained private snapshot crosses worker boundaries; original paths
-/// remain descriptor identity only and are never reopened by a worker.
 pub fn capture_selected_account_sources(
     bindings: &[InstanceAuthBinding],
     host_home: &Path,
@@ -93,9 +89,6 @@ pub fn capture_selected_account_sources(
         .collect()
 }
 
-/// Compare XDG cache roots by their filesystem identity, not their spelling.
-/// Reject parent traversal before canonicalization so a missing path cannot
-/// smuggle an unresolved `..` through the fallback normalization.
 pub(crate) fn canonical_xdg_cache_root(path: &Path) -> anyhow::Result<PathBuf> {
     anyhow::ensure!(
         !path

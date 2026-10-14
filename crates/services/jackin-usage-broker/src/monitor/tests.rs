@@ -492,7 +492,6 @@ fn quota_thresholds_emit_every_crossed_action_and_keep_repeated_actions_idempote
 fn quota_threshold_direct_jumps_emit_every_crossed_action() {
     let (_directory, store) = open_store();
     let reset = NOW + 3_600;
-    // A direct jump must still include every action crossed by the new value.
     ingest(
         &store,
         "acct-jump",
@@ -655,8 +654,6 @@ fn missing_and_stale_quota_fields_remain_unknown_independently() {
     assert!(has_issue(&started, MonitorIssueCode::QuotaUnknown));
     assert!(has_issue(&started, MonitorIssueCode::MissingReset));
 
-    // A changed utilization field refreshes only its own TTL; reset and seven-day
-    // evidence remain stale or missing.
     ingest(
         &store,
         "acct-fields",
@@ -742,8 +739,6 @@ fn older_overlapping_session_cannot_replace_the_account_reset_watermark() {
         NOW + 1
     );
 
-    // A fresh callback from a different session still refers to the old
-    // windows. It cannot lower the account watermark or replace current use.
     let replayed_sequence = ingest(
         &store,
         "acct-reset-watermark",
@@ -839,9 +834,6 @@ fn a_stale_high_session_does_not_resume_until_lower_usage_confirms_a_new_reset()
         MonitorIssueCode::LimitGuardReached
     ));
 
-    // At the exact per-field boundary the lower session is still Current,
-    // while the older high observation is Stale. Its old-reset value cannot
-    // clear the pause after the high session expires.
     let after_old_expires = status(&store, &started.monitor_id, NOW + 301);
     assert_eq!(
         after_old_expires.five_hour.used_percentage_basis_points,
@@ -1076,8 +1068,6 @@ fn seven_day_reset_barrier_has_its_own_grace_deadline_and_requires_paired_recove
     assert!(!started.runnable);
     assert!(has_pause(&started, MonitorIssueCode::LimitGuardReached));
 
-    // Keep the independent five-hour window current immediately before the
-    // seven-day deadline. The old seven-day fields deliberately stay unchanged.
     let before_deadline = seven_day_deadline - 1;
     ingest(
         &store,
@@ -1186,7 +1176,6 @@ fn lower_usage_from_the_old_reset_cannot_pair_with_a_later_reset_only_observatio
         MonitorIssueCode::ResetDueUnverified
     ));
 
-    // With no prior usage, this lower percentage is accepted against the old reset.
     ingest(
         &store,
         "acct-reset-pair",
@@ -1198,7 +1187,6 @@ fn lower_usage_from_the_old_reset_cannot_pair_with_a_later_reset_only_observatio
         ),
         deadline + 1,
     );
-    // The reset-only event must not retroactively associate that usage with the new window.
     ingest(
         &store,
         "acct-reset-pair",
@@ -1340,8 +1328,6 @@ fn a_sticky_quota_pause_survives_more_than_ten_idle_minutes_and_store_reopen() {
         MonitorIssueCode::LimitGuardReached
     ));
 
-    // A lower reading from the same old window after the idle interval does
-    // not satisfy the durable barrier or turn the goal runnable.
     seed_zero_sgd_spend(&reopened, "acct-idle-barrier", idle_time + 1);
     ingest(
         &reopened,
@@ -1548,8 +1534,6 @@ fn strict_activation_without_a_start_baseline_is_atomic_and_does_not_reserve_its
     let after_failed_start = std::fs::read(&state_path).expect("read state after rejected start");
     assert_eq!(after_failed_start, before_failed_start);
 
-    // A failed activation did not reserve its retry key or persist a goal.
-    // A later current-period receipt permits that exact request to activate.
     record_spend(
         &store,
         spend_input(

@@ -1,22 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared prune-one-directory helper.
-//!
-//! [`prune_dir`] deletes a single directory through the
-//! owned-validated remover, reporting through the shared
-//! prune-output rows with the failure recorded as a cleanup
-//! failure. Role, cache, and home pruning call it from the
-//! `jackin-runtime` hub.
-
 use jackin_runtime_cleanup_timing::timing::{cleanup_failure, cleanup_timing};
 use jackin_runtime_isolation::isolation::safe_remove::safe_remove_dir_all;
 use jackin_runtime_prune_output::prune_output;
 
-/// Delete one directory, reporting through prune-output rows.
-///
-/// A deletion failure is recorded via [`cleanup_failure`] and
-/// propagates with the target label and path as context.
 pub fn prune_dir(
     path: &std::path::Path,
     section_label: &str,

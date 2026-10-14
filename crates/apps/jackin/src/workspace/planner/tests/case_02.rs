@@ -83,7 +83,6 @@ fn apply_isolation_overrides_unknown_dst_errors() {
 
 #[test]
 fn plan_collapse_result_satisfies_invariant() {
-    // After planning, no pair in `kept` covers another pair in `kept`.
     let mounts = vec![
         mk("/a", "/a", false),
         mk("/a/b", "/a/b", false),

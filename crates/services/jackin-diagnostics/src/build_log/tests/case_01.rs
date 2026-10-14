@@ -18,7 +18,6 @@ fn buffer_caps_and_clears() {
         Some(&*format!("line {}", MAX_LINES + 9))
     );
 
-    // begin() resets the buffer.
     begin();
     push_line("only");
     assert_eq!(snapshot(), vec!["only"]);

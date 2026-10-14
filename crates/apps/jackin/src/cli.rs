@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! CLI argument types: `Cli` root struct, `Command` enum, and all subcommand
-//! arg structs parsed by `clap`.
-//!
-//! Parsing only — no business logic. `app/mod.rs` maps these parsed structs to
-//! runtime and console calls.
-
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 
@@ -22,7 +16,6 @@ pub(super) const HELP_STYLES: Styles = Styles::styled()
     .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
-// The canonical jackin❯ logo, shared with the host and capsule status bars.
 pub(super) const BANNER: &str = crate::brand_output::BRAND_BANNER;
 
 pub mod account;
@@ -57,16 +50,7 @@ pub use workspace::{
     WorkspaceCommand, WorkspaceEnvCommand, WorkspaceFormatArgs, WorkspaceShowArgs,
 };
 
-/// Operator's CLI for orchestrating AI coding roles in isolated containers
-///
-/// Running `jackin` with no subcommand opens the operator console when
-/// stdout is attached to a reasonably-sized interactive terminal, and
-/// otherwise prints this help page (exit 0, silent).
 #[derive(Debug, Parser)]
-// Root help shows the one-line `BANNER` pill inherited from the flattened
-// `ConsoleArgs`. It needs no explicit `before_help`; the binary layers the
-// frozen-rain field above that pill on a wide interactive terminal (clap
-// reflows multi-line ANSI art, so the rain is printed directly, not here).
 #[command(
     name = "jackin",
     version = env!("JACKIN_VERSION"),
@@ -74,20 +58,17 @@ pub use workspace::{
     disable_help_subcommand = true,
     after_help = "Run 'jackin help <command>' for more detailed information."
 )]
+#[command(
+    about = "Operator's CLI for orchestrating AI coding roles in isolated containers",
+    long_about = "Operator's CLI for orchestrating AI coding roles in isolated containers
+
+Running `jackin` with no subcommand opens the operator console when stdout is attached to a reasonably-sized interactive terminal, and otherwise prints this help page (exit 0, silent)."
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
-    /// Top-level console args — carried through to the console runner when
-    /// no subcommand is given (i.e. bare `jackin`).
     #[command(flatten)]
     pub console_args: ConsoleArgs,
-    /// Print raw container output for troubleshooting.
-    ///
-    /// Global flag: accepted before or after any subcommand.
-    /// Also enabled by setting `JACKIN_DEBUG=1` in the environment.
-    //
-    // `SetTrue` + `FalseyValueParser` lets `JACKIN_DEBUG=1` parse as
-    // true while the absence of `--debug` defaults to false.
     #[arg(
         long,
         global = true,
@@ -95,78 +76,55 @@ pub struct Cli {
         action = clap::ArgAction::SetTrue,
         value_parser = clap::builder::FalseyValueParser::new(),
     )]
+    #[arg(
+        help = "Print raw container output for troubleshooting.",
+        long_help = "Print raw container output for troubleshooting.
+
+Global flag: accepted before or after any subcommand. Also enabled by setting `JACKIN_DEBUG=1` in the environment."
+    )]
     pub debug: bool,
 }
 
-/// Top-level `jackin` subcommand dispatch.
-///
-/// Variants that wrap an `#[derive(Args)]` struct carry their help text on
-/// the struct itself — see e.g. `cli::role::LoadArgs`. Variants that wrap
-/// a `#[derive(Subcommand)]` enum (`Workspace`, `Config`) keep their
-/// parent-command help on the outer variant: Clap's subcommand-enum
-/// attribute propagation targets nested variants, not the parent help
-/// page. `Exile` is a unit variant with no payload, so its attributes
-/// also live here.
-///
-/// All variants use tuple form (`Load(LoadArgs)`, `Workspace(WorkspaceCommand)`),
-/// never struct form with inline `{ ... }`. This keeps dispatch symmetry.
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     Load(LoadArgs),
     Hardline(HardlineArgs),
     Eject(EjectArgs),
-    /// Pull every running role out at once
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Pull every running role out at once", long_about = "Pull every running role out at once", before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     Purge(PurgeArgs),
-    /// Prewarm jackin-owned runtime caches before launch
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Prewarm jackin-owned runtime caches before launch", long_about = "Prewarm jackin-owned runtime caches before launch", before_help = BANNER, styles = HELP_STYLES)]
     Prewarm(PrewarmArgs),
-    /// Delete cached or stale jackin data
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    #[command(about = "Delete cached or stale jackin data", long_about = "Delete cached or stale jackin data", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Prune(PruneCommand),
-    /// Open the operator console to manage workspaces, launch roles, and more
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Open the operator console to manage workspaces, launch roles, and more", long_about = "Open the operator console to manage workspaces, launch roles, and more", before_help = BANNER, styles = HELP_STYLES)]
     Console(ConsoleArgs),
-    /// Validate, migrate, and scaffold role repositories
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    #[command(about = "Validate, migrate, and scaffold role repositories", long_about = "Validate, migrate, and scaffold role repositories", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Role(RoleCommand),
-    /// Manage saved workspaces
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    #[command(about = "Manage saved workspaces", long_about = "Manage saved workspaces", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Workspace(WorkspaceCommand),
-    /// Manage coding-agent and AI-provider accounts
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    #[command(about = "Manage coding-agent and AI-provider accounts", long_about = "Manage coding-agent and AI-provider accounts", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Account(account::AccountCommand),
-    /// View and modify operator configuration
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    #[command(about = "View and modify operator configuration", long_about = "View and modify operator configuration", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
-    /// Manage the per-user jackin❯ host daemon
     #[cfg(unix)]
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    #[command(about = "Manage the per-user jackin❯ host daemon", long_about = "Manage the per-user jackin❯ host daemon", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Daemon(DaemonCommand),
-    /// Run pre-flight health checks for your jackin❯ setup
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Run pre-flight health checks for your jackin❯ setup", long_about = "Run pre-flight health checks for your jackin❯ setup", before_help = BANNER, styles = HELP_STYLES)]
     Doctor(doctor::DoctorArgs),
-    /// Validate direct OTLP telemetry delivery
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    #[command(about = "Validate direct OTLP telemetry delivery", long_about = "Validate direct OTLP telemetry delivery", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Diagnostics(DiagnosticsCommand),
-    /// Show fleet status — workspaces, instances, and agents
-    #[command(before_help = BANNER, styles = HELP_STYLES, visible_alias = "ps")]
+    #[command(about = "Show fleet status — workspaces, instances, and agents", long_about = "Show fleet status — workspaces, instances, and agents", before_help = BANNER, styles = HELP_STYLES, visible_alias = "ps")]
     Status(status::StatusArgs),
-    /// Read broker-owned cached usage and manage durable usage monitors
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Read broker-owned cached usage and manage durable usage monitors", long_about = "Read broker-owned cached usage and manage durable usage monitors", before_help = BANNER, styles = HELP_STYLES)]
     Usage(usage::UsageArgs),
-    /// Print help documentation for a jackin command
-    ///
-    /// With no arguments, displays the jackin manual.
-    /// With a command name, displays the manual for that command:
-    ///
-    ///   jackin help config
-    ///   jackin help account
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "Print help documentation for a jackin command", long_about = "Print help documentation for a jackin command
+
+With no arguments, displays the jackin manual. With a command name, displays the manual for that command:
+
+jackin help config jackin help account", before_help = BANNER, styles = HELP_STYLES)]
     Help {
-        /// Command path to get help for (e.g. `account`)
-        #[arg(trailing_var_arg = true, num_args = 0..)]
+        #[arg(help = "Command path to get help for (e.g. `account`)", long_help = "Command path to get help for (e.g. `account`)", trailing_var_arg = true, num_args = 0..)]
         command: Vec<String>,
     },
 }

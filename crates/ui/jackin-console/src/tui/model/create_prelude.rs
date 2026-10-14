@@ -1,24 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `ConsoleCreatePreludeState` and the `CreatePrelude*` plan types and free functions.
 use super::stage::ConsoleCreatePreludeModalPresence;
 use crate::tui::debug::{ConsoleCreatePreludeDebugFacts, ConsoleModalDebugKind, ConsoleStageDebug};
 
 use std::path::PathBuf;
 use termrock::widgets::{FormWizardState, WizardStep};
 
-/// Wizard step indices — the sequencing authority is the upstream
-/// `FormWizardState`; these name the five steps in order.
 pub const CREATE_PRELUDE_STEP_MOUNT_SRC: usize = 0;
 pub const CREATE_PRELUDE_STEP_MOUNT_DST_CHOICE: usize = 1;
 pub const CREATE_PRELUDE_STEP_MOUNT_DST_EDIT: usize = 2;
 pub const CREATE_PRELUDE_STEP_WORKDIR: usize = 3;
 pub const CREATE_PRELUDE_STEP_NAME: usize = 4;
 
-/// Create-prelude wizard: `mount-src` → `mount-dst-choice` →
-/// `mount-dst-edit` (optional, skipped by the same-path fast path) →
-/// `workdir` → `name`. No review phase; linear; optional steps skippable.
 pub fn create_prelude_wizard_state() -> FormWizardState {
     FormWizardState::with_steps([
         WizardStep::new("mount-src", "Mount source"),
@@ -32,8 +26,6 @@ pub fn create_prelude_wizard_state() -> FormWizardState {
     .with_linear(true)
 }
 
-/// Maps the wizard step index back to the legacy create-step debug
-/// strings so `--debug` output stays byte-identical across the re-host.
 #[must_use]
 pub fn create_prelude_step_debug_name(step: usize) -> &'static str {
     match step {
@@ -55,11 +47,7 @@ pub struct ConsoleCreatePreludeState<Modal> {
     pub pending_workdir: Option<String>,
     pub pending_name: Option<String>,
     pub modal: Option<Modal>,
-    /// Captured so Esc on `MountDstChoice` re-opens `FileBrowser` at the same
-    /// directory instead of `$HOME`.
     pub last_browser_cwd: Option<PathBuf>,
-    /// Picks Esc-on-`WorkdirPick` rewind target: `TextInputDst` when the
-    /// Edit-destination branch was used, else `MountDstChoice`.
     pub used_edit_dst: bool,
 }
 
@@ -294,8 +282,6 @@ impl<Modal> ConsoleCreatePreludeState<Modal> {
         self.pending_mount_src = Some(src);
     }
 
-    /// Default mount dst = same absolute path as host src. Operator can
-    /// overwrite in the dst modal.
     #[must_use]
     pub fn default_mount_dst(&self) -> String {
         let src_display = self
@@ -316,7 +302,6 @@ impl<Modal> ConsoleCreatePreludeState<Modal> {
         self.pending_workdir = Some(workdir);
     }
 
-    /// Default name = mount dst basename.
     #[must_use]
     pub fn default_name(&self) -> String {
         crate::tui::screens::workspaces::view::create_prelude_workspace_name_default(

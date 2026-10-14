@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Sidebar/main-area split layout: percentage-based split state, drag
-//! clamping, and seam hit-testing for the two-panel console layout.
-//!
-//! Not responsible for: computing final pixel rects (see `layout`) or
-//! rendering either panel.
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DragState {
     pub anchor_pct: u16,
@@ -28,14 +22,6 @@ pub const fn clamp_split(pct: u16) -> u16 {
     }
 }
 
-/// Two-pane split rects carried by the upstream `ResizablePanelGroup` in
-/// seamless mode (`handle_cells(0)`): the console renders adjacent panes with
-/// its own seam affordance, so no handle column is reserved. The
-/// percentage-to-cells math stays consumer-side (the ratatui `Percentage`
-/// solver seeded via `set_sizes_cells`), keeping the geometry byte-identical
-/// to the pre-adoption hand-rolled split. The seam-drag lane (hit slack,
-/// anchor-relative delta, pct clamp, width gate) stays consumer code — see
-/// `layout` and `input::mouse`.
 #[must_use]
 pub fn split_panel_group_layout(
     area: ratatui::layout::Rect,

@@ -1,18 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch failure title, diagnosis, CLI error, and role-source resolve.
-//!
-//! Pure rendering over a [`LaunchStage`] plus the failure itself: the title
-//! names the failed stage, the diagnosis is the error's first chain line,
-//! and the CLI error passes the failure through untouched (failures arrive
-//! fully rendered; wrapping would only double prefixes). Role-source
-//! resolution lives here too — the pipeline resolves it on the failure path
-//! next to the rendering. The exit outro rendering moved to
-//! `jackin-runtime-launch-exit-outro` (S7 split 95, observation-inversion:
-//! the hub keeps the universe-boundary observation and the leaf renders
-//! from the already-observed outcome).
-
 use jackin_config::AppConfig;
 use jackin_core::RoleSelector;
 use jackin_diagnostics;
@@ -55,10 +43,6 @@ pub fn launch_failure_cli_error(
     error: &anyhow::Error,
     run: Option<&jackin_diagnostics::RunDiagnostics>,
 ) -> anyhow::Error {
-    // Rendering stays here (next to the stage-specific title/diagnosis),
-    // but the error itself passes through untouched: failures arrive
-    // fully rendered (`DockerBuildFailed` carries the redacted build
-    // stderr tail), and wrapping would only double prefixes or add paths.
     let _ = (stage, run);
     anyhow::anyhow!("{error:#}")
 }

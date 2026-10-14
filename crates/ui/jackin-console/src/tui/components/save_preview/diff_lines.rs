@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings diff line rendering.
 
 use super::{MountPreviewRow, SettingsEnvPreview, SettingsSavePreview, TrustPreviewRow};
 use ratatui::style::Style;

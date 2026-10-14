@@ -10,11 +10,9 @@ fn remote_points_at_github_covers_all_three_forms() {
     assert!(remote_points_at_github("http://github.com/o/r"));
     assert!(remote_points_at_github("ssh://git@github.com/o/r.git"));
     assert!(remote_points_at_github("ssh://github.com/o/r.git"));
-    // Non-GitHub hosts reject.
     assert!(!remote_points_at_github("git@gitlab.com:o/r.git"));
     assert!(!remote_points_at_github("https://gitlab.com/o/r.git"));
     assert!(!remote_points_at_github("git@git.example.com:o/r.git"));
-    // GitHub-lookalike subdomain does not count.
     assert!(!remote_points_at_github(
         "https://github.com.evil.example/o/r"
     ));

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Screen focus and entry transitions.
 
 use crate::tui::model::apply_manager_stage;
 use crate::tui::screens::editor::update::{

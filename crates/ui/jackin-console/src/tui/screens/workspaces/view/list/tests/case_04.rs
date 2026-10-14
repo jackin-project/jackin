@@ -148,10 +148,8 @@ fn preview_shows_compact_running_badge_for_active_instances() {
     .unwrap();
 
     let joined = buffer_text(term.backend().buffer());
-    // Compact badge shows the "Running" block title and instance count.
     assert!(joined.contains("Running"), "{joined}");
     assert!(joined.contains("1 instance running"), "{joined}");
-    // CleanExited instances are not shown in the compact summary.
     assert!(
         !joined.contains("done0001"),
         "cleanly exited instances must not appear: {joined}"
@@ -211,8 +209,6 @@ fn preview_includes_environments_block_when_only_per_agent_overrides_set() {
 
 #[test]
 fn preview_block_order_is_general_mounts_environments_agents() {
-    // Build a workspace with a mount, an env var, and an role so
-    // every block has visible content.
     let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
     ws.workdir = "/workspace/demo".into();
     ws.mounts.push(MountConfig {
@@ -248,8 +244,6 @@ fn preview_block_order_is_general_mounts_environments_agents() {
 
     let buf = term.backend().buffer();
     let area = buf.area;
-    // For each block, find the y-row that holds its title (titles
-    // are unique strings so we can scrape by row content).
     let mut general_y: Option<u16> = None;
     let mut mounts_y: Option<u16> = None;
     let mut envs_y: Option<u16> = None;

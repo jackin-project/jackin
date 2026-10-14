@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings env-tab keymap.
 
 use termrock::input::KeyCode;
 
@@ -12,15 +11,10 @@ pub(crate) enum SettingsEnvTabAction {
     MoveDown,
     Add,
     Save,
-    /// d/D — only fires when plain modifier; caller checks context.
     Delete,
-    /// m/M — only fires when plain modifier; caller checks context.
     ToggleMask,
-    /// p/P — caller checks plain modifier + `op_available`.
     OpenPicker,
-    /// Enter — caller routes: if `selected_is_op_ref` && `op_available` → `OpenPicker`, else `OpenEnterModal`.
     Enter,
-    /// Caller resolves: if dirty → `ConfirmDiscard`, else `ReturnToList`.
     Back,
 }
 
@@ -130,5 +124,3 @@ pub(crate) static SETTINGS_ENV_TAB_KEYMAP_BINDINGS: &[KeyBinding<SettingsEnvTabA
 ];
 pub(crate) static SETTINGS_ENV_TAB_KEYMAP: Keymap<SettingsEnvTabAction> =
     Keymap::from_static(SETTINGS_ENV_TAB_KEYMAP_BINDINGS);
-
-// ── Settings Trust tab ────────────────────────────────────────────────────────

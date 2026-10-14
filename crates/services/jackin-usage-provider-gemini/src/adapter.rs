@@ -1,21 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Gemini CLI` eligibility + project-quota snapshot logic (see `lib.rs`).
-//!
-//! Eligibility changed: consumer Google OAuth access through Gemini CLI ended
-//! 2026-06-18 (targeted deprecation notice); Standard and Enterprise remain
-//! supported. A discovered old consumer login therefore gets a concrete
-//! reconnect/migration action — a 403 on a managed route must never be
-//! blind-mapped to that migration.
-//!
-//! Gemini/Vertex API-key billing is separate again: quotas are project-scoped
-//! RPM/TPM/daily/model limits, keys in one project share quota, and
-//! `usageMetadata` is request consumption, never remaining allowance. This
-//! module parses project-quota responses into count buckets without inventing
-//! denominators, and classifies credential routes so the broker never attaches
-//! a project observation to the wrong billing identity.
-
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
@@ -26,16 +11,12 @@ use jackin_usage_provider_core::{
     home_path, humanize_plan_label, json_number, parse_iso_epoch, timed_bucket, usage_view,
 };
 
-/// 2026-06-18T00:00:00Z: consumer Google OAuth through Gemini CLI ended.
-/// (`parse_iso_epoch` cross-checks this constant in tests.)
 pub const GEMINI_CONSUMER_OAUTH_END: i64 = 1_781_740_800;
 
-/// True once consumer OAuth is retired (at/after the deprecation instant).
 pub fn gemini_consumer_oauth_retired(now: i64) -> bool {
     now >= GEMINI_CONSUMER_OAUTH_END
 }
 
-/// `GEMINI_CLI_HOME` is the parent to which `.gemini` is appended.
 pub fn gemini_oauth_creds_path() -> PathBuf {
     let dir = env_value("GEMINI_CLI_HOME").map_or_else(
         || home_path(".gemini"),
@@ -44,10 +25,6 @@ pub fn gemini_oauth_creds_path() -> PathBuf {
     dir.join("oauth_creds.json")
 }
 
-/// Credential presence: `(oauth_creds_file, api_key_env)`. Presence only —
-/// secret values are never read here. The `GOOGLE_API_KEY` alias is the
-/// S1-recorded decision (`accounts/discovery.rs` recognizes it as the same
-/// key), not a lane invention.
 pub fn gemini_credential_presence() -> (bool, bool) {
     let oauth = gemini_oauth_creds_path().is_file();
     let api_key = env_value("GEMINI_API_KEY")
@@ -68,21 +45,14 @@ pub fn gemini_credential_origin(oauth: bool, api_key: bool) -> String {
     }
 }
 
-/// Parsed entitlement response: tier/plan identity, project scope, and any
-/// consumer-unsupported markers the server sent.
 #[derive(Debug, Clone, Default)]
 pub struct GeminiEntitlement {
     pub tier_name: Option<String>,
     pub plan_name: Option<String>,
     pub project: Option<String>,
-    /// True when the response explicitly marks consumer/individual access
-    /// unsupported, deprecated, or retired.
     pub consumer_unsupported: bool,
 }
 
-/// Parse an entitlement response. Tier names come from the Google tier object
-/// (`userTier`/`currentTier`/`paidTier`); the inherited `planInfo.planName` is
-/// kept only as a plan label, never as tier evidence.
 pub fn parse_gemini_entitlement(value: &serde_json::Value) -> GeminiEntitlement {
     let tier_name = ["userTier", "currentTier", "paidTier", "tier"]
         .into_iter()
@@ -127,9 +97,6 @@ pub fn parse_gemini_entitlement(value: &serde_json::Value) -> GeminiEntitlement 
     }
 }
 
-/// True when the response explicitly flags consumer access unsupported. Only
-/// explicit server flags (or an `individual`-family tier id, the deprecated
-/// product family) count — a missing tier is unknown, never consumer.
 fn gemini_consumer_unsupported(value: &serde_json::Value) -> bool {
     if let Some(object) = value.as_object() {
         for (key, flag) in object {
@@ -151,13 +118,6 @@ fn gemini_consumer_unsupported(value: &serde_json::Value) -> bool {
         .any(|tier| tier.to_ascii_lowercase().contains("individual"))
 }
 
-/// Concrete reconnect action for a retired consumer login, or `None` when the
-/// entitlement gives no migration signal. Only an explicit server
-/// `consumer_unsupported` flag triggers the targeted notice: a bare OAuth
-/// credential past the retirement instant may be a managed
-/// Standard/Enterprise login that is already eligible, so credential
-/// presence + wall-clock alone must never classify it as a to-be-migrated
-/// consumer login.
 pub fn gemini_migration_action(entitlement: Option<&GeminiEntitlement>) -> Option<String> {
     const ACTION: &str = "Consumer Google OAuth ended 2026-06-18; reconnect Gemini CLI with Code Assist Standard/Enterprise";
     entitlement
@@ -165,8 +125,6 @@ pub fn gemini_migration_action(entitlement: Option<&GeminiEntitlement>) -> Optio
         .then(|| ACTION.to_owned())
 }
 
-/// One project-scoped quota entry (RPM/TPM/daily/model limit). Counts stay
-/// counts: `remaining` exists only when the response supplies a denominator.
 #[derive(Debug, Clone)]
 pub struct GeminiProjectQuota {
     pub model: Option<String>,
@@ -266,7 +224,6 @@ fn gemini_quota_bucket(quota: &GeminiProjectQuota, now: i64) -> QuotaBucketView 
         remaining,
         quota.reset_at,
         now,
-        // Rate limits are detail rows: no headline slot, no invented pace.
         None,
         UsageSnapshotStatus::Fresh,
     )
@@ -278,10 +235,6 @@ pub fn gemini_snapshot(agent: &str, provider: Option<&str>, now: i64) -> Focused
     gemini_snapshot_with_presence(agent, provider, has_oauth, has_api_key, &origin, now)
 }
 
-/// Snapshot from broker-routed evidence instead of ambient files: profile
-/// refresh passes the discovery-proven OAuth presence, the env arm the
-/// configured key. The result stays a typed gap (never a zero balance) until
-/// an entitlement endpoint lands.
 pub fn gemini_snapshot_with_presence(
     agent: &str,
     provider: Option<&str>,
@@ -290,9 +243,6 @@ pub fn gemini_snapshot_with_presence(
     credential_origin: &str,
     now: i64,
 ) -> FocusedUsageView {
-    // No entitlement endpoint is wired yet, so no migration signal exists:
-    // every authenticated user gets the generic reporting-gap message until a
-    // fetched entitlement says `consumer_unsupported`.
     let migration = gemini_migration_action(None);
     let (status, message) = if !has_oauth && !has_api_key {
         (
@@ -302,9 +252,6 @@ pub fn gemini_snapshot_with_presence(
     } else if let Some(action) = migration.as_deref() {
         (UsageSnapshotStatus::Unsupported, action)
     } else {
-        // API-key/Vertex route (or managed OAuth without a fetched
-        // entitlement): project reporting needs an authorized scope no pinned
-        // endpoint covers yet — a typed gap, never a zero balance.
         (
             UsageSnapshotStatus::Unsupported,
             "Gemini project quota needs authorized reporting scope",

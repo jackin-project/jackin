@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Debug-log helpers for console TUI event traces.
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModalDebugKind {
     TextInput,
@@ -168,8 +166,6 @@ pub fn console_location_debug_name(location: &ConsoleLocationDebug) -> String {
     name
 }
 
-/// Render a key event for debug logs. Redacts literal text input when the
-/// focused widget owns character entry.
 pub fn key_debug_name_for_input(
     key: crossterm::event::KeyEvent,
     consumes_letter_input: bool,

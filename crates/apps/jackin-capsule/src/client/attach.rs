@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Attach, attach-proxy relay, and transport protocol check commands.
 
 use anyhow::{Context, Result, bail};
 
@@ -10,16 +9,6 @@ use tokio::net::UnixStream;
 
 use crate::socket::SOCKET_PATH;
 
-/// Connect to the running daemon and run the interactive attach client.
-///
-/// `spawn_request` is set by `docker exec ... jackin-capsule new`;
-/// the first Hello frame asks the daemon to create that session before
-/// completing attach. Plain attach (operator-initiated reattach)
-/// passes `None`.
-/// # Errors
-///
-/// Returns an error when terminal setup, socket connection, protocol I/O, or
-/// daemon attach fails.
 pub async fn run_client(
     spawn_request: Option<SpawnRequest>,
     focus_session: Option<u64>,
@@ -27,28 +16,10 @@ pub async fn run_client(
     crate::tui::run::run_client(spawn_request, focus_session).await
 }
 
-/// Relay attach-protocol bytes between stdio and the daemon socket.
-///
-/// This is the fallback transport for hosts that can run `docker exec -i` but
-/// cannot open the bind-mounted Unix socket directly. The proxy is deliberately
-/// byte-blind: the host-side attach client still owns terminal mode, protocol
-/// encoding, frame caps, and validation.
-/// # Errors
-///
-/// Returns an error when the daemon socket cannot be connected or the relay
-/// encounters an I/O failure.
 pub async fn run_attach_proxy() -> Result<()> {
     run_attach_proxy_at(SOCKET_PATH, tokio::io::stdin(), tokio::io::stdout()).await
 }
 
-/// Check that the running daemon speaks this Capsule transport major.
-///
-/// The command is read-only: it opens a socket, negotiates the fixed transport
-/// preface, then closes without sending a control request or attach Hello.
-/// # Errors
-///
-/// Returns an error when the daemon cannot be reached or does not ACK the
-/// exact protocol major.
 pub async fn run_protocol_check(args: &[String]) -> Result<()> {
     let expected_major = match args {
         [] => jackin_protocol::capsule_transport::CONTROL_PROTOCOL_MAJOR,

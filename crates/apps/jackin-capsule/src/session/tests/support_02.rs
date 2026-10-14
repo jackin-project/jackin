@@ -55,7 +55,7 @@ pub(super) fn start_fault_pty_tasks(
             match std::io::Read::read(&mut reader, &mut buf) {
                 Ok(0) => break,
                 Ok(_) => {}
-                Err(_) => break, // read error: no Exited (reaper is authoritative)
+                Err(_) => break,
             }
         }
     });

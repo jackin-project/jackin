@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ManagerState` pending subscription polls.
 
 use crate::tui::runtime::SubscriptionPoll;
 
@@ -10,12 +9,6 @@ use super::super::{
 };
 
 impl ManagerState<'_> {
-    /// Poll the in-flight drift check started by a save operation.
-    ///
-    /// Returns `Some(check)` when the check has a result ready, taking
-    /// ownership of the `PendingDriftCheck` so the caller can continue the
-    /// save flow. Returns `None` when the check is still running or there is
-    /// no pending check.
     pub fn poll_pending_drift_check(
         &mut self,
     ) -> Option<(
@@ -63,10 +56,7 @@ impl ManagerState<'_> {
                     None
                 }
             }
-            SubscriptionPoll::Pending => {
-                // Worker still running — keep the receiver.
-                None
-            }
+            SubscriptionPoll::Pending => None,
             SubscriptionPoll::Closed => {
                 self.instances_refresh_rx = None;
                 let message =

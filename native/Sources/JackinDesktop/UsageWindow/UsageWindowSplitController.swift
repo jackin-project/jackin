@@ -5,7 +5,6 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// macOS 26 native split ownership: full-height sidebar plus detail-local top accessory.
 @MainActor
 final class UsageWindowSplitController: NSSplitViewController {
     private let sidebarHost: NSHostingController<UsageWindowSidebar>
@@ -71,7 +70,6 @@ final class UsageWindowSplitController: NSSplitViewController {
     }
 }
 
-/// Standard AppKit toolbar identifiers keep the system toggle in one stable leading slot.
 @MainActor
 final class UsageWindowToolbar: NSObject, NSToolbarDelegate {
     static let identifier = NSToolbar.Identifier("usage.window-toolbar")

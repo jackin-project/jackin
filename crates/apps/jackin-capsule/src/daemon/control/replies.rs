@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Control replies, status capture, and telemetry health reports.
 
 use super::super::{
     ClientMsg, Instant, Multiplexer, PathBuf, Result, ServerMsg, Session, TokenTotals,
@@ -33,14 +32,6 @@ pub(crate) fn send_attach_control_response(
     );
 }
 
-/// Write a capture fixture for `session`: its live visible grid (`visible.txt`)
-/// and the current evidence report (`evidence.json`), under
-/// `/jackin/state/agent-status/captures/<id>-<seq>/`. Turns a live
-/// mis-detection into a regression fixture in one command.
-/// # Errors
-///
-/// Returns an error when the capture directory or either fixture file cannot
-/// be created or written.
 pub fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -78,8 +69,6 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         ClientMsg::Agents => ServerMsg::AgentRegistry {
             records: mux.agent_registry_snapshot(),
         },
-        // Forwarded in-container reporter event: apply it to the addressed
-        // session's authority and Ack immediately (never block the agent hook).
         ClientMsg::ReportRuntimeEvent {
             session_id,
             source_id,
@@ -100,7 +89,6 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
                 },
             )
         }
-        // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
         ClientMsg::StatusCapture { session_id } => {
             if let Some(session) = mux.session_supervisor.sessions.get(session_id) {
                 drop(
@@ -125,15 +113,9 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: mux.usage.cache().account_snapshot_views(),
         },
-        ClientMsg::ExecCommand { .. } => {
-            // Defensive only: `ExecCommand` is intercepted by the control loop
-            // (it opens `Dialog::ExecPicker` and replies after the operator
-            // confirms/cancels), so it never reaches this synchronous path.
-            // Fail closed if it ever does.
-            ServerMsg::ExecDenied {
-                reason: "jackin-exec must be dispatched through the credential picker".to_owned(),
-            }
-        }
+        ClientMsg::ExecCommand { .. } => ServerMsg::ExecDenied {
+            reason: "jackin-exec must be dispatched through the credential picker".to_owned(),
+        },
         ClientMsg::TokenUsage { session_id } => ServerMsg::TokenUsage {
             summary: mux
                 .usage
@@ -141,10 +123,6 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
                 .totals(session_id)
                 .map(TokenTotals::to_summary),
         },
-        // `session.send`: write the payload into the addressed PTY verbatim.
-        // Input never authors state — the terminal-observation arbitration
-        // decides what the agent is doing — so this only records the input as
-        // recency evidence and reports what it wrote.
         ClientMsg::SessionSend { session, text } => {
             let bytes = text.len() as u64;
             let mut unblocked = false;
@@ -162,19 +140,12 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
                     Ok(bytes)
                 }
             };
-            // Same chrome refresh the keyboard path takes: input that clears a
-            // latched blocked pane must repaint it, whether an operator typed
-            // it or a host client sent it.
             if let Some(reason) = crate::tui::update::pane_data_redraw_reason(false, unblocked) {
                 mux.invalidate(reason);
             }
             super::super::events::session_send_reply(session, outcome)
         }
         ClientMsg::Events { .. } => {
-            // Defensive only: `Events` is a subscription, intercepted before
-            // this synchronous path by `handle_control_request` (it registers
-            // the stream instead of producing one reply). Fail closed if a
-            // future caller ever routes it here.
             let _error = jackin_telemetry::record_error(RPC_ERROR);
             ServerMsg::Unknown
         }

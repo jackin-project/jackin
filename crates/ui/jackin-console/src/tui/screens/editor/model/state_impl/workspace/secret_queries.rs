@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EditorState` secret value and enter-plan queries.
 
 use super::super::super::{
     EditorState, FieldFocus, RoleHeaderExpansionPlan, SecretsEnterPlan, SecretsRow, SecretsScopeTag,
@@ -70,7 +69,6 @@ impl<
         }
     }
 
-    /// No-op on header/sentinel/op:// rows.
     #[must_use]
     pub fn focused_unmask_key(&self) -> Option<(SecretsScopeTag, String)> {
         let FieldFocus::Row(n) = self.active_field;

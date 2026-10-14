@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EditorState` mount, role, and secret mutations.
 
 use super::super::super::{EditorState, FieldFocus, SecretsScopeTag};
 
@@ -111,8 +110,6 @@ impl<
         }
     }
 
-    /// Delete an environment key from the draft workspace or role override.
-    /// Remove a role override only when every role-specific field is default.
     pub fn delete_env_var(&mut self, scope: &SecretsScopeTag, key: &str) -> anyhow::Result<()> {
         match scope {
             SecretsScopeTag::Workspace => {

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace-list footer items and save labels.
 
 use super::{
     WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterFacts,
@@ -84,10 +83,6 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             workspace_picker_footer_items(scroll_axes, true)
         }
         WorkspaceListFooterMode::PreviewPane => {
-            // Glyphs derive from PREVIEW_PANE_KEYMAP — the same table that drives
-            // `preview_pane_key_plan` dispatch — so advertised keys cannot drift
-            // from handled keys. BackTab (HiddenAlias) and the upstream Ctrl-Q
-            // are intentionally not advertised.
             let g = |a| PREVIEW_PANE_KEYMAP.glyph_for(a);
             let mut items = vec![
                 super::super::key_span(g(PreviewPaneAction::NavigateUp)),
@@ -115,8 +110,6 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             show_collapse,
             show_open_in_github,
         } => {
-            // Glyphs derive from WORKSPACE_LIST_KEYMAP (the dispatch table);
-            // labels and conditional composition are workspace-row-specific.
             let g = |a| WORKSPACE_LIST_KEYMAP.glyph_for(a);
             let mut items = Vec::new();
             if scroll_axes.any() {
@@ -189,13 +182,7 @@ pub(crate) fn instance_row_footer_items(
     has_snapshot: bool,
     is_live: bool,
 ) -> Vec<HintSpan<'static>> {
-    // Glyphs derive from WORKSPACE_LIST_KEYMAP (the dispatch table);
-    // labels are instance-row-specific and supplied here.
     let g = |a| WORKSPACE_LIST_KEYMAP.glyph_for(a);
-    // A failed/stopped instance has no live daemon: new-session, shell,
-    // and stop are meaningless. `Enter` enters the restore ladder
-    // (docker start + reconnect, or recreate from image) — that is the
-    // "restart" verb — so it is labelled accordingly (D15).
     let mut items = if is_live {
         vec![
             super::super::key_span(g(WorkspaceListAction::NavigateUp)),
@@ -292,13 +279,11 @@ pub fn workspace_picker_footer_items(
     include_quit: bool,
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
-        // UNREGISTERABLE(multi-key-display-group): combined up/down navigation display.
         super::super::key_span("↑↓"),
         HintSpan::Sep,
         super::super::key_span(WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Enter)),
         HintSpan::Text("launch"),
         HintSpan::GroupSep,
-        // UNREGISTERABLE(workspace-picker-no-keymap): Esc handled inline; no dedicated workspace-picker keymap.
         super::super::key_span("Esc"),
         HintSpan::Text("return to workspaces"),
         HintSpan::GroupSep,

@@ -211,7 +211,6 @@ fn unauthorized_errors_are_distinguished_from_transient() {
     assert!(!usage_error_is_unauthorized(&ProviderError::from(
         ProviderHttpError::Decode("payload mentions 403".to_owned()),
     )));
-    // A rate-limit is transient, not an auth failure.
     assert!(!usage_error_is_unauthorized(&ProviderError::from(
         ProviderHttpError::HttpStatus {
             status: 429,
@@ -385,29 +384,22 @@ fn provider_error_keeps_timeout_transport_and_decode_distinct_from_status_text()
 
 #[test]
 fn fraction_helpers_reject_absent_and_clamp_present() {
-    // Fraction form (0..=1) and already-percent form (>1) both map to a
-    // clamped used percentage.
     assert_eq!(used_percent_from_fraction(0.0), Some(0));
     assert_eq!(used_percent_from_fraction(1.0), Some(100));
     assert_eq!(used_percent_from_fraction(0.84), Some(84));
     assert_eq!(used_percent_from_fraction(42.0), Some(42));
     assert_eq!(used_percent_from_fraction(150.0), Some(100));
 
-    // Absent/unknown sentinels must yield None, never a fabricated value.
-    // A negative input previously rendered as `Some(100)` — a "100% left"
-    // row for data that is genuinely absent.
     assert_eq!(used_percent_from_fraction(-0.5), None);
     assert_eq!(used_percent_from_fraction(f64::NAN), None);
     assert_eq!(used_percent_from_fraction(f64::INFINITY), None);
     assert_eq!(used_percent_from_fraction(f64::NEG_INFINITY), None);
 
-    // remaining = 100 - used, propagating None for absent data.
     assert_eq!(remaining_from_fraction(0.84), Some(16));
     assert_eq!(remaining_from_fraction(1.0), Some(0));
     assert_eq!(remaining_from_fraction(-0.5), None);
     assert_eq!(remaining_from_fraction(f64::NAN), None);
 
-    // The "used" label tracks the same absence contract.
     assert_eq!(used_percent_label(0.84).as_deref(), Some("84% used"));
     assert_eq!(used_percent_label(-0.5), None);
     assert_eq!(used_percent_label(f64::NAN), None);
@@ -432,18 +424,12 @@ fn managed_cli_launch_gate_cools_down_after_launch_failure() {
 
 #[test]
 fn quota_pace_label_uses_codexbar_reserve_deficit_onpace() {
-    // Behind pace (burning faster than the clock): 60% quota left with 90%
-    // of the window still remaining -> 30 points of deficit, and the linear
-    // projection runs out before the reset (Variant A composite).
     let deficit = quota_pace_label(Some(60), Some(900), Some(1_000), 0).expect("pace label");
     assert_eq!(deficit, "30% in deficit · Runs out in 2m");
 
-    // Ahead of pace (quota outlasting the clock): 90% left, 60% of window
-    // remaining -> 30 points in reserve.
     let reserve = quota_pace_label(Some(90), Some(600), Some(1_000), 0).expect("pace label");
     assert_eq!(reserve, "30% in reserve");
 
-    // Within 2 points of the clock -> On pace.
     let on_pace = quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace label");
     assert_eq!(on_pace, "On pace");
 }

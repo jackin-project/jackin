@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! oh-my-pi multi-provider client (`omp`) adapter.
-
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
@@ -10,12 +8,8 @@ use crate::agent::runtime::{
     render_fallback_install_block,
 };
 
-// Pinned npm release (bin `omp` verified via registry metadata;
-// version observed 2026-09-17 — re-pin when the installer lane probes
-// the registry). Requires node/npm on image PATH.
 const FALLBACK_INSTALL_COMMAND: &str = "npm install -g @oh-my-pi/pi-coding-agent@18.2.4";
 
-/// [`crate::agent::runtime::AgentRuntime`] adapter for omp.
 #[derive(Debug)]
 pub(crate) struct OmpRuntime;
 
@@ -59,9 +53,6 @@ RUN set -euxo pipefail && \\
     }
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
-        // Pure multi-provider client with no native billing: even ApiKey
-        // mode has no single agent-level variable; the account layer
-        // selects the provider's variable per account.
         let _ = mode;
         None
     }
@@ -77,11 +68,9 @@ RUN set -euxo pipefail && \\
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".omp",
-            config_dir: None, // agent.db + profiles both under ~/.omp
-            // SQLite store (NOT JSON): provisioning copies the file;
-            // discovery treats file presence as evidence without parsing.
+            config_dir: None,
+
             credential_file: Some(".omp/agent/agent.db"),
-            // OMP_PROFILE selects a named profile within the dir.
             folder_env_var: Some(FolderVar {
                 name: "PI_CODING_AGENT_DIR",
                 kind: FolderVarKind::Dir,

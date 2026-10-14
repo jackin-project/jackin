@@ -167,7 +167,6 @@ pub(super) fn two_codex_mux() -> Multiplexer {
             },
         ),
     ]);
-    // A stale process-wide value must not win over either slot's routing map.
     mux.launch_env.env_passthrough = vec![
         (
             jackin_core::CODEX_LANE_MODEL_ENV_NAME.into(),

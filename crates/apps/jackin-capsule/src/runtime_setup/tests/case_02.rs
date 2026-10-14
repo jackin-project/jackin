@@ -10,7 +10,7 @@ fn seed_home_dir_empty_dst_seeds_from_src_and_signals_first_seed() {
     let dst = tmp.path().join("dst");
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("config.json"), b"{}").unwrap();
-    fs::create_dir(&dst).unwrap(); // empty
+    fs::create_dir(&dst).unwrap();
 
     let outcome = seed_home_dir(&src, &dst).expect("seed should succeed");
     assert_eq!(outcome, SeedOutcome::FirstSeed, "empty dst → first seed");
@@ -25,7 +25,6 @@ fn seed_home_dir_nonempty_dst_skips_and_signals_already_seeded() {
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("default.json"), b"{}").unwrap();
     fs::create_dir_all(&dst).unwrap();
-    // dst has a user file → non-empty
     fs::write(dst.join("user.json"), b"{}").unwrap();
 
     let outcome = seed_home_dir(&src, &dst).expect("skip should succeed");
@@ -45,7 +44,7 @@ fn seed_home_dir_absent_src_still_signals_first_seed() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let src = tmp.path().join("src-absent");
     let dst = tmp.path().join("dst");
-    fs::create_dir(&dst).unwrap(); // empty
+    fs::create_dir(&dst).unwrap();
 
     let outcome = seed_home_dir(&src, &dst).expect("no-src seed should succeed");
     assert_eq!(
@@ -66,8 +65,8 @@ fn seed_agent_home_seeds_data_and_paired_config_in_one_transaction() {
     fs::create_dir_all(&cfg_src).unwrap();
     fs::write(data_src.join("state.json"), b"{}").unwrap();
     fs::write(cfg_src.join("settings.json"), b"{}").unwrap();
-    fs::create_dir_all(&data_dst).unwrap(); // empty
-    fs::create_dir_all(&cfg_dst).unwrap(); // empty
+    fs::create_dir_all(&data_dst).unwrap();
+    fs::create_dir_all(&cfg_dst).unwrap();
 
     let outcome = seed_agent_home(
         data_src.to_str().unwrap(),
@@ -94,9 +93,9 @@ fn seed_agent_home_nonempty_config_root_leaves_both_untouched() {
     fs::create_dir_all(&data_src).unwrap();
     fs::create_dir_all(&cfg_src).unwrap();
     fs::write(data_src.join("state.json"), b"{}").unwrap();
-    fs::create_dir_all(&data_dst).unwrap(); // empty data root
+    fs::create_dir_all(&data_dst).unwrap();
     fs::create_dir_all(&cfg_dst).unwrap();
-    fs::write(cfg_dst.join("user.json"), b"{}").unwrap(); // durable config content
+    fs::write(cfg_dst.join("user.json"), b"{}").unwrap();
 
     let outcome = seed_agent_home(
         data_src.to_str().unwrap(),
@@ -117,14 +116,12 @@ fn seed_agent_home_nonempty_config_root_leaves_both_untouched() {
 
 #[test]
 fn seed_agent_home_no_config_root_seeds_data_only() {
-    // The single-root agents (claude/codex/grok/kimi) call seed_agent_home with
-    // config = None; that branch must seed the data root and signal first seed.
     let tmp = tempfile::tempdir().expect("tempdir");
     let data_src = tmp.path().join("default/data");
     let data_dst = tmp.path().join("home/data");
     fs::create_dir_all(&data_src).unwrap();
     fs::write(data_src.join("state.json"), b"{}").unwrap();
-    fs::create_dir_all(&data_dst).unwrap(); // empty
+    fs::create_dir_all(&data_dst).unwrap();
 
     let outcome = seed_agent_home(data_src.to_str().unwrap(), data_dst.to_str().unwrap(), None)
         .expect("seed should succeed");
@@ -135,7 +132,6 @@ fn seed_agent_home_no_config_root_seeds_data_only() {
     );
     assert!(data_dst.join("state.json").exists(), "data root seeded");
 
-    // A second call now sees a non-empty data root → already seeded, no re-copy.
     fs::write(data_src.join("new.json"), b"{}").unwrap();
     let again = seed_agent_home(data_src.to_str().unwrap(), data_dst.to_str().unwrap(), None)
         .expect("second call should succeed");

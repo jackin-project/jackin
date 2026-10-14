@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Config and workspace file version migration registry.
-//!
-//! Defines `MigrationStep`, and the `CONFIG_MIGRATIONS` / `WORKSPACE_MIGRATIONS`
-//! chains. Not responsible for manifest migrations — those live in the binary
-//! crate's `manifest/migrations.rs`. One version bump per PR targeting the next
-//! version after `main`.
-
 use crate::ConfigError;
 use std::num::NonZeroU32;
 use std::path::Path;
@@ -18,25 +11,19 @@ use toml_edit::DocumentMut;
 use crate::persist::{acquire_config_write_lock, atomic_write, config_file_for_workspace_path};
 use crate::versions::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, LEGACY_VERSION};
 
-/// Transform applied to a TOML document for one version step.
 pub type Migration = fn(&mut DocumentMut) -> crate::ConfigResult<()>;
 
-/// One edge in a config or workspace migration registry.
 #[expect(
     missing_debug_implementations,
     reason = "MigrationStep stores a function pointer; debug output would not add useful migration evidence."
 )]
 #[derive(Clone, Copy)]
 pub struct MigrationStep {
-    /// Source version string (`legacy` or `vN…`).
     pub from: &'static str,
-    /// Destination version string after this step.
     pub to: &'static str,
-    /// Document transform (may be [`noop_migration`]).
     pub migrate: Migration,
 }
 
-/// Ordered `config.toml` migration chain from [`LEGACY_VERSION`] to current.
 pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         from: LEGACY_VERSION,
@@ -68,24 +55,16 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
         to: "v1alpha6",
         migrate: noop_migration,
     },
-    // v1alpha6 → v1alpha7: add optional Docker profile/grants config and
-    // selectable container backends (`[runtime].default_backend`). Additive
-    // with serde defaults; no transformation needed.
     MigrationStep {
         from: "v1alpha6",
         to: "v1alpha7",
         migrate: noop_migration,
     },
-    // v1alpha7 → v1alpha8: add optional `dirty_exit_policy` to AppConfig and
-    // WorkspaceConfig, and exec control-protocol types. Additive with serde
-    // defaults; no transformation needed.
     MigrationStep {
         from: "v1alpha7",
         to: "v1alpha8",
         migrate: noop_migration,
     },
-    // v1alpha8 -> v1alpha9: add optional `[telemetry]` settings to AppConfig.
-    // Additive with serde defaults; no transformation needed.
     MigrationStep {
         from: "v1alpha8",
         to: "v1alpha9",
@@ -96,32 +75,22 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
         to: "v1alpha10",
         migrate: strip_legacy_agent_tables,
     },
-    // v1alpha10 → v1alpha11: add `agent_configurations`, `default_launch`,
-    // and the `[bootstrap]` sentinel. Additive with serde defaults except
-    // the sentinel, which is stamped explicitly as already-initialized so
-    // an upgrade never rescans or resurrects removed accounts.
     MigrationStep {
         from: "v1alpha10",
         to: "v1alpha11",
         migrate: stamp_bootstrap_initialized,
     },
-    // v1alpha11 → v1alpha12: persist secret-free scan exclusions so a
-    // deliberate account removal is not undone by an explicit rescan.
     MigrationStep {
         from: "v1alpha11",
         to: "v1alpha12",
         migrate: noop_migration,
     },
-    // v1alpha12 -> v1alpha13: replace unversioned OpRef `path` strings with
-    // versioned `breadcrumb` objects. Literal percent sequences are escaped
-    // as data; migration never guesses that old text was percent-encoded.
     MigrationStep {
         from: "v1alpha12",
         to: CURRENT_CONFIG_VERSION,
         migrate: migrate_config_op_breadcrumbs,
     },
 ];
-/// Ordered per-workspace file migration chain from [`LEGACY_VERSION`] to current.
 pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         from: LEGACY_VERSION,
@@ -153,17 +122,11 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
         to: "v1alpha6",
         migrate: noop_migration,
     },
-    // v1alpha6 → v1alpha7: add optional workspace Docker profile/grants config,
-    // optional on-demand env metadata (`on_demand`), and optional
-    // `[runtime].backend` per-workspace override. Additive with serde defaults;
-    // no transformation needed.
     MigrationStep {
         from: "v1alpha6",
         to: "v1alpha7",
         migrate: noop_migration,
     },
-    // v1alpha7 → v1alpha8: add optional `dirty_exit_policy` to WorkspaceConfig.
-    // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha7",
         to: "v1alpha8",
@@ -174,16 +137,11 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
         to: "v1alpha9",
         migrate: strip_legacy_agent_tables,
     },
-    // v1alpha9 → v1alpha10: add optional `default_launch` to workspaces
-    // and role overrides. Additive with serde defaults; no transform.
     MigrationStep {
         from: "v1alpha9",
         to: "v1alpha10",
         migrate: noop_migration,
     },
-    // v1alpha10 -> v1alpha11: replace unversioned OpRef `path` strings with
-    // versioned `breadcrumb` objects. Literal percent sequences are escaped
-    // as data; migration never guesses that old text was percent-encoded.
     MigrationStep {
         from: "v1alpha10",
         to: CURRENT_WORKSPACE_VERSION,
@@ -191,9 +149,6 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     },
 ];
 
-/// Stamp an already-initialized `[bootstrap]` sentinel, preserving any
-/// operator-written sentinel (an installer `fresh_install = true` marker
-/// must survive the upgrade so its scan still runs exactly once).
 pub(crate) fn stamp_bootstrap_initialized(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     use toml_edit::Item;
     let has_marker = doc
@@ -215,7 +170,6 @@ pub(crate) fn stamp_bootstrap_initialized(doc: &mut DocumentMut) -> crate::Confi
     Ok(())
 }
 
-/// Strip legacy agent authentication tables from top-level and roles tables.
 pub(crate) fn strip_legacy_agent_tables(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     for agent in jackin_core::Agent::ALL {
         doc.remove(agent.slug());
@@ -235,26 +189,7 @@ pub(crate) fn strip_legacy_agent_tables(doc: &mut DocumentMut) -> crate::ConfigR
     Ok(())
 }
 
-/// v1alpha4 → v1alpha5: the workspace-level `op_account` moves onto each
-/// `op://` env ref as a per-ref `account` key, so a workspace holding
-/// refs from several 1Password accounts resolves each correctly.
-///
-/// Walks every env table that can hold op refs (`[env]`,
-/// `[roles.<role>.env]`, `[github.env]`, `[roles.<role>.github.env]`)
-/// and stamps the old top-level `op_account` onto each inline-table
-/// value carrying an `op` key that lacks an `account`. Plain string
-/// values are skipped. Absent `op_account` is a no-op.
-///
-/// Exposed beyond the migration registry so the legacy-config split in
-/// `persist.rs` can reuse this exact transform: the typed-struct round-trip
-/// there drops the legacy `op_account` before the version-driven migration
-/// would see it, so the split re-injects it and calls this directly.
 pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
-    // Absent op_account is a legitimate no-op (single-account / never-set
-    // workspace). A present-but-non-string value is operator data we must
-    // not silently drop: bail loudly so the standard startup parser error
-    // surfaces, rather than discarding the account and presenting a
-    // downstream phantom "missing credential" at next launch.
     let acct = match doc.get("op_account") {
         None => return Ok(()),
         Some(item) => match item.as_str() {
@@ -281,10 +216,6 @@ pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> crate::Con
     Ok(())
 }
 
-/// v1alpha12 -> v1alpha13: migrate global `OpRef` snapshot breadcrumbs.
-///
-/// This walks embedded workspaces too; they still pass through their own
-/// workspace migration chain immediately after the global chain.
 fn migrate_config_op_breadcrumbs(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     let root = doc.as_table_mut();
     migrate_env_map(root.get_mut("env"))?;
@@ -294,7 +225,6 @@ fn migrate_config_op_breadcrumbs(doc: &mut DocumentMut) -> crate::ConfigResult<(
     migrate_account_credentials(root.get_mut("accounts"))
 }
 
-/// v1alpha10 -> v1alpha11: migrate all `OpRef`s in one workspace document.
 fn migrate_workspace_op_breadcrumbs(doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     migrate_workspace_settings(doc.as_table_mut())
 }
@@ -419,14 +349,7 @@ fn migrate_op_ref_value(table: &mut dyn toml_edit::TableLike) -> crate::ConfigRe
     validate_versioned_op_breadcrumb(table)
 }
 
-/// Validate normalized data before the migration stamps a new schema. A
-/// malformed breadcrumb must not be written successfully and then fail only
-/// when the strict `EnvValue` deserializer reads the file on the next load.
 fn validate_versioned_op_breadcrumb(table: &dyn toml_edit::TableLike) -> crate::ConfigResult<()> {
-    // Use the canonical strict runtime schema here instead of maintaining a
-    // second list of OpRef/breadcrumb keys and value types in the migrator.
-    // This also ensures an unknown key is rejected before the file is stamped
-    // current and later becomes unreadable by EnvValue's deny_unknown_fields.
     let mut document = DocumentMut::new();
     for (key, item) in table.iter() {
         document.as_table_mut().insert(key, item.clone());
@@ -541,10 +464,6 @@ where
     Ok(())
 }
 
-/// Stamp `account` onto every op ref inside `table`'s `[env]` and
-/// `[github.env]` sub-tables. An op ref is a table — inline (`KEY = { op
-/// = … }`) or standard (`[env.KEY]`) — with an `op` key; refs already
-/// carrying `account` are left untouched.
 fn stamp_account_in_env(table: &mut toml_edit::Table, acct: &str) {
     stamp_account_in_env_table(table.get_mut("env"), acct);
     if let Some(github) = table
@@ -560,9 +479,6 @@ fn stamp_account_in_env_table(env: Option<&mut toml_edit::Item>, acct: &str) {
         return;
     };
     for (_, value) in env.iter_mut() {
-        // Match both the inline-table form (written by the editor) and the
-        // standard-table form (`[env.KEY]`, as a serde round-trip emits) so
-        // the legacy-config split is stamped the same as a normal migration.
         if let Some(tbl) = value.as_table_like_mut()
             && tbl.contains_key("op")
             && !tbl.contains_key("account")
@@ -572,42 +488,22 @@ fn stamp_account_in_env_table(env: Option<&mut toml_edit::Item>, acct: &str) {
     }
 }
 
-/// Schema version of a jackin-owned configuration file.
-///
-/// Variant order is load-bearing: `Legacy < Kubernetes(_)` lets the migration
-/// walker treat a missing `version` field as the lowest possible value
-/// without sprinkling `Option`-handling across call sites.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SchemaVersion {
-    /// File predates versioning (no `version` key in the document).
     Legacy,
-    /// Kubernetes-style `vN` / `vNalphaM` / `vNbetaM` version.
     Kubernetes(KubernetesVersion),
 }
 
-/// Field order is load-bearing: derived `Ord` compares `major` first, then
-/// `channel`, which gives the expected `v1alpha1 < v1beta1 < v1 < v2alpha1`
-/// ordering.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KubernetesVersion {
-    /// Major API version number (non-zero).
     pub major: NonZeroU32,
-    /// Stability channel and optional sequence.
     pub channel: Channel,
 }
 
-/// Kubernetes channel maturity.
-///
-/// Variant declaration order is load-bearing — `Alpha < Beta < Stable` is
-/// required by the derived `Ord` and pinned by
-/// `channel_order_is_alpha_beta_stable` in this module's tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Channel {
-    /// `vNalphaM` channel with sequence `M`.
     Alpha(NonZeroU32),
-    /// `vNbetaM` channel with sequence `M`.
     Beta(NonZeroU32),
-    /// Stable `vN` (no channel suffix).
     Stable,
 }
 
@@ -630,7 +526,6 @@ impl std::fmt::Display for KubernetesVersion {
     }
 }
 
-/// Migrate a global `config.toml` to the current schema if needed.
 pub fn migrate_config_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
     let _lock = acquire_config_write_lock(path)?;
     migrate_config_file_if_needed_locked(path)
@@ -644,7 +539,6 @@ pub(crate) fn migrate_config_file_if_needed_locked(path: &Path) -> crate::Config
         .map_err(ConfigError::telemetry_owned)
 }
 
-/// Migrate a split workspace file to the current schema if needed.
 pub fn migrate_workspace_file_if_needed(path: &Path) -> crate::ConfigResult<bool> {
     let config_file = config_file_for_workspace_path(path);
     let _lock = acquire_config_write_lock(&config_file)?;
@@ -735,14 +629,6 @@ pub(crate) fn emit_migration_result(
     );
 }
 
-/// Read `path`, run any pending migrations, write the result back atomically.
-///
-/// Returns `Some(old_version)` when a migration ran, `None` when the file
-/// was already at `current_raw`. Emits a governed configuration-operation event
-/// without configuration values or paths. Wrappers
-/// (e.g. `manifest::migrations::migrate_manifest_file`) project the
-/// `SchemaVersion` into display strings for callers that need to print
-/// both ends.
 pub fn migrate_file_if_needed(
     path: &Path,
     label: &str,
@@ -760,10 +646,6 @@ pub fn migrate_file_if_needed(
     )
 }
 
-/// Read and migrate one file without writing it.
-///
-/// The caller can validate and stage several migrated files before committing
-/// any of them, which is required for split configuration migrations.
 pub(crate) fn migrate_file_contents_if_needed(
     path: &Path,
     label: &str,
@@ -782,7 +664,6 @@ pub(crate) fn migrate_file_contents_if_needed(
     Ok((doc.to_string(), migrated_from))
 }
 
-/// Migrate one parsed document without writing it.
 pub(crate) fn migrate_document_if_needed(
     doc: &mut DocumentMut,
     label: &str,
@@ -805,10 +686,6 @@ pub(crate) fn migrate_document_if_needed(
     Ok(Some(old_version))
 }
 
-/// Walk the registry from `old_version` to `current_version`, mutating `doc` in place.
-///
-/// After each step the framework stamps `step.to` into the document —
-/// migration functions transform content; they must not write `version` themselves.
 pub fn apply_migrations(
     doc: &mut DocumentMut,
     old_version: &SchemaVersion,
@@ -855,7 +732,6 @@ fn find_step<'a>(
     Ok(None)
 }
 
-/// Parse a registry `from`/`to` string (`legacy` or Kubernetes-style).
 pub fn parse_registry_version(version: &str) -> crate::ConfigResult<SchemaVersion> {
     if version == LEGACY_VERSION {
         return Ok(SchemaVersion::Legacy);
@@ -863,7 +739,6 @@ pub fn parse_registry_version(version: &str) -> crate::ConfigResult<SchemaVersio
     parse_version(version)
 }
 
-/// Read and parse the document's `version` field (`Legacy` when absent).
 pub fn doc_version(doc: &DocumentMut, label: &str) -> crate::ConfigResult<SchemaVersion> {
     let Some(item) = doc.get("version") else {
         return Ok(SchemaVersion::Legacy);
@@ -876,12 +751,6 @@ pub fn doc_version(doc: &DocumentMut, label: &str) -> crate::ConfigResult<Schema
     Ok(parse_version(version).with_context(|| format!("{label} version is invalid"))?)
 }
 
-// Hand-rolled parser for Kubernetes-style versions (`v1`, `v1betaN`,
-// `v1alphaN`). No canonical Rust crate fits — `semver` parses `MAJOR.MINOR.PATCH`,
-// `kube`/`k8s_openapi` are heavy and pull a runtime, and the grammar here is
-// small enough that adding a dependency is overkill (per AGENTS.md
-// "Prefer libraries over hand-rolled parsers" carve-out).
-/// Parse a Kubernetes-style schema version string (`v1`, `v1alpha2`, …).
 pub fn parse_version(version: &str) -> crate::ConfigResult<SchemaVersion> {
     let rest = version.strip_prefix('v').ok_or_else(|| {
         anyhow::Error::from(ConfigError::msg(format_args!(
@@ -931,9 +800,6 @@ fn parse_sequence(prefix: &str, raw: &str) -> anyhow::Result<NonZeroU32> {
     })
 }
 
-// Reject leading zeros so version strings round-trip canonically. Without
-// this, `v01alpha01` would parse equal to `v1alpha1` but live on disk as the
-// non-canonical form forever (the file is only rewritten when migrating).
 fn parse_canonical_u32(raw: &str, label: &str) -> anyhow::Result<u32> {
     if raw.len() > 1 && raw.starts_with('0') {
         return Err(ConfigError::msg(format_args!("{label} must not have leading zeros")).into());
@@ -950,7 +816,6 @@ fn split_first_nondigit(s: &str) -> Option<(&str, &str)> {
     Some(s.split_at(split))
 }
 
-/// Write `version` and sort the key so `version` appears first.
 pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
     doc["version"] = toml_edit::value(version);
     doc.as_table_mut().sort_values_by(|left, _, right, _| {
@@ -962,21 +827,10 @@ pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
     });
 }
 
-// Stamp-only registry slot for transitions whose only delta is `version`.
-// `apply_migrations` writes `step.to` to the document after each step, so
-// these migrations are pure no-ops; content-changing migrations replace
-// this with their own fn.
-/// No-op content transform; the framework still stamps `step.to` as `version`.
 pub const fn noop_migration(_doc: &mut DocumentMut) -> crate::ConfigResult<()> {
     Ok(())
 }
 
-/// Walk a `MigrationStep` slice from `Legacy` to `current_raw` and assert the chain is correct.
-///
-/// Catches typos in `from` / `to`, missing middle steps, backward steps,
-/// cycles, and duplicate `from` values (which would silently fork the walker).
-/// Production registries call this from a unit test so a registry mistake
-/// fails CI rather than surfacing on an operator's machine.
 #[expect(
     clippy::expect_used,
     clippy::panic,
@@ -1015,9 +869,6 @@ pub fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
         assert!(steps_taken <= migrations.len(), "registry has a cycle");
     }
     assert_eq!(cursor, current, "registry does not reach {current_raw}");
-    // Catches orphaned entries past `current` — e.g. a step left behind
-    // after `CURRENT_*_VERSION` was rolled back, which would silently extend
-    // the chain when current is bumped again.
     assert_eq!(
         steps_taken,
         migrations.len(),

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Owned multiplexer subsystem state: clients, clipboard, watches, render.
 
 use std::collections::HashMap;
 
@@ -37,7 +36,6 @@ use crate::usage::UsageCache;
 
 use super::{ClipboardImageInsertMode, PendingExecReply};
 
-/// Single active attach client + terminal identity.
 pub(crate) struct ClientRegistry {
     pub(crate) client: crate::client_writer::ClientWriter,
     pub(crate) attached_task: Option<tokio::task::JoinHandle<()>>,
@@ -55,12 +53,10 @@ impl ClientRegistry {
     }
 }
 
-/// Status bar chrome.
 pub(crate) struct StatusState {
     pub(crate) status_bar: StatusBar,
 }
 
-/// Text selection + clipboard image paste state.
 pub(crate) struct ClipboardState {
     pub(crate) selection: Option<SelectionState>,
     pub(crate) pending_selection: Option<SelectionState>,
@@ -81,7 +77,6 @@ pub(crate) struct PendingAttachControl {
     pub(crate) operation: Option<jackin_telemetry::operation::OperationGuard>,
 }
 
-/// Git branch + PR watch cache.
 pub(crate) struct PrWatch {
     pub(crate) pull_request_context_branch: Option<BranchName>,
     pub(crate) pull_request_context_head: Option<Oid>,
@@ -91,7 +86,6 @@ pub(crate) struct PrWatch {
     pub(crate) pull_request_context_cache: HashMap<BranchName, PullRequestContextCacheEntry>,
 }
 
-/// Usage/quota cache and token monitor.
 pub(crate) struct UsageState {
     pub(crate) usage_cache: UsageCache,
     pub(crate) token_monitor: TokenMonitor,
@@ -107,7 +101,6 @@ pub(crate) struct BrokerUsageRefresh {
     >,
 }
 
-/// Dialog stack, control replies, session event channel.
 pub(crate) struct ControlRouting {
     pub(crate) dialog_stack: Vec<Dialog>,
     pub(crate) pending_exec_reply: Option<PendingExecReply>,
@@ -115,8 +108,6 @@ pub(crate) struct ControlRouting {
     pub(crate) input_parser: InputParser,
     pub(crate) event_tx: mpsc::UnboundedSender<SessionEvent>,
     pub(crate) event_rx: mpsc::UnboundedReceiver<SessionEvent>,
-    /// Open `events` subscriptions. Empty in the common case (no host client
-    /// listening), which is what keeps the emit sites free.
     pub(crate) event_subscribers: super::events::EventSubscribers,
 }
 
@@ -126,7 +117,6 @@ impl ControlRouting {
     }
 }
 
-/// Terminal geometry, frame generation, compositor caches.
 pub(crate) struct RenderState {
     pub(crate) term_rows: u16,
     pub(crate) term_cols: u16,
@@ -146,7 +136,6 @@ pub(crate) struct RenderState {
     pub(crate) terminal_row_arena: termpane::RowArena,
 }
 
-/// Static launch configuration at daemon construction.
 pub(crate) struct LaunchEnv {
     pub(crate) available_instances: Vec<String>,
     pub(crate) launch_config: CapsuleConfig,
@@ -156,12 +145,6 @@ pub(crate) struct LaunchEnv {
     pub(crate) workdir_context: WorkdirContext,
 }
 
-/// Three book-keeping fields for a background context lookup. They
-/// MUST move together: `begin_spawn` bumps `request_id`, stamps
-/// `last_run`, and flips `in_flight`; `invalidate_in_flight` bumps
-/// `request_id` and clears `in_flight`. Open-coding any subset
-/// re-opens the race where a stale response carrying an old
-/// `request_id` overwrites a fresh branch's cache slot.
 #[derive(Default)]
 pub(crate) struct LookupState {
     pub(crate) request_id: u64,
@@ -170,10 +153,6 @@ pub(crate) struct LookupState {
 }
 
 impl LookupState {
-    /// Atomic spawn-state transition: bump `request_id`, stamp
-    /// `last_run`, set `in_flight=true`. The three fields move together
-    /// or not at all; open-coding any subset is the symmetric-variant
-    /// drift this struct exists to prevent.
     pub(crate) fn begin_spawn(&mut self, now: Instant) -> u64 {
         self.request_id = self.request_id.wrapping_add(1);
         self.last_run = Some(now);
@@ -181,9 +160,6 @@ impl LookupState {
         self.request_id
     }
 
-    /// Invalidate any in-flight worker without consuming the spawn slot.
-    /// Used on branch flips so a stale response carrying the old
-    /// `request_id` fails the equality guard in the apply path.
     pub(crate) fn invalidate_in_flight(&mut self) {
         self.request_id = self.request_id.wrapping_add(1);
         self.in_flight = false;

@@ -22,10 +22,8 @@ type JobLogs = Arc<Mutex<BTreeMap<u64, Vec<u8>>>>;
 
 #[derive(Args, Debug)]
 pub(crate) struct CiAuditArgs {
-    /// Fail when a warm run emits dependency, build, tool, cache, compiler, product, or report markers.
     #[arg(long)]
     expect_clean: bool,
-    /// Human-readable workflow label used in the step summary.
     #[arg(long, default_value = "CI")]
     workflow_label: String,
     #[arg(long)]

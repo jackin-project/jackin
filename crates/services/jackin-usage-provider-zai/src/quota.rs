@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Z.AI` quota response types and plan windows.
 
 use jackin_protocol::control::{QuotaBucketView, StatusSlot};
 use jackin_usage_provider_core::with_status_slot;
@@ -27,9 +26,6 @@ pub struct ZaiQuotaData {
         alias = "packageName"
     )]
     pub plan_name: Option<String>,
-    // Separate field, not another `plan_name` alias: serde raises a
-    // duplicate-field error if two aliased keys co-occur, which would fail
-    // the whole parse when a response carries both `planName` and `level`.
     pub level: Option<String>,
 }
 
@@ -122,9 +118,6 @@ impl ZaiLimitRaw {
         })
     }
 
-    /// Window length in minutes from the `(unit, number)` period pair:
-    /// `1` = day, `3` = hour, `5` = minute, `6` = week. Unknown unit codes
-    /// yield no window (never a guessed duration).
     pub fn window_minutes(&self) -> Option<i64> {
         let number = self.number?;
         if number <= 0 {
@@ -139,11 +132,6 @@ impl ZaiLimitRaw {
         }
     }
 
-    /// `TIME_LIMIT` covers both short tool/MCP quotas and the monthly
-    /// web-search count; the window tells them apart. The ≥28d `Web search`
-    /// split is a window-size heuristic with a known residual risk: a 28d+
-    /// MCP window would mislabel. No sharper signal exists in the quota
-    /// payload, so the guess stays, documented.
     pub fn time_label(&self) -> &'static str {
         if self
             .window_minutes()

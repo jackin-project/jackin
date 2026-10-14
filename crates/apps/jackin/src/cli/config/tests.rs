@@ -1,18 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `config`.
 use super::super::{Cli, Command};
 use super::*;
 use clap::Parser;
 
-/// Strip ANSI escape sequences for clean test assertions.
 fn strip_ansi(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars();
     while let Some(ch) = chars.next() {
         if ch == '\x1b' {
-            // Skip until 'm' (SGR) or other terminator
             for inner in chars.by_ref() {
                 if inner.is_ascii_alphabetic() {
                     break;
@@ -120,15 +117,11 @@ fn parses_config_trust_list() {
     ));
 }
 
-// ── help subcommand disabled ────────────────────────────────────────
-
 #[test]
 fn config_mount_rejects_help_subcommand() {
     let err = Cli::try_parse_from(["jackin", "config", "mount", "help"]).unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
 }
-
-// ── Config mount help ───────────────────────────────────────────────
 
 #[test]
 fn config_mount_add_help_shows_examples() {
@@ -144,5 +137,3 @@ fn config_mount_remove_help_shows_examples() {
     assert!(help.contains("Examples:"));
     assert!(help.contains("jackin config mount remove gradle-cache"));
 }
-
-// ── Config auth help ─────────────────────────────────────────────────

@@ -12,8 +12,6 @@ publish = false
 
 [features]
 default = []
-# Plan 009 spike: allow a flagged Codex app-server authority prototype without
-# changing the default Codex hook reporter path.
 codex-app-server-authority = []
 
 [dependencies]

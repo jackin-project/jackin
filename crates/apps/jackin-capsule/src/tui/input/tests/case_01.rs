@@ -11,16 +11,12 @@ fn ctrl_backslash_opens_palette_by_default() {
 
 #[test]
 fn ctrl_q_requests_exit() {
-    // Ctrl+Q (0x11) is the global quit chord — intercepted, not forwarded.
     let events = parse_all_default(b"\x11");
     assert_eq!(events, vec![InputEvent::RequestExit]);
 }
 
 #[test]
 fn csi_u_ctrl_backslash_opens_palette_by_default() {
-    // Two encodings: `\x1b[92;5u` (codepoint=92='\\', Ctrl modifier) and the
-    // legacy bare-codepoint form `\x1b[28u` (codepoint=0x1C=Ctrl+\). Both must
-    // reach the same palette-open action.
     let events = parse_all_default(b"\x1b[92;5u");
     assert_eq!(events, vec![InputEvent::OpenPalette]);
     let events = parse_all_default(b"\x1b[28u");
@@ -47,17 +43,12 @@ fn csi_u_lowercase_ctrl_converts_to_control_byte() {
 
 #[test]
 fn csi_u_no_ctrl_modifier_returns_none() {
-    // Shift-only (modifier=2) must not produce a control byte.
     assert_eq!(csi_u_control_byte(u32::from(b'a'), Some(2)), None);
-    // No modifier at all must not produce a control byte.
     assert_eq!(csi_u_control_byte(u32::from(b'a'), None), None);
 }
 
 #[test]
 fn csi_u_uppercase_ctrl_converts_to_control_byte() {
-    // Terminals in CSI-u mode encode Ctrl+A (uppercase) as codepoint=65, modifier=5.
-    // `csi_u_control_byte` must map that to 0x01 so it can be dispatched against
-    // the global keymap — same logic applies to the full A-Z range.
     assert_eq!(csi_u_control_byte(u32::from(b'A'), Some(5)), Some(0x01));
     assert_eq!(csi_u_control_byte(u32::from(b'Z'), Some(5)), Some(0x1A));
 }
@@ -72,9 +63,6 @@ fn csi_u_special_chars_ctrl_convert_to_control_bytes() {
 
 #[test]
 fn csi_u_unbound_ctrl_byte_falls_through_as_data() {
-    // Ctrl+] (0x1D) is not the palette key and not in the global keymap.
-    // `dispatch_control_byte` returns None → classify_csi returns None →
-    // the raw bytes are forwarded verbatim as Data.
     let events = parse_all_default(b"\x1b[93;5u");
     match &events[..] {
         [InputEvent::Data(_)] => {}
@@ -92,8 +80,6 @@ fn xterm_modify_other_keys_global_shortcuts_are_intercepted() {
 
 #[test]
 fn lone_lf_passes_through_with_default_palette_key() {
-    // Bracketed paste / multi-line input continuation must reach
-    // the PTY as `\n` under the default palette binding.
     let events = parse_all_default(b"\n");
     assert_eq!(events, vec![InputEvent::Data(b"\n".to_vec())]);
 }
@@ -106,7 +92,6 @@ fn palette_key_disabled_lets_ctrl_backslash_through() {
 
 #[test]
 fn pasted_text_with_palette_key_does_not_open_palette() {
-    // Bracketed paste protects the palette byte inside paste content.
     let mut parser = InputParser::default();
     let events = parser.parse(b"\x1b[200~hello\x1cworld\x1c\x1b[201~");
     let opens = events
@@ -193,7 +178,6 @@ fn arrow_key_csi_passes_through() {
 
 #[test]
 fn shift_enter_csi_u_round_trips() {
-    // CSI-u extended-keys encoding: `\x1b[13;2u` = Shift+Enter.
     let events = parse_all_default(b"\x1b[13;2u");
     match &events[..] {
         [InputEvent::Data(b)] => assert_eq!(b, b"\x1b[13;2u"),
@@ -203,9 +187,6 @@ fn shift_enter_csi_u_round_trips() {
 
 #[test]
 fn shift_enter_xterm_modify_other_keys_normalises_to_csi_u() {
-    // Ghostty emits xterm modifyOtherKeys before CSI-u/kitty mode
-    // is active: `CSI 27 ; 2 ; 13 ~` = Shift+Enter. Codex expects
-    // the CSI-u form for multiline input.
     let events = parse_all_default(b"\x1b[27;2;13~");
     assert_eq!(events, vec![InputEvent::Data(b"\x1b[13;2u".to_vec())]);
 }
@@ -256,11 +237,6 @@ fn kitty_printable_release_is_suppressed() {
 
 #[test]
 fn kitty_arrow_press_normalises_to_legacy_form() {
-    // Kitty progressive-enhancement arrow Down press, no modifier:
-    // `\x1b[1;1:1B`. The dialog navigator only recognises the
-    // legacy `\x1b[B`, so the parser must rewrite the kitty form
-    // before the byte sequence reaches Dialog::handle_key — every
-    // other arrow direction follows the same rule.
     let events = parse_all_default(b"\x1b[1;1:1B");
     assert_eq!(events, vec![InputEvent::Data(b"\x1b[B".to_vec())]);
     let events = parse_all_default(b"\x1b[1;1:1A");
@@ -273,20 +249,12 @@ fn kitty_arrow_press_normalises_to_legacy_form() {
 
 #[test]
 fn kitty_arrow_repeat_is_treated_as_press() {
-    // Event tag 2 (repeat) must reach the dialog / agent so a
-    // held-down arrow continues scrolling instead of stalling
-    // after the first emit.
     let events = parse_all_default(b"\x1b[1;1:2B");
     assert_eq!(events, vec![InputEvent::Data(b"\x1b[B".to_vec())]);
 }
 
 #[test]
 fn kitty_arrow_release_is_suppressed() {
-    // Event tag 3 (release) must not surface as a Data event.
-    // Forwarding it surfaces as a stray `\x1b[1;1:3B` visible at
-    // the agent's prompt and confuses TUIs that key off press
-    // events. Both the dialog and the agent only ever care about
-    // press / repeat.
     let events = parse_all_default(b"\x1b[1;1:3B");
     assert!(
         events.is_empty(),
@@ -298,10 +266,6 @@ fn kitty_arrow_release_is_suppressed() {
 
 #[test]
 fn kitty_alt_shift_arrow_is_resize_pane() {
-    // Alt-Shift-Arrow stays a multiplexer-level pane-resize gesture
-    // even when the outer terminal is in kitty mode — the event
-    // tag is parsed, the press is acted on, the release is
-    // suppressed (same shape as the no-modifier case above).
     let events = parse_all_default(b"\x1b[1;4:1B");
     assert_eq!(events, vec![InputEvent::ResizePane(ArrowDir::Down)]);
     let events = parse_all_default(b"\x1b[1;4:3B");
@@ -313,9 +277,6 @@ fn kitty_alt_shift_arrow_is_resize_pane() {
 
 #[test]
 fn legacy_xterm_modifier_arrow_still_round_trips() {
-    // Encoding without an event tag stays untouched — agents that
-    // consume the legacy modifier form (Ctrl+Arrow word nav etc.)
-    // continue to receive it byte-for-byte.
     let events = parse_all_default(b"\x1b[1;5A");
     match &events[..] {
         [InputEvent::Data(b)] => assert_eq!(b, b"\x1b[1;5A"),
@@ -374,18 +335,10 @@ fn sgr_mouse_press_is_decoded() {
 
 #[test]
 fn unterminated_csi_does_not_grow_unbounded() {
-    // Stateful parser must drop an in-progress CSI/OSC/OtherEsc
-    // sequence when it exceeds MAX_ESC_SEQ_LEN — otherwise a
-    // peer streaming `\x1b[` followed by megabytes of parameter
-    // bytes across many parse() calls grows self.seq forever.
     let mut parser = InputParser::default();
-    // Open the CSI parameter run.
     parser.parse(b"\x1b[");
-    // Feed enough parameter bytes (no final 0x40..=0x7E) to overflow.
     let junk = vec![b';'; MAX_ESC_SEQ_LEN + 256];
     parser.parse(&junk);
-    // After the cap fires the parser resets; a well-formed
-    // sequence right after must classify cleanly.
     let events = parser.parse(b"\x1b[A");
     assert_eq!(events, vec![InputEvent::Data(b"\x1b[A".to_vec())]);
 }

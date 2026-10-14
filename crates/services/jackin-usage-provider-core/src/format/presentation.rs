@@ -1,26 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage bucket and detail presentation.
 
-/// Rust-owned, limits-only presentation of one quota bucket. Shared by the
-/// Capsule usage dialog and every native Desktop surface so semantic segment
-/// choice and order live in Rust, never in Swift or a per-surface copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageBucketPresentation {
-    /// Provider percentage text (segment 0), when the bucket has one.
     pub remaining_label: Option<String>,
-    /// Complete semantic segments in display order (a Rust pace composite is
-    /// flattened onto the canonical `" · "` separator).
     pub display_segments: Vec<String>,
-    /// `display_segments` joined with the canonical `" · "` separator.
     pub display_label: String,
-    /// Percentage usable only as presentation geometry (meter fill): remaining
-    /// on every slot, including Spend, so all capsule meters agree with the
-    /// console windows. The Spend *text* still reads used (`{n}% used`).
     pub meter_percent: Option<u8>,
 }
 
-/// Stable human status label for a snapshot status (limits-only; no price).
 #[must_use]
 pub fn usage_display_status_label(
     status: jackin_protocol::control::UsageSnapshotStatus,
@@ -37,9 +25,6 @@ pub fn usage_display_status_label(
     }
 }
 
-/// Build the one provider/account/activity identity block consumed by Capsule
-/// and native Desktop surfaces. All visible copy is complete before crossing
-/// the FFI boundary.
 #[must_use]
 pub fn usage_identity_presentation(
     provider_title: &str,
@@ -105,9 +90,6 @@ pub(crate) fn usage_money_cap_segment(
     }
 }
 
-/// Build the shared limits-only presentation for one quota bucket. The segment
-/// choice/order matches the Capsule usage dialog exactly; the Capsule meter is
-/// prepended by the caller from [`UsageBucketPresentation::meter_percent`].
 #[must_use]
 pub fn usage_bucket_presentation(
     bucket: &jackin_protocol::control::QuotaBucketView,
@@ -120,10 +102,6 @@ pub fn usage_bucket_presentation(
 
     if bucket.status_slot == Some(StatusSlot::Spend) {
         if let Some(remaining) = bucket.remaining_percent {
-            // A remaining percent saturates at zero, so money over-100%
-            // overage is invisible to it; the structured money ratio recovers
-            // the raw magnitude through the same checked rule the projection
-            // uses, keeping both surfaces on one "{raw}% used" text.
             let money_raw = bucket
                 .used_money
                 .as_ref()
@@ -179,10 +157,6 @@ pub fn usage_bucket_presentation(
         {
             segments.push(limit.clone());
         }
-        // Balance-only quota (no percent, pace, reset, or money) surfaces its
-        // limit label as the primary segment — the generic seam Grok's prepaid
-        // balance consumes (plan 003). Buckets with any other segment are
-        // unaffected, so existing Capsule output stays byte-identical.
         if segments.is_empty()
             && let Some(limit) = &bucket.limit_label
         {
@@ -193,8 +167,6 @@ pub fn usage_bucket_presentation(
         }
     }
 
-    // Flatten a Rust pace composite (e.g. `"13% in deficit · Runs out in 2d"`)
-    // onto the canonical separator so every segment is atomic.
     let display_segments: Vec<String> = segments
         .iter()
         .flat_map(|segment| segment.split(" · ").map(str::to_owned))
@@ -208,7 +180,6 @@ pub fn usage_bucket_presentation(
     }
 }
 
-/// One leading-only metadata line plus its `display_label`.
 pub(crate) fn metadata_row(
     row_id: &str,
     label: &str,
@@ -228,14 +199,6 @@ pub(crate) fn metadata_row(
     }
 }
 
-/// Build the single Rust-owned provider-detail card shared by the Capsule usage
-/// dialog and the native Desktop Usage window. Identity, activity, and ordinary
-/// freshness live in the separate identity presentation. This card emits only
-/// distinct `username`/`plan`/`auth`, one `bucket:<zero-based index>` per source bucket
-/// (so duplicate provider labels stay distinct), then optional `detail`
-/// (`last_error`, appended after the last-good bucket rows — errors never
-/// replace data). Every visible string is produced here; consumers render the
-/// rows mechanically.
 #[must_use]
 pub fn usage_detail_presentation(
     view: &jackin_protocol::control::FocusedUsageView,
@@ -257,11 +220,6 @@ pub fn usage_detail_presentation(
 
     for (index, bucket) in view.buckets.iter().enumerate() {
         let presentation = usage_bucket_presentation(bucket);
-        // Canonical semantic order is already flattened in `display_segments`
-        // (remaining, pace/run-out, reset, quota-bound/status). The reset
-        // segment moves to the trailing column so the window can right-align it;
-        // every other segment is a leading line. Order — and therefore the
-        // joined `display_label` — is preserved either way.
         let layout_lines: Vec<UsagePresentationLine> = presentation
             .display_segments
             .iter()

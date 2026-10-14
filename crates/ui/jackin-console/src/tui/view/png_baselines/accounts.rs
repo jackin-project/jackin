@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Account-management baseline builders.
 #![cfg(test)]
 
 use super::*;
@@ -140,5 +139,3 @@ pub(crate) fn account_picker() -> (ManagerState<'static>, AppConfig, PathBuf) {
     ));
     (state, config, cwd)
 }
-
-// ── Inventory ──────────────────────────────────────────────────────────────

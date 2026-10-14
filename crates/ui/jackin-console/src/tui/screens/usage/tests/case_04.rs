@@ -7,10 +7,6 @@ use super::*;
 fn meter_color_grades_by_canonical_quota_state_not_percent() {
     use ratatui::style::Color;
 
-    // Exhaustion and failure read red, warnings amber, everything else the
-    // neutral default — regardless of the bar's fill percent. The Capsule
-    // accent reads the same API severity the projection maps into these
-    // states, so both surfaces agree (S4/S5 parity).
     assert_eq!(
         meter_style(UsageQuotaStateV1::Exhausted).fg,
         Some(Color::Red)
@@ -39,9 +35,6 @@ fn meter_color_grades_by_canonical_quota_state_not_percent() {
 
 #[test]
 fn window_group_summary_uses_left_like_windows_and_capsule() {
-    // "73% left" matches the principal-window value labels and the Capsule
-    // bucket presentation; a third word ("remaining") for the same meaning
-    // would break cross-surface label parity (S4/S5).
     let group = UsageMetricGroup {
         group_id: "g".to_owned(),
         rank: 0,
@@ -222,14 +215,12 @@ fn sort_filter_keys_cycle_reanchor_and_render_state() {
     press_key(&mut manager, KeyCode::Char('s'));
     let screen = manager.usage.screen.as_ref().unwrap();
     assert_eq!(screen.sort, UsageSort::Remaining);
-    // Selection follows the account by stable id: lowest remaining first.
     assert_eq!(screen.selected, 1);
     assert_eq!(screen.selected_id, Some("openai:a".to_owned()));
 
     press_key(&mut manager, KeyCode::Char('f'));
     let screen = manager.usage.screen.as_ref().unwrap();
     assert_eq!(screen.filter, UsageFilter::Issues);
-    // Neither account has issues: selection parks on Overview, id kept.
     assert_eq!(screen.selected, 0);
     assert_eq!(screen.selected_id, Some("openai:a".to_owned()));
 
@@ -275,7 +266,6 @@ fn capacity_finder_selects_most_constrained_with_reset_tiebreak() {
     assert_eq!(state.selected, 2);
     assert_eq!(state.selected_id, Some("anthropic:b".to_owned()));
 
-    // An exhausted account beats every partial one.
     state.accounts[2].windows = vec![test_window("w", Some(0))];
     assert_eq!(state.most_constrained_selected(), Some(3));
 }

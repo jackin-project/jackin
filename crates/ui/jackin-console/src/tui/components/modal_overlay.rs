@@ -1,18 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Modal geometry and dismiss policy re-hosted on upstream `OverlayStack` /
-//! `DismissPolicy` (plan 009 step 4).
-//!
-//! Every console modal resolves as a centered overlay entry: the entry
-//! carries the kind, placement policy, and per-variant Esc/outside dismiss
-//! pair, and the painted rect is the stack-resolved placement. Per-variant
-//! preferred sizes stay product-owned (they encode jackin❯ dialog content);
-//! the retired `ModalRectSpec`/`ModalRectMode` registry hand-computed the
-//! same centered rects. The stack is one-shot per call: `ModalChain` stays
-//! the canonical open/close bookkeeping, so no persistent `OverlayStack`
-//! mirrors it.
-
 use ratatui::layout::Rect;
 use termrock::interaction::{
     BackdropPolicy, DismissAction, DismissPolicy, LayerDismissPolicy, NarrowFallback, OverlayId,
@@ -121,15 +109,9 @@ impl ModalContainerInfoState
     }
 }
 
-/// Placement policy every console modal shares: centered, no narrow
-/// threshold (the retired specs only ever clamped), dim backdrop (what
-/// `render_modal_backdrop` paints), input-owning, wheel-capturing.
-/// `escape` is the per-variant half — see [`console_modal_dismiss_policy`].
 pub const fn console_modal_policy(escape: DismissAction) -> OverlayPolicy {
     OverlayPolicy {
         esc: escape.to_layer(),
-        // Outside clicks are inert while any modal is open (ch06 row 13):
-        // nothing dismisses, nothing reaches the background.
         outside: LayerDismissPolicy::Trap,
         owns_input: true,
         focus_trap: true,
@@ -138,20 +120,10 @@ pub const fn console_modal_policy(escape: DismissAction) -> OverlayPolicy {
         prefer: PlacementPrefer::Center,
         cover_anchor: false,
         narrow_fallback: NarrowFallback::Clamp,
-        // 0 disables the narrow fallback: the retired specs had no narrow
-        // threshold, only the clamp.
         narrow_cols: 0,
     }
 }
 
-/// Full per-variant dismiss table, derived from current behavior (never
-/// from upstream presets): `escape` is the variant-specific half
-/// (`Dismiss` when the modal's own keymap maps Esc straight to cancel;
-/// `Bubble` where the component consumes Esc for internal back-navigation
-/// first — file browser above its root, op-picker sub-stages — so cancel
-/// is the component's outcome, not the layer's). The rest is uniform:
-/// outside clicks are inert, focus cannot leave an open modal, chain clear
-/// cascades, explicit actions close.
 pub const fn console_modal_dismiss_policy(escape: DismissAction) -> DismissPolicy {
     DismissPolicy {
         escape,
@@ -162,9 +134,6 @@ pub const fn console_modal_dismiss_policy(escape: DismissAction) -> DismissPolic
     }
 }
 
-/// Preferred size from a percent of the 160-column reference terminal,
-/// shrunk only when `outer` cannot fit it with a four-column side margin —
-/// the retired `centered_rect_fixed` rule, kept byte-identical.
 #[must_use]
 pub fn fixed_dialog_size(outer: Rect, width_pct: u16, rows: u16) -> OverlaySize {
     const REFERENCE_COLS: u16 = 160;
@@ -172,7 +141,6 @@ pub fn fixed_dialog_size(outer: Rect, width_pct: u16, rows: u16) -> OverlaySize 
     exact_dialog_size(outer, preferred.min(outer.width.saturating_sub(4)), rows)
 }
 
-/// Exact preferred size, clamped into `outer` only (the mount-choice rule).
 #[must_use]
 pub fn exact_dialog_size(outer: Rect, width: u16, height: u16) -> OverlaySize {
     OverlaySize {
@@ -185,9 +153,6 @@ pub fn exact_dialog_size(outer: Rect, width: u16, height: u16) -> OverlaySize {
     }
 }
 
-/// Resolve a centered modal rect through a one-shot `OverlayStack`: the
-/// entry carries kind/policy/dismiss data and the returned rect is the
-/// stack-resolved placement.
 #[must_use]
 pub fn modal_overlay_rect(
     outer: Rect,
@@ -211,8 +176,6 @@ pub fn modal_overlay_rect(
     stack.top().map_or_else(Rect::default, |entry| entry.rect)
 }
 
-/// File-browser modal rect (mouse-lane hit tests; Esc bubbles for in-modal
-/// back-navigation).
 #[must_use]
 pub fn file_browser_overlay_rect(outer: Rect) -> Rect {
     modal_overlay_rect(
@@ -223,7 +186,6 @@ pub fn file_browser_overlay_rect(outer: Rect) -> Rect {
     )
 }
 
-/// Role-picker modal rect for `filtered_len` rows (mouse-lane hit tests).
 #[must_use]
 pub fn role_picker_overlay_rect(outer: Rect, filtered_len: usize) -> Rect {
     let rows = (filtered_len as u16).saturating_add(6).min(15);
@@ -235,8 +197,6 @@ pub fn role_picker_overlay_rect(outer: Rect, filtered_len: usize) -> Rect {
     )
 }
 
-/// Op-picker modal rect (mouse-lane hit tests; Esc bubbles for in-modal
-/// back-navigation).
 #[must_use]
 pub fn op_picker_overlay_rect(outer: Rect) -> Rect {
     modal_overlay_rect(

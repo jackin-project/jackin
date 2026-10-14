@@ -12,10 +12,6 @@ pub const AUTHORITY_TTL: Duration = Duration::from_secs(30);
 pub const OSC_SHELL_TTL: Duration = AUTHORITY_TTL;
 pub const WATCHDOG_QUIET: Duration = Duration::from_secs(10);
 pub const IDLE_CONFIRMATIONS: u8 = 3;
-/// Wall-clock cap on the inferred working→idle hold. A stuck confirmation loop
-/// (state oscillating so the count never reaches `IDLE_CONFIRMATIONS`) must not
-/// pin a stale `working` indefinitely; after this long the idle candidate is
-/// released regardless of count. (Herdr-validated bound.)
 pub const IDLE_HOLD_CAP: Duration = Duration::from_millis(700);
 pub const CPU_SAMPLE_WINDOW: Duration = Duration::from_secs(2);
 
@@ -23,7 +19,6 @@ pub const CPU_SAMPLE_WINDOW: Duration = Duration::from_secs(2);
 pub struct PendingTransition {
     pub candidate: Option<AgentState>,
     pub confirmations: u8,
-    /// When the current inferred-idle hold began. Used to enforce `IDLE_HOLD_CAP`.
     pub started_at: Option<Instant>,
 }
 
@@ -35,8 +30,6 @@ pub fn debounce(
 ) -> Option<AgentState> {
     let next = public_state_for_raw(prev_public, candidate.raw_state);
     match next {
-        // Blocked, working, exit, and positively-matched (Strong) idle publish
-        // immediately. Strong idle clears any pending inferred-idle hold.
         AgentState::Blocked | AgentState::Working | AgentState::Unknown => {
             clear_pending(pending);
             publish_if_changed(prev_public, next)
@@ -47,9 +40,6 @@ pub fn debounce(
             clear_pending(pending);
             publish_if_changed(prev_public, next)
         }
-        // Inferred idle (absence of working chrome): require IDLE_CONFIRMATIONS
-        // consecutive evaluations AND no OSC progress active AND CPU-quiet, with
-        // a wall-clock cap so a never-confirming loop cannot pin stale working.
         AgentState::Idle | AgentState::Done => {
             if candidate.osc_progress_active || candidate.cpu_jiffies_delta > 0 {
                 clear_pending(pending);
@@ -92,11 +82,6 @@ pub fn apply_watchdog(mut candidate: EvidenceSummary, now: Instant) -> EvidenceS
     {
         return candidate;
     }
-    // Linux-gate: the watchdog demotes "working with no physical activity", so it
-    // may only fire when `/proc` physics was actually sampled. When physics is
-    // unavailable (non-Linux, or the agent PID is unknown), a zero CPU/child
-    // count means "no evidence", not "quiet" — demoting then would turn every
-    // real working state into Unknown on the developer's own machine.
     if !candidate.physics_sampled {
         return candidate;
     }
@@ -112,8 +97,6 @@ pub fn apply_watchdog(mut candidate: EvidenceSummary, now: Instant) -> EvidenceS
     candidate.raw_state = RawAgentState::Unknown;
     candidate.confidence = AgentStatusConfidence::Unknown;
     candidate.winner = EvidenceWinner::Unknown;
-    // The early return above guarantees `notes` did not already carry
-    // WatchdogDemoted, and nothing since added it, so this push is unconditional.
     candidate.notes.push(EvidenceNote::WatchdogDemoted);
     candidate
 }

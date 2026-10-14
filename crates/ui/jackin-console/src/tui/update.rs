@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Top-level console TUI update helpers.
 mod confirm_plans;
 mod modal_enums;
 mod modal_plans;

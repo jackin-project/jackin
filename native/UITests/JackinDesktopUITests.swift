@@ -31,8 +31,6 @@ final class JackinDesktopUITests: XCTestCase {
         XCTAssertEqual(brandTitle.label, "jackin❯ desktop")
         let detailPane = element("usage.detail-pane")
         XCTAssertTrue(detailPane.waitForExistence(timeout: 5))
-        // The wordmark belongs to the unified titlebar, so it stays centered in the
-        // whole window even when the native sidebar changes the detail pane midpoint.
         XCTAssertEqual(brandTitle.frame.midX, usageWindow.frame.midX, accuracy: 2)
         let refresh = element("usage.refresh")
         XCTAssertTrue(refresh.waitForExistence(timeout: 5))
@@ -354,8 +352,6 @@ final class JackinDesktopUITests: XCTestCase {
         XCTAssertTrue(controlsReady, application.debugDescription)
         guard controlsReady else { return }
         XCTAssertTrue(scroll(lastLimit, intoViewThrough: provider))
-        // macOS wheel synthesis can return activation to the XCTest runner.
-        // Re-enter the app before proving that scrolling did not move fixed footer controls.
         application.activate()
         XCTAssertTrue(lastLimit.waitForHittable(timeout: 3))
         XCTAssertTrue(refresh.waitForHittable(timeout: 3))
@@ -473,8 +469,6 @@ final class JackinDesktopUITests: XCTestCase {
         XCTAssertTrue(overview.waitForExistence(timeout: 5))
         XCTAssertEqual(overview.label, "Usage overview")
         XCTAssertEqual(element("usage.sidebar").label, "Usage providers sidebar")
-        // Heal pre-audit interference (closed window, switched selection):
-        // re-present until settled overview content verifies, then audit once.
         var snapshot: UsageAuditSnapshot?
         for _ in 0..<3 {
             guard ensureUsageWindowVisible(contentIdentifier: "usage.overview.table") else {
@@ -502,9 +496,6 @@ final class JackinDesktopUITests: XCTestCase {
     }
 
     private func overviewAuditSnapshot(overview: XCUIElement) -> UsageAuditSnapshot {
-        // Every property read is exists-guarded: a failed healing-loop
-        // attempt must stay silent, since any recorded failure fails the test
-        // even when a later attempt verifies.
         let refresh = element("usage.refresh")
         let badge = element("usage.fixture-badge")
         let overviewLabel = overview.exists ? overview.label : nil
@@ -587,8 +578,6 @@ final class JackinDesktopUITests: XCTestCase {
         }
         application.launchArguments = arguments
         application.launch()
-        // Each test uses a new regular-policy fixture process. Activate it before querying the
-        // retained Usage window so XCTest does not keep the replacement process disabled.
         application.activate()
         var opened = application.windows["usage-window"].waitForExistence(timeout: 8)
         if !opened {
@@ -602,8 +591,6 @@ final class JackinDesktopUITests: XCTestCase {
         }
         XCTAssertTrue(opened, application.debugDescription)
         guard opened else { return false }
-        // Match popover launches: XCTest can retain activation between per-test app
-        // processes, leaving otherwise visible native window controls disabled.
         application.activate()
         return true
     }
@@ -628,8 +615,6 @@ final class JackinDesktopUITests: XCTestCase {
         }
         XCTAssertTrue(opened, application.debugDescription)
         guard opened else { return false }
-        // The UI-test runner can retain activation between per-test launches even after the real
-        // NSPopover appears, causing the first synthesized click to target stale focus.
         application.activate()
         return true
     }
@@ -645,12 +630,9 @@ final class JackinDesktopUITests: XCTestCase {
         for _ in 0..<8 {
             if target.isHittable { return true }
             guard container.waitForHittable(timeout: 3) else {
-                // Another app may have stolen focus mid-test; re-activate and retry
-                // instead of failing immediately.
                 application.activate()
                 continue
             }
-            // Moderate wheel deltas avoid AppKit coalescing or discarding one giant event.
             container.scroll(byDeltaX: 0, deltaY: -1_200)
         }
         return target.waitForHittable(timeout: 3)
@@ -698,9 +680,6 @@ final class JackinDesktopUITests: XCTestCase {
     private func ensureUsageWindowVisible(contentIdentifier: String? = nil) -> Bool {
         let usageWindow = application.windows["usage-window"]
         if usageWindow.exists {
-            // A previous fixture/popover process can leave XCTest's application
-            // proxy visible but inactive. Re-activate before returning the
-            // existing window so native toolbar controls are hittable.
             application.activate()
             guard let contentIdentifier else { return true }
             if element(contentIdentifier).waitForExistence(timeout: 1) {
@@ -716,8 +695,6 @@ final class JackinDesktopUITests: XCTestCase {
         guard usageWindow.waitForExistence(timeout: 3) else { return false }
         application.activate()
         if !usageWindow.waitForExistence(timeout: 1) {
-            // XCTest can invalidate its native-window proxy while activating an empty/error
-            // split. Re-present the retained fixture window, then require the same real host.
             DistributedNotificationCenter.default().postNotificationName(
                 Notification.Name("com.jackin-project.desktop.visual-qa.show-usage"),
                 object: nil,
@@ -736,8 +713,6 @@ final class JackinDesktopUITests: XCTestCase {
         popoverSnapshot: PopoverAuditSnapshot? = nil
     ) -> Bool {
         let auditingPopover = popoverSnapshot != nil
-        // Touching any property of a replaced proxy records a snapshot
-        // failure, so verify resolvability before reading the element.
         guard let element = issue.element, element.exists else {
             return handlesOrphanAccessibilityAuditIssue(
                 issue,
@@ -749,15 +724,12 @@ final class JackinDesktopUITests: XCTestCase {
 
         if issue.auditType == .sufficientElementDescription {
             if auditingPopover, elementType == .popover {
-                // NSPopover owns this transient host; every contained region is labeled below it.
                 return true
             }
             if elementType == .touchBar {
                 return true
             }
             if elementType == .group {
-                // SwiftUI layout groups are non-actionable. Their named descendants remain
-                // separate AX elements and are audited independently.
                 return true
             }
         }
@@ -768,7 +740,6 @@ final class JackinDesktopUITests: XCTestCase {
             issue.auditType == .elementDetection,
             identifier.hasPrefix("popover.limit.")
         {
-            // Xcode 26 can retain the pre-representation role for native Form quota rows.
             return true
         }
 
@@ -776,8 +747,6 @@ final class JackinDesktopUITests: XCTestCase {
             if ["usage.provider-identity", "popover.provider-identity"].contains(
                 identifier)
             {
-                // Xcode 26 reports an unknown role for a named, single identity element even
-                // though its label is the complete Rust-owned provider/account/activity copy.
                 return true
             }
         }
@@ -794,13 +763,9 @@ final class JackinDesktopUITests: XCTestCase {
             elementType == .popover,
             identifier.isEmpty
         {
-            // NSPopover is a system-owned container, not an actionable control; its child native
-            // buttons and picker expose their own actions and are audited independently.
             return true
         }
 
-        // Xcode 26 attributes native ProgressView track contrast to the combined quota row.
-        // Every text in these rows uses primary system foreground; the meter remains system-owned.
         if issue.auditType == .contrast,
             elementType == .staticText,
             identifier.hasPrefix("usage.limit.")
@@ -809,8 +774,6 @@ final class JackinDesktopUITests: XCTestCase {
             return true
         }
 
-        // Xcode 26 reports primary system text inside native Section and LabeledContent labels as
-        // failed contrast even though issue captures show opaque primary text on the list surface.
         if issue.auditType == .contrast,
             elementType == .staticText,
             identifier.hasPrefix("usage.section.")
@@ -819,7 +782,6 @@ final class JackinDesktopUITests: XCTestCase {
             return true
         }
 
-        // AppKit does not expose SwiftUI Section header identifiers to XCTest on macOS 26.
         if issue.auditType == .contrast,
             elementType == .staticText,
             (element.value as? String) == "Account"
@@ -827,11 +789,6 @@ final class JackinDesktopUITests: XCTestCase {
             return true
         }
 
-        // Xcode 26 samples the native Table row/vibrancy background instead of the
-        // verified explicit primary foreground used by overview row labels. The
-        // catalog fixture renders one row per provider surface, so every
-        // `usage.overview.provider.<surface>` / `usage.overview.account.<surface>.<key>`
-        // static text is affected — whitelist by prefix, not per-fixture enumeration.
         if issue.auditType == .contrast,
             elementType == .staticText,
             identifier.hasPrefix("usage.overview.provider.")
@@ -840,10 +797,6 @@ final class JackinDesktopUITests: XCTestCase {
             return true
         }
 
-        // Same sampler artifact on vibrant sidebar rows: verified explicit
-        // primary foreground/text, measured 10+:1 rendered contrast on the
-        // flagged Amp/Z.AI rows. Provider rows vary per fixture, so match by
-        // prefix instead of per-fixture enumeration.
         if issue.auditType == .contrast,
             elementType == .staticText,
             identifier.hasPrefix("usage.sidebar.provider.")
@@ -860,8 +813,6 @@ final class JackinDesktopUITests: XCTestCase {
                 "usage.sidebar.provider.minimax",
             ].contains(identifier)
         {
-            // Xcode 26 samples native vibrancy/row backgrounds instead of the verified
-            // explicit primary foreground used by these labels and the Kimi template.
             return true
         }
 
@@ -879,10 +830,6 @@ final class JackinDesktopUITests: XCTestCase {
         return false
     }
 
-    /// Adjudicate an issue whose element is missing or was replaced.
-    ///
-    /// Only snapshot-verified content matches; anything else stays unhandled
-    /// so genuinely new findings keep failing.
     private func handlesOrphanAccessibilityAuditIssue(
         _ issue: XCUIAccessibilityAuditIssue,
         usageSnapshot: UsageAuditSnapshot?,
@@ -896,8 +843,6 @@ final class JackinDesktopUITests: XCTestCase {
                     issue.detailedDescription.contains($0)
                 })
             {
-                // Xcode 26 can invalidate native Form row proxies after attributing system
-                // foreground or ProgressView contrast to their labeled representation.
                 return true
             }
             if issue.auditType == .sufficientElementDescription,
@@ -907,8 +852,6 @@ final class JackinDesktopUITests: XCTestCase {
                     issue.compactDescription
                 )
             {
-                // Named provider content and native controls were verified before Xcode lost
-                // the non-actionable Form group or provider identity proxy.
                 return true
             }
         }
@@ -918,8 +861,6 @@ final class JackinDesktopUITests: XCTestCase {
                     issue.detailedDescription.contains($0)
                 })
             {
-                // Xcode 26 can lose the native popover row proxy after attributing its
-                // system ProgressView track contrast to the labeled representation.
                 return true
             }
             if issue.auditType == .sufficientElementDescription,
@@ -929,9 +870,6 @@ final class JackinDesktopUITests: XCTestCase {
                     issue.compactDescription
                 )
             {
-                // Xcode 26 can invalidate the transient NSPopover, anonymous SwiftUI group,
-                // or provider identity proxy after snapshotting it. All named content and
-                // controls were verified immediately before the audit.
                 return true
             }
             if issue.auditType == .action,
@@ -939,14 +877,10 @@ final class JackinDesktopUITests: XCTestCase {
                 popoverSnapshot.controlsVerified,
                 issue.compactDescription == "Action is missing"
             {
-                // The invalidated proxy is the system popover/picker host. The named native
-                // buttons and account picker exposed enabled actions before the audit.
                 return true
             }
         }
         if issue.auditType == .parentChild {
-            // Xcode 26 cannot return the offending element for AppKit-owned NSSplitView or
-            // NSPopover parent proxies. Named native descendants remain independently audited.
             return true
         }
         XCTContext.runActivity(
@@ -955,15 +889,6 @@ final class JackinDesktopUITests: XCTestCase {
         return false
     }
 
-    /// Wait until the overview outline stops materializing rows/cells.
-    ///
-    /// SwiftUI `Table` builds its AppKit outline AX subtree progressively
-    /// after first paint. Auditing mid-construction yields element-less
-    /// findings for transient row/cell proxies (varying 0-75 run to run)
-    /// that cannot be labeled or resolved afterward. Require the row and
-    /// account-cell counts stable across three consecutive polls before
-    /// auditing. Counts-only polling never resolves elements, so it stays
-    /// silent while the tree is in flux.
     private func waitForOverviewOutlineSettled(timeout: TimeInterval = 8) -> Bool {
         let outline = application.outlines["usage.overview.table"]
         let rows = outline.descendants(matching: .outlineRow)
@@ -996,8 +921,6 @@ final class JackinDesktopUITests: XCTestCase {
         let matches = application.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", identifierPrefix)
         )
-        // Resolving an empty match records a snapshot failure; callers treat
-        // a missing prefix as no descriptions.
         guard matches.firstMatch.exists else { return [] }
         return matches.allElementsBoundByIndex.flatMap { element -> [String] in
             guard element.exists else { return [] }

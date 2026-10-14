@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Ignore-mode skip decisions for state preparation.
 
 use crate::{
     InstanceAuthBinding, ProvisionedInstanceAuth, agent_slot_dirs, slot_layout, slot_store_rel,
@@ -16,9 +15,6 @@ pub fn skipped_ignore_instance_auth(
     binding: &InstanceAuthBinding,
     suffix: Option<&str>,
 ) -> ProvisionedInstanceAuth {
-    // No filesystem work ran, so `home_dir` stays `None`; the
-    // deterministic credential paths match the real-path shape so
-    // path accessors keep working for lazy launches.
     let (store, home_rel) = agent_slot_dirs(binding.agent);
     let layout = slot_layout(binding.agent, store, home_rel, suffix);
     let store_dir = root.join(&layout.store_rel);

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Amp` usage views and quota buckets.
 
 use super::{AmpSubscriptionKind, AmpUsage, parse_amp_usage_output};
 use jackin_protocol::control::{
@@ -21,9 +20,6 @@ impl AmpUsage {
         parse_amp_usage_output(display_text)
     }
 
-    /// The subscription plan names the funding route, so it wins; `Amp Free`
-    /// only when the daily line exists; a paid/credit-only balance never
-    /// infers a plan.
     pub fn plan_label(&self) -> Option<String> {
         if let Some(subscription) = &self.subscription {
             return Some(format!("Amp {}", subscription.plan));
@@ -31,8 +27,6 @@ impl AmpUsage {
         self.daily_remaining_percent.map(|_| "Amp Free".to_owned())
     }
 
-    /// Pace/detail line shared by the subscription buckets: the renewal
-    /// countdown plus the billing period when the CLI reported one.
     fn subscription_pace(&self) -> Option<String> {
         let mut parts = Vec::new();
         if let Some(renewal) = &self.renewal {
@@ -139,10 +133,6 @@ impl AmpUsage {
     }
 }
 
-/// Tier Agent dollar pool: structured `Money` on the `Spend` slot plus a
-/// remaining percent from the full-precision balances (never a rounded CLI
-/// percent). The Amp surface headline stays Daily-only, so this never leaks
-/// into the status bar.
 pub(crate) fn push_amp_agent_dollar_bucket(
     buckets: &mut Vec<QuotaBucketView>,
     remaining: f64,
@@ -175,9 +165,6 @@ pub(crate) fn push_amp_agent_dollar_bucket(
     buckets.push(view);
 }
 
-/// Tier Orb hour pool: whole a1.small-equivalent hours rounded down, positive
-/// sub-hour balances shown as `< 1h`; the remaining percent keeps full
-/// precision.
 pub(crate) fn push_amp_orb_bucket(
     buckets: &mut Vec<QuotaBucketView>,
     remaining: f64,
@@ -216,8 +203,6 @@ fn format_orb_hours(hours: f64) -> String {
     }
 }
 
-/// Non-usage inputs the shared Amp success view builder needs: the agent, the
-/// resolved credential origin, and which fetch path produced the usage.
 #[derive(Debug)]
 pub struct AmpSuccessContext<'a> {
     pub agent: &'a str,
@@ -225,9 +210,6 @@ pub struct AmpSuccessContext<'a> {
     pub source: UsageSource,
 }
 
-/// Build the Fresh, Authoritative Amp success view from parsed usage without
-/// touching credentials or provider I/O, so the plan-label and detail-only
-/// credit contract is unit-testable.
 pub fn amp_view_from_usage(
     context: AmpSuccessContext<'_>,
     usage: AmpUsage,

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor render preparation and frame geometry.
 
 use super::{editor_frame_areas, render_editor_screen};
 use ratatui::{Frame, layout::Rect};
@@ -128,8 +127,6 @@ pub(crate) fn clamp_editor_scroll_for_frame(
         mounts_scroll.set_viewport(u16::try_from(viewport_w).unwrap_or(u16::MAX), 1);
         mounts_scroll.clamp();
     }
-    // State owns both axes: configuring one axis must preserve the other's
-    // measured bounds for subsequent scroll input.
     tab_scroll.set_content_size(
         if geometry.active_mounts {
             1
@@ -149,11 +146,6 @@ pub(crate) fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
     editor_frame_areas(area, footer_h).body
 }
 
-/// Concrete adapter: render the editor screen with the standard footer.
-///
-/// Equivalent to the generic `render_editor_screen` but binds the concrete
-/// `EditorState<'_>` and `editor_footer_items` so callers do not need to
-/// construct the footer closure themselves.
 pub(crate) fn render_editor_with_footer(
     frame: &mut Frame<'_>,
     area: Rect,

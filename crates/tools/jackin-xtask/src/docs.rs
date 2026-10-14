@@ -1,24 +1,5 @@
-//! Documentation-tree automation: scaffold and validate Fumadocs `meta.json`
-//! sidebars for roadmap items and research dossiers.
-//!
-//! The docs site is Fumadocs; each directory under `docs/content/` carries
-//! a `meta.json` whose `pages` array orders the sidebar. These tasks keep that
-//! wiring correct without hand-editing JSON:
-//!
-//! ```sh
-//! cargo xtask change new <slug> --group <group>   # scaffold a roadmap item
-//! cargo xtask docs repo-links                     # validate repo-file links
-//! cargo xtask docs brand                          # brand-prose lint (RULES.md)
-//! cargo xtask docs specs                          # spec↔test citation gate
-//! cargo xtask docs map-check                      # workspace crates named in Codebase Map
-//! cargo xtask research scaffold <slug> --group <domain> # scaffold a research dossier
-//! cargo xtask research check                      # validate research meta.json
-//! cargo xtask roadmap audit                       # validate roadmap meta.json
-//! ```
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::Write as _;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -40,28 +21,14 @@ const RESEARCH_REL: &str = "research";
 const REPO_FILE_PREFIXES: &[&str] = &[
     "crates/", "src/", "docs/", "docker/", ".github/", "scripts/",
 ];
-const REPO_LINK_ROOT_DOCS: &[&str] = &[
-    "AGENTS.md",
-    "ENGINEERING.md",
-    "PROJECT_STRUCTURE.md",
-    "PULL_REQUESTS.md",
-    "README.md",
-    "RULES.md",
-    "TESTING.md",
-    "TODO.md",
-];
+const REPO_LINK_ROOT_DOCS: &[&str] = &["AGENTS.md", "README.md"];
 const REPO_TOP_LEVEL_FILES: &[&str] = &[
     "AGENTS.md",
     "BRANCHING.md",
     "Cargo.lock",
     "Cargo.toml",
     "COMMITS.md",
-    "ENGINEERING.md",
-    "PROJECT_STRUCTURE.md",
-    "PULL_REQUESTS.md",
     "README.md",
-    "TESTING.md",
-    "TODO.md",
     "docker-bake.hcl",
     "mise.toml",
     "release.toml",
@@ -70,35 +37,22 @@ const REPO_TOP_LEVEL_FILES: &[&str] = &[
 const GITHUB_BLOB_PREFIX: &str = "https://github.com/jackin-project/jackin/blob/main/";
 const GITHUB_TREE_PREFIX: &str = "https://github.com/jackin-project/jackin/tree/main/";
 
-// ---------------------------------------------------------------------------
-// CLI surface
-// ---------------------------------------------------------------------------
-
 #[derive(Subcommand)]
 pub(crate) enum ChangeCommand {
-    /// Scaffold a new roadmap item `.mdx` and register it in a group sidebar.
     New(ChangeNewArgs),
 }
 
 #[derive(Subcommand)]
 pub(crate) enum DocsCommand {
-    /// Validate that repository file references use checked link components.
     RepoLinks(DocsGateArgs),
-    /// Reject forbidden brand spellings (`jackin'`, `Jackin`, `Jackin'`) in prose.
     Brand(DocsGateArgs),
-    /// Verify every behavioral-spec INV row cites an existing test (or MISSING).
     Specs(DocsGateArgs),
-    /// Every workspace member crate name appears in the Codebase Map MDX.
     MapCheck(DocsGateArgs),
-    /// Print a stable CI cache contract for a documentation surface.
     Contract(contract::DocsContractArgs),
-    /// Resolve and publish the reusable docs-link result for GitHub Actions.
     #[command(hide = true)]
     CiLinkResult,
-    /// Restore the durable lychee response cache for GitHub Actions.
     #[command(hide = true)]
     CiLycheeCache,
-    /// Validate links in the generated documentation site.
     SiteLinks,
 }
 
@@ -110,62 +64,41 @@ pub(crate) struct DocsGateArgs {
 
 #[derive(Args)]
 pub(crate) struct ChangeNewArgs {
-    /// Kebab-case slug; becomes `<slug>.mdx` under the roadmap directory.
     slug: String,
-    /// Sidebar group to register the item under, e.g. `operator-surface` or
-    /// `(operator-surface)`. Must be an existing roadmap group directory.
     #[arg(long)]
     group: String,
-    /// Sidebar/page title. Defaults to a title-cased form of the slug.
     #[arg(long)]
     title: Option<String>,
 }
 
 #[derive(Subcommand)]
 pub(crate) enum ResearchCommand {
-    /// Scaffold a new research dossier folder and register it in the sidebar.
     Scaffold(ResearchScaffoldArgs),
-    /// Validate research sidebars, frontmatter, state labels, and page-title structure.
     Check(DocsGateArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct ResearchScaffoldArgs {
-    /// Kebab-case slug; becomes the dossier directory name under `--group`.
     slug: String,
-    /// Top-level research domain: `agents`, `platform`, `product`, `engineering`, or `context`.
     #[arg(long)]
     group: String,
-    /// Dossier title. Defaults to a title-cased form of the slug.
     #[arg(long)]
     title: Option<String>,
 }
 
 #[derive(Subcommand)]
 pub(crate) enum RoadmapCommand {
-    /// Validate that every roadmap `meta.json` page resolves and no item `.mdx`
-    /// is orphaned.
     Audit(DocsGateArgs),
-    /// Retire a shipped roadmap item. `--plan` prints the worklist; `--apply`
-    /// does the mechanical removal (drop the sidebar entry, delete the `.mdx`,
-    /// audit, fail on a dangling inbound link); `--partial` marks it partially
-    /// implemented and keeps the page.
     Retire(RoadmapRetireArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct RoadmapRetireArgs {
-    /// Roadmap item slug (the `<slug>.mdx` under the roadmap directory).
     slug: String,
-    /// Print the retirement worklist — page content, inbound links, and the
-    /// sidebar entry — without changing anything. This is the default.
     #[arg(long, conflicts_with_all = ["apply", "partial"])]
     plan: bool,
-    /// Apply the mechanical removal: drop the `meta.json` entry, delete the
-    /// `.mdx`, run the audit, and fail if any inbound link still resolves to it.
     #[arg(long, conflicts_with_all = ["plan", "partial"])]
     apply: bool,
-    /// Mark the item `**Status**: Partially implemented` and keep the page.
     #[arg(long, conflicts_with_all = ["plan", "apply"])]
     partial: bool,
 }
@@ -230,8 +163,6 @@ fn run_docs_gate(
     })
 }
 
-/// Recurring map↔workspace gate (R-map-metadata-gate): every `cargo metadata`
-/// workspace member package name must appear as a token in the Codebase Map.
 fn check_codebase_map(root: &Path) -> Result<()> {
     let map_rel = "docs/content/reference/getting-oriented/codebase-map.mdx";
     let map_path = root.join(map_rel);
@@ -263,7 +194,6 @@ fn check_codebase_map_text(
         }
     }
 
-    // Two-way: jackin-* tokens in the map that are not workspace members.
     let mut stale: Vec<String> = Vec::new();
     for tok in map.split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_') {
         if !tok.starts_with("jackin") {
@@ -272,7 +202,6 @@ fn check_codebase_map_text(
         if tok == "jackin" || tok == "jackin❯" {
             continue;
         }
-        // crate-shaped: jackin-foo or jackin_foo
         if !(tok.contains('-') || tok.contains('_')) {
             continue;
         }
@@ -348,7 +277,6 @@ fn check_codebase_map_text(
     );
 }
 
-/// Workspace members as `(package name, manifest dir relative to root)`.
 fn workspace_packages(root: &Path) -> Result<Vec<(String, String)>> {
     let mut meta = crate::cmd::command("cargo");
     meta.args([
@@ -382,7 +310,6 @@ fn workspace_packages(root: &Path) -> Result<Vec<(String, String)>> {
             .get("manifest_path")
             .and_then(|x| x.as_str())
             .unwrap_or("");
-        // Workspace members only (manifest under workspace root).
         if !manifest.starts_with(workspace_root) {
             continue;
         }
@@ -433,12 +360,6 @@ pub(crate) fn run_roadmap(command: RoadmapCommand) -> Result<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Locating the docs tree
-// ---------------------------------------------------------------------------
-
-/// Walk up from the current directory to the repo root (the directory that
-/// contains `docs/content`).
 pub(crate) fn repo_root() -> Result<PathBuf> {
     let start = std::env::current_dir().context("resolving current directory")?;
     for dir in start.ancestors() {
@@ -460,18 +381,11 @@ fn research_dir() -> Result<PathBuf> {
     Ok(repo_root()?.join(DOCS_ROOT).join(RESEARCH_REL))
 }
 
-// ---------------------------------------------------------------------------
-// meta.json helpers
-// ---------------------------------------------------------------------------
-
-/// Read a `meta.json` into a JSON value.
 fn read_meta(path: &Path) -> Result<Value> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))
 }
 
-/// Write a JSON value as pretty 2-space `meta.json` with a trailing newline,
-/// matching the repo's existing formatting.
 fn write_meta(path: &Path, value: &Value) -> Result<()> {
     let mut text = serde_json::to_string_pretty(value)
         .with_context(|| format!("serializing {}", path.display()))?;
@@ -485,7 +399,6 @@ fn write_meta(path: &Path, value: &Value) -> Result<()> {
     fs::rename(&staged, path).with_context(|| format!("replacing {}", path.display()))
 }
 
-/// Append `entry` to a `meta.json`'s `pages` array if not already present.
 #[expect(
     clippy::disallowed_methods,
     reason = "synchronous CLI locks the research tree before atomically updating sidebar metadata"
@@ -508,12 +421,6 @@ fn append_page(meta_path: &Path, tree_lock_path: &Path, entry: &str) -> Result<(
     write_meta(meta_path, &meta)
 }
 
-// ---------------------------------------------------------------------------
-// Slug + title helpers
-// ---------------------------------------------------------------------------
-
-/// Reject slugs that are not lowercase kebab-case (matching existing file
-/// names and Fumadocs slug rules).
 fn validate_slug(slug: &str) -> Result<()> {
     let ok = !slug.is_empty()
         && slug
@@ -528,8 +435,6 @@ fn validate_slug(slug: &str) -> Result<()> {
     Ok(())
 }
 
-/// Title-case a kebab slug for a default page title (`idle-runtime` → `Idle
-/// Runtime`).
 fn title_from_slug(slug: &str) -> String {
     slug.split('-')
         .map(|word| {
@@ -543,10 +448,6 @@ fn title_from_slug(slug: &str) -> String {
         .join(" ")
 }
 
-// ---------------------------------------------------------------------------
-// Scaffolding
-// ---------------------------------------------------------------------------
-
 fn change_new(args: ChangeNewArgs) -> Result<()> {
     change_new_in(&roadmap_dir()?, args)
 }
@@ -555,7 +456,6 @@ fn change_new_in(roadmap: &Path, args: ChangeNewArgs) -> Result<()> {
     validate_slug(&args.slug)?;
     let title = args.title.unwrap_or_else(|| title_from_slug(&args.slug));
 
-    // Normalize the group to its `(group)` directory name.
     let group_name = args.group.trim_matches(['(', ')'].as_ref());
     let group_dir = roadmap.join(format!("({group_name})"));
     let group_meta = group_dir.join("meta.json");
@@ -582,7 +482,6 @@ fn change_new_in(roadmap: &Path, args: ChangeNewArgs) -> Result<()> {
     );
     fs::write(&item_path, body).with_context(|| format!("writing {}", item_path.display()))?;
 
-    // Group meta references siblings in the parent roadmap dir as `../<slug>`.
     append_page(
         &group_meta,
         &roadmap.join("meta.json"),
@@ -595,17 +494,11 @@ fn change_new_in(roadmap: &Path, args: ChangeNewArgs) -> Result<()> {
 
 fn research_scaffold(args: ResearchScaffoldArgs) -> Result<()> {
     let root = repo_root()?;
-    research_scaffold_in(
-        &root.join(DOCS_ROOT).join(RESEARCH_REL),
-        &root.join("prompts/research"),
-        args,
-    )
+    research_scaffold_in(&root.join(DOCS_ROOT).join(RESEARCH_REL), args)
 }
 
 struct ResearchScaffoldRollback {
     dossier: PathBuf,
-    prompt: PathBuf,
-    prompt_owned: bool,
     committed: bool,
 }
 
@@ -614,18 +507,11 @@ impl Drop for ResearchScaffoldRollback {
         if self.committed {
             return;
         }
-        if self.prompt_owned {
-            drop(fs::remove_file(&self.prompt));
-        }
         drop(fs::remove_dir_all(&self.dossier));
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "jackin-xtask is a synchronous CLI; exclusive creation prevents scaffold races"
-)]
-fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldArgs) -> Result<()> {
+fn research_scaffold_in(research: &Path, args: ResearchScaffoldArgs) -> Result<()> {
     validate_slug(&args.slug)?;
     let title = args.title.unwrap_or_else(|| title_from_slug(&args.slug));
     if title.contains(['\n', '\r']) {
@@ -657,10 +543,6 @@ fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldA
         .with_context(|| format!("`pages` is not an array in {}", group_meta.display()))?;
 
     let dossier = group_dir.join(&args.slug);
-    let prompt_dir = prompts.join(group);
-    let prompt = prompt_dir.join(format!("{}.md", args.slug));
-    fs::create_dir_all(&prompt_dir)
-        .with_context(|| format!("creating {}", prompt_dir.display()))?;
     match fs::create_dir(&dossier) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -672,8 +554,6 @@ fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldA
     }
     let mut rollback = ResearchScaffoldRollback {
         dossier: dossier.clone(),
-        prompt: prompt.clone(),
-        prompt_owned: false,
         committed: false,
     };
 
@@ -683,47 +563,15 @@ fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldA
         format!(
             "---\ntitle: {title_yaml}\ndescription: \"<!-- One-sentence research question. -->\"\n---\n\n\
              **Research state:** Incomplete\n\n\
-             **Research brief:** <RepoFile path=\"prompts/research/{}/{}.md\" />\n\n\
              ## Research question\n\n<!-- What must this dossier establish? -->\n\n\
              ## Headline findings\n\n<!-- Key findings, each with a source. -->\n\n\
              ## Method and evidence\n\n<!-- Sources, measurements, dates, and confidence limits. -->\n\n\
              ## Limitations and open questions\n\n<!-- What remains uncertain? -->\n\n\
              ## How to read\n\n<!-- Chapter map and recommended order. -->\n\n\
              ## Related work\n\n<!-- Link research, reference, and roadmap pages without scheduling work here. -->\n",
-            group,
-            args.slug
         ),
     )
     .with_context(|| format!("writing {}", index.display()))?;
-
-    let prompt_result = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&prompt);
-    let mut prompt_file = match prompt_result {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            bail!("research brief already exists: {}", prompt.display());
-        }
-        Err(error) => {
-            return Err(error).with_context(|| format!("creating {}", prompt.display()));
-        }
-    };
-    rollback.prompt_owned = true;
-    prompt_file
-        .write_all(
-            format!(
-            "# {title} research brief\n\n## Mission\n\n<!-- What to establish and why. -->\n\n\
-             ## Scope\n\n<!-- In scope, out of scope, and evidence cutoff. -->\n\n\
-             ## Evidence requirements\n\n<!-- Primary sources, local measurements, confidence labels, and freshness rules. -->\n\n\
-             ## Required output\n\n<!-- Chapter list and completion criteria. -->\n\n\
-             ## Run\n\n`/goal Follow prompts/research/{}/{}.md`\n",
-            group,
-            args.slug
-        )
-            .as_bytes(),
-        )
-        .with_context(|| format!("writing {}", prompt.display()))?;
 
     let meta = dossier.join("meta.json");
     write_meta(
@@ -731,16 +579,10 @@ fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldA
         &json!({ "title": title, "defaultOpen": false, "pages": ["index"] }),
     )?;
 
-    // Register the dossier in its domain sidebar.
     append_page(&group_meta, &research.join("meta.json"), &args.slug)?;
     rollback.committed = true;
 
-    report_created(&[
-        index.as_path(),
-        prompt.as_path(),
-        meta.as_path(),
-        group_meta.as_path(),
-    ]);
+    report_created(&[index.as_path(), meta.as_path(), group_meta.as_path()]);
     Ok(())
 }
 
@@ -756,10 +598,6 @@ fn report_created(paths: &[&Path]) {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Repository file reference validation
-// ---------------------------------------------------------------------------
 
 fn check_repo_links(root: &Path) -> Result<()> {
     let content_root = root.join(DOCS_ROOT);
@@ -1019,10 +857,6 @@ fn report_repo_links_clean() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Retirement
-// ---------------------------------------------------------------------------
-
 #[expect(
     clippy::print_stdout,
     reason = "jackin-xtask is a CLI; the retirement worklist/report is its output"
@@ -1033,7 +867,6 @@ fn emit(line: &str) {
     }
 }
 
-/// Remove `entry` from a `meta.json`'s `pages` array. Errors if it is absent.
 fn remove_page(meta_path: &Path, entry: &str) -> Result<()> {
     let mut meta = read_meta(meta_path)?;
     let pages = meta
@@ -1048,7 +881,6 @@ fn remove_page(meta_path: &Path, entry: &str) -> Result<()> {
     write_meta(meta_path, &meta)
 }
 
-/// Find the `meta.json` entry that registers a roadmap item.
 fn find_group_registration(
     roadmap: &Path,
     item: &Path,
@@ -1100,8 +932,6 @@ fn find_roadmap_item(roadmap: &Path, slug: &str) -> Result<PathBuf> {
     }
 }
 
-/// True when `line` references `slug` as a roadmap route (`roadmap/<slug>`) or a
-/// sidebar entry (`../<slug>`), bounded so `auth` does not match `auth-health`.
 fn line_references_slug(line: &str, slug: &str) -> bool {
     for token in [format!("roadmap/{slug}"), format!("../{slug}")] {
         let mut rest = line;
@@ -1120,8 +950,6 @@ fn line_references_slug(line: &str, slug: &str) -> bool {
     false
 }
 
-/// Collect every `(file, line-number, line)` under `docs_root` that links to the
-/// slug, skipping `exclude` (the item's own page).
 fn inbound_links(
     docs_root: &Path,
     slug: &str,
@@ -1146,7 +974,6 @@ fn inbound_links(
     Ok(hits)
 }
 
-/// Recursively collect `.mdx` and `.json` files under `dir`.
 fn collect_text_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in crate::fs_util::read_dir_sorted(dir)? {
         let path = entry.path();
@@ -1175,7 +1002,6 @@ fn roadmap_retire(docs_root: &Path, args: RoadmapRetireArgs) -> Result<()> {
     retire_plan(docs_root, &roadmap, &item, &args.slug)
 }
 
-/// `--plan`: read-only worklist for the agent. Changes nothing.
 fn retire_plan(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Result<()> {
     let content =
         fs::read_to_string(item).with_context(|| format!("reading {}", item.display()))?;
@@ -1212,7 +1038,6 @@ fn retire_plan(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Res
     Ok(())
 }
 
-/// `--partial`: keep the page; set its status to Partially implemented.
 fn retire_partial(item: &Path) -> Result<()> {
     let content =
         fs::read_to_string(item).with_context(|| format!("reading {}", item.display()))?;
@@ -1241,17 +1066,10 @@ fn retire_partial(item: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `--apply`: drop the sidebar entry, delete the page, audit, fail on a dangling
-/// inbound link.
 fn retire_apply(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Result<()> {
     let (meta, entry) = find_group_registration(roadmap, item, slug)?
         .with_context(|| format!("`{slug}` is not registered in any roadmap group sidebar"))?;
 
-    // Gate BEFORE any mutation: the only reference allowed to survive is the
-    // group's own sidebar entry (which this command removes). Any other inbound
-    // link must be repointed first — so check, and bail, while the page and the
-    // sidebar are still intact. Checking after deletion would leave a half-retired
-    // tree behind on failure.
     let dangling: Vec<_> = inbound_links(docs_root, slug, item)?
         .into_iter()
         .filter(|(file, _, _)| file != &meta)
@@ -1278,14 +1096,6 @@ fn retire_apply(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Re
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
-/// Validate a Fumadocs subtree rooted at `root`: every `meta.json` page entry
-/// must resolve to a file or directory on disk, and every `.mdx` page in the
-/// subtree must be referenced by some `meta.json`. Returns an error listing all
-/// problems, or `Ok` when the tree is clean.
 fn validate_tree(root: &Path, label: &str) -> Result<()> {
     if !root.is_dir() {
         bail!("{label} directory not found: {}", root.display());
@@ -1327,7 +1137,6 @@ fn validate_tree(root: &Path, label: &str) -> Result<()> {
         }
     }
 
-    // Orphan check: every `.mdx` in the subtree must be referenced.
     let mut mdx_files = Vec::new();
     collect_mdx_files(root, &mut mdx_files)?;
     for mdx in &mdx_files {
@@ -1355,8 +1164,6 @@ fn validate_tree(root: &Path, label: &str) -> Result<()> {
     );
 }
 
-/// Enforce the reader-facing contract that makes the research corpus scan as
-/// one collection instead of a pile of unrelated Markdown shapes.
 fn validate_research_pages(
     research_root: &Path,
     files: &[PathBuf],
@@ -1373,7 +1180,7 @@ fn validate_research_pages(
             || stem.ends_with("-brief")
         {
             problems.push(format!(
-                "{}: research briefs belong under prompts/research/, not published docs",
+                "{}: research briefs do not belong in published docs",
                 path.display()
             ));
         }
@@ -1573,9 +1380,6 @@ fn validate_research_href(
     }
 }
 
-/// Resolve a `pages` entry relative to its `meta.json` directory to an existing
-/// path, returning the canonicalized target. Handles `slug`, `../slug`,
-/// `(group)`, and `index` forms.
 fn resolve_entry(dir: &Path, entry: &str) -> Option<PathBuf> {
     let candidates = [
         dir.join(format!("{entry}.mdx")),
@@ -1584,16 +1388,12 @@ fn resolve_entry(dir: &Path, entry: &str) -> Option<PathBuf> {
     ];
     for candidate in candidates {
         if candidate.exists() {
-            // Canonicalize to the `.mdx` for files; for a directory entry
-            // (`meta.json`/`index.mdx` candidate) we key on that file so the
-            // orphan check lines up with `collect_mdx_files`.
             return fs::canonicalize(&candidate).ok();
         }
     }
     None
 }
 
-/// Recursively collect every `meta.json` under `root`.
 fn collect_meta_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     let meta = dir.join("meta.json");
     if meta.is_file() {
@@ -1608,7 +1408,6 @@ fn collect_meta_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Recursively collect every `.mdx` file under `root`.
 fn collect_mdx_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in crate::fs_util::read_dir_sorted(dir)? {
         let path = entry.path();
@@ -1621,7 +1420,6 @@ fn collect_mdx_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Recursively collect every Markdown source file under `root`.
 fn collect_markdown_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());

@@ -1,25 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspace list screen state: `ManagerListRow` enum, row data, selection
-//! index, and summary structs for the sidebar.
-//!
-//! Not responsible for: event handling (see `update`) or rendering (see
-//! `view`).
-
-/// Logical row in the manager list. Prefer over the raw `selected:
-/// usize` when reasoning about what the operator is pointing at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManagerListRow {
     CurrentDirectory,
-    /// An active instance under the synthetic "Current directory" row.
-    /// `instance_idx` is the position within the current-directory
-    /// active-instance list.
     CurrentDirectoryInstance(usize),
     SavedWorkspace(usize),
-    /// An active instance under a saved workspace. `(workspace_idx,
-    /// instance_idx)` where `instance_idx` is the position within that
-    /// workspace's active-instance list.
     WorkspaceInstance(usize, usize),
     NewWorkspace,
 }
@@ -38,9 +24,6 @@ pub const fn hovered_list_row(target: Option<ManagerHoverTarget>) -> Option<Mana
 }
 
 impl ManagerListRow {
-    /// Screen index in the selectable row list. Returns `None` for
-    /// instance rows because they are injected mid-list when their parent
-    /// is expanded, so they have no fixed position.
     #[must_use]
     pub const fn to_screen_index(self, saved_count: usize) -> Option<usize> {
         match self {
@@ -51,9 +34,6 @@ impl ManagerListRow {
         }
     }
 
-    /// Visual-list position including the blank spacer before `NewWorkspace`.
-    /// Returns `None` for instance rows for the same reason as
-    /// `to_screen_index`.
     #[must_use]
     pub const fn to_visual_index(self, saved_count: usize) -> Option<usize> {
         match self {
@@ -105,7 +85,6 @@ impl WorkspaceSummary {
     }
 }
 
-/// `WorkspaceSummarySource` impl for `jackin_config::WorkspaceConfig`.
 impl WorkspaceSummarySource for jackin_config::WorkspaceConfig {
     fn workdir(&self) -> &str {
         &self.workdir

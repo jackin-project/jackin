@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Entry lifecycle and cadence.
 
 use super::policy::UsageActivity;
 use jackin_protocol::control::{FocusedUsageView, UsageSnapshotStatus};
@@ -23,9 +22,6 @@ pub(crate) fn revoke_entry(entry: &mut AccountEntry, now_epoch: i64, clock_sampl
     entry.record_terminal();
 }
 
-/// Fence a stored generation while retaining account-level cooldown inputs.
-/// An updating generation receives a temporary floor from revocation time;
-/// the worker will move it forward to completion when it returns.
 pub(crate) fn revoke_envelope(
     envelope: &mut AccountStateEnvelope,
     now_epoch: i64,
@@ -112,8 +108,6 @@ pub(crate) fn reset_entry(
     entry.refresh_runtime_cooldown(clock_sample);
 }
 
-/// Reset materialized results while retaining provider cooldowns and the
-/// invocation timestamp that still governs the same canonical account.
 pub(crate) fn reset_envelope(envelope: &mut AccountStateEnvelope) {
     envelope.generation = envelope.generation.saturating_add(1);
     envelope.phase = UsageRefreshPhase::Idle;
@@ -123,8 +117,6 @@ pub(crate) fn reset_envelope(envelope: &mut AccountStateEnvelope) {
     envelope.completed_at_epoch = None;
 }
 
-/// Latest durable refresh deadline for one account, including Claude's hard
-/// attempt floor. Periodic cadence remains an in-memory scheduling hint.
 pub(crate) fn account_cooldown_deadline(envelope: &AccountStateEnvelope) -> Option<i64> {
     [
         envelope.rate_limit_deadline_epoch,
@@ -144,10 +136,6 @@ pub(crate) fn data_bearing(view: &FocusedUsageView) -> bool {
     !view.buckets.is_empty() && view.status == UsageSnapshotStatus::Fresh
 }
 
-/// Jittered periodic deadline: tier cadence plus a deterministic
-/// `[0, cadence/4]` skew, so accounts spread out instead of polling in
-/// lockstep. The capability and generation seed it, so joined callers never
-/// derive different due times.
 pub(crate) fn cadence_deadline(
     activity: UsageActivity,
     low_power: bool,

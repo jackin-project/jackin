@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `exit_summary`.
 use super::*;
 use jackin_instance::{InstanceIndexEntry, InstanceStatus};
 
@@ -85,7 +84,6 @@ fn private_folders_collapse_to_a_count() {
     ];
     let (headline, rows) = summary(&running, &idx);
     assert!(headline.contains("3 agents"));
-    // Two distinct private folders, no paths shown.
     assert!(rows.iter().any(|r| r == "2 folders"), "rows: {rows:?}");
     assert!(
         !rows.iter().any(|r| r.contains("proj-a")),

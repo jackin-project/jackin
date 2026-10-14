@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ClassifyCleanup` input and cleanup classification.
 
 use crate::runtime::launch::launch_pipeline::launch_phases::{CleanupClassified, SessionFinalized};
 use crate::runtime::launch::launch_pipeline::purge_or_mark_clean_exited;

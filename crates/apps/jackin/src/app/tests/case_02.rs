@@ -33,7 +33,6 @@ async fn hardline_restore_candidate_errors_when_docker_unavailable() {
     });
     manifest.mark_status(instance::InstanceStatus::Crashed);
     manifest.write(&paths.data_dir.join(container)).unwrap();
-    // inspect returns InspectUnavailable → Docker is unavailable error
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             runtime::ContainerState::InspectUnavailable(
@@ -218,7 +217,6 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
 #[tokio::test]
 async fn resolve_role_no_match_errors() {
     let selector = RoleSelector::new(None, "agent-smith");
-    // list_containers returns empty → no match
     let docker = jackin_test_support::FakeDockerClient::default();
     let err = resolve_role_to_container(&selector, &docker)
         .await
@@ -232,7 +230,6 @@ async fn resolve_role_no_match_errors() {
 #[tokio::test]
 async fn resolve_role_multiple_matches_errors_with_names() {
     let selector = RoleSelector::new(None, "agent-smith");
-    // list_containers returns two containers → multiple match error
     let docker = jackin_test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
@@ -260,7 +257,6 @@ async fn resolve_role_multiple_matches_errors_with_names() {
 #[tokio::test]
 async fn resolve_role_single_match_returns_name() {
     let selector = RoleSelector::new(None, "agent-smith");
-    // list_containers returns one container → single match
     let docker = jackin_test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {

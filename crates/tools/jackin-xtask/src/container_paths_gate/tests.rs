@@ -17,7 +17,6 @@ fn forbidden_root_predicate_matches_roots_and_tmp_jackin() {
 fn turso_import_detects_use_and_path_not_log_string() {
     assert!(turso_import_column("use turso::Builder;").is_some());
     assert!(turso_import_column("let db = turso::Builder::new_local(p);").is_some());
-    // Log-string mention without path form must not trip the gate.
     assert!(
         turso_import_column(r#"jackin_diagnostics::emit_operator_notice("turso store ready");"#)
             .is_none()
@@ -36,10 +35,8 @@ fn cargo_declares_turso_reads_dep_lines() {
 fn shrink_only_logic_growth_and_stale() {
     let measured: BTreeMap<String, usize> =
         BTreeMap::from([("crates/a.rs".into(), 3), ("crates/b.rs".into(), 1)]);
-    let recorded: BTreeMap<String, usize> = BTreeMap::from([
-        ("crates/a.rs".into(), 2), // growth
-        ("crates/c.rs".into(), 5), // stale
-    ]);
+    let recorded: BTreeMap<String, usize> =
+        BTreeMap::from([("crates/a.rs".into(), 2), ("crates/c.rs".into(), 5)]);
     let mut problems = Vec::new();
     for (path, budgeted) in &recorded {
         match measured.get(path) {
@@ -61,7 +58,5 @@ fn shrink_only_logic_growth_and_stale() {
 
 #[test]
 fn forbidden_root_in_production_literal_fails_predicate() {
-    // Characterization: a production `/run/x` string is a forbidden-root hit
-    // (inverts the old gate's ignore-assertion for /run).
     assert!(is_forbidden_root_literal("/run/x"));
 }

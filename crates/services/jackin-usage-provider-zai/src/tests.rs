@@ -28,7 +28,6 @@ fn zai_credit_limit_carries_rate_note_and_model_breakdown() {
     }))
     .expect("valid Z.AI credit quota");
 
-    // Monday 08:00 UTC is inside the peak window.
     let peak = quota.buckets(1_781_510_400);
     assert_eq!(peak[0].label, "Weekly");
     assert_eq!(peak[0].remaining_percent, Some(75));
@@ -38,7 +37,6 @@ fn zai_credit_limit_carries_rate_note_and_model_breakdown() {
         Some("peak 1× rate · top glm-5 80% · glm-4.5 20%")
     );
 
-    // Monday noon is off-peak.
     let off_peak = quota.buckets(1_781_524_800);
     assert_eq!(
         off_peak[0].pace_label.as_deref(),
@@ -49,7 +47,6 @@ fn zai_credit_limit_carries_rate_note_and_model_breakdown() {
 
 #[test]
 fn zai_peak_window_follows_weekday_and_hour() {
-    // Monday 08:00 UTC: peak. Monday noon and Sunday 08:00: off-peak.
     assert!(zai_is_peak(1_781_510_400));
     assert!(!zai_is_peak(1_781_524_800));
     assert!(!zai_is_peak(1_781_424_000));

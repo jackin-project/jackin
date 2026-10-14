@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Cursor` usage events fetch and buckets.
 
 use super::{CursorEnterpriseScope, cursor_teams_events_url};
 use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
@@ -8,8 +7,6 @@ use jackin_usage_provider_core::{
     bucket, compact_count, format_currency, json_number, provider_http_client,
 };
 
-/// Hourly-aggregated usage events. The overview snapshot never fetches these
-/// (aggregation delay + hammering); the fetch exists for detail drill-down.
 #[derive(Debug, Clone, Default)]
 pub struct CursorUsageEvents {
     pub(crate) event_count: usize,
@@ -127,7 +124,3 @@ pub fn cursor_events_buckets(events: &CursorUsageEvents) -> Vec<QuotaBucketView>
     }
     buckets
 }
-
-// ---------------------------------------------------------------------------
-// Snapshots
-// ---------------------------------------------------------------------------

@@ -167,8 +167,6 @@ fn near_limit_config_expansion_is_rejected_before_publishing_new_catalog() {
     let catalog_reference = previous["model_catalog_json"].as_str().unwrap();
     let catalog = Path::new(catalog_reference).file_name().unwrap();
     let catalog_before = std::fs::read(directory.join(catalog)).unwrap();
-    // Valid operator settings just below the input contract. Adding the
-    // selected provider fields must not emit an unreadable next generation.
     let template = format!("preserved = \"\"\nmodel_catalog_json = \"{catalog_reference}\"\n");
     let padding = "x".repeat(1024 * 1024 - 64 - template.len());
     let config_before =
@@ -255,7 +253,6 @@ fn lock_holder(root: &Path) -> anyhow::Result<LockHolder> {
     std::thread::spawn(move || {
         for line in std::io::BufReader::new(output).lines() {
             let Ok(line) = line else { return };
-            // libtest can print its test-name prefix on this same line.
             if line.trim().ends_with("PRIVATE_CONFIG_LOCK_HELD") {
                 ready.send(()).unwrap_or(());
                 return;
@@ -268,7 +265,6 @@ fn lock_holder(root: &Path) -> anyhow::Result<LockHolder> {
     Ok(holder)
 }
 
-/// Child-process fixture only; the parent scenarios are the acceptance tests.
 #[test]
 fn private_config_lock_holder_child() {
     let Some(root) = std::env::var_os(LOCK_CHILD_ROOT) else {

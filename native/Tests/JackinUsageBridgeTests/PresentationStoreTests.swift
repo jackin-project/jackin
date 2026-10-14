@@ -157,9 +157,6 @@ final class PresentationStoreTests: XCTestCase {
         else {
             return XCTFail("catalog fixture is missing expected Codex or Claude accounts")
         }
-        // Claude's selected account is absent from this projection while the
-        // active Codex account remains present. Other providers must not clear
-        // the current provider/account route.
         let projectedAccounts = fixture.accounts.filter { $0.id != claudeAccount.id }
         let store = PresentationStore()
 
@@ -213,8 +210,6 @@ final class PresentationStoreTests: XCTestCase {
             usageAccountSelection: claudeAccount.accountKey
         )
 
-        // A picker change for Codex must not install its key into the active
-        // Claude navigation context.
         store.setSelectedAccount(surfaceId: "codex", accountKey: codexAccount.accountKey)
 
         XCTAssertEqual(store.usageSelection, "claude")

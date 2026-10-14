@@ -38,9 +38,6 @@ fn widest_unpadded(lines: &[Line<'_>]) -> usize {
 
 #[test]
 fn workspace_width_equals_rendered_line_width() {
-    // Single-source invariant: the scroll-clamp width is exactly the width
-    // the renderer measures over the same lines. If a parallel column-sum
-    // is ever reintroduced, this catches the drift.
     let rows = vec![wide_row()];
     assert_eq!(
         workspace_mounts_content_width(&rows),
@@ -50,9 +47,6 @@ fn workspace_width_equals_rendered_line_width() {
 
 #[test]
 fn workspace_width_includes_trailing_scroll_pad() {
-    // Mount lines carry a 2-space indent that render_scrollable_block mirrors
-    // as 2 trailing pad columns. content_width MUST include that pad, or the
-    // horizontal scrollbar thumb stops 2 cells short of the end.
     let rows = vec![wide_row()];
     let lines = workspace_mount_block_lines(&rows);
     assert_eq!(

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Agent setup dispatch, auth modes, and materialization records.
 
 use super::{
     nonempty_env, record_recovered_degradation, setup_amp, setup_antigravity, setup_claude,
@@ -14,9 +13,6 @@ use std::path::{Path, PathBuf};
 pub(crate) fn run_agent_setup() -> Result<()> {
     let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
     let mode = AuthMode::from_env()?;
-    // Home emptiness is the gate: first seed copies auth; subsequent starts
-    // leave in-container credentials untouched (agent refreshes tokens in-place
-    // inside the durable home). No external marker file.
     let materialization = match agent.as_str() {
         "claude" => setup_claude(mode),
         "codex" => setup_codex(mode),
@@ -35,8 +31,6 @@ pub(crate) fn run_agent_setup() -> Result<()> {
     emit_capsule_auth_provision(&agent, mode, materialization.as_ref());
     materialization?;
 
-    // Install/repair the agent-status reporter on every launch (drift repair).
-    // Observability must never break the agent: a failure is logged, not fatal.
     if let Err(e) = install_agent_status_reporter(&agent) {
         let message = reporter_install_failure_message(&agent, &e);
         record_recovered_degradation();
@@ -140,13 +134,6 @@ pub(crate) fn reporter_install_failure_message(agent: &str, error: &anyhow::Erro
     format!("agent-status: reporter install for {agent} failed (non-fatal): {error:#}")
 }
 
-/// Install the container-local agent-status reporter for `agent` into the agent
-/// home, repairing drift each launch. Claude/Codex install too — their forwarded
-/// events are gated to identity/freshness only (Decision 0a), the screen pack
-/// owns their state. Kimi is rule-pack-only (no reporter); Amp installs no
-/// reporter (it has no plugins.json node-plugin mechanism — writing one crashes
-/// it; a real Amp reporter needs its MCP/toolbox surface); unknown/grok have no
-/// reporter yet.
 pub(crate) fn install_agent_status_reporter(agent: &str) -> Result<()> {
     use crate::agent_status::hook_installer::{
         ClaudeHookInstaller, CodexHookInstaller, HookInstaller, PluginInstaller,
@@ -154,19 +141,11 @@ pub(crate) fn install_agent_status_reporter(agent: &str) -> Result<()> {
     let installer: Option<Box<dyn HookInstaller>> = match agent {
         "claude" => Some(Box::new(ClaudeHookInstaller::default())),
         "codex" => Some(Box::new(CodexHookInstaller::default())),
-        // Amp has no `~/.config/amp/plugins.json` node-plugin mechanism (that
-        // was assumed from OpenCode's model); writing one crashes Amp on load. A
-        // reporter must never break the agent it observes, so Amp installs no
-        // reporter — its status falls back to screen + physics evidence. A real
-        // Amp reporter needs Amp's actual extension surface (MCP/toolbox) and is
-        // tracked as remaining work.
         "opencode" => Some(Box::new(PluginInstaller::opencode())),
         _ => None,
     };
     if let Some(installer) = installer {
         let home = Path::new("/home/agent");
-        // The daemon exports the instance's folder var before setup runs;
-        // fall back to the legacy config home when unset (manual runs).
         let parsed = jackin_core::Agent::from_slug(agent);
         let config_dir = parsed
             .and_then(|agent| agent.runtime().state_paths().folder_env_var)

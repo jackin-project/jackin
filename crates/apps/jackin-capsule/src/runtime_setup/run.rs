@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Top-level setup orchestration: state dir, container init, and hooks.
 
 use super::{
     CAPSULE_RUNTIME_BIN, cache_dco_identity_if_needed, coauthor_trailer_for_agent,
@@ -17,9 +16,6 @@ use std::path::{Path, PathBuf};
 
 use jackin_core::container_paths;
 
-/// Resolve the mutable setup root supplied by the daemon for this PTY.
-/// Reject every path shape except `/jackin/run/sessions/<numeric>/state` so a
-/// compromised child cannot redirect setup writes into capsule-wide state.
 pub(crate) fn session_state_dir() -> Result<PathBuf> {
     let raw = std::env::var_os(jackin_protocol::SESSION_STATE_DIR_ENV)
         .context("isolated runtime setup requires JACKIN_SESSION_STATE_DIR")?;
@@ -55,10 +51,6 @@ pub(crate) fn session_state_path(name: &str) -> Result<PathBuf> {
     Ok(session_state_dir()?.join(name))
 }
 
-/// # Errors
-///
-/// Returns an error when container initialization, hook installation, or
-/// agent setup fails.
 pub fn run() -> Result<()> {
     run_runtime_setup_concurrently(
         run_container_init_once,
@@ -88,7 +80,6 @@ pub(crate) fn run_runtime_setup_concurrently(
     agent_result
 }
 
-/// Write a run-once marker (`ok\n`), creating its parent directory first.
 pub(crate) fn write_done_marker(marker: &Path, what: &str) -> Result<()> {
     if let Some(parent) = marker.parent() {
         fs::create_dir_all(parent).with_context(|| {
@@ -196,10 +187,6 @@ pub(crate) fn install_git_trailer_hook_if_requested() -> Result<()> {
     Ok(())
 }
 
-/// # Errors
-///
-/// Returns an error when the commit-message path is missing or the hook cannot
-/// read, update, or write the message.
 pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
     let message_path = args
         .first()
@@ -208,8 +195,6 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
 
     if env_is_one("JACKIN_GIT_DCO") {
         let (dco_name, dco_email) = read_cached_dco_identity().unwrap_or_else(|| {
-            // Cache absent (e.g. daemon was started without JACKIN_GIT_DCO=1 then
-            // env changed): fall back to live git config so the hook still works.
             let name = git_config_value("user.name").unwrap_or_default();
             let email = git_config_value("user.email").unwrap_or_default();
             (name, email)

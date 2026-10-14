@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `InstanceManifest` persistence methods.
 
 use super::{
     AdmittedInstance, BackendResources, INSTANCE_MANIFEST_VERSION, InstanceIndex,
@@ -14,15 +13,10 @@ use jackin_core::Agent;
 use std::path::Path;
 
 impl InstanceManifest {
-    /// Docker-backed instance: the `backend` field is left `None`, so the
-    /// `docker` resources are the single source of truth (current behavior).
     pub fn new(input: NewInstanceManifest<'_>) -> Self {
         Self::build(input, None)
     }
 
-    /// Instance launched by an explicit non-Docker backend (e.g.
-    /// apple-container). `docker` is still populated for naming continuity, but
-    /// `backend` records which backend actually owns the instance.
     pub fn new_with_backend(input: NewInstanceManifest<'_>, backend: BackendResources) -> Self {
         Self::build(input, Some(backend))
     }
@@ -61,21 +55,16 @@ impl InstanceManifest {
         }
     }
 
-    /// Record the launch-admitted instances, in launch order. Called by the
-    /// host launch path once instances resolve; kept out of
-    /// [`NewInstanceManifest`] so admission can be staged before persistence.
     pub fn set_admitted_instances(&mut self, admitted: impl IntoIterator<Item = AdmittedInstance>) {
         self.admitted_instances = admitted.into_iter().collect();
     }
 
-    /// Whether `config_id` was admitted at launch.
     pub fn admits_instance(&self, config_id: &str) -> bool {
         self.admitted_instances
             .iter()
             .any(|admitted| admitted.config_id == config_id)
     }
 
-    /// Owning account ID for an admitted instance config ID.
     pub fn account_for_instance(&self, config_id: &str) -> Option<&str> {
         self.admitted_instances
             .iter()
@@ -83,7 +72,6 @@ impl InstanceManifest {
             .map(|admitted| admitted.account_id.as_str())
     }
 
-    /// Agent runtime for an admitted instance config ID.
     pub fn agent_for_instance(&self, config_id: &str) -> Option<Agent> {
         self.admitted_instances
             .iter()
@@ -91,8 +79,6 @@ impl InstanceManifest {
             .map(|admitted| admitted.agent)
     }
 
-    /// Mark one admitted instance's host registration without changing its
-    /// recorded config, agent, account, labels, or tab admission.
     pub fn mark_registration_state(&mut self, config_id: &str, state: RegistrationState) -> bool {
         let Some(admitted) = self
             .admitted_instances
@@ -108,7 +94,6 @@ impl InstanceManifest {
         true
     }
 
-    /// Registration state for one admitted instance.
     #[must_use]
     pub fn registration_state_for_instance(&self, config_id: &str) -> Option<RegistrationState> {
         self.admitted_instances
@@ -117,8 +102,6 @@ impl InstanceManifest {
             .map(|admitted| admitted.registration_state)
     }
 
-    /// Project this manifest to the lightweight index entry stored in
-    /// `instances.json`. The inverse of reading a full manifest from disk.
     pub fn to_index_entry(&self) -> InstanceIndexEntry {
         InstanceIndexEntry {
             instance_id: self.instance_id.clone(),
@@ -138,14 +121,10 @@ impl InstanceManifest {
         self.updated_at = now_rfc3339();
     }
 
-    /// Refreshes `updated_at` so a side-channel mutation (e.g.
-    /// `last_attach_outcome`) still moves the entry in the index.
     pub fn touch(&mut self) {
         self.updated_at = now_rfc3339();
     }
 
-    /// Errors when the on-disk slug is unknown — corrupt manifest or a
-    /// new agent added to the codebase but not migrated here.
     pub fn agent(&self) -> Result<Agent, crate::InstanceError> {
         self.agent_runtime
             .parse()
@@ -155,10 +134,6 @@ impl InstanceManifest {
             })
     }
 
-    /// Promote the manifest to `RestoreAvailable` and persist the change
-    /// to both `instance.json` and the workspace index. Used by every
-    /// restore-discovery surface (hardline prompt, attach-time `DinD`
-    /// loss, console "found restorable" path).
     pub fn mark_restore_available(
         &mut self,
         paths: &jackin_core::JackinPaths,
@@ -182,11 +157,6 @@ impl InstanceManifest {
         )
     }
 
-    /// Whether this instance should appear in the launch dialog (D10).
-    ///
-    /// Stricter than `is_restore_candidate`: excludes `Active`/`Running`
-    /// because D13 means the launch path never re-attaches to a live
-    /// container. Live instances only appear in the console instance picker.
     pub const fn is_launch_restore_candidate(&self) -> bool {
         matches!(
             self.status,
@@ -205,10 +175,6 @@ impl InstanceManifest {
         Self::parse_and_validate(&bytes, &path)
     }
 
-    /// `Ok(None)` when the manifest file does not exist; `Err(_)` for
-    /// parse or I/O failures. Lets callers distinguish "no recorded
-    /// state" (fall through to the no-restore path) from "state exists
-    /// but unreadable" (must surface, not silently treat as missing).
     pub fn read_optional(state_dir: &Path) -> anyhow::Result<Option<Self>> {
         let path = state_dir.join(".jackin/instance.json");
         match std::fs::read(&path) {
@@ -231,10 +197,6 @@ impl InstanceManifest {
         Ok(manifest)
     }
 
-    /// Collapses [`Self::read_optional`]'s three outcomes into the two
-    /// the discovery surfaces care about — `Some` (use the manifest)
-    /// vs `None` (skip the candidate). Callers run inside discovery loops, so
-    /// unreadable candidates are skipped without emitting user-derived paths.
     pub fn read_optional_lossy(state_dir: &Path) -> Option<Self> {
         Self::read_optional(state_dir).unwrap_or_default()
     }

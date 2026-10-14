@@ -1,9 +1,3 @@
-//! Seeded chaos helpers for the Docker-backed E2E lane (plan 046).
-//!
-//! Deterministic `xorshift64` schedule; seed from `JACKIN_CHAOS_SEED` or a
-//! fixed default. Every docker filter is scoped by the harness's
-//! `jackin.class` label / name prefix.
-
 #![expect(
     clippy::expect_used,
     clippy::disallowed_methods,
@@ -16,7 +10,6 @@ use std::time::{Duration, Instant};
 
 use super::common::docker_command;
 
-/// Default seed when `JACKIN_CHAOS_SEED` is unset (deterministic across runs).
 pub(super) const DEFAULT_CHAOS_SEED: u64 = 0xc4a0_55eed_u64;
 
 #[derive(Debug, Clone, Copy)]
@@ -28,7 +21,6 @@ impl ChaosRng {
     }
 
     pub(super) fn next_u64(&mut self) -> u64 {
-        // `xorshift64*`
         let mut x = self.0;
         x ^= x << 13;
         x ^= x >> 7;
@@ -61,7 +53,6 @@ pub(super) enum Fault {
 
 pub(super) struct ScheduledFault {
     pub fault: Fault,
-    /// Delay after session-up before injecting the fault.
     pub delay: Duration,
 }
 
@@ -101,7 +92,6 @@ pub(super) fn assert_no_orphaned_containers(role_key: &str) {
     );
 }
 
-/// No leftover per-container dirs under the jackin data/state tree for gone containers.
 pub(super) fn assert_no_stale_state_dirs(state_root: &Path, live_names: &[String]) {
     if !state_root.is_dir() {
         return;
@@ -134,16 +124,13 @@ pub(super) fn apply_fault(fault: Fault, container: &str) {
             assert!(status.success(), "docker kill {container} failed");
         }
         Fault::SigkillCapsule => {
-            // Capsule is PID 1 inside the role container.
             let status = docker_command()
                 .args(["exec", container, "kill", "-9", "1"])
                 .status()
                 .expect("docker exec kill -9 1");
-            // May fail if container already dead; that's acceptable mid-chaos.
             let _ = status;
         }
         Fault::DropControlSocket => {
-            // In-container control socket path (capsule SOCKET_PATH).
             let status = docker_command()
                 .args(["exec", container, "rm", "-f", "/jackin/run/jackin.sock"])
                 .status()
@@ -199,11 +186,8 @@ pub(super) fn primary_running_container(role_key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Best-effort: diagnostics tree under home should mention cleanup/exit after chaos.
 pub(super) fn assert_cleanup_classified(home: &Path) {
     let diag = home.join(".local/share/jackin/diagnostics");
-    // Soft assert: presence of any diagnostics after a run is enough signal
-    // that the host wrote end-state; full classification is plan 008/033.
     if diag.is_dir() {
         let has_any = std::fs::read_dir(&diag)
             .map(|rd| rd.filter_map(Result::ok).next().is_some())

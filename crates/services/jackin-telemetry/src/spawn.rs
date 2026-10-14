@@ -211,7 +211,6 @@ where
     tokio::spawn(fut)
 }
 
-/// Spawn substantive persistent-daemon work as an autonomous governed cycle.
 pub fn spawn_autonomous_cycle<F, C>(
     name: crate::schema::enums::BackgroundCycleName,
     fut: F,
@@ -285,7 +284,6 @@ where
     handle.spawn(run_detached(guard, fut, classify).with_current_subscriber())
 }
 
-/// Spawn detached work with a bounded, registry-validated operation shape.
 pub fn spawn_detached_with_attrs<F, C>(
     def: &'static SpanDef,
     attrs: &[crate::Attr<'_>],
@@ -327,8 +325,6 @@ where
     )
 }
 
-/// Schedule detached prewarm work as a PRODUCER decision linked to one
-/// CONSUMER attempt with a shared durable job identity.
 pub fn spawn_prewarm_job<F, C>(
     job_type: crate::schema::enums::JobType,
     fut: F,
@@ -459,7 +455,6 @@ where
     detached_blocking_with_attrs(def, &[], work, classify)
 }
 
-/// Run detached blocking work with a bounded, registry-validated operation shape.
 pub fn detached_blocking_with_attrs<F, C, R>(
     def: &'static SpanDef,
     attrs: &[crate::Attr<'_>],
@@ -480,8 +475,6 @@ where
     })
 }
 
-/// Run blocking persistent-daemon work without inherited invocation/job
-/// correlation, retaining the Capsule session only for Capsule-owned cycles.
 pub fn autonomous_cycle_blocking<F, C, R>(
     name: crate::schema::enums::BackgroundCycleName,
     work: F,
@@ -620,7 +613,6 @@ where
     thread_detached_named_with_attrs(name, def, &[], work, classify)
 }
 
-/// Run a named detached thread with a bounded, registry-validated operation shape.
 pub fn thread_detached_named_with_attrs<F, C, R>(
     name: String,
     def: &'static SpanDef,
@@ -665,7 +657,6 @@ where
     spawned
 }
 
-/// Thread fallback for [`autonomous_cycle_blocking`].
 pub fn thread_autonomous_cycle_named<F, C, R>(
     name: String,
     cycle: crate::schema::enums::BackgroundCycleName,

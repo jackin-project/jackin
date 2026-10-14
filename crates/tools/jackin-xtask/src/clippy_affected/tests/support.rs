@@ -13,7 +13,7 @@ pub(super) fn graph() -> WorkspaceGraph {
             ("image-id".into(), "jackin-image".into()),
             ("status-id".into(), "jackin-agent-status".into()),
             ("app-id".into(), "jackin".into()),
-            ("arrayref 0.3.9".into(), "arrayref".into()),
+            ("image-fuzz 0.1.0".into(), "jackin-image-fuzz".into()),
         ]),
         roots: BTreeMap::from([
             (
@@ -28,7 +28,10 @@ pub(super) fn graph() -> WorkspaceGraph {
         ]),
         dependents: BTreeMap::from([("image-id".into(), BTreeSet::from(["app-id".into()]))]),
         resolved_dependencies: BTreeMap::from([
-            ("image-id".into(), BTreeSet::from(["arrayref 0.3.9".into()])),
+            (
+                "image-id".into(),
+                BTreeSet::from(["image-fuzz 0.1.0".into()]),
+            ),
             ("status-id".into(), BTreeSet::new()),
             ("app-id".into(), BTreeSet::from(["image-id".into()])),
         ]),
@@ -46,8 +49,8 @@ pub(super) fn nested_fixtures() -> Vec<NestedPackage> {
             excluded: false,
         },
         NestedPackage {
-            dir: PathBuf::from("vendor/arrayref"),
-            name: "arrayref".into(),
+            dir: PathBuf::from("crates/adapters/jackin-image/fuzz"),
+            name: "jackin-image-fuzz".into(),
             member_dependencies: BTreeSet::new(),
             depends_on_unknown: false,
             excluded: false,
@@ -85,7 +88,7 @@ pub(super) fn workspace_root() -> PathBuf {
 
 pub(super) fn rust_sources(root: &Path) -> Vec<PathBuf> {
     let mut sources = Vec::new();
-    let mut stack = vec![root.join("crates"), root.join("vendor")];
+    let mut stack = vec![root.join("crates")];
     while let Some(dir) = stack.pop() {
         let entries = fs_util::read_dir_sorted(&dir).expect("read dir");
         for entry in entries {

@@ -260,14 +260,6 @@ plugins = []
 
 #[tokio::test]
 async fn load_agent_rebuild_does_not_attach_running_current_instance() {
-    // Regression for the `--rebuild` fast-path bypass: the early restore gate
-    // is guarded by `!opts.rebuild`, but a forced rebuild then falls through to
-    // the *second* restore resolution. Without the matching guard there,
-    // `resolve_restore_candidate` returns `AttachCurrentRole` for a running
-    // current-role container and `return`s into it — silently skipping the
-    // build the operator asked for. A running current-role container is seeded
-    // here (inspect queue returns `Running`) so that if the guard regresses the
-    // launch attaches and records no `docker build`, failing this test.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
@@ -305,7 +297,6 @@ plugins = []
     )
     .unwrap();
 
-    // Index a running current-role container that the resolver would attach to.
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let mut manifest = workspace_manifest(
         container_name,

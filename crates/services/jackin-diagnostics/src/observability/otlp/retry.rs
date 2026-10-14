@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Isolation boundary for the experimental OTLP/gRPC retry API.
-
 use std::time::Duration;
 
 pub(super) fn policy() -> opentelemetry_otlp::RetryPolicy {

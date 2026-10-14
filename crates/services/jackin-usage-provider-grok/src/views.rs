@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Grok` billing views and cycle labels.
 
 use jackin_protocol::control::{
     Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus, UsageSource,
@@ -30,8 +29,6 @@ impl GrokBillingSnapshot {
         }
     }
 
-    /// Plan label from server-resolved truth: the RPC `subscription_tier`; the
-    /// web-scrape path carries no tier and returns `None` (no auth heuristic).
     pub fn plan_label(&self) -> Option<String> {
         match self {
             Self::Rpc(response) | Self::Rest(response) => response.plan_label(),
@@ -45,8 +42,6 @@ impl GrokWebBillingSnapshot {
         let label = self.reset_at_epoch.map_or("Credits", |reset_at| {
             grok_cycle_label_from_reset(reset_at, now)
         });
-        // Grok exposes only a billing cycle (no session), so it fills the Weekly
-        // headline slot.
         let mut view = timed_bucket(
             label,
             None,
@@ -71,7 +66,6 @@ impl GrokWebBillingSnapshot {
 }
 
 impl GrokBillingResponse {
-    /// Server-resolved plan label (trimmed, nonempty), or `None`.
     pub fn plan_label(&self) -> Option<String> {
         self.subscription_tier
             .as_deref()
@@ -88,8 +82,6 @@ impl GrokBillingResponse {
         if let Some(headline) = config.headline_bucket(now) {
             buckets.push(headline);
         }
-        // Extra usage credits (prepaid balance): a quota bound, never a price;
-        // limit-only, no status slot (renders via the generic balance seam).
         if let Some(balance) = config
             .prepaid_balance
             .as_ref()
@@ -107,16 +99,12 @@ impl GrokBillingResponse {
             view.limit_money = Some(Money::new(balance, "USD", 2));
             buckets.push(view);
         }
-        // On-demand usage: only a positive provider cap is an N3-permitted quota
-        // bound; without one it is unbounded spend and emits no row.
         if self.on_demand_enabled != Some(false)
             && let Some(cap) = config
                 .on_demand_cap
                 .as_ref()
                 .and_then(|cents| positive_cent_value(cents.val))
         {
-            // Omitted/negative used is unknown, never $0: the row degrades to
-            // limit-only rather than inventing zero spend.
             let used = config
                 .on_demand_used
                 .as_ref()
@@ -140,13 +128,6 @@ impl GrokBillingResponse {
 }
 
 impl GrokBillingConfig {
-    /// The single current billing headline, with pace when a positive window is
-    /// derivable. Preferred: a non-monthly `currentPeriod` with a usable
-    /// `creditUsagePercent`; an explicitly monthly period never renders the
-    /// weekly percent meter — monthly-only accounts honestly fall through.
-    /// Fallback: positive `monthlyLimit` + `used` + `billingPeriod*`/`period*`.
-    /// Neither complete → no headline. Omitted quota figures are unknown
-    /// ("No data"), never 0% used.
     pub(crate) fn headline_bucket(&self, now: i64) -> Option<QuotaBucketView> {
         if let Some(period) = self.current_period.as_ref()
             && !period
@@ -159,9 +140,6 @@ impl GrokBillingConfig {
         {
             let window_seconds = end - start;
             let label = grok_period_label(period.period_type.as_deref(), window_seconds);
-            // No evidence supports proto3-zero semantics for this field, so an
-            // omitted (or garbage) percent is unknown, never a full meter
-            // (F05); the known period end still anchors the reset.
             let Some(percent) = self
                 .credit_usage_percent
                 .filter(|value| value.is_finite() && *value >= 0.0)
@@ -215,9 +193,6 @@ pub(crate) fn remaining_from_used_percent(used_percent: f64) -> u8 {
     }
 }
 
-/// Unknown-quota headline: the window and reset are known but no quota
-/// figure arrived. Renders "No data" with no headline slot — never a
-/// fabricated 0% used / 100% remaining.
 pub(crate) fn unknown_billing_headline(label: &str, reset_at: i64, now: i64) -> QuotaBucketView {
     timed_bucket(
         label,
@@ -238,7 +213,6 @@ pub(crate) fn weekly_billing_headline(
     now: i64,
     pace: Option<String>,
 ) -> QuotaBucketView {
-    // Grok exposes only a billing cycle (no session), so it fills the Weekly slot.
     let mut view = timed_bucket(
         label,
         None,

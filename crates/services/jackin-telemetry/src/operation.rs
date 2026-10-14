@@ -519,16 +519,11 @@ pub fn operation(def: &'static SpanDef, attrs: &[Attr<'_>]) -> Result<OperationG
     operation_inner(def, attrs, false, true, true)
 }
 
-/// Start a governed operation, degrading to a disabled guard on rejection.
-///
-/// Product work must never fail because instrumentation was rejected. Tests
-/// and schema validation can use [`operation`] when they need the rejection.
 #[must_use]
 pub fn operation_or_disabled(def: &'static SpanDef, attrs: &[Attr<'_>]) -> OperationGuard {
     operation(def, attrs).unwrap_or_else(|_| OperationGuard::disabled())
 }
 
-/// Start an operation parented by an extracted remote W3C span context.
 pub fn operation_with_remote_parent(
     def: &'static SpanDef,
     attrs: &[Attr<'_>],
@@ -552,8 +547,6 @@ pub fn root_operation(
     operation_inner(def, attrs, true, true, true)
 }
 
-/// Start an autonomous root that belongs to the process session but not to the
-/// launch invocation which happened to start the long-lived process.
 pub fn autonomous_root_operation(
     def: &'static SpanDef,
     attrs: &[Attr<'_>],
@@ -561,10 +554,6 @@ pub fn autonomous_root_operation(
     operation_inner(def, attrs, true, false, true)
 }
 
-/// Start an autonomous cycle root with the correlation owned by that cycle.
-///
-/// Capsule cycles retain the Capsule session, while the host instance refresh
-/// is process-owned and therefore carries neither launch nor console identity.
 pub fn autonomous_cycle_operation(
     name: schema::enums::BackgroundCycleName,
 ) -> Result<OperationGuard, Rejection> {

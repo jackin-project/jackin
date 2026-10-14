@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Homebrew preview source-change classification.
 #![allow(
     dead_code,
     reason = "exercised by unit tests; workflow template will call via xtask next"
@@ -39,7 +38,6 @@ mod tests;
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum PreviewCommand {
-    /// Archive and retire the one known invalid rolling preview release.
     #[command(name = "migrate-legacy")]
     MigrateLegacy(MigrateLegacyArgs),
 }
@@ -176,7 +174,6 @@ const LEGACY_ASSETS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Snapshot of a public rolling release before any migration mutation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct RollingReleaseSnapshot {
     pub(crate) source_repository: String,
@@ -297,7 +294,6 @@ enum DurableArchiveState {
     Verified,
 }
 
-/// Return the exact public asset fingerprint observed for the one-time migration.
 fn known_legacy_assets() -> BTreeMap<String, String> {
     LEGACY_ASSETS
         .iter()
@@ -1373,11 +1369,6 @@ fn ensure_archive_files(
     Ok(())
 }
 
-/// Refuse every invalid rolling release except the one known legacy fingerprint.
-///
-/// The caller must run the normal package verifier for any release that is not
-/// passed to this function. A successful result authorizes archival only; it
-/// never authorizes treating the archived bytes as a verified package.
 pub(crate) fn ensure_known_legacy_rolling_release(snapshot: &RollingReleaseSnapshot) -> Result<()> {
     ensure!(
         snapshot.source_repository == LEGACY_SOURCE_REPOSITORY
@@ -1394,12 +1385,6 @@ pub(crate) fn ensure_known_legacy_rolling_release(snapshot: &RollingReleaseSnaps
     Ok(())
 }
 
-/// Archive the known legacy release as unverified migration evidence.
-///
-/// This copies the downloaded asset bytes into transaction storage and records
-/// both the API digest and the digest of each downloaded byte stream. A digest
-/// mismatch is retained as evidence but never upgrades the bytes to trusted
-/// release material. The caller must stage and verify a new package separately.
 pub(crate) fn archive_known_legacy_rolling_release(
     snapshot: &RollingReleaseSnapshot,
     downloaded_assets: &Path,
@@ -1559,7 +1544,6 @@ fn is_lower_hex(value: &str) -> bool {
         .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-/// Whether a changed path can alter the shipped Homebrew preview binaries.
 pub(crate) fn path_affects_preview(path: &str) -> bool {
     match path {
         ".github/workflows/preview.yml"
@@ -1575,23 +1559,16 @@ pub(crate) fn path_affects_preview(path: &str) -> bool {
     }
 }
 
-/// Whether a mise.toml diff affects release-relevant tool pins.
 pub(crate) fn mise_release_tools_changed(base: &str, head: &str) -> bool {
     extract_release_mise(base) != extract_release_mise(head)
 }
 
-/// Classify whether any changed path requires a preview republish.
 pub(crate) fn classify_preview_source(changed_paths: &[&str], mise_changed: bool) -> bool {
     changed_paths
         .iter()
         .any(|path| path_affects_preview(path) || (*path == "mise.toml" && mise_changed))
 }
 
-/// Whether the consumer updater produced changes that must be committed.
-///
-/// `git status --porcelain --untracked-files=all` is empty only when the
-/// updater is a no-op. The dirty branch must commit and push; the clean branch
-/// must report that the consumer already references the release.
 pub(crate) fn consumer_update_requires_commit(status: &str) -> bool {
     !status.trim().is_empty()
 }
@@ -1639,7 +1616,6 @@ fn keep_release_mise_key(section: &str, key: &str) -> bool {
         && (section == "tools" || section == "tool_alias" || !section.is_empty())
 }
 
-/// Parse the canonical source commit from a preview release body.
 pub(crate) fn preview_commit_from_body(body: &str) -> Option<String> {
     for line in body.lines() {
         let Some((_, url)) = line.split_once("](") else {

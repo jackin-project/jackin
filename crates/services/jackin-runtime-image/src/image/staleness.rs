@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Reuse staleness sentinel and sibling agents.
 
 use jackin_core::Agent;
 

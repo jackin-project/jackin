@@ -1,17 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Status, snapshot, and token-usage query commands.
 
 use super::{connect_and_send, flag_value, read_control_reply, request_control};
 use anyhow::{Context, Result};
 
 use crate::protocol::control::{ClientMsg, ServerMsg};
 
-/// Query the daemon for current session list and print it.
-/// # Errors
-///
-/// Returns an error when the daemon request, response validation, or output
-/// operation fails.
 pub async fn run_status() -> Result<()> {
     let msg = request_control(&ClientMsg::Status).await?;
     let sessions = match msg {
@@ -38,15 +32,6 @@ pub async fn run_status() -> Result<()> {
     Ok(())
 }
 
-/// `jackin-capsule status explain <session_id>` — dump the agent-status
-/// evidence bundle (the arbitration report: raw state, winning source,
-/// confidence, visible flags, foreground pgid, subagent count, revisions) for
-/// one session, as pretty JSON. Reads the same `Snapshot` the console consumes,
-/// so it needs no extra protocol surface.
-/// # Errors
-///
-/// Returns an error when the session ID is invalid, the daemon request fails,
-/// the session is absent, or the report cannot be serialized.
 pub async fn run_status_explain(args: &[String]) -> Result<()> {
     let session_id: u64 = flag_value(args, "explain")
         .context("usage: jackin-capsule status explain <session_id>")?
@@ -72,13 +57,6 @@ pub async fn run_status_explain(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// `jackin-capsule status capture <session_id>` — ask the daemon to write a
-/// capture fixture (live grid + evidence) for one session. The daemon owns the
-/// grid, so it does the write; the client triggers and waits for the Ack.
-/// # Errors
-///
-/// Returns an error when the session ID is invalid, the daemon request fails,
-/// or the daemon does not acknowledge the capture.
 pub async fn run_status_capture(args: &[String]) -> Result<()> {
     let session_id: u64 = flag_value(args, "capture")
         .context("usage: jackin-capsule status capture <session_id>")?
@@ -117,12 +95,6 @@ pub async fn run_status_capture(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// `jackin-capsule token-usage <session_id>` — print the per-session token-spend
-/// summary as JSON, or a no-data line when the session is unknown to the monitor.
-/// # Errors
-///
-/// Returns an error when the session ID is invalid, the daemon request fails,
-/// or the summary cannot be serialized.
 pub async fn run_token_usage(args: &[String]) -> Result<()> {
     let session_id: u64 = flag_value(args, "token-usage")
         .context("usage: jackin-capsule token-usage <session_id>")?
@@ -147,14 +119,6 @@ pub async fn run_token_usage(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Query the daemon for the tab/pane snapshot and print as JSON.
-/// Output shape is `ServerMsg::Snapshot` verbatim so the host
-/// console can deserialize the same struct it shares with the
-/// daemon — no second schema to keep in sync.
-/// # Errors
-///
-/// Returns an error when the daemon request fails, the response is not a
-/// snapshot, or the snapshot cannot be serialized.
 pub async fn run_snapshot() -> Result<()> {
     let msg = request_control(&ClientMsg::Snapshot).await?;
     let (tabs, active_tab) = match msg {

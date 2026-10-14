@@ -1,8 +1,3 @@
-//! jackin-usage-projection: surface-neutral canonical usage projection.
-//!
-//! **Architecture Invariant:** T5.
-//! Entry point: [`build_canonical_projection`] — build the V1 publication.
-
 mod account;
 mod canonical;
 

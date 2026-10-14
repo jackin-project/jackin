@@ -61,14 +61,12 @@ fn section_choices_returns_root_plus_distinct_sections() {
 #[test]
 fn create_mode_existing_field_commits_edit_item_field() {
     let mut s = create_at_section(vec![field("token", "CONCEALED", true)]);
-    // Select `(root)` → Field stage scoped to root.
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::Field);
     assert_eq!(s.selected_section, None);
-    // Root field "token" → display rows: [Field{0}, NewFieldSentinel].
     s.field_list_state.set_active(Some(0));
     match s.handle_key(key(KeyCode::Enter)) {
         ModalOutcome::Commit(OpPickerSelection::EditItemField {
@@ -78,8 +76,6 @@ fn create_mode_existing_field_commits_edit_item_field() {
             ..
         }) => {
             assert_eq!(item.id, "i-login");
-            // The real field id is forwarded so the write targets this
-            // exact field (not the first label match) and preserves it.
             assert_eq!(
                 field,
                 FieldTarget::Existing {
@@ -107,7 +103,6 @@ fn create_mode_selecting_section_scopes_field_stage() {
         ],
         vec![auth.clone()],
     );
-    // section_choices: [None, Some("auth")]; select "auth" (index 1).
     s.section_list_state.set_active(Some(1));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
@@ -115,11 +110,9 @@ fn create_mode_selecting_section_scopes_field_stage() {
     ));
     assert_eq!(s.stage, OpPickerStage::Field);
     assert_eq!(s.selected_section, Some(auth.clone()));
-    // Field stage shows only the two "auth" fields + NewFieldSentinel.
     let rows = s.build_field_display_rows();
     assert_eq!(rows.len(), 3, "two auth fields + new-field sentinel");
     assert!(matches!(rows[2], FieldDisplayRow::NewFieldSentinel));
-    // Selecting the first scoped field commits with section Some("auth").
     s.field_list_state.set_active(Some(0));
     match s.handle_key(key(KeyCode::Enter)) {
         ModalOutcome::Commit(OpPickerSelection::EditItemField { section, field, .. }) => {
@@ -136,13 +129,11 @@ fn create_mode_new_field_in_root_commits_section_none() {
         "user",
         "op://Personal/login/user",
     )]);
-    // Select `(root)`.
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::Field);
-    // Rows: [Field{0}, NewFieldSentinel] → select the sentinel.
     s.field_list_state.set_active(Some(1));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
@@ -161,14 +152,12 @@ fn create_mode_new_field_in_root_commits_section_none() {
 #[test]
 fn create_mode_new_section_flow_threads_section_into_commit() {
     let mut s = create_at_section(vec![]);
-    // section_choices: [None]; sentinel `+ New section` at index 1.
     s.section_list_state.set_active(Some(1));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::NewSectionName);
-    // section_name_input starts empty; type a name (empty won't commit).
     for c in "creds".chars() {
         drop(s.handle_key(key(KeyCode::Char(c))));
     }
@@ -188,11 +177,8 @@ fn create_mode_new_section_flow_threads_section_into_commit() {
 
 #[test]
 fn field_label_cancel_clears_pending_section() {
-    // New-section flow stages pending_section, then backing out of the
-    // field-label stage must discard it so it cannot leak into a later
-    // commit on a different path.
     let mut s = create_at_section(vec![]);
-    s.section_list_state.set_active(Some(1)); // `+ New section` sentinel
+    s.section_list_state.set_active(Some(1));
     drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.stage, OpPickerStage::NewSectionName);
     for c in "foo".chars() {
@@ -204,7 +190,6 @@ fn field_label_cancel_clears_pending_section() {
         s.pending_section,
         Some(OpSectionTarget::NewLabel("foo".into()))
     );
-    // Esc cancels the field-label stage.
     drop(s.handle_key(key(KeyCode::Esc)));
     assert_eq!(s.stage, OpPickerStage::NewSectionName);
     assert!(
@@ -216,7 +201,6 @@ fn field_label_cancel_clears_pending_section() {
 #[test]
 fn field_label_commit_trims_whitespace() {
     let mut s = create_at_section(vec![]);
-    // Drill `(root)` → Field stage, then `+ New field`.
     drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.stage, OpPickerStage::Field);
     s.field_label_input = field_label_input_state("  oauth-token  ");
@@ -245,9 +229,6 @@ fn new_section_name_commit_trims_whitespace() {
 
 #[test]
 fn left_collapse_via_header_keeps_selection_in_range() {
-    // Browse-mode flat field list with a collapsible header. Left on the
-    // header collapses it and (like the Enter toggle) clamps the field
-    // selection so it never points past the shrunken row list.
     let mut s = picker_ready();
     s.selected_vault = Some(OpVault {
         id: "v-Personal".into(),
@@ -263,10 +244,8 @@ fn left_collapse_via_header_keeps_selection_in_range() {
         label: "auth".to_owned(),
     }];
     s.stage = OpPickerStage::Field;
-    // Rows: [SectionHeader(auth), Field, Field]. Park on the last field.
     let last = s.build_field_display_rows().len() - 1;
     s.field_list_state.set_active(Some(last));
-    // Move up onto the header row, then collapse with Left.
     let header_idx = s
         .build_field_display_rows()
         .iter()
@@ -303,7 +282,6 @@ fn create_mode_esc_chain_field_to_section_to_item() {
             label: "auth".to_owned(),
         }],
     );
-    // Drill into "auth", then Esc back to Section, then Esc back to Item.
     s.section_list_state.set_active(Some(1));
     drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.stage, OpPickerStage::Field);

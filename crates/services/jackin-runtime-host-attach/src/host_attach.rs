@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host-owned attach client for running Capsule daemons.
-//!
-//! This is the host-side twin of the in-container `jackin-capsule`
-//! interactive client. It owns the operator terminal and speaks the
-//! shared attach protocol over either the bind-mounted Capsule socket
-//! or a stdio `attach-proxy` running inside the container.
-
 mod terminal_input;
 
 use std::collections::HashMap;
@@ -101,9 +94,6 @@ fn log_clipboard_image_pasted_path_staged() {
 
 #[must_use]
 pub fn host_attach_enabled(paths: &JackinPaths) -> bool {
-    // Integration-test binaries link this crate without `cfg(test)`. The
-    // explicit path context keeps an operator's JACKIN_HOST_ATTACH setting
-    // from routing injected fakes into the real host transport.
     if paths.test_layout {
         return false;
     }
@@ -401,8 +391,6 @@ where
                         )
                         .await;
                     }
-                    // Paste and Stage differ on the Capsule side; the host response
-                    // (probe the clipboard for a readable image) is identical.
                     ServerFrame::HostPasteImageFromClipboard
                     | ServerFrame::HostStageImageFromClipboard => {
                         write_clipboard_image_request_result(
@@ -522,13 +510,6 @@ where
                     .await?;
                     continue;
                 }
-                // The two image sources are mutually exclusive by construction:
-                // Ctrl+V is the lone trigger byte (no surrounding bytes), while the
-                // pasted-path probe matches a bracketed paste. Branch on the trigger
-                // so exclusivity is structural. The pasted-path read also carries any
-                // bytes sharing the read around the paste body; those are forwarded
-                // below so a coincident keystroke/mouse report is not dropped when the
-                // body is consumed as an image.
                 let staged: Option<(ClipboardImage, &[u8], &[u8])> =
                     if is_image_paste_trigger(input) {
                         log_clipboard_image_paste_trigger();
@@ -547,10 +528,6 @@ where
                             }
                         }
                     } else {
-                        // Cmd+V parity: a bracketed paste whose body is a real host
-                        // image file is auto-staged as an image frame instead of
-                        // forwarding the raw path text (the container path is
-                        // substituted downstream). Everything else forwards as text.
                         match read_image_from_pasted_path(input).await {
                             Ok(Some((image, prefix, suffix))) => {
                                 log_clipboard_image_pasted_path_staged();
@@ -564,8 +541,6 @@ where
                         }
                     };
                 if let Some((image, prefix, suffix)) = staged {
-                    // Bytes typed before the paste must reach the agent ahead of the
-                    // image, preserving wire order (prefix → image → suffix).
                     if !prefix.is_empty() {
                         write_input_frame(&mut server_writer, prefix, "paste prefix").await?;
                     }
@@ -582,9 +557,6 @@ where
                             }
                         }
                         Err(_error) => {
-                            // The prefix already went out, so forward the remainder of
-                            // the read verbatim (markers + body + suffix) to reconstruct
-                            // the original input exactly — no double-send.
                             write_input_frame(&mut server_writer, &input[prefix.len()..], "input fallback")
                                 .await?;
                         }
@@ -899,8 +871,6 @@ fn host_file_basename(path: &Path) -> String {
         .to_owned()
 }
 
-/// Encode and send `bytes` as one `Input` frame. `what` names the call site for
-/// the socket-write error context (e.g. "paste prefix").
 async fn write_input_frame<W>(writer: &mut W, bytes: &[u8], what: &str) -> Result<()>
 where
     W: AsyncWrite + Unpin,
@@ -1193,9 +1163,6 @@ fn terminal_size() -> (u16, u16) {
     normalize_size(rows, cols)
 }
 
-/// Run a post-export desktop action (`open`/`reveal`) and build the user
-/// notice. `success_verb` is the past-tense word for the OK message ("opened",
-/// "revealed"); `fail_verb` is the bare action word used in the failure notice.
 fn export_action_notice(
     export: &CompletedHostFileExport,
     action: impl FnOnce(&Path) -> Result<()>,
@@ -1242,10 +1209,6 @@ fn outer_terminal_reset_sequence() -> Vec<u8> {
 }
 
 fn enter_host_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawModeGuard> {
-    // Only enter raw mode when stdin is a real terminal. In a headless context
-    // (CI, piped stdio, tests) `enable_raw_mode` fails with "Device not
-    // configured (os error 6)"; skipping it lets the non-interactive path proceed
-    // and the guard no-ops its raw-mode teardown on drop.
     let raw_mode = std::io::IsTerminal::is_terminal(&std::io::stdin());
     if raw_mode {
         crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
@@ -1263,8 +1226,6 @@ fn enter_host_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawModeGua
 }
 
 struct RawModeGuard {
-    /// Whether `enter_host_attach_terminal` actually enabled raw mode (only on a
-    /// real terminal); the drop teardown disables it only when it was enabled.
     raw_mode: bool,
 }
 

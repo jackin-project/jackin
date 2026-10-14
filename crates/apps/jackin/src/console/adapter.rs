@@ -1,16 +1,6 @@
-//! Root-console binary adapter shell.
-//!
-//! The `jackin` binary owns terminal/runtime/config IO and binds those side
-//! effects to the product state, input, and view code in `jackin-console`.
-//! This is dependency-crossing composition-root code, not a second TUI owner.
-
 pub(crate) mod input;
 pub mod run;
 pub mod state;
-
-// ── Root-console type aliases ───────────────────────────────────────────────
-// Concrete manager effect and save-flow types binding generic jackin-console
-// effect vocabulary to root-binary-owned types.
 
 pub(crate) type ManagerEffect = jackin_console::tui::effect::ConsoleManagerEffect<
     jackin_core::RoleSelector,

@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Workspace resolution: build `ResolvedWorkspace` from a saved or current-directory workspace.
-//!
-//! Handles both `LoadWorkspaceInput::Saved` and `LoadWorkspaceInput::CurrentDir`
-//! paths through the same validation pipeline. Not responsible for mount
-//! parsing from CLI strings (`workspace::mounts`) or sensitive-path detection
-//! (`workspace::sensitive`).
-
 use crate::ConfigError;
 use std::path::{Path, PathBuf};
 
@@ -22,7 +15,6 @@ use crate::schema::{
 use crate::validation::validate_workspace_config;
 use jackin_core::WorkspaceName;
 
-/// Build an ad-hoc workspace whose workdir and sole mount are `cwd`.
 pub fn current_dir_workspace(cwd: &Path) -> crate::ConfigResult<WorkspaceConfig> {
     let cwd = cwd.canonicalize()?;
     let path = cwd.display().to_string();
@@ -39,19 +31,12 @@ pub fn current_dir_workspace(cwd: &Path) -> crate::ConfigResult<WorkspaceConfig>
     })
 }
 
-/// How the operator selected the workspace to load.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadWorkspaceInput {
-    /// Use the process current working directory as an ad-hoc workspace.
     CurrentDir,
-    /// Bind host `src` to container `dst` as an ad-hoc workspace.
-    Path {
-        /// Host source path (tilde-expanded / resolved).
-        src: String,
-        /// Container destination (or same as `src` for identity bind).
-        dst: String,
-    },
-    /// Load a named saved workspace from config.
+
+    Path { src: String, dst: String },
+
     Saved(String),
 }
 
@@ -66,13 +51,9 @@ fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
     }
 }
 
-/// Match depth of `workspace` against `cwd` (workdir exact, mounts as prefix); higher wins.
 pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> Option<usize> {
     let canonical_cwd = cwd.canonicalize().ok()?;
 
-    // Workdir must match exactly — being a parent of cwd is not enough.
-    // Mount sources still match as a prefix so that subdirectories of a
-    // mounted host path are covered without needing to enumerate every file.
     let workdir_depth = {
         let expanded = expand_tilde(&workspace.workdir);
         Path::new(&expanded)
@@ -93,7 +74,6 @@ pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> O
         .max()
 }
 
-/// Resolve `input` into a [`ResolvedWorkspace`] with global mounts merged.
 pub fn resolve_load_workspace(
     config: &AppConfig,
     selector: &RoleSelector,
@@ -101,12 +81,6 @@ pub fn resolve_load_workspace(
     input: LoadWorkspaceInput,
     ad_hoc_mounts: &[MountConfig],
 ) -> crate::ConfigResult<ResolvedWorkspace> {
-    // Note on `keep_awake`: only `Saved` workspaces can opt in.
-    // `CurrentDir` and `Path` build a fresh `WorkspaceConfig` from
-    // defaults (`enabled = false`), so an ad-hoc load against a
-    // directory that *would* match a saved keep-awake workspace
-    // intentionally does not inherit the assertion — the user opted
-    // in for the saved workspace, not for arbitrary loads.
     let (mut workspace, label) = match input {
         LoadWorkspaceInput::CurrentDir => {
             let ws = current_dir_workspace(cwd)?;
@@ -166,7 +140,6 @@ pub fn resolve_load_workspace(
         }
     };
 
-    // Merge ad-hoc mounts after workspace mounts, checking for dst conflicts.
     for ad_hoc in ad_hoc_mounts {
         if workspace
             .mounts
@@ -185,10 +158,6 @@ pub fn resolve_load_workspace(
         &WorkspaceName::parse("runtime").map_err(anyhow::Error::from)?,
         &workspace,
     )?;
-    // Heal cache-backed workspace mounts (recreate dirs, skip files) before
-    // existence validation so a wiped cache never fails launch resolution.
-    // Anything still missing afterwards (project checkouts, failed
-    // recreations) keeps today's hard error.
     let cache_roots = launch_cache_roots();
     let owned_mounts = std::mem::take(&mut workspace.mounts);
     let (healed_mounts, mut heal_report) = ensure_mount_sources(
@@ -235,20 +204,6 @@ pub fn resolve_load_workspace(
 }
 
 impl AppConfig {
-    /// Effective `default_launch` list after scope precedence.
-    ///
-    /// Returns the most-specific configured list: role override → workspace
-    /// → global. `None` means no scope configures one (the sole-eligible
-    /// fallback applies) or the named workspace is unknown (callers fall
-    /// through to their legacy unknown-workspace error).
-    ///
-    /// This is the shared precedence gate behind `resolve_launch`: console
-    /// pre-checks and runtime validation branch on it so neither
-    /// reimplements the scope order nor string-matches resolver errors.
-    /// It must stay in lockstep with the scope lookup inside
-    /// `resolve_launch` (role → workspace → global, replace without
-    /// union); `effective_default_launch_agrees_with_resolve_launch`
-    /// pins that agreement behaviorally.
     #[must_use]
     pub fn effective_default_launch(
         &self,
@@ -266,13 +221,6 @@ impl AppConfig {
     }
 }
 
-/// Find the saved workspace that best matches the current working directory.
-///
-/// Workspace workdirs must match `cwd` exactly; mount sources match as a
-/// prefix. When multiple workspaces match, the deepest path wins (most
-/// specific mount point).
-///
-/// Used by CLI context resolution and the console's workspace preselection.
 pub fn find_saved_workspace_for_cwd<'a>(
     config: &'a AppConfig,
     cwd: &Path,

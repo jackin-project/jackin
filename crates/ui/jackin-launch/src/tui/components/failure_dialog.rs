@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch failure composition over `TermRock`'s canonical message/detail widgets.
-
 use ratatui::{
     Frame,
     buffer::Buffer,
@@ -117,9 +115,6 @@ fn popup_height(area: Rect, rows: &[FailurePopupRow]) -> u16 {
                 .max(1)
         })
         .sum::<usize>();
-    // Head `Dialog::paint` reserves rhythm rows (1 above the body, 2 below)
-    // on top of the 2 border rows, so the detail table gets
-    // `rect.height - message_rows - 5`; budget the same 5 chrome rows.
     u16::try_from(message_rows.saturating_add(detail_rows).saturating_add(5))
         .unwrap_or(u16::MAX)
         .clamp(7.min(area.height), area.height.saturating_sub(2).max(1))

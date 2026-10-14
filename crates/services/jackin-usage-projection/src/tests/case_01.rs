@@ -107,7 +107,6 @@ fn account_projects_window_spend_and_plan_groups() {
     );
 
     let account = project_account(&entry, 0, 7).unwrap();
-    // Principal-window projection keeps its shape: two buckets, two windows.
     assert_eq!(account.windows.len(), 2);
     assert_eq!(
         account.windows[0].remaining_percent.map(UsagePercent::get),
@@ -136,14 +135,12 @@ fn account_projects_window_spend_and_plan_groups() {
         assert_eq!(group.last_success_at_epoch, Some(1_800_000_000));
         assert!(!group.is_stale);
     }
-    // Window group mirrors its bucket window.
     assert_eq!(
         account.metric_groups[0].quota_state,
         account.windows[0].quota_state
     );
     assert_eq!(account.metric_groups[0].reset_at_epoch, Some(1_800_100_000));
     assert_eq!(account.metric_groups[0].renews_at_epoch, None);
-    // Spend group carries structured money with currency and exponent.
     match &account.metric_groups[2].value {
         UsageMetricValueV1::SpendCap {
             cap,
@@ -157,7 +154,6 @@ fn account_projects_window_spend_and_plan_groups() {
         other => panic!("expected spend-cap value, got {other:?}"),
     }
     assert_eq!(account.metric_groups[2].reset_at_epoch, Some(1_800_200_000));
-    // Plan group carries metadata with no quota notion and no reset.
     assert_eq!(
         account.metric_groups[3].quota_state,
         UsageQuotaStateV1::NotApplicable
@@ -165,7 +161,6 @@ fn account_projects_window_spend_and_plan_groups() {
     assert_eq!(account.metric_groups[3].reset_at_epoch, None);
     assert_eq!(account.metric_groups[3].renews_at_epoch, None);
 
-    // Group ids are stable for identical input.
     let rerun = project_account(&entry, 0, 7).unwrap();
     let ids = account
         .metric_groups
@@ -325,7 +320,6 @@ fn parity_antigravity_two_family_windows_groups_and_credits() {
     assert_eq!(account.status, "Available");
     assert_eq!(account.lifecycle, UsageLifecycleV1::Available);
 
-    // Principal windows: family membership, order, percents, resets.
     let labels = account
         .windows
         .iter()
@@ -356,8 +350,6 @@ fn parity_antigravity_two_family_windows_groups_and_credits() {
             .all(|window| window.quota_state == UsageQuotaStateV1::Available)
     );
 
-    // Metric groups: four real window groups, the real plan group, and the
-    // hand-built balance group (no producer emits balances yet).
     assert_eq!(account.metric_groups.len(), 6);
     for (index, percent) in [73_u8, 41, 12, 88].iter().enumerate() {
         let group = &account.metric_groups[index];
@@ -390,7 +382,6 @@ fn parity_antigravity_two_family_windows_groups_and_credits() {
         "balance group must carry $12.50 with expiry"
     );
 
-    // Freshness: same age, renderer-owned words differ (see delta test).
     assert_eq!(freshness_age_label(PARITY_NOW, account), "updated 5m ago");
     assert_eq!(
         group_freshness_label(PARITY_NOW, &account.metric_groups[0]),

@@ -1,4 +1,3 @@
-// docs/components/landing/ApproachCards.tsx
 import { TabbedBuilder } from './TabbedBuilder';
 
 const manifestBody = (

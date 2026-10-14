@@ -211,7 +211,6 @@ fn process_execute_span_redacts_env_args_in_attr_input() {
 
 #[test]
 fn build_stderr_summary_takes_tail_and_redacts_temp_paths() {
-    // BuildKit reports the cause at the end; the preamble is noise.
     let stderr = b"#1 [internal] load build definition\n#4 naming to img done\n#4 DONE 0.0s\nERROR: failed to solve: open /tmp/.tmpAbC/Dockerfile: no such file\n";
     let summary = summarize_build_stderr(stderr);
 

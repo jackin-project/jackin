@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `ManagerMessage` types and the `update_manager` reducer.
 
 use super::{
     action_of, apply_op_commit_result, apply_settings_message, clear_settings_auth_kind,
@@ -69,8 +68,6 @@ pub type ManagerBackgroundEvent = crate::tui::message::BackgroundEvent<
     PendingIsolationCleanup,
     ManagerConfigSaveResult,
 >;
-
-// ── Reducer ───────────────────────────────────────────────────────────────
 
 #[expect(
     clippy::too_many_lines,

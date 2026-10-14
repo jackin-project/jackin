@@ -6,13 +6,9 @@ use crate::instance::{InstanceIndex, InstanceStatus};
 
 #[tokio::test]
 async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
-    // Purged tombstones are index-only entries — the state dir is already gone.
-    // purge_container_filesystem must tolerate NotFound so the tombstone is
-    // removed from the index without error.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-k7p9m2xq-agentsmith";
-    // Register in the index but do NOT create the state directory.
     let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: container,
         workspace_name: Some("ws"),
@@ -40,7 +36,7 @@ async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
     manifest.mark_status(InstanceStatus::Purged);
     InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 
-    let docker = FakeDockerClient::default(); // inspect returns NotFound → allow purge
+    let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
     prune_instances(&paths, &docker, &mut runner).await.unwrap();
 
@@ -56,13 +52,10 @@ async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
 
 #[tokio::test]
 async fn prune_dir_returns_err_with_path_context_on_failure() {
-    // Create a file at the path so remove_dir_all fails (ENOTDIR on the
-    // path's parent, or similar — exact error is platform-dependent but
-    // it will not be NotFound).
     let temp = tempdir().unwrap();
     let blocker = temp.path().join("blocker");
     std::fs::write(&blocker, b"").unwrap();
-    let target = blocker.join("child"); // child of a file — cannot exist
+    let target = blocker.join("child");
 
     let err = prune_dir(&target, "Test Label", "removing test label", "test label").unwrap_err();
 
@@ -89,7 +82,7 @@ async fn prune_all_instances_removes_data_dir_entirely() {
     )
     .unwrap();
 
-    let docker = FakeDockerClient::default(); // exile_all: list_containers returns empty
+    let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
     prune_all_instances(&paths, &docker, &mut runner)
         .await
@@ -132,14 +125,11 @@ async fn prune_jackin_home_removes_home() {
 async fn prune_jackin_home_is_ok_when_absent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    // jackin_home never created — must not panic
     prune_jackin_home(&paths).unwrap();
 }
 
 #[tokio::test]
 async fn purge_container_state_refuses_path_escape() {
-    // A container name escaping the data dir must be refused — never
-    // recursively deleted — even though `data_dir.join(name)` resolves.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     std::fs::create_dir_all(&paths.data_dir).unwrap();
@@ -167,8 +157,6 @@ async fn purge_container_state_refuses_path_escape() {
 
 #[tokio::test]
 async fn prune_dir_refuses_symlink() {
-    // A symlink where the pruned directory should be is refused loudly;
-    // both the link and its target survive.
     let temp = tempdir().unwrap();
     let outside = temp.path().join("outside");
     std::fs::create_dir_all(&outside).unwrap();

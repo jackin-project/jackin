@@ -341,8 +341,6 @@ fn typed_input_after_copied_selection_clears_and_forwards() {
 
 #[test]
 fn split_close_frame_repaints_in_place_without_screen_erase() {
-    // Layout reflow must converge through Ratatui's diff without flashing the
-    // screen blank (I4).
     let mut mux = single_pane_tab_mux_with_size(24, 80);
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 

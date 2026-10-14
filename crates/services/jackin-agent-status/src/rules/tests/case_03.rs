@@ -5,10 +5,6 @@ use super::*;
 
 #[test]
 fn gate_fallback_eval_matches_without_finalize() {
-    // A pack that was validated but NOT finalized evaluates the gate through the
-    // raw `Gate::eval` fallback (the `(None, Some(gate))` arm). This is the only
-    // coverage of that hand-written second copy of the eval logic — it must agree
-    // with the compiled path, so the same three outcomes hold.
     let toml = r#"
 schema_version = 1
 agent = "test"
@@ -27,7 +23,6 @@ all = [
   { not = { contains = "cancelled" } },
 ]
 "#;
-    // Validate-only (no finalize) -> compiled_gate stays None -> fallback path.
     let pack: RulePack = toml::from_str(toml).unwrap();
     pack.validate().unwrap();
 
@@ -55,7 +50,6 @@ all = [
 
 #[test]
 fn gate_regex_and_line_regex_leaves_match() {
-    // `regex` anchors to the joined blob; `line_regex` is existential per line.
     let pack = toml::from_str::<RulePack>(
         r#"
 schema_version = 1
@@ -76,16 +70,13 @@ all = [ { regex = "esc to interrupt" }, { line_regex = '^\s*[*]\s' } ]
     .finalize()
     .unwrap();
 
-    // Joined text contains "esc to interrupt" AND a line starts with "* ".
     let hit = vec!["* Thinking…".to_owned(), "(esc to interrupt)".to_owned()];
     assert_eq!(
         pack.evaluate(&hit).unwrap().state,
         Some(RawAgentState::Working)
     );
-    // "* " only mid-line (not line-start) -> line_regex fails -> no match.
     let no_line = vec!["see * here".to_owned(), "(esc to interrupt)".to_owned()];
     assert!(pack.evaluate(&no_line).is_none());
-    // line-start "* " present but the regex needle absent -> no match.
     let no_regex = vec!["* Thinking…".to_owned(), "all done".to_owned()];
     assert!(pack.evaluate(&no_regex).is_none());
 }
@@ -107,7 +98,6 @@ fn gate_rejects_overlong_leaf() {
 
 #[test]
 fn gate_rejects_excessive_nesting_depth() {
-    // Build `not = { not = { … contains } }` nested past MAX_GATE_DEPTH.
     let mut gate = "{ contains = \"x\" }".to_owned();
     for _ in 0..20 {
         gate = format!("{{ not = {gate} }}");

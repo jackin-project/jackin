@@ -28,12 +28,6 @@ pub enum GateEffect {
     Ignore,
 }
 
-/// Enrich a vendor hook event name using an optional JSON payload.
-///
-/// Claude Code installs hooks as bare `--event Notification`; the subtype
-/// (`permission_prompt`, `idle_prompt`, `elicitation_*`) lives in the stdin
-/// JSON. Without this enrichment, production maps bare `Notification` to
-/// [`GateEffect::Ignore`] and never authors authority.
 #[must_use]
 pub fn enrich_event_name(runtime: &str, event: &str, payload: Option<&str>) -> String {
     if runtime == "claude"
@@ -126,8 +120,6 @@ fn authority(
     }
 }
 
-/// The canonical agent-event vocabulary. A reporter event already in canonical
-/// form passes through unchanged; anything else falls to per-vendor mapping.
 const CANONICAL_EVENTS: &[&str] = &[
     "prompt-submitted",
     "tool-start",
@@ -158,9 +150,6 @@ fn canonical_event(runtime: &str, event: &str) -> Option<&'static str> {
 
 fn canonical_vendor_event(runtime: &str, event: &str) -> Option<&'static str> {
     match (runtime, event) {
-        // Claude and Codex lifecycle hooks remain identity-only (Decision 0a):
-        // their Stop/Subagent ordering can revive an idle pane after a turn ends.
-        // Only documented wait-state notifications below author state.
         ("claude", "SessionEnd") => Some("agent-exit"),
         (
             "claude" | "codex",

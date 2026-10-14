@@ -3,8 +3,6 @@
 
 use super::*;
 pub(super) fn tempdir() -> tempfile::TempDir {
-    // macOS TMPDIR commonly traverses /var -> /private/var. Fixtures use
-    // canonical trusted roots; the resolver intentionally rejects aliases.
     tempfile::tempdir_in(std::fs::canonicalize(std::env::temp_dir()).unwrap()).unwrap()
 }
 

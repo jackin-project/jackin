@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Pointer hover, chrome hit-testing, and drag-resize detection.
 
 use ratatui::layout::Rect;
 use termrock::interaction::HitRegion;
@@ -42,9 +41,6 @@ impl Multiplexer {
     pub(crate) fn update_hover_for_mouse(&mut self, row: u16, col: u16, button: u8) {
         let next = self.hover_target_at(row, col);
         let next_link = self.link_hover_url_at(row, col, button);
-        // The shared Debug info dialog brightens the hovered copyable row, so a
-        // move between two copyable rows must redraw even though hover_target
-        // stays DialogCopyTarget. Track the per-row hover separately.
         let (term_rows, term_cols) = self.render.terminal_size();
         let row_hover_changed = self.dialog_top_mut().is_some_and(|dialog| {
             let row = row + 1;
@@ -66,10 +62,6 @@ impl Multiplexer {
         }
     }
 
-    /// Resolve the chrome target a hit at `(row, col)` (0-based)
-    /// would land on, walking dialog → tab strip → menu → branch bar
-    /// in priority order. Both `hover_target_at` and `pointer_shape_at`
-    /// consume this so the priority ordering lives once.
     pub(crate) fn chrome_hit_target_at(&self, row: u16, col: u16) -> Option<HoverTarget> {
         let row_1based = row + 1;
         let col_1based = col + 1;

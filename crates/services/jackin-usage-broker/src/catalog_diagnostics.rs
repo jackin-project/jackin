@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Converts validated discovery diagnostics into the secret-free projection input.
 
 use crate::publish::{CatalogDiagnosticCode, CatalogDiagnostics};
 use jackin_usage_discovery::{UsageDiscoveryIssue, ValidatedUsageDiscovery};

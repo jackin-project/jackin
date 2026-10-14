@@ -55,7 +55,7 @@ is enforced by physical co-location:
 
 - A behaviour change in `src/cli/**` ships with the matching update to
   `docs/content/(public)/commands/<cmd>.mdx` in the same commit.
-- The per-PR contract in <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> ("Code
+- The per-PR contract in the [Codebase Map](/reference/getting-oriented/codebase-map/) ("Code
   ↔ Docs Cross-Reference" table) is enforceable because both sides are
   in the same diff.
 - The PR review surface naturally includes docs.
@@ -165,7 +165,7 @@ Doing this without breaking anything is the primary risk.
   filter-repo` or `git subtree split`).
 - Switch the GitHub Actions deploy workflow.
 - Delete `docs/` from this repo in the same release cut, and update
-  every reference (<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile>,
+  every reference (the [Codebase Map](/reference/getting-oriented/codebase-map/),
   <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, `docs/AGENTS.md` (removed in #956; consolidated into root AGENTS.md),
   and the docs cross-reference table).
 
@@ -205,7 +205,7 @@ When this lands, the following should all be true:
    matching docs change either landing first or being linked.
 3. PR review across two repos costs no more than one extra click for
    the reviewer.
-4. <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> and the cross-reference table are updated to
+4. The [Codebase Map](/reference/getting-oriented/codebase-map/) cross-reference table is updated to
    point at the new repo and explain the new flow.
 5. The freshness check from the docs site's own `docs/AGENTS.md` (removed in #956; consolidated into root AGENTS.md)
    ("Roadmap sidebar discipline", `<RepoFile />` validation, lychee
@@ -217,6 +217,6 @@ When this lands, the following should all be true:
   at the new repo when this lands.
 - [split workspace-file layout](/reference/runtime/configuration/#one-file-per-workspace-by-design) — orthogonal, but in the same "configuration / workflow ergonomics" cluster.
 - [Developer Reference](/reference/developer-reference/) — also a docs-discoverability surface, since both depend on docs being easy to find and edit.
-- <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> — the "Code ↔ Docs
+- The [Codebase Map](/reference/getting-oriented/codebase-map/) — the "Code ↔ Docs
   Cross-Reference" table is the single biggest piece of in-repo state
   that has to migrate or be re-enforced.

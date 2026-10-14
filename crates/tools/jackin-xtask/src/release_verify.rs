@@ -20,19 +20,14 @@ const GITHUB_REPO: &str = "jackin-project/jackin";
 
 mod package;
 pub(crate) use package::{
-    ReleaseVerifyPackageArgs, expected_file_names as expected_package_file_names, run_package,
-    verify_preview_package,
+    expected_file_names as expected_package_file_names, verify_preview_package,
 };
 
 #[derive(Debug, Args)]
 pub(crate) struct ReleaseVerifyArgs {
-    /// Release archive to verify.
     archive: PathBuf,
-    /// Skip the GitHub artifact attestation check. Use only when verifying an
-    /// unreleased local archive before CI has produced provenance.
     #[arg(long)]
     skip_attestation: bool,
-    /// Skip cosign bundle verification. Use only for digest-only tamper drills.
     #[arg(long)]
     skip_signature: bool,
 }

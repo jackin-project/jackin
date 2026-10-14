@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings tab-bar and content-shell keymaps.
 
 use termrock::input::KeyCode;
 
@@ -55,17 +54,10 @@ pub(crate) static SETTINGS_TAB_BAR_KEYMAP_BINDINGS: &[KeyBinding<SettingsTabBarA
 pub(crate) static SETTINGS_TAB_BAR_KEYMAP: Keymap<SettingsTabBarAction> =
     Keymap::from_static(SETTINGS_TAB_BAR_KEYMAP_BINDINGS);
 
-// ── Settings content-shell mode ───────────────────────────────────────────────
-
-/// Shell-level actions when settings content has focus (tab navigation / focus
-/// return). Applied before per-tab dispatch in `handle_settings_key_with_effects`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsContentShellAction {
-    /// Tab → next tab (focus stays on tab bar after move).
     NextTab,
-    /// `BackTab` → return focus to tab bar, no auth-kind clear.
     FocusTabBar,
-    /// Esc → return focus to tab bar; caller clears auth kind if one is selected.
     FocusTabBarOrClearAuth,
 }
 
@@ -96,5 +88,3 @@ pub(crate) static SETTINGS_CONTENT_SHELL_KEYMAP_BINDINGS: &[KeyBinding<
 ];
 pub(crate) static SETTINGS_CONTENT_SHELL_KEYMAP: Keymap<SettingsContentShellAction> =
     Keymap::from_static(SETTINGS_CONTENT_SHELL_KEYMAP_BINDINGS);
-
-// ── Settings General tab ──────────────────────────────────────────────────────

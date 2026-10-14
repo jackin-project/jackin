@@ -24,8 +24,6 @@ fn a_fully_supplied_programmatic_launch_validates() {
 
 #[test]
 fn an_interactive_launch_skips_every_programmatic_check() {
-    // The interactive path can still answer a prompt, so an unresolved agent
-    // and a missing trust grant are not validation failures there.
     let options = LoadOptions::default();
     assert_eq!(
         options.validate_programmatic(&untrusted_config(), &selector()),
@@ -156,8 +154,6 @@ fn launch_selection_rejects_accounts_outside_workspace_allowlist() {
 #[test]
 fn launch_selection_without_defaults_synthesizes_ephemeral_default() {
     let (config, workspace) = two_account_config();
-    // Two eligible accounts and no defaults: `resolve_launch` alone is
-    // ambiguous. The explicit pick must resolve it, not fail with it.
     jackin_config::resolve_launch(&config, Some(&workspace), "codex", None, None).unwrap_err();
 
     let selected =
@@ -169,7 +165,6 @@ fn launch_selection_without_defaults_synthesizes_ephemeral_default() {
     assert_eq!(instances[0].agent, Agent::Codex);
     assert_eq!(instances[0].account_id, "private");
     assert_eq!(instances[0].config_id, "private@codex");
-    // The ephemeral default lives on the clone only.
     assert_eq!(config.agent_configurations.len(), 2);
     assert!(config.default_launch.is_none());
     assert!(config.workspaces["work"].roles.is_empty());
@@ -258,9 +253,6 @@ fn launch_selection_with_admitting_defaults_narrows_to_selected_account() {
 
     let selected =
         with_account_selection(&config, Agent::Codex, Some(&workspace), "codex", "shared").unwrap();
-    // The pick is admitted, but the sibling account is not part of this
-    // launch. The inherited workspace list stays intact for other callers;
-    // this launch gets a role-local exact override.
     assert_eq!(
         selected.workspaces["work"].roles["codex"].default_launch,
         Some(vec!["codex-alt".to_owned()])
@@ -306,8 +298,6 @@ fn launch_selection_outside_admitted_set_errors() {
     let (mut config, workspace) = two_account_config();
     config.workspaces.get_mut("work").unwrap().default_launch = Some(vec!["codex-main".into()]);
 
-    // `shared` is registered, compatible, and allowlisted — but the
-    // configured default admits only `private`.
     let error = with_account_selection(&config, Agent::Codex, Some(&workspace), "codex", "shared")
         .unwrap_err();
     assert!(

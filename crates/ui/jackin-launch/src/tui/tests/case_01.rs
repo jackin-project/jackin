@@ -332,7 +332,6 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     let rendered = format!("{:?}", terminal.backend().buffer());
     assert!(rendered.contains("Loading agent-smith in big-monorepo"));
     assert!(rendered.contains("construct"));
-    // Footer chip shows the short instance id derived from the container.
     assert!(rendered.contains("k7p9m2xq"));
 
     view.failure = Some(LaunchFailure {
@@ -350,16 +349,11 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     let rendered = format!("{:?}", terminal.backend().buffer());
     assert!(rendered.contains("Docker unavailable"));
     assert!(rendered.contains("docker daemon is not responding"));
-    // The dismiss hint shows in the footer (the popup draws none itself).
     assert!(rendered.contains("dismiss"));
 }
 
 #[test]
 fn failure_copy_target_at_hits_run_id_value() {
-    // The whole point of the copy-on-click feature: a click landing on a
-    // copyable value's drawn columns must register as that target. Render
-    // and hit-test share `failure_popup_body_rect`, so this also pins the
-    // "they cannot drift" invariant the helper's doc-comment claims.
     let area = Rect::new(0, 0, 80, 24);
     let failure = launch_failure();
     let run_id = "jk-run-testid";
@@ -375,8 +369,6 @@ fn failure_copy_target_at_hits_run_id_value() {
         Some(target),
         "click at value-column start must hit {target:?}",
     );
-    // One column left of the value column lands in the label area —
-    // must not register as a copy target.
     assert_eq!(
         failure_copy_target_at(
             area,

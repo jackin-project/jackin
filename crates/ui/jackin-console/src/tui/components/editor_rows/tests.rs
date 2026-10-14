@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `editor_rows`.
 use super::*;
 use jackin_tui::tokens::ACTION_ACCENT;
 use ratatui::style::{Color, Modifier};

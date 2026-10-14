@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Phase chain body for `run_launch_core` (typed `#[must_use]` handoffs).
-
 mod helpers;
 
 mod runtime_dispatch;

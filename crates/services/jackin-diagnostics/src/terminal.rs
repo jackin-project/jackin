@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Product-local terminal ownership and title policy.
-
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 

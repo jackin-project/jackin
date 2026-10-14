@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Snapshot writes and connection handling.
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -36,13 +35,6 @@ pub(crate) fn block_on_store<T, Fut>(future: Fut) -> Result<T, String>
 where
     Fut: Future<Output = Result<T, String>>,
 {
-    // One process-wide current-thread runtime, reused across every store call.
-    // Callers run inside `spawn_blocking` (no enclosing runtime), so `block_on`
-    // never nests; sequential reuse avoids rebuilding a runtime per snapshot
-    // write. Build errors propagate without panicking. INVARIANT: never call the
-    // store functions from inside the async runtime — route them through
-    // `spawn_blocking`, or `block_on` panics ("Cannot start a runtime from within
-    // a runtime").
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     let runtime = if let Some(runtime) = RUNTIME.get() {
         runtime
@@ -73,9 +65,6 @@ pub(crate) async fn open_store(path: &Path) -> Result<Connection, String> {
         .await
         .map_err(|err| format!("open usage snapshot store failed: {err}"))?;
     record_connection_build(&path);
-    // Schema creation + the ALTER-based migration are idempotent but not free;
-    // run them once per database path per process. Keyed by the resolved turso
-    // path so distinct stores (e.g. each test's temp DB) each migrate once.
     static INITIALIZED_DBS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     let initialized = INITIALIZED_DBS.get_or_init(|| Mutex::new(HashSet::new()));
     let already_initialized = initialized.lock().is_ok_and(|set| set.contains(&path));

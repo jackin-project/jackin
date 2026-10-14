@@ -1,15 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! DNS health check for the apple-container backend.
-//!
-//! [`check_dns`] runs an `nslookup` probe inside the container
-//! after attach returns and warns on the macOS sleep/wake DNS
-//! hiccup, so the operator knows to reconnect when the agent
-//! cannot reach the network.
-
-/// DNS health check — an `nslookup` probe run after attach returns. macOS
-/// sleep/wake can drop DNS inside the VM; surface a "reconnect" hint if affected.
 #[expect(
     clippy::print_stderr,
     reason = "documented residual allow; prefer expect when site is lint-true"

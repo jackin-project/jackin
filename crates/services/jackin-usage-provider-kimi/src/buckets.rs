@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Kimi` quota buckets and window views.
 
 use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
 use jackin_usage_provider_core::{compact_count, quota_pace_label, timed_bucket, with_status_slot};
@@ -12,9 +11,6 @@ use super::{
 
 impl KimiUsageResponse {
     pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
-        // The pools object is the precise per-window meter set; when present
-        // it supersedes the coarser `usage` summary and `limits[]` shapes so
-        // the same window is never rendered twice.
         if let Some(KimiUsages::Pools(pools)) = &self.usages
             && pools.any()
         {
@@ -32,8 +28,6 @@ impl KimiUsageResponse {
         } else {
             return Vec::new();
         };
-        // rate (short/active) window on top, then Weekly — an operator
-        // override of CodexBar's Weekly, Rate Limit order.
         let mut buckets = Vec::new();
         if let Some(rate_limit) = limits.first() {
             buckets.push(with_status_slot(
@@ -106,8 +100,6 @@ pub(crate) fn kimi_pool_bucket(
     )
 }
 
-/// Prefix the raw over-cap figure ahead of the pace note (`142% used · …`),
-/// or pass the pace through when at/below cap.
 pub(crate) fn kimi_pace_with_over_cap(
     raw_percent: Option<f64>,
     pace: Option<String>,
@@ -133,7 +125,6 @@ impl KimiUsageDetail {
         self.remaining.as_ref().and_then(KimiCount::value)
     }
 
-    /// Raw used percent, unclamped (see [`KimiPool::used_percent_raw`]).
     pub(crate) fn used_percent_raw(&self) -> Option<f64> {
         let limit = self.limit_value()?.max(0);
         if limit == 0 {
@@ -160,9 +151,6 @@ impl KimiUsageDetail {
     }
 }
 
-/// Over-cap label preserving the raw provider figure (`142% used`), or `None`
-/// at/below cap. Only the bar geometry clamps; the raw overage stays visible
-/// (T02; the Muse lane renders the same form).
 pub(crate) fn kimi_over_cap_label(raw_percent: f64) -> Option<String> {
     if !raw_percent.is_finite() || raw_percent <= 100.0 {
         return None;

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `SaveDiscardState` and rendering.
 
 use jackin_oppicker::ModalOutcome;
 use ratatui::{Frame, layout::Rect, style::Style, text::Text};

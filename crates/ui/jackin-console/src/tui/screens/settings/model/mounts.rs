@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Global mounts settings state.
 
 use super::{
     SettingsMountsTakeExit, SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard,
@@ -38,7 +37,6 @@ pub struct GlobalMountsState<Row, Modal> {
     pub add_draft: Option<GlobalMountDraft>,
     pub error: Option<String>,
     pub scroll: termrock::widgets::ScrollAreaState,
-    /// Dispatcher pops back to the workspace list when set.
     pub exit_requested: bool,
 }
 

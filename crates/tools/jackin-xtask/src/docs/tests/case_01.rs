@@ -41,7 +41,6 @@ fn append_page_is_idempotent() {
 fn validate_tree_passes_clean_and_flags_broken_and_orphan() {
     let root = tempfile::tempdir().unwrap();
     let r = root.path();
-    // Clean tree: meta lists index + alpha, both present.
     write(&r.join("index.mdx"), "---\ntitle: I\n---\n");
     write(&r.join("alpha.mdx"), "---\ntitle: A\n---\n");
     write_meta(
@@ -51,7 +50,6 @@ fn validate_tree_passes_clean_and_flags_broken_and_orphan() {
     .unwrap();
     validate_tree(r, "test").expect("clean tree should pass");
 
-    // Broken reference: page `ghost` has no file.
     write_meta(
         &r.join("meta.json"),
         &json!({ "pages": ["index", "alpha", "ghost"] }),
@@ -60,7 +58,6 @@ fn validate_tree_passes_clean_and_flags_broken_and_orphan() {
     let err = validate_tree(r, "test").unwrap_err().to_string();
     assert!(err.contains("ghost"), "should flag broken ref: {err}");
 
-    // Orphan: drop `alpha` from pages while the file remains.
     write_meta(&r.join("meta.json"), &json!({ "pages": ["index"] })).unwrap();
     let err = validate_tree(r, "test").unwrap_err().to_string();
     assert!(err.contains("alpha.mdx"), "should flag orphan: {err}");
@@ -68,8 +65,6 @@ fn validate_tree_passes_clean_and_flags_broken_and_orphan() {
 
 #[test]
 fn validate_tree_resolves_group_and_parent_cross_refs() {
-    // Mirror the roadmap shape: a `(group)/` whose pages reference a sibling
-    // item one level up as `../item`.
     let root = tempfile::tempdir().unwrap();
     let r = root.path();
     write(&r.join("index.mdx"), "---\ntitle: I\n---\n");
@@ -82,7 +77,6 @@ fn validate_tree_resolves_group_and_parent_cross_refs() {
     write_meta_mk(&r.join("(grp)/meta.json"), &json!({ "pages": ["../item"] }));
     validate_tree(r, "test").expect("(group) + ../item should resolve");
 
-    // Break the cross-ref: point at a missing sibling.
     write_meta_mk(
         &r.join("(grp)/meta.json"),
         &json!({ "pages": ["../ghost"] }),
@@ -104,11 +98,11 @@ fn repo_links_scan_root_and_docs_markdown_files() {
         "See `crates/services/jackin-host/src/host_desktop.rs`.\n",
     );
     write(
-        &root.join("PROJECT_STRUCTURE.md"),
+        &root.join("AGENTS.md"),
         "See `crates/services/jackin-host/src/host_desktop.rs`.\n",
     );
     write(
-        &root.join("TODO.md"),
+        &root.join("README.md"),
         "See `crates/services/jackin-host/src/host_desktop.rs`.\n",
     );
 
@@ -118,8 +112,8 @@ fn repo_links_scan_root_and_docs_markdown_files() {
 
     assert!(
         err.contains("docs/AGENTS.md")
-            && err.contains("PROJECT_STRUCTURE.md")
-            && err.contains("TODO.md"),
+            && err.contains("  AGENTS.md:1")
+            && err.contains("  README.md:1"),
         "should include docs markdown outside content: {err}"
     );
 }
@@ -354,7 +348,6 @@ fn change_new_in_rejects_unknown_group() {
 #[test]
 fn research_scaffold_in_creates_dossier_and_registers() {
     let research = tempfile::tempdir().unwrap();
-    let prompts = tempfile::tempdir().unwrap();
     let r = research.path();
     write_meta(&r.join("meta.json"), &json!({ "pages": [] })).unwrap();
     fs::create_dir_all(r.join("agents")).unwrap();
@@ -362,7 +355,6 @@ fn research_scaffold_in_creates_dossier_and_registers() {
 
     research_scaffold_in(
         r,
-        prompts.path(),
         ResearchScaffoldArgs {
             slug: "my-study".to_owned(),
             group: "agents".to_owned(),
@@ -372,11 +364,9 @@ fn research_scaffold_in_creates_dossier_and_registers() {
     .unwrap();
 
     assert!(r.join("agents/my-study/index.mdx").is_file());
-    assert!(prompts.path().join("agents/my-study.md").is_file());
     let dossier_meta = read_meta(&r.join("agents/my-study/meta.json")).unwrap();
     assert_eq!(dossier_meta["pages"], json!(["index"]));
     let index = fs::read_to_string(r.join("agents/my-study/index.mdx")).unwrap();
-    assert!(index.contains("<RepoFile path=\"prompts/research/agents/my-study.md\" />"));
     assert!(index.contains("**Research state:** Incomplete"));
     assert!(index.find("## Headline findings") < index.find("## Method and evidence"));
     assert!(index.find("## Method and evidence") < index.find("## Limitations and open questions"));

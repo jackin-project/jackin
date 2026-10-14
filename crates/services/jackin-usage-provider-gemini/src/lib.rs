@@ -1,14 +1,3 @@
-//! jackin-usage-provider-gemini: `Gemini CLI` eligibility + project-quota snapshot.
-//!
-//! **Architecture Invariant:** T3.
-//! Entry point: [`gemini_snapshot`] — `Gemini` usage snapshot.
-//!
-//! Gemini CLI is a separate account from Antigravity even though both ride
-//! Google OAuth. Consumer Google OAuth through Gemini CLI ended 2026-06-18;
-//! Standard and Enterprise remain supported. Gemini/Vertex API-key billing is
-//! project-scoped RPM/TPM/daily/model quotas, parsed into count buckets
-//! without inventing denominators.
-
 mod adapter;
 
 pub use adapter::{

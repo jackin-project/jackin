@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! List modal and github-open handling.
 
 use super::super::InputOutcome;
 use super::dispatch_manager;
@@ -18,7 +17,6 @@ use crate::tui::update::{
 };
 use jackin_config::AppConfig;
 
-/// Dispatch the `o` key on the workspace list view.
 pub(crate) fn handle_list_open_in_github(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -45,12 +43,7 @@ pub(crate) fn handle_list_open_in_github(
     }
 }
 
-/// Dispatch a key into whatever modal currently sits on `state.list_modal`.
 pub fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
-    // Pre-compute the Debug-info dialog rect (immutable borrow) so the scroll
-    // can be clamped to the content after the key is handled — without this the
-    // offset inflates past the end and the opposite key feels dead while it
-    // unwinds.
     let container_info_rect = state
         .list_modal
         .as_ref()

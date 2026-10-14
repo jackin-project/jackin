@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Image version helpers extracted from image.rs.
 use super::{
     Agent, AgentInstall, CommandRunner, HashMap, JackinPaths, LABEL_IMAGE_CONSTRUCT,
     LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, PreparedRuntimeBinaries,
@@ -35,9 +34,6 @@ pub fn local_role_base_labels_match(
     head_sha.is_some()
 }
 
-// Collapsed from a 5-arm match to AgentRuntime adapter dispatch.
-// `runtime().label()` → display label; `runtime().parse_version(raw)` → semver parse;
-// `version_check::store_version(paths, agent, image, version)` → unified store.
 pub async fn extract_agent_version(
     paths: &JackinPaths,
     image: &str,

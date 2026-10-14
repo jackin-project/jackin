@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Selected-source snapshots: descriptors, Sync capture, validation entry.
 
 use jackin_instance_credentials::SyncSourceValidationError;
 
@@ -15,13 +14,6 @@ use crate::{
 };
 use jackin_instance_credentials::auth_directory;
 
-/// Secret-free identity for one selected profile source.
-///
-/// `source_dir` is the original descriptor path. The snapshot itself is a
-/// separate host-private directory and is exposed through
-/// [`SelectedAuthSourceSnapshot::materialized_source_dir`]. Keeping these
-/// values together prevents a worker from accidentally pairing bytes with a
-/// different provider or profile selector.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuthSourceDescriptor {
     pub agent: Agent,
@@ -37,9 +29,6 @@ pub struct SelectedAuthSourceSnapshotInner {
     content_revision: String,
 }
 
-/// Owned materialized source tree. Unix keeps the parent directory descriptor
-/// and child name so cleanup remains descriptor-relative even if a pathname is
-/// replaced while workers retain the snapshot.
 #[derive(Debug)]
 pub struct SelectedSourceDirectory {
     #[cfg(unix)]
@@ -54,11 +43,6 @@ impl SelectedSourceDirectory {
     }
 }
 
-/// Immutable selected-source material retained across launch worker threads.
-///
-/// Capture owns a descriptor-relative read of the selected source and stores
-/// only the validated bytes in a private temporary tree. Workers may use the
-/// materialized path, but never need to reopen the original source path.
 #[derive(Clone)]
 pub struct SelectedAuthSourceSnapshot {
     inner: Arc<SelectedAuthSourceSnapshotInner>,
@@ -74,17 +58,14 @@ impl std::fmt::Debug for SelectedAuthSourceSnapshot {
 }
 
 impl SelectedAuthSourceSnapshot {
-    /// Descriptor that was bound to the captured bytes.
     pub fn descriptor(&self) -> &AuthSourceDescriptor {
         &self.inner.descriptor
     }
 
-    /// Host-private source tree containing the captured, validated bytes.
     pub fn materialized_source_dir(&self) -> &Path {
         self.inner.materialized_source.path()
     }
 
-    /// Stable digest of the captured opaque source content.
     pub fn content_revision(&self) -> &str {
         &self.inner.content_revision
     }
@@ -120,18 +101,6 @@ pub fn claude_source_missing_error(source_dir: &Path) -> anyhow::Error {
     )
 }
 
-/// Validate that `source_dir` carries the credential structure `agent`
-/// expects for sync-mode auth forwarding.
-///
-/// Returns `Ok(())` when the folder holds usable credentials for that
-/// agent, or `Err` describing what is missing. The message is
-/// shown verbatim in the Source Folder picker so an operator cannot
-/// silently select a folder that yields no credentials (and, for Claude,
-/// would otherwise leak the default account into the capsule).
-///
-/// `host_home` is the operator's real home directory; it gates the macOS
-/// Keychain probe used to validate a file-less Claude config dir and is
-/// otherwise unused.
 pub fn validate_sync_source_dir(
     agent: Agent,
     source_dir: &Path,
@@ -140,11 +109,6 @@ pub fn validate_sync_source_dir(
     validate_sync_source_dir_for_provider(agent, None, source_dir, host_home)
 }
 
-/// Validate one sync source with the selected provider identity when the
-/// agent has a multi-provider store. `OpenCode`'s `auth.json` is a single
-/// source file containing several independent credentials; the provider must
-/// therefore travel with the account binding or an ambiguous source is
-/// rejected before launch.
 pub fn validate_sync_source_dir_for_provider(
     agent: Agent,
     provider: Option<AiProvider>,
@@ -154,9 +118,6 @@ pub fn validate_sync_source_dir_for_provider(
     validate_sync_source_dir_for_selection(agent, provider, None, source_dir, host_home)
 }
 
-/// Validate one sync source with both its provider and immutable store
-/// selector. Omp and Hermes are only accepted when discovery proves the
-/// source still contains exactly the selected one-account store.
 pub fn validate_sync_source_dir_for_selection(
     agent: Agent,
     provider: Option<AiProvider>,
@@ -202,9 +163,6 @@ pub fn validate_sync_source_dir_for_selection(
             )));
         }
         match agent {
-            // Claude has no single credential file on macOS — the login lives
-            // in the Keychain — so accept either the file or a matching
-            // Keychain entry for this exact config dir.
             Agent::Claude => {
                 if read_host_credentials_from_claude_config_dir(source_dir, host_home)
                     .ok()
@@ -224,22 +182,18 @@ pub fn validate_sync_source_dir_for_selection(
             Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex"),
             Agent::Grok => require_credential_file(source_dir, "auth.json", "Grok"),
             Agent::Opencode => validate_opencode_source_dir(source_dir, provider),
-            // Sync carries prefs only; the OAuth grant stays in the host Keychain.
             Agent::Antigravity => {
                 require_credential_file(source_dir, "settings.json", "Antigravity")
             }
             Agent::Gemini => require_credential_file(source_dir, "oauth_creds.json", "Gemini"),
             Agent::Cursor => require_credential_file(source_dir, "auth.json", "Cursor"),
             Agent::Muse => require_credential_file(source_dir, "auth.json", "Muse"),
-            // Store-backed agents are re-enumerated and must still resolve to the
-            // selected single-account source before their whole store is copied.
             Agent::Omp | Agent::Hermes => {
                 validate_store_source_dir(agent, provider, selector, source_dir, host_home)
             }
             Agent::Amp => {
                 require_credential_file(&amp_credentials_dir(source_dir), "secrets.json", "Amp")
             }
-            // Kimi syncs a directory tree rather than a single file.
             Agent::Kimi => {
                 let config = std::fs::symlink_metadata(source_dir.join("config.toml"));
                 let credentials = std::fs::symlink_metadata(source_dir.join("credentials"));
@@ -259,16 +213,6 @@ pub fn validate_sync_source_dir_for_selection(
     }
 }
 
-/// Capture one selected profile source before launch worker threads begin.
-///
-/// The source directory is locked and traversed descriptor-relatively on Unix
-/// for the whole capture. The returned snapshot owns a private temporary tree;
-/// callers must retain it until provisioning completes and pass
-/// [`SelectedAuthSourceSnapshot::materialized_source_dir`] to the existing
-/// provisioner. `snapshot_parent` must be a host-private directory that is
-/// not mounted into the capsule. A missing source directory returns
-/// `Ok(None)`; a source that exists but no longer contains the selected
-/// credential fails closed.
 pub fn capture_selected_source(
     agent: Agent,
     provider: Option<AiProvider>,

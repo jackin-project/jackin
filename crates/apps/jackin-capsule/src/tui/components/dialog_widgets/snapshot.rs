@@ -1,13 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Dialog-to-snapshot conversion: owned `DialogRatatuiSnapshot` builder.
 
 use super::{DialogRatatuiSnapshot, PickerItem, usage_tab_strip_labels};
 use crate::tui::components::dialog::{Dialog, GithubContextView};
 
 impl Dialog {
-    /// Build a fully-owned snapshot for Ratatui rendering. Called before
-    /// the `ratatui_terminal.draw()` closure so there are no borrow conflicts.
     #[expect(
         clippy::too_many_lines,
         reason = "Dialog renderer snapshot builder carrying each dialog variant's \
@@ -24,8 +21,6 @@ impl Dialog {
         )]
         match self {
             Dialog::ConfirmAction { kind, selected_yes } => {
-                // Exit always renders the shared data-loss state (exit_confirm_state_with_data_loss);
-                // title/message are unused for Exit so we pass empty strings to avoid dead formatting.
                 let data_loss = matches!(kind, crate::tui::components::dialog::ConfirmKind::Exit);
                 DialogRatatuiSnapshot::ConfirmAction {
                     title: if data_loss {
@@ -102,7 +97,6 @@ impl Dialog {
                 let shell_match = needle.is_empty() || "shell".contains(&needle);
                 let mut items: Vec<PickerItem> = Vec::with_capacity(agent_matches.len() + 3);
                 if !agent_matches.is_empty() {
-                    // Label only — render_picker_list draws the ── dashes full-width.
                     items.push(PickerItem::Section("agents".into()));
                     for (_, label) in &agent_matches {
                         items.push(PickerItem::Item((*label).to_owned()));
@@ -122,10 +116,6 @@ impl Dialog {
             }
 
             Dialog::ExecPicker(state) => {
-                // Multi-select credential list. The checkbox state is encoded in
-                // each row label (`[x]` / `[ ]`) so the shared single-select
-                // FilterPicker widget renders it without a bespoke widget; the
-                // cursor is the highlighted row, Space toggles via handle_key.
                 let items: Vec<PickerItem> = state
                     .items
                     .iter()
@@ -219,8 +209,6 @@ impl Dialog {
                 summary, selected, ..
             } => {
                 use crate::tui::components::dialog::EXIT_DIRTY_ROWS;
-                // Per-repo summary lines render as non-selectable section rows
-                // above the four choice rows.
                 let mut items: Vec<PickerItem> = summary
                     .iter()
                     .map(|line| PickerItem::Section(line.clone()))

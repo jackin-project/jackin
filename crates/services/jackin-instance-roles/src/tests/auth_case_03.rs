@@ -284,8 +284,6 @@ fn directory_swap_recovers_journal_and_cleans_target_scoped_orphans_on_retry() {
         ".jackin-auth-stage-{unrelated_key}-unrelated/nested"
     ));
     std::fs::create_dir_all(&unrelated_stage).unwrap();
-    // Pre-846f984 legacy names have no target identity. They are retained
-    // rather than risking deletion of another target's credential tree.
     let unscoped_legacy = parent.join(".jackin-auth-stage-legacy-orphan/nested");
     std::fs::create_dir_all(&unscoped_legacy).unwrap();
 

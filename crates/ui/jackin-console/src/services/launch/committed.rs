@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Committed role and agent launches.
 
 use super::{
     AccountChoice, WorkspaceChoice, accounts_for_launch, admitted_account_choices,
@@ -55,8 +54,6 @@ pub(crate) fn resolve_selected_workspace(
     )?)
 }
 
-/// Resolved committed-agent launch: all inputs needed to either launch
-/// immediately or open the account picker.
 #[derive(Debug)]
 pub struct CommittedAgentLaunch {
     pub input: LoadWorkspaceInput,
@@ -65,14 +62,6 @@ pub struct CommittedAgentLaunch {
     pub accounts: Vec<AccountChoice>,
 }
 
-/// Resolve a committed (role + agent) launch into a workspace and available
-/// providers. Returns `Ok(None)` when the workspace went missing between the
-/// operator's keypress and the commit (concurrent delete).
-///
-/// The returned accounts are admission-aware: when a `default_launch` is
-/// configured at any scope they are the admitted rows for `agent` (see
-/// [`admitted_account_choices`]); otherwise they are the legacy eligible
-/// list. An invalid configured default fails here — never falls back.
 pub fn resolve_committed_agent_launch(
     config: &AppConfig,
     cwd: &std::path::Path,

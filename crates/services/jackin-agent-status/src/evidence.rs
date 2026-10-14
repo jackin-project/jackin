@@ -37,9 +37,6 @@ pub struct OscEvidence {
     pub title: Option<String>,
     pub progress_active: bool,
     pub progress_cleared_at: Option<Instant>,
-    /// Last raw OSC 9;4 progress payload (`"4;<state>"`), for the rule pack's
-    /// `osc_progress` virtual region. `None` until any progress is emitted, so a
-    /// rule can never match progress that never happened.
     pub progress_raw: Option<String>,
     pub shell_state: Option<RawAgentState>,
     pub shell_state_marked_at: Option<Instant>,
@@ -82,10 +79,6 @@ pub struct ProcessEvidence {
     pub foreground_pgid: Option<u32>,
     pub child_process_count: u32,
     pub cpu_jiffies_delta: u64,
-    /// `true` only when `/proc` physics was actually sampled this evaluation
-    /// (Linux, agent PID known). When `false`, CPU/child counts are absent, not
-    /// "quiet": the watchdog must not demote on unavailable physics. Set by the
-    /// `/proc` process sampler; the non-Linux stub leaves it `false`.
     pub physics_sampled: bool,
 }
 
@@ -164,19 +157,12 @@ impl EvidenceSummary {
     }
 }
 
-/// Which evidence channel authored the arbitrated state. `Authority` carries the
-/// winning reporter's source id, so the reported source is a function of the
-/// winner alone — a screen/OSC/physics state can never be mis-attributed to a
-/// reporter, and an authority-won state always knows its source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvidenceWinner {
     ProcessExit,
     Freeze,
-    /// A blocking dialog matched on the live screen (not authority-sourced).
     Blocked,
-    Authority {
-        source_id: String,
-    },
+    Authority { source_id: String },
     StrongVisualOrOsc,
     Physics,
     Unknown,

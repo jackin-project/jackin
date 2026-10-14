@@ -2,7 +2,6 @@ version = "v1alpha7"
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-# Sample role manifest carried through the legacy migration chain.
 
 dockerfile = "Dockerfile"
 agents = ["claude"]

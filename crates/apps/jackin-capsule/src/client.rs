@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host-side capsule client: connects to the daemon socket, forwards
-//! stdin/stdout, and handles terminal window resize events.
-//!
-//! Not responsible for: daemon session management, PTY allocation, or
-//! in-container rendering.
-
 mod agents;
 mod attach;
 mod control;
@@ -40,8 +34,6 @@ pub(crate) use tokio::net::UnixStream;
 #[cfg(test)]
 pub(crate) use usage::verify_usage_accounts;
 
-/// The first arg after `flag` — works for both `--flag value` and a positional
-/// marker like the `<session_id>` after `explain`.
 fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|a| a == flag)

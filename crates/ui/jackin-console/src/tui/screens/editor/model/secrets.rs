@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor secret and auth row types.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldFocus {
@@ -13,21 +12,13 @@ pub enum SecretsScopeTag {
     Role(String),
 }
 
-/// Flat row model for the Secrets tab; cursor is a single index.
 #[derive(Debug, Clone)]
 pub enum SecretsRow {
     WorkspaceKeyRow(String),
     WorkspaceAddSentinel,
-    RoleHeader {
-        role: String,
-        expanded: bool,
-    },
-    RoleKeyRow {
-        role: String,
-        key: String,
-    },
+    RoleHeader { role: String, expanded: bool },
+    RoleKeyRow { role: String, key: String },
     RoleAddSentinel(String),
-    /// Non-focusable; cursor Up/Down skips over it.
     SectionSpacer,
 }
 
@@ -40,7 +31,6 @@ pub enum SecretsEnterPlan {
     Noop,
 }
 
-/// Row-shape model for the Auth tab.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthRow<K> {
     Account {

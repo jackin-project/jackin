@@ -3,15 +3,12 @@
 
 import XCTest
 
-/// One-way bridge boundary: the generated C module is imported only by
-/// generated Swift, the bridge handle is named only by the typed facade, and
-/// the bindings target never grows handwritten source.
 final class BridgeBoundaryTests: XCTestCase {
     private var nativeRoot: URL {
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // Tests/JackinUsageBridgeTests
-            .deletingLastPathComponent()  // Tests
-            .deletingLastPathComponent()  // native
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 
     private func swiftFiles(under relative: String) throws -> [URL] {

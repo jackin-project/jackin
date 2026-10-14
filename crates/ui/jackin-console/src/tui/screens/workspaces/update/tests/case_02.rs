@@ -65,8 +65,6 @@ fn workspace_list_key_plan_routes_navigation_and_actions() {
         workspace_list_key_plan(KeyCode::Char('p'), false),
         WorkspaceListKeyPlan::ConfirmPurge
     );
-    // `?` is intercepted by the dispatcher before this planner runs (proof:
-    // tui::input::dispatch::tests); the planner itself maps it to Continue.
     assert_eq!(
         workspace_list_key_plan(KeyCode::Char('?'), false),
         WorkspaceListKeyPlan::Continue

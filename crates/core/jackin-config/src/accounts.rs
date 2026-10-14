@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Named credentials and workspace account authorization.
-
 use crate::schema::WorkspaceConfig;
 use crate::{AppConfig, ConfigError, ConfigResult};
 use jackin_core::{
@@ -24,40 +22,25 @@ pub(crate) mod discovery;
 pub(crate) mod stores;
 pub(crate) mod zshrc;
 
-/// Service issuing an account's credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AiProvider {
-    /// Anthropic API and Claude subscriptions.
     Anthropic,
-    /// `OpenAI` API and `ChatGPT` subscriptions.
     #[serde(rename = "openai")]
     OpenAi,
-    /// Sourcegraph Amp.
     Amp,
-    /// xAI.
     Xai,
-    /// `OpenCode` Zen.
     Opencode,
-    /// Moonshot Kimi.
     Moonshot,
-    /// Z.ai.
     Zai,
-    /// `MiniMax`.
     Minimax,
-    /// Google AI Studio / Gemini API (Antigravity + Gemini CLI).
     Google,
-    /// Cursor API.
     Cursor,
-    /// Meta API (Muse).
     Meta,
-    /// `OpenRouter` (multi-provider clients only; no native agent).
     #[serde(rename = "openrouter")]
     OpenRouter,
 }
 impl AiProvider {
-    /// Every variant in declaration order. Iteration sites consult this
-    /// instead of hand-rolling their own array.
     pub const ALL: &'static [Self] = &[
         Self::Anthropic,
         Self::OpenAi,
@@ -73,7 +56,6 @@ impl AiProvider {
         Self::OpenRouter,
     ];
 
-    /// Canonical provider identifier.
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Anthropic => "anthropic",
@@ -90,12 +72,6 @@ impl AiProvider {
             Self::OpenRouter => "openrouter",
         }
     }
-    /// Native billing service for an agent, if it has one.
-    ///
-    /// Returns `None` for pure multi-provider clients (Omp, Hermes),
-    /// which route arbitrary providers and have no native billing.
-    /// Callers comparing against an account's provider must compare
-    /// `Some(provider) == for_agent(agent)` so `None` never matches.
     pub const fn for_agent(agent: Agent) -> Option<Self> {
         match agent {
             Agent::Claude => Some(Self::Anthropic),
@@ -139,18 +115,10 @@ impl std::str::FromStr for AiProvider {
     }
 }
 
-/// Immutable selector for one entry in a multi-provider profile store.
-///
-/// `entry` is the store's provider/account key. `profile` is the optional
-/// profile label used by stores that distinguish profiles. The selector is
-/// persisted with the account so launch never falls back to whichever entry
-/// happens to enumerate first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileSelector {
-    /// Exact provider/account key in the source store.
     pub entry: String,
-    /// Exact profile label, when the source store exposes one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
 }
@@ -175,70 +143,41 @@ impl ProfileSelector {
     }
 }
 
-/// Credential source. Secret values are redacted from Debug output.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AccountCredential {
-    /// Agent-managed login stored in a selected configuration directory.
     Profile {
-        /// Agent owning this profile's storage format.
         agent: Agent,
-        /// Exact host configuration directory.
         directory: PathBuf,
-        /// Explicit XDG roots for clients that split state across
-        /// data/config/cache homes (Amp, `OpenCode`, and future XDG-root
-        /// clients). Absolute directories; validated.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         xdg_roots: Option<XdgRoots>,
-        /// Immutable entry/profile identity for Omp and Hermes stores.
-        /// Missing selectors remain valid only for a source that proves it
-        /// contains exactly one account at launch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source_selector: Option<ProfileSelector>,
     },
-    /// Provider API key, literal or an environment/1Password reference.
     ApiKey {
-        /// Secret reference or literal.
         value: EnvValue,
-        /// Optional provider endpoint override.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         base_url: Option<String>,
-        /// Explicit provider model identifier.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
     },
-    /// Agent subscription token.
     OAuthToken {
-        /// Agent accepting this token.
         agent: Agent,
-        /// Secret reference or literal.
         value: EnvValue,
     },
 }
-/// Explicit XDG state roots for one profile credential.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct XdgRoots {
-    /// Data home (`XDG_DATA_HOME` equivalent).
     pub data: PathBuf,
-    /// Config home (`XDG_CONFIG_HOME` equivalent).
     pub config: PathBuf,
-    /// Cache home (`XDG_CACHE_HOME` equivalent).
     pub cache: PathBuf,
 }
 
-/// Shell-wrapper invocation found while importing shell configuration.
-///
-/// The current capsule launch protocol deliberately does not execute arbitrary
-/// host shell functions or helper commands. A configuration carrying this
-/// provenance is therefore rejected before a [`ResolvedInstance`] is created;
-/// its identity and arguments are never transported into the capsule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WrapperSpec {
-    /// Wrapper identity: shell function or helper command name.
     pub identity: String,
-    /// Arguments passed to the wrapper at the call site, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
 }
@@ -268,55 +207,36 @@ impl std::fmt::Debug for AccountCredential {
     }
 }
 
-/// One resolved `(agent, provider)` API-key or OAuth credential route.
-///
-/// This is the canonical secret-free descriptor shared by launch materializer,
-/// host usage discovery, and forwarding checks. `env_name` is the exact key
-/// launch writes; provider ownership is never used to infer it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedCredentialDescriptor {
-    /// Effective launch agent.
     pub agent: Agent,
-    /// Registered credential provider.
     pub provider: AiProvider,
-    /// Forwarding mode for the account credential.
     pub mode: AuthForwardMode,
-    /// Exact environment key used for the staged credential.
     pub env_name: &'static str,
 }
 
-/// Reusable named account. Workspaces explicitly authorize account IDs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AccountConfig {
-    /// Whether this account may authenticate launches.
     #[serde(
         default = "account_enabled_by_default",
         skip_serializing_if = "crate::schema::bool_matches::<true>"
     )]
     pub enabled: bool,
-    /// Human-readable account name.
     pub name: String,
-    /// Credential issuer.
     pub provider: AiProvider,
-    /// Credential source.
     pub credential: AccountCredential,
 }
 const fn account_enabled_by_default() -> bool {
     true
 }
 impl AccountConfig {
-    /// Whether this credential can authenticate this agent.
     pub fn supports_agent(&self, agent: Agent) -> bool {
         self.enabled && self.compatible_agent(agent)
     }
 
     fn compatible_agent(&self, agent: Agent) -> bool {
         match &self.credential {
-            // Profile: the store owner must be the agent, and either the
-            // provider is that agent's native billing or the agent is a
-            // multi-provider client whose store holds arbitrary providers
-            // (OpenCode, Omp, Hermes).
             AccountCredential::Profile { agent: owner, .. } => {
                 *owner == agent
                     && (Some(self.provider) == AiProvider::for_agent(agent)
@@ -328,11 +248,6 @@ impl AccountConfig {
             AccountCredential::ApiKey { .. } => {
                 Some(self.provider) == AiProvider::for_agent(agent)
                     || match agent {
-                        // Claude/Codex route a fixed set of Anthropic/OpenAI
-                        // -compatible third parties. OpenRouter is
-                        // deliberately NOT routed here: it reaches
-                        // Claude/Codex-shaped workloads only through
-                        // OpenCode/Omp/Hermes with an explicit model.
                         Agent::Claude => matches!(
                             self.provider,
                             AiProvider::Moonshot | AiProvider::Zai | AiProvider::Minimax
@@ -343,8 +258,6 @@ impl AccountConfig {
                                 AiProvider::Moonshot | AiProvider::Zai | AiProvider::Minimax
                             )
                         }
-                        // Multi-provider clients accept every provider
-                        // except Amp, whose key has no third-party use.
                         Agent::Opencode | Agent::Omp | Agent::Hermes => {
                             !matches!(self.provider, AiProvider::Amp)
                         }
@@ -367,17 +280,9 @@ impl AccountConfig {
             Agent::Amp => AMP_API_KEY_ENV_NAME,
             Agent::Kimi => KIMI_API_KEY_ENV_NAME,
             Agent::Grok => XAI_API_KEY_ENV_NAME,
-            // Single-provider newcomers only accept their native provider,
-            // so the variable is fixed per agent.
             Agent::Antigravity | Agent::Gemini => GEMINI_API_KEY_ENV_NAME,
             Agent::Cursor => CURSOR_API_KEY_ENV_NAME,
             Agent::Muse => META_API_KEY_ENV_NAME,
-            // Multi-provider clients select the variable per provider.
-            // Provider-native names are used so the routed CLI finds the
-            // key without extra mapping; the OpenCode Zen key is the
-            // fallback for the two providers with no third-party variable
-            // (Amp is unreachable here — excluded by compatibility —
-            // and Opencode's own Zen key).
             Agent::Opencode | Agent::Omp | Agent::Hermes => match self.provider {
                 AiProvider::Anthropic => ANTHROPIC_API_KEY_ENV_NAME,
                 AiProvider::OpenAi => OPENAI_API_KEY_ENV_NAME,
@@ -394,10 +299,6 @@ impl AccountConfig {
         }
     }
 
-    /// Resolve the exact credential route for one launch agent.
-    ///
-    /// # Errors
-    /// Rejects disabled or incompatible agent/provider combinations.
     pub fn resolved_credential_descriptor(
         &self,
         agent: Agent,
@@ -439,17 +340,9 @@ impl AccountConfig {
             (Agent::Codex, AiProvider::Moonshot) => Some("https://api.kimi.com/coding/v1"),
             (Agent::Codex, AiProvider::Zai) => Some("https://api.z.ai/api/v1"),
             (Agent::Codex, AiProvider::Minimax) => Some("https://api.minimax.io/v1"),
-            // Multi-provider clients route OpenRouter at its documented
-            // base. Endpoint *application* for Omp/Hermes is deferred to
-            // the provider-config lane (credential_env skips env
-            // injection for them, like OpenCode); the URL is recorded
-            // here so that lane has one source of truth.
             (Agent::Opencode | Agent::Omp | Agent::Hermes, AiProvider::OpenRouter) => {
                 Some("https://openrouter.ai/api/v1")
             }
-            // Native Google/Cursor/Meta keys need no endpoint override;
-            // unknown third-party combinations fail closed (None) rather
-            // than guessing a base URL.
             _ => None,
         }
     }
@@ -544,7 +437,6 @@ impl AccountConfig {
         Ok(())
     }
 
-    /// Runtime credential transport mode.
     pub const fn auth_mode(&self) -> AuthForwardMode {
         match self.credential {
             AccountCredential::Profile { .. } => AuthForwardMode::Sync,
@@ -552,32 +444,16 @@ impl AccountConfig {
             AccountCredential::OAuthToken { .. } => AuthForwardMode::OAuthToken,
         }
     }
-    /// Exact source directory for profile credentials.
     pub fn source_directory(&self) -> Option<&Path> {
         match &self.credential {
             AccountCredential::Profile { directory, .. } => Some(directory),
             _ => None,
         }
     }
-    /// Build unresolved credential environment for the selected agent.
-    ///
-    /// # Errors
-    /// Rejects incompatible agent/provider combinations.
     pub fn credential_env(&self, agent: Agent) -> ConfigResult<BTreeMap<String, EnvValue>> {
         self.credential_env_for_endpoint(agent, None)
     }
 
-    /// Build unresolved credential environment for one resolved instance.
-    ///
-    /// `base_url` is the effective instance endpoint. When it is `None`, the
-    /// account endpoint or provider default is used. Endpoint-bearing
-    /// variables are only emitted for clients whose credential contract uses
-    /// environment routing; private provider-config clients apply the same
-    /// value in their instance-specific config file.
-    ///
-    /// # Errors
-    /// Rejects incompatible agent/provider combinations and invalid or
-    /// unsupported endpoint overrides.
     pub fn credential_env_for_instance(
         &self,
         agent: Agent,
@@ -671,10 +547,6 @@ impl AccountConfig {
                         self.name
                     )));
                 }
-                // OpenCode writes its endpoint to private provider
-                // configuration. Omp/Hermes endpoint overrides were rejected
-                // above until their provider-config writers exist; neither
-                // client receives an endpoint through ambient env.
                 if !matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes)
                     && let Some(url) = endpoint.or(default_url)
                 {
@@ -696,13 +568,6 @@ impl AccountConfig {
     }
 }
 
-/// Stable, secret-free identity for the credential source used by an account.
-///
-/// The fields intentionally mirror `same_credential_source`: API-key model
-/// overrides do not identify a credential source, while the full persisted
-/// `EnvValue` does. The digest lets removal tombstones survive without keeping
-/// literal credentials in a second config field. Profile directories and XDG
-/// roots are canonicalized for identity before hashing.
 pub(crate) fn account_source_fingerprint(account: &AccountConfig) -> String {
     let mut digest = Sha256::new();
     hash_component(&mut digest, account.provider.slug());
@@ -787,10 +652,6 @@ fn hash_env_value(digest: &mut Sha256, value: &EnvValue) {
         EnvValue::OpRef(value) => {
             hash_component(digest, "op_ref");
             hash_component(digest, &value.op);
-            // Fingerprints track breadcrumb meaning, not its storage escape
-            // spelling. A schema migration must not change account-source
-            // identity solely because legacy literal percent signs were
-            // escaped into the versioned wire format.
             hash_component(
                 digest,
                 &jackin_core::display_op_breadcrumb_path(&value.path),
@@ -800,10 +661,6 @@ fn hash_env_value(digest: &mut Sha256, value: &EnvValue) {
         }
     }
 }
-/// Validate a stable, filesystem-safe account identifier.
-///
-/// # Errors
-/// IDs must start with an ASCII lowercase letter or digit, followed by lowercase letters, digits, hyphens or underscores.
 pub fn validate_account_id(id: &str) -> ConfigResult<()> {
     if id.is_empty()
         || id.len() > 64
@@ -821,10 +678,6 @@ pub fn validate_account_id(id: &str) -> ConfigResult<()> {
     }
     Ok(())
 }
-/// Resolve only an authorized account. Global selections never expand workspace access.
-///
-/// # Errors
-/// Fails for unknown workspaces/accounts, unauthorized bindings or ambiguous selection.
 pub fn resolve_account<'a>(
     cfg: &'a AppConfig,
     agent: Agent,
@@ -842,9 +695,6 @@ pub fn resolve_account<'a>(
         .and_then(|w| w.roles.get(role))
         .and_then(|r| r.account_bindings.get(&agent))
         .or_else(|| ws.and_then(|w| w.account_bindings.get(&agent)))
-        // Keep an inherited global binding in the chain. It is an explicit
-        // account selection, so an unauthorized ID must fail below instead
-        // of disappearing and selecting another workspace account.
         .or_else(|| cfg.account_bindings.get(&agent));
     if let Some(id) = binding {
         if ws.is_some_and(|w| !w.accounts.contains(id)) {
@@ -882,28 +732,17 @@ pub fn resolve_account<'a>(
     }
     Ok(selected)
 }
-/// Current bootstrap sentinel schema version.
 pub const BOOTSTRAP_VERSION: u32 = 1;
 
-/// First-run bootstrap sentinel (`[bootstrap]` in `config.toml`).
-///
-/// Distinguishes a genuine fresh install (no config file), an
-/// installer-created empty config (`fresh_install = true`, scan once),
-/// and an older installation (no sentinel: already initialized, never
-/// rescan — the migration stamps `fresh_install = false` explicitly).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BootstrapState {
-    /// Sentinel schema version ([`BOOTSTRAP_VERSION`]).
     pub version: u32,
-    /// True only when an installer pre-created an empty config that
-    /// still needs its first discovery scan.
     #[serde(default)]
     pub fresh_install: bool,
 }
 
 impl BootstrapState {
-    /// Sentinel for a completed (or migrated) initialization.
     pub const fn initialized() -> Self {
         Self {
             version: BOOTSTRAP_VERSION,
@@ -912,38 +751,22 @@ impl BootstrapState {
     }
 }
 
-/// Named agent/account/model template: one launchable agent instance.
-///
-/// Several configurations may share one account (and its quota); each
-/// configuration pins the agent plus optional model/endpoint overrides.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentConfiguration {
-    /// Client that runs this instance.
     pub agent: Agent,
-    /// Registered account supplying credentials.
     pub account: String,
-    /// Model override; empty falls back to the account/client default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// Endpoint override; empty falls back to the account/client default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
-    /// Explicit instance label; default derives `{Agent} · {account name}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_label: Option<String>,
-    /// Imported shell-wrapper provenance. Arbitrary wrappers are not a safe
-    /// capsule launch transport, so configurations carrying this field fail
-    /// validation and launch resolution before any instance is admitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invoked_via_wrapper: Option<WrapperSpec>,
 }
 
 impl AgentConfiguration {
-    /// Validate this configuration against the account registry.
-    ///
-    /// # Errors
-    /// Rejects bad IDs, unknown/disabled/incompatible accounts, and bad overrides.
     pub fn validate(
         &self,
         id: &str,
@@ -1000,7 +823,6 @@ impl AgentConfiguration {
         Ok(())
     }
 
-    /// Reject launch settings the capsule cannot execute safely.
     fn validate_launch_transport(&self, id: &str) -> ConfigResult<()> {
         if self.invoked_via_wrapper.is_some() {
             return Err(ConfigError::msg(format_args!(
@@ -1011,31 +833,19 @@ impl AgentConfiguration {
     }
 }
 
-/// One resolved launch instance: a configuration bound to an authorized account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedInstance {
-    /// Configuration ID (explicit, or synthesized `{account}@{agent}`).
     pub config_id: String,
-    /// Client that runs this instance.
     pub agent: Agent,
-    /// Registered account supplying credentials.
     pub account_id: String,
-    /// Effective model (configuration override, else account default).
     pub model: Option<String>,
-    /// Effective endpoint (configuration override, else account default).
     pub base_url: Option<String>,
-    /// Explicit profile XDG roots, when the selected account carries them.
-    /// These are threaded into selected auth provisioning; they are never
-    /// inferred from ambient process environment.
     pub xdg_roots: Option<XdgRoots>,
-    /// Instance label (`{Agent} · {account name}` unless overridden).
     pub label: String,
-    /// True when synthesized from a binding/sole-eligible fallback.
     pub synthesized: bool,
 }
 
 impl ResolvedInstance {
-    /// Bind an explicit configuration to its resolved account values.
     fn bind(config_id: &str, config: &AgentConfiguration, account: &AccountConfig) -> Self {
         let (account_model, account_url) = match &account.credential {
             AccountCredential::ApiKey {
@@ -1065,7 +875,6 @@ impl ResolvedInstance {
         }
     }
 
-    /// Synthesize the default instance for one account/agent pair.
     fn synthesize(account_id: &str, agent: Agent, account: &AccountConfig) -> Self {
         let (model, base_url) = match &account.credential {
             AccountCredential::ApiKey {
@@ -1094,27 +903,6 @@ impl ResolvedInstance {
     }
 }
 
-/// Resolve the ordered launch instances for a workspace/role selection.
-///
-/// Precedence: one-launch selection → role `default_launch` → workspace
-/// `default_launch` → global `default_launch` → per-agent
-/// `account_bindings` (role → workspace → global, when `agent` is
-/// known) → sole eligible instance. A full launch list beats a bare
-/// per-agent account preference at any scope; the committed launch
-/// agent scopes the binding/sole-eligible fallbacks so fast start
-/// honors a valid default instead of prompting whenever several
-/// accounts exist. An explicit scope replaces inherited scopes (no
-/// union). Explicit selections validate atomically against
-/// authorization and compatibility: invalid entries fail the whole
-/// launch, never fall back silently. Inherited global candidates
-/// filter by workspace authorization. An explicit empty list resolves
-/// to no instances (shell-only launches accept that; agent launches
-/// reject it).
-///
-/// # Errors
-/// Fails for unknown workspaces/configurations/accounts, unauthorized
-/// or incompatible selections, zero eligible accounts, and ambiguous
-/// (picker-needed) fallbacks.
 pub fn resolve_launch(
     cfg: &AppConfig,
     workspace: Option<&WorkspaceName>,
@@ -1162,8 +950,6 @@ pub fn resolve_launch(
             let config = cfg.agent_configurations.get(id).ok_or_else(|| {
                 ConfigError::msg(format_args!("unknown agent configuration {id:?}"))
             })?;
-            // Role/workspace scopes validate atomically like bindings;
-            // inherited global candidates filter by authorization.
             if scope_is_global && !authorized(&config.account) {
                 continue;
             }
@@ -1172,10 +958,6 @@ pub fn resolve_launch(
         return checked_launch_instances(instances);
     }
 
-    // No launch list anywhere: per-agent account bindings are the
-    // global defaults layer (role → workspace → global), validated
-    // atomically — a valid default wins over prompting whenever the
-    // committed launch agent is known.
     if let Some(committed) = agent
         && let Some(selected) = resolve_account(cfg, committed, workspace, role)?
         && let Some(id) = cfg
@@ -1188,7 +970,6 @@ pub fn resolve_launch(
             &id, committed, selected,
         )]);
     }
-    // No defaults anywhere: sole eligible instance wins, ambiguity needs a picker.
     let agents: &[Agent] = match agent.as_slice() {
         [committed] => std::slice::from_ref(committed),
         _ => Agent::ALL,
@@ -1231,13 +1012,6 @@ pub fn resolve_launch(
     Ok(eligible)
 }
 
-/// Reject same-agent instance sets the container cannot isolate.
-/// Several admitted instances for one agent need a dedicated config-folder
-/// env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, …) so
-/// each pane gets its own credentials and history. Agents without one
-/// cannot isolate instances; `XDG_*`-root agents would also redirect
-/// unrelated XDG consumers of the pane process. Both fail closed with
-/// the exact reason.
 fn checked_launch_instances(
     instances: Vec<ResolvedInstance>,
 ) -> ConfigResult<Vec<ResolvedInstance>> {
@@ -1275,7 +1049,6 @@ fn checked_launch_instances(
     Ok(instances)
 }
 
-/// Bind one explicit configuration ID, validating authorization and compatibility.
 fn bind_explicit(
     cfg: &AppConfig,
     ws: Option<&WorkspaceConfig>,
@@ -1307,16 +1080,6 @@ fn bind_explicit(
     Ok(ResolvedInstance::bind(id, config, account))
 }
 impl AppConfig {
-    /// Resolve every explicit launch route registered for one account.
-    ///
-    /// A single account may back several agent configurations. Returning all
-    /// routes lets usage discovery intersect them with the exact env keys
-    /// forwarded into the current Capsule instead of collapsing to provider
-    /// ownership. Role and workspace bindings are included; with no explicit
-    /// route every compatible agent is synthesized.
-    ///
-    /// # Errors
-    /// Fails when the account is unknown or has no compatible route.
     pub fn credential_descriptors_for_account(
         &self,
         account_id: &str,
@@ -1352,9 +1115,6 @@ impl AppConfig {
                 }
             }
         }
-        // `resolve_launch` synthesizes compatible fallback instances even
-        // when another agent has an explicit account binding. Union every
-        // compatible route so usage proofs cover the actual launch surface.
         agents.extend(
             Agent::ALL
                 .iter()
@@ -1375,10 +1135,6 @@ impl AppConfig {
         Ok(descriptors)
     }
 
-    /// Validate registry credentials and all account references.
-    ///
-    /// # Errors
-    /// Rejects invalid credentials, unknown IDs, disabled or incompatible bindings, and workspace authorization violations.
     pub fn validate_accounts(&self) -> ConfigResult<()> {
         for (id, account) in &self.accounts {
             account.validate(id)?;
@@ -1407,13 +1163,6 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Validate registry credentials plus binding and allowlist integrity.
-    ///
-    /// This is the editor-open migration gate scope: it covers everything
-    /// the pre-multi-account gate enforced, while launch-instance
-    /// references (`agent_configurations`, `default_launch`) are left to
-    /// save/load validation, so the editor stays usable as a repair tool
-    /// for a config whose instance account is not registered yet.
     pub(crate) fn validate_registry_and_bindings(&self) -> ConfigResult<()> {
         for (id, account) in &self.accounts {
             account.validate(id)?;
@@ -1436,7 +1185,6 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Reject bindings that name unknown accounts or escape the workspace allowlist.
     fn check_account_bindings(
         &self,
         bindings: &BTreeMap<Agent, String>,
@@ -1456,8 +1204,6 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Validate one `default_launch` list: known IDs, no duplicates, and
-    /// (for workspace/role scopes) accounts inside the workspace allowlist.
     fn validate_launch_list(
         &self,
         ids: Option<&[String]>,
@@ -1484,7 +1230,6 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Prune bindings to the given account ID across global, workspace, and role scopes.
     pub fn prune_account_bindings(&mut self, id: &str) {
         self.account_bindings.retain(|_, selected| selected != id);
         for ws in self.workspaces.values_mut() {
@@ -1495,8 +1240,6 @@ impl AppConfig {
         }
     }
 
-    /// Drop agent configurations using the given account and scrub
-    /// `default_launch` lists of the removed configuration IDs.
     pub fn prune_agent_configurations(&mut self, account_id: &str) {
         let removed: Vec<String> = self
             .agent_configurations

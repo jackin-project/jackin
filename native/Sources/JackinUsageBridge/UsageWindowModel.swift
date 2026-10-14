@@ -4,7 +4,6 @@
 import Foundation
 import JackinUsageBindings
 
-/// Exact provider/account destination carried across popover/window handoff.
 public struct UsageNavigationContext: Equatable, Sendable {
     public let surfaceId: String
     public let accountKey: String?
@@ -15,9 +14,6 @@ public struct UsageNavigationContext: Equatable, Sendable {
     }
 }
 
-/// One already-grouped visual line of a ``UsageDetailRow`` (mirror of the Rust
-/// `UsagePresentationLine`). `leading`/`trailing` are finished display strings;
-/// Swift never splits, joins, or reorders them.
 public struct UsagePresentationLine: Equatable, Sendable {
     public let leading: String?
     public let trailing: String?
@@ -28,12 +24,10 @@ public struct UsagePresentationLine: Equatable, Sendable {
     }
 }
 
-/// Layout kind of a ``UsageDetailRow`` (pure layout metadata, never prose).
 public enum UsageDetailRowKind: String, Equatable, Sendable {
     case metadata
     case bucket
     case detail
-    /// Any future Rust kind we do not model yet — rendered as a plain metadata row.
     case unknown
 
     public init(rawKind: String) {
@@ -41,11 +35,6 @@ public enum UsageDetailRowKind: String, Equatable, Sendable {
     }
 }
 
-/// One provider-detail row mirroring the Rust `UsageDetailRow`.
-///
-/// Every visible
-/// string is Rust-owned. `meterPercent`/`severity` are geometry/style metadata
-/// the view may use for bar width and color but never turns into text.
 public struct UsageDetailRow: Identifiable, Equatable, Sendable {
     public var id: String { rowId }
     public let rowId: String
@@ -75,9 +64,6 @@ public struct UsageDetailRow: Identifiable, Equatable, Sendable {
     }
 }
 
-/// The complete Rust-owned provider detail.
-///
-/// It mirrors `UsageDetailPresentation`; rows are already in canonical order.
 public struct UsageDetailPresentation: Equatable, Sendable {
     public let rows: [UsageDetailRow]
 
@@ -85,11 +71,8 @@ public struct UsageDetailPresentation: Equatable, Sendable {
         self.rows = rows
     }
 
-    /// No detail (disabled/unavailable surface, or Overview).
     public static let empty = UsageDetailPresentation(rows: [])
 
-    /// Project the generated boltffi DTO verbatim — no reordering, relabeling, or
-    /// string synthesis.
     public init(dto: UsageDetailPresentationDto) {
         rows = dto.rows.map { row in
             UsageDetailRow(
@@ -107,14 +90,7 @@ public struct UsageDetailPresentation: Equatable, Sendable {
     }
 }
 
-/// Pure, importable model for the Usage window.
-///
-/// It preserves the Rust sidebar
-/// order, resolves the incoming selection to the selected surface's Rust detail
-/// presentation and account rows, and represents Overview/empty without
-/// synthesizing any usage string. It writes no persistence and calls no FFI.
 public struct UsageWindowModel: Equatable, Sendable {
-    /// Sidebar/detail selection.
     public enum Selection: Equatable, Sendable {
         case overview
         case provider(String)
@@ -125,12 +101,9 @@ public struct UsageWindowModel: Equatable, Sendable {
         public let message: String
     }
 
-    /// Selected provider content (nil for Overview / empty).
     public struct Content: Equatable, Sendable {
         public let surfaceId: String
-        /// Provider display name for detail head (from glance / surface — Rust only).
         public let displayLabel: String
-        /// Rust-owned icon key for the detail-head logo plate.
         public let iconKey: String?
         public let fallbackGlyph: String?
         public let usageURL: String?
@@ -161,7 +134,6 @@ public struct UsageWindowModel: Equatable, Sendable {
             self.selectedAccountRoute = selectedAccountRoute
         }
 
-        /// Exact account resolved by the Rust route, with no sibling inference.
         public var selectedAccountKey: String? {
             if case .available(let accountKey) = selectedAccountRoute {
                 return accountKey
@@ -169,7 +141,6 @@ public struct UsageWindowModel: Equatable, Sendable {
             return nil
         }
 
-        /// Exact account for the detail-head subtitle; unresolved routes show no sibling.
         public var headAccount: PresentationStore.AccountRow? {
             selectedAccountKey.flatMap { key in
                 accounts.first(where: { $0.accountKey == key })
@@ -177,15 +148,12 @@ public struct UsageWindowModel: Equatable, Sendable {
         }
     }
 
-    /// Rust-owned sidebar/Overview rows in canonical (Capsule tab) order.
     public let sidebar: [PresentationStore.GlanceProviderRow]
     public let selection: Selection
     public let content: Content?
     public let routeNotice: AccountRouteNotice?
-    /// No providers detected → the empty-state hint.
     public let isEmpty: Bool
 
-    /// The exact empty-state hint (fixed copy; the only allowed fallback string).
     public static let emptyHint = "no agent credentials found"
 
     public init(
@@ -197,8 +165,6 @@ public struct UsageWindowModel: Equatable, Sendable {
     ) {
         sidebar = glanceRows
         isEmpty = glanceRows.isEmpty
-        // An invalid/disabled provider or unavailable exact account falls back
-        // to Overview; a valid route resolves to Rust detail and account rows.
         if let surfaceId,
             let surface = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
         {

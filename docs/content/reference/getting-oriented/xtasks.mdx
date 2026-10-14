@@ -48,7 +48,7 @@ Source the generated env file before smoke testing the PR. `jackin-dev` runs as 
 
 `mise exec -- mbx +1.99.0 xtask pty-fixture <capture> <out.bin>` (source: <RepoFile path="crates/tools/jackin-xtask/src/pty_fixture.rs">crates/tools/jackin-xtask/src/pty_fixture.rs</RepoFile>) copies an explicitly captured raw PTY byte stream into a replayable terminal fixture. Set `JACKIN_PTY_FIXTURE_CAPTURE=<path>` only for the deliberate capture run, then place the resulting fixture under the capsule test fixtures. Telemetry never carries terminal bytes.
 
-The extractor accepts only a raw file created through the explicit `JACKIN_PTY_FIXTURE_CAPTURE` test gate. Fixtures land under <RepoFile path="crates/apps/jackin-capsule/tests/fixtures/pty/README.md">crates/apps/jackin-capsule/tests/fixtures/pty/README.md</RepoFile> by convention; the review and wiring flow is documented in <RepoFile path="TESTING.md">TESTING.md</RepoFile>. Production telemetry never supplies PTY fixture bytes.
+The extractor accepts only a raw file created through the explicit `JACKIN_PTY_FIXTURE_CAPTURE` test gate. Fixtures land under <RepoFile path="crates/apps/jackin-capsule/tests/fixtures/pty/README.md">crates/apps/jackin-capsule/tests/fixtures/pty/README.md</RepoFile> by convention. Production telemetry never supplies PTY fixture bytes.
 
 Reach for it when an operator-reported rendering bug needs the agent's exact byte stream as a regression test: one command replaces hand-extracting hex from logs.
 
@@ -59,7 +59,7 @@ The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates
 | Command | What it does |
 | --- | --- |
 | `mise exec -- mbx +1.99.0 xtask change new <slug> --group <group>` | Scaffold a roadmap item under `/roadmap/` with `Status`, `Outcome`, `Current state`, `Remaining work`, `Completion gate`, and `Related research`, then register it in the named product-area group. `--title` overrides the title-cased default. |
-| `mise exec -- mbx +1.99.0 xtask research scaffold <slug> --group <domain>` | Scaffold a research dossier under `/research/<domain>/<slug>/` with a consistent question, findings, evidence, limitations, reading-order, and related-work format. The reusable brief is created outside published docs at `prompts/research/<domain>/<slug>.md`. Domains are `agents`, `platform`, `product`, `engineering`, or `context`; `--title` overrides the default. |
+| `mise exec -- mbx +1.99.0 xtask research scaffold <slug> --group <domain>` | Scaffold a research dossier under `/research/<domain>/<slug>/` with a consistent question, findings, evidence, limitations, reading-order, and related-work format. Domains are `agents`, `platform`, `product`, `engineering`, or `context`; `--title` overrides the default. |
 | `mise exec -- mbx +1.99.0 xtask research check` | Validate research sidebar parity plus the shared page contract: title and concise description frontmatter, canonical state labels, no duplicate body H1, and no published prompt/brief pages. Non-zero exit on any problem. |
 | `mise exec -- mbx +1.99.0 xtask docs brand` | Enforce the product spelling in published prose. Root documents must be registered in `ROOT_PROSE_DOCS`; missing registered roots fail. Crate-level readmes and agent-instruction files are discovered automatically; documentation-content and roadmap pages are discovered recursively. Operational root inputs are outside the published-prose contract. |
 | `mise exec -- mbx +1.99.0 xtask roadmap audit` | Same validation for the roadmap subtree, including `(group)` folders and `../<slug>` cross-references. Non-zero exit on any problem. |
@@ -69,7 +69,7 @@ The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates
 
 ## Schema migration gate
 
-`mise exec -- mbx +1.99.0 xtask schema-check --base <ref>` (source: <RepoFile path="crates/tools/jackin-xtask/src/schema.rs">crates/tools/jackin-xtask/src/schema.rs</RepoFile>) enforces the five-artifact rule for versioned schemas described in <RepoFile path="PRERELEASE.md">PRERELEASE.md</RepoFile>. It reads each `CURRENT_{CONFIG,WORKSPACE,MANIFEST}_VERSION` on the working tree and at the base ref; when one is bumped it asserts the new `from-<predecessor>/` fixture directory exists (`meta.toml` / `before.toml` / `after.toml`, with the right `target_version`) and that <RepoFile path="docs/content/reference/runtime/schema-versions.mdx">schema-versions.mdx</RepoFile> carries a Timeline entry for the new version. The migration step and the existing-fixture re-bake are already enforced by <RepoFile path="crates/apps/jackin/tests/migration_fixtures.rs">crates/apps/jackin/tests/migration_fixtures.rs</RepoFile>, so this gate covers only the two artifacts those tests cannot see. The local `mise exec -- mbx +1.99.0 xtask ci --only policy` partition invokes it. The current generated workflow does not run that policy partition, so hosted enforcement remains an integration requirement.
+`mise exec -- mbx +1.99.0 xtask schema-check --base <ref>` (source: <RepoFile path="crates/tools/jackin-xtask/src/schema.rs">crates/tools/jackin-xtask/src/schema.rs</RepoFile>) enforces the five-artifact rule for versioned schemas. It reads each `CURRENT_{CONFIG,WORKSPACE,MANIFEST}_VERSION` on the working tree and at the base ref; when one is bumped it asserts the new `from-<predecessor>/` fixture directory exists (`meta.toml` / `before.toml` / `after.toml`, with the right `target_version`) and that <RepoFile path="docs/content/reference/runtime/schema-versions.mdx">schema-versions.mdx</RepoFile> carries a Timeline entry for the new version. The migration step and the existing-fixture re-bake are already enforced by <RepoFile path="crates/apps/jackin/tests/migration_fixtures.rs">crates/apps/jackin/tests/migration_fixtures.rs</RepoFile>, so this gate covers only the two artifacts those tests cannot see. The local `mise exec -- mbx +1.99.0 xtask ci --only policy` partition invokes it. The current generated workflow does not run that policy partition, so hosted enforcement remains an integration requirement.
 
 ## Adding a new xtask
 
@@ -77,14 +77,13 @@ Repo-internal command logic belongs in this binary, not in one-off shell command
 
 ## Preview package publication
 
-Local preview package preparation and verification use these typed commands:
-
-1. `MISE_AUTO_INSTALL=false mise exec --locked -- scripts/release-preview-package` builds the source-bound six-payload package with the pinned tool environment.
-2. `VELNOR_VERIFIED_PACKAGE_DIR=<package-dir> MISE_AUTO_INSTALL=false mise exec -- mbx +1.99.0 xtask release-verify-package` verifies the handoff and its provenance.
+`MISE_AUTO_INSTALL=false mise exec -- mbx +1.99.0 xtask release-verify <archive>.tar.gz` verifies
+a signed release archive and its published sidecars (SHA-256 digest, cosign bundle,
+GitHub artifact attestation, SBOM binding).
 
 The current generated workflow does not stage or publish the preview package or
 create the Homebrew consumer update PR. Those hosted steps remain an integration
-requirement; the local commands do not establish publication coverage.
+requirement; the local command does not establish publication coverage.
 
 `MISE_AUTO_INSTALL=false mise exec -- mbx +1.99.0 xtask preview migrate-legacy` invokes the jackin❯-specific,
 fingerprint-guarded migration for the known malformed rolling release. This

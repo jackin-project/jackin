@@ -1,5 +1,4 @@
 version = "v1alpha10"
-# Operator comment preserved across the bootstrap-stamp migration.
 [accounts.personal]
 name = "Personal"
 provider = "anthropic"

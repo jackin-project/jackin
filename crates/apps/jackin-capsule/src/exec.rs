@@ -1,19 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `jackin-exec` / `jackin-capsule exec` subcommand.
-//!
-//! Two roles in this module:
-//!
-//! 1. **Client binary** (`run`): connects to the capsule daemon via the
-//!    control socket, sends `ExecCommand`, waits for `ExecResult` or
-//!    `ExecDenied`, and writes the output to the terminal.
-//!
-//! 2. **Shared types** (`ExecPickerState`, …) and helpers
-//!    (`resolve_credentials`, `execute_command`): used by the daemon to drive
-//!    the credential picker and run the approved command. The host.sock wire
-//!    types (`ExecBinding`, `CredRequest`, `CredReply`) live in `jackin-protocol`.
-
 use anyhow::{Context as _, Result, bail};
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
@@ -30,11 +17,6 @@ pub(crate) use command::{cap_output, redact_pem};
 pub use command::{execute_command, resolve_credentials};
 pub use picker::{ExecPickerItem, ExecPickerState};
 
-// ---------------------------------------------------------------------------
-// Client binary entry point
-// ---------------------------------------------------------------------------
-
-/// Result of an exec call when captured (for MCP tool integration).
 #[derive(Debug)]
 pub struct ExecCapture {
     pub exit_code: i32,
@@ -64,13 +46,6 @@ fn inherited_session_capability() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// Run `jackin-exec` and return the result as a captured struct instead of
-/// writing to stdout/stderr and calling `process::exit`. Used by the MCP
-/// server to return structured output to Claude Code.
-/// # Errors
-///
-/// Returns an error when command arguments are invalid, the daemon cannot be
-/// reached, or the command request fails.
 pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
     if args.is_empty() {
         bail!("usage: jackin-exec <command> [args…]");
@@ -172,20 +147,10 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
     }
 }
 
-/// Entry point for `jackin-capsule exec <command> [args…]`
-/// and the `jackin-exec <command> [args…]` symlink form.
-///
-/// Thin terminal wrapper over [`run_capture`]: the socket round-trip lives
-/// there; `run` only renders the captured result to stdout/stderr and exits
-/// with the child's code.
 #[expect(
     clippy::exit,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-/// # Errors
-///
-/// Returns an error when command arguments are invalid, the daemon request
-/// fails, or output cannot be written.
 pub async fn run(args: &[String]) -> Result<()> {
     let capture = run_capture(args).await?;
 

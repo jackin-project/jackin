@@ -5,13 +5,10 @@ use super::*;
 
 #[test]
 fn materialize_api_accepts_path_label_rejected_as_config_stem() {
-    // Dual-semantics boundary: ad-hoc workdir paths are legal labels but not
-    // WorkspaceName config stems.
     let path = "/home/op/projects/adhoc-ws";
     WorkspaceName::parse(path).unwrap_err();
     let label = WorkspaceLabel::parse(path).expect("path label");
     assert_eq!(label.as_str(), path);
-    // PreflightContext carries the label type, not a free &str.
     let _ctx = PreflightContext {
         workspace_label: label,
         force: false,
@@ -33,10 +30,6 @@ async fn materialized_mount_holds_isolation() {
 
 #[tokio::test]
 async fn worktree_path_uses_container_name_as_basename() {
-    // Container name as the worktree's basename gives globally
-    // unique admin entry names in `<host_repo>/.git/worktrees/`.
-    // The `worktree/repo/` segments mark git's territory inside
-    // the per-container state dir.
     let base = PathBuf::from("/data/jackin-x");
     assert_eq!(
         worktree_path_for(&base, "/workspace/jackin", "jackin-the-architect"),
@@ -107,7 +100,6 @@ async fn strip_userinfo_passes_clean_urls_through_unchanged() {
 
 #[tokio::test]
 async fn strip_userinfo_handles_authority_only_urls() {
-    // No path component after the authority — still strip userinfo.
     assert_eq!(
         strip_userinfo("https://user:pw@github.com".into()),
         "https://github.com",
@@ -116,12 +108,6 @@ async fn strip_userinfo_handles_authority_only_urls() {
 
 #[tokio::test]
 async fn host_git_paths_disambiguate_per_mount_in_one_container() {
-    // Two isolated mounts on different host repos in the same
-    // container must land at distinct container paths so multi-mount
-    // workspaces don't collide. With the admin entry living
-    // natively inside the host `.git/` mount, this single check is
-    // enough — admin disambiguation is inherited from the host
-    // mount disambiguation.
     assert_ne!(
         container_host_git_path("/workspace/proj-a"),
         container_host_git_path("/workspace/proj-b"),
@@ -140,20 +126,14 @@ async fn write_git_overrides_writes_two_files_with_correct_content() {
     )
     .unwrap();
 
-    // Auxiliary mount metadata reflects the design doc topology:
-    // /jackin/host/<dst-tree>/.git for the host repo's .git/ mount,
-    // with both override files layered on top of that mount.
     assert_eq!(aux.host_git_dir, "/host/jackin/.git");
     assert_eq!(aux.host_git_target, "/jackin/host/workspace/jackin/.git");
     assert_eq!(aux.git_file_target, "/workspace/jackin/.git");
-    // gitdir back-pointer override target lives natively at
-    // worktrees/<container>/gitdir inside the host .git/ mount.
     assert_eq!(
         aux.gitdir_back_target,
         "/jackin/host/workspace/jackin/.git/worktrees/jackin-the-architect/gitdir",
     );
 
-    // Override file contents.
     let git_file = std::fs::read_to_string(&aux.git_file_override).unwrap();
     assert_eq!(
         git_file, "gitdir: /jackin/host/workspace/jackin/.git/worktrees/jackin-the-architect\n",
@@ -162,11 +142,6 @@ async fn write_git_overrides_writes_two_files_with_correct_content() {
     let gitdir_back = std::fs::read_to_string(&aux.gitdir_back_override).unwrap();
     assert_eq!(gitdir_back, "/workspace/jackin/.git\n");
 
-    // Override files live under git/overrides/<dst-tree>/ on host,
-    // with filenames matching their docker mount destinations
-    // (.git, gitdir). No commondir override — git's on-disk default
-    // (`commondir = ../..`) resolves correctly because the admin
-    // entry is in-place inside the host .git/ mount.
     assert!(
         aux.git_file_override
             .ends_with("/git/overrides/workspace/jackin/.git"),
@@ -199,7 +174,6 @@ async fn write_git_overrides_is_idempotent() {
         "/host/jackin",
     )
     .unwrap();
-    // Same paths, same content — re-running on a reused worktree is safe.
     assert_eq!(first, second);
 }
 

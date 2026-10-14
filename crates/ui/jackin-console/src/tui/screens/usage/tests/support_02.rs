@@ -65,9 +65,6 @@ pub(super) fn s8_press(
 }
 
 pub(super) fn s8_manager(screen: UsageScreenState) -> crate::tui::state::ManagerState<'static> {
-    // `ManagerState::from_config` borrows nothing `'static`-blocking here: the
-    // config outlives the call via the leaked box, matching how the console
-    // owns config for the whole run.
     let config: &'static jackin_config::AppConfig =
         Box::leak(Box::new(jackin_config::AppConfig::default()));
     let mut manager =
@@ -134,8 +131,6 @@ pub(super) fn assert_manual_refresh_join_preserves_periodic_cadence(
             "joined intent is consumed together"
         );
     }
-    // Production polls before claiming. A Ready receiver must consume a
-    // manual request even when the in-flight claim branch never executes.
     let completed = started + Duration::from_secs(1);
     let outcome = screen.poll_refresh().expect("ready active generation");
     match outcome {

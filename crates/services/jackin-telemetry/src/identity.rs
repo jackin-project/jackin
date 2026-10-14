@@ -81,11 +81,6 @@ struct SessionRegistry {
     last_ended: Option<SessionId>,
 }
 
-/// Install the process invocation once.
-///
-/// Repeating the same identity is idempotent. A conflicting reinitialization
-/// returns the identity that already owns the process, so callers can adopt it
-/// deterministically rather than silently replacing correlation.
 pub fn set_current_invocation(id: InvocationId) -> Result<(), InvocationId> {
     if let Some(current) = INVOCATION.get().copied() {
         return if current == id { Ok(()) } else { Err(current) };
@@ -137,7 +132,6 @@ fn end_session(id: SessionId) {
     }
 }
 
-/// Exclusive interactive-session ownership with paired lifecycle events.
 #[derive(Debug)]
 pub struct SessionGuard {
     context: SessionContext,
@@ -146,8 +140,6 @@ pub struct SessionGuard {
 }
 
 impl SessionGuard {
-    /// Claim ownership without emitting the start event. Capsule startup uses
-    /// this before fallible subscriber installation, then calls [`Self::start`].
     pub fn claim(kind: SessionKind) -> Result<Self, SessionOwnershipError> {
         Ok(Self {
             context: claim_session(kind)?,
@@ -156,16 +148,12 @@ impl SessionGuard {
         })
     }
 
-    /// Claim ownership and emit the paired start event immediately.
     pub fn begin(kind: SessionKind) -> Result<Self, SessionOwnershipError> {
         let mut guard = Self::claim(kind)?;
         guard.start();
         Ok(guard)
     }
 
-    /// Begin a direct attachment, or continue the session already owned by
-    /// the console that transferred its terminal into the attachment flow.
-    /// Other active owners remain conflicts.
     pub fn begin_attachment() -> Result<Self, SessionOwnershipError> {
         if let Some(context) = current_session() {
             if context.kind == SessionKind::Console {

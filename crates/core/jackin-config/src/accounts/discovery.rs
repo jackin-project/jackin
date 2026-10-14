@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Credential discovery reports locations, never credential values.
-
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
@@ -11,14 +9,10 @@ use serde_json::Value;
 
 use super::{AiProvider, ProfileSelector};
 
-/// An environment API-key source plus its non-secret endpoint override.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EnvironmentAccountCandidate {
-    /// Provider selected by the API-key variable.
     pub provider: AiProvider,
-    /// Variable holding the credential reference.
     pub variable: String,
-    /// Optional provider endpoint from the environment.
     pub base_url: Option<String>,
 }
 
@@ -68,8 +62,6 @@ fn environment_base_url(
     })
 }
 
-/// Find provider API-key sources and their endpoint overrides in an explicit
-/// environment snapshot. Secret values never leave this boundary.
 pub(crate) fn discover_environment_account_candidates(
     environment: &std::collections::BTreeMap<String, String>,
 ) -> Vec<EnvironmentAccountCandidate> {
@@ -99,8 +91,6 @@ pub(crate) fn discover_environment_account_candidates(
                 "MINIMAX_API_TOKEN",
             ][..],
         ),
-        // GEMINI_API_KEY is the documented Google AI Studio variable;
-        // GOOGLE_API_KEY is a widely used alias for the same key.
         (
             AiProvider::Google,
             &["GEMINI_API_KEY", "GOOGLE_API_KEY"][..],
@@ -111,9 +101,6 @@ pub(crate) fn discover_environment_account_candidates(
     ]
     .into_iter()
     .filter_map(|(provider, names)| {
-        // One account per provider: prefer the canonical name, then aliases.
-        // Bootstrap keys accounts by provider, so returning aliases separately
-        // would silently replace the preferred credential reference.
         names.iter().find_map(|name| {
             environment
                 .get(*name)
@@ -128,8 +115,6 @@ pub(crate) fn discover_environment_account_candidates(
     .collect()
 }
 
-/// Find provider API-key references in an explicit environment snapshot.
-/// Returns variable names only; values never leave this boundary.
 pub fn discover_environment_accounts(
     environment: &std::collections::BTreeMap<String, String>,
 ) -> Vec<(AiProvider, String)> {
@@ -139,7 +124,6 @@ pub fn discover_environment_accounts(
         .collect()
 }
 
-/// Discover supported subscription-token references without copying their values.
 pub fn discover_environment_oauth_accounts(
     environment: &std::collections::BTreeMap<String, String>,
 ) -> Vec<(Agent, String)> {
@@ -151,83 +135,51 @@ pub fn discover_environment_oauth_accounts(
         .unwrap_or_default()
 }
 
-/// Evidence backing a discovered account. Discovery does not verify expiry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CredentialEvidence {
-    /// A recognized credential field in this file is nonempty.
     File(PathBuf),
-    /// An exact Claude Keychain service exists; its secret was not read.
     Keychain(String),
 }
 
-/// A usable source location to import into the account registry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredAccount {
-    /// Agent that owns the credential format.
     pub agent: Agent,
-    /// Provider identity selected from the source store.  Multi-provider
-    /// clients must carry this identity into the account registry; the
-    /// directory alone is not an account selector.
     pub provider: Option<AiProvider>,
-    /// Immutable entry/profile identity for a multi-provider store.
     pub source_selector: Option<ProfileSelector>,
-    /// Selected source directory to store in the account registry.
     pub directory: PathBuf,
-    /// Credential location which established this discovery.
     pub evidence: CredentialEvidence,
 }
 
-/// Stable, secret-free discovery failure category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum DiscoveryError {
-    /// Source cannot be read as a regular file.
     #[error("credential source cannot be read")]
     Unreadable,
-    /// Source is present but not parseable in its documented layout.
     #[error("credential source is not parseable")]
     Malformed,
-    /// Source exceeds the bounded credential read size.
     #[error("credential file exceeds the discovery size limit")]
     TooLarge,
-    /// Source is readable but the selected agent cannot safely provision its
-    /// layout without risking unrelated credentials.
     #[error("credential source uses an unsupported layout: {0}")]
     Unsupported(&'static str),
 }
 
-/// One failed source; other agents are still scanned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveryIssue {
-    /// Agent whose source could not be inspected.
     pub agent: Agent,
-    /// Source directory whose scan failed.
     pub directory: PathBuf,
-    /// Sanitized failure category.
     pub error: DiscoveryError,
 }
 
-/// Results from scanning every supported agent's default directory.
 #[derive(Debug, Default)]
 pub struct DiscoveryReport {
-    /// Sources with credential evidence.
     pub accounts: Vec<DiscoveredAccount>,
-    /// Failures encountered while continuing other scans.
     pub issues: Vec<DiscoveryIssue>,
 }
 
-/// Scan catalog defaults first. Codex uses a nonempty `CODEX_HOME` when set;
-/// an unset or empty value selects the operator's `home/.codex`. Other shell
-/// config-directory overrides are imported separately. This performs
-/// blocking filesystem/Keychain work; UI callers must use a worker.
 pub fn discover_default_accounts(home: &Path) -> DiscoveryReport {
     let codex_home = std::env::var_os("CODEX_HOME");
     discover_default_accounts_with_codex_home(home, codex_home.as_deref())
 }
 
-/// Discover catalog defaults with the Codex home supplied by the caller.
-/// `None` or an empty value selects the operator's `home/.codex`; a nonempty
-/// override is resolved from the current directory if relative and must be an
-/// existing directory.
 pub(crate) fn discover_default_accounts_with_codex_home(
     home: &Path,
     codex_home: Option<&OsStr>,
@@ -237,8 +189,6 @@ pub(crate) fn discover_default_accounts_with_codex_home(
     let codex_directory = match codex_home_directory(home, codex_home) {
         Ok(directory) => Some(directory),
         Err(error) => {
-            // Do not include the environment value in diagnostics: paths may
-            // contain private operator directory names.
             report.issues.push(DiscoveryIssue {
                 agent: Agent::Codex,
                 directory: PathBuf::from("CODEX_HOME"),
@@ -327,12 +277,6 @@ fn codex_home_directory(
     Ok(directory)
 }
 
-/// Inspect a selected config/credential directory, without reading shell files.
-/// Empty folders and metadata-only files do not count as accounts.
-/// Performs blocking I/O and must run off render/runtime threads.
-///
-/// # Errors
-/// Returns a sanitized category for unreadable, oversized, or malformed files.
 pub fn discover_account_directory(
     agent: Agent,
     directory: &Path,
@@ -347,9 +291,6 @@ fn inspect_directory(
     home: &Path,
     keychain_exists: impl FnOnce(&str) -> bool,
 ) -> Result<Option<DiscoveredAccount>, DiscoveryError> {
-    // Antigravity credentials live ONLY in the macOS Keychain singleton
-    // (service `gemini`, account `antigravity`); settings.json holds prefs
-    // and can never be evidence, so it is not read at all.
     if agent == Agent::Antigravity {
         if keychain_exists("gemini") {
             return Ok(Some(DiscoveredAccount {
@@ -362,10 +303,6 @@ fn inspect_directory(
         }
         return Ok(None);
     }
-    // Stores-backed agents enumerate content-verified candidates via their
-    // bounded readers. OMP and OpenCode inspect private SQLite snapshots and
-    // never write their user source; Hermes checks config.yaml + profiles +
-    // auth.json. Discovery retains only source-bound identities and locations.
     if matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes) {
         return inspect_store(agent, directory);
     }
@@ -379,16 +316,12 @@ fn inspect_directory(
             unreachable!("handled by early returns above")
         }
     });
-    // Alias-style Amp accounts set both XDG roots beneath one selected folder.
     if agent == Agent::Amp && !file.exists() {
         let nested = directory.join("data/amp/secrets.json");
         if nested.exists() {
             file = nested;
         }
     }
-    // Kimi rotates the live grant into per-environment siblings
-    // (`credentials/kimi-code-env-<id>.json`) while the base file keeps a
-    // drained placeholder; a stale base file must not hide the live grant.
     if agent == Agent::Kimi
         && !matches!(&read_credentials(&file), Ok(Some(value)) if has_credentials(agent, value))
         && let Some(live) = newest_kimi_env_credentials(&directory.join("credentials"))
@@ -407,7 +340,6 @@ fn inspect_directory(
             evidence: CredentialEvidence::File(file),
         }));
     }
-    // A stale file must not hide a valid login in the exact Keychain scope.
     if agent == Agent::Claude
         && let Some(scope) = jackin_core::claude_keychain_scope(directory, home, home)
         && keychain_exists(&scope.service)
@@ -423,11 +355,6 @@ fn inspect_directory(
     file_result.map(|_| None)
 }
 
-/// Inspect a stores-backed agent directory via the `stores` enumerators.
-///
-/// A store is launchable only when exactly one candidate can be attributed to
-/// it. Selecting the first candidate from a multi-entry store would register
-/// an account whose later full-store mount exposes its siblings.
 fn inspect_store(
     agent: Agent,
     directory: &Path,
@@ -445,14 +372,6 @@ fn inspect_store(
     }
 }
 
-/// Inspect a store and retain every source-bound account candidate.
-///
-/// `OpenCode` candidates are keyed by the provider entry in `auth.json`.
-/// OMP candidates use the provider/account entry plus optional profile label;
-/// Hermes candidates use the provider entry plus required profile name. Those
-/// exact dimensions are persisted as [`ProfileSelector`] values. `OpenCode`'s
-/// database-only stores remain unavailable without a source-bound `auth.json`
-/// profile; a sibling database is ignored when one usable auth entry exists.
 fn inspect_store_accounts(
     agent: Agent,
     directory: &Path,
@@ -485,10 +404,6 @@ fn inspect_store_accounts(
             .collect();
     }
     let candidates = match agent {
-        // The database parser remains available for audit fixtures, but its
-        // row identity cannot cross the profile boundary. A valid auth.json
-        // entry is the only source currently materialized for launch/usage;
-        // ignore a sibling database rather than mixing two identity systems.
         Agent::Opencode => opencode::enumerate_opencode_auth(&directory.join("auth.json")),
         Agent::Omp => unreachable!("OMP discovery uses the exact snapshot path above"),
         Agent::Hermes => hermes::enumerate_hermes_store(directory),
@@ -547,9 +462,6 @@ fn inspect_store_accounts(
     }
 }
 
-/// Map an `OpenCode` store key to the canonical provider catalog. `OpenCode`
-/// names its native Go subscription `opencode-go`; every other accepted key
-/// uses the catalog slug directly.
 fn opencode_provider(name: &str) -> Option<AiProvider> {
     if name == "opencode-go" {
         return Some(AiProvider::Opencode);
@@ -557,9 +469,6 @@ fn opencode_provider(name: &str) -> Option<AiProvider> {
     name.parse().ok()
 }
 
-/// Map a secret-free [`StoreError`](super::stores::StoreError) to the
-/// matching discovery category. Unsupported layouts retain their sanitized
-/// reason so Settings can explain why a source was not registered.
 fn map_store_error(error: super::stores::StoreError) -> DiscoveryError {
     match error {
         super::stores::StoreError::Unreadable => DiscoveryError::Unreadable,
@@ -569,19 +478,6 @@ fn map_store_error(error: super::stores::StoreError) -> DiscoveryError {
     }
 }
 
-// NOTE (S1/stores seam): per-value secret import from store candidates
-// awaits a secret accessor on `StoreCandidate` (the field is currently
-// private with no reader). Discovery consumes only the source location;
-// when the stores lane exposes secrets for import, a
-// `discover_store_credentials` API + `account scan` import can be layered
-// here without touching the matchers above.
-
-/// Newest Kimi per-environment credential file, if any.
-///
-/// Bounded directory scan: only `kimi-code-env-*.json` regular files are
-/// considered, newest first by mtime (name order breaks ties and covers
-/// mtime failures deterministically). Returns `None` when the directory
-/// cannot be listed.
 fn newest_kimi_env_credentials(dir: &Path) -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
     let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = entries
@@ -594,9 +490,6 @@ fn newest_kimi_env_credentials(dir: &Path) -> Option<PathBuf> {
             if !is_env_grant {
                 return None;
             }
-            // A newer directory with a `.json` suffix is not a credential
-            // file.  Keep it out of the mtime ordering so it cannot hide a
-            // valid live grant when the selected path is read below.
             if !entry.file_type().ok()?.is_file() {
                 return None;
             }
@@ -618,7 +511,6 @@ fn read_credentials(path: &Path) -> Result<Option<Value>, DiscoveryError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(DiscoveryError::Unreadable),
     }
-    // The synchronous persistence boundary owns bounded file reads.
     const LIMIT: u64 = 1024 * 1024;
     let bytes = match crate::persist::read_bounded_file(path, LIMIT + 1) {
         Ok(bytes) => bytes,
@@ -659,26 +551,19 @@ fn has_credentials(agent: Agent, value: &Value) -> bool {
                     && nonempty(entry.get("key"))
             })
         }),
-        // Unreachable: Antigravity never reads a file; OpenCode, Omp,
-        // and Hermes enumerate via the `stores` enumerators instead.
         Agent::Antigravity | Agent::Opencode | Agent::Omp | Agent::Hermes => false,
-        // Docs-derived shape, unverified against a live install.
         Agent::Gemini => {
             nonempty(value.get("access_token"))
                 || nonempty(value.get("refresh_token"))
                 || nonempty(value.get("token"))
         }
         Agent::Cursor => nonempty(value.get("accessToken")) || nonempty(value.get("refreshToken")),
-        // Verified shape: {schema_version: 2, providers: {meta: {...}}};
-        // the secret itself lives in the Keychain, so the meta entry's
-        // presence is the evidence.
         Agent::Muse => value.pointer("/providers/meta").is_some(),
     }
 }
 
 #[cfg(target_os = "macos")]
 fn keychain_service_exists(service: &str) -> bool {
-    // No -w/-g: query metadata only and discard it, avoiding secret extraction.
     std::process::Command::new("/usr/bin/security")
         .args(["find-generic-password", "-s", service])
         .stdin(std::process::Stdio::null())

@@ -1,8 +1,3 @@
-//! jackin-isolation: workspace isolation materialization and mounts.
-//!
-//! **Architecture Invariant:** T4.
-//! Entry point: [`materialize`] — workspace materialization entry.
-
 pub mod branch;
 pub mod cleanup;
 mod error;

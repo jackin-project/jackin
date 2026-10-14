@@ -1,15 +1,3 @@
-//! jackin❯ desktop (native macOS usage menu bar) assembly and verification.
-//!
-//! Rust owns desktop build and verification logic; `native/mise.toml` composes
-//! the local format, lint, test, and cadence commands. The UI test driver stays
-//! in `native/Scripts/run-ui-tests.sh`.
-//!
-//! ```sh
-//! mise exec -- mbx +1.99.0 xtask desktop build --version 0.6.0 --build 1
-//! mise exec -- mbx +1.99.0 xtask desktop verify native/dist/JackinDesktop.app
-//! # or use the local native cadence: mise -C native run ci
-//! ```
-
 mod bootstrap;
 mod release_state;
 mod sign_notarize;
@@ -34,17 +22,13 @@ const BROKER_EXECUTABLE: &str = "jackin-usage-broker";
 const BUNDLE_ID: &str = "com.jackin-project.desktop";
 const BUNDLE_NAME: &str = "jackin❯ desktop";
 const MIN_OS: &str = "27.0";
-/// XC framework artifact name; the boltffi FFI module is always `{name}FFI`.
 const FRAMEWORK_NAME: &str = "JackinUsage";
 const MODULE_NAME: &str = "JackinUsageFFI";
 const STATIC_LIB: &str = "libjackin_usage_ffi.a";
 const HOST_TARGET: &str = "aarch64-apple-darwin";
 const ARCH: &str = "arm64";
-/// Crate holding `boltffi.toml`; boltffi resolves the crate from its cwd.
 const FFI_CRATE_DIR: &str = "crates/adapters/jackin-usage-ffi";
 const FFI_CRATE: &str = "jackin-usage-ffi";
-/// Symbol-rich release lane for the desktop static library (see workspace
-/// `[profile.desktop-release]`); release CI archives its unstripped bytes.
 const DESKTOP_PROFILE: &str = "desktop-release";
 const DEFAULT_SWIFT_JOBS: usize = 2;
 const MAX_SWIFT_JOBS: usize = 8;
@@ -61,78 +45,56 @@ pub(super) fn progress(msg: impl AsRef<str>) {
 
 #[derive(Subcommand)]
 pub(crate) enum DesktopCommand {
-    /// Generate boltffi Swift bindings into `native/Sources/JackinUsageBindings`.
     Bindings(BindingsArgs),
-    /// Nonmutating drift gate: regenerate into staging and byte-compare.
     BindingsCheck(BindingsArgs),
-    /// Build the static arm64 `XCFramework` for `jackin-usage-ffi`.
     Xcframework,
-    /// Assemble arm64 static `JackinDesktop.app` under `native/dist/`.
     Build(BuildArgs),
-    /// Fail-closed validation for a `JackinDesktop.app` (and optional ZIP).
     Verify(VerifyArgs),
-    /// Launch a built `JackinDesktop.app` (menu-bar / `LSUIElement` — no Dock icon).
     Run(RunArgs),
-    /// Run host + pure Swift parity harnesses (OpenUsage/CodexBar limits-only matrix).
     Test,
-    /// Counted `SwiftPM` unit tests: parse the xUnit report, reject zero/corrupt results.
     TestSwift(SwiftTestArgs),
-    /// Developer ID sign + notarize + staple + final release ZIP.
     SignNotarize(sign_notarize::SignNotarizeArgs),
-    /// Independent publication state (`KEY=value` lines for `GITHUB_OUTPUT`).
     ReleaseState(release_state::ReleaseStateArgs),
-    /// Bootstrap GitHub env `release-macos` Apple secrets (never prints values).
     BootstrapSecrets(Box<bootstrap::BootstrapSecretsArgs>),
 }
 
 #[derive(Args)]
 pub(crate) struct BindingsArgs {
-    /// Cargo profile passed to boltffi's cargo invocation.
     #[arg(long, default_value = "desktop-release")]
     profile: String,
 }
 
 #[derive(Args)]
 pub(crate) struct BuildArgs {
-    /// `CFBundleShortVersionString` (or env `JACKIN_APP_VERSION`).
     #[arg(long)]
     version: Option<String>,
-    /// `CFBundleVersion` numeric build (or env `JACKIN_APP_BUILD`).
     #[arg(long)]
     build: Option<String>,
 }
 
 #[derive(Args)]
 pub(crate) struct VerifyArgs {
-    /// Path to `JackinDesktop.app` (default `native/dist/JackinDesktop.app`).
     #[arg(default_value = "native/dist/JackinDesktop.app")]
     app: PathBuf,
-    /// Optional ZIP for archive round-trip verification.
     zip: Option<PathBuf>,
-    /// Require Developer ID + notarization (Gatekeeper + stapler).
     #[arg(long)]
     release: bool,
-    /// Expected short version (or env `JACKIN_APP_VERSION`).
     #[arg(long)]
     version: Option<String>,
-    /// Expected build number (or env `JACKIN_APP_BUILD`).
     #[arg(long)]
     build: Option<String>,
 }
 
 #[derive(Args)]
 pub(crate) struct RunArgs {
-    /// Path to `JackinDesktop.app` (default `native/dist/JackinDesktop.app`).
     #[arg(default_value = "native/dist/JackinDesktop.app")]
     app: PathBuf,
-    /// Fail-closed verify the bundle before launching.
     #[arg(long)]
     verify: bool,
 }
 
 #[derive(Args)]
 pub(crate) struct SwiftTestArgs {
-    /// Maximum `SwiftPM` build jobs and parallel test workers (1–8).
     #[arg(long, default_value_t = DEFAULT_SWIFT_JOBS, value_parser = parse_swift_jobs)]
     jobs: usize,
 }
@@ -162,7 +124,6 @@ pub(crate) fn run(command: DesktopCommand) -> Result<()> {
     }
 }
 
-/// Resolve a relative app path against the repo root and return an absolute path.
 pub(super) fn resolve_app_path(app: &Path) -> Result<PathBuf> {
     let root = docs::repo_root()?;
     let path = if app.is_absolute() {
@@ -179,9 +140,6 @@ pub(super) fn resolve_app_path(app: &Path) -> Result<PathBuf> {
     Ok(fs::canonicalize(&path).unwrap_or(path))
 }
 
-/// Host unit tests + pure Swift harnesses (OpenUsage/CodexBar limits-only matrix).
-///
-/// Does not require full Xcode `XCTest` — uses CLT-safe `swift run` harnesses.
 fn run_desktop_tests(root: &Path) -> Result<()> {
     require_macos("desktop test")?;
     progress("==> jackin-usage + jackin-usage-ffi nextest");
@@ -197,7 +155,6 @@ fn run_desktop_tests(root: &Path) -> Result<()> {
     ]);
     cmd::run_streaming(&mut nextest)?;
 
-    // Ensure XCFramework exists for SwiftPM binary target.
     let xcf = root.join(format!("target/xcframework/{FRAMEWORK_NAME}.xcframework"));
     if !xcf.is_dir() {
         progress("==> XCFramework missing — building");
@@ -229,11 +186,6 @@ fn run_desktop_tests(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `SwiftPM` unit tests with a count proof. Parallel `XCTest` writes the
-/// aggregate xUnit report at `swift-unit-tests.xml`; Swift Testing writes its
-/// separate `swift-unit-tests-swift-testing.xml` report. Both reports must be
-/// present and nonzero — a mistyped selector, crashed runner, or missing
-/// report can never look green.
 fn run_swift_unit_tests(root: &Path, jobs: usize) -> Result<()> {
     require_macos("desktop test-swift")?;
     let native = root.join("native");
@@ -330,9 +282,6 @@ struct XunitTotals {
     errors: u64,
 }
 
-/// Validate an opening (`Start`/`Empty`) element's name and document position.
-/// An empty root both opens and closes the document; `Start` elements advance
-/// depth at the call site.
 fn check_xunit_open_position(
     name: &str,
     depth: usize,
@@ -364,10 +313,6 @@ fn check_xunit_open_position(
     Ok(())
 }
 
-/// Sum `tests`/`failures`/`errors` across direct `<testsuite>` children.
-/// The token reader is state-checked as an XML document; unsupported DTDs,
-/// malformed prologs, content outside the root, and missing reports fail closed.
-/// Missing elements or attributes are corruption, never zero.
 fn parse_xunit_totals(source: &str) -> Result<XunitTotals> {
     anyhow::ensure!(
         source.chars().all(is_xml_char),
@@ -707,15 +652,12 @@ fn run_app(args: &RunArgs) -> Result<()> {
         bail!("missing executable {}", bin.display());
     }
 
-    // WHY: reusing a stale agent process (open without -n) can leave a PID alive
-    // with no MenuBarExtra after a bad first launch. Always restart cleanly.
     {
         let mut pkill = cmd::command("pkill");
         pkill.args(["-x", APP_EXECUTABLE]);
         drop(cmd::run(&mut pkill));
     }
 
-    // Clear quarantine bits from local builds so LaunchServices will map UI.
     {
         let mut xattr = cmd::command("xattr");
         xattr.args(["-cr", app.to_str().context("app utf-8")?]);
@@ -735,12 +677,10 @@ fn run_app(args: &RunArgs) -> Result<()> {
     progress("└─────────────────────────────────────────────────────────────");
     progress("");
 
-    // -n forces a new instance after pkill; absolute path avoids PATH ambiguity.
     let mut open = cmd::command("open");
     open.args(["-n", app.to_str().context("app utf-8")?]);
     cmd::run(&mut open).with_context(|| format!("opening {}", app.display()))?;
 
-    // Poll briefly for a live process (no thread::sleep — short bash wait).
     let mut seen = String::new();
     for _ in 0..20 {
         let mut pgrep = cmd::command("pgrep");
@@ -786,7 +726,6 @@ fn print_app_ready_banner(app: &Path, version: &str, build: &str) {
     progress("│   (menu bar only — no Dock icon; LSUIElement)");
     progress("└─────────────────────────────────────────────────────────────");
     progress("");
-    // Machine-readable line for scripts / CI grepping.
     progress(format!("DESKTOP_APP={}", abs.display()));
 }
 
@@ -805,8 +744,6 @@ pub(super) fn resolve_version_build(
     Ok((version, build))
 }
 
-/// Prefer flags/env; otherwise read identity from the app plist so
-/// `mise exec -- mbx +1.99.0 xtask desktop verify` reads version metadata from the app bundle.
 fn resolve_version_build_for_verify(
     app: &Path,
     version: Option<String>,
@@ -879,8 +816,6 @@ fn bindings_check(root: &Path, profile: &str) -> Result<()> {
         fs::remove_dir_all(&staging).with_context(|| format!("clearing {}", staging.display()))?;
     }
     let staging_sources = staging.join("Sources/JackinUsageBindings");
-    // Redirect boltffi's Swift output into staging via an overlay config so the
-    // committed tree is never touched by the drift gate.
     let overlay = staging.join("boltffi.overlay.toml");
     fs::create_dir_all(&staging)?;
     fs::write(
@@ -911,8 +846,6 @@ fn bindings_check(root: &Path, profile: &str) -> Result<()> {
     bail!(report)
 }
 
-/// Byte-compare two directory trees; each entry names a missing, extra, or
-/// changed committed-relative path. `label` prefixes entries for reporting.
 fn tree_differences(expected: &Path, actual: &Path, label: &str) -> Result<Vec<String>> {
     fn collect(root: &Path) -> Result<Vec<PathBuf>> {
         let mut files = Vec::new();
@@ -992,8 +925,6 @@ fn generate_bindings_into(
     generate.args(["generate", "swift"]);
     cmd::run_streaming(&mut generate)?;
 
-    // `boltffi generate` also drops the C header beside the Swift; only the
-    // xcframework consumes headers, so the committed tree stays pure Swift.
     let stray_header = sources.join("BoltFFI/boltffi.h");
     if stray_header.is_file() {
         fs::remove_file(&stray_header)?;
@@ -1044,15 +975,8 @@ fn build_xcframework(root: &Path) -> Result<()> {
     ));
     let mut rustup = cmd::command("rustup");
     rustup.args(["target", "add", HOST_TARGET]);
-    // Already-installed target is fine; surface other rustup failures below if cargo fails.
     drop(cmd::run(&mut rustup));
 
-    // Stream the long staticlib build directly: boltffi captures cargo's
-    // output and only summarizes, leaving CI silent for 400s+ on a healthy
-    // full build — indistinguishable from a stall to the 600s watchdog.
-    // Same profile/target/env as boltffi's own invocation, so its cargo
-    // call below goes incremental and fast; mismatch degrades to a slow
-    // but correct rebuild, never wrong output.
     progress("==> building staticlib (streaming cargo progress)");
     let mut prebuild = cmd::command("cargo");
     prebuild
@@ -1071,7 +995,6 @@ fn build_xcframework(root: &Path) -> Result<()> {
 
     let out_dir = root.join("target/xcframework");
     let xcframework = out_dir.join(format!("{FRAMEWORK_NAME}.xcframework"));
-    // boltffi merges into an existing output directory; wipe for a clean slice set.
     if xcframework.exists() {
         fs::remove_dir_all(&xcframework)?;
     }
@@ -1080,9 +1003,6 @@ fn build_xcframework(root: &Path) -> Result<()> {
         fs::remove_file(&zip)?;
     }
 
-    // boltffi's clean pack needs both its generated header and XCFramework
-    // staging inputs. It also regenerates Swift, so normalize those outputs
-    // after packing to keep the committed bindings deterministic.
     let boltffi = which("boltffi").context(
         "boltffi not on PATH; install via mise (`mise install`) — see mise.toml github:boltffi/boltffi",
     )?;
@@ -1148,8 +1068,6 @@ fn build_app(root: &Path, version: &str, build: &str) -> Result<()> {
         bail!("missing {}", xcframework.display());
     }
 
-    // The FFI resolves its broker beside the running app executable. Build
-    // that process for the app's native target, regardless of CLI release lanes.
     progress("==> building native usage broker");
     let mut broker_build = cmd::command("cargo");
     broker_build
@@ -1499,7 +1417,6 @@ fn verify_broker(path: &Path, version: &str) -> Result<()> {
     assert_broker_version(&cmd::output_string(&mut probe)?, version)
 }
 
-/// Sign nested code explicitly before sealing the enclosing bundle.
 pub(super) fn sign_broker(app: &Path, identity: &str, release: bool) -> Result<()> {
     let broker = broker_path(app);
     assert_executable_file(&broker)?;
@@ -1523,7 +1440,6 @@ pub(super) fn verify_broker_signature(app: &Path) -> Result<()> {
     cmd::run(&mut codesign).context("usage broker codesign verify failed")
 }
 
-/// arm64 UUID of a Mach-O binary or dSYM DWARF file, via `dwarfdump --uuid`.
 fn dwarf_uuid(path: &Path) -> Result<String> {
     let mut dwarfdump = cmd::command("xcrun");
     dwarfdump.args(["dwarfdump", "--uuid", path.to_str().context("path utf-8")?]);

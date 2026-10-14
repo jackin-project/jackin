@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Secrets tab helpers for the editor: value lookup, modal openers, delete/add flows.
-
 use crate::tui::screens::editor::view::{
     secret_delete_confirm_state, secret_new_key_label, secret_scope_picker_state,
     secret_value_current_text, secret_value_input_state,
@@ -24,8 +22,6 @@ pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
             });
         }
         SecretsEnterPlan::OpenScopePicker => {
-            // Workspace sentinel asks the scope question first; the
-            // per-role sentinel fast-path stays direct.
             editor.modal = Some(Modal::ScopePicker {
                 state: secret_scope_picker_state(),
             });
@@ -34,8 +30,6 @@ pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
             editor.set_secrets_role_expanded(role, true);
         }
         SecretsEnterPlan::AddRoleKey { scope } => {
-            // In-section fast-path — already viewing the role, don't
-            // re-ask the scope question.
             let label = secret_new_key_label(&scope);
             let state = super::env_key_input_state(editor, &scope, label, String::new());
             editor.modal = Some(Modal::TextInput {
@@ -58,10 +52,6 @@ pub(super) fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
     });
 }
 
-/// `A` commits to the row's contextual scope without asking — unlike
-/// the workspace-sentinel `Enter` path, which routes through
-/// `ScopePicker`. Operator already chose a row with unambiguous
-/// scope; an extra prompt would be a regression.
 pub(super) fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
     let Some(scope) = editor.focused_secret_add_target() else {
         return;

@@ -10,7 +10,6 @@ fn switching_from_token_to_sync_forwards_fresh_host_creds() {
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 
-    // First run: token mode writes the onboarding skeleton
     let (state, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -30,7 +29,6 @@ fn switching_from_token_to_sync_forwards_fresh_host_creds() {
     );
     drop(state);
 
-    // Operator switches to sync — host auth must now be forwarded
     let (state2, outcome) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -63,7 +61,6 @@ fn switching_from_token_to_ignore_remains_empty() {
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 
-    // Token mode seeds an empty state
     let (_, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -78,7 +75,6 @@ fn switching_from_token_to_ignore_remains_empty() {
     )
     .unwrap();
 
-    // Switching to ignore must keep the empty shape (no .credentials.json)
     let (state2, outcome) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -106,7 +102,6 @@ fn sync_mode_preserves_container_auth_when_host_file_missing() {
     let paths = JackinPaths::for_tests(temp.path());
     let manifest = simple_manifest(&temp);
 
-    // First run: host has auth, sync copies it
     seed_host_auth(&temp);
     let (state, _) = RoleState::prepare(
         &paths,
@@ -122,16 +117,13 @@ fn sync_mode_preserves_container_auth_when_host_file_missing() {
     )
     .unwrap();
 
-    // Host auth disappears (e.g. user logged out)
     std::fs::remove_file(temp.path().join(".claude.json")).unwrap();
     std::fs::remove_file(temp.path().join(".claude/.credentials.json")).unwrap();
 
-    // Container may have its own auth by now (from manual login inside)
     let container_auth = r#"{"oauthAccount":{"emailAddress":"container@example.com"}}"#;
     std::fs::write(state.claude_account_json().unwrap(), container_auth).unwrap();
     drop(state);
 
-    // Second run: host auth missing — container auth must be preserved
     let (state2, outcome) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -204,7 +196,6 @@ fn sync_repairs_permissions_on_legacy_permissive_file() {
     let manifest = simple_manifest(&temp);
     seed_host_auth(&temp);
 
-    // First run: sync host auth so the jackin-owned account.json exists at 0600.
     let (state, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -219,7 +210,6 @@ fn sync_repairs_permissions_on_legacy_permissive_file() {
     )
     .unwrap();
 
-    // Simulate a legacy state file with permissive mode
     std::fs::set_permissions(
         state.claude_account_json().unwrap(),
         std::fs::Permissions::from_mode(0o644),
@@ -231,7 +221,6 @@ fn sync_repairs_permissions_on_legacy_permissive_file() {
     assert_eq!(perms.mode() & 0o777, 0o644, "precondition: file is 0644");
     drop(state);
 
-    // A subsequent sync must tighten permissions back to 0600.
     let (state2, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -265,7 +254,6 @@ fn sync_repairs_permissions_when_host_auth_missing() {
     let paths = JackinPaths::for_tests(temp.path());
     let manifest = simple_manifest(&temp);
 
-    // First run: sync with host auth to seed both files
     seed_host_auth(&temp);
     let (state, _) = RoleState::prepare(
         &paths,
@@ -281,7 +269,6 @@ fn sync_repairs_permissions_when_host_auth_missing() {
     )
     .unwrap();
 
-    // Simulate legacy permissive modes on both auth files
     std::fs::set_permissions(
         state.claude_account_json().unwrap(),
         std::fs::Permissions::from_mode(0o644),
@@ -290,12 +277,10 @@ fn sync_repairs_permissions_when_host_auth_missing() {
     let creds_path = state.claude_credentials_json().unwrap();
     std::fs::set_permissions(creds_path, std::fs::Permissions::from_mode(0o644)).unwrap();
 
-    // Remove host auth so sync takes the preserve path
     std::fs::remove_file(temp.path().join(".claude.json")).unwrap();
     std::fs::remove_file(temp.path().join(".claude/.credentials.json")).unwrap();
     drop(state);
 
-    // Second run: host auth missing — files preserved but permissions repaired
     let (state2, outcome) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -337,7 +322,6 @@ fn rejects_symlink_at_claude_json() {
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 
-    // First run: create the state directory
     let (state, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -352,14 +336,12 @@ fn rejects_symlink_at_claude_json() {
     )
     .unwrap();
 
-    // Replace .claude.json with a symlink to a decoy file
     let decoy = temp.path().join("decoy.txt");
     std::fs::write(&decoy, "original").unwrap();
     std::fs::remove_file(state.claude_account_json().unwrap()).unwrap();
     std::os::unix::fs::symlink(&decoy, state.claude_account_json().unwrap()).unwrap();
     drop(state);
 
-    // Sync should refuse to write through the symlink
     let err = RoleState::prepare(
         &paths,
         "jk-agent-smith",
@@ -378,6 +360,5 @@ fn rejects_symlink_at_claude_json() {
         "expected symlink error, got: {err}"
     );
 
-    // Decoy file must be untouched
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "original");
 }

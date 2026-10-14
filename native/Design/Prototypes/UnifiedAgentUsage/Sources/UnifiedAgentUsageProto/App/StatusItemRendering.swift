@@ -1,6 +1,5 @@
 import AppKit
 
-/// AppKit rendering for one per-provider `NSStatusItem`.
 enum StatusItemRendering {
     static func title(
         barLabel: String, compactResetLabel: String?,
@@ -25,10 +24,6 @@ enum StatusItemRendering {
                 ])
         }
 
-        // Measured against the rendered button: the multi-line title block
-        // draws top-aligned, ~2.5pt above the icon's center. A −2.5pt global
-        // shift with a 3pt spread (top −0.5, bottom −3.5) lands the text ink
-        // mid exactly on the icon ink mid (raster-verified, both lines).
         let result = NSMutableAttributedString()
         result.append(
             NSAttributedString(

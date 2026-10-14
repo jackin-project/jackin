@@ -9,8 +9,6 @@ async fn load_agent_launches_codex_without_openai_key() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
-    // Profile admission preserves the test's intent: Codex launches with no
-    // API key anywhere (sync mode stages a home, never an env secret).
     let profile_dir = temp.path().join("codex-profile");
     std::fs::create_dir_all(&profile_dir).unwrap();
     std::fs::write(profile_dir.join("auth.json"), "{}\n").unwrap();
@@ -197,11 +195,6 @@ agents = []
     .await
     .expect_err("role manifest with no agents must fail load");
     let rendered = format!("{error:#}");
-    // Manifest validation rejects `agents = []` before reaching the
-    // launch-time bail. The defensive bail at the resolve site is
-    // unreachable in practice — pinned here so a future refactor
-    // that loosens manifest validation still surfaces the same
-    // operator-facing failure.
     assert!(
         rendered.contains("agents") && rendered.contains("empty"),
         "error must name the empty-agents condition: {rendered}"
@@ -210,9 +203,6 @@ agents = []
 
 #[tokio::test]
 async fn console_agent_resolution_fast_paths_cached_manifest() {
-    // When the role repo + manifest are already on disk, the
-    // console must skip git entirely — the actual launch path
-    // re-fetches and re-validates anyway.
     let mut f = console_resolution_fixture();
     seed_cached_repo(&f.repo_dir, MULTI_AGENT_MANIFEST);
 
@@ -234,12 +224,8 @@ async fn console_agent_resolution_fast_paths_cached_manifest() {
 
 #[tokio::test]
 async fn console_agent_resolution_falls_through_when_manifest_present_but_git_absent() {
-    // Orphan manifest (jackin.role.toml without `.git/`) must not
-    // be trusted as a cache hit — the `.git/` guard forces a fresh
-    // clone so half-cleaned caches never serve stale data.
     let mut f = console_resolution_fixture();
     write_role_repo(&f.repo_dir, CODEX_ONLY_MANIFEST);
-    // Deliberately no `.git/` directory.
     let materialize_dir = f.repo_dir.clone();
     f.runner.side_effects.push((
         "clone".to_owned(),
@@ -265,11 +251,6 @@ async fn console_agent_resolution_falls_through_when_manifest_present_but_git_ab
 
 #[tokio::test]
 async fn console_agent_resolution_falls_through_when_cached_manifest_unparseable() {
-    // `.git/` present but manifest body cannot be parsed →
-    // fast-path must defer to the real fetch instead of returning
-    // a stale or partial agent list. The downstream fetch itself
-    // may legitimately fail in the test harness; what matters is
-    // that the runner is invoked at all.
     let mut f = console_resolution_fixture();
     std::fs::create_dir_all(f.repo_dir.join(".git")).unwrap();
     std::fs::write(f.repo_dir.join("jackin.role.toml"), "this is not toml = =").unwrap();
@@ -286,9 +267,6 @@ async fn console_agent_resolution_falls_through_when_cached_manifest_unparseable
 
 #[tokio::test]
 async fn console_agent_resolution_falls_through_to_git_when_uncached() {
-    // No cached repo on disk → must fetch via non-interactive git
-    // (null stdin, GIT_TERMINAL_PROMPT=0, quiet) so a hanging
-    // credential helper cannot freeze the TUI.
     let mut f = console_resolution_fixture();
     materialize_on_clone(
         &mut f.runner,

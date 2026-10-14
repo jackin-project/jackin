@@ -371,7 +371,6 @@ fn reload_attempt_fence_moves_scheduler_due_with_wall_clock_jumps() {
     assert_eq!(coordinator.current(&account, 5_000).unwrap().generation, 1);
     assert_eq!(coordinator.next_due_epoch(), Some(5_300));
 
-    // A forward wall-clock jump does not consume the monotonic restart fence.
     clock.set_wall_epoch(100_000);
     assert_eq!(coordinator.next_due_epoch(), Some(100_300));
     assert!(coordinator.poll_due(100_299).is_empty());
@@ -419,9 +418,6 @@ fn recovered_monotonic_fence_does_not_shorten_a_later_retry_after() {
     assert!(coordinator.poll_due(10_999).is_empty());
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
-    // A later wall jump still leaves the freshly installed monotonic floor in
-    // force; the persisted 1,000-second retry remains longer than the new
-    // 300-second reload floor.
     clock.set_wall_epoch(20_000);
     assert_eq!(coordinator.next_due_epoch(), Some(21_000));
     assert!(coordinator.poll_due(20_999).is_empty());

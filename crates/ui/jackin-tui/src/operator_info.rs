@@ -1,19 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Product-owned jackin❯ operator-information vocabulary and `TermRock` projection.
-//!
-//! Plan 010 step 6 (C19) reviewed the named `key_value_table` + `link`
-//! pairing at rev `29a16b5b` and recorded a behavior-preserving
-//! non-adoption (commit-message carve-out): the pairing's substance already
-//! lands through the current substrate — upstream `DetailTable` (the
-//! KVT-class detail table with `Link`/`CopyAndLink` capabilities and
-//! `Role::Link` styling), `hyperlink_regions`, and OSC 8 bytes emitted via
-//! `termrock::osc::encode_hyperlink_open`. A literal `KeyValueTable` swap is
-//! not byte-viable: its field-row paint is an editable form-grid anatomy
-//! (row-chrome fills, two-column leading pad, separator rules, auto key
-//! width) that would shift every rendered row.
-
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -31,13 +18,9 @@ use termrock::widgets::{
     Panel, PanelChrome,
 };
 
-/// Key-handling result for the Debug-info dialog. The dialog only ever
-/// continues or dismisses — it has no commit path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatorInfoOutcome {
-    /// Key absorbed; dialog stays open.
     Continue,
-    /// Esc/q pressed; dialog dismissed.
     Cancel,
 }
 
@@ -48,8 +31,6 @@ pub struct ContainerInfoRow {
     href: Option<String>,
     copyable: bool,
     emphasised: bool,
-    /// Optional accent colour for the row's meter/value, used to severity-grade
-    /// a usage bucket (warn/danger). `None` keeps the default rendering.
     accent: Option<Color>,
 }
 
@@ -66,14 +47,12 @@ impl ContainerInfoRow {
         }
     }
 
-    /// Set the accent colour used to severity-grade this row's meter.
     #[must_use]
     pub const fn accent(mut self, accent: Color) -> Self {
         self.accent = Some(accent);
         self
     }
 
-    /// The row's accent colour, if any.
     #[must_use]
     pub const fn accent_color(&self) -> Option<Color> {
         self.accent
@@ -118,40 +97,18 @@ impl ContainerInfoRow {
     }
 }
 
-/// Accumulating model for the shared "Debug info" dialog.
-///
-/// The same dialog is shown on every surface — the console manager, the launch
-/// cockpit, and the in-container capsule — and gains rows as the corresponding
-/// facts become known: the console knows only the run; launch additionally
-/// knows the container id, role, agent, and target; the capsule additionally
-/// knows its own binary version. Each surface fills the fields it knows and
-/// calls [`DebugInfo::into_state`]; absent fields are simply omitted, so the
-/// row set grows as the operator moves console -> launch -> capsule while the
-/// ordering, labels, copy affordances, and styling stay identical.
-///
-/// Version strings are passed in as data because the canonical values live in
-/// build-time env vars (`JACKIN_VERSION`, `JACKIN_CAPSULE_VERSION`) that are
-/// only in scope in the binary crates. Pass the exact string `jackin --version`
-/// / `jackin-capsule --version` print so the dialog never disagrees with the CLI.
 #[derive(Debug, Clone, Default)]
 pub struct DebugInfo {
-    /// `jackin --version` output. Shown as the `jackin version` row.
     pub jackin_version: Option<String>,
-    /// `jackin-capsule --version` output. Shown as the `jackin-capsule` row
-    /// (capsule surface only).
     pub capsule_version: Option<String>,
-    /// Container name, once one has been assigned (launch onward).
     pub container_id: Option<String>,
     pub role: Option<String>,
     pub agent: Option<String>,
-    /// Working directory / target label.
     pub target: Option<String>,
-    /// Opaque invocation id for backend correlation.
     pub run_id: Option<String>,
 }
 
 impl DebugInfo {
-    /// Build the dialog state in canonical row order, omitting unknown fields.
     #[must_use]
     pub fn into_state(self) -> ContainerInfoState {
         let mut rows = Vec::new();
@@ -187,9 +144,6 @@ pub struct ContainerInfoState {
     copied_row: Option<usize>,
     hovered_row: Option<usize>,
     viewport: Option<Rect>,
-    /// Scroll offsets for when the content overflows the dialog area. Shared
-    /// with every other dialog through [`DialogScroll`] so vertical and
-    /// horizontal scroll behave identically everywhere.
     pub scroll: DialogScroll,
 }
 
@@ -230,8 +184,6 @@ impl ContainerInfoState {
             let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
             return self.handle_scroll_key(key, viewport_height, viewport_width, axes);
         }
-        // Viewport is unknown here; pass 0 so the key is accepted and the next
-        // render-time clamp settles the final offset, and advertise both axes.
         self.handle_scroll_key(
             key,
             0,
@@ -247,11 +199,6 @@ impl ContainerInfoState {
         self.viewport = Some(dialog_rect);
     }
 
-    /// Shared Esc/q dismiss + scroll-key dispatch for the Debug-info dialog. The
-    /// two public entry points differ only in the viewport extents and the
-    /// available axes they derive; the key set and dismiss behaviour are one.
-    /// Content extents are clamped at render time, so a generous viewport here is
-    /// harmless — the renderer never shows past the last row/col.
     fn handle_scroll_key(
         &mut self,
         key: KeyEvent,
@@ -261,7 +208,6 @@ impl ContainerInfoState {
     ) -> OperatorInfoOutcome {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q' | 'Q') => OperatorInfoOutcome::Cancel,
-            // Scroll keys (Up/Down/Left/Right + vim h/j/k/l + PageUp/PageDown).
             KeyCode::Up
             | KeyCode::Down
             | KeyCode::Left
@@ -285,9 +231,6 @@ impl ContainerInfoState {
         }
     }
 
-    /// Display-column width of the widest rendered body line (label column +
-    /// `" : "` + value), including the 2-space indent. Drives horizontal scroll.
-    /// Matches the unpadded width `render_scrollable_dialog_body` measures.
     #[must_use]
     pub fn content_width(&self) -> usize {
         let label_width = self.label_width();
@@ -308,18 +251,11 @@ impl ContainerInfoState {
             .unwrap_or(0)
     }
 
-    /// Rendered body height: one leading spacer row + one row per fact.
     #[must_use]
     pub fn content_height(&self) -> usize {
         self.rows.len().saturating_add(1)
     }
 
-    /// Clamp the scroll offsets to the content given the dialog's outer rect, so
-    /// over-scrolling (holding →/↓ past the end, or a wheel that out-runs the
-    /// content) cannot inflate the stored offset and make the opposite key feel
-    /// dead while it unwinds. Call after handling a scroll key/wheel. `vp` is the
-    /// inner viewport (rect minus the 1-col border on each side), matching what
-    /// `render_scrollable_dialog_body` uses.
     pub fn clamp_scroll(&mut self, dialog_rect: Rect) {
         let content_width = self.content_width();
         let content_height = self.content_height();
@@ -343,9 +279,6 @@ impl ContainerInfoState {
         self.copied_row
     }
 
-    /// Set the row index the pointer is hovering (a copyable value), or `None`.
-    /// Drives the link hover-colour change. Callers feed this from a mouse-move
-    /// hit-test via [`copy_payload_at`], which returns the row index.
     pub fn set_hovered_row(&mut self, row: Option<usize>) {
         self.hovered_row = row;
     }
@@ -355,11 +288,6 @@ impl ContainerInfoState {
         self.hovered_row
     }
 
-    /// Default keyboard copy target for the Debug-info dialog.
-    ///
-    /// Mouse hit-testing copies the row under the pointer. Keyboard copy has no
-    /// row cursor, so every surface uses the first copyable row in canonical
-    /// row order as the stable default.
     #[must_use]
     pub fn keyboard_copy_payload(&self) -> Option<(usize, String)> {
         self.rows
@@ -370,10 +298,6 @@ impl ContainerInfoState {
     }
 }
 
-/// Clamp a dialog body's scroll offsets to the content within `dialog_rect`'s
-/// inner viewport. Shared by surfaces whose scroll state lives outside a
-/// persistent `ContainerInfoState` (the cockpit's `LaunchView`, the capsule's
-/// `Dialog` enum) so they get the same over-scroll guard as `clamp_scroll`.
 pub fn clamp_dialog_scroll(
     scroll: &mut DialogScroll,
     content_width: usize,
@@ -387,33 +311,18 @@ pub fn clamp_dialog_scroll(
     scroll.scroll_y = effective_offset(content_height, vp_h, scroll.scroll_y);
 }
 
-/// Keys for the Debug-info dialog hint bar: the *available* scroll axes (per
-/// `axes`), keyboard copy, dismiss, then click-to-copy. The scroll segment is
-/// omitted entirely when the body fits, and shows only the axis/axes that
-/// actually overflow — the dialog never advertises a direction the operator
-/// cannot move.
-///
-/// Single source of truth for the Debug-info hint bar: the console list modal
-/// and the launch cockpit both render this exact sequence so the same dialog
-/// never drifts between surfaces. The keyboard and mouse affordances are
-/// inline-handled (Enter copies the hovered row, Esc dismisses, left-click
-/// copies) with no backing `Keymap<A>`, so each span carries an
-/// `// UNREGISTERABLE` annotation per the keymap/hint-bar enforcement rule.
 #[must_use]
 pub fn debug_info_hint_spans(axes: termrock::scroll::ScrollAxes) -> Vec<HintSpan<'static>> {
     let mut spans = termrock::scroll::scroll_hint_spans(axes);
     if axes.any() {
         spans.push(HintSpan::GroupSep);
     }
-    // UNREGISTERABLE(container-info-copy): Enter copies the active row inline; no ContainerInfo keymap.
     spans.push(HintSpan::Key("↵"));
     spans.push(HintSpan::Text("copy value"));
     spans.push(HintSpan::GroupSep);
-    // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
     spans.push(HintSpan::Key("Esc"));
     spans.push(HintSpan::Text("dismiss"));
     spans.push(HintSpan::GroupSep);
-    // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
     spans.push(HintSpan::Key("click"));
     spans.push(HintSpan::Text("copy value"));
     spans
@@ -443,15 +352,10 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
     let mut table_state = detail_state(state);
     frame.render_stateful_widget(&table, table_area, &mut table_state);
 
-    // DetailTable paints its own scrollbars from table_state during render.
     let _ = (table_state.content_height, table_state.content_width);
 }
 
 fn detail_table_area(inner: Rect) -> Rect {
-    // `inner` is head Panel::inner (border + density padding). The detail
-    // surface keeps the old pin's geometry: content column flush inside the
-    // border on X, with the pad_y row serving as the one spacer row between
-    // title border and first detail row.
     let spacing = termrock::style::DesignSystem::default().spacing;
     Rect {
         x: inner.x.saturating_sub(spacing.pad_x),
@@ -552,11 +456,6 @@ pub fn hyperlink_payload_at(
         .and_then(|row| row.href.map(|href| (id, href.to_owned())))
 }
 
-/// Visible hyperlink cells for the encoder's frame-layer OSC 8 emission:
-/// one `(rect, uri)` per linked row slice currently on screen. The capsule's
-/// cell encoder brackets exactly these cells during emission, replacing the
-/// raw post-frame overlay (the host console still uses
-/// [`hyperlink_overlay`]).
 #[must_use]
 pub fn hyperlink_regions(area: Rect, state: &ContainerInfoState) -> Vec<(Rect, String)> {
     let (rows, table_state, _) = detail_layout(area, state);

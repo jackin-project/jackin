@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Settings screen state: per-tab state structs for the General, Mounts,
-//! Environments, Auth, and Trust panels.
 mod auth;
 mod auth_impls;
 mod env;
@@ -25,10 +23,8 @@ pub use env_impls::*;
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub use general_impls::*;
-pub use trust_impls::*;
-// Not responsible for: event handling (see `update`) or rendering (see
-// `view`).
 use std::collections::BTreeMap;
+pub use trust_impls::*;
 
 use crate::tui::auth::AuthKind;
 

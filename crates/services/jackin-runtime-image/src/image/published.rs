@@ -1,27 +1,13 @@
-//! Published role image freshness checks.
-
 use jackin_docker::docker_client::DockerApi;
 
 use super::{LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, emit_compact_image_warning};
 
-/// Published-image freshness relative to the current role repo state.
 pub(super) enum PublishedImageFreshness {
     Fresh,
     Stale,
     NeedsRoleSha(String),
 }
 
-/// Returns freshness for a published image used as the role base.
-///
-/// Checks in order:
-/// 1. `jackin.role.git.sha` label: if present and matches `head_sha`, the image
-///    was built from the exact same commit. If present and different, stale.
-/// 2. Fallback only when the current role SHA is not yet known:
-///    `jackin.construct.version` label must match `dockerfile_version`.
-///
-/// If `docker pull` fails, treat the image as stale so launch falls back to the
-/// workspace Dockerfile and reports a clearer error if the construct base is
-/// also unreachable.
 pub(super) async fn published_image_freshness(
     published: &str,
     dockerfile_version: &str,

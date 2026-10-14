@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Catalog reconciliation methods.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -99,9 +98,6 @@ fn catalog_purge_tombstone(
         .or_else(|| match preimages.get(capability) {
             Some(CatalogAccountPreimage::Present(envelope)) => Some((**envelope).clone()),
             Some(CatalogAccountPreimage::Corrupt) if capability.surface_id == "claude" => {
-                // Corrupt durable state cannot establish whether a Claude
-                // provider attempt already happened. Replace it with a
-                // result-free uncertainty marker before catalog cleanup.
                 let mut marker = AccountStateEnvelope::idle(capability.clone());
                 marker.reload_fence_required = true;
                 Some(marker)
@@ -169,11 +165,6 @@ fn rollback_catalog_reconciliation(
 }
 
 impl UsageCoordinator {
-    /// Reconcile the live broker catalog with the last durable catalog.
-    /// Removed capabilities are fenced in memory and their result-free
-    /// cooldown or uncertainty markers are durably written before cleanup.
-    /// Revision changes fence old work and discard its materialized result
-    /// before the capability can refresh again.
     pub fn reconcile_catalog(
         &self,
         entries: impl IntoIterator<Item = UsageCatalogEntry>,
@@ -183,10 +174,6 @@ impl UsageCoordinator {
             .map(|_| ())
     }
 
-    /// Apply one catalog rotation with the caller's content-derived catalog
-    /// revision. Broker processes use this stronger boundary so executor
-    /// discovery can reject a caller/service catalog mismatch before state is
-    /// changed.
     #[expect(
         clippy::too_many_lines,
         reason = "catalog rotation keeps validation, fencing, and state replacement in one transaction"
@@ -294,16 +281,11 @@ impl UsageCoordinator {
                 preimages.get(capability),
                 Some(CatalogAccountPreimage::Missing | CatalogAccountPreimage::Corrupt)
             ) {
-                // If a later write fails, rollback must keep the newly
-                // materialized safety marker rather than restore absence or
-                // unreadable bytes and erase an invocation uncertainty fence.
                 preimages.insert(
                     capability.clone(),
                     CatalogAccountPreimage::Present(Box::new(tombstone.clone())),
                 );
             }
-            // The store can report an error after an atomic replacement has
-            // reached disk. Include this path in rollback before calling it.
             mutated_capabilities.insert(capability.clone());
             if let Err(error) = self.shared.store.store(&tombstone, persist_epoch) {
                 let primary = state_error(error);
@@ -324,8 +306,6 @@ impl UsageCoordinator {
             if prewritten_tombstones.contains(capability) {
                 continue;
             }
-            // A purge/quarantine implementation may report failure after its
-            // filesystem mutation. Restore this preimage on every failure.
             mutated_capabilities.insert(capability.clone());
             let result: Result<(), StateStoreError> = match preimages.get(capability) {
                 Some(CatalogAccountPreimage::Corrupt) => self.shared.store.quarantine(capability),

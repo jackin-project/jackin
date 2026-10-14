@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor per-tab key dispatchers.
 
 use super::super::InputOutcome;
 use super::{
@@ -28,8 +27,6 @@ use crate::tui::state::{EditorState, ManagerStage, ManagerState};
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
 
-// Central keymap dispatch — table-like layout makes the keymap
-// readable at a glance; extracting per-key helpers just scatters it.
 pub fn handle_editor_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -46,7 +43,6 @@ pub fn handle_editor_key(
         editor.edit_account_row(config, matches!(key.code, KeyCode::Char('d' | 'D')));
         return Ok(InputOutcome::Continue);
     }
-    // Capture before the editor borrow (separate fields, but explicit is cleaner).
     let op_cache = std::rc::Rc::clone(&state.op_cache);
     let op_available = state.op_available;
     let term_width = state.cached_term_size.width;
@@ -64,8 +60,6 @@ pub fn handle_editor_key(
             } {
                 dispatch_editor_save(state, config, plan)?;
             }
-            // `paths` is consumed by the commit path in
-            // handle_editor_modal, not here.
             let _unused = paths;
             return Ok(InputOutcome::Continue);
         }

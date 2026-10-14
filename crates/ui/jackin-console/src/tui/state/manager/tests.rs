@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Characterization tests for `ManagerState` trait seams (operator-console
-//! INV-C1 / C7–C8 / C12–C13). Pure stage/poll helpers stay in `model/tests.rs`;
-//! these pin the concrete manager impls screens and update paths call.
-
 use crate::tui::components::ErrorPopupState;
 use jackin_config::AppConfig;
 use tempfile::tempdir;
@@ -38,7 +34,6 @@ fn fresh_manager() -> ManagerState<'static> {
     ManagerState::from_config(&AppConfig::default(), tmp.path())
 }
 
-/// INV-C1: `ManagerState` owns the active stage via `ConsoleManagerStageState`.
 #[test]
 fn manager_state_is_single_stage_owner() {
     let mut state = fresh_manager();
@@ -51,7 +46,6 @@ fn manager_state_is_single_stage_owner() {
     assert!(matches!(state.stage, ManagerStage::List));
 }
 
-/// INV-C7: list modals open/dismiss only through `ListModalState` on the manager.
 #[test]
 fn list_modals_open_through_list_modal_state() {
     let mut state = fresh_manager();
@@ -76,7 +70,6 @@ fn list_modals_open_through_list_modal_state() {
     assert!(state.list_modal.is_none());
 }
 
-/// INV-C8: inline picker dismissal clears each picker slot independently.
 #[test]
 fn inline_picker_dismissal_clears_only_targeted_slot() {
     use crate::tui::components::agent_choice::AgentChoiceState;
@@ -97,7 +90,6 @@ fn inline_picker_dismissal_clears_only_targeted_slot() {
     assert!(state.inline_role_picker.is_none());
 }
 
-/// INV-C12: workspace list selection + tree disclosure live on `ManagerState`.
 #[test]
 fn workspace_list_selection_and_disclosure_live_on_manager() {
     let mut state = fresh_manager();
@@ -105,14 +97,12 @@ fn workspace_list_selection_and_disclosure_live_on_manager() {
     state.set_selected(before.saturating_add(1));
     assert_eq!(state.selected, before.saturating_add(1));
 
-    // Disclosure methods are callable on the concrete manager (trait-split surface).
     state.collapse_current_dir();
     state.expand_current_dir();
     state.collapse_workspace(0);
     state.expand_workspace(0);
 }
 
-/// INV-C13: preview focus and pane cursor live on the manager, not screen locals.
 #[test]
 fn preview_focus_and_pane_cursor_live_on_manager() {
     let mut state = fresh_manager();
@@ -124,7 +114,6 @@ fn preview_focus_and_pane_cursor_live_on_manager() {
     assert_eq!(state.preview_pane_cursor.get("jk-agent-smith"), Some(&3));
 }
 
-/// INV-C9 (manager hand-off): list stage has no pending poll results to drain.
 #[test]
 fn list_stage_poll_pending_handoffs_are_empty() {
     let mut state = fresh_manager();

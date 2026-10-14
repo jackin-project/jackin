@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! GitHub pull-request context lookup for the capsule status bar.
-
 use std::path::Path;
 #[cfg(test)]
 use std::process::Command;
@@ -21,8 +19,6 @@ fn record_pr_context_recovery() {
     let _warning = jackin_telemetry::record_recovered_degradation();
 }
 
-/// Stable failure classes for pull-request lookup. Operator-derived command
-/// output and response payloads never enter the error value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LookupError {
     Spawn,
@@ -75,10 +71,6 @@ struct GhStatusCheck {
     details_url: String,
 }
 
-/// Run `gh <args>` and parse stdout as JSON. `Ok(None)` means
-/// `gh` exited successfully (per `accepted_statuses`) with empty
-/// stdout, the documented "no rows" shape. Failure is mapped to
-/// a stable decode failure without retaining the response payload.
 fn gh_json<T: serde::de::DeserializeOwned>(
     workdir: &Path,
     label: &str,
@@ -110,9 +102,6 @@ pub(crate) fn gh_pull_request_info(
         is_draft: bool,
     }
 
-    // `gh pr list` with no matching PR prints an empty JSON array `[]`,
-    // which `gh_json` parses to `Some(vec![])`. An empty stdout
-    // surfaces as `Ok(None)`. Either shape collapses to "no PR".
     let Some(prs) = gh_json::<Vec<GhPullRequest>>(
         workdir,
         "gh pr list",
@@ -143,19 +132,12 @@ pub(crate) fn gh_pull_request_info(
     {
         return Err(LookupError::InvalidResponse);
     }
-    // Checks lookup is best-effort — a parse failure on checks should
-    // not poison the PR cache. Demote any error to `None` checks.
     let checks = if let Ok(checks) = gh_pull_request_checks(workdir, &pr.url) {
         checks
     } else {
         record_pr_context_recovery();
         None
     };
-    // GitHub does not sanitize PR titles for terminal safety; strip
-    // control bytes here so the dialog body, the bottom bar, and the
-    // OSC 2 outer-terminal title can all consume the field directly.
-    // A crafted title like `bad\x1b[2J\x1b]2;evil\x07` would otherwise
-    // execute its escapes the first time an operator opens the dialog.
     Ok(Some(Arc::new(PullRequestInfo {
         number: pr.number,
         title: sanitize_terminal_title(&pr.title),
@@ -169,8 +151,6 @@ fn gh_pull_request_checks(
     workdir: &Path,
     url: &str,
 ) -> Result<Option<PullRequestChecks>, LookupError> {
-    // `gh pr checks` exits with `8` when checks are pending and `0`
-    // otherwise; both are accepted statuses.
     let Some(checks) = gh_json::<Vec<GhCheck>>(
         workdir,
         "gh pr checks",
@@ -274,16 +254,6 @@ pub(crate) fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
     )
 }
 
-/// Result-returning command runner that distinguishes success (returns
-/// `Ok(Some(stdout))` or `Ok(None)` for empty stdout) from genuine
-/// failure (returns a typed [`LookupError`]). Used by the gh
-/// helpers so cache-poisoning can be avoided.
-///
-/// Differences from `command_stdout_trimmed_with_timeout`:
-/// - stdin is set to `Stdio::null()` so a misbehaving subprocess never
-///   blocks reading from the daemon's stdin awaiting a prompt.
-/// - stderr is drained into a bounded buffer solely to prevent child blocking;
-///   it is never retained in errors or telemetry.
 fn run_command_capturing_output(
     request: &jackin_process::ExecRequest,
     timeout: Duration,
@@ -373,8 +343,6 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
                 let take = (cap - bytes.len()).min(n);
                 bytes.extend_from_slice(&buf[..take]);
                 if bytes.len() >= cap {
-                    // Cap reached; drain remaining bytes so the writer
-                    // doesn't block on SIGPIPE waiting for us.
                     while pipe.read(&mut buf)? > 0 {}
                     break;
                 }

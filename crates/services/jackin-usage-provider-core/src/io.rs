@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! CLI gates, protobuf scan, and `JSONL` IO.
 
 use std::io::Write;
 

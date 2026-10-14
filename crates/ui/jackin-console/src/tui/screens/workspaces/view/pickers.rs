@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace picker sidebars.
 
 use super::{panel, picker_sidebar_title};
 use ratatui::{Frame, layout::Rect, text::Line};

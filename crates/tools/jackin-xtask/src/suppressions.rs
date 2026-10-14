@@ -1,15 +1,3 @@
-//! Suppression reason-gate + per-crate bare-allow / per-lint expect ratchet.
-//!
-//! ```sh
-//! cargo xtask lint suppressions             # enforce, fail on violation
-//! cargo xtask lint suppressions --print-budget  # emit fresh ratchet family entries
-//! ```
-//!
-//! Production enforcement is a thin shim over [`crate::ratchet`] for the
-//! `bare-allow-per-crate` and `expect-per-lint-crate` families in `ratchet.toml`.
-//! Measurement (`measure`) stays here for the ratchet providers. Pure
-//! `Budget`/`check` helpers below exist only for unit characterization tests.
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -30,13 +18,10 @@ const RERUN: &str = "cargo xtask lint suppressions";
 pub(crate) struct LintSuppressionsArgs {
     #[command(flatten)]
     output: FormatArgs,
-    /// Emit regenerated `ratchet.toml` entries for the suppression families on
-    /// stdout. Prefer `cargo xtask lint ratchet --print <family>` for one family.
     #[arg(long)]
     print_budget: bool,
 }
 
-/// Test-only budget shape (characterization fixtures parse this TOML themselves).
 #[cfg(test)]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 struct Budget {
@@ -62,12 +47,9 @@ struct ExpectBudget {
     count: usize,
 }
 
-/// Measured suppression inventory used by the gate and `--print-budget`.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Measured {
-    /// Bare `allow` attribute counts keyed by crate directory name.
     pub bare_by_crate: BTreeMap<String, usize>,
-    /// `expect` counts keyed by `(lint, crate)`.
     pub expect_by_lint_crate: BTreeMap<(String, String), usize>,
 }
 
@@ -156,8 +138,6 @@ pub(crate) fn measure(root: &Path) -> Result<Measured> {
     Ok(measured)
 }
 
-// --- Pure helpers kept for unit characterization tests only ---
-
 #[cfg(test)]
 fn check(budget: &Budget, measured: &Measured) -> Result<()> {
     let mut problems: Vec<String> = Vec::new();
@@ -244,7 +224,6 @@ fn check(budget: &Budget, measured: &Measured) -> Result<()> {
     )
 }
 
-/// Serialize measured counts as a legacy-shaped budget TOML body (unit tests).
 #[cfg(test)]
 pub(crate) fn print_budget(measured: &Measured) -> String {
     let mut out = String::from(

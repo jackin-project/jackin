@@ -1,16 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! CLI argument structs for `jackin eject` and `jackin purge` subcommands.
-//!
-//! Not responsible for: executing eject or purge logic — structs are parsed
-//! by `clap` and dispatched to handlers in `src/commands/`.
-
 use clap::Args;
 
 use super::{BANNER, HELP_STYLES};
 
-/// Stop a role and clean up its container
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     before_help = BANNER,
@@ -23,18 +17,30 @@ Examples:
   jackin eject k7p9m2xq
   jackin eject jk-k7p9m2xq-agentsmith"
 )]
+#[command(
+    about = "Stop a role and clean up its container",
+    long_about = "Stop a role and clean up its container"
+)]
 pub struct EjectArgs {
-    /// Role class selector, instance ID, or container name to stop
+    #[arg(
+        help = "Role class selector, instance ID, or container name to stop",
+        long_help = "Role class selector, instance ID, or container name to stop"
+    )]
     pub selector: String,
-    /// Stop every matching instance (otherwise errors if multiple exist)
-    #[arg(long)]
+    #[arg(
+        help = "Stop every matching instance (otherwise errors if multiple exist)",
+        long_help = "Stop every matching instance (otherwise errors if multiple exist)",
+        long
+    )]
     pub all: bool,
-    /// Also delete persisted state after stopping
-    #[arg(long)]
+    #[arg(
+        help = "Also delete persisted state after stopping",
+        long_help = "Also delete persisted state after stopping",
+        long
+    )]
     pub purge: bool,
 }
 
-/// Delete persisted state for a role class
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     before_help = BANNER,
@@ -46,11 +52,21 @@ Examples:
   jackin purge k7p9m2xq
   jackin purge chainargos/the-architect"
 )]
+#[command(
+    about = "Delete persisted state for a role class",
+    long_about = "Delete persisted state for a role class"
+)]
 pub struct PurgeArgs {
-    /// Role class selector, instance ID, or container name
+    #[arg(
+        help = "Role class selector, instance ID, or container name",
+        long_help = "Role class selector, instance ID, or container name"
+    )]
     pub selector: String,
-    /// Delete state for every matching instance (otherwise errors if multiple exist)
-    #[arg(long)]
+    #[arg(
+        help = "Delete state for every matching instance (otherwise errors if multiple exist)",
+        long_help = "Delete state for every matching instance (otherwise errors if multiple exist)",
+        long
+    )]
     pub all: bool,
 }
 

@@ -31,9 +31,6 @@ fn rejects_a_stale_generation_suffix_instead_of_falling_back() {
 
 #[test]
 fn permits_only_complete_same_generation_uncommitted_frames_after_a_commit() {
-    // CURRENT fixture ends with a commit. Append one synthetic
-    // same-generation uncommitted frame with a valid chained checksum;
-    // the validator must accept it without moving the commit.
     let database = header(CURRENT_DB);
     let mut wal = CURRENT_WAL.to_vec();
     let frame_size = database.page_size + 24;

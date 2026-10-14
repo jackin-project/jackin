@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Host broker process activation.
 
 use std::process::{Command, Stdio};
 
@@ -9,10 +8,6 @@ use jackin_usage_discovery::UsageDiscoveryScope;
 
 use crate::{UsageBrokerClient, UsageBrokerConfig, connect_probe, unavailable, wait_for_leader};
 
-/// Activate the independent provider broker executable and attach a client.
-///
-/// The broker process receives only host discovery paths. It performs
-/// discovery, credential resolution, and provider work under its own policy.
 pub fn ensure_usage_broker_process(
     config: UsageBrokerConfig,
     scope: &UsageDiscoveryScope,
@@ -63,11 +58,6 @@ pub fn ensure_usage_broker_process(
     Ok(client)
 }
 
-/// Start or attach to the host broker for durable monitor work.
-///
-/// This entry point is safe for explicit monitor or service startup: it never
-/// discovers accounts, resolves credentials, or passes operator paths to the
-/// service process. All other client operations remain attach-only.
 pub fn ensure_usage_monitor_process(
     config: UsageBrokerConfig,
     scope: &UsageDiscoveryScope,

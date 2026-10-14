@@ -158,10 +158,6 @@ async fn clean_worktree_with_head_equal_base_deletes_record() {
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
 
-    // Capture queue:
-    //   status --porcelain           (clean)
-    //   for-each-ref refs/heads/     (single scratch branch at base_commit)
-    //   symbolic-ref HEAD            (HEAD on scratch branch → attached)
     let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
     let mut runner = fake_with_outputs(&["", &branches, "refs/heads/jackin/scratch/x"]);
     let mut p = NoPrompt;
@@ -201,11 +197,6 @@ async fn clean_worktree_with_pushed_commits_deletes_record() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // Capture queue:
-    //   status --porcelain (clean)
-    //   for-each-ref -> single branch ahead of base with reachable upstream
-    //   rev-list <upstream>..<branch> -> "" (all reachable)
-    //   symbolic-ref HEAD            (HEAD on scratch branch → attached)
     let branches = format!(
         "{}\n",
         ferow("jackin/scratch/x", "newhead", "origin/jackin/scratch/x", "",)
@@ -236,10 +227,6 @@ async fn clean_worktree_with_unpushed_commits_preserves() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // Capture queue:
-    //   status --porcelain (clean)
-    //   for-each-ref -> single branch ahead of base with upstream set
-    //   rev-list <upstream>..<branch> -> "deadbeef" (one local commit not on upstream)
     let branches = format!(
         "{}\n",
         ferow(
@@ -277,9 +264,6 @@ async fn clean_worktree_no_upstream_preserves_when_head_diverged() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // Capture queue:
-    //   status --porcelain (clean)
-    //   for-each-ref -> single branch ahead of base with no upstream
     let branches = format!("{}\n", ferow("jackin/scratch/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;

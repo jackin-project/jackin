@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `PrepareInstance` input and instance preparation.
 
 use crate::runtime::launch::launch_pipeline::launch_phases::{ImageMaterialized, InstancePrepared};
 
@@ -89,9 +88,6 @@ where
         supported_agents: supported_agents.to_vec(),
     });
     let container_state = paths.data_dir.join(container_name);
-    // The launch was admitted before `prepare_instance`; migrate any old
-    // isolation envelope while its independent v3 manifest witness is still
-    // on disk. Inspection and restore-candidate reads stay non-mutating.
     if let Err(error) = crate::isolation::state::migrate_records(&container_state)
         .context("cannot migrate admitted isolation state before manifest replacement")
     {

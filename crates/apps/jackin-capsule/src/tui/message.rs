@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Daemon dispatch actions.
-//!
-//! Input parsing answers "what did the terminal send?" Actions answer "what
-//! should the multiplexer do with it?" so dispatch can become testable without
-//! a live PTY or attach socket.
-
 use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::components::dialog::{DialogAction, PaletteCommand, PickerIntent, SplitDirection};
 use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand, is_wheel_button};
@@ -14,7 +8,6 @@ use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand, is_wheel_button};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     OpenPalette,
-    /// Ctrl+Q: open the "Exit jackin❯?" confirmation (data-loss variant).
     RequestExit,
     OpenContainerInfo,
     OpenGithubContext,
@@ -146,10 +139,6 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
                 col: *col,
             })
         }
-        // A wheel event still reaches the dialog scroll handler while a dialog
-        // captures input — it scrolls the dialog body (Action::Wheel dispatch),
-        // not the pane behind it. Must precede the swallow arm below, which
-        // otherwise eats every non-left-click press including the wheel.
         InputEvent::MousePress { col, row, button }
             if context.dialog_captures_input && is_wheel_button(*button) =>
         {
@@ -313,7 +302,6 @@ pub(crate) fn branch_context_bar_click_action(hit: Option<BranchContextBarHit>) 
         Some(BranchContextBarHit::Context) => Some(Action::OpenGithubContext),
         Some(BranchContextBarHit::UsageStatus) => Some(Action::OpenUsage),
         Some(BranchContextBarHit::Container) => Some(Action::OpenContainerInfo),
-        // Debug chip also opens the shared ContainerInfo dialog.
         Some(BranchContextBarHit::DebugChip) => Some(Action::OpenContainerInfo),
         None => None,
     }

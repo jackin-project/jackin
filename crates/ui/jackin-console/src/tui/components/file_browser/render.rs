@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Listing + footer rendering for the file browser modal.
-
 use ratatui::{
     Frame,
     layout::Rect,
@@ -15,8 +13,6 @@ use super::git_prompt::render_git_prompt;
 use super::state::FileBrowserState;
 use termrock::widgets::{List, ListRow, ListState, Panel, PanelChrome};
 
-/// Vertical-layout constraints used by `render` and by the geometry-only
-/// helpers consumed by the mouse-click hit-tester. Keep these in sync.
 fn render_constraints(has_rejection: bool) -> Vec<ratatui::layout::Constraint> {
     use ratatui::layout::Constraint;
     if has_rejection {
@@ -26,14 +22,7 @@ fn render_constraints(has_rejection: bool) -> Vec<ratatui::layout::Constraint> {
     }
 }
 
-/// Rect of the listing area inside the modal.
-///
-/// This is the same chunk that `render` passes to `render_listing` and
-/// anchors `render_git_prompt` on. Exposed so a mouse-handler can
-/// recompute the git-prompt overlay geometry without needing `&mut`
-/// access at render time.
 pub fn listing_rect(modal_area: Rect, has_rejection: bool) -> Rect {
-    // Structural exception: File Browser render and mouse paths share this listing sub-rect derived from the modal body.
     use ratatui::layout::{Direction, Layout};
     let constraints = render_constraints(has_rejection);
     let listing_idx = usize::from(has_rejection);
@@ -49,8 +38,6 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
 
     frame.render_widget(ratatui::widgets::Clear, area);
 
-    // Layout: [optional rejection banner][listing]. Hints render in the
-    // screen footer (see `FileBrowserState::footer_items`), not inside the box.
     let rejection = state.rejected_reason.as_ref();
     let constraints = render_constraints(rejection.is_some());
     let chunks = Layout::default()
@@ -72,24 +59,16 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
 
     render_listing(frame, chunks[listing_idx], state);
 
-    // Git-repo prompt overlay — centred inside the listing area so the
-    // listing stays visible as context behind the modal.
     if state.pending_git_prompt.is_some() {
         render_git_prompt(frame, chunks[listing_idx], state);
     }
 }
 
-/// Render the folder listing inside `area` with a phosphor-framed block
-/// and a bold-white cwd title.
 fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     let title = format!(
         " {} ",
         jackin_core::shorten_home(&state.cwd.display().to_string())
     );
-    // File browser is normally the active modal (termrock::style::DesignSystem::default().style(termrock::style::Role::Accent).fg.unwrap_or_default() border). When a
-    // child dialog (Git repo prompt) is stacked on top, the file browser becomes
-    // a background modal and must use the inactive border so exactly one bright
-    // border is visible (Defect 9 — one-bright-border rule).
     let theme = termrock::style::DesignSystem::default();
     let panel = Panel::new(&theme)
         .title(&title)
@@ -98,9 +77,6 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         } else {
             PanelChrome::Focused
         });
-    // Border-only inner: the browser's list owns its own gutter/padding
-    // vocabulary, so it keeps the old pin's geometry (content flush inside
-    // the border) instead of the `Panel::inner` density padding.
     let inner = Rect {
         x: area.x.saturating_add(1),
         y: area.y.saturating_add(1),

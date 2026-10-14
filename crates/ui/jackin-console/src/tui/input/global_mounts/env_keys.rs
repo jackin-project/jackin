@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings env tab key handling.
 
 use super::{
     confirm_modal, dispatch_manager, open_settings_env_add_modal, open_settings_env_delete_confirm,
@@ -109,7 +108,6 @@ pub(crate) fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 dispatch_manager(state, ManagerMessage::ReturnToList);
             }
         }
-        // Context check failed (Delete/ToggleMask/OpenPicker without plain_modifier) or no binding.
         Some(_) | None => {}
     }
 }

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings auth form persistence.
 
 use crate::tui::state::AuthForm;
 
@@ -45,9 +44,6 @@ pub(crate) fn persist_settings_auth_form(
         AuthKind::Cursor => AiProvider::Cursor,
         AuthKind::Muse => AiProvider::Meta,
         AuthKind::Omp | AuthKind::Hermes => {
-            // No native provider: edits keep the existing account's
-            // provider; only brand-new console accounts are refused (the
-            // console has no provider picker yet — use the CLI).
             let existing = auth
                 .editing_account
                 .as_ref()

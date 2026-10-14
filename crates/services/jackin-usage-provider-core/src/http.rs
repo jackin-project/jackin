@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Provider HTTP requests, errors, and retry parsing.
 
 use std::time::UNIX_EPOCH;
 
@@ -43,14 +42,8 @@ pub fn provider_request<T, E>(
     result
 }
 
-/// Failure classes preserved by the shared bearer-auth JSON fetcher.
-///
-/// Provider snapshots may map an HTTP auth status to `NeedsLogin`, but a
-/// transport or decode failure must remain an ordinary provider error even if
-/// its rendered message happens to contain the same digits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderHttpError {
-    /// Request exceeded the configured provider HTTP timeout.
     Timeout(String),
     Transport(String),
     HttpStatus {
@@ -107,11 +100,6 @@ pub fn retry_after_header_value(value: &str, response_received_at_epoch: i64) ->
     )
 }
 
-/// Shared GET → bearer-auth → JSON skeleton for provider quota endpoints. The
-/// caller supplies the human label (used verbatim in every error string so the
-/// per-provider wording is unchanged), the URL, the bearer token, and any extra
-/// request headers beyond the always-sent `Accept: application/json`. Per-
-/// provider response validation stays at the call site.
 pub fn get_json_bearer<T: serde::de::DeserializeOwned>(
     provider: jackin_telemetry::schema::enums::ProviderName,
     template: &'static str,

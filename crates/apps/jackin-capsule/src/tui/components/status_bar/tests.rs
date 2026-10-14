@@ -1,16 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `status_bar`.
 use super::*;
 use crate::tui::layout::{PaneTree, Tab};
 
 #[test]
 fn tab_click_region_width_matches_layout() {
-    // Tab cell layout: ` <name> <glyph> ` = 1 pad + name +
-    // 1 sep + 1 glyph + 1 pad = name + 4. With name="Claude" the
-    // cell is 10 cols wide; the region is stable regardless of
-    // the agent state.
     let mut bar = StatusBar::new();
     let tab = Tab::new_single("Claude", 1, "test");
     let tabs = vec![tab];
@@ -18,7 +13,6 @@ fn tab_click_region_width_matches_layout() {
     bar.set_click_regions_from_plan(&status_bar_plan(80, &tabs, 0, &states, PrefixMode::Idle));
     let (start, end) = bar.tab_regions[0];
     assert_eq!(end - start, 10);
-    // Recomputing with no state must keep the same width.
     bar.set_click_regions_from_plan(&status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle));
     let (s2, e2) = bar.tab_regions[0];
     assert_eq!(e2 - s2, 10);

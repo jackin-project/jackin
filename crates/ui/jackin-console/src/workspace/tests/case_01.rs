@@ -131,9 +131,6 @@ fn eligible_agents_returns_all_registered_when_allowed_empty() {
 
 #[test]
 fn eligible_agents_does_not_filter_by_existing_overrides() {
-    // Operators may want to add additional keys to a role that already
-    // carries some — the picker must include every allowed role regardless
-    // of whether `pending.roles` already lists them.
     let cfg = config_with_agents_for_override(&["agent-smith", "agent-brown"]);
     let ws = ws_with_role_overrides(&["agent-smith", "agent-brown"], &["agent-smith"]);
     let mut eligible = eligible_role_keys_for_override(cfg.roles.keys(), &ws);

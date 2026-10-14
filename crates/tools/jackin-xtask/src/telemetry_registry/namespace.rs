@@ -1,5 +1,3 @@
-//! Binding-aware validation of governed telemetry namespace literals.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;

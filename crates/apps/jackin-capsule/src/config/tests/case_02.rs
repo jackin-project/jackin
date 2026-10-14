@@ -172,8 +172,6 @@ fn several_instances_may_share_one_agent_with_isolated_env() {
             "sibling instance env must not leak across the shared agent"
         );
     }
-    // Per-instance requirement: one empty sibling fails even when the other is
-    // fully provisioned.
     let half_empty = v2_credentials(serde_json::json!({
         "schema_version": 2,
         "instances": {

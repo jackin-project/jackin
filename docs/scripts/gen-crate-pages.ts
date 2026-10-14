@@ -1,8 +1,3 @@
-/**
- * Build-time pipeline: render each crate README as a Fumadocs page under
- * content/reference/crates/. The README is the source of truth; generated
- * pages are gitignored.
- */
 import { existsSync, statSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, normalize, relative, sep } from 'node:path'
@@ -15,7 +10,6 @@ const metaPath = join(outDir, 'meta.json')
 
 export type CrateReadme = { name: string; dir: string; body: string }
 
-/** List workspace crates that carry a README.md (sorted). */
 export async function listCrateReadmes(): Promise<CrateReadme[]> {
   const groups = await readdir(cratesRoot, { withFileTypes: true })
   const crates: CrateReadme[] = []
@@ -32,7 +26,6 @@ export async function listCrateReadmes(): Promise<CrateReadme[]> {
         const body = await readFile(readmePath, 'utf8')
         crates.push({ name: entry.name, dir: dir.split(sep).join('/'), body })
       } catch {
-        // no README — skip (agents gate enforces presence separately)
       }
     }
   }
@@ -40,7 +33,6 @@ export async function listCrateReadmes(): Promise<CrateReadme[]> {
   return crates
 }
 
-/** Strip the leading H1 (frontmatter title replaces it). */
 export function stripH1(markdown: string): string {
   const lines = markdown.split('\n')
   if (lines[0]?.startsWith('# ')) {
@@ -50,10 +42,6 @@ export function stripH1(markdown: string): string {
   return lines.join('\n')
 }
 
-/**
- * Normalize a relative link target from a crate README into a repo path under
- * crates/<group>/<name>/, or null if it should not become a RepoFile.
- */
 export function normalizeRepoPath(
   crateDir: string,
   href: string,
@@ -61,11 +49,9 @@ export function normalizeRepoPath(
   if (!href || href.startsWith('#') || href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
     return null
   }
-  // Sibling crate README → handled separately as a site route.
   const sibling = href.match(/^(?:\.\.\/)+(?:[^/]+\/)?([^/]+)\/README\.md(?:#.*)?$/)
   if (sibling) return null
 
-  // Docs content path → site route, not RepoFile.
   if (
     href.includes('docs/content/') ||
     href.startsWith('../../docs/') ||
@@ -74,7 +60,6 @@ export function normalizeRepoPath(
     return null
   }
 
-  // Strip optional anchors for path resolution.
   const bare = href.split('#')[0] ?? href
   if (!bare) return null
 
@@ -82,24 +67,17 @@ export function normalizeRepoPath(
   if (bare.startsWith('src/') || bare.startsWith('./src/')) {
     joined = join(crateDir, bare.replace(/^\.\//, ''))
   } else if (bare.startsWith('../')) {
-    // Resolve relative to crates/<group>/<name>/README.md location.
     joined = normalize(join(crateDir, bare))
   } else if (bare.startsWith('/')) {
     return null
   } else {
     joined = join(crateDir, bare)
   }
-  // Reject escapes outside the repo crates tree (and allow other repo roots
-  // that resolve via ../ outside crates/<group>/<name>).
   const norm = joined.split(sep).join('/')
   if (norm.includes('..')) return null
   return norm
 }
 
-/**
- * Repo-links only accepts files. Map directory targets to the paired `*.rs`
- * module file when present; return null when no existing file can be linked.
- */
 export function resolveExistingFile(
   repoPath: string,
   root: string = repoRoot,
@@ -116,14 +94,12 @@ export function resolveExistingFile(
   return null
 }
 
-/** Sibling crate README → /reference/crates/<other>/. */
 export function siblingCrateRoute(href: string): string | null {
   const m = href.match(/^(?:\.\.\/)+(?:[^/]+\/)?([^/]+)\/README\.md(?:#.*)?$/)
   if (!m) return null
   return `/reference/crates/${m[1]}/`
 }
 
-/** Docs MDX relative path → site-absolute route. */
 export function docsContentRoute(href: string): string | null {
   const m = href.match(/(?:^|\/)docs\/content\/(.+?)(?:\.mdx)?(?:#.*)?$/)
   if (!m) return null
@@ -135,10 +111,6 @@ export function docsContentRoute(href: string): string | null {
   return `/${slug}/`.replace(/\/+/g, '/')
 }
 
-/**
- * Escape MDX-hostile characters outside fenced code blocks.
- * `{` → `\{`, raw `<` that is not a known component start → `&lt;`.
- */
 export function escapeMdxOutsideFences(markdown: string): string {
   const lines = markdown.split('\n')
   let inFence = false
@@ -159,7 +131,6 @@ export function escapeMdxOutsideFences(markdown: string): string {
 }
 
 function escapeMdxProseLine(line: string): string {
-  // Leave JSX-like RepoFile tags alone once we've rewritten links.
   let result = ''
   let i = 0
   while (i < line.length) {
@@ -170,7 +141,6 @@ function escapeMdxProseLine(line: string): string {
       continue
     }
     if (ch === '<') {
-      // Preserve known MDX components and HTML that we emit.
       const rest = line.slice(i)
       if (
         rest.startsWith('<RepoFile') ||
@@ -198,12 +168,9 @@ function escapeMdxProseLine(line: string): string {
 }
 
 const MD_LINK = /\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
-// Bare code spans that are existing repo-relative paths (repo-links gate),
-// including root files like ENGINEERING.md.
 const BARE_REPO_PATH =
   /`((?:crates|docs|src|docker|scripts|plans)\/[^`\s]+|[A-Z][A-Z0-9_.-]*\.md)`/g
 
-/** Rewrite markdown links according to plan 049 rules. */
 export function rewriteLinks(crateDir: string, markdown: string): string {
   return markdown.replace(MD_LINK, (full, text: string, href: string) => {
     if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:') || href.startsWith('#')) {
@@ -222,7 +189,6 @@ export function rewriteLinks(crateDir: string, markdown: string): string {
         const label = text.trim() || filePath
         return `<RepoFile path="${filePath}">${label}</RepoFile>`
       }
-      // Directory without a paired file, or missing path: keep prose, drop link.
       const label = text.trim() || repoPath
       return `\`${label.replace(/`/g, '')}\``
     }
@@ -230,7 +196,6 @@ export function rewriteLinks(crateDir: string, markdown: string): string {
   })
 }
 
-/** Turn bare repo-path code spans into RepoFile when the file exists. */
 export function rewriteBareRepoPaths(markdown: string): string {
   return markdown.replace(BARE_REPO_PATH, (full, path: string) => {
     if (path.includes('*/') || path.includes('<') || path.includes('>')) return full
@@ -240,7 +205,6 @@ export function rewriteBareRepoPaths(markdown: string): string {
   })
 }
 
-/** Full body transform: strip H1 → rewrite links → bare paths → escape MDX. */
 export function transformReadmeBody(crate: CrateReadme, body: string): string {
   const stripped = stripH1(body)
   const linked = rewriteLinks(crate.dir, stripped)
@@ -272,10 +236,6 @@ export function expectedMeta(crateNames: string[]): MetaFile {
   }
 }
 
-/**
- * Completeness check: every crate README has a meta.json page entry and vice
- * versa. Returns an error message or null when OK.
- */
 export function metaCompletenessError(
   crateNames: string[],
   metaPages: string[],
@@ -327,7 +287,6 @@ async function main(): Promise<void> {
     await writeFile(outPath, mdx, 'utf8')
   }
 
-  // Emit page list for Step 2 verification / humans.
   console.log(
     JSON.stringify(
       { generated: names.length, pages: names, outDir: relative(repoRoot, outDir) },

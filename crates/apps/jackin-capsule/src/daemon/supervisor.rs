@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Session supervision: registry, tabs, codenames, and spawn targets.
 
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
@@ -27,9 +26,6 @@ pub(crate) struct SessionLaunch {
     pub(crate) cache_dir: Option<String>,
 }
 
-// ── Owned subsystems (plan 017) ────────────────────────────────────────────
-
-/// Session map, tabs, and codename assignment.
 pub(crate) struct SessionSupervisor {
     pub(crate) sessions: SessionRegistry,
     pub(crate) tabs: Vec<Tab>,

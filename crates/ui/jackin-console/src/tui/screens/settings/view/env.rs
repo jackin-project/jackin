@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Environments tab lines.
 
 use super::super::model::SettingsEnvRow;
 use super::super::model::SettingsEnvScope;

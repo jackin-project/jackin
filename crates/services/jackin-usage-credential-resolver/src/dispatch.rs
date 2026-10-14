@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Coordinator-side vendor arms for configured-provider credential snapshots.
-//!
-//! Implements [`CredentialSnapshotVendors`](jackin_usage_credential_snapshots::CredentialSnapshotVendors)
-//! over the T3 vendor crates (this T4 crate names them for coordinator-side
-//! dispatch) and exposes the historical [`provider_credential_snapshot`] paths.
-
 use std::path::Path;
 
 use jackin_protocol::control::FocusedUsageView;
@@ -107,9 +101,6 @@ impl CredentialSnapshotVendors for UsageCredentialVendors {
     }
 }
 
-/// Build one explicit configured-provider snapshot while the caller retains the
-/// credential. This is the tier-3 probe body used by tier-4 protected-source
-/// adapters; the secret is never returned or persisted.
 #[must_use]
 pub fn provider_credential_snapshot(
     surface_id: &str,

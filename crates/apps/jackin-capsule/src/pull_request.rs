@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pull-request context snapshots shared by daemon, title, and TUI rendering.
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullRequestInfo {
     pub number: u64,
@@ -31,10 +29,6 @@ pub struct PullRequestChecks {
 }
 
 impl PullRequestChecks {
-    /// Build a check rollup from `gh pr checks` bucket strings.
-    /// Unknown buckets count toward `skipped` so the
-    /// `passing + failing + pending + skipped + cancelled == total`
-    /// invariant always holds; renderers can trust the counters.
     pub fn from_buckets<I, S>(buckets: I) -> Self
     where
         I: IntoIterator<Item = S>,

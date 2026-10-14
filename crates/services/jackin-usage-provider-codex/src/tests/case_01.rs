@@ -58,7 +58,6 @@ fn codex_over_cap_keeps_raw_label_with_clamped_bar() {
     assert_eq!(buckets[0].used_label.as_deref(), Some("142% used"));
     assert_eq!(buckets[0].remaining_percent, Some(0));
 
-    // In-range labels are unchanged; negatives floor at 0, never "-3%".
     let normal: CodexWindowSnapshot =
         serde_json::from_value(serde_json::json!({"used_percent": 63.7}))
             .expect("fractional window decodes");
@@ -88,15 +87,12 @@ fn codex_over_cap_keeps_raw_label_with_clamped_bar() {
 fn profile_snapshot_surfaces_reset_credits_from_fixture() {
     use std::io::{Read as _, Write as _};
 
-    // Mirrors the 2 live Full-reset grants.
     const USAGE_FIXTURE: &str = r#"{"plan_type": "pro", "rate_limit": {"primary_window": {"used_percent": 10, "reset_after_seconds": 3600, "limit_window_seconds": 18000}, "secondary_window": {"used_percent": 5, "reset_after_seconds": 604800, "limit_window_seconds": 604800}}}"#;
     const RESET_FIXTURE: &str = r#"{"credits": [{"status": "available", "expires_at": "2030-01-01T00:00:00Z"}, {"status": "available", "expires_at": "2030-02-01T00:00:00Z"}], "available_count": 2}"#;
 
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
-    // Bounded poll (not blocking accept): if the profile lane ever stops
-    // issuing the reset-credits GET, this fails instead of hanging the suite.
     let server = std::thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut served = 0;

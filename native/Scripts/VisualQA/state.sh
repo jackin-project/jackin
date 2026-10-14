@@ -1,5 +1,4 @@
 #!/bin/sh
-# Snapshot, apply, and restore the real macOS state used by visual QA.
 set -eu
 
 KEYS='com.apple.universalaccess|increaseContrast

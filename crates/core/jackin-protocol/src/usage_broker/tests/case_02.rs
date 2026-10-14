@@ -118,11 +118,9 @@ fn quota_scope_dedup_key_is_stable_and_axis_sensitive() {
         assert!(!base.shares_allowance(&other));
         assert_ne!(base.dedup_key(), other.dedup_key());
     }
-    // Length-prefixing keeps ("ab","c") distinct from ("a","bc").
     let left = UsageQuotaScopeKey::new("ab", "c", "s");
     let right = UsageQuotaScopeKey::new("a", "bc", "s");
     assert_ne!(left.dedup_key(), right.dedup_key());
-    // Missing scope detail never equals an empty string.
     let missing = UsageQuotaScopeKey::new("s", "b", "c");
     let empty_key = UsageQuotaScopeKey::new("s", "b", "c").with_key("");
     assert!(!missing.shares_allowance(&empty_key));
@@ -135,11 +133,9 @@ fn independent_key_caps_never_merge() {
     let key_b = UsageQuotaScopeKey::new("openai", "org-1", "key").with_key("key-b");
     assert!(!key_a.shares_allowance(&key_b));
     assert_ne!(key_a.dedup_key(), key_b.dedup_key());
-    // Same key identity under one billing subject shares one observation.
     let key_a_alias = UsageQuotaScopeKey::new("openai", "org-1", "key").with_key("key-a");
     assert!(key_a.shares_allowance(&key_a_alias));
     assert_eq!(key_a.dedup_key(), key_a_alias.dedup_key());
-    // Unscoped subscription allowance never merges with a key cap.
     let subscription = UsageQuotaScopeKey::new("openai", "org-1", "subscription");
     assert!(!subscription.shares_allowance(&key_a));
 }

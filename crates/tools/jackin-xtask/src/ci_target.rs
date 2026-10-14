@@ -20,19 +20,12 @@ mod tests;
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiTargetCommand {
-    /// Resolve one crate's exact source key from the affected-crates result.
     ResolveKey(ResolveKeyArgs),
-    /// Find the newest compatible target artifact and emit step outputs.
     Find(FindArgs),
-    /// Download and extract one GitHub Actions artifact.
     Download(DownloadArgs),
-    /// Restore a target archive and emit whether it exactly matches the source.
     Restore(RestoreArgs),
-    /// Select a complete local target or restore its reusable artifact.
     Prepare(PrepareArgs),
-    /// Validate the runner-local Cargo target as a reusable seed.
     ValidateLocal(ValidateLocalArgs),
-    /// Pack the reusable portion of a Cargo target into one archive.
     Pack(PackArgs),
 }
 
@@ -42,7 +35,6 @@ pub(crate) struct ResolveKeyArgs {
     package: String,
     #[arg(long)]
     cache_keys_json: String,
-    /// Append the key to `GITHUB_OUTPUT` instead of printing it.
     #[arg(long)]
     github_output: bool,
 }
@@ -61,10 +53,8 @@ pub(crate) struct FindArgs {
     runner_arch: String,
     #[arg(long)]
     repository: String,
-    /// Pre-resolved per-package target map from the affected-crates job.
     #[arg(long, default_value = "")]
     supplied_results: String,
-    /// Append fields to `GITHUB_OUTPUT` instead of printing one JSON object.
     #[arg(long)]
     github_output: bool,
 }

@@ -135,8 +135,6 @@ fn fresh_watch_after_expired_restart_returns_only_the_reconciled_current_event()
     let monitor_id = status.monitor_id.clone();
     drop(store);
 
-    // Reopening the state after its source evidence expired must reconcile and
-    // persist the current blocked state before a new watcher receives anything.
     let reopened = MonitorStore::open(directory.path()).expect("reopen monitor store");
     let reply = reopened
         .operate(

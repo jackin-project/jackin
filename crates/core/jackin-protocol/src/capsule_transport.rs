@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Mandatory version negotiation for the shared Capsule control/attach socket.
-//!
-//! Every socket user exchanges this fixed preface before writing a control
-//! frame or attach Hello. The reserved `0x7f || 0xffff_ffff` prefix is invalid
-//! to the legacy attach decoder, so an old daemon cannot interpret it as a
-//! request. No compatibility or downgrade path exists.
-
 use anyhow::{Context as _, Result, bail};
 #[cfg(unix)]
 use std::io::{Read, Write};
@@ -18,10 +11,8 @@ use std::time::Duration;
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 
-/// Major version shared by the Capsule control and attach socket transports.
 pub const CONTROL_PROTOCOL_MAJOR: u16 = 2;
 
-/// Maximum time spent sending a preface and waiting for its exact ACK.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 const TRANSPORT_TAG: u8 = 0x7f;
@@ -90,16 +81,6 @@ fn validate_ack(reply: &[u8; PACKET_LEN], expected_major: u16) -> Result<()> {
     bail!("Capsule daemon returned an invalid transport protocol ACK")
 }
 
-/// Negotiate the Capsule transport on a synchronous Unix stream.
-///
-/// `timeout` bounds the full send-and-ACK exchange. Socket timeouts are
-/// reduced after every partial read or write, so a peer cannot renew the
-/// deadline by trickling bytes.
-///
-/// # Errors
-///
-/// Returns an error when writing the preface fails, the peer closes or times
-/// out, or the peer does not ACK the exact major version.
 #[cfg(unix)]
 pub fn client_handshake(stream: &mut UnixStream, timeout: Duration) -> Result<()> {
     let deadline = Instant::now()
@@ -163,15 +144,6 @@ fn read_exact_until(stream: &mut UnixStream, bytes: &mut [u8], deadline: Instant
     Ok(())
 }
 
-/// Negotiate the Capsule transport on an asynchronous stream.
-///
-/// Returns only after receiving the exact ACK for this client's major version;
-/// callers must not send application bytes before it succeeds.
-///
-/// # Errors
-///
-/// Returns an error when the preface write or ACK read fails, times out, or the
-/// peer does not ACK the exact major version.
 pub async fn client_handshake_async<S>(stream: &mut S) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -197,16 +169,6 @@ where
     .context("timed out negotiating Capsule transport")?
 }
 
-/// Validate a client's preface and ACK it before the daemon routes the socket.
-///
-/// The caller must bound this operation with a deadline. Invalid, legacy, and
-/// mismatched peers receive a fixed-length NAK when the stream can still be
-/// written, then return an error without reaching either request decoder.
-///
-/// # Errors
-///
-/// Returns an error when the peer sends a missing, malformed, or mismatched
-/// preface, or when reading/writing negotiation bytes fails.
 pub async fn server_handshake_async<S>(stream: &mut S) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,

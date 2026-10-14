@@ -232,7 +232,7 @@ async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
 #[tokio::test]
 async fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() {
     use jackin_test_support::FakeDockerClient;
-    let docker = FakeDockerClient::default(); // empty queue → NotFound
+    let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
     assert!(
         diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach)
@@ -244,10 +244,6 @@ async fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() 
 
 #[tokio::test]
 async fn diagnose_premature_exit_swallows_post_attach_clean_exit() {
-    // Operator typed `/exit` in the agent → multiplexer drained
-    // the last live session → container shut itself down with
-    // exit 0. The container-lifecycle policy treats this as the
-    // happy path; the host CLI must not surface it as an error.
     use jackin_docker::docker_client::ContainerState;
     use jackin_test_support::FakeDockerClient;
     let docker = FakeDockerClient {
@@ -277,9 +273,6 @@ async fn diagnose_premature_exit_swallows_post_attach_clean_exit() {
 
 #[tokio::test]
 async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
-    // Post-attach exit with a non-zero code still indicates a
-    // problem inside the multiplexer / agent — operator wants the
-    // logs surfaced even though the container is gone now.
     use jackin_docker::docker_client::ContainerState;
     use jackin_test_support::FakeDockerClient;
     let docker = FakeDockerClient {
@@ -312,10 +305,6 @@ async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
 
 #[tokio::test]
 async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
-    // Pre-attach exit 0 is still suspicious — PID 1 exited
-    // without doing anything, most likely a bad image or missing
-    // entrypoint. Operator wants the heads-up even though the
-    // exit code looks clean.
     use jackin_docker::docker_client::ContainerState;
     use jackin_test_support::FakeDockerClient;
     let docker = FakeDockerClient {

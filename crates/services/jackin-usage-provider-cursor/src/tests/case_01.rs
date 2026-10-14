@@ -5,7 +5,6 @@ use super::*;
 
 #[test]
 fn jwt_user_id_derives_after_pipe() {
-    // Sanitized fixture token: header + {"sub": "auth0|user_123"} + sig.
     let token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhdXRoMHx1c2VyXzEyMyJ9.c2lnbmF0dXJl";
     assert_eq!(
         cursor_user_id_from_token(token).as_deref(),
@@ -25,8 +24,6 @@ fn session_cookie_shape() {
 
 #[test]
 fn scope_urls_never_cross() {
-    // Hermetic: the pure join, not the env-reading wrapper, so a live
-    // `CURSOR_API_ENDPOINT` can neither break nor leak into this test.
     assert!(
         cursor_dashboard_url_with_base(CURSOR_DEFAULT_DASHBOARD_BASE, "GetPlanInfo")
             .starts_with("https://api2.cursor.sh/")
@@ -54,7 +51,6 @@ fn period_parses_with_team_inference() {
     assert_eq!(buckets[0].remaining_percent, Some(66));
     assert_eq!(buckets[1].label, "Spend (actual)");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Spend));
-    // Spend scale is unverified: labels only, no structured money.
     assert!(buckets[1].used_money.is_none());
 
     let team = serde_json::json!({
@@ -68,8 +64,6 @@ fn period_parses_with_team_inference() {
 
 #[test]
 fn period_parses_top_level_live_shape() {
-    // Shape observed live 2026-09-21: `planUsage` at top level, no `usage`
-    // wrapper (usage counters rounded; no credentials involved).
     let live = serde_json::json!({
         "billingCycleStart": "1789542030000",
         "billingCycleEnd": "1792134030000",
@@ -135,13 +129,10 @@ fn plan_and_grants_parse() {
         parse_cursor_plan_info(&serde_json::json!({"planName": "pro_plus"})),
         Some("Pro Plus".to_owned())
     );
-    // Live `GetPlanInfo` shape: the label nests under `planInfo` (Ultra
-    // $200/mo reported null before the nested read).
     assert_eq!(
         parse_cursor_plan_info(&serde_json::json!({"planInfo": {"planName": "ultra"}})),
         Some("Ultra".to_owned())
     );
-    // Blank nested label falls back to the flat keys, never to null.
     assert_eq!(
         parse_cursor_plan_info(
             &serde_json::json!({"planInfo": {"planName": "  "}, "planName": "pro"})
@@ -162,7 +153,6 @@ fn plan_and_grants_parse() {
         ),
         150
     );
-    // Total + breakdown: the itemized sum wins, never total + sum.
     assert_eq!(
         parse_cursor_credit_grants(&serde_json::json!({
             "grantTotal": 150,
@@ -170,7 +160,6 @@ fn plan_and_grants_parse() {
         })),
         150
     );
-    // Empty `grants[]` falls back to the top-level total.
     assert_eq!(
         parse_cursor_credit_grants(&serde_json::json!({"grantTotal": 150, "grants": []})),
         150
@@ -230,7 +219,6 @@ fn summary_preserves_every_pool_without_invention() {
     );
     assert_eq!(buckets[0].remaining_percent, Some(59));
     assert!(buckets[0].resets_at.is_some());
-    // `overall` has no documented unit: raw, uninterrupted.
     assert_eq!(buckets[4].used_label.as_deref(), Some("77"));
     assert!(buckets[4].used_money.is_none());
 }
@@ -250,8 +238,6 @@ fn requests_bucket_from_model_keyed_shape() {
 
 #[test]
 fn requests_multi_model_pick_is_pinned_not_arbitrary() {
-    // Two models with counters: the alphabetically first key wins,
-    // deterministically, regardless of document order.
     for value in [
         serde_json::json!({
             "zebra": {"maxRequestUsage": 100, "numRequestsTotal": 90},
@@ -352,8 +338,6 @@ fn snapshot_with_auth_serves_personal_quota_from_canned_rpc() {
 
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
-    // Four personal-RPC calls; the opaque fixture token yields no user id so
-    // session-REST enrichment stays skipped.
     let server = std::thread::spawn(move || {
         for _ in 0..4 {
             let (mut stream, _) = listener.accept().unwrap();

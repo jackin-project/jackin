@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Credential source display and proxy helpers.
-
-/// non-empty. Centralizes the "skip the env push when the value is
-/// missing or blank" check used by every optional env injection.
 pub fn push_env_if_present(env_strings: &mut Vec<String>, key: &str, value: Option<&str>) {
     if let Some(v) = value
         && !v.is_empty()
@@ -13,10 +9,6 @@ pub fn push_env_if_present(env_strings: &mut Vec<String>, key: &str, value: Opti
     }
 }
 
-/// Canonical CLI proxy env vars `curl`, `wget`, and Go's HTTP client read.
-/// `FTP_PROXY` / `RSYNC_PROXY` are intentionally out of scope: they don't
-/// reach `DinD`'s daemon socket, so adding them here would only widen the
-/// detection surface without changing bypass behavior.
 pub const PROXY_VAR_NAMES: &[&str] = &[
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -48,12 +40,6 @@ pub fn append_no_proxy_host(value: &str, host: &str) -> String {
     }
 }
 
-/// Printable source reference for the credential env var `env_var` (e.g.
-/// `"CLAUDE_CODE_OAUTH_TOKEN"`, `"ANTHROPIC_API_KEY"`) given the raw
-/// (unresolved) declaration value from the operator env config (e.g.
-/// `"Private/Claude/security/auth token"` or `"$CLAUDE_CODE_OAUTH_TOKEN"`).
-/// Produces the `"KEY ← value"` form; falls back to the bare env-var name
-/// when `raw` is `None` or empty.
 pub fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
     match raw {
         None | Some("") => env_var.to_owned(),

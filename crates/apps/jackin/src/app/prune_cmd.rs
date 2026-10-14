@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Purge and Prune command handlers — extracted from `app::run`.
-
 use anyhow::{Context, Result};
 use owo_colors::OwoColorize;
 
@@ -88,9 +86,6 @@ pub(super) async fn handle_prune(
                     anyhow::bail!("aborted by operator");
                 }
             }
-            // Run every step regardless of individual failures so a single
-            // Docker error doesn't leave the role cache and shared cache
-            // untouched.
             let prune_instances_result = if args.all {
                 runtime::prune_all_instances(paths, &docker, runner)
                     .await

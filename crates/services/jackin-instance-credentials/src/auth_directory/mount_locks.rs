@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential mount presence and locking.
 
 #[cfg(any(test, feature = "test-support"))]
 use super::path_key;

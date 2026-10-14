@@ -5,9 +5,6 @@ use super::*;
 
 #[test]
 fn apply_git_context_head_change_schedules_fresh_pr_lookup() {
-    // gh_available=true so the spawn path runs end-to-end; we assert
-    // in_flight=true after the head flip to prove the maybe_spawn at
-    // the tail of `apply_git_context` fires (not just request_id bump).
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
     mux.launch_env.workdir_context.gh_available = true;
@@ -32,9 +29,6 @@ fn apply_git_context_head_change_schedules_fresh_pr_lookup() {
 
 #[test]
 fn apply_pull_request_context_loaded_refuses_head_mismatch() {
-    // Defense-in-depth: request_id matched but mux.head drifted
-    // between spawn and apply. The result MUST NOT overwrite
-    // pull_request_context or land in the cache against the new head.
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
     mux.pr_watch.pull_request_lookup.request_id = 9;
@@ -68,9 +62,6 @@ fn apply_pull_request_context_loaded_refuses_head_mismatch() {
 
 #[test]
 fn apply_pull_request_context_loaded_refuses_head_drift_none_to_some() {
-    // Spawn-time head was None (e.g. mid-write HEAD), apply-time
-    // mux.head resolved to Some. Drift guard must refuse the spawn
-    // payload — its data is keyed against the absent-head state.
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
     mux.pr_watch.pull_request_lookup.request_id = 11;
@@ -99,8 +90,6 @@ fn apply_pull_request_context_loaded_refuses_head_drift_none_to_some() {
 
 #[test]
 fn apply_pull_request_context_loaded_refuses_head_drift_some_to_none() {
-    // Inverse: spawn captured a head, apply-time mux.head was
-    // cleared (e.g. HEAD became unreadable between spawn and apply).
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
     mux.pr_watch.pull_request_lookup.request_id = 13;
@@ -304,7 +293,6 @@ fn oid_parse_accepts_sha1_and_sha256_lengths_only() {
     assert!(Oid::parse(&"a".repeat(41)).is_none());
     assert!(Oid::parse(&"a".repeat(63)).is_none());
     assert!(Oid::parse(&"a".repeat(65)).is_none());
-    // Non-hex character at SHA-1 length.
     let mut s = "a".repeat(39);
     s.push('g');
     assert!(Oid::parse(&s).is_none());
@@ -335,7 +323,6 @@ fn read_context_from_git_metadata_handles_malformed_head_content() {
     let temp = tempfile::tempdir().unwrap();
     let git_dir = temp.path().join(".git");
     std::fs::create_dir_all(&git_dir).unwrap();
-    // Neither `ref: ` prefix nor full hex OID — corruption / mid-write.
     std::fs::write(git_dir.join("HEAD"), "abc123\n").unwrap();
 
     let context = read_context_from_git_metadata(temp.path()).unwrap();
@@ -352,7 +339,6 @@ fn read_context_from_git_metadata_handles_malformed_head_content() {
 fn read_context_from_git_metadata_handles_malformed_gitfile_content() {
     let temp = tempfile::tempdir().unwrap();
     let workdir = temp.path();
-    // `.git` is a file but does not start with `gitdir:` — corruption.
     std::fs::write(workdir.join(".git"), "not a gitdir pointer\n").unwrap();
 
     assert!(read_context_from_git_metadata(workdir).is_none());
@@ -378,7 +364,6 @@ fn read_context_from_git_metadata_resolves_worktree_head_via_commondir() {
     let (workdir, common_git) = make_worktree_layout(temp.path(), "wt");
     let wt_git = common_git.join("worktrees/wt");
     std::fs::create_dir_all(common_git.join("refs/heads/feat")).unwrap();
-    // Loose ref lives in the COMMON dir, not the per-worktree gitdir.
     std::fs::write(
         common_git.join("refs/heads/feat/wt"),
         "1111111111111111111111111111111111111111\n",

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Digital-rain simulation for the launch cockpit.
-
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
@@ -13,7 +11,6 @@ use jackin_brand::{RAIN_BODY, RAIN_DARK, RAIN_DIM, RAIN_FRESH, RAIN_HEAD, RAIN_M
 pub struct RainCell {
     pub ch: char,
     pub age: u16,
-    /// How many age units to add per frame (1 = long trail, 3 = short trail).
     pub fade: u16,
 }
 
@@ -21,7 +18,6 @@ pub struct RainCell {
 pub struct RainColumn {
     pub head: i32,
     pub speed: u32,
-    /// Fade rate for cells deposited by this column (1 = long, 3 = short).
     pub fade: u16,
     pub active: bool,
     pub cooldown: u32,
@@ -110,9 +106,6 @@ fn random_char(seed: &mut u64) -> char {
     RAIN_CHARS[(xorshift(seed) as usize) % RAIN_CHARS.len()] as char
 }
 
-/// Advance the rain state by one tick: age existing cells and move column
-/// heads forward. This is the simulation step; callers render the result
-/// after ticking.
 pub fn tick_rain(state: &mut RainState) {
     let RainState {
         grid,
@@ -175,10 +168,6 @@ pub fn tick_rain(state: &mut RainState) {
     *frame += 1;
 }
 
-/// Paint the shared rain engine's grid into `area`. The grid is sized to the
-/// whole terminal, so `area` is a window onto a continuous rainfall; each cell
-/// maps to its glyph and the engine's green age fade — the same palette as the
-/// intro/outro rain.
 pub fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&RainState>) {
     let Some(rain) = rain else {
         return;
@@ -186,18 +175,8 @@ pub fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&RainState>) 
     if area.width == 0 || area.height == 0 {
         return;
     }
-    // Fade the whole field up from black over the first ~30 ticks so the rain
-    // eases in smoothly instead of popping on at full brightness.
     let fade_in = (rain.frame as f32 / 30.0).min(1.0);
-    // Fade the rain to black over the bottom rows so it dissolves into a gap
-    // above the progress bar instead of colliding with it: the bottommost row
-    // is fully extinguished and brightness ramps back to full a few rows up.
     let fade_rows = (area.height / 3).clamp(3, 7);
-    // Write each cell straight into the frame buffer rather than building a
-    // `Vec<Line<Span>>`: at 30fps a full field is width × height spans, each its
-    // own `String`, every frame. RAIN_CHARS is ASCII (width-1), so one cell maps
-    // to one buffer cell. An empty cell only sets its symbol so it keeps the
-    // background already painted behind the rain.
     let buf = frame.buffer_mut();
     for y in 0..area.height {
         let grid_y = usize::from(area.y + y);

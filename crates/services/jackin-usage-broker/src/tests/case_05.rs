@@ -332,8 +332,6 @@ fn expired_successor_lease_fences_old_owner_renewal_and_cleanup() {
     let mut expired = old_owner.lease.clone();
     expired.renewed_at_epoch -= 31;
     write_lease(&mut old_owner.file, &expired).unwrap();
-    // Simulate process death: the open descriptor remains for this stale-owner
-    // assertion, but the OS releases its lifetime lock before succession.
     old_owner.file.unlock().unwrap();
     let mut successor = claim_leader(&lease_path, "build", Duration::from_secs(30))
         .unwrap()
@@ -419,8 +417,6 @@ fn saturated_join_waiters_do_not_block_refresh_or_current() {
         response_tx.send((short_wait, elapsed, result)).unwrap();
     });
     let response = response_rx.recv_timeout(Duration::from_secs(2));
-    // Always release the provider before asserting, so a failed regression
-    // cannot strand fixture threads or turn cleanup into another timeout.
     release_tx.send(()).unwrap();
     request.join().unwrap();
     let (short_wait, elapsed, response) =
@@ -454,7 +450,6 @@ fn stalled_response_reader_does_not_hold_worker_shutdown() {
         done_tx.send(()).unwrap();
     });
     let finished = done_rx.recv_timeout(Duration::from_secs(1));
-    // Even the failing implementation can be joined once the peer closes.
     drop(client);
     worker.join().unwrap();
     assert!(
@@ -477,7 +472,6 @@ fn subscribe_all_dedups_reuses_fresh_and_forces_only_on_demand() {
     )
     .unwrap();
 
-    // Due-on-open with a duplicated capability issues one request per account.
     let opened = client.subscribe_all([capability(), second_capability(), capability()]);
     assert_eq!(opened.len(), 2);
     assert!(opened.iter().all(|(_, result)| result.is_ok()));
@@ -497,15 +491,12 @@ fn subscribe_all_dedups_reuses_fresh_and_forces_only_on_demand() {
     }
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
 
-    // Still-fresh observations are reused; nothing new is forced.
     let reopened = client.subscribe_all([capability(), second_capability()]);
     assert!(reopened.iter().all(|(_, result)| result.is_ok()));
     let heartbeat = client.refresh_due(false);
     assert_eq!(heartbeat.len(), 2);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
 
-    // An explicit operator refresh bypasses Codex's success cooldown, while
-    // Claude's persisted minimum attempt interval still applies.
     let forced = client.refresh_due(true);
     assert!(forced.iter().all(|(_, result)| result.is_ok()));
     for (_, result) in &forced {
@@ -545,8 +536,6 @@ fn unsubscribe_releases_local_interest_without_cancelling_shared_work() {
     let opened = client.subscribe(capability()).unwrap();
     started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
 
-    // Prompt unsubscribe performs no broker I/O and leaves the broker-owned
-    // generation untouched.
     assert!(client.unsubscribe(&capability()));
     assert!(!client.unsubscribe(&capability()));
     assert!(client.subscriptions().is_empty());
@@ -554,7 +543,6 @@ fn unsubscribe_releases_local_interest_without_cancelling_shared_work() {
     assert_eq!(active.generation, opened.generation);
     assert!(active.phase.is_active());
 
-    // Another client awaiting the same generation still observes terminal.
     release_tx.send(()).unwrap();
     let waiter = client.clone();
     let terminal = waiter

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Codex adapter.
-
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
@@ -15,7 +13,6 @@ const FALLBACK_INSTALL_COMMAND: &str = bounded_fallback_curl!(
     " | CODEX_NON_INTERACTIVE=1 bash"
 );
 
-/// [`crate::agent::runtime::AgentRuntime`] adapter for Codex.
 #[derive(Debug)]
 pub(crate) struct CodexRuntime;
 
@@ -76,7 +73,7 @@ RUN set -euxo pipefail && \\
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".codex",
-            config_dir: None, // all durable state under ~/.codex
+            config_dir: None,
             credential_file: Some(".codex/auth.json"),
             folder_env_var: Some(FolderVar {
                 name: "CODEX_HOME",

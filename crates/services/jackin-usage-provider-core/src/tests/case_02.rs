@@ -28,7 +28,6 @@ fn broker_account_id_for_tab_id_recovers_broker_key() {
         cache.broker_account_id_for_tab_id(&usage_account_tab_id("Anthropic", "a@example.com")),
         Some("broker-claude-a".to_owned())
     );
-    // Legacy keys carry no capability; unknown ids match nothing.
     assert_eq!(
         cache.broker_account_id_for_tab_id(&usage_account_tab_id("OpenAI", "codex@example.com")),
         None
@@ -78,8 +77,6 @@ fn usage_snapshot_reads_in_memory_cache() {
 fn usage_status_label_cache_miss_is_refreshing() {
     let cache = UsageCache::default();
 
-    // A focused agent with no cached snapshot is mid-load → `refreshing`
-    // (P3), computed without touching the store.
     assert_eq!(
         cache.focused_status_bar_label(Some("codex"), Some("OpenAI")),
         Some("refreshing".to_owned())
@@ -92,22 +89,16 @@ fn usage_snapshot_cache_miss_is_refreshing() {
 
     let snapshot = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
 
-    // a focused agent with no cached snapshot renders `refreshing`
-    // (still without reading the store), not a stale/unavailable headline.
     assert_eq!(snapshot.status_bar_label, "refreshing");
     assert_eq!(snapshot.last_error.as_deref(), Some("refreshing"));
 }
 
 #[test]
 fn focused_usage_lifecycle_hides_before_start_and_refreshes_on_start() {
-    // P3 lifecycle: no focused agent → segment hidden; focused agent with
-    // no data yet → `refreshing` (no fabricated quota); resolved → headline.
     let mut cache = UsageCache::default();
 
-    // Before start: no focused agent → status bar renders nothing.
     assert_eq!(cache.focused_status_bar_label(None, None), None);
 
-    // Started, not yet resolved → refreshing on both surfaces.
     assert_eq!(
         cache.focused_status_bar_label(Some("codex"), Some("OpenAI")),
         Some("refreshing".to_owned())
@@ -119,7 +110,6 @@ fn focused_usage_lifecycle_hides_before_start_and_refreshes_on_start() {
         "refreshing must carry no fabricated quota"
     );
 
-    // Resolved: a cached snapshot wins and the real headline renders.
     cache.snapshots.insert(
         canonical_usage_cache_key("codex", Some("OpenAI")),
         CachedUsage {
@@ -133,8 +123,6 @@ fn focused_usage_lifecycle_hides_before_start_and_refreshes_on_start() {
 
 #[test]
 fn account_snapshot_rows_carry_reset_epoch() {
-    // the CLI report (`usage accounts`) emits the raw reset epoch, not
-    // a dropped null — so the CLI and TUI agree on reset data.
     let now = 1_782_000_000;
     let reset_at = now + 3_600;
     let mut view = codex_cached_usage_view();
@@ -297,11 +285,6 @@ fn status_bar_label_uses_session_and_weekly_remaining() {
 
 #[test]
 fn status_bar_reads_session_weekly_slots_from_tags() {
-    // The headline reads the semantic slot the provider tagged at
-    // construction, not the (free-text) window label — Z.AI's weekly window
-    // is "Tokens", MiniMax's is "General · Weekly", Grok tags its billing
-    // cycle Weekly with no session. An untagged window (MCP) never reaches
-    // the headline.
     let pct = |label: &str, remaining: u8, slot: Option<StatusSlot>| QuotaBucketView {
         used_money: None,
         limit_money: None,
@@ -341,7 +324,6 @@ fn status_bar_reads_session_weekly_slots_from_tags() {
         "Session 70% · Weekly 55%"
     );
 
-    // Grok: billing cycle tagged Weekly, no session → "Weekly N%".
     let grok = vec![pct("Monthly", 33, Some(StatusSlot::Weekly))];
     assert_eq!(
         status_bar_label(UsageSurface::Grok, "", UsageSnapshotStatus::Fresh, &grok),

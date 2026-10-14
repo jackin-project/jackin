@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Locked-source capture for descriptor-selected credential sources.
 
 use anyhow::Context;
 use jackin_config::{AiProvider, ProfileSelector};

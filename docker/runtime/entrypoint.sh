@@ -5,16 +5,9 @@
 
 set -euo pipefail
 
-# Run a child-process hook with a `[entrypoint]` log prefix and an
-# explicit failure-attributed exit. `$3` (optional) is appended after
-# `; ` to the failure line — used by setup-once to surface its retry
-# semantics.
 run_hook() {
     local label="$1" path="$2" tail="${3:-}" hook_cwd="${4:-}"
     echo "[entrypoint] running $label hook..."
-    # `$?` inside `if ! cmd; then ...` is the negated test's status (0),
-    # not the hook's. Capture before the test so the failure log + exit
-    # surface the real exit code.
     local rc=0
     if [ -n "$hook_cwd" ]; then
         ( cd "$hook_cwd" && "$path" ) || rc=$?
@@ -27,49 +20,28 @@ run_hook() {
     fi
 }
 
-# Deterministic runtime setup lives in Rust now: global git identity,
-# SSH->HTTPS rewrite, gh credential helper setup, and the shared git
-# trailer hook, plus per-agent home/auth preparation. This keeps
-# repeated pane starts quiet and avoids shell xtrace leaking token
-# values.
 /jackin/runtime/jackin-capsule runtime-setup
 
-# ── session-scoped hook state ──────────────────────────────────────────
-# Landlock-confined agent sessions cannot write capsule-wide /jackin/state,
-# so hooks must write under JACKIN_HOOK_STATE_DIR instead. Export before ALL
-# hook execution (setup-once, source, preflight) so hooks inherit it.
 export JACKIN_HOOK_STATE_DIR="${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hook-state"
 if ! mkdir -p "$JACKIN_HOOK_STATE_DIR"; then
     echo "[entrypoint] failed to create hook state directory $JACKIN_HOOK_STATE_DIR" >&2
     exit 1
 fi
 
-# ── agent runtime status env ───────────────────────────────────────────
-# JACKIN_SESSION_ID is set only for agent runtimes by the daemon. Export
-# remaining status vars so agent hook scripts and subprocesses inherit them.
 export JACKIN_STATUS_SOCKET="${JACKIN_STATUS_SOCKET:-/jackin/run/jackin.sock}"
 export JACKIN_STATUS_SOURCE="${JACKIN_STATUS_SOURCE:-wrapper-${JACKIN_SESSION_ID:-0}}"
 export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"
 
-# ── Network allowlist (allowlist tier) ────────────────────────────────
-# The firewall (`jackin-capsule firewall-apply`) is run by jackin❯ via
-# `docker exec --user root` AFTER this entrypoint starts but BEFORE the agent
-# session begins, not here in the entrypoint. This avoids a conflict with
-# --security-opt no-new-privileges (docker exec as root needs no setuid
-# escalation; sudo inside the container does). The host blocks the session on a
-# non-zero firewall-apply (fail-closed), so the entrypoint neither needs nor can
-# verify install state here — a post-start exec cannot mutate this PID 1
-# environment. JACKIN_NETWORK_MODE is informational only.
 
-# ── agent-specific setup ───────────────────────────────────────────
-#
-# Per-session file setup already ran in `jackin-capsule runtime-setup`.
-# The remaining shell branch only builds the final argv because role
-# `source.sh` can mutate this shell's environment before `exec`.
-# ── jackin-exec system prompt injection ────────────────────────────
-# When on-demand credential bindings are configured (JACKIN_EXEC_BINDINGS
-# is non-empty), prepend a system prompt block telling agents to use
-# jackin-exec for those commands.
+
+
+
+
+
+
+
+
+
 JACKIN_EXEC_SYSTEM_PROMPT=""
 if [ -n "${JACKIN_EXEC_BINDINGS:-}" ]; then
     JACKIN_EXEC_SYSTEM_PROMPT="$(cat <<'EXEC_PROMPT'

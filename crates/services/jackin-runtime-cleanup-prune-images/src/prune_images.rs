@@ -1,24 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Unused `jk_*` Docker image pruning.
-//!
-//! [`prune_images`] removes jackin-managed images that no role container
-//! (running or stopped) still references, reporting per-image progress
-//! through the shared prune-output rows. Best-effort per image: `rmi`
-//! failures print and count into the summary without propagating, while
-//! the initial image/container enumeration errors do propagate.
-//! Instance and role pruning stays in the `jackin-runtime` hub.
-
 use jackin_docker::docker_client::{DockerApi, RemoveImageOutcome};
 use jackin_runtime_cleanup_timing::timing::{cleanup_failure, cleanup_timing};
 use jackin_runtime_naming::naming::{LABEL_IMAGE_KEY, LABEL_KIND_ROLE};
 use jackin_runtime_prune_output::prune_output;
 
-/// Remove jk_* Docker images that have no managed role containers (running or stopped).
-///
-/// Per-image `rmi` failures are printed to stderr and counted in the summary but do not
-/// propagate. The initial `docker images` and `docker ps` enumeration calls do propagate.
 pub async fn prune_images(docker: &impl DockerApi) -> anyhow::Result<()> {
     let _timing = cleanup_timing("images");
     prune_output::section("Images", "scanning jackin-managed Docker images");

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace save preview types and builders.
 
 use super::{
     SettingsEnvPreview, WorkspaceAuthChange, WorkspaceMountDiff, workspace_auth_changes,
@@ -11,9 +10,6 @@ use ratatui::text::Line;
 
 use crate::tui::screens::editor::model::{EditorMode, EditorState};
 
-/// Toggleable workspace settings captured at edit time. Bundled so the parent
-/// `WorkspaceSavePreview` keeps the `struct_excessive_bools` clippy gate quiet
-/// while preserving the original/pending diff display surface.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WorkspaceToggleSet {
     pub keep_awake: bool,

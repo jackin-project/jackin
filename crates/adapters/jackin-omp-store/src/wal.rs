@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Strict validation for a captured `SQLite` WAL before `SQLite` opens the copy.
-//!
-//! A WAL can be reused without truncating its previous-generation tail. That
-//! tail is ambiguous with corruption of a current frame, so this validator
-//! accepts only a complete, single-generation checksum chain through EOF.
-//! It never falls back to an earlier commit when a later frame is invalid.
-
 use std::time::Instant;
 
 use thiserror::Error;
@@ -20,61 +13,45 @@ const WAL_FRAME_HEADER_BYTES: usize = 24;
 const WAL_FORMAT_VERSION: u32 = 3_007_000;
 const CHECKSUM_DEADLINE_INTERVAL: usize = 4096;
 
-/// Secret-free reason that a captured `SQLite` image could not be validated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub(crate) enum WalError {
-    /// The main file is not a bounded, well-formed `SQLite` database image.
     #[error("OMP database image is invalid or exceeds its size limit")]
     InvalidDatabase,
-    /// A present WAL has no complete, valid header or does not match the DB.
     #[error("OMP WAL header is invalid")]
     InvalidHeader,
-    /// A present WAL is too large.
     #[error("OMP WAL exceeds its size limit")]
     WalTooLarge,
-    /// A present WAL does not end at a complete frame boundary.
     #[error("OMP WAL has a truncated frame or trailing bytes")]
     InvalidLength,
-    /// A frame salt does not belong to this WAL generation.
     #[error("OMP WAL contains a frame from another generation")]
     InvalidSalt,
-    /// A header or frame checksum is invalid.
     #[error("OMP WAL checksum validation failed")]
     InvalidChecksum,
-    /// A page reference or committed logical size exceeds the configured cap.
     #[error("OMP database exceeds its logical page limit")]
     PageLimit,
-    /// Validation exceeded the capture operation's deadline.
     #[error("OMP database validation timed out")]
     Deadline,
 }
 
-/// Validated geometry for the main `SQLite` image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DatabaseHeader {
     pub(crate) page_size: usize,
     pub(crate) page_count: usize,
-    /// Whether the file header declares WAL journal mode.
     pub(crate) wal_mode: bool,
 }
 
-/// The final committed database boundary represented by a valid WAL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WalCommit {
     pub(crate) final_frame: usize,
     pub(crate) page_count: usize,
 }
 
-/// Summary of a complete, valid WAL. A WAL may contain valid uncommitted frames
-/// after its final commit; `SQLite` ignores those frames when materializing data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ValidatedWal {
     pub(crate) frame_count: usize,
     pub(crate) last_commit: Option<WalCommit>,
 }
 
-/// Validate the main database header and enforce both physical and logical
-/// size bounds before it is opened by `SQLite`.
 pub(crate) fn validate_database(
     database: &[u8],
     deadline: Instant,
@@ -117,9 +94,6 @@ pub(crate) fn validate_database(
     })
 }
 
-/// Validate every byte of a present WAL. `None` means no WAL file existed;
-/// `Some(&[])` is an invalid truncated WAL and is deliberately not treated as
-/// absence.
 pub(crate) fn validate_wal(
     wal: &[u8],
     database: DatabaseHeader,

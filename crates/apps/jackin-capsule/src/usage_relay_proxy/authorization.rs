@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Capability authorization for the usage relay proxy.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,9 +9,6 @@ use jackin_protocol::usage_broker::{UsageAccountCapability, UsageBrokerOperation
 
 use super::identity::{PeerIdentity, SupervisorIdentity};
 
-/// Immutable capability binding loaded from the host-validated Capsule config.
-/// Session peers get exactly one capability through their kernel UID/GID; the
-/// root Capsule supervisor may use the launch-wide set for daemon refreshes.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UsageRelayAuthorization {
     by_peer: BTreeMap<(u32, u32), UsageAccountCapability>,

@@ -52,15 +52,12 @@ fn resolve_instance_gate_rejects_unknown_and_ambiguous_targets() {
         ]),
         ..CapsuleConfig::default()
     };
-    // Exact config IDs resolve even when the slug is ambiguous.
     assert_eq!(config.resolve_instance("claude-work"), Ok("claude-work"));
     assert_eq!(
         config.resolve_instance("claude-personal"),
         Ok("claude-personal")
     );
-    // An ambiguous slug never silently picks an instance.
     config.resolve_instance("claude").unwrap_err();
-    // Unknown targets error at the gate.
     config.resolve_instance("codex-work").unwrap_err();
     config.resolve_instance("codex").unwrap_err();
 
@@ -69,21 +66,17 @@ fn resolve_instance_gate_rejects_unknown_and_ambiguous_targets() {
         agents: BTreeMap::from([("codex-work".to_owned(), "codex".to_owned())]),
         ..CapsuleConfig::default()
     };
-    // An unambiguous slug resolves to its sole instance.
     assert_eq!(solo.resolve_instance("codex"), Ok("codex-work"));
 
     let unmapped = CapsuleConfig {
         instances: vec!["ghost".to_owned()],
         ..CapsuleConfig::default()
     };
-    // An admitted ID without a runtime mapping is not spawnable.
     unmapped.resolve_instance("ghost").unwrap_err();
 }
 
 #[test]
 fn identity_wire_records_default_account_to_none_for_old_peers() {
-    // Payloads written before account stamping (or by an older peer) omit
-    // the new fields; they must decode with `None`, never fail.
     let info: control::SessionInfo = serde_json::from_value(serde_json::json!({
         "id": 1,
         "label": "Claude · Work",

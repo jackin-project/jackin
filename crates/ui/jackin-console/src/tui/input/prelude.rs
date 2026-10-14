@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Create-workspace wizard: prelude stage dispatch and its multi-step
-//! modal sequence (`FileBrowser` → `MountDstChoice` → [`TextInput`] →
-//! `WorkdirPick` → `TextInputName`).
-
 use crossterm::event::KeyEvent;
 
 use super::InputOutcome;
@@ -51,15 +47,6 @@ pub fn handle_prelude_key(
     InputOutcome::Continue
 }
 
-/// Wizard/modal agreement invariant: while a modal is open, the wizard's
-/// current step index must name the step that modal belongs to. Steps with
-/// no open modal (cancelled, or completed before the outer dispatcher
-/// reacts) are exempt.
-///
-/// Compiled unconditionally: `debug_assert!` still type-checks its
-/// expression in release builds, so a `#[cfg(debug_assertions)]` helper
-/// breaks `cargo build --release` (E0425, seen in the preview workflow's
-/// cross-build).
 fn create_prelude_step_matches_modal(step: usize, modal: Option<&Modal<'_>>) -> bool {
     use crate::tui::state::{FileBrowserTarget, Modal, TextInputTarget};
     let Some(modal) = modal else {
@@ -109,9 +96,6 @@ pub fn handle_prelude_modal(
 
     match prelude.wizard.step() {
         CREATE_PRELUDE_STEP_MOUNT_SRC => {
-            // Capture the current browser cwd on Commit so step-back from
-            // MountDstChoice can restore it. Read before moving the
-            // outcome out of `prelude.modal`.
             let (outcome, browser_cwd) =
                 if let Some(Modal::FileBrowser { state, .. }) = &mut prelude.modal {
                     let cwd = state.cwd().to_path_buf();
@@ -123,10 +107,6 @@ pub fn handle_prelude_modal(
                 };
             match create_prelude_file_browser_plan(outcome) {
                 CreatePreludeFileBrowserPlan::CancelPrelude => {
-                    // Step 1 of the wizard — no prior state to rewind to.
-                    // Close the modal; the outer dispatcher treats
-                    // `modal = None + pending_name = None` as "cancelled"
-                    // and drops back to the workspace list.
                     prelude.wizard.cancel();
                     prelude.modal = None;
                 }
@@ -153,10 +133,6 @@ pub fn handle_prelude_modal(
             };
             match create_prelude_mount_dst_choice_plan(outcome) {
                 CreatePreludeMountDstChoicePlan::CommitSamePath => {
-                    // Fast path: dst = src, skip TextInput, chain straight
-                    // to WorkdirPick (mirrors the post-TextInputDst tail).
-                    // `skip()` only marks the *current* step, so the wizard
-                    // advance is next() onto `mount-dst-edit` then skip().
                     let default_dst = prelude.default_mount_dst();
                     prelude.modal = None;
                     prelude.used_edit_dst = false;
@@ -166,9 +142,6 @@ pub fn handle_prelude_modal(
                     open_workdir_pick_from_pending_mount(prelude);
                 }
                 CreatePreludeMountDstChoicePlan::OpenEditInput => {
-                    // Re-enter today's flow: open TextInput pre-filled with
-                    // the host path. The TextInputDst branch below handles
-                    // the advance to WorkdirPick once the operator commits.
                     let default_dst = prelude.default_mount_dst();
                     prelude.used_edit_dst = true;
                     prelude.wizard.next();
@@ -178,10 +151,6 @@ pub fn handle_prelude_modal(
                     });
                 }
                 CreatePreludeMountDstChoicePlan::ReopenFileBrowserAtLastCwd => {
-                    // Step-back: reopen FileBrowserSrc at the last-seen
-                    // browser cwd (captured when src was committed). The
-                    // mount src field is left stashed so `default_mount_dst`
-                    // keeps working if the operator re-commits the same path.
                     prelude.wizard.back();
                     return PreludeModalOutcome::ReopenFileBrowserAtLastCwd;
                 }
@@ -197,14 +166,11 @@ pub fn handle_prelude_modal(
             match create_prelude_text_input_dst_plan(outcome) {
                 CreatePreludeTextInputDstPlan::Commit(dst) => {
                     prelude.modal = None;
-                    // readonly defaults to false (toggle for readonly is
-                    // future work — spec allows this simplification).
                     prelude.accept_mount_dst(dst, false);
                     prelude.wizard.next();
                     open_workdir_pick_from_pending_mount(prelude);
                 }
                 CreatePreludeTextInputDstPlan::ReopenMountDstChoice => {
-                    // Step-back: reopen MountDstChoice with the stashed src.
                     prelude.wizard.back();
                     reopen_mount_dst_choice(prelude);
                 }
@@ -217,12 +183,6 @@ pub fn handle_prelude_modal(
             } else {
                 return PreludeModalOutcome::Continue;
             };
-            // Step-back rewinds to TextInputDst when the operator edited the
-            // destination, otherwise MountDstChoice for the same-path branch.
-            // Consumer compensation: upstream `back()` decrements
-            // unconditionally and would land on the skipped `mount-dst-edit`
-            // step, so the rewind uses a backward `jump_to` instead
-            // (permitted under `linear`).
             match create_prelude_workdir_pick_plan(outcome, prelude.used_edit_dst) {
                 CreatePreludeWorkdirPickPlan::Commit(workdir) => {
                     prelude.modal = None;
@@ -261,15 +221,9 @@ pub fn handle_prelude_modal(
                 CreatePreludeTextInputNamePlan::Commit(name) => {
                     prelude.modal = None;
                     prelude.accept_name(name);
-                    // Last step with review disabled ⇒ SubmitRequested;
-                    // the outer handle_key dispatcher detects completion
-                    // (modal closed + completed()) and transitions to
-                    // Editor(Create) — unchanged.
                     prelude.wizard.next();
                 }
                 CreatePreludeTextInputNamePlan::ReopenWorkdirPick => {
-                    // Step-back: reopen WorkdirPick from the stashed
-                    // mount src/dst — mirrors the post-TextInputDst tail.
                     prelude.wizard.back();
                     open_workdir_pick_from_pending_mount(prelude);
                 }
@@ -281,8 +235,6 @@ pub fn handle_prelude_modal(
     PreludeModalOutcome::Continue
 }
 
-/// Reopen the `MountDstChoice` modal seeded from the stashed mount src.
-/// Used by step-back navigation from `TextInputDst` / `WorkdirPick`.
 fn reopen_mount_dst_choice(prelude: &mut crate::tui::state::CreatePreludeState<'_>) {
     use crate::tui::state::FileBrowserTarget;
     prelude.reopen_mount_dst_choice(|src| Modal::MountDstChoice {

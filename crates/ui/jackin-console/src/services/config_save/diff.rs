@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Env and auth-forward diff pushers.
 
 use super::WorkspaceSaveDiffOp;
 use jackin_config::{EnvScope, EnvValue, WorkspaceConfig};

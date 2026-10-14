@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cleanup authority, positive verification, and partial-failure regressions.
-
 use super::*;
 
 use crate::MountIsolation;

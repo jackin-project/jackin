@@ -36,7 +36,6 @@ async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // status --porcelain errors → must NOT be treated as clean tree.
     let mut runner = fake_failing_capture(&[], "status --porcelain");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -56,7 +55,6 @@ async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
     assert_eq!(dec, FinalizeDecision::Preserved);
     let recs = read_records(dir.path()).unwrap();
     assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
-    // Preservation must not enter pinned repository cleanup.
     assert!(
         !runner
             .run_options
@@ -73,7 +71,6 @@ async fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // status clean, then for-each-ref refs/heads/ errors.
     let mut runner = fake_failing_capture(&[""], "for-each-ref");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -107,10 +104,6 @@ async fn assess_cleanup_rev_list_failure_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // status clean, for-each-ref returns one branch ahead with
-    // upstream still configured (not gone), then rev-list fails.
-    // The fail-closed Err arm must route to PreservedUnpushed, not
-    // silently treat the failure as "no commits ahead".
     let branches = format!(
         "{}\n",
         ferow(
@@ -156,9 +149,7 @@ async fn multi_mount_force_delete_on_each_cleans_all_records() {
     let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2]).unwrap();
-    // Both records assess to PreservedDirty (status returns dirty for each).
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
-    // Operator chooses option 2 (force delete) for both.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -179,8 +170,6 @@ async fn multi_mount_force_delete_on_each_cleans_all_records() {
         read_records(dir.path()).unwrap().is_empty(),
         "both records should be removed after force-delete on both",
     );
-    // Each journal cleanup issues 6 pinned invocations (scratch-tip
-    // inspections, ref-format probes, and verification re-reads).
     let removes = runner
         .run_options
         .iter()
@@ -202,7 +191,6 @@ async fn multi_mount_keep_all_signals_preserved() {
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2]).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
-    // D23: one dialog for all records; operator picks keep all.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::KeepAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -236,7 +224,6 @@ async fn multi_mount_return_to_agent_signals_return_to_agent() {
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2, r3]).unwrap();
     let mut runner = fake_with_outputs(&[" M f1\n", " M f2\n", " M f3\n"]);
-    // D23: one dialog for all records; operator returns to role.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -253,11 +240,8 @@ async fn multi_mount_return_to_agent_signals_return_to_agent() {
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::ReturnToAgent);
-    // No worktrees removed — all three records still on disk.
     let recs = read_records(dir.path()).unwrap();
     assert_eq!(recs.len(), 3, "ReturnToAgent must not delete any records");
-    // Each journal cleanup issues 6 pinned invocations; zero are
-    // expected here.
     let removes = runner
         .run_options
         .iter()
@@ -278,16 +262,7 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
     let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2]).unwrap();
-    // Both records assess to PreservedDirty (status returns dirty
-    // for each), then force_cleanup_isolated runs git commands.
-    // First mount's malformed exact-ref inspection retains its record;
-    // the second mount's branch is positively verified absent.
-    // Pre-fix: that bail would propagate via `?` and the second
-    // record would never be prompted.
     let mut runner = FakeRunner {
-        // Capture queue: status for r1, status for r2, then verify
-        // capture for r1 (says branch IS present — triggers bail),
-        // then verify capture for r2 (says branch absent — proceed).
         capture_queue: VecDeque::from([
             " M f1\n".to_owned(),
             " M f2\n".to_owned(),
@@ -297,10 +272,8 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
             "sha1".to_owned(),
             String::new(),
         ]),
-        // No mutation is authorized by the malformed first observation.
         ..FakeRunner::default()
     };
-    // Operator force-deletes both.
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -366,14 +339,10 @@ async fn multi_mount_non_interactive_marks_all_preserved() {
 
 #[tokio::test]
 async fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
-    // Defense in depth: a worktree that reports zero local branches
-    // is pathological — even a freshly materialized worktree carries
-    // the scratch branch. Refuse to delete what we can't account for.
     let dir = TempDir::new().unwrap();
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-    // status clean, then for-each-ref returns empty (no branches).
     let mut runner = fake_with_outputs(&["", ""]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();

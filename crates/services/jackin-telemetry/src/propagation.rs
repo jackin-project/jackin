@@ -50,7 +50,6 @@ pub fn inject(carrier: &mut impl Carrier) {
     );
 }
 
-/// W3C traceparent for the currently entered bounded operation.
 #[must_use]
 pub fn current_traceparent() -> Option<String> {
     use opentelemetry::trace::TraceContextExt as _;

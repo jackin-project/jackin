@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Row upsert and quota mapping.
 
 use super::StoredAccountUsageSnapshot;
 use jackin_core::account_key_hash;
@@ -104,8 +103,6 @@ pub(crate) async fn upsert_account_snapshot_rows(
         )
         .await
         {
-            // Roll the whole batch back so a mid-batch failure never leaves a
-            // partially-written snapshot set; surface the original row error.
             let _rollback =
                 jackin_usage_store_backend::operation(DbOperation::Rollback, conn.execute("ROLLBACK", ()))
                     .await

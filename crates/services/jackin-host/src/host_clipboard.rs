@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host clipboard readers used by opt-in host attach.
-//!
-//! This is deliberately host-side. In-container `xclip` only talks to an X11
-//! clipboard when DISPLAY/Xauthority/X11 sockets exist; it is not a macOS
-//! clipboard bridge.
-
 use std::path::Path;
 
 #[cfg(any(target_os = "linux", test))]
@@ -32,36 +26,23 @@ pub async fn read_image_for_paste_trigger(input: &[u8]) -> Result<Option<Clipboa
     read_host_clipboard_image().await
 }
 
-/// Env opt-out for auto-staging bracketed-pasted host image paths.
 const PASTE_IMAGE_PATHS_ENV: &str = "JACKIN_PASTE_IMAGE_PATHS";
 const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
 const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
-/// Dotted so the suffix test needs no per-call allocation.
 const IMAGE_PATH_EXTENSIONS: &[&str] = &[".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".tif"];
 
-/// Auto-staging of a `Cmd+V`-pasted host image path (the `CleanShot` flow: tools
-/// that copy a *file path* to the clipboard, which the terminal pastes as
-/// bracketed-paste text). On by default whenever host attach is active; set
-/// `JACKIN_PASTE_IMAGE_PATHS` to `0`/`false`/`no`/`off` (or empty) to keep every
-/// paste as ordinary terminal text. Resolved once — the value is fixed for the
-/// process.
 #[must_use]
 pub fn paste_image_paths_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| paste_image_paths_enabled_for(std::env::var_os(PASTE_IMAGE_PATHS_ENV)))
 }
 
-/// The opt-out decision, split out from the process-wide cache so it is unit
-/// testable: unset → enabled; otherwise the shared truthy/falsy parse.
 fn paste_image_paths_enabled_for(value: Option<std::ffi::OsString>) -> bool {
     value.is_none_or(|value| crate::universe::env_flag_enabled(Some(value)))
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() {
-        // `windows(0)` panics, so the empty needle needs this guard. A needle
-        // longer than the haystack needs none: `windows` yields nothing and
-        // `position` returns `None`.
         return None;
     }
     haystack
@@ -69,8 +50,6 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-/// Strip one matched pair of surrounding single or double quotes. Terminals and
-/// "copy as pathname" sources sometimes wrap a pasted path in quotes.
 fn strip_surrounding_quotes(text: &str) -> &str {
     text.strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
@@ -81,14 +60,6 @@ fn strip_surrounding_quotes(text: &str) -> &str {
         .unwrap_or(text)
 }
 
-/// Split one read carrying a bracketed paste (`ESC[200~ … ESC[201~`) into
-/// `(prefix, body, suffix)` such that `prefix + START + body + END + suffix`
-/// reconstructs `input`. Returns `None` when the read has no start marker, so
-/// typed input is never treated as a paste. Leading/trailing bytes are tolerated;
-/// a missing end marker (paste split across reads) puts the rest in `body` and
-/// leaves an empty `suffix`. The `prefix`/`suffix` still have to reach the agent
-/// so a coincident keystroke or mouse report sharing the read is not dropped when
-/// the body is consumed as an image.
 fn split_paste(input: &[u8]) -> Option<(&[u8], &[u8], &[u8])> {
     let start = find_subsequence(input, BRACKETED_PASTE_START)?;
     let prefix = &input[..start];
@@ -100,9 +71,6 @@ fn split_paste(input: &[u8]) -> Option<(&[u8], &[u8], &[u8])> {
     Some((prefix, body, suffix))
 }
 
-/// Cheap pre-check: does the pasted text look like a single absolute image-file
-/// path or `file://` image URL? Gates the filesystem read so ordinary text
-/// pastes never touch disk.
 fn looks_like_image_path(text: &str) -> bool {
     let trimmed = text.trim();
     if trimmed.is_empty()
@@ -119,16 +87,12 @@ fn looks_like_image_path(text: &str) -> bool {
             .any(|ext| has_extension(unquoted, ext))
 }
 
-/// Case-insensitive suffix test without allocating (no full-string lowercasing).
 fn has_extension(path: &str, dotted_ext: &str) -> bool {
     path.len() >= dotted_ext.len()
         && path.as_bytes()[path.len() - dotted_ext.len()..]
             .eq_ignore_ascii_case(dotted_ext.as_bytes())
 }
 
-/// Drop one level of shell backslash-escaping. Terminals escape pasted file
-/// paths (e.g. `\ ` for a space) before inserting them, so the literal bytes
-/// would not resolve on disk without this.
 fn unescape_shell_path(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars();
@@ -144,20 +108,6 @@ fn unescape_shell_path(text: &str) -> String {
     out
 }
 
-/// Auto-stage path for `Cmd+V` parity: if `input`'s paste body is a single real,
-/// magic-validated host image file, return that image plus the `prefix`/`suffix`
-/// bytes sharing the read, so the caller stages the image, inserts the container
-/// path instead of the raw host path, and still forwards the surrounding bytes.
-/// Anything else returns `None` and is forwarded as ordinary text.
-///
-/// The body is the bracketed-paste content when the read carries the
-/// `ESC[200~ … ESC[201~` markers; otherwise the whole read is the body. The
-/// unbracketed fallback is what makes a `Cmd+V` work in terminals that do not
-/// bracket the paste (the symptom: the raw host path lands in the prompt). It is
-/// safe because raw-mode *typing* delivers one byte per read, so a whole absolute
-/// image path can only arrive in a single read via a paste/drop — never
-/// keystroke-by-keystroke — and `looks_like_image_path` still requires the entire
-/// body to be one absolute image path with no other bytes.
 pub async fn read_image_from_pasted_path(
     input: &[u8],
 ) -> Result<Option<(ClipboardImage, &[u8], &[u8])>> {
@@ -178,8 +128,6 @@ pub async fn read_image_from_pasted_path(
             if let Some(image) = image_from_path_text(&owned)? {
                 return Ok(Some(image));
             }
-            // Terminals shell-escape pasted paths; retry once de-escaped when there
-            // is anything to de-escape.
             if owned.contains('\\') {
                 return image_from_path_text(&unescape_shell_path(&owned));
             }
@@ -188,15 +136,11 @@ pub async fn read_image_from_pasted_path(
         .await
         .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))??;
     let Some(image) = resolved else {
-        // An implicit path-like paste that does not resolve remains ordinary text;
-        // it did not explicitly ask to stage an image or expose its host path.
         return Ok(None);
     };
     Ok(Some((image, prefix, suffix)))
 }
 
-/// Run a clipboard reader on a blocking pool, mapping a join failure to an
-/// error tagged with the per-OS `label`.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 async fn spawn_clipboard_probe(
     label: &str,
@@ -475,12 +419,6 @@ fn image_from_bytes(bytes: Vec<u8>) -> Result<Option<ClipboardImage>> {
     Ok(Some(ClipboardImage { format, bytes }))
 }
 
-/// Spawn `program` and read its stdout, capping the kept bytes at `max_bytes`
-/// (one extra byte is read to detect overflow). Returns `Ok(None)` when the
-/// command exits non-zero, produces no output, or exceeds `max_bytes` (the child
-/// is killed in that case rather than draining an unbounded clipboard payload);
-/// spawn and I/O failures propagate as `Err`. `what` ("text"/"image") names the
-/// probe so a failure points at the right reader.
 #[cfg(any(target_os = "linux", test))]
 fn read_command_stdout_bounded<I, S>(
     program: &Path,
@@ -572,9 +510,6 @@ fn find_program_in_path(program: &str) -> Option<PathBuf> {
     find_program_in_path_value(program, &path)
 }
 
-/// Probe the live host environment (display-server vars + tool availability) and
-/// validate it. `label` names the caller so the failure message points at the
-/// image or text reader.
 #[cfg(target_os = "linux")]
 fn validate_linux_clipboard_backend_env(label: &str) -> Result<()> {
     let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
@@ -606,8 +541,6 @@ fn validate_linux_clipboard_backend(
     if (wayland && wl_paste) || (display && xclip) {
         return Ok(());
     }
-    // Reached only with a display server set but its tool absent. The final bail
-    // is exhaustive: `!wayland` here implies `display`, since no-display bailed above.
     if wayland && display {
         anyhow::bail!("{label} needs wl-paste or xclip in host PATH");
     }

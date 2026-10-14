@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Pane hyperlink and SGR region caching for hit-testing.
 
 use std::collections::HashSet;
 
@@ -60,17 +59,6 @@ pub(crate) fn cached_pane_regions(
     (hyperlinks, sgr)
 }
 
-/// Run-length-encode per-row cell metadata into single-row `Rect`s. For each
-/// allowed pane's visible `View`, groups horizontally-adjacent cells sharing
-/// the same run value and emits one `Rect` per run (offset into the pane's
-/// inner area). Shared by the hyperlink and SGR-metadata region builders so the
-/// boundary arithmetic and clamping live in one place.
-///
-/// `probe` opens a run and produces its owned value once at the run's first
-/// cell; `same_run` extends the run by comparing each later cell against that
-/// value. They are split so the (allocating) owned form is built once per run
-/// while extension stays allocation-free — the hyperlink path would otherwise
-/// allocate a `String` per cell.
 fn pane_cell_runs<T>(
     panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
@@ -121,9 +109,6 @@ fn pane_cell_runs<T>(
     regions
 }
 
-/// The cell's hyperlink target if it carries one that passes the OSC 8 safety
-/// filter. Borrows from the cell — no allocation — so run extension can compare
-/// targets without owning a `String` per cell.
 fn cell_safe_uri(cell: &termpane::Cell) -> Option<&str> {
     cell.hyperlink
         .as_ref()

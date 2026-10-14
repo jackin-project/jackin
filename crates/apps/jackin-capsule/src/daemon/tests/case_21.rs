@@ -28,14 +28,12 @@ fn triple_click_clears_then_two_more_presses_reselect() {
         "second press selects the word"
     );
 
-    // Third quick press clears the highlight (and stamps a fresh cycle).
     drop(apply_action_frame(
         &mut mux,
         Action::PanePrimaryPress { row, col },
     ));
     assert!(mux.clipboard.selection.is_none(), "third press clears");
 
-    // Fourth quick press completes a new double-click on the same word.
     drop(apply_action_frame(
         &mut mux,
         Action::PanePrimaryPress { row, col },
@@ -54,8 +52,8 @@ fn double_click_on_a_second_word_needs_only_two_presses() {
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     let row = inner.row;
-    let col_a = inner.col + 1; // inside "alpha"
-    let col_b = inner.col + 7; // inside "beta"
+    let col_a = inner.col + 1;
+    let col_b = inner.col + 7;
     let mut rx = attach_drained_client(&mut mux);
 
     drop(apply_action_frame(
@@ -161,7 +159,6 @@ fn full_scroll_cycle_keeps_screen_equal_to_model() {
         feed_and_compose(&mut mux, &mut client, sid, &codex_chunk(i));
     }
 
-    // Wheel up three steps into history.
     for step in 0..3 {
         dispatch_and_compose(
             &mut mux,
@@ -183,13 +180,11 @@ fn full_scroll_cycle_keeps_screen_equal_to_model() {
         0
     );
 
-    // Stream while scrolled: the anchored view must stay equal to the model.
     for i in 60..70 {
         feed_and_compose(&mut mux, &mut client, sid, &codex_chunk(i));
     }
     assert_frame_conformance(&mut mux, &client, "anchored feed while scrolled");
 
-    // Wheel back to the live tail — wheel only.
     while mux
         .session_supervisor
         .sessions
@@ -241,7 +236,6 @@ fn focus_swap_mid_stream_keeps_screen_equal_to_model() {
     }
     assert_frame_conformance(&mut mux, &client, "split stream");
 
-    // Click into the second pane mid-stream, then keep streaming.
     let target = &panes[1];
     dispatch_and_compose(
         &mut mux,
@@ -290,7 +284,6 @@ fn dialog_open_close_over_streaming_leaves_no_residue() {
     client.apply(&frame);
     assert!(mux.dialog_open());
 
-    // Stream under the open dialog — frames keep flowing.
     for i in 20..30 {
         feed_and_compose(&mut mux, &mut client, sid, &codex_chunk(i));
     }
@@ -309,7 +302,6 @@ fn alt_screen_session_enter_exit_keeps_screen_equal_to_model() {
         feed_and_compose(&mut mux, &mut client, sid, &codex_chunk(i));
     }
 
-    // Claude-style alt-screen TUI: enter, paint a frame, exit.
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[?1049h\x1b[2J\x1b[H");
     feed_and_compose(
         &mut mux,

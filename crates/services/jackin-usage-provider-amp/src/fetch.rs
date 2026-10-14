@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Amp` API usage fetch and key loading.
 
 use super::{AmpUsage, parse_amp_usage_output};
 use jackin_usage_provider_core::{

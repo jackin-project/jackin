@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `restore`.
 use super::*;
 use crate::instance::{DockerResources, NewInstanceManifest};
 use jackin_core::MountIsolation;
@@ -55,8 +54,6 @@ fn is_dirty_for(status: CleanupStatus) -> bool {
     let container = "jk-k7p9m2xq-agentsmith";
     let state_dir = paths.data_dir.join(container);
     std::fs::create_dir_all(&state_dir).unwrap();
-    // worktree_path points at a non-git dir; worktree_inspect degrades to an
-    // empty file list, which is fine — this asserts the is_dirty derivation.
     let wt = temp.path().join("wt");
     std::fs::create_dir_all(&wt).unwrap();
     crate::isolation::state::write_records(

@@ -1,23 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! MCP server for `jackin_exec` tool.
-//!
-//! Implements the Model Context Protocol (MCP) stdio transport so Claude Code
-//! can invoke `jackin-exec` commands as a structured tool rather than relying
-//! on system prompt injection alone.
-//!
-//! Registered via `claude mcp add jackin-exec -- /jackin/runtime/jackin-capsule mcp-server`
-//! in `runtime_setup.rs` (Claude Code setup). The server reads JSON-RPC from
-//! stdin and writes responses to stdout using the MCP stdio protocol.
-//!
-//! # Tool: `jackin_exec`
-//!
-//! Allows Claude Code to call `jackin-exec <command> [args...]` with operator
-//! approval for on-demand credential injection. The tool description lists the
-//! available on-demand bindings from `JACKIN_EXEC_BINDINGS` so the model knows
-//! which commands need to go through `jackin-exec`.
-
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -29,7 +12,6 @@ const SERVER_VERSION: &str = env!("JACKIN_CAPSULE_VERSION");
 
 #[derive(Debug, Deserialize)]
 struct JsonRpcRequest {
-    // JSON-RPC 2.0 required field; `id` may be null for notifications.
     #[serde(default)]
     id: Value,
     method: String,
@@ -76,8 +58,6 @@ impl JsonRpcResponse {
     }
 }
 
-/// Build the `jackin_exec` tool schema.
-/// Uses `JACKIN_EXEC_BINDINGS` to populate the description with available bindings.
 fn tool_schema() -> Value {
     let bindings = std::env::var("JACKIN_EXEC_BINDINGS").unwrap_or_default();
     let description = if bindings.is_empty() {
@@ -121,7 +101,6 @@ fn tool_schema() -> Value {
     })
 }
 
-/// Handle a `tools/call` request for the `jackin_exec` tool.
 async fn handle_tool_call(params: &Value) -> Value {
     let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -156,9 +135,6 @@ async fn handle_tool_call(params: &Value) -> Value {
         })
         .unwrap_or_default();
 
-    // Delegate to run_capture which sends ExecCommand via the control socket,
-    // shows the operator picker dialog for on-demand credentials, and returns
-    // the captured stdout/stderr rather than calling process::exit.
     let mut all_args = vec![command];
     all_args.extend(cmd_args);
 
@@ -206,11 +182,6 @@ async fn handle_tool_call(params: &Value) -> Value {
     }
 }
 
-/// Run the MCP stdio server. Reads JSON-RPC from stdin, writes to stdout.
-/// # Errors
-///
-/// Returns an error when the MCP stream cannot be read or a response cannot
-/// be written.
 pub async fn run() -> Result<()> {
     run_with_io(tokio::io::stdin(), tokio::io::stdout()).await
 }
@@ -232,7 +203,6 @@ where
             line.clear();
             let n = reader.read_line(&mut line).await?;
             if n == 0 {
-                // EOF — client closed the connection.
                 break;
             }
 
@@ -268,7 +238,6 @@ where
     result
 }
 
-/// Returns `None` for JSON-RPC notifications (no response required by spec).
 async fn dispatch(req: JsonRpcRequest) -> Option<JsonRpcResponse> {
     match req.method.as_str() {
         "initialize" => Some(JsonRpcResponse::ok(
@@ -284,10 +253,7 @@ async fn dispatch(req: JsonRpcRequest) -> Option<JsonRpcResponse> {
                 }
             }),
         )),
-        "notifications/initialized" | "notifications/cancelled" => {
-            // Notifications must not receive a response per JSON-RPC 2.0 spec.
-            None
-        }
+        "notifications/initialized" | "notifications/cancelled" => None,
         "tools/list" => Some(JsonRpcResponse::ok(
             req.id,
             json!({

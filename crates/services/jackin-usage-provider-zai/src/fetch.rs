@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Z.AI` quota fetch, team scope, and endpoint resolution.
 
 use jackin_usage_provider_core::{
     env_value, normalize_url_or_host, provider_http_client, provider_request,
@@ -8,8 +7,6 @@ use jackin_usage_provider_core::{
 
 use super::ZaiQuotaResponse;
 
-/// CN team scope: `?type=2` on the quota path plus the
-/// `Bigmodel-Organization` / `Bigmodel-Project` headers.
 #[derive(Debug, Clone, Default)]
 pub struct ZaiTeamScope {
     pub quota_type: Option<String>,
@@ -91,8 +88,6 @@ pub fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
                 .map_err(|err| format!("Z.AI quota decode failed: {err}"))
         },
     )?;
-    // HTTP success with `success: false` is a valid key without a GLM Coding
-    // Plan — surfaced distinctly so it is never mistaken for key presence.
     if quota.success == Some(false) {
         let detail = quota.msg.unwrap_or_else(|| "quota rejected".to_owned());
         return Err(format!("Z.AI key has no GLM Coding Plan ({detail})"));
@@ -101,8 +96,6 @@ pub fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
         let detail = quota.msg.unwrap_or_else(|| "unknown error".to_owned());
         return Err(format!("Z.AI quota rejected response: {detail}"));
     }
-    // HTTP success with no windows: a team key missing its selectors, or no
-    // plan entitlement — never rendered as empty-but-fresh quota.
     let empty = quota
         .data
         .as_ref()

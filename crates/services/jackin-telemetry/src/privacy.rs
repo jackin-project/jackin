@@ -16,9 +16,6 @@ pub fn validate_key(key: &str) -> Result<(), Rejection> {
     }
 }
 
-/// Reject values which are payload material rather than bounded telemetry
-/// dimensions. Redaction is reserved for governed human-readable bodies and
-/// exception fields; attributes fail closed.
 pub fn validate_value(value: &Value<'_>) -> Result<(), Rejection> {
     match value {
         Value::Str(value) => validate_string(value),
@@ -48,9 +45,6 @@ pub fn validate_string(value: &str) -> Result<(), Rejection> {
     }
 }
 
-/// Validate a string attribute with the narrow syntax exceptions defined by
-/// its semantic key. URL templates may be absolute-path templates, but never
-/// concrete URLs, queries, fragments, or multiline values.
 pub fn validate_attribute_string(key: &str, value: &str) -> Result<(), Rejection> {
     if key == schema::attrs::std_attrs::URL_TEMPLATE
         && value.starts_with('/')

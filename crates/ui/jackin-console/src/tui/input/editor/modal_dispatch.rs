@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor modal key handling.
 
 use super::{EditorModalOutcome, env_key_input_state};
 use crate::tui::screens::editor::view::{
@@ -51,8 +50,6 @@ pub fn handle_editor_modal(
                 InlinePickerPlan::Dismiss => {
                     let target = target.clone();
                     if matches!(target, TextInputTarget::AuthCredential) {
-                        // Plain-text leg of the source-picker round trip
-                        // recovers identically to the OpPicker leg.
                         editor.dismiss_active_modal();
                         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return EditorModalOutcome::Continue;
@@ -94,10 +91,6 @@ pub fn handle_editor_modal(
                 BoolConfirmModalPlan::Confirm => {
                     let target = target.clone();
                     editor.clear_modal_chain();
-                    // Source-drift acknowledgement consumes `plan` and
-                    // re-stashes it as a `PendingCommit` for the outer
-                    // dispatcher (which owns `paths` / `cwd` / `runner`)
-                    // to drain via `commit_editor_save`.
                     if let ConfirmTarget::DeleteIsolatedAndSave {
                         mut plan,
                         exit_on_success,
@@ -153,17 +146,12 @@ pub fn handle_editor_modal(
                 SaveDiscardModalPlan::Continue => {}
             }
         }
-        // List-view modals; defensive cancel if one lands here.
         Modal::GithubPicker { .. } | Modal::RolePicker { .. } => {
             editor.clear_modal_chain();
         }
         Modal::RoleOverridePicker { state: picker } => {
             match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
-                    // The override section materializes organically on
-                    // the first value commit; we don't touch
-                    // `pending.roles` here, so a cancel mid-flow leaves
-                    // no empty placeholder.
                     let role_name = role.key();
                     let scope = SecretsScopeTag::Role(role_name);
                     let label = secret_new_key_label(&scope);
@@ -182,17 +170,9 @@ pub fn handle_editor_modal(
         Modal::ConfirmSave { state: modal_state } => {
             match confirm_save_modal_plan(modal_state.handle_key(key)) {
                 ConfirmSaveModalPlan::Commit => {
-                    // Confirming → PendingCommit atomically so plan +
-                    // exit_on_success travel together to the outer
-                    // handler that holds paths/cwd.
                     let plan = crate::tui::state::PendingSaveCommit {
                         effective_removals: modal_state.effective_removals.clone(),
                         final_mounts: modal_state.final_mounts.clone(),
-                        // First commit pass — the drift check in
-                        // `commit_editor_save` runs unconditionally. The
-                        // `DeleteIsolatedAndSave` confirm modal is what
-                        // re-stashes the plan with the flag flipped to
-                        // `true` so the second pass skips the check.
                         delete_isolated_acknowledged: false,
                         isolated_cleanup_complete: false,
                     };
@@ -218,10 +198,6 @@ pub fn handle_editor_modal(
         Modal::ErrorPopup { state: popup_state } => {
             match dismissible_modal_plan(popup_state.handle_key(key.into())) {
                 DismissibleModalPlan::Dismiss => {
-                    // A source-folder validation rejection stacks this popup
-                    // directly over the auth source-folder picker. Dismissing it
-                    // returns to that picker so the operator can pick another
-                    // folder, rather than tearing down the whole auth flow.
                     if matches!(
                         editor.modal_parents.last(),
                         Some(Modal::FileBrowser {
@@ -234,12 +210,6 @@ pub fn handle_editor_modal(
                     }
                     editor.clear_modal_chain();
                     editor.save_flow = EditorSaveFlow::Idle;
-                    // If the popup was raised by a failed OpPicker commit
-                    // for the auth form, the form's state was re-stashed
-                    // into the modal parent stack instead of being
-                    // re-mounted directly — restore it now so the operator
-                    // lands back on the form with the prior credential
-                    // unchanged, ready to retry through the source picker.
                     if editor.has_modal_parent() {
                         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
                     }
@@ -260,8 +230,6 @@ pub fn handle_editor_modal(
                     });
                 }
                 ScopePickerPlan::SpecificAgent => {
-                    // Empty eligible set → `open_agent_override_picker`
-                    // is a no-op; we close the modal then.
                     super::agents::open_agent_override_picker(editor, config);
                     if !editor.has_active_role_override_picker() {
                         editor.clear_modal_chain();
@@ -276,42 +244,37 @@ pub fn handle_editor_modal(
         Modal::SourcePicker {
             state: source,
             env_key,
-        } => {
-            match source_picker_plan(source.handle_key(key)) {
-                SourcePickerPlan::Plain => {
-                    let Some((scope, key)) = env_key.take() else {
-                        editor.clear_modal_chain();
-                        return EditorModalOutcome::Continue;
-                    };
-                    editor.open_sub_modal(Modal::TextInput {
-                        target: TextInputTarget::EnvValue {
-                            scope,
-                            key: key.clone(),
-                        },
-                        state: secret_new_value_input_state(&key),
-                    });
-                }
-                SourcePickerPlan::Op => {
-                    let Some((scope, key)) = env_key.take() else {
-                        editor.clear_modal_chain();
-                        return EditorModalOutcome::Continue;
-                    };
-                    editor.open_sub_modal(Modal::OpPicker {
-                        secrets_target: Some(SecretsPickerTarget::Existing { scope, key }),
-                        state: Box::new(crate::tui::op_picker::OpPickerState::new_with_cache(
-                            op_cache,
-                        )),
-                    });
-                }
-                SourcePickerPlan::Dismiss => {
-                    // Cancel: drop the in-flight key name and close
-                    // the modal. Operator returns to the Secrets tab
-                    // with no env entry added.
-                    editor.pop_modal_chain();
-                }
-                SourcePickerPlan::Continue => {}
+        } => match source_picker_plan(source.handle_key(key)) {
+            SourcePickerPlan::Plain => {
+                let Some((scope, key)) = env_key.take() else {
+                    editor.clear_modal_chain();
+                    return EditorModalOutcome::Continue;
+                };
+                editor.open_sub_modal(Modal::TextInput {
+                    target: TextInputTarget::EnvValue {
+                        scope,
+                        key: key.clone(),
+                    },
+                    state: secret_new_value_input_state(&key),
+                });
             }
-        }
+            SourcePickerPlan::Op => {
+                let Some((scope, key)) = env_key.take() else {
+                    editor.clear_modal_chain();
+                    return EditorModalOutcome::Continue;
+                };
+                editor.open_sub_modal(Modal::OpPicker {
+                    secrets_target: Some(SecretsPickerTarget::Existing { scope, key }),
+                    state: Box::new(crate::tui::op_picker::OpPickerState::new_with_cache(
+                        op_cache,
+                    )),
+                });
+            }
+            SourcePickerPlan::Dismiss => {
+                editor.pop_modal_chain();
+            }
+            SourcePickerPlan::Continue => {}
+        },
         Modal::AuthSourcePicker { state: source } => {
             let outcome = source.handle_key(key);
             match source_picker_plan(outcome) {
@@ -337,7 +300,6 @@ pub fn handle_editor_modal(
             let outcome = picker.handle_key(key);
             let secrets_target = secrets_target.clone();
             match crate::tui::update::op_picker_inline_plan(outcome) {
-                // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }
                     | crate::tui::op_picker::OpPickerSelection::EditItemField { .. },
@@ -345,20 +307,10 @@ pub fn handle_editor_modal(
                 InlinePickerPlan::Commit(crate::tui::op_picker::OpPickerSelection::Existing(
                     op_ref,
                 )) => {
-                    // Auth-form round trip wins over the Secrets-tab
-                    // dispatch: the auth form sets
-                    // the modal parent stack exactly when it's the
-                    // caller, so the two paths can never collide.
                     if editor.has_modal_parent() {
-                        // Close the OpPicker — the auth form stays stashed on
-                        // modal_parents so the _committed / _failed helpers find it.
                         editor.dismiss_active_modal();
                         return EditorModalOutcome::ValidateOpRef(op_ref);
                     }
-                    // Operator picked a Vault → Item → Field path. The
-                    // dispatch depends on whether `P` was pressed on a
-                    // key row (write directly) or on an `+ Add` sentinel
-                    // (stash the OpRef, ask for the key name first).
                     match secrets_target {
                         Some(SecretsPickerTarget::Existing { scope, key }) => {
                             super::set_pending_env_op_ref(editor, &scope, &key, op_ref);
@@ -381,10 +333,6 @@ pub fn handle_editor_modal(
                     }
                 }
                 InlinePickerPlan::Dismiss => {
-                    // Auth-form round trip: re-mount the form
-                    // unchanged. Mirrors the Commit branch — the two
-                    // callers (Secrets-tab `P`, auth-form Enter) are
-                    // disambiguated by the modal parent stack.
                     if editor.has_modal_parent() {
                         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return EditorModalOutcome::Continue;

@@ -5,7 +5,6 @@ use super::*;
 
 #[test]
 fn new_session_account_picker_skips_when_no_choice() {
-    // Single-provider Codex must dispatch directly, mirroring Claude.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
@@ -53,7 +52,6 @@ fn new_session_account_picker_opens_for_claude() {
 
 #[test]
 fn new_session_account_picker_opens_for_codex_with_multiple_providers() {
-    // Codex with two providers configured opens the picker.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
@@ -70,8 +68,6 @@ fn new_session_account_picker_opens_for_codex_with_multiple_providers() {
     assert_eq!(picker.context, "jackin-demo-architect");
     assert_eq!(picker.agent, jackin_core::Agent::Codex);
     assert_eq!(picker.providers().len(), 2);
-    // Seeded [openai, minimax]; the picker renders stable id-ascending
-    // order, so minimax sorts first.
     assert_eq!(
         picker.providers()[0].provider,
         jackin_config::AiProvider::Minimax
@@ -126,8 +122,6 @@ fn new_session_picker_does_not_offer_host_config_providers_for_running_container
 
 #[test]
 fn new_session_commit_with_empty_providers_errors_instead_of_none() {
-    // Zero eligible must never dispatch `NewSessionWithAccount` with
-    // `account: None` — it opens an actionable error popup.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
@@ -150,8 +144,6 @@ fn new_session_commit_with_empty_providers_errors_instead_of_none() {
 
 #[test]
 fn new_session_commit_ignores_accounts_offered_to_other_agents() {
-    // A non-empty provider list where nothing serves Claude is still zero
-    // eligible: error, never an account-less dispatch.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
@@ -290,8 +282,6 @@ fn new_session_open_without_default_opens_sorted_picker() {
         .collect();
     assert_eq!(ids, vec!["a-claude", "z-claude"]);
 
-    // Selecting the second same-agent row must retain its exact config ID,
-    // not collapse back to the shared account/provider identity.
     assert!(matches!(
         handle_inline_account_picker(&mut state, key(KeyCode::Down)),
         InputOutcome::Continue
@@ -312,8 +302,6 @@ fn new_session_open_without_default_opens_sorted_picker() {
 
 #[test]
 fn new_session_open_ignores_mutable_host_bindings() {
-    // The role binding names an unknown id while the live manifest admits two
-    // Claude instances: the host binding must not rewrite the live rows.
     let (mut state, mut config, paths, tmp) = running_session_state(|config| {
         config.workspaces.get_mut("demo").unwrap().roles.insert(
             "the-architect".into(),

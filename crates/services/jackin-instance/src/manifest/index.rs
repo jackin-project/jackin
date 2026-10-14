@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Instance index registry methods.
 
 use super::{
     INSTANCE_INDEX_VERSION, InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery,
@@ -24,12 +23,6 @@ impl InstanceIndex {
         Ok(index)
     }
 
-    /// Distinguish "file missing" (`Ok(None)` → rebuild path) from real
-    /// read errors (parse failure, version mismatch, IO error other
-    /// than `NotFound`). Real errors must propagate — silently
-    /// rebuilding on a corrupted index throws away `Purged` tombstones
-    /// whose state dir is already gone, and masks daemon/permission
-    /// faults.
     pub(crate) fn read_optional(data_dir: &Path) -> anyhow::Result<Option<Self>> {
         let path = data_dir.join(INSTANCE_INDEX_FILE);
         match std::fs::read(&path) {
@@ -69,7 +62,6 @@ impl InstanceIndex {
         })
     }
 
-    /// Removes entries in a single lock pass.
     pub fn remove_many(data_dir: &Path, container_bases: &[&str]) -> anyhow::Result<()> {
         if container_bases.is_empty() {
             return Ok(());
@@ -87,12 +79,6 @@ impl InstanceIndex {
         Self::mark_many_purged(data_dir, &[container_base])
     }
 
-    /// Run `mutate` under an exclusive flock on `instances.json.lock`
-    /// after reading the current index, then write the result back
-    /// atomically. Prevents two concurrent `update_manifest` calls from
-    /// racing read-modify-write and clobbering each other's entries —
-    /// the per-name lock in `claim_container_name` protects names, not
-    /// the index payload.
     pub(crate) fn with_lock<F>(data_dir: &Path, mutate: F) -> anyhow::Result<()>
     where
         F: FnOnce(&mut Self) -> anyhow::Result<()>,
@@ -119,20 +105,10 @@ impl InstanceIndex {
             index.sort();
             index.write(data_dir)
         })();
-        // Drop the handle (which releases the flock); leave the lock
-        // file in place so future opens reuse the same inode.
         drop(lock);
         result
     }
 
-    /// Batch-mark a set of containers as purged with a single index
-    /// read/write. Containers already absent from the index get a
-    /// backfilled tombstone read from disk (or a synthesized minimal
-    /// row when the manifest is corrupt).
-    ///
-    /// One pass over the index using `HashSet` membership avoids the
-    /// O(N×M) cost of `find()`-per-container when a class-wide purge
-    /// touches many entries.
     pub fn mark_many_purged(data_dir: &Path, container_bases: &[&str]) -> anyhow::Result<()> {
         if container_bases.is_empty() {
             return Ok(());
@@ -154,9 +130,6 @@ impl InstanceIndex {
         })
     }
 
-    /// Container is not in the index but a manifest may still exist on
-    /// disk. Synthesizes a minimal tombstone on parse failure so the
-    /// operator still sees the purge.
     pub(crate) fn backfill_purge_tombstone(
         index: &mut Self,
         data_dir: &Path,
@@ -168,12 +141,8 @@ impl InstanceIndex {
                 manifest.mark_status(InstanceStatus::Purged);
                 index.instances.push(manifest.to_index_entry());
             }
-            // Manifest absent → state already torn down by
-            // `purge_container_filesystem`; nothing to tombstone.
             Ok(None) => {}
             Err(_) => {
-                // Corrupt manifest: synthesize a minimal tombstone so
-                // the operator still sees that this container was purged.
                 index.instances.push(InstanceIndexEntry {
                     instance_id: container_base.to_owned(),
                     container_base: container_base.to_owned(),
@@ -212,7 +181,6 @@ impl InstanceIndex {
         Ok(manifests)
     }
 
-    /// Errors if the file is missing or unreadable.
     pub fn read(data_dir: &Path) -> anyhow::Result<Self> {
         Self::read_optional(data_dir)?.ok_or_else(|| {
             crate::InstanceError::IndexMissing {
@@ -236,8 +204,6 @@ impl InstanceIndex {
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-            // Propagate parse errors; a corrupt manifest must not be
-            // silently dropped from the rebuild.
             let Some(manifest) = InstanceManifest::read_optional(&entry.path())? else {
                 continue;
             };

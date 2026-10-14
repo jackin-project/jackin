@@ -7,9 +7,6 @@ use clap::Args;
 
 use crate::docs::repo_root;
 
-/// CI partition names for `--only` selection.
-///
-/// `lint` | `policy` | `tests` | `powerset` | `docs` | `snapshots` | `e2e`
 pub(crate) const PARTITIONS: &[&str] = &[
     "lint",
     "policy",
@@ -22,25 +19,16 @@ pub(crate) const PARTITIONS: &[&str] = &[
 
 #[derive(Args, Debug)]
 pub(crate) struct CiArgs {
-    /// Skip intentionally slow lanes: feature-powerset and Docker E2E.
     #[arg(long)]
     fast: bool,
-    /// Include Docker E2E with capsule export and Docker daemon preflight.
     #[arg(long)]
     e2e: bool,
-    /// Existing capsule binary to use instead of exporting a new one.
     #[arg(long, value_name = "PATH")]
     e2e_capsule: Option<PathBuf>,
-    /// Optional nextest expression for a focused Docker E2E invocation.
     #[arg(long, value_name = "EXPRESSION")]
     e2e_filter: Option<String>,
-    /// Git ref used by schema-check.
     #[arg(long, default_value = "origin/main")]
     base: String,
-    /// Run only the named partition(s). Repeatable.
-    ///
-    /// Partitions: lint, policy, tests, powerset, docs, snapshots, e2e.
-    /// Local-dev convenience only — merge readiness remains the full `ci`.
     #[arg(long = "only", value_name = "PARTITION")]
     only: Vec<String>,
 }
@@ -226,7 +214,6 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
         steps.push(cargo("shear", &["shear", "--deny-warnings"], "policy"));
     }
 
-    // Full powerset is the non-`--fast` default step; also selectable via `--only powerset`.
     let want_powerset = if args.only.is_empty() {
         !args.fast
     } else {
@@ -409,7 +396,6 @@ fn display_step(step: &Step) -> String {
     parts.join(" ")
 }
 
-/// Expose step names for tests without running them.
 #[cfg(test)]
 fn step_names(args: &CiArgs) -> Result<Vec<String>> {
     let root = repo_root()?;
@@ -419,7 +405,6 @@ fn step_names(args: &CiArgs) -> Result<Vec<String>> {
         .collect())
 }
 
-/// Expose partitions for tests.
 #[cfg(test)]
 #[expect(
     dead_code,

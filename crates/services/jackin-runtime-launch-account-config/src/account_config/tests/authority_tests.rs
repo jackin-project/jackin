@@ -66,9 +66,6 @@ fn writable_agent_home_cannot_exchange_publication_staging_names() {
         None,
         |point| {
             if matches!(point, private_config_fs::PublishPoint::BeforeInstall(_)) {
-                // This attacker can write only the directory mounted into its
-                // own home. Replace every visible staged leaf immediately before
-                // install, including the catalog's hard-link publication path.
                 for entry in std::fs::read_dir(&home)? {
                     let entry = entry?;
                     if entry

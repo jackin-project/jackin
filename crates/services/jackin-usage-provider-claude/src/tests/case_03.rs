@@ -28,8 +28,6 @@ fn claude_limits_array_surfaces_every_scoped_model_together() {
     let buckets = usage.into_buckets(1_781_300_000);
     let labels: Vec<&str> = buckets.iter().map(|b| b.label.as_str()).collect();
 
-    // Headline windows bind to their slots; every model-scoped window renders
-    // as its own labelled, non-headline row.
     assert!(labels.contains(&"Session"));
     assert!(labels.contains(&"All models"));
     assert!(labels.contains(&"Sonnet"));
@@ -43,8 +41,6 @@ fn claude_limits_array_surfaces_every_scoped_model_together() {
         assert_eq!(b.status_slot, None, "{label} must be non-headline");
         assert!(b.remaining_percent.is_some(), "{label} must carry a meter");
     }
-    // Fable carries its own (warn) severity for meter color, independent of the
-    // other scoped windows.
     let fable = buckets.iter().find(|b| b.label == "Fable").expect("Fable");
     assert_eq!(fable.severity, UsageSeverity::Warn);
     assert_eq!(fable.remaining_percent, Some(57));
@@ -60,7 +56,6 @@ fn claude_codename_dollar_window_is_surfaced() {
             "limit_dollars": 25000,
             "used_dollars": 5000.0
         },
-        // Present but empty — must not produce a bucket.
         "omelette_promotional": { "utilization": 0.0, "limit_dollars": null }
     }))
     .expect("valid Claude OAuth usage");
@@ -106,7 +101,6 @@ fn claude_spend_disabled_is_surfaced_with_reason() {
         spend.pace_label.as_deref(),
         Some("disabled · out of credits")
     );
-    // Headline still shows the cap context: `<used> of <limit>`.
     assert_eq!(
         spend_headline_label(&buckets).as_deref(),
         Some("SGD 78 of 260")
@@ -119,8 +113,6 @@ fn claude_oauth_response_accepts_window_aliases() {
         "five_hour": { "utilization": 0.10 },
         "seven_day": { "utilization": 0.45 },
         "seven_day_opus": { "utilization": 0.30 },
-        // `seven_day_oauth_apps` is a SEPARATE window, not an alias of
-        // `seven_day` — it must be ignored, never override Weekly.
         "seven_day_oauth_apps": { "utilization": 0.99 },
         "seven_day_cowork": { "utilization": 0.25 }
     }))
@@ -138,7 +130,6 @@ fn claude_oauth_response_accepts_window_aliases() {
             .iter()
             .any(|bucket| bucket.label == "Daily Routines" && bucket.remaining_percent == Some(75))
     );
-    // A present Opus window is a detail row, never a headline slot.
     assert!(
         buckets
             .iter()

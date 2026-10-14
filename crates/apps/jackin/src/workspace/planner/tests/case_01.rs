@@ -35,8 +35,6 @@ fn plan_create_collapses_redundant_children_under_parent() {
 
 #[test]
 fn plan_edit_classifies_new_parent_as_edit_driven() {
-    // Existing: /work/sub. Add: /work (new parent). /work/sub gets
-    // subsumed by the new parent — edit-driven.
     let current = workspace("/work", vec![mount("/work/sub", "/work/sub")]);
     let plan = plan_edit(&current, &[mount("/work", "/work")], &[], false).unwrap();
 
@@ -48,8 +46,6 @@ fn plan_edit_classifies_new_parent_as_edit_driven() {
 
 #[test]
 fn plan_edit_classifies_untouched_redundancy_as_pre_existing() {
-    // Existing config already has /work and /work/sub (redundant).
-    // Edit does nothing related to those; collapse reports pre-existing.
     let current = workspace(
         "/work",
         vec![mount("/work", "/work"), mount("/work/sub", "/work/sub")],
@@ -63,9 +59,6 @@ fn plan_edit_classifies_untouched_redundancy_as_pre_existing() {
 
 #[test]
 fn plan_edit_applies_remove_destinations_before_upsert() {
-    // Remove /work/sub, then add /work. If removes happened *after*
-    // upserts, /work would subsume /work/sub and show up as an
-    // edit-driven collapse. Because removes come first, nothing collapses.
     let current = workspace("/work", vec![mount("/work/sub", "/work/sub")]);
     let plan = plan_edit(
         &current,
@@ -85,10 +78,6 @@ fn plan_edit_applies_remove_destinations_before_upsert() {
 
 #[test]
 fn plan_edit_no_workdir_mount_drops_workdir_auto_mount() {
-    // Workdir auto-mount is present; also add /work/sub as an upsert.
-    // If no_workdir_mount correctly drops /work before collapse, /work/sub
-    // has no parent and no collapse fires. If /work survived, /work/sub
-    // would collapse under it as edit-driven.
     let current = workspace(
         "/work",
         vec![mount("/work", "/work"), mount("/data", "/data")],
@@ -104,8 +93,6 @@ fn plan_edit_no_workdir_mount_drops_workdir_auto_mount() {
 
 #[test]
 fn plan_edit_effective_removals_stack_on_user_removals() {
-    // User asks to remove /extra. Then an edit adds /work that subsumes
-    // /work/sub. Both removals should appear in effective_removals.
     let current = workspace(
         "/work",
         vec![mount("/work/sub", "/work/sub"), mount("/extra", "/extra")],
@@ -221,7 +208,6 @@ fn covers_is_false_when_src_does_not_nest() {
 
 #[test]
 fn covers_is_false_for_sibling_prefix_match() {
-    // `/a-x` is not a child of `/a`, even though "/a-x".starts_with("/a").
     let parent = MountConfig {
         src: "/a".into(),
         dst: "/a".into(),
@@ -256,7 +242,6 @@ fn covers_normalizes_trailing_slashes() {
 
 #[test]
 fn covers_handles_different_readonly_flags() {
-    // `covers` is purely path-based. Readonly mismatches are caught by plan_collapse.
     let parent = MountConfig {
         src: "/a".into(),
         dst: "/a".into(),
@@ -289,10 +274,7 @@ fn plan_collapse_preserves_unrelated_mounts() {
 
 #[test]
 fn plan_collapse_collapses_single_child_under_new_parent() {
-    let mounts = vec![
-        mk("/a/b", "/a/b", false), // pre-existing child (index 0)
-        mk("/a", "/a", false),     // new parent (index 1)
-    ];
+    let mounts = vec![mk("/a/b", "/a/b", false), mk("/a", "/a", false)];
     let plan = plan_collapse(&mounts, &[1]).unwrap();
     assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
     assert_eq!(plan.removed.len(), 1);
@@ -314,7 +296,6 @@ fn plan_collapse_collapses_multiple_children_under_new_parent() {
 
 #[test]
 fn plan_collapse_handles_transitive_chain() {
-    // A ⊃ B ⊃ C, all present in input; B and C both find A as a parent.
     let mounts = vec![
         mk("/a", "/a", false),
         mk("/a/b", "/a/b", false),
@@ -323,7 +304,6 @@ fn plan_collapse_handles_transitive_chain() {
     let plan = plan_collapse(&mounts, &[0, 1, 2]).unwrap();
     assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
     assert_eq!(plan.removed.len(), 2);
-    // Both B and C are covered by A.
     for rem in &plan.removed {
         assert_eq!(rem.covered_by, mk("/a", "/a", false));
     }
@@ -331,9 +311,6 @@ fn plan_collapse_handles_transitive_chain() {
 
 #[test]
 fn plan_collapse_flags_pre_existing_violation_as_removal_when_nothing_new() {
-    // Neither index is in new_indexes — both pre-existing. Library returns
-    // Ok with removal; CLI will inspect origin and decide to reject or
-    // proceed with --prune.
     let mounts = vec![mk("/a", "/a", false), mk("/a/b", "/a/b", false)];
     let plan = plan_collapse(&mounts, &[]).unwrap();
     assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
@@ -342,10 +319,7 @@ fn plan_collapse_flags_pre_existing_violation_as_removal_when_nothing_new() {
 
 #[test]
 fn plan_collapse_errors_on_readonly_mismatch_rw_parent_ro_child() {
-    let mounts = vec![
-        mk("/a/b", "/a/b", true), // ro child
-        mk("/a", "/a", false),    // rw parent (new)
-    ];
+    let mounts = vec![mk("/a/b", "/a/b", true), mk("/a", "/a", false)];
     let err = plan_collapse(&mounts, &[1]).unwrap_err();
     match err {
         CollapseError::ReadonlyMismatch { parent, child } => {
@@ -358,21 +332,14 @@ fn plan_collapse_errors_on_readonly_mismatch_rw_parent_ro_child() {
 
 #[test]
 fn plan_collapse_errors_on_readonly_mismatch_ro_parent_rw_child() {
-    let mounts = vec![
-        mk("/a/b", "/a/b", false), // rw child
-        mk("/a", "/a", true),      // ro parent (new)
-    ];
+    let mounts = vec![mk("/a/b", "/a/b", false), mk("/a", "/a", true)];
     let err = plan_collapse(&mounts, &[1]).unwrap_err();
     assert!(matches!(err, CollapseError::ReadonlyMismatch { .. }));
 }
 
 #[test]
 fn plan_collapse_errors_on_new_child_under_existing_parent() {
-    // Parent at index 0 is pre-existing. Child at index 1 is new.
-    let mounts = vec![
-        mk("/a", "/a", false),     // existing parent
-        mk("/a/b", "/a/b", false), // new child
-    ];
+    let mounts = vec![mk("/a", "/a", false), mk("/a/b", "/a/b", false)];
     let err = plan_collapse(&mounts, &[1]).unwrap_err();
     match err {
         CollapseError::ChildUnderExistingParent { parent, child } => {
@@ -385,9 +352,6 @@ fn plan_collapse_errors_on_new_child_under_existing_parent() {
 
 #[test]
 fn plan_collapse_allows_new_child_when_new_parent_is_also_in_same_edit() {
-    // Both parent and child introduced in the same edit — not a "child
-    // under existing parent" case; child is just redundant and gets
-    // collapsed normally.
     let mounts = vec![mk("/a/b", "/a/b", false), mk("/a", "/a", false)];
     let plan = plan_collapse(&mounts, &[0, 1]).unwrap();
     assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);

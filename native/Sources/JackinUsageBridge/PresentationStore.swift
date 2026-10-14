@@ -5,7 +5,6 @@ import CoreGraphics
 import Foundation
 import JackinUsageBindings
 
-/// Status-item display mode (Settings-selectable; Rust supplies every string).
 public enum StatusItemDisplayMode: String, CaseIterable, Sendable {
     case iconOnly
     case focusPercent
@@ -13,7 +12,6 @@ public enum StatusItemDisplayMode: String, CaseIterable, Sendable {
     case strip
 }
 
-/// Thin presentation store: polls Rust boltffi snapshots; no provider probes.
 @MainActor
 public final class PresentationStore: ObservableObject {
     public struct IdentityRow: Sendable, Equatable {
@@ -46,10 +44,6 @@ public final class PresentationStore: ObservableObject {
         public var updatedLabel: String
         public var lastError: String?
         public var identity: IdentityRow?
-        /// Rust-owned Capsule-parity provider detail.
-        ///
-        /// The Usage window
-        /// renders these rows verbatim; other surfaces ignore it.
         public var detailPresentation: UsageDetailPresentation
 
         public init(
@@ -98,18 +92,14 @@ public final class PresentationStore: ObservableObject {
         public let statusSlot: String?
         public let severity: String
         public let status: String
-        /// Rust money fields (display-only; formatted in the shell).
         public let usedMoney: MoneyDto?
         public let limitMoney: MoneyDto?
-        /// Rust-owned limits-only presentation (rendered verbatim; never recomputed).
         public let remainingLabel: String?
         public let displaySegments: [String]
         public let displayLabel: String
         public let meterPercent: UInt8?
     }
 
-    /// One Rust-owned provider glance row projected verbatim (no computed usage
-    /// values in Swift). `id == surfaceId`.
     public struct GlanceProviderRow: Identifiable, Sendable, Equatable {
         public var id: String { surfaceId }
         public let surfaceId: String
@@ -187,15 +177,10 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Exact Rust-owned account route status for one provider.
     public enum SelectedAccountRoute: Sendable, Equatable {
-        /// No persisted account choice exists for this provider.
         case unselected
-        /// The persisted key is retained while cold discovery determines membership.
         case resolving(accountKey: String)
-        /// The persisted key is present in the current account catalog.
         case available(accountKey: String)
-        /// Discovery completed without the persisted key; the notice is Rust-owned.
         case unavailable(accountKey: String, notice: String)
 
         public init?(dto: SelectedAccountRouteDto) {
@@ -240,8 +225,6 @@ public final class PresentationStore: ObservableObject {
         public let accounts: [AccountRow]
         public let accessibilityLabel: String
         public let lastError: String?
-        /// Rust-owned route is the sole authority for the persisted account choice.
-        /// `nil` means the FFI status/key/notice tuple was malformed.
         public let selectedAccountRoute: SelectedAccountRoute?
 
         public init(
@@ -275,9 +258,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Rust-owned, sanitized discovery failure.
-    ///
-    /// No credential location or secret.
     public struct DiscoveryDiagnostic: Identifiable, Sendable, Equatable {
         public var id: String { "\(surfaceId ?? "global")#\(scopeLabel)#\(issue)" }
         public let surfaceId: String?
@@ -287,7 +267,6 @@ public final class PresentationStore: ObservableObject {
         public let displayLabel: String
     }
 
-    /// Multi-account row for a host surface (Rust-owned keys/labels).
     public struct AccountRow: Identifiable, Sendable, Equatable {
         public var id: String { "\(surfaceId)#\(accountKey)" }
         public let surfaceId: String
@@ -359,7 +338,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Complete frozen state used only by explicit `--fixture` QA launches.
     public struct QIFixtureProjection: Sendable, Equatable {
         public let glanceRows: [GlanceProviderRow]
         public let statusBarGlanceRows: [GlanceProviderRow]
@@ -382,47 +360,23 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Footer / window next-refresh string from Rust.
     @Published public private(set) var nextRefreshLabel: String = ""
     @Published public private(set) var surfaces: [SurfaceRow] = []
-    /// Rust-owned seven-provider glance rows (auto-detected, catalog order).
-    ///
-    /// Full inventory for popover / Usage — **includes** 0% (OV-7).
     @Published public private(set) var providerGlanceRows: [GlanceProviderRow] = []
-    /// Burn-first **status bar** chips only (SB-3/14/17/19): hide 0%, soonest-
-    /// then-remaining, hard-cap ≤3.
-    ///
-    /// Popover never uses this list.
     @Published public private(set) var statusBarGlanceRows: [GlanceProviderRow] = []
-    /// Presentation-only privacy flag: `false` hides the Rust status-bar values
-    /// during screen sharing (it may hide a Rust label, never replace it).
     @Published public private(set) var statusBarShowsValues = true
-    /// Canonical Rust-ordered provider groups with account children.
     @Published public private(set) var providerGroups: [ProviderGroupRow] = []
     @Published public var overviewExpandedProviderIDs: Set<String> = []
     @Published public var overviewSelectionID: String?
-    /// Known accounts across surfaces (multi-account host logins / shared snapshots).
     @Published public private(set) var accounts: [AccountRow] = []
     @Published public private(set) var discoveryDiagnostics: [DiscoveryDiagnostic] = []
-    /// Sidebar / detail selection: `nil` = Overview, else surface id.
     @Published public private(set) var usageSelection: String?
-    /// Exact account context carried by navigation into the Usage window.
     @Published public private(set) var usageAccountSelection: String?
-    /// Focused popover provider; nil lets the host select the first available provider.
     @Published public var popoverSelection: String?
-    /// True only while an enqueued refresh request runs its bridge operation —
-    /// drives the popover/footer spinner.
-    ///
-    /// Never clears glance rows or surfaces.
     @Published public private(set) var refreshInProgress = false
     @Published public private(set) var lastError: String?
     @Published public private(set) var isOpen: Bool = false
-    /// True from the moment a cold open is submitted until it succeeds/fails, so
-    /// a second `open`/`openDefault` (e.g. `applicationDidBecomeActive` firing
-    /// while the async open is still in flight) is a no-op rather than a
-    /// duplicate runtime open.
     @Published public private(set) var isOpening: Bool = false
-    /// Refresh floor in seconds (owned by Rust; mirrored for Settings).
     @Published public private(set) var refreshFloorSecs: UInt64 = 300
 
     @Published public var displayMode: StatusItemDisplayMode {
@@ -441,7 +395,6 @@ public final class PresentationStore: ObservableObject {
 
     @Published public var stripMax: Int {
         didSet {
-            // SB-3: never more than three burn-first chips.
             let clamped = max(1, min(statusBarMaxChips, stripMax))
             if clamped != stripMax {
                 stripMax = clamped
@@ -454,7 +407,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Rust `percent_style`: `left` | `used`.
     @Published public var percentStyle: String {
         didSet {
             UserDefaults.standard.set(percentStyle, forKey: Self.percentStyleKey)
@@ -466,7 +418,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Rust `reset_style`: `countdown` | `exact_clock`.
     @Published public var resetStyle: String {
         didSet {
             UserDefaults.standard.set(resetStyle, forKey: Self.resetStyleKey)
@@ -491,9 +442,6 @@ public final class PresentationStore: ObservableObject {
     private static let resetStyleKey = "jackin.desktop.resetStyle"
     private static let hideScreenShareKey = "jackin.desktop.hideWhileScreenSharing"
 
-    /// All bridge access is serialized off the main actor through this scheduler
-    /// so a Keychain consent sheet can never freeze the UI. `PresentationStore`
-    /// itself holds no bridge reference and makes no direct `bridge.` calls.
     private let scheduler: RefreshScheduler
     private var projectedStatusBarRows: [GlanceProviderRow] = []
     private var nextApplyRequest: UInt64 = 0
@@ -516,9 +464,6 @@ public final class PresentationStore: ObservableObject {
         self.init(scheduler: RefreshScheduler())
     }
 
-    /// Designated initializer.
-    ///
-    /// Tests inject a scheduler wrapping a fake bridge.
     public init(scheduler: RefreshScheduler) {
         self.scheduler = scheduler
         let defaults = UserDefaults.standard
@@ -527,18 +472,15 @@ public final class PresentationStore: ObservableObject {
         {
             self.displayMode = mode
         } else if defaults.object(forKey: "jackin.desktop.showPercent") != nil {
-            // Pre-release migration: old boolean → mode (no long-term shim).
             self.displayMode =
                 defaults.bool(forKey: "jackin.desktop.showPercent")
                 ? .focusPercent
                 : .iconOnly
             defaults.removeObject(forKey: "jackin.desktop.showPercent")
         } else {
-            // Burn-first multi-chip strip by default (SB-3 ≤3).
             self.displayMode = .strip
         }
         self.pinnedSurfaceId = defaults.string(forKey: Self.pinnedSurfaceKey) ?? ""
-        // SB-3 hard-caps at 3; migrate older UserDefaults >3 down.
         let strip = defaults.object(forKey: Self.stripMaxKey) as? Int ?? statusBarMaxChips
         self.stripMax = max(1, min(statusBarMaxChips, strip))
         let percent = defaults.string(forKey: Self.percentStyleKey) ?? "left"
@@ -548,16 +490,10 @@ public final class PresentationStore: ObservableObject {
         self.hideWhileScreenSharing = defaults.bool(forKey: Self.hideScreenShareKey)
     }
 
-    /// How this launch should open the runtime.
-    ///
-    /// Smoke mode is defense-in-depth
-    /// for the isolated launch test: a non-home data root and no live probes.
     public enum LaunchConfiguration: Sendable, Equatable {
         case production
         case ephemeralSmoke(dataDir: String)
 
-        /// Resolve from the environment: an absolute, non-home
-        /// `JACKIN_DESKTOP_SMOKE_DATA_DIR` selects ephemeral smoke; else production.
         public static func resolve(
             environment: [String: String],
             homeDirectory: String
@@ -592,7 +528,6 @@ public final class PresentationStore: ObservableObject {
         )
     }
 
-    /// Retry the failed cold open, or refresh when the runtime is already open.
     public func retryLastOperation() {
         guard !fixtureMode else { return }
         if isOpen {
@@ -602,8 +537,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Ephemeral smoke open: isolated path, live probes disabled, exactly one
-    /// snapshot application, and no initial/manual/periodic refresh or polling.
     private func openSmoke(dataDir: String) {
         guard !isOpen, !isOpening else { return }
         isOpening = true
@@ -649,9 +582,6 @@ public final class PresentationStore: ObservableObject {
         enabled: [String],
         allowLiveProbes: Bool
     ) {
-        // Coalesce duplicate cold-opens: a second open while one is in flight
-        // (or already open) is a no-op, so `applicationDidBecomeActive` firing
-        // during the async open cannot start a second runtime.
         guard !isOpen, !isOpening else { return }
         isOpening = true
         let config = OpenConfig(
@@ -670,7 +600,6 @@ public final class PresentationStore: ObservableObject {
                 self.lastError = nil
                 self.refreshFloorSecs = floor
                 await self.pushFormatPrefs()
-                // First load forces network so the bar is not stuck on "refreshing".
                 await self.refreshAll(force: true)
                 self.startPolling()
             } catch {
@@ -686,8 +615,6 @@ public final class PresentationStore: ObservableObject {
         pollTask = nil
         fixtureRefreshTask?.cancel()
         fixtureRefreshTask = nil
-        // Non-blocking: shutdown runs on the serial queue behind any in-flight
-        // bridge op; the main actor never waits on the Rust mutex.
         scheduler.invalidateAndShutdown()
         isOpen = false
         isOpening = false
@@ -706,7 +633,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Select multi-account identity for a surface (Rust-persisted).
     public func setSelectedAccount(surfaceId: String, accountKey: String) {
         if fixtureMode {
             guard
@@ -736,16 +662,10 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Accounts for one surface (empty when none known).
     public func accountsForSurface(_ surfaceId: String) -> [AccountRow] {
         accounts.filter { $0.surfaceId == surfaceId }
     }
 
-    /// Inject frozen DATA_CONTRACT / QI presentation without a live bridge poll.
-    ///
-    /// Used by explicit visual-QA launches so UI automation drives the same
-    /// ``PresentationStore`` + SwiftUI surfaces as production.
-    /// Does not invent strings — caller supplies Rust-shaped fixtures.
     public func applyQIFixture(
         glanceRows: [GlanceProviderRow],
         statusBarGlanceRows: [GlanceProviderRow]? = nil,
@@ -806,7 +726,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Manual Refresh button — bypasses floor.
     public func refreshAll() {
         if fixtureMode {
             runFixtureRefresh()
@@ -815,9 +734,6 @@ public final class PresentationStore: ObservableObject {
         Task { [weak self] in await self?.refreshAll(force: true) }
     }
 
-    /// Submit refresh intent once.
-    ///
-    /// Rust broker generations own coalescing.
     private func refreshAll(force: Bool) async {
         await performRefresh(surfaceId: nil, force: force)
     }
@@ -874,10 +790,6 @@ public final class PresentationStore: ObservableObject {
             screenShareActive = false
         }
         statusBarShowsValues = !(hideWhileScreenSharing && screenShareActive)
-        // Always-on: ask Rust to refresh when the floor allows (force: false).
-        // Rust no-ops inside the floor so this is poll-safe every 5s. The whole
-        // due-check + refresh + event-drain runs as one serialized bridge op off
-        // the main actor, so a consent sheet cannot freeze the UI or queue polls.
         let cursor = eventCursor
         do {
             let nextCursor = try await scheduler.pollOnce(cursor: cursor)
@@ -888,9 +800,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-    /// Poll CGSession for active screen share (privacy collapse).
-    ///
-    /// AppKit-free.
     public static func isScreenCurrentlyShared() -> Bool {
         guard let dict = CGSessionCopyCurrentDictionary() as? [String: Any] else {
             return false
@@ -989,7 +898,6 @@ public final class PresentationStore: ObservableObject {
         report(error, userMessage: "Usage could not be updated. Try again.")
     }
 
-    /// Test seam for the same transient-failure path used by `applySnapshots`.
     func applyProjectionFailureForTesting(_ error: Error, request: UInt64 = .max) {
         retainLastGoodAfterProjectionFailure(error, request: request)
     }
@@ -1142,12 +1050,10 @@ public final class PresentationStore: ObservableObject {
         )
     }
 
-    /// Open the Usage window on Overview or a specific surface.
     public func selectUsageSurface(_ surfaceId: String?) {
         selectUsageContext(surfaceId: surfaceId, accountKey: nil)
     }
 
-    /// Open Usage on one exact canonical provider/account context.
     public func selectUsageContext(surfaceId: String?, accountKey: String?) {
         guard let surfaceId else {
             usageSelection = nil
@@ -1163,9 +1069,6 @@ public final class PresentationStore: ObservableObject {
         usageAccountSelection = accountKey
     }
 
-    /// Update the Usage window's navigation context only when the account
-    /// selection still belongs to its active provider. A persisted picker
-    /// write can finish after the user has navigated to another provider.
     private func recordUsageAccountSelection(surfaceId: String, accountKey: String) {
         guard usageSelection == surfaceId else { return }
         usageAccountSelection = accountKey
@@ -1184,8 +1087,6 @@ public final class PresentationStore: ObservableObject {
             let route = providerGroups.first(where: { $0.surfaceId == usageSelection })?.selectedAccountRoute
                 ?? nil
             if let route, case .unavailable = route {
-                // Keep provider scope so UsageWindowModel can show Rust's fixed
-                // unavailable notice in Overview; discard only the stale UI key.
                 self.usageAccountSelection = nil
             } else {
                 self.usageSelection = nil

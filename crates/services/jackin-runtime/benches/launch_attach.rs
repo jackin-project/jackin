@@ -1,19 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Launch/attach hot-path benchmark — baseline for the E1/E2 carve perf gate.
-//!
-//! Measures the in-process CPU-only operations on the `jackin load` / attach
-//! critical path that span the new crate boundaries created by E1 (`jackin-isolation`)
-//! and E2 (`jackin-instance`) carves from `jackin-runtime`.
-//!
-//! Run with:
-//! ```sh
-//! cargo bench -p jackin-runtime --bench launch_attach
-//! ```
-//! Record the numbers in the E0 PR description as the baseline. Future carve
-//! PRs (E1, E2) must show no measurable regression against these numbers.
-
 use jackin_core::WorkspaceName;
 use std::path::Path;
 
@@ -25,7 +12,6 @@ use jackin_instance::naming::{
 };
 use jackin_isolation::materialize::{clone_path_for, worktree_path_for};
 
-// Representative fixtures.
 const WORKSPACE: &str = "myworkspace";
 const ROLE: &str = "myrole";
 const NAMESPACE: &str = "myns";
@@ -67,8 +53,6 @@ fn new_manifest_input() -> NewInstanceManifest<'static> {
     }
 }
 
-// ── Naming: container_name_with_id (E2 hot path) ─────────────────────────────
-
 fn bench_container_name(c: &mut Criterion) {
     let selector = make_selector();
     c.bench_function("naming/container_name_with_id", |b| {
@@ -84,12 +68,7 @@ fn bench_container_name(c: &mut Criterion) {
     });
 }
 
-// ── Naming: class_family_scan (attach container scan, E2 hot path) ───────────
-
-/// Simulates the inner loop of `jackin attach`: scan 20 running container
-/// names and collect those whose role slug matches the selector.
 fn bench_class_family_scan(c: &mut Criterion) {
-    // 20 containers: 2 match (at indices 7 and 17), 18 do not.
     let containers: Vec<String> = (0u32..20)
         .map(|i| {
             if i % 10 == 7 {
@@ -111,8 +90,6 @@ fn bench_class_family_scan(c: &mut Criterion) {
     });
 }
 
-// ── Isolation: mount path computation (E1 hot path) ──────────────────────────
-
 fn bench_mount_paths(c: &mut Criterion) {
     let state_dir = Path::new(STATE_DIR);
     let mut group = c.benchmark_group("isolation");
@@ -127,8 +104,6 @@ fn bench_mount_paths(c: &mut Criterion) {
 
     group.finish();
 }
-
-// ── Instance: manifest construction + serialization (E2 hot path) ────────────
 
 fn bench_manifest_new(c: &mut Criterion) {
     c.bench_function("instance/manifest_new", |b| {

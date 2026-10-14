@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Demand-activated host usage broker process.
-
 use std::io::{IsTerminal as _, Write as _};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -45,8 +43,6 @@ impl ProviderCredentialSecretSource for ServiceSecretSource {
     ) -> Option<ProviderCredentialSecretResolution> {
         let declaration = config.env.get(entry.name).cloned()?;
         let outcome = if broker_secret_requires_interaction(&declaration) {
-            // Broker refresh can run without an attached operator. Never let
-            // this service invoke `op read` or a biometric prompt.
             ProviderCredentialSecretOutcome::InteractionRequired
         } else {
             let result = jackin_env::resolve_account_declaration(entry.name, &declaration);
@@ -177,7 +173,6 @@ impl From<ClaudeCredentialBootstrapOutcome> for ForegroundBootstrapOutcome {
     fn from(outcome: ClaudeCredentialBootstrapOutcome) -> Self {
         match outcome {
             ClaudeCredentialBootstrapOutcome::Acquired(lease) => {
-                // The foreground service owns the lease until the broker loop exits.
                 drop(lease);
                 Self::Acquired
             }
@@ -400,14 +395,6 @@ fn auth_malformed_error(diagnostic: ClaudeCredentialPayloadDiagnostic) -> (i32, 
     (2, json)
 }
 
-/// Survive the activating client's death so a later launch reuses this
-/// broker instead of failing closed on its fresh leader lease. The
-/// activator spawns us in its own session; when its terminal dies the
-/// kernel HUPs that session's groups, which would otherwise take a
-/// healthy broker down with the client. A new session has no
-/// controlling terminal, so the HUP never reaches us. Best-effort: a
-/// broker that cannot detach still serves; lease expiry still covers
-/// real crashes.
 #[cfg(unix)]
 fn detach_from_activating_session() {
     let _detached = nix::unistd::setsid();

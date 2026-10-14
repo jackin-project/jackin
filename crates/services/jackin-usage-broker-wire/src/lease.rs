@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker lease types and ownership.
 
 use std::fs::File;
 
@@ -44,18 +43,9 @@ impl BrokerLease {
     }
 }
 
-/// Descriptor-bound broker authority.
-///
-/// The lease file is never replaced while an owner is alive. The owner keeps
-/// this descriptor locked for its lifetime, and renew/cleanup verify the
-/// instance before updating or removing only the inode it opened. A stale
-/// process holding an old descriptor therefore cannot renew or unlink a
-/// replacement lease at the same path.
 pub struct BrokerLeaseOwner {
     pub lease: BrokerLease,
     pub file: File,
-    /// True only when this owner replaced an expired or demonstrably dead
-    /// lease. Socket recovery is allowed only under this proof.
     pub stale_lease_reclaimed: bool,
 }
 

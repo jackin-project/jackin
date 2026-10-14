@@ -1,14 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Governed cache-decision telemetry.
-
 use std::time::Instant;
 
 use crate::schema::enums::{CacheName, CacheResult};
 use crate::{Attr, FieldSet, Value};
 
-/// Emit the registered event and record the complete cache-decision metric family.
 pub fn decision(name: CacheName, result: CacheResult) {
     let started_at = Instant::now();
     let name_attr = Attr {

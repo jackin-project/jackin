@@ -29,9 +29,6 @@ fn normalize_github_url_passes_https_through_unchanged() {
 
 #[test]
 fn normalize_github_url_leaves_non_github_urls_alone() {
-    // Non-GitHub SSH URLs must NOT be rewritten — substituting an
-    // HTTPS URL would risk hitting an endpoint that doesn't exist
-    // on the operator's SCM.
     assert_eq!(
         normalize_github_url("git@gitlab.example.com:team/repo.git"),
         "git@gitlab.example.com:team/repo.git"
@@ -56,9 +53,6 @@ fn normalize_github_url_handles_missing_git_suffix() {
 
 #[test]
 fn repo_matches_cross_protocol_for_same_owner_repo() {
-    // After SSH→HTTPS normalize, a repo cloned years ago via SSH
-    // and a config that now says HTTPS must agree at the
-    // remote-URL match check.
     assert!(repo_matches(
         "https://github.com/jackin-project/jackin.git",
         "git@github.com:jackin-project/jackin.git"
@@ -163,16 +157,11 @@ plugins = []
     )
     .unwrap();
 
-    // The capture queue provides: 1) the wrong remote URL, then 2) a
-    // successful clone response (empty output).  After the user confirms,
-    // the function removes the stale dir and re-clones.
     let mut runner = FakeRunner::with_capture_queue([
         "git@github.com:evil/agent-smith.git".to_owned(),
-        String::new(), // clone output
+        String::new(),
     ]);
 
-    // Simulate what `git clone` would produce on disk: recreate the repo
-    // files when the clone command is captured by FakeRunner.
     let repo_dir_clone = repo_dir;
     runner.side_effects.push((
         "clone".to_owned(),
@@ -202,7 +191,7 @@ plugins = []
         "https://github.com/jackin-project/jackin-agent-smith.git",
         &mut runner,
         RepoResolveOptions::interactive(false),
-        || Ok(true), // user confirms removal
+        || Ok(true),
     )
     .await;
 
@@ -244,7 +233,7 @@ plugins = []
         "https://github.com/jackin-project/jackin-agent-smith.git",
         &mut runner,
         RepoResolveOptions::interactive(false),
-        || Ok(false), // user declines
+        || Ok(false),
     )
     .await
     .unwrap_err();
@@ -254,7 +243,6 @@ plugins = []
             .to_string()
             .contains("cached role repo remote mismatch")
     );
-    // The cached repo directory should still exist
     assert!(repo_dir.join(".git").is_dir());
 }
 

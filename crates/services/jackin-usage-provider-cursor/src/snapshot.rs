@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Cursor` snapshot entry points.
 
 use super::{
     CursorAuth, CursorEnterpriseScope, cursor_auth_from_value, cursor_cli_identity_from_value,
@@ -44,8 +43,6 @@ pub fn cursor_snapshot(agent: &str, provider: Option<&str>, now: i64) -> Focused
     )
 }
 
-/// Broker-refresh entry: `auth.json` at a registered profile root plus the
-/// sibling `cli-config.json` identity. Never touches the default home.
 pub fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> FocusedUsageView {
     let auth = match read_json_file(auth_path)
         .ok_or_else(|| "Cursor auth.json is missing or unreadable".to_owned())
@@ -73,9 +70,6 @@ pub fn cursor_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> Focus
     )
 }
 
-/// Personal snapshot from broker-minted material: the selected profile's
-/// token, identity, and origin — never ambient files. The dashboard base is
-/// explicit so hermetic tests can point the RPC at a dead port.
 pub fn cursor_snapshot_with_auth(
     agent: &str,
     provider: Option<&str>,
@@ -92,7 +86,6 @@ pub fn cursor_snapshot_with_auth(
     let (grants, grants_error) =
         split_fetch(Some(fetch_cursor_credit_grants(dashboard_base, token)));
     let (sand, sand_error) = split_fetch(Some(fetch_cursor_sand_usage(dashboard_base, token)));
-    // Session-REST enrichment only for OAuth-file auth against the default base.
     let rest = auth.user_id.as_deref().filter(|_| cursor_default_base());
     let (summary, summary_error) =
         split_fetch(rest.map(|user| fetch_cursor_usage_summary(user, token)));
@@ -104,8 +97,6 @@ pub fn cursor_snapshot_with_auth(
     let (stripe, stripe_error) =
         split_fetch(rest.map(|user| fetch_cursor_stripe_balance(user, token)));
 
-    // Primary quota first (RPC wins; summary fills gaps, never duplicates the
-    // same cycle meter), then requests, credits, and the Grok Bot meter.
     let mut buckets = Vec::new();
     if let Some(usage) = &period {
         buckets.extend(cursor_period_buckets(
@@ -152,7 +143,6 @@ pub fn cursor_snapshot_with_auth(
     } else {
         UsageSnapshotStatus::Stale
     };
-    // Partial enrichment failures stay visible without erasing good quota.
     let mut failures = Vec::new();
     failures.extend(
         [
@@ -206,8 +196,6 @@ pub fn cursor_enterprise_snapshot(
     scope: &CursorEnterpriseScope,
     now: i64,
 ) -> FocusedUsageView {
-    // Usage events are hourly aggregated: the overview reads team spend only,
-    // never the events endpoint.
     let (spend, spend_error) = split_fetch(Some(fetch_cursor_team_spend(scope)));
     let mut buckets = spend
         .as_ref()

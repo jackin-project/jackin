@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Freshness and quota states.
 
 use jackin_protocol::control::{QuotaBucketView, UsageSeverity, UsageSnapshotStatus};
 use jackin_protocol::usage_broker::{
@@ -59,11 +58,6 @@ pub fn provider_freshness(accounts: &[UsageAccountV1], generation: u64) -> Usage
     }
 }
 
-/// Quota state for one bucket with no collapsing: missing permission stays
-/// [`UsageQuotaStateV1::NoPermission`] (never [`UsageQuotaStateV1::Unsupported`]),
-/// and a fresh bucket with no usable quantity stays
-/// [`UsageQuotaStateV1::Unknown`] (never a fabricated `0%` bar or an
-/// [`UsageQuotaStateV1::Available`] claim).
 pub fn quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
     match bucket.status {
         UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::NeedsSecret => {
@@ -92,8 +86,6 @@ pub fn quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
     }
 }
 
-/// Whether a monetary bucket reports spend at or over its cap on a compatible
-/// denomination. Incompatible or unusable money never reads as exhausted.
 pub fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
     match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
         (Some(used), Some(limit)) => {
@@ -106,9 +98,6 @@ pub fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
     }
 }
 
-/// Whether a bucket carries any usable quantity: a percent, a money amount,
-/// or a provider quantity label. Buckets with none of these are unknown, not
-/// available.
 pub fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
     bucket.remaining_percent.is_some()
         || bucket.used_money.is_some()

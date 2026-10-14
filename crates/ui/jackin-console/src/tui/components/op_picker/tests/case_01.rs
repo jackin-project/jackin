@@ -151,7 +151,6 @@ fn probe_error_message_classifies_operator_states() {
 
 #[test]
 fn probe_error_downcast_classifies_without_substring() {
-    // Decoy messages prove the typed source wins over the fallback classifier.
     let not_installed = anyhow::Error::new(jackin_core::OpProbeError::NotInstalled {
         detail: "xyzzy".into(),
     })
@@ -213,8 +212,6 @@ fn field_rows_group_by_explicit_section_id_in_first_seen_order() {
                 Some("opaque-deploy-id"),
                 "op://Vault/Item/Deploy/key",
             ),
-            // Some CLI responses omit `section.id` even when the reference
-            // section segment uniquely matches item section metadata.
             field("auth-otp", None, "op://Vault/Item/Auth/otp"),
         ],
         &sections,

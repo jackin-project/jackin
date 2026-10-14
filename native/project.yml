@@ -1,13 +1,5 @@
 name: JackinDesktop
 
-# Platform lanes (recorded contract — see native/README.md "Platform lanes"):
-#   minimum deployment target: macOS 27.0 (no compatibility branch)
-#   shipping lane: Xcode 26.6, macOS 26.5 SDK, Swift 6 + complete strict concurrency
-#   forward-validation lane: Xcode 27 beta / macOS 27 SDK — nonblocking, scheduled;
-#     dated exception in native/README.md until the runner image exists
-#   post-26.0 API: #available(macOS 27, *) guard + decided native fallback +
-#     recorded minimum-target bump that removes the guard;
-#     UIDesignRequiresCompatibility is never a strategy
 
 options:
   minimumXcodeGenVersion: 2.46.0
@@ -23,7 +15,6 @@ settings:
     DEAD_CODE_STRIPPING: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     GCC_TREAT_WARNINGS_AS_ERRORS: YES
-    # Xcode 26 otherwise reports the intentional no-AppIntents path as a warning.
     LM_FILTER_WARNINGS: YES
     LM_FORCE_LINK_GENERATION: YES
     MACOSX_DEPLOYMENT_TARGET: "27.0"

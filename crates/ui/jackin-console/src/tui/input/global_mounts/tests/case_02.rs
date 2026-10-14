@@ -13,7 +13,6 @@ fn general_tab_space_toggles_both_rows() {
     settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
 
-    // row 0 (coauthor_trailer) — default is false
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings stage");
     };
@@ -32,7 +31,6 @@ fn general_tab_space_toggles_both_rows() {
     };
     assert!(!settings.general.pending_coauthor_trailer);
 
-    // navigate to row 1 (dco)
     handle_settings_key(&mut state, key(KeyCode::Down));
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings stage");
@@ -52,7 +50,6 @@ fn general_tab_space_toggles_both_rows() {
     };
     assert!(!settings.general.pending_dco);
 
-    // navigate back to row 0
     handle_settings_key(&mut state, key(KeyCode::Up));
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings stage");
@@ -185,9 +182,6 @@ fn env_tab_key_input_esc_closes_chain() {
         std::rc::Rc::clone(&state.op_cache),
     );
 
-    // The ScopePicker was committed before the EnvKey input opened,
-    // so Esc on the input must close the chain instead of restoring
-    // a consumed picker.
     assert!(
         !settings.env.modals.is_open(),
         "Esc from settings env key input should close the chain; got {:?}",

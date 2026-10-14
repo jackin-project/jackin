@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-/// Input parser regressions.
-///
-/// Two parallel models: default `Ctrl+\` palette key; opt-in Ctrl+B
-/// prefix mode. Tests exercise both.
 use jackin_capsule::tui::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 
 fn parse_default(bytes: &[u8]) -> Vec<InputEvent> {
@@ -23,9 +19,6 @@ fn ctrl_backslash_opens_palette_in_default_mode() {
 
 #[test]
 fn lone_lf_reaches_pty_in_default_mode() {
-    // Multi-line input continuation (`\n`) must reach the agent —
-    // the previous `Ctrl+J` default ate every LF and broke Claude
-    // Code / Codex multi-line entry.
     let events = parse_default(b"\n");
     assert_eq!(events, vec![InputEvent::Data(b"\n".to_vec())]);
 }
@@ -130,7 +123,6 @@ fn x10_no_button_motion_from_live_log_is_not_split_into_data() {
 
 #[test]
 fn bracketed_paste_protects_palette_byte() {
-    // Pasted text containing the palette byte must NOT open the palette.
     let mut parser = InputParser::default();
     let events = parser.parse(b"before\x1b[200~hello\x1cworld\x1c\x1b[201~after");
     let opens = events

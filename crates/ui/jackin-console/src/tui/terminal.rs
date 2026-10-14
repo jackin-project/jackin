@@ -1,14 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Terminal raw-mode lifecycle and teardown helpers.
-
 use crossterm::ExecutableCommand as _;
 
 use crate::ConsoleHostTerminal;
 
-/// 20 Hz: spinner stays fluid and op results surface within ~50ms
-/// without hot-spinning. <16ms wastes cycles, >100ms stutters.
 pub const TICK_MS: u64 = 50;
 pub const MAX_EVENTS_PER_TICK: usize = 256;
 pub const MAX_TEARDOWN_DRAIN_EVENTS: usize = 16_384;
@@ -74,11 +70,6 @@ pub fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io:
     out.flush()
 }
 
-/// Owns the terminal for an entire launch flow so it never flashes the shell.
-///
-/// Holds the alternate screen, raw mode, and mouse capture across console →
-/// loading cockpit → capsule → exit outro so the terminal never drops back
-/// to the cooked primary screen between surfaces.
 #[expect(
     missing_debug_implementations,
     reason = "TerminalSession is a raw terminal guard around host callbacks, not diagnostic state."
@@ -88,8 +79,6 @@ pub struct TerminalSession {
 }
 
 impl TerminalSession {
-    /// Enter raw mode + the alternate screen + mouse capture and mark the
-    /// screen owned. The caller holds the returned guard for the whole flow.
     pub fn enter(host: &'static dyn ConsoleHostTerminal) -> std::io::Result<Self> {
         let mut stdout = std::io::stdout();
         crossterm::terminal::enable_raw_mode()?;
@@ -101,14 +90,11 @@ impl TerminalSession {
         Ok(screen)
     }
 
-    /// Returns true while this session owns the host terminal.
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.host.host_screen_owned()
     }
 
-    /// Drop to the cooked primary screen for the duration of `f`, then restore
-    /// the full-screen session.
     pub fn suspend<T>(&self, f: impl FnOnce() -> T) -> std::io::Result<T> {
         let mut stdout = std::io::stdout();
         drop(disable_console_mouse_capture(&mut stdout));
@@ -143,7 +129,6 @@ impl Drop for TerminalSession {
     }
 }
 
-/// Hand the real terminal back to a child process.
 pub fn suspend_console_terminal(
     stdout: &mut std::io::Stdout,
     host: &'static dyn ConsoleHostTerminal,
@@ -155,7 +140,6 @@ pub fn suspend_console_terminal(
     host.end_debug_buffering();
 }
 
-/// Re-enter raw-mode + alt-screen after a [`suspend_console_terminal`] detour.
 pub fn resume_console_terminal(
     stdout: &mut std::io::Stdout,
     host: &'static dyn ConsoleHostTerminal,

@@ -1,7 +1,5 @@
 import AppKit
 
-/// Standard AppKit toolbar identifiers keep the system toggle in one stable
-/// leading slot; the label follows collapse state while the width stays put.
 @MainActor
 final class UsageWindowToolbar: NSObject, NSToolbarDelegate {
     static let identifier = NSToolbar.Identifier("usage.window-toolbar")

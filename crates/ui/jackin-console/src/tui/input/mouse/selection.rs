@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Selection-row helpers: click-to-select in tab bars, mount rows,
-//! auth rows, and settings trust rows.
-
 use super::{
     ManagerMessage, ManagerStage, ManagerState, MouseEvent, Rect, SettingsTab, dispatch_manager,
     editor_auth_row_index_at_position, editor_mount_index_at_position, editor_scroll_area,
@@ -41,7 +38,6 @@ pub fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) 
     true
 }
 
-/// Click inside the Trust block selects the row and activates the block for scrolling.
 pub fn try_select_settings_trust_row(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -63,17 +59,11 @@ pub fn try_select_settings_trust_row(
     ) {
         dispatch_manager(state, ManagerMessage::SelectSettingsTrustRow(row));
     } else {
-        // Mouse parity matrix row 18 carve-out: click on a non-row in the
-        // Trust block deselects via the `usize::MAX` sentinel — upstream
-        // scene outside-click carries layer dismiss policy only.
         dispatch_manager(state, ManagerMessage::SelectSettingsTrustRow(usize::MAX));
     }
     true
 }
 
-/// Mount-row index the pointer is over on the editor Mounts tab, or `None`.
-/// Pure geometry shared by the click handler and the hover hand-pointer cue so
-/// they can't drift.
 pub fn editor_mount_index_at(
     editor: &crate::tui::state::EditorState<'_>,
     mouse: MouseEvent,

@@ -21,10 +21,8 @@ fn grok_omitted_weekly_percent_is_unknown_not_zero() {
     assert_eq!(buckets[0].remaining_percent, None);
     assert_eq!(buckets[0].pace_label.as_deref(), Some("No data"));
     assert_eq!(buckets[0].status_slot, None);
-    // The known period end still anchors the reset.
     assert!(buckets[0].resets_at.is_some());
 
-    // Explicit zero still renders a full meter.
     let zero: GrokBillingResponse = serde_json::from_value(serde_json::json!({
         "config": {
             "creditUsagePercent": 0.0,
@@ -60,7 +58,6 @@ fn grok_omitted_fallback_used_is_unknown_not_zero() {
 
 #[test]
 fn grok_negative_cents_never_mirror_into_bounds() {
-    // Negative limits/caps/balances are invalid, never mirrored positive.
     let response: GrokBillingResponse = serde_json::from_value(serde_json::json!({
         "on_demand_enabled": true,
         "config": {
@@ -79,7 +76,6 @@ fn grok_negative_cents_never_mirror_into_bounds() {
         "no headline, no prepaid row, no on-demand row"
     );
 
-    // Omitted on-demand used degrades to limit-only, never $0.
     let partial: GrokBillingResponse = serde_json::from_value(serde_json::json!({
         "on_demand_enabled": true,
         "config": {"onDemandCap": {"val": 4000}}

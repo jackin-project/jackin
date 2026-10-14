@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Coordinator construction and catalog install.
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self};
@@ -16,7 +15,6 @@ use super::{
 };
 
 impl UsageCoordinator {
-    /// Start a bounded coordinator worker pool.
     #[must_use]
     pub fn new(
         executor: Arc<dyn UsageProviderExecutor>,
@@ -26,9 +24,6 @@ impl UsageCoordinator {
         Self::start(executor, store, config, None, None)
     }
 
-    /// Start a coordinator with a caller-supplied paired wall and monotonic
-    /// clock for deterministic test coverage. The default [`Self::new`]
-    /// constructor uses the system clock.
     #[cfg(feature = "test-support")]
     #[must_use]
     pub fn new_with_clock(
@@ -40,8 +35,6 @@ impl UsageCoordinator {
         Self::start_with_clock(executor, store, config, None, None, clock)
     }
 
-    /// Verify a launch-scoped credential proof against the executor's current
-    /// source binding before admitting a provider operation.
     pub fn authorize_credential_scope(
         &self,
         capability: &UsageAccountCapability,
@@ -52,9 +45,6 @@ impl UsageCoordinator {
             .authorize_credential_scope(capability, scope)
     }
 
-    /// Start a coordinator with the catalog from the last durable broker
-    /// publication. The broker reconciles it with current discovery before
-    /// admitting new work.
     #[must_use]
     pub fn with_catalog(
         executor: Arc<dyn UsageProviderExecutor>,
@@ -69,8 +59,6 @@ impl UsageCoordinator {
         Self::start(executor, store, config, Some(catalog), None)
     }
 
-    /// Start a coordinator with a catalog and a caller-supplied paired clock
-    /// for deterministic broker test coverage.
     #[cfg(feature = "test-support")]
     #[must_use]
     pub fn with_catalog_and_clock(
@@ -87,9 +75,6 @@ impl UsageCoordinator {
         Self::start_with_clock(executor, store, config, Some(catalog), None, clock)
     }
 
-    /// Start a coordinator with the exact revision persisted beside the
-    /// catalog. Broker recovery uses this so executor rollback is fenced by
-    /// the same caller/service revision as the forward rotation.
     #[must_use]
     pub fn with_catalog_revision(
         executor: Arc<dyn UsageProviderExecutor>,

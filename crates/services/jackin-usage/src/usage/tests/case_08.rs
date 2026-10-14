@@ -23,7 +23,6 @@ fn grok_billing_config_maps_current_fallback_and_bounds() {
     assert_eq!(usage.plan_label().as_deref(), Some("SuperGrok"));
     let buckets = usage.buckets(1_780_315_200);
 
-    // One headline (Weekly slot), detail rows stay untagged.
     assert_eq!(buckets[0].label, "Monthly");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
     assert_eq!(buckets[0].remaining_percent, Some(64));
@@ -79,7 +78,6 @@ fn grok_plan_label_from_server_tier_only() {
     }))
     .expect("blank tier");
     assert_eq!(free.plan_label(), None);
-    // Web path never guesses a plan (no auth heuristic).
     let web = GrokBillingSnapshot::Web(GrokWebBillingSnapshot {
         used_percent: 40.0,
         reset_at_epoch: Some(1_780_315_200),
@@ -95,7 +93,6 @@ fn grok_on_demand_requires_positive_cap() {
     }))
     .expect("no cap config");
     let buckets = usage.buckets(1_780_315_200);
-    // Used without a positive provider cap is unbounded spend, not a quota bound.
     assert!(
         buckets
             .iter()

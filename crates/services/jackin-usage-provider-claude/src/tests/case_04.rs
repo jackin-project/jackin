@@ -195,10 +195,6 @@ fn claude_401_does_not_implicitly_reread_same_source_or_retry() {
             ))
         );
 
-        // The contract permits at most one noninteractive reread, so zero is
-        // valid here: this factory receives only a resolved credential and has
-        // no source handle. A later explicit caller resolution uses the same
-        // fake source, whether its value stayed the same or changed during 401.
         let later_resolved = source.resolve_explicitly();
         assert_eq!(source.read_count.get(), 2);
         assert_eq!(later_resolved.credential_origin, source.label);
@@ -290,8 +286,6 @@ fn claude_denied_view_has_no_quota_and_exact_error() {
 
 #[test]
 fn claude_limits_inactive_flag_does_not_gate_rendering() {
-    // Live responses send `is_active: false` on headline limits that still
-    // carry quota — the flag must never suppress a bucket.
     let response: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
         "five_hour": null,
         "seven_day": null,

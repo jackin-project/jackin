@@ -1,16 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `EnvLayer` enum and `merge_layers` function for the four-layer env merge.
-
 use std::collections::BTreeMap;
 
 use jackin_core::EnvValue;
 
-/// Source layer of an env value.
-///
-/// Attached to error messages and launch diagnostics so the operator can
-/// locate the offending entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum EnvLayer {
     Global,
@@ -32,7 +26,6 @@ impl std::fmt::Display for EnvLayer {
     }
 }
 
-/// Later-wins merge: global → role → workspace → workspace-role.
 #[expect(dead_code, reason = "demoted with env_layer module (plan 039)")]
 pub(crate) fn merge_layers(
     global: &BTreeMap<String, EnvValue>,

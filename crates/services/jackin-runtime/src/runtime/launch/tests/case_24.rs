@@ -16,9 +16,6 @@ async fn load_agent_injects_op_cli_resolved_value() {
     let bin_dir = temp.path().join("fake-bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
     let bin_path = bin_dir.join("op");
-    // The resolver first runs `op --version` as a reachability probe
-    // when any value carries an OpRef, then calls `op read -- op://...`
-    // with the canonical UUID URI. The fake must handle both.
     std::fs::write(
             &bin_path,
             "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ]; then\n  for arg in \"$@\"; do\n    if [ \"$arg\" = \"op://abc-vault/abc-item/api-token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\n  done\nfi\nexit 99\n",
@@ -72,11 +69,6 @@ plugins = []
     )
     .unwrap();
 
-    // Inject the fake `op` binary path via `LoadOptions::op_runner`.
-    // No process env mutation — `OpCli::with_binary` takes the path
-    // as a direct argument, so the `unsafe_code = "forbid"`
-    // crate-level lint stays intact and sibling tests running in
-    // parallel via cargo-nextest cannot race on any shared env var.
     let op_runner: Box<dyn jackin_env::OpRunner> = Box::new(jackin_env::OpCli::with_binary(
         bin_path.to_string_lossy().to_string(),
     ));
@@ -124,7 +116,6 @@ async fn claim_container_name_not_found_claims_unique_ad_hoc_name() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
-    // inspect returns NotFound (empty queue)
     let docker = jackin_test_support::FakeDockerClient::default();
     let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
         .await
@@ -181,7 +172,6 @@ async fn claim_container_name_running_collision_tries_another_unique_name() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
-    // First inspect → Running (occupied), second → NotFound (claimed)
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -220,7 +210,6 @@ async fn claim_container_name_clean_exit_removes_and_reclaims() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
-    // Stopped with exit_code=0, oom_killed=false → remove and reclaim
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -249,7 +238,6 @@ async fn claim_container_name_crashed_collision_tries_another_unique_name() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
-    // Stopped with exit_code=1 → skip (no rm), then NotFound → claim
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Stopped {
@@ -315,9 +303,6 @@ async fn missing_matching_instance_recreates_current_role() {
     manifest
         .write(&paths.data_dir.join(container_name))
         .unwrap();
-    // Missing current-role containers can be recreated in-place. The image
-    // decision later decides whether that recreate can reuse the local image
-    // or must rebuild.
     let docker = jackin_test_support::FakeDockerClient::default();
 
     let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
@@ -332,8 +317,6 @@ async fn missing_matching_instance_recreates_current_role() {
 
 #[tokio::test]
 async fn running_matching_instance_is_skipped_by_launch_path() {
-    // D13: launch never reconnects to a live instance. Running container →
-    // StartFresh (let launch proceed to create a new container).
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
@@ -370,8 +353,6 @@ async fn stopped_matching_instance_starts_current_role() {
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // Stopped current-role containers can be started and reconnected without
-    // rebuilding or resolving launch credentials, as long as network exists.
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,

@@ -172,8 +172,6 @@ fn in_memory_layers_hold_global_telemetry_lock_until_export_drop() {
     let (attempt_tx, attempt_rx) = mpsc::channel();
     let (acquired_tx, acquired_rx) = mpsc::channel();
     let worker = std::thread::spawn(move || {
-        // Directly observe contention before announcing readiness: a scheduled
-        // worker or an elapsed timeout alone does not prove ownership.
         assert!(matches!(
             crate::DIAGNOSTICS_TEST_LOCK.try_lock(),
             Err(TryLockError::WouldBlock)

@@ -197,8 +197,6 @@ fn doctor_treats_unknown_auth_as_informational() {
 
 #[test]
 fn watch_fresh_attach_uses_current_event_as_cursor_then_only_advances() {
-    // The broker's cursor-zero attach returns only the newest reconciled
-    // current event, not retained history. Its cursor seeds subsequent reads.
     let fresh_attach_cursor = advance_watch_cursor(0, 17, [17]);
     assert_eq!(fresh_attach_cursor, 17);
 

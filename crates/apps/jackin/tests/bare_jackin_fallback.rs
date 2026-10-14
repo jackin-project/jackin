@@ -1,12 +1,3 @@
-//! Integration coverage for the bare-`jackin` / `jackin console` dispatch.
-//!
-//! Each test spawns the real binary with a pipe (guaranteeing a
-//! non-TTY stdout) and checks that the fallback behaviour matches the
-//! contract encoded in [`jackin::cli::dispatch`]:
-//!
-//! - bare `jackin` on a non-TTY prints help and exits 0
-//! - `jackin console` on a non-TTY errors and exits 1
-
 use assert_cmd::Command;
 use predicates::prelude::*;
 
@@ -21,7 +12,6 @@ fn bare_jackin_without_tty_prints_help_and_exits_zero() {
 
 #[test]
 fn bare_jackin_without_tty_does_not_emit_warning() {
-    // Silent fallback: operator did not ask for the console by name.
     Command::cargo_bin("jackin")
         .unwrap()
         .assert()

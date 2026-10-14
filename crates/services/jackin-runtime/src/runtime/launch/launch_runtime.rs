@@ -1,28 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `LaunchContext` + prewarm types + `launch_role_runtime`
-//! (+ host passthrough + debug env helpers) extracted from launch coordinator (File1).
-//! All items `pub(crate)` re-exported from the coordinator to preserve `super::` / `use super::*` .
-//! Sibling auth prewarm lives in `jackin_runtime_launch_sibling_auth_prewarm` (S7 split 97),
-//! re-exported below.
-//!
-//! The debug runtime env helper lives in
-//! `jackin_runtime_launch_debug_envs` (S7 split 115),
-//! re-exported below.
-//!
-//! The run invocation env helper lives in
-//! `jackin_runtime_launch_run_envs` (S7 split 116),
-//! re-exported below.
-//!
-//! The post-run failure emit helper lives in
-//! `jackin_runtime_launch_post_run_failure` (S7 split 117),
-//! privately imported below.
-
 use anyhow::Context;
-// Test-only scope restoration: the hub suite below names `AppConfig`
-// through `use super::*`; prod moved it into the leaf with
-// `SiblingAuthPrewarm` (S7 split 97).
+
 #[cfg(test)]
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
@@ -71,35 +51,18 @@ pub(crate) struct LaunchContext<'a, 'manifest> {
     pub(crate) profile: crate::runtime::docker_profile::DockerSecurityProfile,
     pub(crate) profile_source: crate::runtime::docker_profile::ProfileSource,
     pub(crate) grants: &'a crate::runtime::docker_profile::EffectiveGrants,
-    /// Resolved `[…github.env]` map (post `op://` + `$NAME`
-    /// resolution). `GH_TOKEN` carries the token in the launcher's
-    /// preferred env-injection path; `GH_HOST` and
-    /// `GH_ENTERPRISE_TOKEN` are forwarded as-is when set so GHE
-    /// targets work end to end.
     pub(crate) github_env: &'a std::collections::BTreeMap<String, String>,
-    /// Required so `launch_role_runtime` can fire the `keep_awake`
-    /// reconciler between `docker run -d` and the foreground `docker
-    /// attach`. Without that mid-flight call, caffeinate would never
-    /// spawn for an interactive `jackin load`: the post-launch
-    /// reconcile in `app::Command::Load` only runs after attach
-    /// returns, by which time the container has stopped and the
-    /// `keep_awake` count is back to zero.
     pub(crate) paths: &'a JackinPaths,
     pub(crate) selected_image_refresh: Option<SelectedImageRefresh<'a>>,
     pub(crate) reuse_staleness_sentinel: Option<ReuseStalenessSentinel<'a>>,
     pub(crate) sidecar_prewarm_replenish: SidecarPrewarmReplenish,
     pub(crate) sibling_prewarm: SiblingPrewarm<'a>,
     pub(crate) sibling_auth_prewarm: SiblingAuthPrewarm<'a>,
-    /// Non-TTY programmatic launch: the container is started and left running,
-    /// and no foreground session is attached. There is no terminal to hand the
-    /// capsule multiplexer, so attaching would fail rather than degrade.
     pub(crate) non_interactive: bool,
-    /// Immutable account/config generation lease held through container start.
     pub(crate) account_revision: &'a super::account_identity::AccountConfigRevision,
     pub(crate) entry_claim: Option<&'a crate::runtime::universe::EntryClaim>,
 }
 
-/// Persist the containers this launch actually created before starting them.
 pub(crate) struct DockerLaunchOwnership<'a> {
     pub(crate) manifest: std::sync::Mutex<&'a mut crate::instance::InstanceManifest>,
     pub(crate) resources: crate::instance::DockerResources,
@@ -164,18 +127,11 @@ pub(crate) struct SiblingPrewarm<'a> {
     pub(crate) selected_image_reused: bool,
 }
 
-// Moved to jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm
-// (S7 split 97); the item re-exports keep every
-// `launch_runtime::SiblingAuthPrewarm` / `spawn_sibling_auth_prewarm` /
-// `await_sibling_auth_prewarm` / `spawn_auth_prewarm_worker` path stable.
+#[cfg(test)]
+pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::spawn_auth_prewarm_worker;
 pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::{
     SiblingAuthPrewarm, await_sibling_auth_prewarm, spawn_sibling_auth_prewarm,
 };
-// Test-only scope restoration: the hub suite below names
-// `spawn_auth_prewarm_worker` through `use super::*`; prod never
-// referenced it outside the moved `spawn_sibling_auth_prewarm` body.
-#[cfg(test)]
-pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::spawn_auth_prewarm_worker;
 
 fn emit_isolation_decision(
     workspace: &crate::isolation::materialize::MaterializedWorkspace,
@@ -205,11 +161,6 @@ fn emit_isolation_decision(
     jackin_diagnostics::operation::isolation_decision(workspace, network, dind);
 }
 
-/// Initial daemon argv: the first admitted instance (launch order) for
-/// the launch agent. Falls back to the first admitted instance of any
-/// agent, then to the bare slug for legacy launches without instances.
-/// An exact config ID always resolves at the daemon's spawn gate; a bare
-/// slug is rejected when several instances share the runtime.
 fn initial_daemon_argv(
     agent: jackin_core::Agent,
     capsule_config: &jackin_protocol::CapsuleConfig,
@@ -228,20 +179,14 @@ fn initial_daemon_argv(
         .map_or(slug, String::as_str)
 }
 
-// Moved to jackin_runtime_launch_post_run_failure::post_run_failure (S7
-// split 117); the private import keeps the in-file call site
-// (the post-run steps loop) compiling unchanged.
 use jackin_runtime_launch_post_run_failure::post_run_failure::emit_post_run_failure;
 
-/// Whether launch returned from a foreground session or handed off a live daemon.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LaunchOutcome {
     Detached(jackin_core::ContainerHandle),
     ForegroundSessionEnded(jackin_core::ContainerHandle),
 }
 
-/// Launch the role container after the caller has prepared the private network
-/// and `DinD` sidecar.
 #[expect(
     clippy::too_many_lines,
     reason = "Launch pipeline coordinator with three distinct phases (profile \
@@ -316,17 +261,10 @@ pub(crate) async fn launch_role_runtime(
         crate::runtime::docker_profile::validate_cgroup_for_profile(*profile, cgroup_version)
             .map_err(|msg| anyhow::anyhow!(msg))?
     {
-        // Always-on (not --debug): a silently-dropped resource limit is operator-
-        // visible degradation, like the privileged-DinD warning below.
         jackin_diagnostics::emit_compact_line("warning", warning);
     }
-    // WP4 Part B: rootless DinD requires cgroup v2 — fail closed on v1 rather
-    // than silently falling back to a privileged sidecar.
     crate::runtime::docker_profile::validate_dind_grant_for_cgroup(grants.dind, cgroup_version)
         .map_err(|msg| anyhow::anyhow!(msg))?;
-    // WP4 / Decision 12: privileged DinD under hardened/locked defeats the
-    // capability + network boundary the profile promises. It is allowed only by
-    // explicit grant, but the operator must be told the enforcement is partial.
     if crate::runtime::docker_profile::dind_privileged(grants)
         && crate::runtime::docker_profile::drops_all_caps(*profile)
     {
@@ -337,10 +275,6 @@ pub(crate) async fn launch_role_runtime(
             ),
         );
     }
-    // AppArmor only feeds local `--debug` output + session contract, so skip the
-    // `docker info` round-trip on the common non-debug launch. On a probe error,
-    // report layer `unknown` rather than letting a failed round-trip masquerade
-    // as a genuine `available=no` in the audit surface.
     let (apparmor_available, apparmor_layer) = if *debug {
         match runner
             .capture(
@@ -364,7 +298,6 @@ pub(crate) async fn launch_role_runtime(
         (false, "host")
     };
 
-    // Step 4: Mount volumes and launch
     steps.next("Launching role").await?;
     steps.done();
 
@@ -415,27 +348,6 @@ pub(crate) async fn launch_role_runtime(
         jackin_core::container_paths::DIND_CERTS_CLIENT_DIR
     );
 
-    // Start detached with a persistent TTY, then attach separately.  This
-    // decouples the container's lifetime from the foreground attach, so
-    // closing the terminal tab only drops the attach — the container keeps
-    // running and `jackin hardline` can reconnect to the same live session.
-    //
-    // No `--rm` here, intentionally.  Omitting `--rm` lets the container
-    // persist after exit so that:
-    //   - A crashed container's logs and filesystem remain available for
-    //     diagnosis, and `jackin hardline` can restart the exact same
-    //     container in place without rebuilding the network stack.
-    //   - Clean-exit containers (exit 0, not OOM-killed) are removed by
-    //     `cleanup` at the end of a normal session, and the
-    //     `claim_container_name` loop reclaims those slots on the next load
-    //     by inspecting per-candidate state rather than relying on Docker
-    //     auto-removal.
-    //
-    // Using the naming loop rather than `--rm` as the removal mechanism is
-    // the right boundary: the loop can inspect the exit code and OOM flag
-    // and make a correct per-container decision (reclaim vs. preserve for
-    // hardline), whereas `--rm` would indiscriminately destroy every exited
-    // container, making crash recovery impossible.
     let mut run_args: Vec<&str> = vec![
         "run",
         "-d",
@@ -472,10 +384,6 @@ pub(crate) async fn launch_role_runtime(
     }
     let resource_flags = crate::runtime::docker_profile::resource_flags(grants);
     run_args.extend(resource_flags.iter().map(String::as_str));
-    // WP3: per-decision local launch diagnostics. One line per applied control so a
-    // `--debug` run shows exactly what was enforced. The session contract
-    // (emitted below, once credential state is known) is the human-readable
-    // summary of the same data.
     if *debug {
         let yes_no = |enabled: bool| if enabled { "yes" } else { "no" };
         jackin_diagnostics::emit_debug_line(
@@ -541,8 +449,6 @@ pub(crate) async fn launch_role_runtime(
             "launch",
             &format!("dind enabled={dind_enabled} mode={}", grants.dind),
         );
-        // Host Docker socket is never mounted into a role container (hard rule);
-        // guarded by `role_container_never_mounts_host_docker_socket` in tests.
         jackin_diagnostics::emit_debug_line("launch", "host_socket_check passed=yes");
         jackin_diagnostics::emit_debug_line(
             "launch",
@@ -554,16 +460,9 @@ pub(crate) async fn launch_role_runtime(
         );
     }
 
-    // The capsule supervisor must start as root so it can create a distinct
-    // Unix identity and install the required per-session Landlock boundary.
-    // Agent sessions immediately drop to their admitted slot identity before
-    // executing any agent code. DAC capabilities are retained only so shared
-    // host workspaces remain writable; Landlock denies those capabilities from
-    // reaching sibling home/auth paths.
     run_args.extend_from_slice(&["--user", "0:0", "-e", "HOME=/home/agent"]);
 
     run_args.extend_from_slice(&[
-        // JACKIN_* runtime metadata is injected by jackin, not declared in role manifests.
         "-e",
         &role_container_name_env,
         "-e",
@@ -599,8 +498,6 @@ pub(crate) async fn launch_role_runtime(
     for env in &telemetry_envs {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
-    // Always pass the host jackin version so the capsule ContainerInfo dialog
-    // can surface which host binary launched the container.
     let host_version_env = format!("JACKIN_HOST_VERSION={}", env!("JACKIN_VERSION"));
     run_args.extend_from_slice(&["-e", host_version_env.as_str()]);
 
@@ -625,11 +522,6 @@ pub(crate) async fn launch_role_runtime(
         jackin_core::JACKIN_ENV_NAME,
         jackin_core::JACKIN_ENV_VALUE
     ));
-    // DinD reachable only via Docker network; route past HTTP_PROXY by adding
-    // hostname to NO_PROXY in both casings — Go reads upper, curl/Python
-    // requests/wget read lower. Mirror the merged value across both casings
-    // so an operator who declared only one variant still gets full bypass
-    // coverage for tools that read the other.
     let proxy_seen = resolved_env.vars.iter().any(|(k, _)| is_proxy_env_name(k));
     let upper_existing = resolved_env
         .vars
@@ -644,19 +536,11 @@ pub(crate) async fn launch_role_runtime(
             continue;
         }
         if key == NO_PROXY_UPPER || key == NO_PROXY_LOWER {
-            // Synthesized below from merged casing — skip the inline emit.
             continue;
         }
         env_strings.push(format!("{key}={value}"));
     }
 
-    // Grok's CLI accepts either XAI_API_KEY (personal) or GROK_DEPLOYMENT_KEY
-    // (enterprise deployment key) for api-key auth. When the operator
-    // configures a credential for Grok (via the api_key slot, which stores
-    // under XAI_API_KEY, or has XAI_API_KEY in any env layer), also expose
-    // it under GROK_DEPLOYMENT_KEY so the in-container `grok` sees the
-    // credential under the name it prefers. Explicit GROK_DEPLOYMENT_KEY
-    // in the layers takes precedence.
     if *agent == jackin_core::Agent::Grok
         && let Some((_, value)) = resolved_env.vars.iter().find(|(k, _)| k == "XAI_API_KEY")
         && !resolved_env
@@ -666,9 +550,6 @@ pub(crate) async fn launch_role_runtime(
     {
         env_strings.push(format!("GROK_DEPLOYMENT_KEY={value}"));
     }
-    // Trigger synth when any proxy class OR any NO_PROXY casing is declared.
-    // The latter covers operators who set NO_PROXY without an HTTP_PROXY
-    // (transparent proxy, /etc/environment, container-injected proxy vars).
     if dind_enabled && (proxy_seen || upper_existing.is_some() || lower_existing.is_some()) {
         let upper_value = upper_existing
             .or(lower_existing)
@@ -680,13 +561,6 @@ pub(crate) async fn launch_role_runtime(
         env_strings.push(format!("{NO_PROXY_LOWER}={lower_value}"));
     }
 
-    // GitHub auth env wiring. Token mode and Sync-with-host-token both
-    // export GH_TOKEN AND GITHUB_TOKEN from the same source — `gh`
-    // prefers GH_TOKEN, but the official github-mcp-server and most
-    // GitHub-Actions-style scripts read GITHUB_TOKEN. Exporting both
-    // closes Known Gap 3 in the roadmap doc. GH_HOST and
-    // GH_ENTERPRISE_TOKEN are passed through as-is when declared by
-    // the operator so GHE workspaces work end to end.
     let gh_token = state.gh_provision_outcome.token();
     push_env_if_present(&mut env_strings, jackin_core::GH_TOKEN_ENV_NAME, gh_token);
 
@@ -695,16 +569,10 @@ pub(crate) async fn launch_role_runtime(
         jackin_core::JACKIN_NETWORK_MODE_ENV_NAME,
         crate::runtime::docker_profile::network_grant_label(grants.network)
     ));
-    // WP-SUDO: the container provisions sudo at runtime from this signal (the
-    // base image bakes no sudoers). Reserved so role manifests can't set it.
     if grants.sudo {
         env_strings.push(format!("{}=1", jackin_core::JACKIN_SUDO_ENV_NAME));
     }
-    // Read-only-root profiles need writable-home env redirects (e.g. git's
-    // global config) — see `readonly_home_env`, the companion to `tmpfs_paths`.
     env_strings.extend(crate::runtime::docker_profile::readonly_home_env(grants));
-    // Computed once here so the WP1 allowlist (below) can include the OTLP
-    // endpoint host; reused for OTLP propagation after env_strings is flushed.
     let capsule_otlp_safe = std::env::var("JACKIN_CAPSULE_OTLP_SAFE").as_deref() == Ok("1");
     let capsule_otlp_headers = std::env::var("JACKIN_CAPSULE_OTLP_HEADERS")
         .ok()
@@ -728,11 +596,6 @@ pub(crate) async fn launch_role_runtime(
     let container_otlp = (capsule_export == jackin_diagnostics::CapsuleExportCoverage::Enabled)
         .then(jackin_diagnostics::container_otlp)
         .flatten();
-    // WP1: egress allowlist enforcement. Inject the assembled allowlist and the
-    // truthful enforcement label so the `firewall-apply` exec (after the
-    // container starts) installs an iptables OUTPUT allowlist. The OTLP host is
-    // included only when the endpoint is explicitly classified Capsule-safe.
-    // Only the allowlist tier installs a firewall; open/none get none.
     if grants.network == crate::runtime::docker_profile::NetworkGrant::Allowlist {
         let github_hosts = if gh_token.is_some() {
             crate::runtime::docker_profile::github_allowlist_hosts(
@@ -761,9 +624,6 @@ pub(crate) async fn launch_role_runtime(
             crate::runtime::docker_profile::network_enforcement_label(grants)
         ));
     }
-    // WP3: render the session contract under `--debug` only (its sole consumer
-    // is the local debug sink below). Coarse `agent_auth_mode` reflects whether the
-    // selected agent's auth was provisioned; richer posture is owned by WP7.
     if *debug {
         let agent_auth_mode = state.auth.for_agent(*agent).is_some();
         let session_contract = crate::runtime::docker_profile::format_session_contract(
@@ -810,12 +670,6 @@ pub(crate) async fn launch_role_runtime(
         run_args.push(env_str);
     }
 
-    // OTLP cross-process propagation: for an explicitly Capsule-safe endpoint,
-    // hand the container the launch trace context and reachable endpoint, so the
-    // capsule's telemetry links back to this launch trace and shares the run.
-    // host.docker.internal must be wired to the host gateway for the rewritten
-    // loopback endpoint to resolve on Linux engines. `container_otlp` is
-    // computed once above (for the WP1 allowlist) and reused here.
     let otlp_propagation = capsule_otlp_propagation(
         container_otlp.as_ref(),
         capsule_otlp_headers.as_deref(),
@@ -850,11 +704,6 @@ pub(crate) async fn launch_role_runtime(
     }
     let image_label = format!("jackin.image={image}");
     run_args.extend_from_slice(&["--label", &image_label]);
-    // Host-side bind-mount of the daemon's socket directory. Pre-create
-    // host-side so Docker does not materialise the target itself as
-    // root:root 0755. The root capsule supervisor owns the socket and its
-    // normalized launch config; session clients use the separate host.sock
-    // capability path.
     let mut capsule_config = (*capsule_config).clone();
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let prepared_usage_relay =
@@ -876,10 +725,6 @@ pub(crate) async fn launch_role_runtime(
     prepared_usage_relay.apply_to_launch_config(&mut capsule_config)?;
     let capsule_config_contents = super::capsule_config_contents(&capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-    // Runtime passwd/group entries for the slot UIDs so `getpwuid` works in
-    // agent tools even though the image only bakes UID 1000. Consumed via
-    // libnss-extrausers (see docker/construct). Written atomically per
-    // container so a concurrent launch cannot read torn files.
     let extrausers_passwd = paths.jackin_home.join("extrausers").join("passwd");
     let extrausers_group = paths.jackin_home.join("extrausers").join("group");
     let extrausers_entries = if capsule_config.instance_identities.is_empty()
@@ -911,10 +756,6 @@ pub(crate) async fn launch_role_runtime(
     let extrausers_tmp = extrausers_passwd.with_file_name(format!("passwd.{container_name}.tmp"));
     let extrausers_group_tmp =
         extrausers_group.with_file_name(format!("group.{container_name}.tmp"));
-    // Run the filesystem syscalls on the blocking pool — the tokio
-    // runtime is built without the `fs` feature here, and blocking on
-    // a slow / NFS host parks the worker driving the docker-run RPC
-    // for every other future scheduled on it.
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
     let extrausers_passwd_for_write = extrausers_passwd.clone();
@@ -965,14 +806,6 @@ pub(crate) async fn launch_role_runtime(
         },
     );
     prepare_socket_dir_result?;
-    // The single usage-relay preparation runs before agent.toml serialization
-    // above, so canonical per-instance authorities land in the mounted config.
-    // Start the jackin-exec host credential resolver for this container's
-    // on-demand bindings. Its socket lands in the dir just prepared (bind-
-    // mounted to /jackin/run), so the in-container capsule reaches it at
-    // /jackin/run/host.sock. Spawned detached: the task runs independently of
-    // this handle, for the host process's lifetime alongside the interactive
-    // attach. No-op when the workspace declares no on-demand credentials.
     if !ctx.capsule_config.exec_bindings.is_empty() {
         drop(crate::exec_host::start_for_container(
             &ctx.paths.jackin_home,
@@ -982,7 +815,6 @@ pub(crate) async fn launch_role_runtime(
     }
     let socket_mount = crate::usage_relay::docker_runtime_mount(&socket_dir)?;
     run_args.extend_from_slice(&["-v", &socket_mount]);
-    // Mount the host UID/GID entries where libnss-extrausers reads them.
     let extrausers_mounts = if extrausers_entries.is_some() {
         let passwd_mount = extrausers_passwd
             .to_str()
@@ -1011,18 +843,8 @@ pub(crate) async fn launch_role_runtime(
         );
     }
     run_args.push(image);
-    // Pass the initial instance as the container command argument. The
-    // daemon uses it only to choose the first tab; per-session
-    // `JACKIN_AGENT` is set later when spawning an actual agent PTY. A
-    // bare agent slug is ambiguous when several admitted instances share
-    // the runtime, and the daemon's spawn gate rejects it — so resolve to
-    // an exact instance config ID whenever instances are admitted.
     run_args.push(initial_daemon_argv(*agent, &capsule_config));
 
-    // The typed Docker API receives the same complete environment that the
-    // legacy CLI vector carried. Sensitive entries were removed from argv by
-    // `prepare_host_env_transport`; they are safe in the daemon request body
-    // and must not be lost during the identity migration.
     let mut container_env = host_env_transport.environment().to_vec();
     container_env.extend(
         run_args
@@ -1031,9 +853,6 @@ pub(crate) async fn launch_role_runtime(
             .map(|pair| pair[1].to_owned()),
     );
 
-    // Create first, then start by the daemon-assigned ID. A name is only a
-    // mutable lookup key; resolving it after `docker run --name` permits a
-    // same-name replacement to receive every post-launch operation.
     let mut container_labels = std::collections::HashMap::new();
     for label in [
         crate::runtime::naming::LABEL_MANAGED,
@@ -1196,15 +1015,6 @@ pub(crate) async fn launch_role_runtime(
     )
     .await?;
 
-    // Privileged post-run capsule steps, each run as root via `docker exec`
-    // (needs no setuid, so composes with no-new-privileges) and each fail-closed:
-    // a non-zero exit tears the container down rather than start the agent with a
-    // control the profile only partially applied.
-    //   - WP1 firewall-apply (allowlist tier only): installs the egress allowlist
-    //     from JACKIN_ALLOWED_HOSTS; an empty list is itself fail-closed.
-    //   - WP-SUDO sudo-provision (sudo-granted profiles only — compat / explicit
-    //     `sudo = true`): writes /etc/sudoers.d/agent. The base image bakes no
-    //     sudoers, so non-sudo profiles have nothing to provision and skip it.
     let mut post_run_steps: Vec<(String, [&str; 6], String, bool)> = Vec::new();
     if let Some(argv) =
         crate::runtime::docker_profile::firewall_post_run_argv(grants, role_container.id())
@@ -1253,9 +1063,6 @@ pub(crate) async fn launch_role_runtime(
         anyhow::bail!("starting scoped usage stdio tunnel failed");
     };
 
-    // Reconcile keep_awake AFTER the role container is running but
-    // BEFORE the foreground session blocks. This is the only window in
-    // which an interactive `jackin load` can spawn caffeinate.
     jackin_host::caffeinate::reconcile_when_configured(
         paths,
         docker,
@@ -1264,9 +1071,6 @@ pub(crate) async fn launch_role_runtime(
     )
     .await;
 
-    // Pre-session safety check: if jackin-capsule exited immediately
-    // (missing binary, bad image), surface the container logs rather than
-    // failing with a cryptic docker exec error.
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Capsule,
         "pre_attach_exit_check",
@@ -1295,18 +1099,11 @@ pub(crate) async fn launch_role_runtime(
     )
     .await?;
 
-    // Connect the operator's terminal to the running jackin-capsule multiplexer.
-    // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
-    // to answer `status`; jackin-capsule detects PID != 1 and then runs in
-    // client mode, connecting to that daemon socket inside the container.
     steps.stage_done(crate::runtime::progress::LaunchStage::Capsule, "ready");
     steps.opening_hardline();
     if let Some(progress) = steps.progress_mut() {
         progress.settle_stage_visual().await;
     }
-    // Tear down the loading cockpit before the interactive attach: the
-    // capsule's `docker exec -it` must own a clean terminal, and leaving the
-    // rich surface active would force-capture its PTY and hang the handoff.
     steps.finish_progress();
     if let Some(refresh) = selected_image_refresh {
         crate::runtime::image::spawn_selected_image_refresh(
@@ -1346,10 +1143,6 @@ pub(crate) async fn launch_role_runtime(
         sibling_prewarm.selected_image_reused,
     );
     if *non_interactive {
-        // The container passed the premature-exit check. A programmatic caller
-        // reconnects later with `jackin hardline`, whose reconnect path waits
-        // for daemon readiness; detached launch does not own a foreground
-        // session or wait for its terminal.
         steps.stage_done(
             crate::runtime::progress::LaunchStage::Hardline,
             "detached (non-interactive launch)",
@@ -1381,7 +1174,6 @@ pub(crate) async fn launch_role_runtime(
             None,
         )
         .await;
-    // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
     if let Err(err) = session_result {
         if err.is::<super::super::attach::ReconnectAdmissionFailure>()
@@ -1389,12 +1181,6 @@ pub(crate) async fn launch_role_runtime(
         {
             return Err(err);
         }
-        // Single inspect — the previous two-call shape opened a TOCTOU
-        // window where the container could transition Running→Stopped(0)
-        // between the diagnose and swallow checks. If the attach command
-        // itself returned Err, propagate it even when PID 1 exited cleanly:
-        // the capsule attach protocol uses that path to report failed final
-        // sessions while the daemon still shuts down as init with exit 0.
         let inspect = docker.inspect_container_by_id(&role_container).await;
         if let Some(diag) = super::diagnose_with_state_by_id(
             runner,
@@ -1409,13 +1195,6 @@ pub(crate) async fn launch_role_runtime(
         if !super::is_known_socket_close(&err, &inspect) {
             return Err(err);
         }
-        // `diagnose_with_state` returned `None`, so PID 1 exited cleanly: the
-        // in-capsule dirty-exit modal already made any keep/discard decision and
-        // recorded it in exit-action.json. The non-zero `docker exec` result is
-        // the attach socket-close race at clean shutdown, not a failed session,
-        // so fall through to a successful return — the pipeline then runs
-        // finalize, which reads exit-action.json and executes the choice. The
-        // attach detail is kept only as a diagnostic breadcrumb.
         let attach_detail = attach_failure_error(container_name, &err);
         if *debug {
             jackin_diagnostics::emit_debug_line(
@@ -1463,11 +1242,6 @@ pub(crate) fn host_runtime_passthrough_env(
         .collect()
 }
 
-// Moved to jackin_runtime_launch_debug_envs::debug_envs (S7 split
-// 115); the item re-export keeps every
-// `launch_runtime::debug_runtime_envs` path stable (the in-file
-// `launch_role_runtime` call site plus the hub launch suite,
-// which names it through `tests.rs`).
 pub(crate) use jackin_runtime_launch_debug_envs::debug_envs::debug_runtime_envs;
 
 pub(crate) fn telemetry_runtime_envs_for(level: jackin_diagnostics::TelemetryLevel) -> Vec<String> {
@@ -1483,10 +1257,6 @@ pub(crate) fn telemetry_runtime_envs(debug: bool) -> Vec<String> {
     telemetry_runtime_envs_for(jackin_diagnostics::telemetry_level(debug))
 }
 
-// Moved to jackin_runtime_launch_run_envs::run_envs (S7 split
-// 116); the item re-export keeps every
-// `launch_runtime::run_runtime_envs` path stable (the in-file
-// `launch_role_runtime` call site).
 pub(crate) use jackin_runtime_launch_run_envs::run_envs::run_runtime_envs;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1591,7 +1361,6 @@ pub(crate) const fn capsule_otlp_allowlist_host(
 #[cfg(test)]
 mod tests;
 
-/// Final complete-spec admission boundary, immediately before Docker creation.
 fn with_admitted_final_docker_spec<T>(
     paths: &JackinPaths,
     state: &RoleState,

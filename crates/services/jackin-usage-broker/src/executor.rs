@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Discovery provider executor.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -197,9 +196,6 @@ where
         + Send
         + 'static,
 {
-    // Independent Claude usage HTTP is disabled for the normal broker too.
-    // Gate before cache lookup and fallback rediscovery so selected, cached,
-    // and newly discovered Claude sources all stay local-only.
     if capability.surface_id == HostSurfaceId::Claude.id() {
         return ProviderProbeOutcome::Failure {
             kind: UsageCoordinationErrorKind::ProviderUnavailable,
@@ -208,11 +204,6 @@ where
         };
     }
 
-    // The coordinator only classifies elapsed time after a probe returns, so
-    // the blocking provider call (child CLI/RPC, secret resolution) runs under
-    // an explicit broker-side budget. Expiry completes the generation through
-    // the normal failure path: last-good quota is preserved and broker
-    // ownership is unaffected.
     let cached = executor
         .bindings
         .lock()
@@ -301,9 +292,6 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
             .iter()
             .map(|entry| entry.capability.clone())
             .collect::<BTreeSet<_>>();
-        // The caller's catalog is authoritative. A transient discovery failure
-        // must clear old bindings rather than leave a revoked credential
-        // usable; a later probe can rediscover one admitted capability.
         let mut bindings =
             rediscover_all_bindings(&self.scope, self.resolver.as_ref()).unwrap_or_default();
         bindings.retain(|capability, _| admitted.contains(capability));
@@ -397,9 +385,6 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
             .iter()
             .map(|entry| entry.capability.clone())
             .collect::<BTreeSet<_>>();
-        // Preserve every binding in a canonical capability group. Profile
-        // sources remain first for refresh selection, while authorization
-        // checks every relevant env proof against the complete group.
         let mut bindings = grouped_bindings(&discovery);
         bindings.retain(|capability, _| admitted.contains(capability));
         self.bindings

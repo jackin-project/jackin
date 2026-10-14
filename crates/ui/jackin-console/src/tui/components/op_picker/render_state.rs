@@ -1,5 +1,3 @@
-//! Adapter from op-picker state to render-only row builders.
-
 use ratatui::text::Line;
 
 use super::{

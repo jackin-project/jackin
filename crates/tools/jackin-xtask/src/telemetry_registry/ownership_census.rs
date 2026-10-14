@@ -1,5 +1,3 @@
-//! Generated inventory of production error-ownership call sites.
-
 use std::{fmt::Write as _, fs, path::Path};
 
 use anyhow::{Context, Result, bail};

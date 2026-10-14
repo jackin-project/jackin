@@ -1,5 +1,3 @@
-//! Copy an explicitly captured raw PTY byte stream into a conformance fixture.
-
 use std::fs;
 use std::path::PathBuf;
 
@@ -8,9 +6,7 @@ use clap::Args;
 
 #[derive(Args)]
 pub(crate) struct PtyFixtureArgs {
-    /// Raw capture written by `JACKIN_PTY_FIXTURE_CAPTURE=<path>`.
     capture: PathBuf,
-    /// Output fixture path, conventionally under the capsule PTY fixtures.
     out_bin: PathBuf,
 }
 

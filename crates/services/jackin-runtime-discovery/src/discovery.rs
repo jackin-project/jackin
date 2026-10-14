@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! List running and managed jackin role containers via Docker label queries.
-//!
-//! Not responsible for starting, stopping, or inspecting container internals —
-//! only name enumeration filtered by the `LABEL_KIND_ROLE` label. Callers
-//! that need session state query the capsule daemon directly via `attach.rs`.
-
 use jackin_docker::docker_client::{ContainerRow, DockerApi};
 
 use jackin_runtime_naming::naming::{LABEL_KIND_ROLE, format_role_display};

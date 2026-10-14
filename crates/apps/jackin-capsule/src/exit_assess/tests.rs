@@ -102,7 +102,6 @@ async fn assess_dirty_empty_when_no_isolated_worktrees() {
 
 #[tokio::test]
 async fn decide_exit_drains_for_keep_and_discard_policies() {
-    // Even with isolated worktrees present, keep/discard skip the modal.
     for policy in ["keep", "discard"] {
         let config = CapsuleConfig {
             dirty_exit_policy: Some(policy.to_owned()),

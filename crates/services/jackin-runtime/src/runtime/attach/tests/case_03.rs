@@ -321,7 +321,7 @@ async fn spawn_shell_session_errors_on_stopped_container() {
 #[tokio::test]
 async fn spawn_shell_session_errors_on_not_found() {
     let (_tmp, paths) = test_paths();
-    let docker = FakeDockerClient::default(); // empty inspect → NotFound
+    let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
 
     let err = spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner)

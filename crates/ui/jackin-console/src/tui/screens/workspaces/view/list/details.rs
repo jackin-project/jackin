@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Instance details pane rendering.
 
 use crate::tui::screens::workspaces::view::{
     WorkspaceInstanceLivePaneFacts, WorkspaceInstanceLiveTabFacts, WorkspaceInstancePane,

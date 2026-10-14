@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Auth directory staging, wipe, and source snapshot.
 
 use super::{
     FailurePoint, JOURNAL_SCHEMA_VERSION, LockedSource, SwapJournal, SwapPhase, TargetLock,

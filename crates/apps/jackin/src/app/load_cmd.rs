@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Load, Console, Hardline, Eject, and Exile command handlers — extracted from `app::run`.
-
 use anyhow::{Context, Result};
 
 use crate::cli::cleanup::EjectArgs;
@@ -29,19 +27,10 @@ use super::{
     restore_candidate_for_hardline, restore_hardline_instance, rich_prelaunch_choice,
 };
 
-/// Config used by post-console launch/prewarm after `run_console` returns.
-///
-/// The console owns and mutates this model in memory; successful saves write
-/// disk *and* replace the in-memory `AppConfig`. Returning that model skips a
-/// second `AppConfig::load_or_init` parse (launch-speed 008g). Callers must
-/// not re-read disk when the console proved no changes **or** when it already
-/// applied saves into this value.
 pub(crate) fn take_post_console_config(console_owned: AppConfig) -> AppConfig {
     console_owned
 }
 
-/// Resolve the role selector and workspace input from CLI args, prompting when
-/// the target is ambiguous (saved workspace vs directory) or absent entirely.
 fn resolve_load_selector_and_workspace(
     selector: Option<String>,
     target: Option<String>,
@@ -61,7 +50,6 @@ fn resolve_load_selector_and_workspace(
         };
         Ok((class, input))
     } else {
-        // No selector — resolve role from workspace context
         resolve_agent_from_context_with_choice(config, cwd, rich_prelaunch_choice)
     }
 }
@@ -134,8 +122,6 @@ pub(super) async fn handle_load(
         } else {
             &*config
         };
-        // Canonical identity resolution: the same admission call launch
-        // provisions from, so dry-run and launch cannot disagree (F4).
         let identity = runtime::resolve_dry_run_identity(
             plan_config,
             selected_agent,
@@ -143,14 +129,7 @@ pub(super) async fn handle_load(
             &class.to_string(),
             account.is_some(),
         )?;
-        // The image-plan resolver needs mutable config access. Keep the same
-        // effective account scope for model projection without holding an
-        // immutable borrow of the launch config across that resolution.
         let projection_config = (*plan_config).clone();
-        // The image half of the plan is only knowable after the role manifest
-        // is read: `published_image` is a manifest field and the
-        // reuse-vs-build decision derives from it. Resolving it here is what
-        // makes `--dry-run` the resolved plan rather than a guess (D-078).
         let image_plan = runtime::resolve_launch_image_plan(
             paths,
             config,
@@ -193,10 +172,6 @@ pub(super) async fn handle_load(
     opts.role_branch = role_branch;
     opts.docker_profile = docker_profile;
     apply_load_model_effort(&mut opts, model, effort);
-    // Pre-launch reconcile: if a previous role in a keep_awake
-    // workspace already runs, ensure caffeinate is up before we
-    // build/launch (so a long Docker build doesn't see the host
-    // sleep). Post-launch reconcile below catches the new role.
     opts.entry_claim = Some(std::sync::Arc::new(
         play_construct_intro_if_needed(paths, &docker).await,
     ));
@@ -252,10 +227,6 @@ pub(super) async fn handle_console(
         debug,
     };
 
-    // One alternate screen owns the entire console → loading → capsule
-    // → exit flow so transitions never flash back to the cooked
-    // terminal. Sub-surfaces detect this and skip their own
-    // enter/leave; the guard tears the terminal down once, on drop.
     let screen = console::TerminalSession::enter(console::terminal::host_console_terminal())?;
     let _session = jackin_telemetry::identity::SessionGuard::begin(
         jackin_telemetry::identity::SessionKind::Console,
@@ -265,10 +236,6 @@ pub(super) async fn handle_console(
     let (mut console_entry, startup_error) = match connect_docker() {
         Ok(docker) => {
             let claim = play_construct_intro_if_needed(&paths, &docker).await;
-            // D22: while the operator browses the console (off the attach path),
-            // refresh any stale baked workspace images in the background so a
-            // later launch hits the valid-image fast path. Reuses valid images;
-            // only rebuilds stale ones. Launch never waits on this.
             runtime::spawn_background_image_prewarm(
                 &paths,
                 runtime::background_prewarm_targets(&config),
@@ -299,8 +266,6 @@ pub(super) async fn handle_console(
     )
     .await?;
     lifecycle.exit_requested();
-    // Prefer the in-memory config the console returned (updated on successful
-    // saves). Do not re-read disk — that is the launch-speed 008g win.
     let mut config = take_post_console_config(console_config);
     let Some(outcome) = outcome else {
         if let Some((docker, claim)) = &console_entry {
@@ -330,8 +295,6 @@ pub(super) async fn handle_console(
 
 type ConsoleEntry = Option<(BollardDockerClient, runtime::EntryClaim)>;
 
-/// Shared handles for console outcome launch paths (keeps helpers under
-/// clippy argument limits).
 struct ConsoleLaunchCtx<'a> {
     paths: &'a JackinPaths,
     config: &'a mut AppConfig,
@@ -413,8 +376,6 @@ async fn console_outcome_instance_action(
     ctx: &mut ConsoleLaunchCtx<'_>,
     screen: console::TerminalSession,
 ) -> Result<()> {
-    // The action owns the terminal with its own foreground
-    // process; hand it back the cooked screen.
     if let Some((docker, claim)) = ctx.console_entry {
         runtime::release_entry_if_idle(docker, claim).await;
     }
@@ -435,10 +396,6 @@ async fn console_outcome_new_session(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-    // The picker selected an exact live admission. Runtime re-reads both the
-    // manifest and the persisted host config; it must reject drift instead of
-    // rebuilding the container or resolving the account again from mutable
-    // defaults.
     let result = runtime::spawn_agent_session(
         ctx.paths,
         &container,
@@ -547,7 +504,6 @@ async fn console_outcome_launch(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-    // Alternate-screen guard drops in the caller after this returns.
     result
 }
 
@@ -617,8 +573,6 @@ pub(super) async fn handle_hardline(
     let mut runner = ShellRunner { debug };
     crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
     let docker = connect_docker()?;
-    // `--inspect` / `--new` / `--shell` mutual exclusion is enforced by
-    // clap `conflicts_with_all` on `HardlineArgs`; no runtime guard needed.
     let explicit_selector = selector.is_some();
     let container = if let Some(sel) = selector {
         if let Some(container) = resolve_instance_reference(&paths, &sel)? {
@@ -731,10 +685,6 @@ pub(super) async fn handle_eject(
             }
         }
     };
-    // Wrap the loop so a partial failure still hits the trailing
-    // reconcile — otherwise a `--all` eject that errors on
-    // container N+1 would leave caffeinate running even though
-    // earlier containers were already removed.
     let result: Result<()> = async {
         if containers.is_empty() {
             println!("No matching roles found.");
@@ -760,10 +710,6 @@ pub(super) async fn handle_eject(
     result
 }
 
-/// Machine-readable `--dry-run --format json` plan.
-///
-/// Split out from printing so the wire shape is asserted directly, without a
-/// Docker daemon or a captured stdout.
 fn dry_run_plan_json(
     class: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
@@ -802,10 +748,6 @@ fn dry_run_plan_json(
     })
 }
 
-/// Apply the identity half of the `--dry-run` plan onto the JSON wire
-/// shape: the single account (plus its effective model pin, F7) or every
-/// admitted instance, each carrying its effective model. Split out from
-/// printing so the shape is asserted directly, like [`dry_run_plan_json`].
 pub(crate) fn apply_dry_run_identity_json(
     plan: &mut serde_json::Value,
     identity: &runtime::DryRunIdentity,
@@ -827,9 +769,6 @@ pub(crate) fn apply_dry_run_identity_json(
     );
 }
 
-/// Apply effective model and effort values to the `--dry-run` plan. Model
-/// values come from the launch pipeline's canonical per-instance resolver,
-/// including whitespace normalization and provider-specific `OpenCode` IDs.
 pub(crate) fn apply_dry_run_load_overrides_json(
     plan: &mut serde_json::Value,
     selected_agent: jackin_core::Agent,
@@ -860,8 +799,6 @@ pub(crate) fn apply_dry_run_load_overrides_json(
     }
 }
 
-/// Identity half of the `--dry-run` plan as the printer consumes it: the
-/// committed launch agent plus the canonical runtime identity.
 struct DryRunPlan<'a> {
     agent: jackin_core::Agent,
     identity: &'a runtime::DryRunIdentity,
@@ -882,7 +819,6 @@ impl<'a> DryRunLaunchOverrides<'a> {
     }
 }
 
-/// Print the resolved load plan for `--dry-run` and exit without launching.
 fn print_dry_run_plan(
     class: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,

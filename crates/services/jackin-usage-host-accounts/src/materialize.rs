@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Account catalog materialization.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,12 +13,7 @@ use super::{
 };
 use jackin_usage_host_presentation::HostSurfaceId;
 
-/// Durable snapshot reads for catalog materialization.
-///
-/// The snapshot store is a same-tier sibling, so the T4 host implements
-/// this seam by projecting stored rows to their views.
 pub trait AccountCatalogStores {
-    /// Load every stored account view under `store_path`.
     fn load_stored_views(
         &self,
         store_path: &Path,
@@ -27,24 +21,14 @@ pub trait AccountCatalogStores {
     ) -> Result<Vec<FocusedUsageView>, String>;
 }
 
-/// Current-membership account evidence consumed during materialization.
-///
-/// Implemented once by the T4 host for discovery descriptors; the
-/// catalog only reads these accessors, never discovery types.
 pub trait AccountMembershipDescriptor {
-    /// Exact provider surface id.
     fn surface_id(&self) -> &str;
-    /// Stable canonical account key.
     fn account_key(&self) -> &str;
-    /// Authenticated provider label.
     fn account_label(&self) -> &str;
-    /// Effective config scopes contributing this account.
     fn provenance(&self) -> &[String];
-    /// Canonical identity evidence.
     fn identity(&self) -> CanonicalAccountIdentity;
 }
 
-/// Build one catalog by scanning each external source exactly once.
 pub fn materialize_account_catalog<M: AccountMembershipDescriptor>(
     live_views: &[(HostSurfaceId, FocusedUsageView, bool)],
     discovered_views: &BTreeMap<(HostSurfaceId, String), FocusedUsageView>,
@@ -135,9 +119,6 @@ pub(crate) fn membership_identity<M: AccountMembershipDescriptor>(
     view: &FocusedUsageView,
 ) -> Option<CanonicalAccountIdentity> {
     let membership = membership?;
-    // Existing snapshots retain their pre-V1 routing key during additive
-    // migration. Only discovery supplies canonical evidence; display-label
-    // comparison never promotes a snapshot into membership.
     let routing_key = CanonicalAccountIdentity::from_view(surface, view)?.account_key();
     membership
         .iter()

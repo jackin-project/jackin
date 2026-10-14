@@ -130,7 +130,6 @@ fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
     .expect("Amp API daily usage");
     let cli = parse_amp_usage_output(AMP_DAILY_FIXTURE).expect("Amp CLI daily usage");
 
-    // API and CLI delegate to one parser: identical parsed fields.
     assert_eq!(api.account_label.as_deref(), Some("user@example.com"));
     assert_eq!(api.account_label, cli.account_label);
     assert_eq!(api.daily_remaining_percent, Some(61));
@@ -154,7 +153,6 @@ fn amp_daily_percentage_clamps_to_protocol_range() {
     let low =
         parse_amp_usage_output("Amp Free: -5% remaining today (resets daily)").expect("low daily");
     assert_eq!(low.daily_remaining_percent, Some(0));
-    // A malformed/non-finite percent yields no Daily bucket.
     assert!(parse_amp_usage_output("Amp Free: abc% remaining today (resets daily)").is_none());
 }
 
@@ -186,7 +184,6 @@ fn amp_daily_parser_preserves_workspace_balances_in_order() {
             "Workspace beta"
         ]
     );
-    // Only the Amp Free bucket carries a status slot.
     assert!(
         buckets[1..]
             .iter()

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EditorState` workdir and mount-destination inputs.
 
 use super::super::super::{EditorMode, EditorState};
 use std::collections::{BTreeMap, BTreeSet};

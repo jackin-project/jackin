@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Binding rediscovery and probe outcomes.
 
 use std::collections::BTreeMap;
 
@@ -52,9 +51,6 @@ pub(crate) fn rediscover_bindings(
         return (None, None);
     };
     let Some(group) = bindings.get(capability).cloned() else {
-        // A successful scan that cannot reproduce the requested capability is
-        // a catalog mismatch. Do not replace the cache with a partial scan;
-        // the caller must fail closed for this exact capability.
         return (None, None);
     };
     (Some(group), Some(bindings))
@@ -205,11 +201,6 @@ pub(crate) fn provider_probe_outcome_with_metadata(
     }
 }
 
-/// Carry the collector's specific gap reason into a probe failure.
-///
-/// Failure kinds stay stable for retry matching; only the operator-facing
-/// message becomes specific. Views without their own reason keep the generic
-/// fallback.
 pub(crate) fn honest_probe_message(
     view: &jackin_protocol::control::FocusedUsageView,
     fallback: &str,

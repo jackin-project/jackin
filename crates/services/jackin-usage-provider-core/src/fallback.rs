@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Unpollable and unsupported snapshot fallbacks.
 
 use jackin_protocol::control::{
     FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
@@ -8,17 +7,11 @@ use jackin_protocol::control::{
 
 use super::{UsageSurface, UsageViewInput, usage_view};
 
-/// Honest snapshot for a locally identified binding with no pollable usage
-/// fetch by design (Muse identity, omp/hermes attribution adapters). This is
-/// a deliberate no-poll, never a provider outage: `Unsupported` so the broker
-/// records it as a data-bearing success, outside retry/backoff paths.
 pub fn unpollable_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     usage_view(UsageViewInput {
         agent,
         provider,
         surface: UsageSurface::Unsupported,
-        // Empty until the broker binds the discovery account label; never a
-        // fabricated identity.
         account_label: String::new(),
         username: None,
         plan_label: None,

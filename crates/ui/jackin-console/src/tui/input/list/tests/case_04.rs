@@ -5,7 +5,6 @@ use super::*;
 
 #[test]
 fn list_o_on_row_zero_is_silent_noop() {
-    // Row 0 is "Current directory" — O must be a silent no-op.
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     paths.ensure_base_dirs().unwrap();
@@ -33,9 +32,6 @@ fn list_o_on_row_zero_is_silent_noop() {
 
 #[test]
 fn picker_commit_closes_list_modal_and_clears_state() {
-    // Seed the state directly with an open GithubPicker, then commit.
-    // The input layer must not open the browser. It closes the modal and
-    // returns a typed URL-open outcome for the run loop.
     use crate::{github_mounts::GithubChoice, tui::components::github_picker::GithubPickerState};
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
@@ -59,8 +55,6 @@ fn picker_commit_closes_list_modal_and_clears_state() {
     )
     .unwrap();
 
-    // Browser side effects are not executed in the input handler. The
-    // modal closes and queues a URL-open effect for the run loop.
     assert!(
         !matches!(state.list_modal, Some(Modal::GithubPicker { .. })),
         "GithubPicker must be gone after Enter"

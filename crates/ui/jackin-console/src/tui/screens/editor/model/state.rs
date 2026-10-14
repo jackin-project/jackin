@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `EditorState` and modal traits.
 
 use super::{
     EditorFocusTarget, EditorHorizontalScrollKeyPlan, EditorHoverTarget, EditorMode,
@@ -40,7 +39,6 @@ pub struct EditorState<
 > {
     pub mode: EditorMode,
     pub active_tab: EditorTab,
-    /// W3C ARIA Tabs: focus is either on the tab list or exactly one content block.
     pub focus_owner: TabFocus<EditorFocusTarget>,
     pub hover_target: Option<EditorHoverTarget>,
     pub active_field: FieldFocus,
@@ -49,12 +47,9 @@ pub struct EditorState<
     pub mount_info_cache: MountInfoCache,
     pub modal: Option<Modal>,
     pub modal_parents: Vec<Modal>,
-    /// Create-mode only; Edit mode reads name from `EditorMode::Edit`.
     pub pending_name: Option<String>,
-    /// Signals the outer input handler to save and/or pop to List.
     pub exit_after_save: Option<ExitIntent>,
     pub save_flow: SaveFlow,
-    /// Secrets tab keys whose value is currently unmasked.
     pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
     pub secrets_expanded: BTreeSet<String>,
     pub _env_value: PhantomData<fn() -> EnvValue>,

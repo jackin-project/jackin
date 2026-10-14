@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Z.AI` quota bucket views and peak-hour notes.
 
 use chrono::{Datelike, Timelike};
 use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
@@ -8,15 +7,9 @@ use jackin_usage_provider_core::{compact_count, epoch_seconds_from_maybe_ms, tim
 
 use super::ZaiLimitRaw;
 
-/// Peak-rate window: Mon–Fri 06:00–10:00 UTC burns credits at 1×,
-/// everything else at 0.5×. Source: the GLM Coding Plan rate note captured
-/// in `ref-contracts-B.md` §2 — no endpoint exposes the rate, so it is
-/// derived client-side from the clock and goes stale silently if the plan
-/// changes; pace-note only, never quota math.
 pub(crate) const ZAI_PEAK_START_HOUR_UTC: u32 = 6;
 pub(crate) const ZAI_PEAK_END_HOUR_UTC: u32 = 10;
 
-/// True while the spend clock is inside the peak-rate window.
 pub(crate) fn zai_is_peak(now: i64) -> bool {
     let Some(moment) = chrono::DateTime::from_timestamp(now, 0).map(|date| date.naive_utc()) else {
         return false;
@@ -39,8 +32,6 @@ pub(crate) fn zai_credit_rate_note(now: i64) -> &'static str {
     }
 }
 
-/// Top-two models by `usageDetails` consumption, e.g.
-/// `top glm-5 71% · glm-4.5 29%`. `None` when no model breakdown is present.
 pub(crate) fn zai_model_note(limit: &ZaiLimitRaw) -> Option<String> {
     let mut details = limit.usage_details.clone();
     details.retain(|detail| {

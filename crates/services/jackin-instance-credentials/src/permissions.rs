@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Credential file permission repair with test failure injection.
 
 use std::path::Path;
 
@@ -51,12 +50,6 @@ pub fn maybe_inject_permission_repair_failure(
     Ok(())
 }
 
-/// Tighten permissions on an existing credential file to `0o600`.
-///
-/// Missing files are allowed because callers use this helper on optional
-/// credentials. Any failure while inspecting, chmod-ing, or verifying an
-/// existing path is returned so launch provisioning fails closed rather than
-/// continuing with potentially exposed credentials.
 pub fn repair_permissions(path: &Path) -> anyhow::Result<()> {
     #[cfg(unix)]
     {

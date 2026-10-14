@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings per-tab render dispatch.
 
 use super::{
     ConsoleSettingsState, auth_state_lines, env_state_lines, general_state_lines,

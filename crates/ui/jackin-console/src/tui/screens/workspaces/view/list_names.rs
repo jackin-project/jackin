@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace list-names rendering.
 
 use super::{
     WorkspaceListDisplayRow, WorkspaceListNamesRenderFacts, WorkspaceListNamesRenderPlan,
@@ -18,9 +17,6 @@ pub fn list_name_lines(
     viewport: usize,
     show_cursor: bool,
 ) -> (Vec<Line<'static>>, usize) {
-    // Structural exception: workspace names are a mixed tree with disclosure,
-    // instance tones, hover fill, and horizontal scroll padding, so they cannot
-    // use the flat picker renderer even though they share its cursor contract.
     let mut max_w = viewport;
     let mut lines: Vec<Line<'static>> = Vec::with_capacity(visual_rows.len());
 
@@ -104,15 +100,6 @@ pub fn workspace_list_names_render_plan(
     }
 }
 
-/// Names-list vertical window, driven by upstream `VirtualListState`
-/// (plan 009): the stored offset seeds the virtualizer (`set_offset`, same
-/// clamp) and `reveal` moves it only when the cursor leaves the view —
-/// byte-identical to the retired `cursor_follow_offset` call. Zero height
-/// short-circuits first: upstream `cursor_follow_offset` returns 0 there
-/// while `VirtualListState` floors the viewport at 1, which would diverge.
-/// One-shot construction per frame: the list keeps no persistent
-/// virtual-list state of its own (the stored offset lives in
-/// `ManagerState::list_names_scroll`, read by paint through this plan).
 pub(crate) fn names_window_follow_y(
     selected_index: usize,
     row_count: usize,

@@ -5,11 +5,6 @@ use super::*;
 
 #[test]
 fn click_on_sentinel_row_sets_selected_to_sentinel_idx() {
-    // 3 saved workspaces ⇒ rows are:
-    //   y=3  → index 0 ("Current directory")
-    //   y=4,5,6 → indices 1, 2, 3 (saved)
-    //   y=7  → visual spacer
-    //   y=8  → visual index 5 (sentinel "+ New workspace")
     let mut state = list_state_with_saved(3);
     state.selected = 0;
     handle_mouse(&mut state, mouse_at(10, 8), term(100));
@@ -26,50 +21,33 @@ fn click_on_workspace_list_spacer_does_not_change_selected() {
 
 #[test]
 fn click_outside_list_rows_does_not_change_selected() {
-    // Several "outside" positions must all leave selected untouched:
-    //   - Click above the list (y < 3, e.g. in the header)
-    //   - Click on the left border (x=0)
-    //   - Click at x >= seam (right pane territory)
-    //   - Click below the list content (footer)
     let mut state = list_state_with_saved(3);
     state.selected = 2;
     let initial = state.selected;
 
-    // In the header.
     handle_mouse(&mut state, mouse_at(10, 1), term(100));
     assert_eq!(state.selected, initial, "click in header must not select");
 
-    // On the top border of the list block.
     handle_mouse(&mut state, mouse_at(10, 2), term(100));
     assert_eq!(state.selected, initial, "click on top border");
 
-    // On the left border column.
     handle_mouse(&mut state, mouse_at(0, 3), term(100));
     assert_eq!(state.selected, initial, "click on left border");
 
-    // Past the sentinel row (y=8+ when we have 3 saved workspaces).
     handle_mouse(&mut state, mouse_at(10, 9), term(100));
     assert_eq!(state.selected, initial, "click below sentinel");
 
-    // In the right pane (x=60, well clear of the default seam).
     handle_mouse(&mut state, mouse_at(60, 5), term(100));
     assert_eq!(state.selected, initial, "click in details pane");
 
-    // In the footer.
     handle_mouse(&mut state, mouse_at(10, 29), term(100));
     assert_eq!(state.selected, initial, "click on footer row");
 }
 
 #[test]
 fn click_on_seam_still_starts_drag_not_selection() {
-    // Regression guard for batch 14: a click on the seam column must
-    // kick off a drag and NOT retarget selection, even when the y
-    // coordinate happens to overlap a valid list row.
     let mut state = list_state_with_saved(3);
     state.selected = 0;
-    // Default split on a 100-col terminal ⇒ seam at column
-    // `DEFAULT_SPLIT_PCT`. y=4 maps to list index 1 in our layout —
-    // if seam didn't win, selection would flip to 1.
     handle_mouse(&mut state, mouse_at(DEFAULT_SPLIT_PCT, 4), term(100));
     assert!(state.drag_state.is_some(), "click on seam must start drag");
     assert_eq!(
@@ -83,8 +61,6 @@ fn click_scrollable_mount_block_focuses_it() {
     let config = config_with_scrollable_workspace_and_global_mounts();
     let mut state = selected_demo_state(&config);
 
-    // Right pane starts at x=30 for a 100-col terminal. Workspace mounts
-    // block starts at y=5 after General's 3 rows.
     handle_mouse_with_config(&mut state, mouse_at(31, 6), term(100), Some(&config));
 
     assert_eq!(state.list_scroll_focus(), Some(MountScrollFocus::Workspace));
@@ -123,8 +99,6 @@ fn click_non_scrollable_area_clears_mount_focus() {
     let mut state = selected_demo_state(&config);
     state.set_list_scroll_focus(Some(MountScrollFocus::Workspace));
 
-    // y=3 is inside the General block, which is not a horizontal-scroll
-    // target.
     handle_mouse_with_config(&mut state, mouse_at(31, 3), term(100), Some(&config));
 
     assert_eq!(state.list_scroll_focus(), None);
@@ -136,8 +110,6 @@ fn horizontal_mouse_wheel_scrolls_block_under_pointer() {
     let mut state = selected_demo_state(&config);
     state.set_list_scroll_focus(Some(MountScrollFocus::Workspace));
 
-    // Global mounts block starts immediately after General (3 rows) and
-    // the one-mount Workspace mounts block (5 rows): y=10.
     handle_mouse_with_config(
         &mut state,
         mouse_kind_at(MouseEventKind::ScrollRight, 31, 11),
@@ -155,8 +127,6 @@ fn horizontal_mouse_wheel_scrolls_block_under_pointer() {
 
 #[test]
 fn vertical_mouse_wheel_does_not_scroll_horizontal_only_list_block() {
-    // W3C rule: ScrollUp/Down are vertical events; horizontal-only blocks
-    // (List view mounts) must ignore them. Only ScrollLeft/Right scroll them.
     let config = config_with_scrollable_workspace_and_global_mounts();
     let mut state = selected_demo_state(&config);
 

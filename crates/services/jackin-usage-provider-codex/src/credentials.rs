@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Codex` OAuth credential loading.
 
 use base64::Engine as _;
 use jackin_usage_provider_core::first_string_key;
@@ -14,9 +13,6 @@ pub struct CodexOAuthCredentials {
     pub access_token: String,
     pub account_id: Option<String>,
     pub account_label: Option<String>,
-    /// OAuth refresh token, when present, used to re-mint a rejected
-    /// `access_token` in place for a single retry (see
-    /// `fetch_codex_oauth_usage_refreshing`).
     pub refresh_token: Option<String>,
 }
 
@@ -41,7 +37,6 @@ pub fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexOAuthCre
             access_token: api_key.trim().to_owned(),
             account_id: None,
             account_label: Some("OPENAI_API_KEY".to_owned()),
-            // A static API key cannot be refreshed; there is nothing to re-mint.
             refresh_token: None,
         });
     }

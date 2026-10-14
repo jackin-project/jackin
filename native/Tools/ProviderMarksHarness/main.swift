@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-/// Prove all seven Desktop provider keys load official bundled marks via the
-/// shipped APIs (`ProviderMarks` + `StatusItemRendering.icon`).
-///
-///   cd native && swift run -c release ProviderMarksHarness
-///
-/// Exit 0 only when every key has a non-nil official mark and a status icon
-/// that is not the jackin fallback for unknown keys.
 
 import AppKit
 import Foundation
@@ -19,7 +12,6 @@ struct ProviderMarksHarness {
     static func main() {
         _ = NSApplication.shared
         var failed = 0
-        // Resource coverage only. Provider membership/order belongs to the Rust projection.
         let keys = ["codex", "claude", "amp", "grok", "zai", "kimi", "minimax"]
         fputs("ProviderMarksHarness: \(keys.count) Desktop keys\n", stderr)
         for key in keys {
@@ -33,13 +25,10 @@ struct ProviderMarksHarness {
             )
             if !ok { failed += 1 }
         }
-        // Unknown key must not pretend to be an official mark.
         let unknown = ProviderMarks.hasMark(forIconKey: "not-a-provider")
         fputs("\(unknown ? "FAIL" : "PASS")  unknown key hasMark=false\n", stderr)
         if unknown { failed += 1 }
 
-        // Template mono must have near-full ink alpha (not washed-out glyphs).
-        // Amp once shipped maxA≈59 while peers were ~255 — invisible on bar/plates.
         for key in keys {
             guard let mark = ProviderMarks.templateImage(forIconKey: key),
                 let maxA = maxAlpha(of: mark)
@@ -64,7 +53,6 @@ struct ProviderMarksHarness {
             "ProviderMarksHarness: ALL PASS (\(keys.count)/\(keys.count) official marks)\n", stderr)
     }
 
-    /// Max alpha from the bitmap AppKit loads for a template mark (ship PNG preferred).
     private static func maxAlpha(of image: NSImage) -> Int? {
         guard let tiff = image.tiffRepresentation,
             let rep = NSBitmapImageRep(data: tiff)

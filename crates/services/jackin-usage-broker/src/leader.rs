@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker leader lease claim and renewal.
 
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -39,9 +38,6 @@ pub(crate) fn claim_leader(
             Ok(fd) => {
                 let mut file = File::from(fd);
                 validate_owned_file(&file, 0o600)?;
-                // The descriptor lock is held for the entire broker lifetime.
-                // Expiry permits recovery only after the OS releases a dead
-                // owner's lock.
                 if file.try_lock().is_err() {
                     return Ok(None);
                 }
@@ -55,9 +51,6 @@ pub(crate) fn claim_leader(
                 }
                 return match claim_existing_lease(path, &mut file, &lease, build_id, lease_duration)
                 {
-                    // The owner keeps the descriptor lock for its entire
-                    // lifetime. Expiry cannot transfer a live process's
-                    // authority while it is suspended or waking.
                     Ok(Some(stale_lease_reclaimed)) => {
                         if path_matches_file(path, &file) == Ok(true) {
                             Ok(Some(BrokerLeaseOwner {
@@ -141,8 +134,6 @@ pub(crate) fn claim_existing_lease(
         if existing.protocol_version != USAGE_BROKER_PROTOCOL_VERSION
             || existing.build_id != build_id
         {
-            // A healthy incompatible endpoint is never replaced by an
-            // activator; the client will receive protocol_mismatch.
             return Ok(None);
         }
         chrono::Utc::now()
@@ -150,8 +141,6 @@ pub(crate) fn claim_existing_lease(
             .saturating_sub(existing.renewed_at_epoch)
             >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
     } else {
-        // Preserve compatibility with pre-lease state only when its PID is
-        // demonstrably gone; a malformed live lease fails closed.
         let pid = String::from_utf8_lossy(&bytes).trim().parse::<i32>().ok();
         pid.is_some_and(|pid| kill(Pid::from_raw(pid), None).is_err())
     };
@@ -173,12 +162,6 @@ pub(crate) fn renew_lease(owner: &mut BrokerLeaseOwner) -> bool {
     renew_lease_at(owner, chrono::Utc::now().timestamp())
 }
 
-/// Renew an owner lease at the caller's clock value while retaining its
-/// lifetime descriptor lock.
-///
-/// Expiry makes the lease claimable only while unowned. A sleeping owner may
-/// renew an expired lease when its exact descriptor and persisted identity are
-/// still current. If a successor has replaced that identity, renewal fails.
 pub(crate) fn renew_lease_at(owner: &mut BrokerLeaseOwner, now_epoch: i64) -> bool {
     (|| {
         validate_owned_file(&owner.file, 0o600).ok()?;
@@ -224,9 +207,6 @@ pub(crate) fn cleanup_owned_files(
         if !lease_matches_owner(&current, &owner.lease) {
             return Err(());
         }
-        // The lease descriptor remains locked across both unlinks. No valid
-        // successor can bind the broker socket between the ownership check
-        // and path removal.
         if !path_matches_file(lease_path, &owner.file)? {
             return Err(());
         }

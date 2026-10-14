@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Concrete footer adapters for workspace-style screens.
-//!
-//! Reads `ManagerState` fields and assembles the facts structs needed by
-//! `footer_hints` so callers do not have to build them by hand.
 use jackin_config::AppConfig;
 use ratatui::layout::Rect;
 use termrock::{scroll::ScrollAxes, widgets::HintSpan};
@@ -26,7 +22,6 @@ use crate::tui::screens::workspaces::update::{workspace_row_owns_left, workspace
 use crate::tui::sidebar_layout;
 use crate::tui::state::ManagerState;
 
-/// Build the workspace list screen footer hints from a concrete `ManagerState`.
 #[must_use]
 pub fn workspace_list_footer_items_for_state(
     state: &ManagerState<'_>,
@@ -168,9 +163,6 @@ fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerLis
     )
 }
 
-/// Whether the selected tree row is a live (`Active`/`Running`) instance. Drives
-/// which instance-row footer actions to surface: live rows offer new-session /
-/// shell / stop; failed/stopped rows offer restart instead (D15).
 fn selected_instance_is_live(state: &ManagerState<'_>, selected: ManagerListRow) -> bool {
     let is_live = |entry: &jackin_core::InstanceIndexEntry| {
         matches!(
@@ -200,12 +192,6 @@ fn selected_instance_is_live(state: &ManagerState<'_>, selected: ManagerListRow)
 #[cfg(test)]
 mod tests;
 
-/// Build the workspace-screen footer hints for any workspace-style screen
-/// (list, create-prelude, destructive confirm) from a concrete `ManagerState`.
-///
-/// Delegates footer item assembly to `workspace_screen_footer_items`. The
-/// `area` is passed through to modal footer adapters so scroll-sensitive
-/// modals can measure their available height.
 #[must_use]
 pub fn workspace_screen_footer_items_for_state(
     state: &ManagerState<'_>,

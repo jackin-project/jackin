@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Native DTO presentation directly from broker-owned usage projections.
-
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jackin_protocol::control::{
@@ -296,9 +294,6 @@ pub(crate) fn desktop_projection(
         .into_iter()
         .filter(|(row, _)| row.glance_remaining_percent.is_some_and(|value| value > 0))
         .collect::<Vec<_>>();
-    // Keep the full glance list in canonical provider order. The capped status
-    // list prioritizes the earliest raw reset, then the lowest remaining quota;
-    // stable sorting keeps provider order when all ranking fields tie.
     status_rows.sort_by_key(|(row, reset_at_epoch)| {
         (
             reset_at_epoch.is_none(),

@@ -137,17 +137,11 @@ fn read_cpu_jiffies() -> io::Result<CpuJiffies> {
 }
 
 const fn clock_ticks_per_second() -> u64 {
-    // Linux containers use USER_HZ=100 for `/proc/<pid>/stat` CPU accounting
-    // on the platforms jackin-capsule targets. Deltas retain sub-second
-    // remainders before export as cumulative seconds.
     LINUX_USER_HZ
 }
 
 fn parse_stat_cpu_jiffies(stat: &str) -> Option<CpuJiffies> {
     let end_comm = stat.rfind(')')?;
-    // Fields after `comm` are 1-based in proc(5); utime is field 14 and stime 15,
-    // i.e. indices 11 and 12 of the post-`)` whitespace split. Walk the iterator
-    // once instead of materializing every field into a vec.
     let mut fields = stat[end_comm + 1..].split_whitespace();
     let utime = fields.nth(11)?.parse::<u64>().ok()?;
     let stime = fields.next()?.parse::<u64>().ok()?;

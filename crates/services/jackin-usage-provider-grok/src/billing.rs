@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `Grok` billing fetch and tier parsing.
 
 use jackin_usage_provider_core::ProviderError;
 use jackin_usage_provider_core::{
@@ -35,9 +34,6 @@ pub fn fetch_grok_billing(
     }
 }
 
-/// Fetch the supported Grok CLI-proxy REST contract. The ACP adapter remains
-/// a fallback facade, but the direct grpc-web wire scan is not a production
-/// source anymore.
 pub fn fetch_grok_rest_billing(
     auth_path: &Path,
     now: i64,
@@ -69,9 +65,6 @@ pub fn fetch_grok_rest_billing(
     Ok(response)
 }
 
-/// Server-resolved plan label from the `{proxy}/settings` payload. The display
-/// form wins, then the machine form, in either case convention. Pure so the
-/// lookup chain is unit-testable without provider I/O.
 pub(crate) fn grok_tier_from_settings(settings: &serde_json::Value) -> Option<String> {
     settings
         .get("subscriptionTierDisplay")

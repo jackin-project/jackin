@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Console-local error popup state construction.
-
 use crate::tui::screens::workspaces::update::WorkspaceInstanceAction;
 
 pub fn error_popup_state(
@@ -12,9 +10,6 @@ pub fn error_popup_state(
     crate::tui::components::ErrorPopupState::new(title, message)
 }
 
-/// Shared error dialog for a rejected auth source folder. Used by both the
-/// workspace-editor and global-settings source-folder pickers so the
-/// rejection looks and reads identically on either surface.
 pub fn invalid_source_folder_error_popup_state(
     reason: impl Into<String>,
 ) -> crate::tui::components::ErrorPopupState {

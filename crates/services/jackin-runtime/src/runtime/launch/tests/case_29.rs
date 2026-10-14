@@ -1,9 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Name-lock ownership suite (relocated from
-//! `launch_slot/tests/case_01` by S7 split 77).
-
 #![cfg(unix)]
 
 use super::*;
@@ -49,7 +46,6 @@ fn name_lock_child() {
         );
         std::io::stdout().flush().unwrap();
     }
-    // Dropping ownership must release flock without deleting the pathname.
     drop(held);
 }
 

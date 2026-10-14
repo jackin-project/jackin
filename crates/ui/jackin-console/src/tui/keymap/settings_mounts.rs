@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings global-mounts-tab keymap.
 
 use termrock::input::KeyCode;
 
@@ -12,21 +11,16 @@ pub(crate) enum SettingsGlobalMountsTabAction {
     MoveDown,
     ScrollLeft,
     ScrollRight,
-    /// s/S — caller checks `has_sensitive_mount` to route `ConfirmSensitiveSave` vs `OpenSavePreview`.
     Save,
     ToggleReadonly,
-    /// a/A — always Add; Enter on the add-row also → Add, checked by caller.
     Add,
-    /// d/D — caller checks `mount_count` > 0.
     Delete,
     OpenGithub,
     EditRename,
     EditSource,
     EditDest,
     EditScope,
-    /// Enter — fires when Enter pressed; caller routes to Add (if `add_row_selected`) else `Noop`.
     Enter,
-    /// Caller resolves: if dirty → `ConfirmDiscard`, else `ReturnToList`.
     Back,
 }
 
@@ -189,5 +183,3 @@ pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP_BINDINGS: &[KeyBinding<
 ];
 pub(crate) static SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP: Keymap<SettingsGlobalMountsTabAction> =
     Keymap::from_static(SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP_BINDINGS);
-
-// ── Inline picker shell ───────────────────────────────────────────────────────

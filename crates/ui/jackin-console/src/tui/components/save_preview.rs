@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Save-confirm preview line builders for console-local dialogs.
 mod diff_lines;
 mod mount_diff;
 mod settings_lines;

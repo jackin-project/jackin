@@ -1,11 +1,3 @@
-//! Model state for the 1Password picker.
-//!
-//! The runner is intentionally absent from `OpPickerState`: the host crate
-//! owns the runner and injects it at load-execution time (see the binary's
-//! `console/tui/op_picker/load.rs`). Pending-load slots use `()` as the
-//! runner type; the host layer swaps in the real runner when converting
-//! `take_pending_request` output into an `OpPickerPendingLoad` for execution.
-
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -22,8 +14,6 @@ use crate::{
     section_label_for_id, selected_account_id,
 };
 
-/// Concrete load-result type for the op picker (all four payload variants
-/// carry lists of the picker's own account/vault/item/field types).
 pub type LoadResult =
     OpPickerLoadResult<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
 
@@ -47,50 +37,24 @@ pub struct OpPickerState {
     pub sections: Vec<OpSection>,
     pub field_list_state: CollectionState<usize>,
     pub section_list_state: CollectionState<usize>,
-    /// The section chosen on the Section stage (Create mode), scoping the
-    /// Field stage. `None` = the unsectioned `(root)` choice. Reset to
-    /// `None` whenever a fresh item's fields load.
     pub selected_section: Option<OpSection>,
-    /// Opaque section IDs currently collapsed in the field picker.
-    /// Absent => expanded. Cleared whenever a fresh field list loads.
     pub collapsed_sections: HashSet<String>,
 
     pub load_state: OpLoadState,
 
-    /// Browse vs. Create. Browse is the default for all existing callers.
     pub mode: OpPickerMode,
-    /// New-item title input, driven during the `NewItemName` stage.
     pub item_name_input: TextInputState<'static>,
-    /// Field-label input, driven during the `FieldLabel` stage.
     pub field_label_input: TextInputState<'static>,
-    /// New-section name input, driven during the `NewSectionName` stage.
     pub section_name_input: TextInputState<'static>,
-    /// Captured by the New-section flow, consumed when the final
-    /// `OpPickerSelection` is built at commit.
     pub pending_section: Option<jackin_core::OpSectionTarget>,
-    /// The stage the `FieldLabel` sub-stage was entered from, so its Esc
-    /// returns to the right origin (Create mode has three entry points).
     pub field_label_origin: FieldLabelOrigin,
-    /// Set by the Field-stage `R` refresh before re-issuing the field
-    /// load so the Fields-loaded arm rebuilds the field rows in place
-    /// rather than bouncing back to the Section stage (Create mode). The
-    /// initial item-selection load leaves it `false` and lands on Section
-    /// as usual. Cleared the moment the refreshed fields arrive.
     pub field_refresh_in_place: bool,
 
-    /// In-flight subscription waiting for a background load result.
     pub rx: Option<LoadSubscription<LoadResult>>,
-    /// Pending load request queued by state-mutation methods; the host
-    /// crate's load-execution layer picks this up and starts the worker.
-    /// Runner is `()` here — the host injects the real runner at execution
-    /// time (see the binary's `op_picker/load.rs`).
     pub pending_load: Option<OpPickerPendingLoad<LoadResult, OpPickerLoadRequest, ()>>,
-    /// Session-scoped cache shared with `ConsoleState`; the default
-    /// constructor allocates a fresh empty one for unit tests.
     pub op_cache: Rc<RefCell<OpPickerCache>>,
 }
 
-// `rx` is not `Debug`; skipped fields are plumbing only.
 impl std::fmt::Debug for OpPickerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpPickerState")
@@ -126,8 +90,6 @@ impl OpPickerState {
         filtered_items(&self.filter_buf, &self.items)
     }
 
-    /// Filtered items, followed by a trailing `None` sentinel (the
-    /// `+ New item` row) in Create mode. Browse mode emits no sentinel.
     pub fn filtered_item_choices(&self) -> Vec<Option<&OpPickerItem>> {
         filtered_item_choices(&self.filter_buf, &self.items, &self.mode)
     }
@@ -136,10 +98,6 @@ impl OpPickerState {
         filtered_fields(&self.filter_buf, &self.fields)
     }
 
-    /// Existing sections from item metadata, in first-appearance order,
-    /// with a leading `None` (`(root)`) entry. Drives the Section
-    /// stage list (Create mode). The render appends a `+ New section`
-    /// sentinel after these choices.
     pub fn section_choices(&self) -> Vec<Option<OpSection>> {
         let mut choices = vec![None];
         let mut seen_ids = HashSet::new();
@@ -151,13 +109,6 @@ impl OpPickerState {
         choices
     }
 
-    /// Build the ordered display rows for the field picker.
-    ///
-    /// Browse mode: unsectioned fields are emitted first; each named section
-    /// follows with a collapsible `SectionHeader` row.
-    ///
-    /// Create mode: the Field stage is already scoped to `selected_section`,
-    /// so rows are just that section's fields followed by `+ New field`.
     pub fn build_field_display_rows(&self) -> Vec<FieldDisplayRow> {
         field_display_rows_for_picker(
             &self.mode,
@@ -171,8 +122,6 @@ impl OpPickerState {
         )
     }
 
-    /// The input box for the current naming sub-stage, or `None` when the
-    /// picker is in a list stage. Single source for render, sizing, and footer.
     pub const fn naming_stage_input(&self) -> Option<&TextInputState<'static>> {
         naming_stage_input_for_stage(
             self.stage,
@@ -182,13 +131,6 @@ impl OpPickerState {
         )
     }
 
-    /// Build an `OpRef` from the picker's currently-selected vault/item/field.
-    ///
-    /// The `op` field uses UUID-form identifiers from the picker's pane
-    /// selections. The `path` field uses human-readable names, with an
-    /// inline `Item[subtitle]` annotation when the item shares its name
-    /// with another item in the same vault.
-    ///
     #[expect(
         clippy::expect_used,
         reason = "op ref commit is reachable only after vault and item selections exist"
@@ -284,9 +226,6 @@ impl OpPickerState {
     }
 }
 
-/// `wrap` stays at its default `true` (the keyboard cycle path). No
-/// selection when empty, else the first row — the retired `for_count`
-/// constructor's exact semantics.
 #[must_use]
 pub(crate) fn collection_state_for_count(count: usize) -> CollectionState<usize> {
     let mut state = CollectionState::new();
@@ -294,8 +233,6 @@ pub(crate) fn collection_state_for_count(count: usize) -> CollectionState<usize>
     state
 }
 
-/// Index-keyed projection for `move_by`. Labels are empty on purpose: the
-/// label only feeds upstream typeahead, which this picker never drives.
 #[must_use]
 pub(crate) fn index_collection_items(count: usize) -> Vec<CollectionItem<usize>> {
     (0..count)
@@ -303,11 +240,6 @@ pub(crate) fn index_collection_items(count: usize) -> Vec<CollectionItem<usize>>
         .collect()
 }
 
-/// Wheel moves the selection WITHOUT wrapping. Carve-out (ch06 row 9):
-/// `CollectionState`'s `wrap` flag is state-level and already serves the
-/// keyboard cycle, so the clamp half stays a product helper replicating
-/// the retired list wrapper's clamping-move arithmetic — never per-event
-/// flag flips.
 fn scroll_select(list_state: &mut CollectionState<usize>, count: usize, delta: i16) -> bool {
     if count == 0 {
         let changed = list_state.active().is_some();

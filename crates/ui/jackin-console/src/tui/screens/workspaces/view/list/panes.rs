@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Details panes and sidebar body.
 
 use super::instance_details_pane;
 use crate::tui::layout::list::{

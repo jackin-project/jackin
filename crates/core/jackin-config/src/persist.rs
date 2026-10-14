@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Atomic file writes and workspace filename validation.
-//!
-//! Uses a per-process counter mixed with the PID so concurrent migrations
-//! cannot clobber each other's staged files. Not responsible for config
-//! deserialization, migration logic, or mount resolution.
-
 #![expect(
     clippy::disallowed_methods,
     reason = "synchronous config persistence and advisory locking run only on caller-governed blocking paths"
@@ -24,11 +18,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-// Per-process counter mixed with the PID into the staged-write filename.
-// Combined with the PID it produces unique suffixes across concurrent
-// migrations, so two writers cannot clobber each other's staged file before
-// rename, and a leftover staged file cannot truncate an operator-created
-// `<name>.tmp` workspace file.
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 const LOCK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -40,9 +29,6 @@ enum LockMode {
     Exclusive,
 }
 
-/// Held shared advisory lock for one complete config-tree snapshot.
-///
-/// The OS lock, not the persistent lock-file contents, is authoritative.
 #[derive(Debug)]
 pub struct ConfigReadGuard {
     _file: Option<File>,
@@ -53,7 +39,6 @@ pub(crate) struct ConfigWriteGuard {
     _file: File,
 }
 
-/// A fully written and synced sibling file awaiting its atomic rename.
 #[derive(Debug)]
 pub(crate) struct StagedWrite {
     target: PathBuf,
@@ -71,7 +56,6 @@ enum TargetState {
     Other,
 }
 
-/// A staged deletion that can be restored if a later config mutation fails.
 #[derive(Debug)]
 pub(crate) struct StagedDelete {
     target: PathBuf,
@@ -79,19 +63,12 @@ pub(crate) struct StagedDelete {
     committed: bool,
 }
 
-/// Reject workspace file stems that are not valid [`WorkspaceName`](jackin_core::WorkspaceName)s.
 pub fn validate_workspace_file_stem(name: &str) -> crate::ConfigResult<()> {
     jackin_core::WorkspaceName::parse(name)
         .map(drop)
         .map_err(Into::into)
 }
 
-/// Acquire a shared advisory lock covering a complete config-tree read.
-///
-/// Readers may coexist, but an editor excludes them until it saves or is dropped.
-/// If no writer has created the sibling lock file yet, this returns an empty guard
-/// instead of creating host state. Snapshot readers must still verify their input
-/// bytes after parsing to cover the race with a first writer.
 pub fn acquire_config_read_lock(config_file: &Path) -> crate::ConfigResult<ConfigReadGuard> {
     let lock_path = config_file.with_file_name("config.lock");
     let file = match File::open(&lock_path) {
@@ -108,12 +85,6 @@ pub fn acquire_config_read_lock(config_file: &Path) -> crate::ConfigResult<Confi
     Ok(ConfigReadGuard { _file: file })
 }
 
-/// Acquire a shared advisory lock for a security-sensitive config snapshot.
-///
-/// Unlike [`acquire_config_read_lock`], this rejects a missing lock file. The
-/// ordinary read path permits lock-free first-run reads; admission and launch
-/// paths must fail closed because a lock-free snapshot cannot be held stable
-/// against a writer that follows the config writer protocol.
 pub fn acquire_config_read_lock_required(
     config_file: &Path,
 ) -> crate::ConfigResult<ConfigReadGuard> {
@@ -139,11 +110,6 @@ pub(crate) fn acquire_config_write_lock(
     config_file: &Path,
 ) -> crate::ConfigResult<ConfigWriteGuard> {
     let mut file = acquire_lock(config_file, LockMode::Exclusive, LOCK_TIMEOUT, LOCK_POLL)?;
-    // Every writer enters through this lock, so a stale publication journal
-    // (previous owner died mid-commit) is rolled forward here, before any
-    // read or write observes the tree. The lock is exclusive, so no
-    // concurrent committer can own the journal we are completing.
-    // Orphaned staged files are collected on the same path.
     recover_pending_publication(config_file)?;
     file.set_len(0)?;
     file.rewind()?;
@@ -152,9 +118,6 @@ pub(crate) fn acquire_config_write_lock(
     Ok(ConfigWriteGuard { _file: file })
 }
 
-/// Resolve the global config file that owns a split workspace file's writer
-/// lock. Standalone migration callers use a sibling `config.toml`; normal
-/// split files use `<config-dir>/config.toml`.
 pub(crate) fn config_file_for_workspace_path(path: &Path) -> PathBuf {
     let Some(parent) = path.parent() else {
         return PathBuf::from("config.toml");
@@ -237,8 +200,6 @@ where
     }
 }
 
-/// Bounded read for synchronous config and credential discovery callers.
-/// Callers choose a limit and interpret truncation for their format.
 pub(crate) fn read_bounded_file(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)?.take(limit).read_to_end(&mut bytes)?;
@@ -278,7 +239,6 @@ fn recorded_holder(lock_path: &Path) -> String {
     }
 }
 
-/// Write `contents` to `path` via a unique staged file then rename.
 pub fn atomic_write(path: &Path, contents: &str) -> crate::ConfigResult<()> {
     let mut staged = stage_atomic_write(path, contents)?;
     staged.commit()
@@ -297,10 +257,6 @@ pub(crate) fn stage_atomic_write_bytes(
             .with_context(|| format!("creating parent directory {}", parent.display()))?;
     }
     let original = target_state(path);
-    // Place the `.tmp` marker mid-filename rather than as the extension so
-    // `load_workspace_files`'s `extension == "toml"` filter ignores leftover
-    // staged files. PID + counter make the suffix unique across processes
-    // and concurrent in-process writers.
     let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut staged_name = path
         .file_name()
@@ -342,7 +298,6 @@ fn target_state(path: &Path) -> TargetState {
     }
 }
 
-/// Reject a target that cannot be atomically replaced by a regular file.
 pub(crate) fn ensure_replaceable_target(path: &Path) -> crate::ConfigResult<()> {
     match std::fs::metadata(path) {
         Ok(metadata) if metadata.is_file() => Ok(()),
@@ -355,7 +310,6 @@ pub(crate) fn ensure_replaceable_target(path: &Path) -> crate::ConfigResult<()> 
     }
 }
 
-/// Stage removal of one regular config file. Missing files are already gone.
 pub(crate) fn stage_delete(path: &Path) -> crate::ConfigResult<Option<StagedDelete>> {
     match std::fs::metadata(path) {
         Ok(metadata) if metadata.is_file() => Ok(Some(StagedDelete {
@@ -372,31 +326,12 @@ pub(crate) fn stage_delete(path: &Path) -> crate::ConfigResult<Option<StagedDele
     }
 }
 
-/// Sibling of `config.toml` recording a multi-file publication in progress.
-///
-/// Every [`commit_staged_config`] writes this journal (durably, `0600`) before
-/// its first rename and removes it after its last mutation. A crash in the
-/// rename window leaves the journal behind; the next
-/// [`acquire_config_write_lock`] rolls it forward before any read or write
-/// observes the tree, converging to either all-new (crash during commit) or
-/// all-old (crash during abort).
-///
-/// The name stays visible (like the `config.lock` sibling) so a stale journal
-/// is obvious in directory listings instead of hiding as a dotfile.
 pub(crate) fn publication_journal_path(config_file: &Path) -> PathBuf {
     config_file.with_file_name("config.publish.journal")
 }
 
-/// Only publication-journal schema this binary forward-rolls.
 const PUBLICATION_JOURNAL_VERSION: u32 = 2;
 
-/// Durable record of one multi-file publication, fsync'd before the first rename.
-///
-/// The same ordered op list journals both directions: a commit lists the
-/// staged writes then deletes, an abort lists the staged restores. Recovery
-/// always rolls the listed ops forward, so it converges regardless of which
-/// phase died. Unknown fields are rejected so a newer writer's journal fails
-/// loud instead of half-rolling under an older reader.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PublicationJournal {
@@ -431,11 +366,6 @@ fn publication_ops(writes: &[StagedWrite], deletes: &[StagedDelete]) -> Vec<Publ
         .collect()
 }
 
-/// Durably record a pending multi-file publication before the first rename.
-///
-/// Written via staged tmp + fsync + rename + parent fsync at `0600`, so the
-/// journal itself is all-or-nothing: recovery either sees the full rename set
-/// or no journal at all.
 #[cfg(test)]
 pub(crate) fn write_publication_journal(
     journal_path: &Path,
@@ -471,17 +401,6 @@ fn remove_publication_journal(journal_path: &Path) -> crate::ConfigResult<()> {
     sync_parent(journal_path)
 }
 
-/// Forward-roll a publication journal left by a crash between renames.
-///
-/// Runs under the config tree's already-held exclusive lock (see
-/// [`acquire_config_write_lock`]); it performs no locking itself. No journal
-/// still garbage-collects orphaned staged files and returns `Ok(())`. Each op
-/// is idempotent: a write whose target matches the recorded generation is
-/// complete; already-applied deletes are skipped. A corrupt journal, a version mismatch,
-/// or a write with missing or mismatched generation bytes fails closed with the
-/// journal left for forensics — the operator hand-verifies the tree and
-/// removes the journal to proceed. Orphaned `*.tmp.<pid>.<ctr>` staged files
-/// are garbage-collected best-effort while the write lock is held.
 pub(crate) fn recover_pending_publication(config_file: &Path) -> crate::ConfigResult<()> {
     let journal_path = publication_journal_path(config_file);
     let raw = match std::fs::read(&journal_path) {
@@ -528,12 +447,6 @@ pub(crate) fn recover_pending_publication(config_file: &Path) -> crate::ConfigRe
     remove_publication_journal(&journal_path)
 }
 
-/// Best-effort removal of orphaned staged files while the write lock is held.
-///
-/// Only `*.tmp.<pid>.<ctr>` names the stager produces are eligible, minus
-/// `listed` tmps still named by a live journal; operator `*.toml` files never
-/// match. Errors are ignored: leftovers are inert (workspace scans filter by
-/// the `.toml` extension) and retried on the next write-locked open.
 fn collect_staged_garbage(config_file: &Path, listed: &HashSet<PathBuf>) {
     let Some(config_dir) = config_file.parent() else {
         return;
@@ -553,7 +466,6 @@ fn collect_staged_garbage(config_file: &Path, listed: &HashSet<PathBuf>) {
     }
 }
 
-/// `true` when `file_name` matches the stager's `<name>.tmp.<pid>.<ctr>` shape.
 fn is_staged_garbage(file_name: &OsStr) -> bool {
     let Some(name) = file_name.to_str() else {
         return false;
@@ -570,18 +482,6 @@ fn is_staged_garbage(file_name: &OsStr) -> bool {
         && counter.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-/// Commit every staged config mutation, restoring committed targets if a
-/// later rename, delete, or directory sync fails.
-///
-/// The commit point is the journal write, not the last rename: once the
-/// journal is durable, any crash converges (via
-/// [`recover_pending_publication`], which [`acquire_config_write_lock`]
-/// runs before any read or write observes the tree) instead of stranding
-/// global-new / workspace-old skew. An in-process abort swaps the journal to
-/// the staged restores before applying them, so a crash mid-abort converges
-/// to all-old rather than to a mix the commit journal could no longer
-/// describe. Orphaned staged files are garbage-collected on the next
-/// write-locked open.
 pub(crate) fn commit_staged_config(
     journal_path: &Path,
     writes: &mut [StagedWrite],
@@ -636,12 +536,7 @@ where
     D: FnMut(&Path) -> crate::ConfigResult<()>,
 {
     let (mut publish, mut commit, mut stage_restore) = operations;
-    // The journal can only recover a staged generation whose directory
-    // entries are durable, including entries in the workspace directory.
     sync_staged_parents(writes, &mut sync_staged_parent)?;
-    // Installation may rename the journal and then fail its directory sync.
-    // Recovery takes custody before that ambiguous boundary. If no journal
-    // lands, the next locked recovery collects these files as orphans.
     for write in writes.iter_mut() {
         write.recovery_owned = true;
     }
@@ -675,7 +570,6 @@ where
     remove_publication_journal(journal_path)
 }
 
-/// Sync each staged parent once before a journal can name its files.
 fn sync_staged_parents<D>(writes: &[StagedWrite], sync: &mut D) -> crate::ConfigResult<()>
 where
     D: FnMut(&Path) -> crate::ConfigResult<()>,
@@ -689,14 +583,6 @@ where
     Ok(())
 }
 
-/// Restore every committed target to its pre-commit bytes.
-///
-/// Restores are staged first, then the journal is atomically swapped from the
-/// commit ops to the restore ops before any restore is applied. If staging a
-/// restore fails, the original commit journal is left in place so recovery
-/// rolls the commit forward to all-new. If applying a restore fails, the
-/// abort journal is left in place so recovery completes the abort to all-old.
-/// Either way the on-disk outcome is deterministic.
 fn abort_staged_config<P, S, D>(
     journal_path: &Path,
     writes: &mut [StagedWrite],
@@ -768,9 +654,6 @@ where
             "{error}; config rollback failed: {journal_error}"
         )));
     }
-    // The durable abort journal no longer references forward staged files.
-    // Return unused forward files to local cleanup; restore files stay owned
-    // by recovery until their operations complete.
     for write in writes.iter_mut() {
         write.recovery_owned = false;
     }
@@ -880,8 +763,6 @@ fn open_private(path: &Path) -> std::io::Result<File> {
     options.open(path)
 }
 
-/// Leak staged writes without running their cleanup `Drop`, simulating a
-/// crash between staging and rename. Test-only: production drops always run.
 #[cfg(test)]
 pub(crate) fn leak_staged_writes(staged: Vec<StagedWrite>) {
     let _leaked = std::mem::ManuallyDrop::new(staged);

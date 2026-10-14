@@ -112,8 +112,6 @@ fn provider_labels_resolve_all_account_refresh_surfaces() {
         broker_surface_id("opencode", Some("OpenRouter")),
         Some("openrouter")
     );
-    // Antigravity shares the Google surface; the remaining explicitly
-    // blocked agents never resolve to a refreshable surface.
     assert_eq!(resolve_surface("antigravity", None), UsageSurface::Google);
     for agent in ["muse", "omp", "hermes"] {
         assert_eq!(
@@ -147,16 +145,11 @@ fn capability_matches_newly_wired_surfaces_only() {
         Some("OpenRouter"),
         &capability("openrouter")
     ));
-    // A presentation-tab override must not reuse a capability under another
-    // surface; blocked agents match nothing.
     assert!(!capability_matches_surface(
         "cursor",
         Some("Cursor"),
         &capability("google")
     ));
-    // Antigravity is wired to the Google surface; blocked agents with no
-    // provider label match nothing (their unwired-ness lives in discovery,
-    // which mints no binding for them).
     assert!(capability_matches_surface(
         "antigravity",
         None,
@@ -192,8 +185,6 @@ fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
 
     let tabs = provider_tabs(&[&claude_stale, &claude_latest, &codex]);
 
-    // Duplicate snapshots for one account collapse to the newest fetch;
-    // same-provider accounts would each keep their own tab.
     assert_eq!(tabs.len(), 2);
     assert_eq!(
         tabs.iter().map(|tab| &tab.label).collect::<Vec<_>>(),
@@ -215,16 +206,12 @@ fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
     assert_ne!(tabs[0].id, tabs[1].id);
     assert!(tabs.iter().all(|tab| !tab.active));
 
-    // An unlisted provider tabs without a hardcoded surface entry, and an
-    // empty scope stays empty.
     let cursor = account_snapshot_view("Cursor", "cursor@example.com", None, 100);
     let tabs = provider_tabs(&[&cursor]);
     assert_eq!(tabs.len(), 1);
     assert_eq!(tabs[0].label, "Cursor · cursor@example.com");
     assert!(provider_tabs(&[]).is_empty());
 
-    // Same-provider accounts render individually visible labels; an account
-    // without identity keeps the bare provider label.
     let claude_b = account_snapshot_view("Anthropic", "b@example.com", None, 100);
     let tabs = provider_tabs(&[&claude_stale, &claude_b]);
     assert_eq!(
@@ -278,7 +265,6 @@ fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
     assert_eq!(claude.account_label, "claude@example.com");
     assert_eq!(claude.plan_label.as_deref(), Some("Max"));
 
-    // Empty broker state clears the strip instead of leaving stale tabs.
     let mut view = account_snapshot_view("OpenAI", "codex@example.com", None, 123);
     enrich_provider_tabs(&mut view, &HashMap::new());
     assert!(view.tabs.is_empty());
@@ -305,7 +291,6 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
 
     let snapshot = cache.focused_snapshot(Some("claude"), Some("Anthropic"));
 
-    // One tab (and therefore one overview row) per admitted account.
     assert_eq!(snapshot.tabs.len(), 3);
     let mut ids: Vec<String> = snapshot.tabs.iter().map(|tab| tab.id.clone()).collect();
     ids.sort();
@@ -318,7 +303,6 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
     ];
     expected.sort();
     assert_eq!(ids, expected);
-    // The focused account (newest Claude fetch) is the active tab.
     let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
     assert_eq!(active.len(), 1);
     assert_eq!(
@@ -326,9 +310,6 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
         usage_account_tab_id("Anthropic", "b@example.com")
     );
 
-    // Selection by id focuses the correct account: a view focused on the
-    // other Claude account marks exactly its tab, matched by id rather than
-    // the shared "Anthropic" display label.
     let id_a = usage_account_tab_id("Anthropic", "a@example.com");
     let mut selected = account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100);
     enrich_provider_tabs(&mut selected, &cache.snapshots);
@@ -337,7 +318,6 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].id, id_a);
     assert_eq!(active[0].account_label, "a@example.com");
-    // Strip labels stay individually visible per account.
     let mut labels: Vec<String> = selected.tabs.iter().map(|tab| tab.label.clone()).collect();
     labels.sort();
     labels.dedup();

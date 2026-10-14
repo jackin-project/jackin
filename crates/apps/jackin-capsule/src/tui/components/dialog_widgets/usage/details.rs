@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Bucket detail parsing, quota predicates, and compact narrow rows.
 
 use super::{usage_content_indent, usage_meter_char};
 use ratatui::{
@@ -58,8 +57,6 @@ pub(crate) fn usage_quota_bucket_compact_lines(
     let detail = if details.is_empty() {
         "status unavailable".to_owned()
     } else {
-        // Narrow layout keeps only remaining + reset (e.g. "37% left · Resets
-        // in 1h 21m"); pace and other tokens drop out to fit the width.
         let remaining = details.first().cloned();
         let reset = details.iter().find(|part| part.contains("Resets")).cloned();
         let kept = remaining.into_iter().chain(reset).collect::<Vec<_>>();

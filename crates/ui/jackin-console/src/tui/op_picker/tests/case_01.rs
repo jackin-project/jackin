@@ -38,9 +38,6 @@ fn filter_clears_on_pane_advance() {
     s.filter_buf = "per".to_owned();
     assert_eq!(s.filtered_vaults().len(), 1);
 
-    // The pane-advance-clears-filter contract lives inside
-    // `poll_load`'s Items arm; simulate it directly below rather
-    // than racing the worker.
     let outcome = s.handle_key(key(KeyCode::Enter));
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(
@@ -89,7 +86,6 @@ fn esc_from_item_goes_to_vault() {
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(s.stage, OpPickerStage::Vault);
     assert!(s.filter_buf.is_empty(), "filter must clear on back-nav");
-    // Vault selection preserved.
     assert_eq!(s.vault_list_state.active().copied(), Some(1));
     assert_eq!(s.vaults.len(), 2);
 }
@@ -110,16 +106,12 @@ fn esc_from_field_goes_to_item() {
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(s.stage, OpPickerStage::Item);
     assert!(s.filter_buf.is_empty());
-    // Item selection preserved.
     assert_eq!(s.item_list_state.active().copied(), Some(0));
     assert_eq!(s.items.len(), 1);
 }
 
 #[test]
 fn field_sort_concealed_first() {
-    // The Fields-arm of `poll_load` applies a stable sort that puts
-    // concealed fields first. We invoke that sort here against the
-    // same input order used in production to confirm the contract.
     let mut input = vec![
         field("user", "text", false),
         field("pw", "concealed", true),
@@ -128,12 +120,9 @@ fn field_sort_concealed_first() {
     input.sort_by_key(|f| !f.concealed);
     assert_eq!(input[0].label, "pw");
     assert!(input[0].concealed);
-    // Stable sort: non-concealed entries retain their input order.
     assert_eq!(input[1].label, "user");
     assert_eq!(input[2].label, "url");
 
-    // End-to-end through the picker view: seed the sorted list,
-    // assert filtered_fields() preserves it.
     let mut s = picker_ready();
     s.fields = input;
     s.field_list_state.set_active(Some(0));
@@ -191,17 +180,12 @@ fn picker_commit_uses_canonical_ids_and_display_labels() {
         id: "Opaque-Auth-ID".to_owned(),
         label: "auth".to_owned(),
     }];
-    // Field is inside section "auth", so display rows are:
-    //   0: SectionHeader "auth"
-    //   1: Field { field_idx: 0 }
     s.field_list_state.set_active(Some(1));
     s.stage = OpPickerStage::Field;
 
     let outcome = s.handle_key(key(KeyCode::Enter));
     match outcome {
         ModalOutcome::Commit(OpPickerSelection::Existing(op_ref)) => {
-            // The unique reference label resolves through item metadata; the
-            // URI uses the opaque ID while the path keeps the section label.
             assert_eq!(
                 op_ref.op, "op://v-Personal/i-test/Opaque-Auth-ID/api",
                 "op URI must use vault, item, section, and field IDs"
@@ -241,20 +225,17 @@ fn create_mode_new_item_flow_commits_new_item() {
     s.selected_vault = Some(vault("Personal"));
     s.items = vec![item("Existing")];
     s.stage = OpPickerStage::Item;
-    // choices: [Some(Existing), None]; select the sentinel at index 1.
     s.item_list_state.set_active(Some(1));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::NewItemName);
-    // item_name_input defaults to "default-item"; accept with Enter.
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::FieldLabel);
-    // field_label_input defaults to "token"; accept with Enter to commit.
     match s.handle_key(key(KeyCode::Enter)) {
         ModalOutcome::Commit(OpPickerSelection::NewItem {
             vault,
@@ -274,9 +255,6 @@ fn create_mode_new_item_flow_commits_new_item() {
 
 #[test]
 fn create_mode_existing_item_lands_on_section_stage() {
-    // poll_load's Fields arm routes Create mode to the Section stage
-    // (Browse mode goes to Field). Invoke that arm directly via the
-    // worker drain so we exercise the real sequencing.
     let runner = Arc::new(StubRunner {
         accounts: Mutex::new(vec![account(
             "acct1",
@@ -296,7 +274,6 @@ fn create_mode_existing_item_lands_on_section_stage() {
     s.pending_load = None;
     s.selected_vault = Some(vault("Personal"));
     s.selected_item = Some(item("login"));
-    // Drive the existing-item Enter through start_field_load + drain.
     s.start_field_load("i-login".into(), "v-Personal".into(), None);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline {
@@ -324,13 +301,10 @@ fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
         ],
         vec![auth.clone()],
     );
-    // Operator already drilled into the "auth" section on the Field stage.
     s.stage = OpPickerStage::Field;
     s.selected_section = Some(auth.clone());
-    // `r` clears `fields`/`field_list_state` and sets the in-place flag.
     s.fields.clear();
     s.field_refresh_in_place = true;
-    // Publish the reloaded fields through the same arm the worker uses.
     s.rx = Some(jackin_oppicker::ready_load_subscription(
         LoadResult::Fields(Ok(jackin_core::OpItemDetail {
             fields: vec![
@@ -361,7 +335,6 @@ fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
         !s.field_refresh_in_place,
         "the flag is cleared once the refreshed fields arrive"
     );
-    // Rows are re-scoped to "auth": one field + the new-field sentinel.
     let rows = s.build_field_display_rows();
     assert_eq!(rows.len(), 2, "one auth field + new-field sentinel");
     assert!(matches!(rows[1], FieldDisplayRow::NewFieldSentinel));

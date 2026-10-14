@@ -123,9 +123,6 @@ fn breadcrumb_migration_preserves_account_source_fingerprint() {
         },
     };
 
-    // Prior binaries fingerprinted the literal legacy path bytes. The v1
-    // decoder must restore those exact bytes before hashing so a schema bump
-    // does not resurrect an intentionally removed account source.
     let mut expected = Sha256::new();
     hash_component(&mut expected, account.provider.slug());
     hash_component(&mut expected, "api_key");
@@ -284,10 +281,8 @@ fn cross_provider_opencode_account_requires_model_and_native_does_not() {
         env.get("ANTHROPIC_API_KEY"),
         Some(&EnvValue::from("fixture-anthropic-key"))
     );
-    // OpenCode endpoints are written to its private configuration, not env
     assert_eq!(env.len(), 1);
 
-    // Cross-provider account with None model must fail
     if let AccountCredential::ApiKey { model, .. } = &mut account.credential {
         *model = None;
     }
@@ -297,7 +292,6 @@ fn cross_provider_opencode_account_requires_model_and_native_does_not() {
             .contains("requires an explicit model for opencode")
     );
 
-    // Cross-provider account with empty model must also fail
     if let AccountCredential::ApiKey { model, .. } = &mut account.credential {
         *model = Some("   ".into());
     }
@@ -307,7 +301,6 @@ fn cross_provider_opencode_account_requires_model_and_native_does_not() {
             .contains("requires an explicit model for opencode")
     );
 
-    // Native OpenCode account does not require an explicit model
     let native_account = AccountConfig {
         enabled: true,
         name: "Native OpenCode".into(),

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded stream and watcher lifecycle phases.
-
 use crate::{Attr, OperationGuard, Value, autonomous_root_operation, operation, schema};
 
 #[must_use]

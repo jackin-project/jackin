@@ -199,9 +199,6 @@ impl Multiplexer {
         })
     }
 
-    /// Returns the canonicalized export source alongside the canonicalized
-    /// workdir it was validated against, so callers reuse the single workdir
-    /// `canonicalize()` rather than re-stat it.
     fn resolve_export_source(&self, requested_path: &str) -> Result<(PathBuf, PathBuf)> {
         let trimmed = requested_path.trim();
         if trimmed.is_empty() {
@@ -234,9 +231,6 @@ struct ExportCandidate {
     file_name: String,
 }
 
-/// Extract the trimmed word token straddling `col` in `row`, or `None` when no
-/// word covers the cell or the token is blank. Shared tail of the cursor-cell
-/// and mouse-cell export-path probes.
 fn word_token(row: &RowSnapshot, col: u16) -> Option<String> {
     let (start_col, end_col) = word_bounds_in_row(row, col)?;
     let token = row.text_range(start_col, end_col).trim().to_owned();

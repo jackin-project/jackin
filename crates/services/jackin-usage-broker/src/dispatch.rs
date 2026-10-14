@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker request dispatch and publication join.
 
 use std::io::{BufRead, BufReader, Read};
 
@@ -222,10 +221,6 @@ fn dispatch_capability_operation(
     }
 }
 
-/// Resolve a launch from fresh discovery inside the broker, then reconcile
-/// that same generation before returning any authority. A stale catalog scan
-/// cannot win after a newer publication because every reconciliation is CAS
-/// fenced and conflicts trigger a fresh scan.
 fn resolve_relay_capabilities(
     publisher: &publish::ProjectionPublisher,
     catalog_refresh: Option<&BrokerCatalogRefresh>,
@@ -337,8 +332,6 @@ fn refresh_projection_with_catalog(
     refresh_projection(coordinator, publisher, force)
 }
 
-/// Retry only catalog lease conflicts. The supplied attempt performs a fresh
-/// broker-owned scan on every call; all other failures stay fail-closed.
 pub(crate) fn retry_catalog_revision_conflict<T>(
     mut attempt: impl FnMut() -> Result<T, UsageCoordinationError>,
 ) -> Result<T, UsageCoordinationError> {
@@ -363,11 +356,6 @@ pub(crate) fn read_projection(publisher: &publish::ProjectionPublisher) -> Usage
     }
 }
 
-/// Request due observations for every observed account and return the latest
-/// publication. Each account runs its normal due check: still-fresh data is
-/// reused, active work is joined, and retry deadlines always win. `force` is
-/// honored only as the coordinator honors it — an explicit operator refresh
-/// bypasses the success cooldown but never retry or rate-limit deadlines.
 pub(crate) fn refresh_projection(
     coordinator: &UsageCoordinator,
     publisher: &publish::ProjectionPublisher,
@@ -378,8 +366,6 @@ pub(crate) fn refresh_projection(
     if !known.is_empty() {
         let mut requests = Vec::with_capacity(known.len());
         for capability in &known {
-            // A read failure resolves to generation 0, which can only adopt
-            // the current winner — never force a duplicate generation.
             let observed = coordinator
                 .current(capability, now)
                 .map_or(0, |view| view.generation);
@@ -391,12 +377,6 @@ pub(crate) fn refresh_projection(
     read_projection(publisher)
 }
 
-/// Wait until one named publication settles or is superseded.
-///
-/// A newer publication means the requested one is terminal history and is
-/// returned immediately. Waiting only happens while the requested publication
-/// is current and still refreshing. Expiry reports `WaitTimeout` without
-/// touching broker ownership: generations always run to terminal.
 pub(crate) fn join_publication(
     publisher: &publish::ProjectionPublisher,
     projection_id: &str,
@@ -451,8 +431,6 @@ mod protocol_version_tests {
 
     #[test]
     fn v7_request_envelope_is_rejected_by_the_v8_dispatch_gate() {
-        // This is the v7 CurrentProjection envelope shape: the enum's own tag
-        // is nested under the request's `operation` field.
         let request: UsageBrokerRequest = serde_json::from_str(
             r#"{"protocol_version":"v7","build_id":"test-build","operation":{"operation":"current_projection"}}"#,
         )

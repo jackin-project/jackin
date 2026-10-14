@@ -335,7 +335,6 @@ fn validate_kimi_requires_config_and_credentials_tree() {
     std::fs::write(good.join("config.toml"), "x = 1\n").unwrap();
     validate_sync_source_dir(Agent::Kimi, &good, temp.path()).unwrap();
 
-    // config.toml present but no credentials/ dir → rejected.
     let bad = temp.path().join("kimi-bad");
     std::fs::create_dir_all(&bad).unwrap();
     std::fs::write(bad.join("config.toml"), "x = 1\n").unwrap();
@@ -363,12 +362,6 @@ fn ignore_mode_skips_state_when_absent() {
     )
     .unwrap();
 
-    // Ignore mode with no prior jackin-owned state provisions nothing: it does
-    // not copy host auth and does not write an empty `{}` skeleton, so no
-    // jackin-owned state is created for the container to mount. The agent falls
-    // back to the image's credential-free default-home — the same no-auth
-    // outcome as an explicit `{}`, without an empty bind source. Stale existing
-    // jackin-owned state still enters the normal wipe path.
     assert_eq!(outcome, AuthProvisionOutcome::Skipped);
     assert!(!state.claude_account_json().unwrap().exists());
     assert!(!state.claude_credentials_json().unwrap().exists());

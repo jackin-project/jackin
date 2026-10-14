@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! TUI dialog stack management for the daemon-owned `Multiplexer`.
-
 use super::{
     Dialog, GithubContextView, Instant, Multiplexer, MuxMode, MuxModeState,
     github_context_view_from_state, mux_mode_for_state,
@@ -34,9 +32,6 @@ impl Multiplexer {
         }
     }
 
-    /// Top of the dialog stack — `Some` when a dialog is visible.
-    /// Use this instead of inspecting `dialog_stack` directly so the
-    /// "is a dialog open" check stays in one place.
     pub(super) fn dialog_top(&self) -> Option<&Dialog> {
         self.control.dialog_top()
     }
@@ -45,7 +40,6 @@ impl Multiplexer {
         self.control.dialog_top_mut()
     }
 
-    /// `true` when at least one dialog is on the stack.
     pub(super) fn dialog_open(&self) -> bool {
         self.control.dialog_open()
     }
@@ -63,10 +57,6 @@ impl Multiplexer {
         matches!(self.mux_mode(), MuxMode::Dialog)
     }
 
-    /// Push a new dialog on top of the current one. The previous
-    /// dialog stays underneath waiting for an Esc-pop to surface it
-    /// again — the standard sub-dialog opening path (Menu → New tab
-    /// pushes `AgentPicker` on top of Menu, not a replacement).
     pub(super) fn dialog_push(&mut self, d: Dialog) {
         self.clipboard.dialog_copy_feedback_deadline = None;
         self.control.push_dialog(d);
@@ -95,9 +85,6 @@ impl Multiplexer {
 
     pub(super) fn open_github_context_dialog(&mut self, now: Instant) {
         self.dialog_push(Dialog::new_github_context());
-        // Dialog overlay frame is composed by the caller; spawn-or-not
-        // does not gate the visible state. The return value names
-        // whether a worker was kicked off (consumed only by tests).
         let _spawned = self.force_spawn_pull_request_context_lookup(now);
     }
 
@@ -106,20 +93,10 @@ impl Multiplexer {
         github_context_view_from_state(branch, pull_request, self.pull_request_context_loading())
     }
 
-    /// Single `&mut self.control.dialog_stack` borrow alongside a
-    /// `GithubContextView` snapshot. NLL can split the borrow only when
-    /// the immutable field reads and the mutable `dialog_stack` access
-    /// live in the same function — open-coding both at every dispatch
-    /// site triggers the borrow checker. Returns `None` when no dialog
-    /// is on the stack.
     pub(super) fn dispatch_to_dialog_top<F, R>(&mut self, f: F) -> Option<R>
     where
         F: FnOnce(&mut Dialog, Option<&GithubContextView<'_>>) -> R,
     {
-        // Inline `pull_request_status` instead of calling the helper so
-        // the compiler splits the borrow into `pull_request_context*`
-        // (immutable) and `dialog_stack` (mutable) — disjoint fields
-        // that NLL accepts only through direct field access.
         let view = github_context_view_from_state(
             self.pr_watch.pull_request_context_branch.as_deref(),
             self.pr_watch.pull_request_context.as_deref(),
@@ -154,10 +131,6 @@ impl Multiplexer {
         popped
     }
 
-    /// Clear every dialog on the stack — used by action paths that
-    /// finish the flow (`SpawnAgent` after picking an agent,
-    /// destructive confirmations after they fire, etc.) so the
-    /// operator returns straight to the focused pane.
     pub(super) fn dialog_clear(&mut self) {
         self.control.clear_dialogs();
         self.clipboard.dialog_copy_feedback_deadline = None;
@@ -215,8 +188,6 @@ impl Multiplexer {
         self.clear_clipboard_image_notice()
     }
 
-    /// Drop saved gesture state when the pane geometry it referenced
-    /// is about to change. Cheaper than per-motion re-validation.
     pub(super) fn cancel_drag(&mut self) {
         self.render.drag = None;
         self.clipboard.selection = None;

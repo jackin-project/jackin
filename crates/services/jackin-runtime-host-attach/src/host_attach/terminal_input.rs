@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Session-owned terminal input. Cancellation wakes the reader before joining
-//! it, so an idle terminal cannot hold Tokio's blocking-pool shutdown forever.
-//! This owns the only reader for the input descriptor during attachment;
-//! readiness followed by a blocking read requires that exclusive ownership.
-
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::net::Shutdown;
@@ -27,8 +22,6 @@ pub(super) struct TerminalInput {
 
 impl TerminalInput {
     pub(super) fn stdin() -> io::Result<Self> {
-        // Duplicating preserves the descriptor's flags and does not take
-        // ownership of the process's standard-input descriptor.
         Self::from_reader(File::from(io::stdin().as_fd().try_clone_to_owned()?))
     }
 
@@ -75,7 +68,6 @@ impl AsyncRead for TerminalInput {
 
 impl Drop for TerminalInput {
     fn drop(&mut self) {
-        // Wake either poll or a backpressured socket write before joining.
         let _shutdown = self.cancellation.shutdown(Shutdown::Both);
         let _joined = self.join_worker();
     }
@@ -83,9 +75,6 @@ impl Drop for TerminalInput {
 
 fn forward_input<I: Read + AsFd>(input: I, mut sender: BlockingStream) -> io::Result<()> {
     let result = forward_input_inner(input, &mut sender);
-    // The session keeps a duplicate writer for cancellation. Explicitly send
-    // EOF when this worker finishes so that duplicate cannot hide read errors
-    // or input EOF from the async receiver.
     let _shutdown = sender.shutdown(Shutdown::Write);
     result
 }
@@ -94,9 +83,6 @@ fn forward_input_inner<I: Read + AsFd>(
     mut input: I,
     sender: &mut BlockingStream,
 ) -> io::Result<()> {
-    // A peer shutdown need not interrupt a blocking write on every supported
-    // kernel. Keep writes nonblocking and observe cancellation in the poll set
-    // even while the async reader has stopped draining forwarded input.
     sender.set_nonblocking(true)?;
     let mut bytes = [0u8; 4096];
     let mut pending = 0..0;

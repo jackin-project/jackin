@@ -69,9 +69,6 @@ fn global_mount_add_filebrowser_esc_closes_chain() {
 
     confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
 
-    // The ScopePicker was committed when AllAgents was picked, so Esc
-    // on the FileBrowser must close the modal chain entirely rather
-    // than resurrect a consumed picker.
     assert!(
         !settings.mounts.modals.is_open(),
         "Esc from add-mount FileBrowser should close the chain; got {:?}",
@@ -243,18 +240,15 @@ fn global_mount_role_picker_esc_returns_scope_picker() {
 
 #[test]
 fn settings_tab_navigation_reaches_all_config_tabs() {
-    // W3C ARIA Tabs: Right cycles tabs when the tab bar has focus.
     let tmp = tempfile::tempdir().unwrap();
     let config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
     state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
-    // Settings opens with tab_bar_focused = true; Right cycles forward.
     assert!(
         matches!(&state.stage, ManagerStage::Settings(s) if s.tab_bar_focused()),
         "must start on tab bar"
     );
 
-    // Settings opens on General (first tab); Right cycles: General → Mounts → Environments → Auth → Trust → General
     handle_settings_key(&mut state, key(KeyCode::Right));
     assert!(
         matches!(&state.stage, ManagerStage::Settings(settings) if settings.active_tab == SettingsTab::Mounts)
@@ -311,15 +305,11 @@ fn settings_tab_bar_follows_aria_focus_pattern() {
 
 #[test]
 fn settings_focus_owner_exclusivity() {
-    // Defect 563 regression: when content owns focus, exactly one "green border"
-    // signal exists — tab_bar_focused is false AND the active-tab's scroll_focused
-    // is true. The tab bar must not also be green (tab_bar_focused must be false).
     let tmp = tempfile::tempdir().unwrap();
     let config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
     state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
 
-    // Enter content (General tab by default).
     handle_settings_key(&mut state, key(KeyCode::Down));
     {
         let ManagerStage::Settings(settings) = &state.stage else {
@@ -330,7 +320,6 @@ fn settings_focus_owner_exclusivity() {
             "tab_bar must yield focus when content gains it"
         );
     }
-    // Return to tab bar, switch to Mounts tab, enter content.
     handle_settings_key(&mut state, key(KeyCode::Esc));
     handle_settings_key(&mut state, key(KeyCode::Right));
     handle_settings_key(&mut state, key(KeyCode::Down));

@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Agent picker used in the Auth-tab "+ Add" flow.
-//!
-//! Arrow keys move focus, Enter commits, Esc cancels.
-
 use crossterm::event::{KeyCode, KeyEvent};
 use jackin_oppicker::ModalOutcome;
 use ratatui::Frame;
@@ -97,10 +93,7 @@ pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentCh
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(1),    // agent list
-            Constraint::Length(1), // spacer
-        ])
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(inner);
 
     let items: Vec<ListRow<'_, usize>> = state

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker service entry points.
 
 use std::collections::BTreeMap;
 use std::fs::{self};
@@ -50,16 +49,12 @@ impl ProviderCredentialEnvResolver for EmptyProviderCredentialResolver {
     }
 }
 
-/// Secret-free metadata emitted after the foreground broker has installed its
-/// exact-source catalog and is ready to serve monitor requests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageBrokerForegroundReady {
     pub capability: UsageAccountCapability,
     pub binding_scope: String,
 }
 
-/// Bootstrap the exact selected Claude Keychain item, then hold its lease and
-/// the broker lease for the foreground collector service lifetime.
 pub fn run_usage_broker_foreground_bootstrap(
     config: UsageBrokerConfig,
     scope: UsageDiscoveryScope,
@@ -167,7 +162,6 @@ pub(crate) fn validate_foreground_catalog_revision(
     Ok(())
 }
 
-/// Run the process-owned service until its idle lease expires.
 pub fn run_usage_broker_service(
     config: UsageBrokerConfig,
     scope: UsageDiscoveryScope,
@@ -205,7 +199,6 @@ pub fn run_usage_broker_service(
     )
 }
 
-/// Process service seam used by the shipped broker binary and process tests.
 pub fn run_usage_broker_service_with_executor(
     config: UsageBrokerConfig,
     executor: Arc<dyn UsageProviderExecutor>,
@@ -219,11 +212,6 @@ pub fn run_usage_broker_service_with_executor(
     )
 }
 
-/// Run the host broker without discovering accounts or resolving credentials.
-///
-/// This is the service entry point used by explicit monitor startup. Existing
-/// usage reads can still use persisted projections, while provider refresh
-/// requests fail closed without touching provider or credential APIs.
 pub fn run_usage_monitor_service(config: UsageBrokerConfig) -> Result<(), UsageCoordinationError> {
     run_usage_broker_service_with_executor_and_metadata(
         config,
@@ -295,9 +283,6 @@ fn claim_foreground_startup_cleanup(
     claim_startup_cleanup(config)?.ok_or_else(broker_conflict)
 }
 
-/// Reclaim only a dead socket paired with a lease that this process actually
-/// replaced. A live endpoint, foreign path, or unproven stale socket is left
-/// untouched.
 pub(crate) fn prepare_socket_for_startup(
     config: &UsageBrokerConfig,
     cleanup: &BrokerStartupCleanup,
@@ -455,7 +440,6 @@ fn run_usage_broker_service_with_cleanup(
     Ok(())
 }
 
-/// Test/runtime seam that preserves the same process election and transport.
 #[doc(hidden)]
 pub fn ensure_usage_broker_with_executor(
     config: UsageBrokerConfig,

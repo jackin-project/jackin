@@ -1,20 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Quit confirm and modal gating plans.
 
 use super::QuitInterceptState;
 
-/// Whether a key should open the global exit confirmation.
-///
-/// Two triggers, matching every other jackin❯ surface:
-/// * `Ctrl+Q` — the explicit quit chord. Always opens, regardless of screen or
-///   focus: it is not a text character, so it never collides with typing.
-/// * bare `q`/`Q` — a convenience trigger, but only off the main screen and
-///   when no field is consuming letter input (otherwise it is just text).
-///
-/// The root console maps its stage/modal state into [`QuitInterceptState`].
-/// Keeping the key policy here prevents the event loop from owning a parallel
-/// interpretation of visible console focus.
 #[must_use]
 pub fn should_open_quit_confirm(
     key: crossterm::event::KeyEvent,
@@ -37,10 +25,6 @@ pub fn quit_confirm_state() -> crate::tui::components::ConfirmState {
     crate::tui::components::ConfirmState::new("Exit jackin❯?").with_focus_yes()
 }
 
-/// `?` opens the keyboard-help overlay. Consulted only inside the input
-/// dispatcher's `Stage` arm, so no modal/picker owns input when this fires
-/// (a text input must keep `?` as a typed character). Shift-tolerant: `?`
-/// arrives with SHIFT on many layouts.
 #[must_use]
 pub fn should_open_keyboard_help(key: crossterm::event::KeyEvent) -> bool {
     use crossterm::event::{KeyCode, KeyModifiers};

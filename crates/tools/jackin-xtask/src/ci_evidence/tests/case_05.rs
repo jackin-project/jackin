@@ -5,14 +5,6 @@ use super::*;
 
 #[test]
 fn generated_evidence_workflows_are_complete_and_tamper_bound() {
-    // Post-#1110 the repo no longer carries the velnor-workflow contract or
-    // generator state (main commit 6c389d38e deleted .github-gen/ and
-    // .github/ci/ as "legacy velnor-workflow generator files"), and the
-    // all-branches consolidation dropped the two evidence-observer workflow
-    // stubs because the pinned renderer rejects non-generated files. The
-    // tamper-binding assertions below therefore run against frozen fixtures
-    // (the last rendered observer workflows) plus a synthesized workflow
-    // contract and ownership state.
     let directory = tempfile::tempdir().unwrap();
     let copy = directory.path();
     for (relative, contents) in [

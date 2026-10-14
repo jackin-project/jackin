@@ -5,13 +5,6 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-/// System **menu bar** for jackin❯ desktop when a document window is front
-/// (Usage / Settings).
-///
-/// Accessory status-item mode has no app menu chrome;
-/// switching to `.regular` reveals  + these menus.
-///
-/// Standard macOS menu citizenship for the Usage window.
 @MainActor
 public final class AppMainMenu: NSObject, NSMenuDelegate {
     static let settingsKeyEquivalent = ","
@@ -28,7 +21,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     private lazy var sidebarCommandItem = Self.sidebarMenuItem()
     private weak var sidebarSplitController: NSSplitViewController?
     private var settingsWindow: NSWindow?
-    /// Strong: `NSWindow.delegate` is weak.
     private var settingsCloseProxy: SettingsWindowCloseProxy?
 
     init(
@@ -40,7 +32,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         super.init()
     }
 
-    /// Install once at launch; becomes visible when activation policy is `.regular`.
     func install() {
         let main = NSMenu()
 
@@ -56,7 +47,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         NSApp.mainMenu = main
     }
 
-    // MARK: - Menus
 
     private var appMenuTitle: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
@@ -128,7 +118,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     }
 
     private func editMenu() -> NSMenu {
-        // Target nil → first-responder chain (standard macOS Edit menu).
         let menu = NSMenu(title: "Edit")
         menu.addItem(firstResponder("Undo", Selector(("undo:")), key: "z"))
         menu.addItem(
@@ -196,7 +185,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         return menu
     }
 
-    // MARK: - Actions
 
     @objc private func orderFrontAbout(_: Any?) {
         NSApp.orderFrontStandardAboutPanel(options: [
@@ -232,7 +220,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         }
         settingsCloseProxy = proxy
         window.delegate = proxy
-        // Hosting controller so any future SwiftUI toolbar attaches as NSToolbar.
         window.contentViewController = NSHostingController(
             rootView: SettingsView(store: store)
                 .frame(minWidth: 440, minHeight: 400)
@@ -251,7 +238,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         openUsage()
     }
 
-    // MARK: - Helpers
 
     static func sidebarMenuItem() -> NSMenuItem {
         let item = NSMenuItem(
@@ -289,7 +275,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         return item
     }
 
-    /// Action handled by this controller.
     private func owned(
         _ title: String,
         _ action: Selector,
@@ -299,7 +284,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         makeItem(title, action: action, key: key, modifiers: modifiers, target: self)
     }
 
-    /// Action on a fixed object (usually `NSApp`).
     private func routed(
         _ title: String,
         _ action: Selector,
@@ -310,7 +294,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         makeItem(title, action: action, key: key, modifiers: modifiers, target: target)
     }
 
-    /// First-responder chain (Edit / window chrome).
     private func firstResponder(
         _ title: String,
         _ action: Selector,
@@ -336,7 +319,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     }
 }
 
-/// Clears Settings window ownership and resigns accessory when Settings closes.
 @MainActor
 private final class SettingsWindowCloseProxy: NSObject, NSWindowDelegate {
     private let onClose: () -> Void
@@ -353,11 +335,8 @@ private final class SettingsWindowCloseProxy: NSObject, NSWindowDelegate {
     }
 }
 
-/// Activation policy bridge: accessory (status bar only) ↔ regular (menu bar + Dock).
 @MainActor
 public enum AppActivation {
-    /// Promote before ordering the window; AppKit may otherwise register an accessory-process
-    /// window in its Window menu without making that window visible on the active Space.
     static func present(_ window: NSWindow) {
         if NSApp.activationPolicy() == .regular {
             NSApp.unhide(nil)
@@ -373,7 +352,6 @@ public enum AppActivation {
         }
     }
 
-    /// Back to menu-bar agent when no app windows remain visible.
     static func resignToAccessoryIfNeeded() {
         let visible = NSApp.windows.contains { window in
             window.isVisible

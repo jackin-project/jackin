@@ -205,9 +205,7 @@ fn prop_validate_never_panics_on_parsed_manifest() {
         let text = format!(
             "version = \"v1alpha6\"\ndockerfile = \"{dockerfile}\"\n{junk}\n"
         );
-        // Parsing may fail (deny_unknown / invalid TOML) — never panic either path.
         if let Ok(manifest) = toml::from_str::<RoleManifest>(&text) {
-            // Validation is total: Ok(warnings) or Err; never panic.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 drop(validate_role_manifest(&manifest));
                 drop(validate_agent_consistency(&manifest));

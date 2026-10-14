@@ -137,9 +137,6 @@ fn shared_state_and_tmp_are_not_agent_grants_and_private_root_is_exact() {
 
 #[test]
 fn derived_pane_homes_and_agent_seed_fragment_are_granted() {
-    // Secondary same-agent slot: suffixed home, agent default fragment.
-    // The seed reads `/jackin/default-home/.codex` for every home shape,
-    // so the grant must be keyed by runtime — never by home suffix.
     let config = CapsuleConfig {
         instances: vec!["cx-b-inst".to_owned()],
         agents: BTreeMap::from([("cx-b-inst".to_owned(), "codex".to_owned())]),
@@ -180,8 +177,6 @@ fn derived_pane_homes_and_agent_seed_fragment_are_granted() {
 
 #[test]
 fn xdg_parent_home_gets_pane_homes_and_config_fragments() {
-    // XDG-parent home: the base mount grants cover only subpaths, so the
-    // derived `{home}/panes/{seq}` tree needs its own parent grant.
     let config = CapsuleConfig {
         instances: vec!["oc-c-inst".to_owned()],
         agents: BTreeMap::from([("oc-c-inst".to_owned(), "opencode".to_owned())]),
@@ -223,8 +218,6 @@ fn xdg_parent_home_gets_pane_homes_and_config_fragments() {
         assert_eq!(rule.access, READ_ONLY);
         assert!(!rule.required);
     }
-    // The parent home itself stays ungranted: only the panes subtree and
-    // the instance's own mount subpaths are writable.
     assert!(!rules.iter().any(|rule| {
         rule.path == Path::new("/home/agent/.local/share") && rule.access & support::WRITABLE != 0
     }));

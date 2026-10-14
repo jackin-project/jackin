@@ -1,13 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `binary_artifact`.
 use super::*;
 
 #[test]
 fn hash_file_sha256_matches_known_vector() {
-    // SHA-256 of the empty string is the well-known
-    // e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.
     let tmp = tempfile::NamedTempFile::new().unwrap();
     let digest = hash_file_sha256(tmp.path()).unwrap();
     assert_eq!(
@@ -18,8 +15,6 @@ fn hash_file_sha256_matches_known_vector() {
 
 #[test]
 fn hash_file_sha256_matches_for_known_bytes() {
-    // SHA-256 of the ASCII string "abc" is
-    // ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), b"abc").unwrap();
     let digest = hash_file_sha256(tmp.path()).unwrap();
@@ -92,7 +87,6 @@ fn repair_executable_file_sets_exec_bit_on_regular_file() {
 fn parse_sha256_hex_accepts_valid_and_rejects_garbage() {
     let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     assert_eq!(parse_sha256_hex(digest).unwrap(), digest);
-    // Uppercase is normalized; a trailing filename token is ignored.
     assert_eq!(
         parse_sha256_hex(&format!("{}  some-asset.tar.gz", digest.to_uppercase())).unwrap(),
         digest

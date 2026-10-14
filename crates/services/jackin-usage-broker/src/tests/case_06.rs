@@ -32,8 +32,6 @@ fn healthy_accounts_publish_while_one_account_stalls() {
         .join(capability(), fast.generation, Duration::from_secs(5))
         .unwrap();
 
-    // The healthy account is published with data while the stalled account
-    // keeps its refreshing state; the catalog revision never changes.
     let partial = client.current_projection().unwrap();
     partial.validate().unwrap();
     assert_eq!(partial.discovery_revision, before.discovery_revision);
@@ -111,7 +109,6 @@ fn projection_refresh_runs_due_checks_and_join_settles() {
         .unwrap();
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 
-    // A non-forced projection refresh reuses the still-fresh observation.
     let reused = client.request_refresh(None, false).unwrap();
     reused.validate().unwrap();
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
@@ -123,14 +120,6 @@ fn projection_refresh_runs_due_checks_and_join_settles() {
             .any(|account| account.canonical_account_id == "abc123")
     );
 
-    // A forced projection refresh still respects Claude's minimum attempt
-    // interval; the join observes the unchanged projection settle without
-    // cancelling broker ownership.
-    //
-    // Join returns a superseding publication immediately by design, and
-    // every intermediate publish mints a fresh publication id, so a single
-    // join can observe a still-Refreshing snapshot under load. Chase the
-    // chain until Idle or the deadline, like any correct caller must.
     let refreshing = client.request_refresh(None, true).unwrap();
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut target = refreshing.projection_id.clone();
@@ -148,7 +137,6 @@ fn projection_refresh_runs_due_checks_and_join_settles() {
     assert_eq!(settled.refresh_state, UsageProjectionRefreshStateV1::Idle);
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
 
-    // A superseded or unknown publication id returns the latest publication.
     let latest = client
         .join_publication("usage-broker:unknown".to_owned(), Duration::from_secs(5))
         .unwrap();
@@ -171,9 +159,6 @@ fn join_publication_timeout_leaves_broker_ownership_intact() {
     .unwrap();
     client.subscribe(capability()).unwrap();
     started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    // Wait for a quiesced refreshing publication: once the id is stable
-    // across a ticker interval, no publish can interleave with the join below
-    // until the probe is released.
     let refreshing = loop {
         let first = client.current_projection().unwrap();
         thread::park_timeout(Duration::from_millis(250));
@@ -190,8 +175,6 @@ fn join_publication_timeout_leaves_broker_ownership_intact() {
         .unwrap_err();
     assert_eq!(error.kind, UsageCoordinationErrorKind::WaitTimeout);
 
-    // The timed-out join cancelled nothing: releasing the probe still settles
-    // the same account generation into a newer publication.
     release_tx.send(()).unwrap();
     let settled = client
         .join_publication(refreshing.projection_id, Duration::from_secs(5))

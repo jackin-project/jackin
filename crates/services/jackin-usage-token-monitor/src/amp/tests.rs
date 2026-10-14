@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the parent module.
 use crate::TokenSession;
 use jackin_core::Agent;
 
@@ -69,7 +68,6 @@ fn amp_changed_flag_includes_cache_tokens() {
 #[test]
 fn amp_token_reader_skips_zero_usage() {
     let session = TokenSession::new(Agent::Amp);
-    // Zero usage should not flip changed flag — verify via parse_raw_usage logic
     let zero = serde_json::json!({"usage":{"input_tokens":0,"output_tokens":0}});
     let usage = zero.get("usage").unwrap();
     let input = usage

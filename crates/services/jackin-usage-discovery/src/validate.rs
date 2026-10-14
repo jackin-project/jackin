@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Usage source validation entry points.
 
 use crate::{
     AccountAccumulator, CachingProfileCredentialReader, DiscoveredAccountDescriptor,
@@ -15,9 +14,6 @@ use jackin_usage_host_accounts::CanonicalAccountIdentity;
 use jackin_usage_host_accounts::CanonicalAccountSubject;
 use jackin_usage_host_presentation::HostSurfaceId;
 
-/// Validate every pre-deduplicated source and merge authenticated identities.
-///
-/// Missing/malformed/denied sources produce diagnostics and never account rows.
 pub fn validate_usage_sources(
     catalog: UsageDiscoveryCatalog,
     env_resolver: &dyn ProviderCredentialEnvResolver,
@@ -40,10 +36,6 @@ pub(crate) fn validate_usage_sources_with_reader(
         .into_iter()
         .map(|source| validate_source(source, env_resolver, &profile_reader))
         .collect();
-    // Provider-issued identities per surface, from any source form. An
-    // anonymous env/key credential carries no identity evidence of its own;
-    // when exactly one same-surface provider identity exists, the key joins
-    // that canonical account instead of minting a source-scoped row.
     let mut strong = BTreeMap::<HostSurfaceId, BTreeSet<CanonicalAccountIdentity>>::new();
     for (surface, _, _, _, _, _, outcome) in &validated {
         if let ProfileValidation::Authenticated {
@@ -64,8 +56,6 @@ pub(crate) fn validate_usage_sources_with_reader(
     let (primary, attachable): (Vec<ValidatedSourceParts>, Vec<ValidatedSourceParts>) = validated
         .into_iter()
         .partition(|parts| !is_attachable_env_source(&parts.5, &parts.6));
-    // Strong sources accumulate first so canonical labels come from
-    // authenticated evidence, never from an attached anonymous key.
     for parts in primary {
         accumulate_validated_source(parts, None, &mut diagnostics, &mut bindings, &mut accounts);
     }
@@ -104,12 +94,6 @@ pub(crate) fn validate_usage_sources_with_reader(
     }
 }
 
-/// Whether an env/key source proved no identity of its own.
-///
-/// Anonymous API-key/OAuth-token credentials are bearer material without
-/// local identity evidence. Unlike profiles (distinct local logins) and
-/// forwarded capabilities (a separate trust domain), they may join the one
-/// same-surface provider-authenticated account when it exists.
 pub(crate) fn is_attachable_env_source(
     source: &ValidatedCredentialSource,
     outcome: &ProfileValidation,

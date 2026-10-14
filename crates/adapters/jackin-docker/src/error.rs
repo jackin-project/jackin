@@ -1,6 +1,3 @@
-//! Typed errors for Docker client / shell runner / download helpers.
-
-/// Failures from subprocess runs, Docker exec attach, and HTTP downloads.
 #[derive(Debug, thiserror::Error)]
 pub enum DockerError {
     #[error("command timed out after {secs}s: {program}")]
@@ -24,11 +21,7 @@ pub enum DockerError {
     #[error("command failed: {program} {args} (see stderr above)")]
     CommandFailedSeeStderr { program: String, args: String },
     #[error("Docker build command failed: {stderr}")]
-    DockerBuildFailed {
-        /// Redacted tail of the build stderr (last lines carry the cause;
-        /// local temp paths are scrubbed so CLI errors stay path-free).
-        stderr: String,
-    },
+    DockerBuildFailed { stderr: String },
     #[error("exec in {container} returned Detached — attach_stdout was set but exec ran detached")]
     ExecDetached { container: String },
     #[error("exec in {container} exited with code {exit_code}: {output}")]

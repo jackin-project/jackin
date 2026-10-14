@@ -125,13 +125,11 @@ plugins = []
     .unwrap();
 
     let container_name = launched_role_container_name(&runner);
-    // D9: clean exit purges per-instance data inline; state dir must be gone.
     let state_dir = paths.data_dir.join(&container_name);
     assert!(
         !state_dir.exists(),
         "D9: state dir must be removed inline after clean exit, found {state_dir:?}"
     );
-    // Index entry transitions to `purged` (entry removed at next explicit prune).
     let index_body = std::fs::read_to_string(paths.data_dir.join("instances.json")).unwrap();
     if index_body.contains(&format!(r#""container_base": "{container_name}""#)) {
         assert!(

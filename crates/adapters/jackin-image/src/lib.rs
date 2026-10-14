@@ -1,8 +1,3 @@
-//! jackin-image: derived-image Dockerfile generation and build context.
-//!
-//! **Architecture Invariant:** T4.
-//! Entry point: [`DerivedBuildContext`] — derived-image build context.
-
 pub mod agent_binary;
 pub mod binary_artifact;
 pub mod capsule_binary;

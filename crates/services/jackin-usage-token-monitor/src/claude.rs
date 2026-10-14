@@ -1,19 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! JSONL reader for Claude Code token usage.
-//!
-//! Reads `/home/agent/.config/claude/projects/**/*.jsonl` (v1.0.30+) or
-//! `/home/agent/.claude/projects/**/*.jsonl` (legacy). Each line carries one
-//! message's usage; totals are recomputed from scratch each poll (re-reading the
-//! whole file), so polls never double-count and need no byte-offset bookkeeping.
-
 use std::path::PathBuf;
 use std::time::SystemTime;
 
 use super::{PollStatus, TokenSession, json_u64};
 
-/// Per-line token fields from Claude JSONL.
 #[derive(Debug, Default)]
 struct ClaudeUsageLine {
     input_tokens: u64,
@@ -73,7 +65,7 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> PollStatus {
                 continue;
             };
             if parsed.is_sidechain {
-                continue; // Skip sidechain replays.
+                continue;
             }
             if parsed.is_error && parsed.input_tokens == 0 && parsed.output_tokens == 0 {
                 continue;

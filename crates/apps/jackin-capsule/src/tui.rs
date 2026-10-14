@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Terminal-rendering code for the jackin-capsule multiplexer.
-//!
-//! Everything that directly renders, paints, or computes the in-container
-//! terminal UI lives here, per the TUI source-location convention in
-//! `tui-design-decisions.mdx`.
-
 pub mod ansi;
 pub mod components;
 pub mod effect;

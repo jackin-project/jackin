@@ -1,18 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared mount-table row render helpers.
-
 use crate::tui::mount_display::MountDisplayRow;
 use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
 };
 
-/// "Mode" header is 4 chars; pad row values so the Type column stays aligned.
 pub const MOUNT_MODE_COL_WIDTH: usize = 4;
 
-/// Width of the `Isolation` column, pinned to the widest known value/header.
 pub const MOUNT_ISOLATION_COL_WIDTH: usize = 9;
 
 #[must_use]

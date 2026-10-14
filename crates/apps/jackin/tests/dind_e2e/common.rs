@@ -1,8 +1,3 @@
-//! Shared e2e prereq checks: `docker` daemon + `buildx` + `script(1)` probe,
-//! capsule-binary ELF + executable assertions, and the e2e serial lock that
-//! keeps `cargo nextest run -p jackin --features e2e` from spawning multiple
-//! concurrent `DinD` harnesses against the same `docker` daemon.
-
 #![expect(
     clippy::expect_used,
     clippy::panic,
@@ -87,10 +82,6 @@ pub(super) fn is_elf_binary(path: &Path) -> bool {
 }
 
 pub(super) fn docker_available() -> bool {
-    // Probe the same daemon jackin will drive: honor DOCKER_HOST (and the
-    // active docker context when unset), exactly as the host-side client
-    // does. Stripping DOCKER_HOST here would gate on a default-socket daemon
-    // that jackin itself would bypass whenever the operator set one.
     let mut command = docker_command();
     command
         .arg("info")
@@ -128,11 +119,6 @@ pub(super) fn host_docker_config() -> Option<PathBuf> {
         })
 }
 
-/// Probe `script(1)` via the canonical PATH lookup. The previous
-/// `script --help` / `script -q /dev/null` fallback chain was unsound:
-/// the fallback only fired on spawn failure, and on the only platforms
-/// that lack `--help` it would invoke `script` with side effects (start a
-/// real PTY recording session against `/dev/null`).
 pub(super) fn script_available() -> bool {
     Command::new("which")
         .arg("script")

@@ -4,8 +4,6 @@
 use super::*;
 pub(super) fn parity_antigravity_account() -> ParityAccount {
     ParityAccount {
-        // No `HostSurfaceId::Antigravity` exists; the surface only feeds the
-        // opaque canonical-id hash here (Antigravity is Google tooling).
         surface: HostSurfaceId::Google,
         provider_id: "antigravity",
         provider_label: "Antigravity",
@@ -72,8 +70,6 @@ pub(super) fn parity_antigravity_account() -> ParityAccount {
                 amount: usd(1_250),
                 expires_at_epoch: Some(PARITY_NOW + 2_592_000),
             },
-            // No producer rule assigns balance quota states yet; the balance
-            // carries a usable quantity, so `Available` (harness choice).
             quota_state: UsageQuotaStateV1::Available,
             phase: UsageFreshnessPhaseV1::Current,
             is_stale: false,
@@ -186,7 +182,6 @@ pub(super) fn parity_claude_personal_account() -> ParityAccount {
                 severity: UsageSeverity::Danger,
                 ..ParityBucket::metered("Weekly", 8)
             },
-            // Overdrawn spend: $150 against a $100 cap (raw 150% used).
             ParityBucket {
                 label: "Extra usage",
                 slot: Some(StatusSlot::Spend),

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Instance actions and preview focus.
 
 use crate::tui::components::error_popup::{
     no_instance_state_for_workspace_message, no_purgeable_instance_for_workspace_message,
@@ -66,21 +65,12 @@ pub struct PreviewFocusPlan {
     pub focused: bool,
 }
 
-/// Focus owners of the workspaces list screen, in the order the key-driven
-/// focus cycle walks them. Mirrors the upstream `project_launcher` recipe's
-/// `ProjectLauncherPane::focus_order()` (copy-adapted composition reference):
-/// the master list first, then the preview pane. The sidebar scroll blocks
-/// are pointer-targeted (plan 008) and the footer action bar is chrome-only
-/// (like the recipe's status strip), so neither joins the key cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListFocusOwner {
-    /// Master workspace/instance list (recipe: projects pane).
     ListNames,
-    /// Instance snapshot preview pane (recipe: preview pane).
     Preview,
 }
 
-/// The ordered focus-owner chain — the recipe's `focus_order()` walk.
 #[must_use]
 pub const fn workspace_list_focus_order() -> [WorkspaceListFocusOwner; 2] {
     [
@@ -89,14 +79,12 @@ pub const fn workspace_list_focus_order() -> [WorkspaceListFocusOwner; 2] {
     ]
 }
 
-/// Head of the focus chain: the cycle's start and the exit's return target.
 #[must_use]
 pub const fn workspace_list_focus_head() -> WorkspaceListFocusOwner {
     let [head, ..] = workspace_list_focus_order();
     head
 }
 
-/// The owner after `owner` in the chain, wrapping to the head at the end.
 #[must_use]
 pub const fn workspace_list_focus_next(owner: WorkspaceListFocusOwner) -> WorkspaceListFocusOwner {
     let [head, second] = workspace_list_focus_order();

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bounded, owner-only atomic persistence for monitor state.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -26,7 +24,6 @@ const STORE_DIR_MODE: u32 = 0o700;
 pub(super) const MAX_STORE_BYTES: usize = 32 * 1024 * 1024;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-/// Open or create the private monitor directory below the host broker state.
 pub(super) fn open_store_dir(data_dir: &Path) -> Result<File, MonitorIssue> {
     crate::secure_run_directory(data_dir).map_err(|_| unavailable())?;
     let broker_path = data_dir.join(crate::BROKER_DIR);
@@ -56,7 +53,6 @@ pub(super) fn open_store_dir(data_dir: &Path) -> Result<File, MonitorIssue> {
     Ok(store_dir)
 }
 
-/// Load one validated store. Missing state is returned as `None`.
 pub(super) fn load(dir: &File) -> Result<Option<StoreState>, MonitorIssue> {
     let fd = match openat(
         dir,
@@ -97,17 +93,11 @@ pub(super) fn load(dir: &File) -> Result<Option<StoreState>, MonitorIssue> {
     };
     super::validate_store_state(&state)?;
     if version != USAGE_MONITOR_SCHEMA_VERSION {
-        // The converted snapshot replaces its source schema only after full
-        // semantic validation; `save` publishes it through the existing fsync+rename path.
         save(dir, &state)?;
     }
     Ok(Some(state))
 }
 
-/// Upgrade pre-V4 snapshots that already use the current durable state shape.
-/// New consent and source fields default to disabled/absent. V3 migration also
-/// latches uncertainty for strict goals whose retained spend anchors prove a
-/// rollover that the old schema could not represent safely.
 fn migrate_v2_or_v3(bytes: &[u8], version: u16) -> Result<StoreState, MonitorIssue> {
     let mut state: StoreState = serde_json::from_slice(bytes).map_err(|_| unavailable())?;
     state.schema_version = USAGE_MONITOR_SCHEMA_VERSION;
@@ -120,8 +110,6 @@ fn migrate_v2_or_v3(bytes: &[u8], version: u16) -> Result<StoreState, MonitorIss
         }
     }
 
-    // Validate the normalized source before migration semantics can alter it.
-    // This prevents uncertainty latching from masking corrupt persisted state.
     super::validate_store_state(&state)?;
 
     let changed_goals = if version == 3 {
@@ -155,10 +143,6 @@ fn migrate_v2_or_v3(bytes: &[u8], version: u16) -> Result<StoreState, MonitorIss
     Ok(state)
 }
 
-/// V3 could lose verified receipts outside its retained current/previous
-/// period slots while still claiming a complete cumulative total. Preserve the
-/// stored estimate, but mark only rolled strict goals uncertain and persist a
-/// horizon that later receipts cannot clear.
 fn latch_ambiguous_v3_rollovers(state: &mut StoreState) -> BTreeSet<String> {
     let mut account_horizons = BTreeMap::<String, i64>::new();
     let mut changed_goals = BTreeSet::new();
@@ -260,14 +244,12 @@ fn latch_ambiguous_v3_rollovers(state: &mut StoreState) -> BTreeSet<String> {
     changed_goals
 }
 
-/// Atomically publish one bounded state snapshot with mode `0600`.
 pub(super) fn save(dir: &File, state: &StoreState) -> Result<(), MonitorIssue> {
     let bytes = serde_json::to_vec(state).map_err(|_| unavailable())?;
     if bytes.len() > MAX_STORE_BYTES {
         return Err(unavailable());
     }
 
-    // Refuse a symlink or foreign-mode existing target before replacing it.
     match openat(
         dir,
         STORE_FILE,

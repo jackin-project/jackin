@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Error and status popups.
 
 use jackin_oppicker::ModalOutcome;
 use ratatui::{

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Private file replace/create/remove/repair.
 
 use super::{
     ensure_same_source_identity, entry_stat, file_target_lock, fsync_directory,

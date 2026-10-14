@@ -1,4 +1,3 @@
-//! Account authorization survives the complete manager save/reload path.
 use super::*;
 use anyhow::Result;
 use jackin::console::adapter::state::AuthRow;

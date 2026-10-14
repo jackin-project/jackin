@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Editor tab move and hover plans.
 
 use super::editor_mount_index_at_visual_row;
 

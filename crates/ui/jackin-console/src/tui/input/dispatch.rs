@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Key dispatch for the workspace manager.
 mod confirms;
 mod keys;
 #[cfg(test)]

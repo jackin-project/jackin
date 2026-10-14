@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings per-tab key plans.
 
 use super::{
     SettingsAuthKeyPlan, SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan, SettingsFocusRegion,
@@ -36,7 +35,6 @@ pub const fn settings_shell_key_plan(
                 };
             }
             KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                // Tab from the tab bar walks the focus chain one region on.
                 return match settings_focus_next(settings_focus_region(tab_bar_focused)) {
                     SettingsFocusRegion::Content => SettingsShellKeyPlan::FocusContent,
                     SettingsFocusRegion::TabBar => SettingsShellKeyPlan::Continue,
@@ -49,7 +47,6 @@ pub const fn settings_shell_key_plan(
     match key {
         KeyCode::Tab => SettingsShellKeyPlan::MoveTab {
             delta: 1,
-            // Tab from the body wraps the chain back to the chain head.
             focus_tab_bar: settings_focus_region_eq(
                 settings_focus_next(SettingsFocusRegion::Content),
                 settings_focus_head(),

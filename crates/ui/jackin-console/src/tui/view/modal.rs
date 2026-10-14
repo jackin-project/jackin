@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Modal rendering and preparation.
 
 use super::{
     ConsolePrepareFramePlan, StageModalArea, console_prepare_frame_plan, effective_footer_height,
@@ -8,11 +7,6 @@ use super::{
 };
 use ratatui::{Frame, layout::Rect};
 
-/// Render the active modal overlay for the current console state.
-///
-/// Dispatches to the appropriate component renderer based on the `Modal` variant.
-/// The modal area has already been computed by `prepare_for_render` and stored
-/// on the modal via `modal.prepare_for_render`.
 pub fn render_modal(frame: &mut Frame<'_>, modal: &crate::tui::state::Modal<'_>) {
     use crate::tui::state::Modal;
 
@@ -77,11 +71,6 @@ pub fn render_modal(frame: &mut Frame<'_>, modal: &crate::tui::state::Modal<'_>)
     }
 }
 
-/// Prepare `state` for the next render pass.
-///
-/// Must be called once before `render` each frame. Computes and caches footer
-/// heights, clamps all scroll offsets to the current terminal area, and
-/// positions modals within the drawable content area.
 pub fn prepare_for_render(
     state: &mut crate::tui::state::ManagerState<'_>,
     config: &jackin_config::AppConfig,

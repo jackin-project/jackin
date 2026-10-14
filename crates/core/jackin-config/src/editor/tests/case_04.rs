@@ -54,8 +54,6 @@ git = "https://example.com/a.git"
 
 #[test]
 fn set_agent_trust_false_removes_field() {
-    // Canonical TOML representation of trusted=false is absent (serde
-    // skip_serializing_if on RoleSource::trusted).
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -132,9 +130,6 @@ fn create_workspace_adds_table() {
 
 #[test]
 fn create_workspace_rejects_invalid_workdir_mount_combo() {
-    // Editor delegates to AppConfig::create_workspace, which validates
-    // that the workdir is equal-to / inside / parent-of some mount dst.
-    // A workdir that doesn't line up with any mount dst must be rejected.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -369,7 +364,6 @@ fn set_env_var_writes_inline_table_for_op_ref() {
     editor.save().unwrap();
 
     let serialized = std::fs::read_to_string(&paths.config_file).unwrap();
-    // Inline-table form, not a scalar string with quoted JSON.
     assert!(
             serialized.contains(r#"SERVICE_TOKEN = { op = "op://abc/def/fld", breadcrumb = { version = 1, value = "Private/Claude/security/auth token" } }"#),
             "expected inline-table emit, got:\n{serialized}"

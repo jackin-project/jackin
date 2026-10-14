@@ -83,8 +83,5 @@ fn console_startup_refresh_stays_inside_the_fake_broker() {
     let snapshot = load_console_usage_projection(&client, false, true)
         .expect("Console startup broker refresh");
     assert!(snapshot.canonical_projection.is_some());
-    // This fake broker has no broker-owned catalog refresher. Console can
-    // request refresh, but it cannot inject catalog entries or invoke a
-    // provider itself.
     assert_eq!(executor.0.load(Ordering::SeqCst), 0);
 }

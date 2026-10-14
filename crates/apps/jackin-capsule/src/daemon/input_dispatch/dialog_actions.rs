@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Dialog-action dispatch, usage-account helpers, and exec resolution.
 
 use std::sync::Arc;
 
@@ -31,19 +30,10 @@ impl Multiplexer {
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
     }
 
-    /// Single dispatch point for a `DialogAction`. Both the
-    /// mouse-click and key-event paths call `Dialog::handle_*`
-    /// and route the result here, so adding a new variant means
-    /// updating one match arm instead of two.
     pub(crate) fn apply_dialog_action(&mut self, action: DialogAction) {
         let frame_plan = dialog_action_frame_plan(&action);
         match action {
             DialogAction::Dismiss => {
-                // Back-navigation: pop one dialog so a sub-dialog
-                // reveals its parent rather than closing the whole
-                // flow. Operator at the top of stack (Menu) pops to
-                // an empty stack — same effective "close" the
-                // pre-stack code achieved with `self.dialog = None`.
                 self.dialog_pop_one();
             }
             DialogAction::Redraw | DialogAction::Consume => {}
@@ -52,11 +42,6 @@ impl Multiplexer {
                 args,
                 selected,
             } => {
-                // Operator approved. Close the picker, then resolve the chosen
-                // credentials through the host socket and run the command off
-                // the event loop so the daemon keeps rendering; the spawned task
-                // owns the deferred control reply and answers when the command
-                // finishes (or fails closed).
                 self.dialog_pop_one();
                 if let Some(reply_tx) = self.control.pending_exec_reply.take() {
                     reply_tx.spawn(async move { run_exec_selected(command, args, selected).await });
@@ -73,15 +58,10 @@ impl Multiplexer {
             DialogAction::ExitDirty(row) => {
                 use crate::tui::components::dialog::ExitDirtyRow;
                 match row {
-                    // Open the verbatim New-tab agent picker over the exit modal.
-                    // Picking an agent spawns a session and clears the dialog
-                    // stack (SpawnAgent → dialog_clear), dismissing the modal.
                     ExitDirtyRow::StartNewAgent => {
                         self.apply_action(Action::OpenAgentPicker(PickerIntent::NewTab));
                         return;
                     }
-                    // Push the read-only changed-files list stored in the
-                    // ExitDirty variant; Arc::clone is O(1). Esc walks back.
                     ExitDirtyRow::Inspect => {
                         let rows = match self.dialog_top() {
                             Some(Dialog::ExitDirty { inspect_rows, .. }) => {
@@ -93,8 +73,6 @@ impl Multiplexer {
                         self.invalidate(FullRedrawReason::DialogChange);
                         return;
                     }
-                    // Record the operator's choice; the event loop writes the
-                    // exit-action file and drains on the next iteration.
                     ExitDirtyRow::Keep => {
                         self.control.exit_request = Some(jackin_protocol::ExitAction::Keep);
                     }
@@ -104,10 +82,6 @@ impl Multiplexer {
                 }
             }
             DialogAction::Command(cmd) => {
-                // `handle_palette_command` decides per-arm whether
-                // the command opens a sub-dialog (push) or finishes
-                // the flow (clear stack). It records its own
-                // invalidation, so return before the generic one.
                 self.apply_action(Action::Palette(cmd));
                 return;
             }
@@ -122,24 +96,6 @@ impl Multiplexer {
                 }
             }
             DialogAction::CopyToClipboard(payload) => {
-                // OSC 52 selection write — `\x1b]52;c;<base64>\x07`.
-                // `c` is the system clipboard target; modern terminals
-                // (Ghostty, iTerm2, Kitty, Alacritty, wezterm, recent
-                // gnome-terminal) all honour it. Older / locked-down
-                // terminals silently drop the sequence — the copy
-                // appears to do nothing but no error fires; the
-                // multiplexer can't tell from this side. Emitted to
-                // the client via `send_output`; the alt-screen path
-                // forwards it byte-for-byte to the operator's outer
-                // terminal.
-                //
-                // Copy-capable dialogs stay on the stack — the
-                // operator's "did it actually copy?" question is
-                // answered by the copied check affordance the renderer
-                // paints now that `copied = true` (flipped by the
-                // dialog's handle_key or row-click handler before this
-                // action returned).
-                // The badge expires from the daemon's tick loop.
                 self.send_out_of_band(encode_osc52_clipboard_write(&payload));
                 self.clipboard.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
@@ -175,10 +131,6 @@ impl Multiplexer {
                 self.request_usage_refresh_for_account_id(&account_id, &provider_label);
             }
             DialogAction::SplitDirection(direction) => {
-                // Chain to the agent picker carrying the direction —
-                // push it on top of the SplitDirectionPicker so Esc
-                // walks the operator one step back instead of
-                // closing the whole flow.
                 let agents = self.launch_env.available_instances.clone();
                 self.dialog_push(Dialog::new_agent_picker(
                     agents,
@@ -186,15 +138,9 @@ impl Multiplexer {
                 ));
             }
             DialogAction::PickedCloseTarget(kind) => {
-                // Push the ConfirmAction dialog on top of the
-                // CloseTargetPicker. Esc walks back to the picker,
-                // then back to the Menu — operator can change their
-                // mind without destroying anything.
                 self.dialog_push(Dialog::new_confirm_action(kind));
             }
             DialogAction::ConfirmedAction(kind) => {
-                // Terminal action — clear every dialog under us and
-                // fire the matching destructive call.
                 self.dialog_clear();
                 match confirmed_action_route(kind) {
                     ConfirmedActionRoute::ClosePane => self.close_focused_pane(),
@@ -206,10 +152,6 @@ impl Multiplexer {
         self.invalidate(frame_plan.reason());
     }
 
-    /// Focused usage snapshot for a tab switch: exact account id when the
-    /// action carries one, label resolution only for empty ids (old
-    /// payloads). A non-empty but unknown id is an honest unavailable, never
-    /// a label-guessed sibling account.
     fn focused_usage_snapshot_for_account_id(
         &mut self,
         account_id: &str,
@@ -231,10 +173,6 @@ impl Multiplexer {
         )
     }
 
-    /// Queue a refresh for a tab switch: exact account id when the action
-    /// carries one, label resolution only for empty ids (old payloads). A
-    /// non-empty but unrefreshable id queues nothing rather than refreshing
-    /// a label-guessed sibling account.
     fn request_usage_refresh_for_account_id(&mut self, account_id: &str, provider_label: &str) {
         if account_id.is_empty() {
             self.request_usage_refresh_for_provider(Some(provider_label));
@@ -243,16 +181,10 @@ impl Multiplexer {
         let Some(target) = self.usage_refresh_target_for_account_id(account_id) else {
             return;
         };
-        // Queue through the shared path so the open dialog gets the same
-        // refreshing treatment, then pin the exact id-resolved target: the
-        // display label must never route a refresh.
         self.request_usage_refresh_for_provider(None);
         self.usage.pending_usage_refresh = Some(target);
     }
 
-    /// Refresh target for the session holding the broker account behind a tab
-    /// id. The session's own provider label and capability keep the target
-    /// authoritative; the action's display label never routes a refresh.
     fn usage_refresh_target_for_account_id(
         &self,
         account_id: &str,
@@ -278,12 +210,6 @@ impl Multiplexer {
     }
 }
 
-/// Resolve the operator-selected credentials through the host socket and run the
-/// command with them injected as env vars, returning the framed control reply.
-///
-/// Fails closed (`ExecDenied`) on any resolver or spawn error — the command is
-/// never run with a partially-resolved credential set. The container reaches the
-/// host resolver at `/jackin/run/host.sock` (bind-mounted by the launch path).
 async fn run_exec_selected(
     command: String,
     args: Vec<String>,
@@ -302,8 +228,6 @@ async fn run_exec_selected(
                 };
             }
         };
-    // Redaction set borrows the resolved values — no second copy of secret
-    // material; the strings already live in `resolved` for the env injection.
     let secrets: Vec<&str> = resolved.values().map(String::as_str).collect();
     match crate::exec::execute_command(&command, &args, &resolved, &secrets).await {
         Ok((exit_code, stdout, stderr, redacted_count)) => ServerMsg::ExecResult {

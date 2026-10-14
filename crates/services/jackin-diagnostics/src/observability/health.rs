@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Lock-free outer telemetry health counters.
-
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -60,20 +58,13 @@ pub enum TelemetryFlushStatus {
     Failed,
 }
 
-/// Why a Capsule process can or cannot export directly to OTLP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapsuleExportCoverage {
-    /// This process is not a Capsule.
     NotApplicable,
-    /// Endpoint and authentication requirements are Capsule-safe.
     Enabled,
-    /// No OTLP endpoint is configured on the host.
     DisabledNoEndpoint,
-    /// The effective network policy forbids all egress.
     DisabledNetworkNone,
-    /// The endpoint was not explicitly classified Capsule-safe.
     DisabledUnclassifiedEndpoint,
-    /// Host authentication exists without a dedicated Capsule-safe carrier.
     DisabledUnclassifiedAuth,
 }
 

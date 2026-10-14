@@ -1,8 +1,5 @@
 import SwiftUI
 
-// View layer mirrors the incumbent implementation
-// (native/Sources/JackinDesktop/UsageWindow/*) over fixture view models and
-// lifts verbatim into the real app.
 
 struct SidebarView: View {
     let store: ProtoStore

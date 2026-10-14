@@ -1,12 +1,3 @@
-//! README-freshness gate: structural `src/` layout changes must touch the crate README.
-//!
-//! Trigger: git name-status A/D/R* on `crates/<x>/src/**/*.rs` (content-only M does not
-//! fire). Clear by any status on `crates/<x>/README.md` in the same range.
-//!
-//! ```sh
-//! cargo xtask lint readme-freshness --base origin/main
-//! ```
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -22,7 +13,6 @@ const RERUN: &str = "cargo xtask lint readme-freshness --base origin/main";
 pub(crate) struct LintReadmeFreshnessArgs {
     #[command(flatten)]
     output: FormatArgs,
-    /// Diff base ref (merge-base with HEAD). Defaults to `origin/main`.
     #[arg(long, default_value = "origin/main")]
     base: String,
 }
@@ -89,7 +79,6 @@ fn run_inner(args: LintReadmeFreshnessArgs) -> Result<()> {
 struct NameStatusEntry {
     status: String,
     path: String,
-    /// For renames, the destination path (R status).
     new_path: Option<String>,
 }
 
@@ -106,7 +95,6 @@ struct FreshnessReport {
     violations: Vec<Violation>,
 }
 
-/// Pure bucketing over a parsed `git diff --name-status` list.
 fn evaluate(entries: &[NameStatusEntry], allowlist: &[&str]) -> FreshnessReport {
     let allow: BTreeSet<&str> = allowlist.iter().copied().collect();
     let mut structural: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -159,7 +147,6 @@ fn is_structural_status(status: &str) -> bool {
 }
 
 fn crate_from_src_rs_path(path: &str) -> Option<&str> {
-    // crates/<group>/<name>/src/**/*.rs
     let rest = path.strip_prefix("crates/")?;
     let (_, rest) = rest.split_once('/')?;
     let (crate_name, after) = rest.split_once('/')?;
@@ -194,7 +181,6 @@ fn git_name_status(root: &Path, base: &str) -> Result<Vec<NameStatusEntry>> {
         out.trim().to_owned()
     };
     let mut cmd = crate::cmd::command("git");
-    // -M enables rename detection explicitly (plan note).
     cmd.args(["diff", "--name-status", "-M", &merge_base, "HEAD"])
         .current_dir(root);
     let raw = crate::cmd::output_string(&mut cmd).context("git diff --name-status")?;

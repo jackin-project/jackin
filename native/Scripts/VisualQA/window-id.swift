@@ -1,4 +1,3 @@
-// Resolve the CGWindowID of a running application's window.
 
 import AppKit
 import CoreGraphics

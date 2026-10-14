@@ -451,7 +451,6 @@ async fn hardline_restore_candidate_marks_missing_manifest_available() {
     let state_dir = paths.data_dir.join(container);
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-    // inspect returns NotFound → manifest marked RestoreAvailable
     let docker = jackin_test_support::FakeDockerClient::default();
 
     let candidate = restore_candidate_for_hardline(&paths, container, &docker)

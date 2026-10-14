@@ -1,10 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Role ejection with docker resources.
-//!
-//! The terminal destructive step lives in
-//! `jackin_runtime_cleanup_eject_resources` (S7 split 106),
-//! re-exported below.
 
 use crate::instance::{DockerResources, InstanceManifest};
 use jackin_core::JackinPaths;
@@ -16,9 +11,6 @@ use crate::runtime::backend::{ContainerBackend as _, InstanceBackend};
 
 use super::{cleanup_timing, resolve_cleanup_handles_for_state};
 
-// Moved to jackin_runtime_cleanup_eject_resources::eject_resources (S7 split
-// 106); the item re-export keeps every
-// `cleanup::eject::eject_docker_role_with_resources` path stable.
 pub(crate) use jackin_runtime_cleanup_eject_resources::eject_resources::eject_docker_role_with_resources;
 
 pub async fn eject_role(
@@ -56,10 +48,6 @@ pub(crate) async fn eject_docker_role(
     .await
 }
 
-/// Eject a Docker role using identities captured before any destructive
-/// operation. A persisted sidecar name is lookup context only: if its
-/// immutable identity is unavailable, this function aborts before removing
-/// either container rather than risking a same-name replacement.
 pub(crate) async fn eject_docker_role_with_handles(
     paths: &JackinPaths,
     container_name: &str,
@@ -67,9 +55,6 @@ pub(crate) async fn eject_docker_role_with_handles(
     role_handle: &ContainerHandle,
     dind_handle: Option<&ContainerHandle>,
 ) -> anyhow::Result<()> {
-    // Persisted state must authorize reconnect/eject handles too. Handles
-    // supplied by an in-flight launch without a manifest remain captured
-    // creation identities, rather than a restart name lookup.
     let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
     if let Some(manifest) = manifest.as_ref() {
         let identity = manifest.docker_identity.as_ref().ok_or_else(|| anyhow::anyhow!(

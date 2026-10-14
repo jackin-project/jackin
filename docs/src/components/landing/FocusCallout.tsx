@@ -1,4 +1,3 @@
-// docs/components/landing/FocusCallout.tsx
 export function FocusCallout() {
   return (
     <div className="landing-focus-callout">

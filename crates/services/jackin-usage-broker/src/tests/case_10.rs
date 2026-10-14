@@ -76,11 +76,7 @@ fn fake_retry_after_server() -> RetryAfterServer {
                         if matches!(
                             error.kind(),
                             ErrorKind::UnexpectedEof | ErrorKind::TimedOut | ErrorKind::WouldBlock
-                        ) =>
-                    {
-                        // Ignore an incomplete connection and accept a replacement, without
-                        // counting it as a provider request or consuming either response.
-                    }
+                        ) => {}
                     Err(error) => return Err(error),
                 }
             }
@@ -449,9 +445,6 @@ fn reset_barrier_does_not_bypass_shared_provider_retry_after() {
     assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
     assert_eq!(fixture.requests.load(Ordering::SeqCst), 1);
 
-    // A monitor clock tick is local reconciliation. Crossing the reset grace
-    // deadline without a fresh statusline produces the safety barrier and does
-    // not trigger another provider request.
     let (monitor, monitor_id) =
         start_reset_barrier_monitor(data_dir, &account.account_id, reset_at, now);
 
@@ -476,9 +469,6 @@ fn reset_barrier_does_not_bypass_shared_provider_retry_after() {
         &fixture.requests,
     );
 
-    // The attempt floor has elapsed by Retry-After minus one second, so this
-    // assertion specifically proves the shared provider deadline still blocks
-    // a forced refresh after the monitor's reset deadline.
     clock.advance_to_epoch(retry_at - 1);
     assert_blocked_by_shared_retry_after(
         &coordinator,

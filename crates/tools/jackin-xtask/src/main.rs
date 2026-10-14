@@ -1,8 +1,3 @@
-//! jackin-xtask: workspace automation (cargo xtask) for CI, lints, and docs gates.
-//!
-//! **Architecture Invariant:** T1.
-//! Entry point: [`main`] — cargo xtask command dispatcher.
-
 mod affected_crates;
 mod agent_files;
 mod agent_links;
@@ -62,202 +57,89 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Print the crates whose tests are affected by a Git diff.
     AffectedCrates(affected_crates::AffectedCratesArgs),
-    /// Run the local CI merge-readiness gate.
-    ///
-    /// Partitions (`--only`, repeatable): lint, policy, tests, powerset,
-    /// docs, snapshots. `--only` is a local-dev tool; merge readiness is the
-    /// full `ci` (or `ci --fast` without powerset).
-    ///
-    /// Use as `cargo xtask ci --fast` for the non-e2e gate, or add `--e2e`
-    /// to include Docker-backed smoke tests.
     Ci(ci::CiArgs),
-    /// Audit every job and step in the current GitHub Actions run.
     #[command(name = "ci-audit")]
     CiAudit(ci_audit::CiAuditArgs),
-    /// Measure clean-package and incremental build time without discarding dependencies.
     #[command(name = "ci-build-times")]
     CiBuildTimes(ci_build_times::CiBuildTimesArgs),
-    /// Run `cargo audit` without fetching when a restored advisory database is usable.
     #[command(name = "ci-cargo-audit")]
     CiCargoAudit(ci_cargo_audit::CiCargoAuditArgs),
-    /// Require documentation examples to have nextest-discoverable regression coverage.
     #[command(name = "ci-doc-examples")]
     CiDocExamples(ci_doc_examples::CiDocExamplesArgs),
-    /// Collect and roll up durable first-attempt CI evidence.
     #[command(name = "ci-evidence", subcommand)]
     CiEvidence(ci_evidence::CiEvidenceCommand),
-    /// Run every bounded fuzz target owned by one crate.
     #[command(name = "ci-fuzz")]
     CiFuzz(ci_fuzz::CiFuzzArgs),
-    /// Analyze one `JUnit` report and enforce the flake quarantine.
     #[command(name = "ci-junit")]
     CiJunit(ci_junit::CiJunitArgs),
-    /// Resolve reusable per-crate CI results.
     #[command(name = "ci-result", subcommand)]
     CiResult(ci_result::CiResultCommand),
-    /// Resolve affected crates and reusable test inputs in one CI step.
     #[command(name = "ci-route")]
     CiRoute(ci_route::CiRouteArgs),
-    /// Run Clippy over the crates affected by worktree changes.
-    ///
-    /// Pre-commit hook entry point (`cargo xtask clippy-affected`): selects
-    /// workspace members via the shared affected-crates closure plus
-    /// detached packages (`fuzz/*`, `vendor/arrayref`) and runs
-    /// Clippy with the exact CI flags.
     #[command(name = "clippy-affected")]
     ClippyAffected(clippy_affected::ClippyAffectedArgs),
-    /// Stage the prepared CI binary set as one atomic artifact operation.
     #[command(name = "ci-stage")]
     CiStage(ci_stage::CiStageArgs),
-    /// Manage the reusable per-crate Cargo target used by CI.
     #[command(name = "ci-target", subcommand)]
     CiTarget(ci_target::CiTargetCommand),
-    /// Validate and activate the prepared Rust toolchain used by CI.
     #[command(name = "ci-toolchain", subcommand)]
     CiToolchain(ci_toolchain::CiToolchainCommand),
-    /// Perform resilient GitHub API operations for CI.
     #[command(name = "github", subcommand)]
     Github(github::GithubCommand),
-    /// Construct base-image build and publish tasks.
-    ///
-    /// Use as `cargo xtask construct <subcommand>`.
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
-    /// jackin❯ desktop (native macOS usage menu bar) build, verify, and release.
-    ///
-    /// Use as `mise exec -- mbx +1.99.0 xtask desktop build|verify|run|…`.
     #[command(subcommand)]
     Desktop(desktop::DesktopCommand),
-    /// Generate pull request body skeletons.
-    ///
-    /// Use as `cargo xtask pr body`.
     #[command(subcommand)]
     Pr(pr::PrCommand),
-    /// Extract a PTY byte-stream fixture from a `--debug` run log for the
-    /// capsule render-conformance harness.
     PtyFixture(pty_fixture::PtyFixtureArgs),
-    /// Measure console first-frame and input-to-frame latency through a PTY.
     FrameTiming(frame_timing::FrameTimingArgs),
-    /// Scaffold a new roadmap item and register it in the sidebar.
-    ///
-    /// Use as `cargo xtask change new <slug> --group <group>`.
     #[command(subcommand)]
     Change(docs::ChangeCommand),
-    /// Documentation checks that do not require the TypeScript/Fumadocs runtime.
-    ///
-    /// Use as `cargo xtask docs repo-links`.
     #[command(subcommand)]
     Docs(docs::DocsCommand),
-    /// Scaffold or validate research dossiers.
-    ///
-    /// Use as `cargo xtask research scaffold <slug> --group <domain>` / `research check`.
     #[command(subcommand)]
     Research(docs::ResearchCommand),
-    /// Roadmap sidebar maintenance.
-    ///
-    /// Use as `cargo xtask roadmap audit` / `roadmap retire <slug>`.
     #[command(subcommand)]
     Roadmap(docs::RoadmapCommand),
-    /// Enforce the versioned-schema five-artifact rule on a diff.
-    ///
-    /// Use as `cargo xtask schema-check --base origin/main`.
     SchemaCheck(schema::SchemaCheckArgs),
-    /// Validate the closed OpenTelemetry semantic registry and generated Rust.
     #[command(name = "telemetry-registry")]
     TelemetryRegistry(telemetry_registry::TelemetryRegistryArgs),
-    /// Capture and enforce the reviewed telemetry performance baseline.
     #[command(name = "telemetry-bench")]
     TelemetryBench(telemetry_bench::TelemetryBenchArgs),
-    /// Codebase-health lint gates (completed codebase-health W3 + W4).
-    ///
-    /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
-    /// ratchet, the test-file-layout rule, the AGENTS/CLAUDE symlink rule, and
-    /// the dependency-direction check. This is the CI entry point. Add
-    /// `--strict` to fail on architecture violations instead of just reporting
-    /// them.
-    ///
-    /// Subcommands run a single gate: `cargo xtask lint files`
-    /// (`--print-budget` refreshes the budget file), `cargo xtask lint tests`,
-    /// `cargo xtask lint agents`, `cargo xtask lint arch` (`--dump` /
-    /// `--strict`).
     Lint {
         #[command(subcommand)]
         command: Option<LintCommand>,
-        /// When running all gates (no subcommand), fail on architecture
-        /// violations. Forwarded to the arch gate; ignored when a subcommand
-        /// is given.
         #[arg(long)]
         strict: bool,
     },
-    /// Run Docker security-profile compatibility probes.
-    ///
-    /// Use as `cargo xtask profile-matrix standard`. The command runs the
-    /// cheap local probes directly and reports heavyweight/host-specific cells
-    /// as gated evidence with their required host prerequisites.
     #[command(name = "profile-matrix")]
     ProfileMatrix(profile_matrix::ProfileMatrixArgs),
-    /// Verify a signed release archive and its published sidecars.
-    ///
-    /// Use as `cargo xtask release-verify <archive>.tar.gz` or `.zip` (usage menu-bar).
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
-    /// Verify the complete six-payload preview package handoff.
-    ///
-    /// Use as `cargo xtask release-verify-package` with
-    /// `VELNOR_VERIFIED_PACKAGE_DIR` set.
-    #[command(name = "release-verify-package")]
-    ReleaseVerifyPackage(release_verify::ReleaseVerifyPackageArgs),
-    /// Preview-package migration operations.
     #[command(subcommand)]
     Preview(preview::PreviewCommand),
-    /// Build, package, sign, and describe every release target for one crate.
     #[command(name = "release-archives")]
     ReleaseArchives(release_archive::ReleaseArchivesArgs),
-    /// Report-only code-health dashboard (completed codebase-health Phase 0).
-    ///
-    /// Use as `cargo xtask health`, `cargo xtask health --format json`, or
-    /// `cargo xtask health --write-baseline`.
     Health(health::HealthArgs),
 }
 
 #[derive(Subcommand)]
 enum LintCommand {
-    /// Enforce the file-size ratchet (`ratchet.toml` families
-    /// `file-size-production` / `file-size-test`).
     Files(lint::LintFilesArgs),
-    /// Enforce the test-file-layout rule (tests live in a sibling
-    /// `tests.rs`, never inline `#[cfg(test)] mod tests` or split across
-    /// `tests/` sub-modules; allowlist in `ratchet.toml` family `test-layout`).
     Tests(layout_lint::LintTestsArgs),
-    /// Enforce that first-party `CLAUDE.md` files are symlinks to sibling
-    /// `AGENTS.md` files.
     Agents(agent_files::LintAgentFilesArgs),
-    /// Enforce that no `README.md` or `AGENTS.md` links to an `AGENTS.md`
-    /// (both files are self-contained; nearest-`AGENTS.md`-wins).
     AgentLinks(agent_links::LintAgentLinksArgs),
-    /// Keep the agent-runtime-status roadmap claim bound to compiled wiring.
     AgentStatusTruth(agent_status_truth::LintAgentStatusTruthArgs),
-    /// Dependency-direction gate (Workstream 4).
     Arch(arch::LintArchArgs),
-    /// Residual `/jackin` production-literal shrink-only gate.
     ContainerPaths(container_paths_gate::LintContainerPathsArgs),
-    /// Ownership-header contract for lib.rs/main.rs roots.
     Headers(headers::LintHeadersArgs),
-    /// README freshness vs structural src layout changes.
     ReadmeFreshness(readme_freshness::LintReadmeFreshnessArgs),
-    /// Bare-allow / per-lint expect suppression shrink-only reason-gate
-    /// (`ratchet.toml` families `bare-allow-per-crate` / `expect-per-lint-crate`).
     Suppressions(suppressions::LintSuppressionsArgs),
-    /// Unified shrink-only ratchet engine over `ratchet.toml` (all families).
     Ratchet(ratchet::LintRatchetArgs),
 }
 
-/// Run every codebase-health lint gate — the `cargo xtask lint` (no subcommand)
-/// entry point used by CI. Independent repository scans share one process and
-/// run concurrently; every failure is collected before the command exits. The
-/// dependency-direction gate fails only in `strict` mode.
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     fs_util::enforce_sorted_iteration(&docs::repo_root()?)?;
 
@@ -278,8 +160,6 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
                     })
                 }),
             ),
-            // The unified ratchet owns file-size, test-layout, and suppression
-            // families. Running their legacy shims would measure the tree twice.
             ("ratchet", scope.spawn(ratchet::enforce)),
             ("arch", scope.spawn(move || arch::check(strict))),
         ];
@@ -352,7 +232,6 @@ fn main() -> ExitCode {
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::Preview(command) => preview::run(command),
         Command::ReleaseVerify(args) => release_verify::run(args),
-        Command::ReleaseVerifyPackage(args) => release_verify::run_package(args),
         Command::ReleaseArchives(args) => release_archive::run(args),
         Command::Health(args) => health::run(args),
         Command::Lint { command, strict } => run_lint(command, strict),

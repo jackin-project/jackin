@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `AuthForm` rendering and line builder.
 
 use super::{
     AUTH_FORM_MODE_LABEL_WIDTH, AuthCredential, AuthForm, action_buttons_line, credential_env_line,
@@ -19,7 +18,6 @@ use crate::tui::components::editor_rows::cursor_span;
 
 use crate::tui::screens::settings::model::AuthFormFocus;
 
-/// Render the auth-edit modal for `form` into `area`.
 pub fn render_form<V: AuthCredential>(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -75,7 +73,6 @@ impl FormLine {
     }
 }
 
-/// Total rendered rows the auth-edit modal needs.
 #[must_use]
 pub fn required_height<V: AuthCredential>(form: &AuthForm<V>) -> u16 {
     let mut inner: u16 = 5;

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Workspace list sidebar rendering.
 
 use super::{list_name_lines, render_account_picker_sidebar};
 use ratatui::{Frame, layout::Rect};

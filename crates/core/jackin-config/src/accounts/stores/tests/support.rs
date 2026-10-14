@@ -5,15 +5,10 @@ pub(crate) const PAGE_SIZE: usize = 512;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Value {
-    /// SQL NULL.
     Null,
-    /// Signed integer.
     Int(i64),
-    /// IEEE-754 float.
     Float(f64),
-    /// UTF-8 text.
     Text(String),
-    /// Raw blob.
     Blob(Vec<u8>),
 }
 
@@ -24,7 +19,6 @@ pub(crate) struct Cell {
 }
 
 impl Cell {
-    /// One leaf cell with the given rowid and values.
     pub(crate) fn row(rowid: u64, values: Vec<Value>) -> Self {
         Self { rowid, values }
     }

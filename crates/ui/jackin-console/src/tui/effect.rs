@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Host console TUI effect vocabulary.
-//!
-//! Effects describe non-TUI work requested by console update code. The root
-//! application layer executes them because it owns config, runtime paths, and
-//! service adapters.
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsoleEffect {
     RequestActiveMountInfoRefresh,
@@ -54,9 +48,6 @@ pub enum ConsoleManagerEffect<RoleSelector, RoleSource, OpRef> {
         op_ref: OpRef,
         is_settings: bool,
     },
-    /// Run account discovery on a worker thread (blocking I/O — never
-    /// on the UI thread), then dispatch
-    /// `SettingsMessage::AccountScanCompleted` with this generation.
     StartAccountScan {
         generation: u64,
     },

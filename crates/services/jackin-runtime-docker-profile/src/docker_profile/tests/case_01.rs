@@ -203,7 +203,6 @@ fn capability_flags_compat_empty() {
 
 #[test]
 fn capability_flags_compat_adds_extra_without_drop_all() {
-    // Non-drop-all profile: extra caps are added, but no --cap-drop=ALL.
     let flags = capability_flags(DockerSecurityProfile::Compat, &["NET_ADMIN".to_owned()]);
     assert!(!flags.iter().any(|f| f == "--cap-drop=ALL"));
     assert!(flags.windows(2).any(|w| w == ["--cap-add", "NET_ADMIN"]));
@@ -211,15 +210,12 @@ fn capability_flags_compat_adds_extra_without_drop_all() {
 
 #[test]
 fn capability_flags_hardened_adds_extra_on_top_of_minimum() {
-    // Drop-all profile: --cap-drop=ALL + the minimum set + the extra cap.
     let flags = capability_flags(
         DockerSecurityProfile::Hardened,
         &["CAP_NET_ADMIN".to_owned()],
     );
     assert!(flags.contains(&"--cap-drop=ALL".to_owned()));
-    // Extra cap is normalized (CAP_ prefix stripped) and added.
     assert!(flags.windows(2).any(|w| w == ["--cap-add", "NET_ADMIN"]));
-    // The minimum set is still present alongside the extra.
     assert!(flags.windows(2).any(|w| w == ["--cap-add", "SETUID"]));
 }
 
@@ -282,7 +278,6 @@ fn apply_grants_cannot_lower_network() {
         network: Some(NetworkGrant::None),
         ..Default::default()
     };
-    // Grant is lower than profile default — profile wins.
     let effective = apply_grants(base, &grants);
     assert_eq!(effective.network, NetworkGrant::Open);
 }
@@ -354,8 +349,6 @@ fn apply_grants_cannot_lower_dind() {
 
 #[test]
 fn fold_role_grants_pins_dind_off_over_capable_profile() {
-    // The only down-force in the grant system: a role can pin DinD OFF even
-    // after a more capable profile raised it.
     let base = profile_base_grants(DockerSecurityProfile::Compat);
     assert_eq!(base.dind, DindGrant::Privileged);
     let role = DockerGrants {
@@ -392,7 +385,6 @@ fn fold_role_grants_raises_dind_when_not_pinned() {
 #[test]
 fn profile_meets_floor_respects_ascending_capability() {
     use DockerSecurityProfile::{Compat, Hardened, Locked};
-    // Floor `hardened`: `locked` is more restrictive (less capable) → rejected.
     assert!(!profile_meets_floor(Locked, Hardened));
     assert!(profile_meets_floor(Hardened, Hardened));
     assert!(profile_meets_floor(Compat, Hardened));

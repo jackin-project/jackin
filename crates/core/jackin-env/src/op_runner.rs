@@ -1,36 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! `OpRunner` trait: single-reference 1Password resolution seam.
-//!
-//! Defines the trait used by `resolve_env_value` to fetch `op://` credentials
-//! without depending on the `OpCli` subprocess implementation.
-
 use jackin_core::EnvValue;
 
-/// Single-reference 1Password read seam. Implemented by `OpCli` (production)
-/// and various test stubs.
 pub trait OpRunner: Send + Sync {
-    /// Resolve an `op://` reference (or equivalent) to a secret string.
     fn read(&self, reference: &str) -> anyhow::Result<String>;
 
-    /// Read pinned to a specific 1Password account. Default ignores `account`
-    /// and delegates to `read`, keeping mock runners trivial.
     fn read_with_account(&self, reference: &str, _account: Option<&str>) -> anyhow::Result<String> {
         self.read(reference)
     }
 
-    /// Probed once per launch so a missing `op` surfaces as a single
-    /// install-link error rather than one-per-key noise. Default no-op.
     fn probe(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }
 
-/// Resolve a single [`EnvValue`] to its final string.
-///
-/// - `EnvValue::Plain` passes through `$VAR` / `${VAR}` host expansion.
-/// - `EnvValue::OpRef` shells out to `op read` via `op_runner`.
 pub fn resolve_env_value<R, H>(
     layer_label: &str,
     var_name: &str,
@@ -54,15 +38,11 @@ where
             }),
         EnvValue::Extended(e) => {
             if e.on_demand {
-                // on_demand vars are filtered out before launch env injection
-                // (see `EnvValue::is_on_demand`), resolved later at exec time.
-                // Reaching here means the launch filter was bypassed.
                 Err(anyhow::anyhow!(
                     "{layer_label} env var {var_name:?}: on_demand value reached \
                      resolve_env_value — it should have been filtered before launch"
                 ))
             } else {
-                // on_demand = false behaves exactly like a Plain value.
                 dispatch_plain(layer_label, var_name, &e.value, host_env)
             }
         }

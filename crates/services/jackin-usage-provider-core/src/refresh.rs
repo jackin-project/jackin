@@ -1,43 +1,26 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Materialized-account writes and provider error classification.
-
 use super::{AtomicU64, FocusedUsageView, Ordering, Path, ProviderHttpError, Serialize, Write, fs};
 use serde::Deserialize;
 
 pub static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Typed provider failure category retained after HTTP errors enter snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderErrorKind {
-    /// Failure was created outside the typed HTTP boundary (for example, a
-    /// local CLI or parsing failure).
     Other,
-    /// Request exceeded the configured provider HTTP timeout.
     Timeout,
-    /// HTTP request failed before a response arrived.
     Transport,
-    /// Provider returned an HTTP response with a non-success status.
     HttpStatus,
-    /// Provider returned a success response that could not be decoded.
     Decode,
 }
 
-/// Secret-free provider failure classification carried across broker seams.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderFailureMetadata {
-    /// Typed provider failure category, independent of display text.
     pub kind: ProviderErrorKind,
-    /// HTTP status when the provider returned a typed HTTP response.
     pub http_status: Option<u16>,
 }
 
-/// Error carrier used after provider fetches leave the shared HTTP boundary.
-///
-/// Only `ProviderHttpError::HttpStatus` contributes a status. Timeouts,
-/// transport, decode, CLI, and RPC failures retain their typed distinction
-/// even when their rendered text contains status-looking digits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderError {
     kind: ProviderErrorKind,
@@ -47,12 +30,8 @@ pub struct ProviderError {
     response_received_at_epoch: Option<i64>,
 }
 
-/// Typed rate-limit metadata carried from a provider snapshot to the host
-/// broker. The deadline is absent when the provider returned HTTP 429 without
-/// a valid delay-seconds or HTTP-date `Retry-After` header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderRateLimit {
-    /// Absolute epoch deadline derived from the provider's `Retry-After` header.
     pub retry_at_epoch: Option<i64>,
 }
 
@@ -86,13 +65,11 @@ impl ProviderError {
         &self.message
     }
 
-    /// Typed failure kind, independent of its display text.
     #[must_use]
     pub fn kind(&self) -> ProviderErrorKind {
         self.kind
     }
 
-    /// Secret-free typed failure classification for broker outcome mapping.
     #[must_use]
     pub fn metadata(&self) -> ProviderFailureMetadata {
         ProviderFailureMetadata {
@@ -193,9 +170,6 @@ pub fn split_provider_fetch<U>(
     }
 }
 
-/// True when a provider fetch failed because the token was rejected (expired or
-/// revoked), as opposed to a transient/network error. Drives the honest
-/// `NeedsLogin` status so a stale on-disk token reads as "login", not "stale".
 pub fn usage_error_is_unauthorized(error: &ProviderError) -> bool {
     matches!(error.status(), Some(401 | 403))
 }
@@ -204,8 +178,6 @@ pub fn usage_error_is_rate_limited(error: &ProviderError) -> bool {
     error.status() == Some(429)
 }
 
-/// Owned document shape for reading materialized accounts JSON (tests + any
-/// future consumers). Write path serializes via `MaterializedUsageAccountsRef`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MaterializedUsageAccounts {
     pub generated_at_epoch: i64,

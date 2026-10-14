@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Dialog constructor methods (`new_*`) extracted from the main impl block
-//! in the coordinator. Each remains an inherent `impl Dialog` method so
-//! `Dialog::new_foo(...)` call sites continue to resolve unchanged.
-
 use std::sync::Arc;
 
 use termrock::widgets::TextInputState;
@@ -79,13 +75,6 @@ impl Dialog {
         }
     }
 
-    /// Construct an `AgentPicker` with `selected` pre-initialised to
-    /// the first selectable row of the unfiltered layout. Saves every
-    /// caller from having to know about the leading "agents" section
-    /// row that pushes the first selectable index off zero — and
-    /// keeps the "no agents installed" case working (the layout
-    /// degenerates to `[Section("shells"), Shell]`, first selectable
-    /// is still `1`).
     #[must_use]
     pub fn new_agent_picker(agents: Vec<String>, intent: PickerIntent) -> Self {
         let filter = String::new();
@@ -98,8 +87,6 @@ impl Dialog {
         }
     }
 
-    /// Build the in-capsule dirty-exit modal from per-repo summary lines and
-    /// the pre-built inspect rows (shared with the Inspect sub-dialog).
     #[must_use]
     pub fn new_exit_dirty(summary: Vec<String>, inspect_rows: Arc<[InspectRow]>) -> Self {
         Self::ExitDirty {
@@ -109,7 +96,6 @@ impl Dialog {
         }
     }
 
-    /// Build the read-only Inspect list opened from the dirty-exit modal.
     #[must_use]
     pub fn new_exit_inspect(lines: Arc<[InspectRow]>) -> Self {
         Self::ExitInspect { lines, selected: 0 }

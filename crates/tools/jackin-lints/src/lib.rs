@@ -1,7 +1,3 @@
-//! jackin❯ project lints (dylint).
-//!
-//! Isolated from the main workspace (own nightly pin). Never make this a
-//! workspace member — dylint compiles against rustc-private APIs.
 
 #![feature(rustc_private)]
 #![warn(unused_extern_crates)]
@@ -20,25 +16,6 @@ use rustc_span::Span;
 use std::collections::{HashSet, VecDeque};
 
 dylint_linting::declare_late_lint! {
-    /// ### What it does
-    ///
-    /// Flags blocking I/O / process / `std::sync` lock calls reachable from a
-    /// render-path function (named `render`, or a compositor frame helper
-    /// named `compose_pending_frame` / `compose_ratatui_frame`).
-    ///
-    /// ### Why is this bad?
-    ///
-    /// The terminal draw path must not block on filesystem, network, sleep,
-    /// process spawn, or `std::sync` locks. Clippy method lists cannot see
-    /// one call deep; this lint walks a bounded local call graph.
-    ///
-    /// ### Example
-    ///
-    /// ```rust,ignore
-    /// fn render(&self) {
-    ///     let _ = std::fs::read("/tmp/x"); // ~RENDER_THREAD_PURITY
-    /// }
-    /// ```
     pub RENDER_THREAD_PURITY,
     Warn,
     "blocking I/O or std::sync locks reachable from a render-path function"
@@ -59,7 +36,6 @@ impl<'tcx> LateLintPass<'tcx> for RenderThreadPurity {
         _span: Span,
         def_id: LocalDefId,
     ) {
-        // Closures have no item_name — skip (also intentional graph boundary).
         match kind {
             rustc_hir::intravisit::FnKind::ItemFn(ident, _, _)
             | rustc_hir::intravisit::FnKind::Method(ident, _) => {
@@ -93,8 +69,6 @@ fn walk_from_body<'tcx>(
         let Some(body) = body_opt.or_else(|| cx.tcx.hir_maybe_body_owned_by(def_id)) else {
             continue;
         };
-        // typeck_results is valid only for the body currently under analysis.
-        // For callees we re-enter via their own body id through nested typeck.
         find_calls(
             cx,
             body.value,
@@ -133,7 +107,6 @@ fn find_calls<'tcx>(
                 find_calls(cx, arg, chain, depth, current_fn, queue, reported);
             }
         }
-        // Closure bodies are graph boundaries (spawn_blocking / tokio::spawn).
         ExprKind::Closure(_) => {}
         ExprKind::Block(block, _) => {
             for stmt in block.stmts {
@@ -215,7 +188,6 @@ fn typeck_for_fn<'tcx>(
     cx: &LateContext<'tcx>,
     fn_def: LocalDefId,
 ) -> Option<&'tcx rustc_middle::ty::TypeckResults<'tcx>> {
-    // Prefer the active body when it matches; otherwise query typeck for the callee.
     if cx.enclosing_body.is_some() {
         let owner = cx.tcx.hir_body_owner_def_id(cx.enclosing_body?);
         if owner == fn_def {

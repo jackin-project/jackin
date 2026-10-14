@@ -43,8 +43,6 @@ fn plain_row_marker_column_is_5_blank_chars_for_alignment() {
     editor.active_tab = EditorTab::Secrets;
     editor.active_field = FieldFocus::Row(0);
 
-    // 7-char prefix region = cursor (1..3) + marker (3..8); on
-    // a plain row, cells 3..8 are all blanks.
     let backend = TestBackend::new(80, 15);
     let mut term = Terminal::new(backend).unwrap();
     let config = AppConfig::default();
@@ -190,19 +188,15 @@ fn renderer_op_ref_with_subtitle_renders_text() {
     editor.active_tab = EditorTab::Secrets;
     editor.active_field = FieldFocus::Row(0);
 
-    // Use the wide terminal so the subtitle and field are not truncated.
     let dump = render_to_dump_wide(&editor);
-    // The row must carry the [op] marker (OpRef variant).
     assert!(
         dump.contains("[op]"),
         "OpRef row with subtitle must render `[op]` marker; dump:\n{dump}"
     );
-    // Subtitle text must appear in the rendered output.
     assert!(
         dump.contains("alexey@zhokhov.com"),
         "subtitle text must appear in the breadcrumb; dump:\n{dump}"
     );
-    // Vault, item, section, and field must all render.
     assert!(dump.contains("Private"), "vault must render; dump:\n{dump}");
     assert!(
         dump.contains("Claude"),
@@ -238,19 +232,15 @@ fn renderer_op_ref_with_attribute_query_renders_text() {
     editor.active_tab = EditorTab::Secrets;
     editor.active_field = FieldFocus::Row(0);
 
-    // Use the wide terminal so `?attribute=otp` is not truncated.
     let dump = render_to_dump_wide(&editor);
-    // The row must carry the [op] marker.
     assert!(
         dump.contains("[op]"),
         "OpRef row with attribute query must render `[op]` marker; dump:\n{dump}"
     );
-    // The query suffix must appear in the output.
     assert!(
         dump.contains("?attribute=otp"),
         "attribute query must appear in breadcrumb; dump:\n{dump}"
     );
-    // Field name must also render.
     assert!(
         dump.contains("one-time password"),
         "field must render; dump:\n{dump}"
@@ -277,11 +267,8 @@ fn renderer_op_ref_with_subtitle_section_and_query_renders_all() {
     editor.active_tab = EditorTab::Secrets;
     editor.active_field = FieldFocus::Row(0);
 
-    // Use the wide terminal so no piece is truncated.
     let dump = render_to_dump_wide(&editor);
 
-    // All visible pieces must appear in order:
-    // vault → item → subtitle → section → field → query.
     let v_pos = dump.find("Private").expect("vault present");
     let i_pos = dump.find("Claude").expect("item present");
     let s_pos = dump.find("alexey@zhokhov.com").expect("subtitle present");
@@ -308,19 +295,14 @@ fn renderer_plain_with_bare_op_uri_renders_as_literal_no_breadcrumb() {
     editor.active_field = FieldFocus::Row(0);
 
     let dump = render_to_dump(&editor);
-    // Plain rows carrying a legacy op:// string must NOT render the
-    // [op] marker — the visual distinction signals the need to re-pick.
     assert!(
         !dump.contains("[op]"),
         "Plain rows must NOT carry [op] marker; dump:\n{dump}"
     );
-    // The breadcrumb separators must not appear — this is a plain
-    // masked/literal row, not a breadcrumb render.
     assert!(
         !dump.contains(" / Vault / "),
         "Plain op:// strings must not render vault breadcrumb; dump:\n{dump}"
     );
-    // The mask glyph must appear (plain row, masked by default).
     assert!(
         dump.contains("●●●"),
         "Plain row must render masked by default; dump:\n{dump}"
@@ -347,7 +329,6 @@ fn renderer_account_credential_op_ref_never_exposes_breadcrumb() {
     editor.active_tab = EditorTab::Secrets;
     editor.active_field = FieldFocus::Row(0);
 
-    // Use the wide terminal so the breadcrumb is not truncated.
     let dump = render_to_dump_wide(&editor);
     assert!(
         dump.contains("CLAUDE_CODE_OAUTH_TOKEN  ●●●"),
@@ -378,20 +359,16 @@ fn renderer_op_ref_with_malformed_path_renders_repick_placeholder_no_panic() {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
     editor.active_field = FieldFocus::Row(0);
-    // Unmask so the placeholder is rendered as text rather than ●●●.
     editor
         .unmasked_rows
         .insert((SecretsScopeTag::Workspace, "TOKEN".into()));
 
     let dump = render_to_dump_wide(&editor);
-    // Malformed breadcrumb → the shared core parser rejects it → no [op] marker.
     assert!(!dump.contains("[op]"), "no [op] marker; dump:\n{dump}");
-    // Re-pick placeholder must be shown instead of the UUID URI.
     assert!(
         dump.contains("<unparseable path \u{2014} re-pick>"),
         "expected re-pick placeholder; dump:\n{dump}"
     );
-    // UUID URI must NOT be visible to the operator.
     assert!(
         !dump.contains("op://abc/def/fld"),
         "UUID URI must NOT leak; dump:\n{dump}"

@@ -113,18 +113,6 @@ plugins = []
 
 #[tokio::test]
 async fn load_agent_operator_env_overrides_manifest_env() {
-    // Spec: on conflict between manifest-declared env and operator
-    // env, operator wins. The manifest below declares OPERATOR_SMOKE
-    // as a literal "manifest-default"; the global operator env
-    // declares the same key as "operator-wins". The docker run
-    // env file must inject the operator value.
-    //
-    // The `[env.OPERATOR_SMOKE]` manifest shape below matches the
-    // existing EnvEntry schema in `src/env_model.rs` — if that
-    // schema has diverged (e.g. `kind`/`default` field names), the
-    // implementer should update the TOML fixture to match the
-    // current schema; the test's *assertions* (operator-wins /
-    // manifest-default not present) are unchanged.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
@@ -218,11 +206,6 @@ async fn load_agent_injects_host_ref_operator_env() {
     crate::runtime::stubs::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
 
-    // No process-env mutation anywhere — the host env for the
-    // resolver is supplied via `LoadOptions::host_env`, a plain
-    // `BTreeMap<String, String>`. This keeps the test free of
-    // any `std::env` write, which the crate-level
-    // `unsafe_code = "forbid"` lint forbids.
     std::fs::write(
         &paths.config_file,
         format!(

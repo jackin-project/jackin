@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings trust-tab keymap.
 
 use termrock::input::KeyCode;
 
@@ -14,7 +13,6 @@ pub(crate) enum SettingsTrustTabAction {
     ScrollRight,
     Toggle,
     Save,
-    /// Caller resolves: if dirty → `ConfirmDiscard`, else `ReturnToList`.
     Back,
 }
 
@@ -104,5 +102,3 @@ pub(crate) static SETTINGS_TRUST_TAB_KEYMAP_BINDINGS: &[KeyBinding<SettingsTrust
 ];
 pub(crate) static SETTINGS_TRUST_TAB_KEYMAP: Keymap<SettingsTrustTabAction> =
     Keymap::from_static(SETTINGS_TRUST_TAB_KEYMAP_BINDINGS);
-
-// ── Settings Global Mounts tab ────────────────────────────────────────────────

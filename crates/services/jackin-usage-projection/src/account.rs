@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Account projection.
 
 use jackin_protocol::control::UsageSnapshotStatus;
 use jackin_protocol::usage_broker::{
@@ -53,8 +52,6 @@ pub(crate) fn project_account(
         provenance_count: u32::try_from(entry.discovery_provenance.len()).unwrap_or(u32::MAX),
         windows,
         metric_groups,
-        // No credential-expiry signal exists in current provider views; the
-        // field stays unset rather than borrowing a quota reset timestamp.
         credential_expires_at_epoch: None,
         issues: view_issues(&entry.view),
     })
@@ -79,7 +76,6 @@ pub(crate) fn discovery_issue(
     }
 }
 
-/// Typed broker state supplies recovery policy; display text never controls it.
 pub(crate) fn apply_generation_metadata(account: &mut UsageAccountV1, state: &UsageGenerationView) {
     account.freshness.generation = state.generation;
     account.freshness.retry_at_epoch = state.retry_at_epoch;

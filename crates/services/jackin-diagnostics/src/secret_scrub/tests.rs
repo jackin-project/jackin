@@ -1,5 +1,3 @@
-//! Tests for diagnostic secret-shape scrubbing.
-
 use super::*;
 
 use std::borrow::Cow;

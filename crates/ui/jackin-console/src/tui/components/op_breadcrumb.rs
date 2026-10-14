@@ -1,14 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared `OpRef.path` breadcrumb spans.
-
 use ratatui::{
     style::{Modifier, Style},
     text::Span,
 };
 
-/// Render an `OpRef.path` as `vault / item [subtitle] / section -> field ?query`.
 pub fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
     let dim = termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted);
     let white_style = Style::default().fg(termrock::style::DesignSystem::default()

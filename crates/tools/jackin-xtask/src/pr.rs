@@ -1,5 +1,3 @@
-//! Pull-request body helpers.
-
 use std::fs;
 use std::path::Path;
 
@@ -8,14 +6,11 @@ use clap::{Args, Subcommand};
 
 #[derive(Subcommand)]
 pub(crate) enum PrCommand {
-    /// Print a change digest (stderr) and a PR body skeleton (stdout) with the
-    /// verify-locally blocks auto-selected from the diff.
     Body(BodyArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct BodyArgs {
-    /// Git ref to diff against — the pre-PR baseline.
     #[arg(long, default_value = "origin/main")]
     base: String,
 }
@@ -26,11 +21,6 @@ pub(crate) fn run(command: PrCommand) -> Result<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// `pr body` — change digest + verify-block selection
-// ---------------------------------------------------------------------------
-
-/// Which categories of file the diff touches; each gates a verify-locally block.
 #[derive(Default)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -71,7 +61,6 @@ fn classify(files: &[String]) -> Categories {
     cats
 }
 
-/// Paths whose serde representation lives in a versioned schema file.
 fn is_schema_path(file: &str) -> bool {
     file.starts_with("crates/core/jackin-config/")
         || file.starts_with("crates/core/jackin-manifest/")
@@ -80,30 +69,22 @@ fn is_schema_path(file: &str) -> bool {
         || file.starts_with("crates/apps/jackin/tests/fixtures/migrations/")
 }
 
-/// Keep a `### <block>` verify-locally subsection? Checkout always; the rest are
-/// gated on the diff. Unknown blocks are kept (the template is the source of
-/// truth for which blocks exist).
 fn keep_block(name: &str, cats: &Categories) -> bool {
     match name {
         "Static checks" | "Rust tests" | "User smoke" => cats.rust,
         "Schema migration smoke" => cats.schema,
         "Docs checks" | "Documentation" => cats.docs,
         "jackin-capsule smoke" => cats.capsule,
-        // Checkout and any unmapped job always run.
         _ => true,
     }
 }
 
-/// Drop the verify-locally `### ` subsections that do not apply to the diff,
-/// keeping every other line of the template verbatim.
 fn filter_template(template: &str, cats: &Categories) -> String {
     let mut out = Vec::new();
     let mut in_verify = false;
     let mut keep = true;
     let mut in_fence = false;
     for line in template.lines() {
-        // A heading inside a ``` code fence (the verify blocks embed shell
-        // fences) is content, not a section marker.
         if line.trim_start().starts_with("```") {
             in_fence = !in_fence;
         } else if !in_fence {

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! List selection index plans.
 
 use super::{WorkspaceCollapseSelectionPlan, workspace_last_selectable_index, workspace_row_index};
 

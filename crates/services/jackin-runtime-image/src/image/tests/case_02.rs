@@ -349,10 +349,6 @@ fn image_recipe_accepts_script_fallback_install_recipe() {
 
 #[test]
 fn image_recipe_is_agent_independent() {
-    // The recipe (and thus the image identity) keys on the supported-agent set,
-    // never the selected agent — so the same role yields one recipe hash
-    // regardless of which agent is launched. Selecting a different initial agent
-    // must reuse the warm image instead of forking a redundant one.
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
@@ -378,7 +374,5 @@ fn image_recipe_is_agent_independent() {
     )
     .unwrap();
 
-    // Labels written while launching Claude satisfy the recipe expected when
-    // launching Codex — one image, reused across agents.
     assert_eq!(classify_image_labels(&labels_claude, &expected_codex), None);
 }

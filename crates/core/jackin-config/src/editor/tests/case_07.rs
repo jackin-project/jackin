@@ -55,11 +55,9 @@ fn open_detailed_fresh_install_scans_and_stamps_sentinel() {
     assert!(report.fresh_install);
     let config = editor.save().unwrap();
     assert_eq!(config.bootstrap, Some(crate::BootstrapState::initialized()));
-    // Every reported ID exists in the registry (no phantom additions).
     for id in &report.added_accounts {
         assert!(config.accounts.contains_key(id), "missing {id}");
     }
-    // Reopening is not a fresh install and rescans nothing.
     let (_, second) = ConfigEditor::open_detailed(&paths).unwrap();
     assert!(!second.fresh_install);
     assert!(second.added_accounts.is_empty());
@@ -125,7 +123,6 @@ fn open_detailed_upgrade_never_resurrects_or_rescans() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-    // Pre-sentinel config with one deliberate account and no marker.
     std::fs::write(
         &paths.config_file,
         "version = \"v1alpha10\"\n\n[accounts.kept]\nenabled = true\nname = \"Kept\"\nprovider = \"anthropic\"\n\n[accounts.kept.credential]\ntype = \"api_key\"\nvalue = \"${ANTHROPIC_API_KEY}\"\n",
@@ -135,7 +132,6 @@ fn open_detailed_upgrade_never_resurrects_or_rescans() {
     assert!(!report.fresh_install);
     assert!(report.added_accounts.is_empty());
     let config = editor.save().unwrap();
-    // Exactly the deliberate account survives: nothing resurrected, nothing added.
     assert_eq!(
         config.accounts.keys().collect::<Vec<_>>(),
         vec![&"kept".to_owned()]
@@ -166,7 +162,6 @@ fn scan_for_accounts_imports_profiles_with_bootstrap_naming_and_dedupes() {
     let config = editor.save().unwrap();
     assert!(config.accounts.contains_key("default-claude"));
 
-    // Re-scan dedupes to a no-op: same IDs, same sources, nothing added.
     let mut editor = ConfigEditor::open(&paths).unwrap();
     let second = editor
         .scan_for_accounts_with(&paths.home_dir, &BTreeMap::new())

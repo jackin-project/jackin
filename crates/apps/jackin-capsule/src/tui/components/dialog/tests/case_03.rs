@@ -211,8 +211,6 @@ fn usage_provider_tab_renders_meterless_family_bucket_as_plain_row() {
         text.contains("73% left"),
         "metered family bucket must render its percent:\n{text}"
     );
-    // Plain label/value row — never the overview join, which glues label and
-    // value without a separator ("Gemini · WeeklyNo data").
     assert!(
         text.contains("Gemini · Weekly No data"),
         "meter-less family bucket must render as a plain row:\n{text}"
@@ -225,8 +223,6 @@ fn usage_provider_tab_renders_meterless_family_bucket_as_plain_row() {
 
 #[test]
 fn usage_dialog_renders_auth_source_and_omits_blank_email() {
-    // credential_origin, distinct username, and plan stay in Details while the
-    // Rust identity projection supplies an honest non-account state above them.
     let mut view = usage_view_fixture();
     view.account = jackin_protocol::control::FocusedAccountHeader {
         provider_label: "Z.AI".to_owned(),

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Client-mode subcommand dispatch for the capsule entrypoint.
 
 use crate::argv::parse_focus_flag;
 use crate::usage_relay_proxy;
@@ -106,8 +105,6 @@ connecting as a client.",
                             None
                         }
                     };
-                    // Early client-side resolution for a precise error;
-                    // the daemon re-resolves authoritatively at spawn.
                     if let (Some(token), Some(config)) = (token, &launch_config)
                         && let Err(reason) = config.resolve_instance(token)
                     {

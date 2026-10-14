@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Git trailer hook and commit-message helpers.
 
 use super::{
     CAPSULE_RUNTIME_BIN, env_is_one, is_executable, run_command, runtime_setup_output,
@@ -45,15 +44,11 @@ pub(crate) fn coauthor_trailer_for_agent(agent: &str) -> Option<&'static str> {
         "opencode" => Some(
             "Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>",
         ),
-        // Grok does not support trailers.
         "grok" => None,
         _ => None,
     }
 }
 
-/// Write `user.name` and `user.email` to `GIT_DCO_IDENTITY_CACHE` at startup
-/// so the prepare-commit-msg hook never shells out to `git config` at commit
-/// time (eliminates the class of transient-empty-config silent-skip failures).
 pub(crate) fn cache_dco_identity_if_needed() {
     if !env_is_one("JACKIN_GIT_DCO") {
         return;
@@ -62,8 +57,6 @@ pub(crate) fn cache_dco_identity_if_needed() {
         git_config_value("user.name"),
         git_config_value("user.email"),
     ) else {
-        // DCO is on but git identity is unreadable at startup; the commit-time
-        // hook will fall back to live `git config` (and warn) per commit.
         record_recovered_degradation();
         return;
     };
@@ -72,8 +65,6 @@ pub(crate) fn cache_dco_identity_if_needed() {
         return;
     };
     if let Err(_error) = fs::write(&cache_path, format!("{name}\n{email}\n")) {
-        // A failed cache write means every commit shells out to live git
-        // config — the exact failure this cache exists to prevent.
         record_recovered_degradation();
     }
 }

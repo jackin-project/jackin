@@ -1,26 +1,3 @@
-//! No-cross-reference gate for `README.md` and `AGENTS.md`.
-//!
-//! The repo carries a single consolidated `AGENTS.md` at the root (per-folder
-//! files were removed in #956). It is **self-contained** — it must never point
-//! at another `AGENTS.md`, in any form — not a link, not a prose
-//! "see `../AGENTS.md` / `.github/AGENTS.md`". A `README.md` likewise never
-//! links to any `AGENTS.md`. Either file may still reference any other markdown
-//! or source file (a design doc, a spec) as needed.
-//!
-//! This gate scans every `README.md` and `AGENTS.md` in the repo (skipping
-//! fenced code blocks, where the convention doc shows template examples) and
-//! fails on:
-//!
-//! - any markdown link — inline `[t](path)` or reference `[id]: path` — whose
-//!   target is an `AGENTS.md` (in any `README.md` or `AGENTS.md`); and
-//! - any path-reference to another `AGENTS.md` (a `…/AGENTS.md` mention) inside
-//!   an `AGENTS.md`, except the convention doc `AGENTS.md` (repo root) that
-//!   defines this very rule.
-//!
-//! ```sh
-//! cargo xtask lint agent-links
-//! ```
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -32,8 +9,6 @@ use crate::report::{self, FormatArgs};
 
 const TARGET_BASENAME: &str = "AGENTS.md";
 const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules"];
-/// The convention doc that defines this rule references `AGENTS.md` files (and
-/// shows templates in code fences); exempt it from the path-mention check.
 const CONVENTION_DOC: &str = "AGENTS.md";
 
 #[derive(Args, Debug)]
@@ -93,8 +68,6 @@ fn run_inner() -> Result<()> {
     )
 }
 
-/// Recursively collect every `README.md` and `AGENTS.md`, skipping build/VCS
-/// dirs.
 fn collect(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in crate::fs_util::read_dir_sorted(root)? {
         let path = entry.path();
@@ -118,9 +91,6 @@ fn check_file(root: &Path, path: &Path, problems: &mut Vec<String>) -> Result<()
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let is_agents = name == "AGENTS.md";
     let is_convention_doc = path == root.join(CONVENTION_DOC);
-    // Path-mention check applies only to AGENTS.md files (a README may name a
-    // workflow doc that happens to be an AGENTS.md), and never to the
-    // convention doc that defines this rule.
     let check_mentions = is_agents && !is_convention_doc;
     let mut in_fence = false;
     for (idx, raw) in text.lines().enumerate() {
@@ -165,15 +135,10 @@ fn check_file(root: &Path, path: &Path, problems: &mut Vec<String>) -> Result<()
     Ok(())
 }
 
-/// A path reference to another `AGENTS.md` — `…/AGENTS.md` or `./AGENTS.md`.
-/// A bare `AGENTS.md` (self/convention) is allowed.
 fn has_agents_path_mention(line: &str) -> bool {
     line.contains("/AGENTS.md") || line.contains("./AGENTS.md")
 }
 
-/// Extract markdown link targets from a single line, skipping inline code
-/// spans. Handles inline `[label](target)` and reference-definition
-/// `[id]: target`.
 fn link_targets(line: &str) -> Vec<String> {
     let mut out = Vec::new();
     let bytes: Vec<char> = line.chars().collect();
@@ -213,7 +178,6 @@ fn link_targets(line: &str) -> Vec<String> {
         }
         i += 1;
     }
-    // Reference definitions at the start of the line: `[id]: target "title"`.
     let trimmed = line.trim_start();
     if let Some(rest) = trimmed.strip_prefix('[')
         && let Some(close) = rest.find("]:")

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Launch workspace choices.
 
 use jackin_config::{
     AppConfig, LoadWorkspaceInput, MountHealReport, ResolvedWorkspace, current_dir_workspace,
@@ -17,14 +16,6 @@ pub struct WorkspaceChoice {
     pub input: LoadWorkspaceInput,
 }
 
-/// `Ok(None)` when a saved name went missing between keypress and
-/// dispatch (concurrent delete via the manager).
-///
-/// Global mounts are intentionally not resolved here: every caller follows
-/// with `resolve_load_workspace` (via `resolve_selected_workspace`), which
-/// is the single site that merges, heals, and validates the effective
-/// mounts. A redundant pre-check here would only fail earlier with a
-/// poorer error.
 pub fn build_workspace_choice(
     config: &AppConfig,
     cwd: &std::path::Path,
@@ -75,7 +66,6 @@ pub fn build_workspace_choice(
                 input: LoadWorkspaceInput::Saved(name.clone()),
             }))
         }
-        // CLI-only shape (`jackin load --path`); console never produces it.
         LoadWorkspaceInput::Path { .. } => Ok(None),
     }
 }

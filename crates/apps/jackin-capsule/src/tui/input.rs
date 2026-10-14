@@ -1,44 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Capsule TUI input parsing: classify raw terminal bytes into palette/prefix
-//! key events, mouse events, and PTY pass-through sequences.
-//!
-//! Not responsible for: acting on classified events (see `daemon` dispatch) or
-//! rendering (see `tui` render modules).
-
-/// Input from the attached client terminal.
-///
-/// Two parallel models are supported:
-///
-/// - **Palette key (default `Ctrl+\`)** — one keystroke opens the
-///   command palette and the operator picks an action from a list,
-///   launcher-style. This is the primary UX and the only model the
-///   default status-bar hint advertises. `Ctrl+\` is the byte `0x1C`
-///   — no agent uses it as an editing key, it never appears in agent
-///   output, and raw-mode terminals never emit it as content (the
-///   `SIGQUIT` semantic only applies in cooked mode).
-///
-/// - **Prefix key (opt-in via `JACKIN_PREFIX=C-b`)** — tmux-style
-///   prefix + command-key for operators who prefer direct keyboard
-///   navigation. Disabled by default.
-///
-/// Both models can run simultaneously when both env vars are set.
-/// `JACKIN_PALETTE_KEY=none` disables the palette key entirely.
-/// `JACKIN_PALETTE_KEY=C-j` binds the palette to `Ctrl+J`, which is
-/// the same byte multi-line agents and shells use as line-continuation
-/// — so the bind collides with editing in those programs; set only
-/// when the trade-off is acceptable.
-/// A second click on the active tab cell within this window is a
-/// TUI double-click and opens the rename-tab dialog.
 pub(crate) const TAB_DOUBLE_CLICK_WINDOW: std::time::Duration =
     std::time::Duration::from_millis(500);
 
-/// `JACKIN_ESCAPE_TIME` env var — operator-tunable in milliseconds.
 pub(crate) const ENV_ESCAPE_TIME: &str = "JACKIN_ESCAPE_TIME";
 
-/// 50 ms matches tmux's default. Below human perception while
-/// surviving slow ssh / paste chunks.
 pub(crate) const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_millis(50);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,33 +26,12 @@ impl Default for InputBindings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
     Data(Vec<u8>),
-    MousePress {
-        col: u16,
-        row: u16,
-        button: u8,
-    },
-    /// SGR mouse release (`\x1b[< ... m`). Carries the same fields as
-    /// `MousePress` so the daemon can drop both press and release on
-    /// the same gate: shells and pre-mount agents that never enabled
-    /// any mouse protocol must not see the raw SGR bytes as input.
-    MouseRelease {
-        col: u16,
-        row: u16,
-        button: u8,
-    },
+    MousePress { col: u16, row: u16, button: u8 },
+
+    MouseRelease { col: u16, row: u16, button: u8 },
     PrefixCommand(PrefixCommand),
-    /// Direct one-key shortcut → open the palette dialog. Distinct from
-    /// `PrefixCommand::Palette`, which fires only after the prefix
-    /// gesture; the daemon collapses both into the same dialog open.
     OpenPalette,
-    /// `Ctrl+Q` (byte `0x11`) → open the "Exit jackin❯?" confirmation. The
-    /// quit chord is consistent with every other jackin❯ surface; the dialog
-    /// warns that exiting force-stops the container before it does so.
     RequestExit,
-    /// Resize the focused pane in `dir` by one step. Emitted by
-    /// `Alt-Shift-Arrow` so the operator can drag a split without
-    /// reaching for the mouse. Steps are ratio-based (~5%) so the
-    /// gesture is independent of terminal size.
     ResizePane(ArrowDir),
     FocusIn,
     FocusOut,
@@ -123,12 +69,6 @@ pub fn parse_prefix(s: &str) -> Option<u8> {
     parse_key_binding(s)
 }
 
-/// Accept:
-/// - `C-a` ... `C-z` (case-insensitive) - `Ctrl+letter`, maps to `0x01..=0x1A`
-/// - `C-\` / `C-]` / `C-^` / `C-_` - `Ctrl+symbol`, maps to `0x1C..=0x1F`
-/// - `C-Space` or `C-@` - `Ctrl+Space` / `Ctrl+@`, maps to `0x00`
-/// - A single ASCII control byte in hex form `0xNN`
-/// - A single literal byte
 #[must_use]
 pub fn parse_key_binding(s: &str) -> Option<u8> {
     let s = s.trim();

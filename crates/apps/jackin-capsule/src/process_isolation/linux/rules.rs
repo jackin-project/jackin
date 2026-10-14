@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Landlock rule computation for admitted session paths.
 
 use super::{
     FULL_WITH_UNIX, NULL_DEVICE, READ_FILE_ONLY, READ_ONLY, READ_ONLY_WITH_UNIX, Rule,
@@ -40,15 +39,10 @@ pub(crate) fn rules_for_impl(
     let cwd = validate_cwd_boundary(config, cwd)?;
     let session_root = normalize_existing_path(session_root)?;
     let mut rules = Vec::new();
-    // The workspace and selected slot roots may contain legitimate
-    // process-local Unix sockets. Sensitive `/jackin/run` sockets never
-    // receive this bit.
     required_exact_rule(&mut rules, &cwd, FULL_WITH_UNIX);
     required_exact_rule(&mut rules, &session_root, FULL_WITH_UNIX);
     for mount in &config.workspace_mounts {
         let mount = validate_workspace_mount_boundary(config, mount)?;
-        // `:ro` dsts are still enforced by the bind mount itself; the
-        // Landlock grant may be write-capable.
         required_exact_rule(&mut rules, &mount, FULL_WITH_UNIX);
     }
     for target in &config.worktree_git_targets {
@@ -80,27 +74,11 @@ pub(crate) fn rules_for_impl(
     ] {
         optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
     }
-    // Recovery/runtime setup uses jackin-process's StdioMode::Null for
-    // non-interactive children. Its stdin fd is opened O_RDWR, so a
-    // read-only /dev rule is insufficient. This is the narrow device
-    // exception; no other device path receives write access.
     optional_exact_rule(&mut rules, Path::new("/dev/null"), NULL_DEVICE);
-    // Do not grant a broad /proc read rule: selected credentials are
-    // transported in the child environment, and /proc/<pid>/environ would
-    // otherwise let a DAC-capable sibling read them. Programs may inspect
-    // only their own proc tree when the image provides these magic links.
     for path in ["/proc/self", "/proc/thread-self"] {
         optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
     }
-    // There is no broad /tmp grant. TMPDIR/TMP/TEMP point into the exact
-    // session root; an agent trying the host/container /tmp is denied.
 
-    // Image-baked tools and shell configuration are shared, but are not
-    // account slots. They are read-only. Slot roots below are the only
-    // mutable account paths outside the private session root.
-    // Grants must cover symlink targets as well as link parents: Landlock
-    // resolves `/home/agent/.local/bin/claude` to the installer-owned
-    // version under `.local/share/claude` before checking access.
     for path in [
         "/home/agent/.oh-my-zsh",
         "/home/agent/.local/bin",
@@ -133,10 +111,6 @@ pub(crate) fn rules_for_impl(
     ] {
         optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
     }
-    // These are exact socket inodes, not writable roots. ABI 9 needs the
-    // explicit pathname-socket right for connect(2); older kernels strip
-    // it in `access_for_abi` and retain the ABI-3 fail-closed filesystem
-    // policy.
     for path in [
         jackin_core::container_paths::CAPSULE_SOCKET,
         jackin_core::container_paths::HOST_SOCK,
@@ -144,10 +118,6 @@ pub(crate) fn rules_for_impl(
     ] {
         optional_exact_rule(&mut rules, Path::new(path), READ_ONLY_WITH_UNIX);
     }
-    // Docker clients in the agent session use the mounted DinD client
-    // certificates. The parent `/jackin/run` rule is traverse-only, so
-    // this exact mount must be readable without exposing other runtime
-    // state or sockets.
     optional_exact_rule(
         &mut rules,
         Path::new(jackin_core::container_paths::DIND_CERTS_CLIENT_DIR),
@@ -170,25 +140,12 @@ pub(crate) fn rules_for_impl(
             let access = if path.is_dir() {
                 FULL_WITH_UNIX
             } else {
-                // Forwarded auth files are Docker/Apple read-only mounts;
-                // keep the Landlock grant read-only too.
                 READ_FILE_ONLY
             };
             required_exact_rule(&mut rules, &path, access);
         }
-        // Concurrent same-instance sessions run in derived pane homes
-        // (`{home}/panes/{seq}`). The parent sits outside the base mount
-        // grants for XDG-parent homes, so it gets its own grant; the
-        // wrapper pre-created it before dropping privileges, and requiring
-        // it here fails closed with the path named when that breaks.
         let panes = pane_homes_parent(config, instance)?;
         required_exact_rule(&mut rules, &panes, FULL_WITH_UNIX);
-        // Runtime setup seeds a fresh home — base or derived pane home —
-        // from the image snapshot of this agent's own default fragment(s).
-        // Never the snapshot root itself: it holds every agent's defaults.
-        // The fragment is keyed by the agent runtime, not by the instance
-        // home suffix: seed reads `credential_dir` for every home shape,
-        // so a suffix-derived grant would miss and fail the seed closed.
         if let Some(slug) = config.agents.get(instance)
             && let Some(agent) = jackin_core::Agent::from_slug(slug)
         {

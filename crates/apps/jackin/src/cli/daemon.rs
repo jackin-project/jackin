@@ -2,18 +2,39 @@ use clap::Subcommand;
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum DaemonCommand {
-    /// Run the host daemon in the foreground
+    #[command(
+        about = "Run the host daemon in the foreground",
+        long_about = "Run the host daemon in the foreground"
+    )]
     Serve,
-    /// Install a per-user launchd/systemd service file
+    #[command(
+        about = "Install a per-user launchd/systemd service file",
+        long_about = "Install a per-user launchd/systemd service file"
+    )]
     Install,
-    /// Remove the per-user launchd/systemd service file
+    #[command(
+        about = "Remove the per-user launchd/systemd service file",
+        long_about = "Remove the per-user launchd/systemd service file"
+    )]
     Uninstall,
-    /// Start the daemon for this user
+    #[command(
+        about = "Start the daemon for this user",
+        long_about = "Start the daemon for this user"
+    )]
     Start,
-    /// Ask the running daemon to stop
+    #[command(
+        about = "Ask the running daemon to stop",
+        long_about = "Ask the running daemon to stop"
+    )]
     Stop,
-    /// Stop then start the daemon
+    #[command(
+        about = "Stop then start the daemon",
+        long_about = "Stop then start the daemon"
+    )]
     Restart,
-    /// Show daemon protocol and lifecycle status
+    #[command(
+        about = "Show daemon protocol and lifecycle status",
+        long_about = "Show daemon protocol and lifecycle status"
+    )]
     Status,
 }

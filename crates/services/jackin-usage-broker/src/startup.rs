@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Broker startup cleanup guard.
 
 use std::path::PathBuf;
 
@@ -9,10 +8,6 @@ use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
 
 use crate::{BrokerLeaseOwner, BrokerSocketIdentity, cleanup_owned_files, renew_lease};
 
-/// Owns the lease and socket for the broker lifetime. Drop removes the socket
-/// while the descriptor-bound lease is still locked, then removes that exact
-/// lease inode. The serve loop drops this guard only after its workers and
-/// ticker have drained.
 pub(crate) struct BrokerStartupCleanup {
     lease_path: PathBuf,
     socket_path: PathBuf,

@@ -114,7 +114,6 @@ fn presence_stale_and_new() {
 #[test]
 fn curated_pub_mods_rejects_extra_root_mod() {
     let dir = tempfile::tempdir().expect("tempdir");
-    // Valid curated siblings so the only failure is the intentional leak.
     for (crate_name, body) in [
         ("jackin-config", "mod private;\npub mod fixtures;\n"),
         (
@@ -154,7 +153,6 @@ fn curated_pub_mods_accepts_env_pilot_shape() {
 
 #[test]
 fn real_tree_curated_pub_mods_green() {
-    // Workspace root is three levels up from this crate under the test runner.
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
         .canonicalize()
@@ -167,7 +165,6 @@ fn suite_time_parses_fixture_junit_ms() {
     let dir = tempfile::tempdir().expect("tempdir");
     let junit_dir = dir.path().join("target/nextest/ci");
     fs::create_dir_all(&junit_dir).expect("mkdir");
-    // Two time attributes: 1.5s + 2s → 3500ms sum (attributes on suite + case).
     fs::write(
         junit_dir.join("junit.xml"),
         r#"<?xml version="1.0"?><testsuites time="1.5"><testsuite time="2.0"></testsuite></testsuites>"#,

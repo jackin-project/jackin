@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Container-local usage socket bridged over a host-started stdio tunnel.
-
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -39,7 +37,6 @@ const RESPONSE_TIMEOUT: Duration = Duration::from_secs(35);
 
 type Pending = Arc<Mutex<BTreeMap<u64, oneshot::Sender<UsageBrokerResponse>>>>;
 
-/// Bind the Capsule-local scoped usage socket and bridge requests over stdio.
 pub(crate) async fn run() -> Result<()> {
     let config = crate::config::load().context("loading Capsule config for usage relay")?;
     let authorization = UsageRelayAuthorization::from_config(&config)

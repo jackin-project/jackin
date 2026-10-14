@@ -1,4 +1,3 @@
-//! Shared account/GitHub row lookup for manager integration tests.
 use super::*;
 use jackin::console::adapter::state::AuthRow;
 use jackin_config::AppConfig;

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Direct OTLP subscriber setup with no terminal or local-file sink.
-
 use tracing_subscriber::prelude::*;
 
 mod config;
@@ -19,7 +17,6 @@ pub struct ValidationReport {
     pub health: TelemetryHealth,
 }
 
-/// Sanitized class of invalid OTLP configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TelemetryConfigFailure {
     MissingSignalEndpoint,
@@ -99,7 +96,6 @@ impl std::fmt::Display for ValidationFailure {
 
 impl std::error::Error for ValidationFailure {}
 
-/// Emit one marker for every signal and synchronously confirm exporter delivery.
 pub fn validate_delivery() -> Result<ValidationReport, ValidationFailure> {
     if std::env::var("OTEL_SDK_DISABLED").is_ok_and(|value| value.eq_ignore_ascii_case("true")) {
         return Err(ValidationFailure::Disabled);
@@ -157,17 +153,6 @@ fn validate_delivery_delta(
     Ok(())
 }
 
-/// Install the global subscriber and direct OTLP exporters when configured.
-///
-/// Without an endpoint this installs only the governed subscriber; telemetry
-/// remains in memory and no local telemetry artifact is created. With a
-/// standard OTLP endpoint, spans, logs, and metrics are exported directly and
-/// correlated by governed invocation and session attributes.
-///
-/// Returns `Ok(true)` when all three OTLP providers were installed and
-/// `Ok(false)` when no endpoint is configured. Returns `Err` when configured
-/// providers fail to build or the subscriber is already set. The owning
-/// [`RunDiagnostics`](crate::RunDiagnostics) keeps product execution fail-open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServiceIdentity {
     service_name: &'static str,
@@ -226,7 +211,6 @@ pub fn init_tracing_for(
         };
     }
 
-    // No fmt layer: the operator's terminal must never receive the firehose.
     let _ = (debug, run_id, identity);
     tracing_subscriber::registry()
         .try_init()
@@ -234,14 +218,12 @@ pub fn init_tracing_for(
     Ok(false)
 }
 
-/// Install real OTLP providers against an explicit test receiver endpoint.
 #[cfg(feature = "test-support")]
 pub fn init_wire_test_export(endpoint: &str, identity: ServiceIdentity) -> anyhow::Result<()> {
     let endpoints = otlp::OtlpEndpoints::new(endpoint, endpoint, endpoint);
     otlp::init(false, "wire-conformance", identity, &endpoints)
 }
 
-/// Force all three wire-test providers to deliver their current batches.
 #[cfg(feature = "test-support")]
 pub fn flush_wire_test_export() -> Result<(), ValidationFailure> {
     otlp::validate_flush()
@@ -259,10 +241,6 @@ pub fn otlp_runtime_active_for_test() -> bool {
     otlp::runtime_is_active()
 }
 
-/// The first explicitly-requested OTLP protocol jackin cannot honor, when an
-/// OTLP endpoint is configured (i.e. export is intended). `None` means the
-/// configuration is exportable (grpc or unset) or no endpoint is set. Callers
-/// use this to fail fast with a clear operator error before doing any work.
 #[must_use]
 pub fn unsupported_otlp_protocol() -> Option<String> {
     let env = |key: &str| std::env::var(key).ok();
@@ -272,29 +250,14 @@ pub fn unsupported_otlp_protocol() -> Option<String> {
     }
 }
 
-/// Flush and shut down the OTLP exporters, if any are active.
-///
-/// Batch exporters hold the tail of a run in memory; a run that exits without
-/// this call silently drops its last spans, log records, and metrics. Invoked
-/// from `ActiveRunGuard::drop` so it runs on every exit path out of the run —
-/// including `?` error early-returns — rather than only the success path.
-/// No-op when no endpoint was configured.
 pub(crate) fn shutdown_otlp() {
     otlp::shutdown();
 }
 
-/// Flush and shut down the capsule's OTLP exporters at process exit. The public
-/// counterpart to the host's guard-driven [`shutdown_otlp`]; the capsule has no
-/// `ActiveRunGuard`, so it calls this explicitly before the daemon exits.
 pub fn shutdown_capsule_tracing() {
     otlp::shutdown();
 }
 
-/// Install OTLP export for the in-container capsule process.
-///
-/// W3C trace context links the session back to the launch trace. Returns
-/// `Ok(true)` when export was activated,
-/// `Ok(false)` when no endpoint is configured (the common, no-op case).
 pub fn init_capsule_tracing(traceparent: Option<&str>) -> anyhow::Result<bool> {
     jackin_telemetry::limits::install_redactor(crate::redact::redact_text);
     let env = |key: &str| std::env::var(key).ok();
@@ -308,25 +271,16 @@ pub fn init_capsule_tracing(traceparent: Option<&str>) -> anyhow::Result<bool> {
     Ok(activated)
 }
 
-/// The configured host OTLP endpoint (`OTEL_EXPORTER_OTLP_ENDPOINT`), or `None`
-/// when export is off / not compiled.
 #[must_use]
 pub fn configured_endpoint() -> Option<String> {
     otlp::base_endpoint()
 }
 
-/// Human-readable host OTLP endpoint configuration for debug banners.
 #[must_use]
 pub fn configured_endpoint_summary() -> Option<String> {
     otlp::endpoint_summary()
 }
 
-/// Operator-facing backend query line for an invocation id, when an OTLP endpoint is
-/// configured. Returns `None` when export is off.
-///
-/// Renders `parallax run <id>` when the endpoint summary looks like the
-/// Parallax reference backend; otherwise a backend-neutral
-/// `cli.invocation.id=<id>` filter string.
 #[must_use]
 pub fn backend_query_hint(invocation_id: &str) -> Option<String> {
     let endpoint = configured_endpoint_summary()?;
@@ -338,30 +292,22 @@ pub fn backend_query_hint(invocation_id: &str) -> Option<String> {
     Some(query)
 }
 
-/// Whether the operator set any OTLP endpoint env var (export intended), even if
-/// the resulting config is incomplete and so installs no exporter. Lets the
-/// caller surface "export configured but disabled" instead of silently treating
-/// it as never requested. Always `false` without the `otlp` feature.
 #[must_use]
 pub fn otlp_endpoint_configured() -> bool {
     config::any_endpoint_configured(&|key| std::env::var(key).ok())
 }
 
-/// Whether host OTLP authentication material is configured. Values are never
-/// returned so launch policy cannot accidentally copy them into a Capsule.
 #[must_use]
 pub fn otlp_auth_configured() -> bool {
     config::any_auth_configured(&|key| std::env::var(key).ok())
 }
 
-/// Effective, privacy-safe configuration for one OTLP signal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OtlpSignalFingerprint {
     pub authority: String,
     pub tls: bool,
 }
 
-/// Effective per-signal OTLP configuration without credentials or paths.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OtlpConfigFingerprint {
     pub traces: OtlpSignalFingerprint,
@@ -371,7 +317,6 @@ pub struct OtlpConfigFingerprint {
     pub sampler: &'static str,
 }
 
-/// Resolve and sanitize the same configuration used to build the providers.
 pub fn resolved_otlp_config_fingerprint()
 -> Result<Option<OtlpConfigFingerprint>, TelemetryConfigFailure> {
     let env = |key: &str| std::env::var(key).ok();
@@ -402,36 +347,21 @@ fn endpoint_authority(endpoint: &str) -> Option<String> {
     (!authority.is_empty()).then(|| authority.to_owned())
 }
 
-/// How a launched container should reach the host OTLP backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerOtlp {
-    /// Value for `OTEL_EXPORTER_OTLP_ENDPOINT` inside the container.
     pub endpoint: String,
-    /// Whether the launch must add `host.docker.internal:host-gateway` so the
-    /// rewritten loopback host resolves to the host on Linux engines.
     pub needs_host_gateway: bool,
 }
 
-/// The configured OTLP endpoint rewritten to be reachable from inside a
-/// container. `None` when export is off.
 #[must_use]
 pub fn container_otlp() -> Option<ContainerOtlp> {
     container_endpoint().map(|endpoint| rewrite_endpoint_for_container(&endpoint))
 }
 
-/// The single endpoint to inject as the container's `OTEL_EXPORTER_OTLP_ENDPOINT`.
-/// Prefers the base var; falls back to the resolved traces endpoint so a
-/// per-signal-only host config (per-signal vars, no base) still gives the capsule
-/// a reachable collector instead of silently disabling capsule export. gRPC sends
-/// every signal to one target, so a single endpoint is the right container shape.
 fn container_endpoint() -> Option<String> {
     otlp::container_endpoint()
 }
 
-/// Rewrite a host-loopback OTLP endpoint to `host.docker.internal` (the host
-/// gateway), leaving any already-routable host untouched. Hand-rolled rather
-/// than pulling a URL parser: the only transform is swapping a loopback
-/// authority, and the input is jackin❯'s own `scheme://host[:port][/path]`.
 fn rewrite_endpoint_for_container(endpoint: &str) -> ContainerOtlp {
     if let Some((scheme, rest)) = endpoint.split_once("://") {
         let (authority, path) = rest.split_once('/').map_or((rest, ""), |(a, p)| (a, p));
@@ -461,16 +391,10 @@ fn rewrite_endpoint_for_container(endpoint: &str) -> ContainerOtlp {
 #[cfg(test)]
 mod tests;
 
-/// OTLP export: spans (stage timings + screen/launch traces), logs (the
-/// diagnostics event stream), and process/runtime metrics to one endpoint.
-/// Only compiled with `--features otlp`; entirely absent from default builds
-/// so there is zero link-time cost. No `fmt` layer is attached: OTLP export is
-/// a separate sink from the operator's screen, which stays free of the firehose.
 mod otlp;
 
 #[cfg(any(test, feature = "test-support"))]
 pub use otlp::{TestExport, test_capsule_layers};
-/// In-memory export rig for crate tests (operation facade, conformance).
 #[cfg(test)]
 pub(crate) use otlp::{emit_session_start_for_test, test_layers};
 
@@ -509,8 +433,6 @@ fn emit_progress_event_inner(kind: &str, message: &str, error_type: Option<&str>
     use jackin_telemetry::event;
     use jackin_telemetry::{Attr, FieldSet, Value};
 
-    // Launch stages use the shared paired guard, which owns their typed events,
-    // span, and metrics in both rich and headless paths.
     if matches!(
         kind,
         "stage_started" | "stage_done" | "stage_failed" | "stage_skipped"

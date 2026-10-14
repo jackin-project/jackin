@@ -7,7 +7,6 @@ use super::{
 };
 use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
 
-/// Sanitized Portal subscription fixture: plan shape only, no secrets.
 const HERMES_SUBSCRIPTION_FIXTURE: &str = r#"{
     "current": {
         "tier_id": "tier-pro",
@@ -18,7 +17,6 @@ const HERMES_SUBSCRIPTION_FIXTURE: &str = r#"{
     }
 }"#;
 
-/// Sanitized local rate-limit tracker fixture: counters only, no secrets.
 const HERMES_TRACKER_FIXTURE: &str = r#"{
     "windows": [
         {"model": "example-model-a", "in_flight": 1, "recent_429": 0},

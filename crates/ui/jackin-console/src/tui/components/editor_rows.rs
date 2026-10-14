@@ -1,18 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared row render helpers for editor/settings tabs.
-//!
-//! Plan 010 step 4 (C10) reviewed the named upstream pairings at rev
-//! `29a16b5b` and recorded behavior-preserving non-adoptions (commit-message
-//! carve-outs): `FieldRow::paint` inserts a spacing gap after the label band,
-//! truncates label and value with `…`, and paints selection fill/tint, while
-//! `labeled_field_line` pads the pinned label column with no gap, no
-//! truncation, and no row fill; the mount tables are a four-column product
-//! layout with continuation rows, not key→value anatomy; and the secret
-//! masking here is read-only display rows (fixed 11-glyph mask / clamped
-//! 1–12 repeat), not an editor — `PasswordInputState` masks per real secret
-//! length with reveal/strength chrome.
 mod auth_lines;
 mod displays;
 mod primitives;

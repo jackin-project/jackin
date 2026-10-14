@@ -1,14 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Usage-dialog rendering helpers extracted from `dialog_widgets.rs`.
-//!
-//! `dialog_widgets.rs` is the coordinator; this sub-module owns the per-line /
-//! per-section content composition for the usage dialog. The helpers are
-//! consumed by `render_usage_info` (in the coordinator) and the test helpers
-//! in `tests.rs`; the API surface is re-exported at the parent so the test
-//! glob continues to read `dialog_widgets::usage_xxx`.
-
 mod buckets;
 mod details;
 mod geometry;

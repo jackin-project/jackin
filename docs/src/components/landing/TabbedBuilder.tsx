@@ -1,11 +1,10 @@
-// docs/components/landing/TabbedBuilder.tsx
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 export interface BuilderTab {
   id: string;
   title: string;
-  body: ReactNode; // pre-rendered spans with syntax highlighting classes
+  body: ReactNode;
 }
 
 export interface TabbedBuilderProps {

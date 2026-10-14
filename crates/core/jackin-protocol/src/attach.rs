@@ -2,29 +2,7 @@
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-//! Attach protocol handshake: initial capability negotiation and session-ID
-//! assignment when a client connects.
-//!
-//! Not responsible for: PTY lifecycle, input dispatch after attach completes,
-//! or control-channel framing (see `protocol::control`).
-//!
-//! Key invariant: every client → server tag is in `0x01..=0x7F`; every
-//! server → client tag has the top bit set (`0x80..=0xFF`). The first byte
-//! of a new connection lands in the daemon's protocol-disambiguator before
-//! this module sees it.
 
-/// Attach channel: tag-plus-length binary framing.
-///
-/// Used by interactive clients: one persistent connection per attached
-/// terminal. Each frame is `[1-byte tag][4-byte BE length][payload]`.
-/// Payload of `InputBytes` / `OutputBytes` is raw PTY bytes — no base64,
-/// no JSON nesting on the hot path.
-///
-/// Disambiguation from the control channel: every binary tag is in
-/// `0x01..=0xFF`. The control channel's first byte is the top byte of a
-/// 4-byte big-endian length, which is always `0x00` for the message
-/// sizes the host CLI sends. Reading the first byte tells the daemon
-/// which protocol the client is speaking.
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -34,140 +12,68 @@ use crate::TelemetryContext;
 
 mod contextual;
 
-// Client → server tags.
-/// Wire/protocol constant `TAG_HELLO`.
 pub const TAG_HELLO: u8 = 0x01;
-/// Wire/protocol constant `TAG_RESIZE`.
 pub const TAG_RESIZE: u8 = 0x02;
-/// Wire/protocol constant `TAG_INPUT`.
 pub const TAG_INPUT: u8 = 0x03;
-/// Wire/protocol constant `TAG_COMMAND`.
 pub const TAG_COMMAND: u8 = 0x04;
-/// Wire/protocol constant `TAG_DETACH`.
 pub const TAG_DETACH: u8 = 0x05;
-/// Wire/protocol constant `TAG_FOCUS_IN`.
 pub const TAG_FOCUS_IN: u8 = 0x06;
-/// Wire/protocol constant `TAG_FOCUS_OUT`.
 pub const TAG_FOCUS_OUT: u8 = 0x07;
-/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE`.
 pub const TAG_CLIPBOARD_IMAGE: u8 = 0x08;
-/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE_START`.
 pub const TAG_CLIPBOARD_IMAGE_START: u8 = 0x09;
-/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE_CHUNK`.
 pub const TAG_CLIPBOARD_IMAGE_CHUNK: u8 = 0x0a;
-/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE_END`.
 pub const TAG_CLIPBOARD_IMAGE_END: u8 = 0x0b;
-/// Wire/protocol constant `TAG_CLIPBOARD_IMAGE_ERROR`.
 pub const TAG_CLIPBOARD_IMAGE_ERROR: u8 = 0x0c;
-/// Wire/protocol constant `TAG_HOST_NOTICE`.
 pub const TAG_HOST_NOTICE: u8 = 0x0d;
-/// Versioned contextual attach control request.
 pub const TAG_ATTACH_CONTROL: u8 = 0x0e;
 
-// Server → client tags. The top bit is set as a convention so a future
-// reader can tell direction by glancing at the byte.
-/// Wire/protocol constant `TAG_WELCOME`.
 pub const TAG_WELCOME: u8 = 0x81;
-/// Wire/protocol constant `TAG_OUTPUT`.
 pub const TAG_OUTPUT: u8 = 0x82;
-/// Wire/protocol constant `TAG_SESSION_LIST`.
 pub const TAG_SESSION_LIST: u8 = 0x83;
-/// Wire/protocol constant `TAG_SHUTDOWN`.
 pub const TAG_SHUTDOWN: u8 = 0x84;
-/// Wire/protocol constant `TAG_BELL`.
 pub const TAG_BELL: u8 = 0x85;
-/// Wire/protocol constant `TAG_HOST_OPEN_URL`.
 pub const TAG_HOST_OPEN_URL: u8 = 0x86;
-/// Wire/protocol constant `TAG_FILE_EXPORT_START`.
 pub const TAG_FILE_EXPORT_START: u8 = 0x87;
-/// Wire/protocol constant `TAG_FILE_EXPORT_CHUNK`.
 pub const TAG_FILE_EXPORT_CHUNK: u8 = 0x88;
-/// Wire/protocol constant `TAG_FILE_EXPORT_END`.
 pub const TAG_FILE_EXPORT_END: u8 = 0x89;
-/// Wire/protocol constant `TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH`.
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH: u8 = 0x8a;
-/// Wire/protocol constant `TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD`.
 pub const TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD: u8 = 0x8b;
-/// Wire/protocol constant `TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD`.
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD: u8 = 0x8c;
-/// Wire/protocol constant `TAG_HOST_REVEAL_PATH`.
 pub const TAG_HOST_REVEAL_PATH: u8 = 0x8d;
-/// Bounded attach control acknowledgement.
 pub const TAG_ATTACH_CONTROL_RESPONSE: u8 = 0x8e;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
-/// Wire/protocol constant `MAX_FILE_EXPORT_PATH_BYTES`.
 pub const MAX_FILE_EXPORT_PATH_BYTES: usize = 4096;
-/// Wire/protocol constant `MAX_FILE_EXPORT_NAME_BYTES`.
 pub const MAX_FILE_EXPORT_NAME_BYTES: usize = 255;
-/// Wire/protocol constant `MAX_FILE_EXPORT_CHUNK_BYTES`.
 pub const MAX_FILE_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
-/// Wire/protocol constant `FILE_EXPORT_DIGEST_BYTES`.
 pub const FILE_EXPORT_DIGEST_BYTES: usize = 32;
-/// Wire/protocol constant `MAX_CLIPBOARD_IMAGE_ERROR_BYTES`.
 pub const MAX_CLIPBOARD_IMAGE_ERROR_BYTES: usize = 1024;
-/// Wire/protocol constant `MAX_HOST_NOTICE_BYTES`.
 pub const MAX_HOST_NOTICE_BYTES: usize = 2048;
-/// Wire/protocol constant `MAX_HOST_REVEAL_PATH_BYTES`.
 pub const MAX_HOST_REVEAL_PATH_BYTES: usize = 4096;
-/// Wire/protocol constant `MAX_CLIPBOARD_IMAGE_CHUNK_BYTES`.
 pub const MAX_CLIPBOARD_IMAGE_CHUNK_BYTES: usize = 1024 * 1024;
-/// Wire/protocol constant `MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES`.
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
-/// Wire/protocol constant `MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64`.
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES as u64;
-/// Maximum image byte payload that fits in one clipboard-image attach
-/// frame after the one-byte image-format discriminator. Normal
-/// attach/control frames keep the smaller `MAX_FRAME_PAYLOAD`; image
-/// paste gets a narrowly-scoped cap because screenshots routinely exceed
-/// 4 MiB while still being small enough for a bounded local frame.
 pub const MAX_CLIPBOARD_IMAGE_BYTES: usize = MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD - 1;
-/// Maximum one-frame image size after reserving bounded contextual-envelope overhead.
 pub const MAX_CONTEXTUAL_CLIPBOARD_IMAGE_BYTES: usize = MAX_CLIPBOARD_IMAGE_BYTES - 2048;
-/// Wire/protocol constant `MAX_HELLO_ENV`.
 pub const MAX_HELLO_ENV: usize = 64;
-/// Per-entry cap on Hello env-value byte length. Operator-supplied env
-/// values in jackin❯ are short (slugs, booleans, file paths); cap at
-/// 8 KiB so a buggy or hostile client cannot smuggle a megabyte-sized
-/// env entry past `MAX_HELLO_ENV` (the count cap) into the spawned
-/// session's environment block.
 pub const MAX_HELLO_ENV_VALUE: usize = 8 * 1024;
-/// Per-entry cap on Hello env-key byte length. Same shape as
-/// `MAX_HELLO_ENV_VALUE`; env-var names should be even shorter than
-/// values, but the wire field is still u16-sized so we bound it.
 pub const MAX_HELLO_ENV_KEY: usize = 1024;
-/// Per terminal-identity field cap. These values come from the active
-/// attach client's environment (`TERM`, `TERM_PROGRAM`, `COLORTERM`) and
-/// should be tiny, but bounding them keeps the Hello frame shape explicit.
 pub const MAX_CLIENT_TERMINAL_FIELD: usize = 1024;
 
 const TERM_LABEL: &str = "TERM";
 const TERM_PROGRAM_LABEL: &str = "TERM_PROGRAM";
 const COLORTERM_LABEL: &str = "COLORTERM";
 
-/// Wall-clock cap for a single attach frame's read. Bounded so a peer
-/// that stalls between length prefix and payload — or trickles bytes
-/// slower than the bandwidth bound — cannot pin the per-connection
-/// task. 4 MiB across 10 s is ~409 KiB/s, well below any reasonable
-/// localhost rate.
 const FRAME_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `SpawnRequest` protocol enum.
 pub enum SpawnRequest {
-    /// `Shell` variant.
     Shell,
-    /// Exact instance config ID (or an unambiguous agent slug for the
-    /// entrypoint compatibility path).
     Instance(String),
 }
 
 impl SpawnRequest {
-    /// Build an `Instance` request rejecting empty targets. Mirrors the
-    /// decode-side `decode_client` check so in-process callers cannot
-    /// construct a degenerate request that would only be caught after a
-    /// wire round-trip.
     pub fn instance(target: impl Into<String>) -> Result<Self> {
         let target = target.into();
         if target.is_empty() {
@@ -177,40 +83,16 @@ impl SpawnRequest {
     }
 }
 
-/// Terminal identity reported by the currently attached client.
-/// Per-attach, not container-lifetime: the daemon must gate
-/// outer-terminal enhancements on this value rather than on the
-/// daemon process environment inherited at launch, since a running
-/// container can be reattached from a different terminal later.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ClientTerminal {
-    /// `term` field.
     pub term: Option<String>,
-    /// `term_program` field.
     pub term_program: Option<String>,
-    /// `colorterm` field.
     pub colorterm: Option<String>,
-    /// Default foreground/background the client read from its terminal via
-    /// OSC 10/11 before the handshake. `None` when the terminal did not
-    /// answer. The daemon feeds these into every pane grid so agent OSC 10/11
-    /// queries are answered with the colors the operator actually sees.
     pub default_fg: Option<(u8, u8, u8)>,
-    /// `default_bg` field.
     pub default_bg: Option<(u8, u8, u8)>,
-    /// `capability_overrides` field.
     pub capability_overrides: AttachCapabilityOverrides,
 }
 
-/// Backend-side capabilities for the currently attached terminal.
-///
-/// These are host-adaptive and may change on every attach. They must not
-/// change agent-visible `termpane` profile semantics.
-///
-/// Consumption status: only `pointer_shapes` currently gates behavior. The
-/// remaining fields (and `sources`) are derived and logged on attach but do
-/// not yet gate emission — OSC 8 / underline / truecolor output is governed by
-/// `session::OscPolicy` and the terminal profile, not these flags. They are the
-/// forward contract for capability-driven downsampling (deferred per roadmap).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -222,19 +104,12 @@ pub struct ClientTerminal {
               site without changing observable behavior."
 )]
 pub struct AttachCapabilities {
-    /// `pointer_shapes` field.
     pub pointer_shapes: bool,
-    /// `truecolor` field.
     pub truecolor: bool,
-    /// `synchronized_output` field.
     pub synchronized_output: bool,
-    /// `osc8_hyperlinks` field.
     pub osc8_hyperlinks: bool,
-    /// `underline_style` field.
     pub underline_style: bool,
-    /// `image_protocol` field.
     pub image_protocol: ImageProtocolCapability,
-    /// `sources` field.
     pub sources: AttachCapabilitySources,
 }
 
@@ -247,49 +122,32 @@ pub struct AttachCapabilities {
               resolved the way it did. Named-field reads are clearer than bit-position \
               lookups in capability-debug output."
 )]
-/// `AttachCapabilitySources` protocol type.
 pub struct AttachCapabilitySources {
-    /// `handshake_identity` field.
     pub handshake_identity: bool,
-    /// `terminfo_name` field.
     pub terminfo_name: bool,
-    /// `safe_color_probe` field.
     pub safe_color_probe: bool,
-    /// `user_override` field.
     pub user_override: bool,
-    /// `denylist` field.
     pub denylist: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-/// `AttachCapabilityOverrides` protocol type.
 pub struct AttachCapabilityOverrides {
-    /// `pointer_shapes` field.
     pub pointer_shapes: Option<bool>,
-    /// `truecolor` field.
     pub truecolor: Option<bool>,
-    /// `synchronized_output` field.
     pub synchronized_output: Option<bool>,
-    /// `osc8_hyperlinks` field.
     pub osc8_hyperlinks: Option<bool>,
-    /// `underline_style` field.
     pub underline_style: Option<bool>,
-    /// `image_protocol` field.
     pub image_protocol: Option<ImageProtocolCapability>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-/// `ImageProtocolCapability` protocol enum.
 pub enum ImageProtocolCapability {
     #[default]
-    /// `Unsupported` variant.
     Unsupported,
-    /// `Kitty` variant.
     Kitty,
 }
 
 impl ClientTerminal {
-    /// `from_env` associated function.
     pub fn from_env() -> Self {
         Self {
             term: non_empty_env(TERM_LABEL),
@@ -302,13 +160,11 @@ impl ClientTerminal {
     }
 
     #[must_use]
-    /// `pointer_shapes_supported` method.
     pub fn pointer_shapes_supported(&self) -> bool {
         self.attach_capabilities().pointer_shapes
     }
 
     #[must_use]
-    /// `attach_capabilities` method.
     pub fn attach_capabilities(&self) -> AttachCapabilities {
         let term = self.term.as_deref().unwrap_or("").to_ascii_lowercase();
         let term_program = self
@@ -364,7 +220,6 @@ impl ClientTerminal {
 
 impl AttachCapabilityOverrides {
     #[must_use]
-    /// `from_env` associated function.
     pub fn from_env() -> Self {
         Self {
             pointer_shapes: env_bool("JACKIN_ATTACH_POINTER_SHAPES"),
@@ -377,7 +232,6 @@ impl AttachCapabilityOverrides {
     }
 
     #[must_use]
-    /// `any` method.
     pub const fn any(self) -> bool {
         self.pointer_shapes.is_some()
             || self.truecolor.is_some()
@@ -430,23 +284,16 @@ fn env_image_protocol(key: &str) -> Option<ImageProtocolCapability> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `ClipboardImageFormat` protocol enum.
 pub enum ClipboardImageFormat {
-    /// `Png` variant.
     Png,
-    /// `Jpeg` variant.
     Jpeg,
-    /// `Gif` variant.
     Gif,
-    /// `Webp` variant.
     Webp,
-    /// `Tiff` variant.
     Tiff,
 }
 
 impl ClipboardImageFormat {
     #[must_use]
-    /// `extension` method.
     pub fn extension(&self) -> &'static str {
         match self {
             Self::Png => "png",
@@ -480,167 +327,101 @@ impl ClipboardImageFormat {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `ClipboardImage` protocol type.
 pub struct ClipboardImage {
-    /// `format` field.
     pub format: ClipboardImageFormat,
-    /// `bytes` field.
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `ClipboardImageStart` protocol type.
 pub struct ClipboardImageStart {
-    /// `transfer_id` field.
     pub transfer_id: u64,
-    /// `format` field.
     pub format: ClipboardImageFormat,
-    /// `size` field.
     pub size: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `ClipboardImageChunk` protocol type.
 pub struct ClipboardImageChunk {
-    /// `transfer_id` field.
     pub transfer_id: u64,
-    /// `offset` field.
     pub offset: u64,
-    /// `bytes` field.
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `ClipboardImageEnd` protocol type.
 pub struct ClipboardImageEnd {
-    /// `transfer_id` field.
     pub transfer_id: u64,
-    /// `sha256` field.
     pub sha256: [u8; FILE_EXPORT_DIGEST_BYTES],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Contextual bounded operation carried over the attach stream.
 pub struct AttachControlRequest {
-    /// Client-unique request identifier used to match the acknowledgement.
     pub request_id: u64,
-    /// Versioned W3C/product correlation envelope.
     pub context: TelemetryContext,
-    /// Bounded control operation.
     pub operation: AttachControlOperation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// Operations that are traced on the attach protocol rather than as stream frames.
 pub enum AttachControlOperation {
-    /// Detach the current client.
     Detach,
-    /// Report outer-terminal focus gained.
     FocusIn,
-    /// Report outer-terminal focus lost.
     FocusOut,
-    /// Transfer a bounded image in one frame.
     ClipboardImage(ClipboardImage),
-    /// Begin a chunked clipboard image transfer.
     ClipboardImageStart(ClipboardImageStart),
-    /// Continue a chunked clipboard image transfer.
     ClipboardImageChunk(ClipboardImageChunk),
-    /// Finish a chunked clipboard image transfer.
     ClipboardImageEnd(ClipboardImageEnd),
-    /// Report a host clipboard probe failure.
     ClipboardImageError(ClipboardImageError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Stable result of a bounded attach control request.
 pub enum AttachControlResult {
-    /// The requested operation completed.
     Success,
-    /// The correlation envelope was invalid and no product side effect ran.
     InvalidCorrelation,
-    /// The operation was rejected or failed.
     Rejected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Response paired with [`AttachControlRequest::request_id`].
 pub struct AttachControlResponse {
-    /// Request identifier copied from the request.
     pub request_id: u64,
-    /// Stable bounded outcome.
     pub result: AttachControlResult,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `FileExportStart` protocol type.
 pub struct FileExportStart {
-    /// `transfer_id` field.
     pub transfer_id: u64,
-    /// `source_path` field.
     pub source_path: String,
-    /// `file_name` field.
     pub file_name: String,
-    /// `size` field.
     pub size: u64,
-    /// When true, the host attach client reveals the verified exported copy
-    /// after the digest-matched rename. This is still an explicit operator
-    /// action carried on the export request, not an automatic side effect of
-    /// every export.
     pub reveal_after_export: bool,
-    /// When true, the host attach client opens the verified exported copy
-    /// after the digest-matched rename. This is mutually exclusive with
-    /// `reveal_after_export` at call sites that expose palette actions.
     pub open_after_export: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `FileExportChunk` protocol type.
 pub struct FileExportChunk {
-    /// `transfer_id` field.
     pub transfer_id: u64,
-    /// `offset` field.
     pub offset: u64,
-    /// `bytes` field.
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `FileExportEnd` protocol type.
 pub struct FileExportEnd {
-    /// `transfer_id` field.
     pub transfer_id: u64,
-    /// `sha256` field.
     pub sha256: [u8; FILE_EXPORT_DIGEST_BYTES],
 }
 
-/// Why a clipboard image transfer failed (capsule→host or host→capsule).
-/// Machine-matchable kinds; display text is for operator surfaces only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipboardImageError {
-    /// Transfer assembled zero bytes.
     Empty,
-    /// Assembled image exceeded the transfer size bound.
     TooLarge,
-    /// Payload failed magic/signature checks for a supported format.
     UnsupportedFormat,
-    /// End-frame digest did not match assembled bytes.
     DigestMismatch,
-    /// Chunks arrived out of order or a chunk went missing.
     ChunkSequence,
-    /// Chunk/end arrived without an active start.
     MissingTransfer,
-    /// A second start arrived while another transfer was active.
     DuplicateTransfer,
-    /// Host clipboard backend (xclip/wl-paste/etc.) was unavailable.
     BackendUnavailable,
-    /// Host filesystem or clipboard I/O failed.
     Io,
-    /// Host probe/response failed or any other free-form failure.
     Other(String),
 }
 
 impl ClipboardImageError {
-    /// Operator-facing message (also the wire payload).
     #[must_use]
     pub fn message(&self) -> &str {
         match self {
@@ -659,7 +440,6 @@ impl ClipboardImageError {
         }
     }
 
-    /// Stable compact reason codes for clog/cdebug classification.
     #[must_use]
     pub fn reason_code(&self) -> &'static str {
         match self {
@@ -676,8 +456,6 @@ impl ClipboardImageError {
         }
     }
 
-    /// Classify a free-form host/capsule message into a typed kind.
-    /// Unknown shapes become [`Self::Other`].
     #[must_use]
     pub fn from_message(message: String) -> Self {
         let lower = message.to_ascii_lowercase();
@@ -736,111 +514,55 @@ impl std::fmt::Display for ClipboardImageError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `ClientFrame` protocol enum.
 pub enum ClientFrame {
-    /// First frame from a newly-connected client. Plain attach sets
-    /// `spawn` to None; `jackin-capsule new` uses `Shell` or
-    /// `Instance(target)` so the daemon can create the requested session
-    /// before attach completes. `env` carries per-session overrides
-    /// that the short-lived `docker exec` client must forward to the
-    /// long-lived daemon.
     Hello {
-        /// `rows` field.
         rows: u16,
-        /// `cols` field.
         cols: u16,
-        /// `spawn` field.
         spawn: Option<SpawnRequest>,
-        /// `env` field.
         env: Vec<(String, String)>,
-        /// Optional pane-focus request: when `Some(session_id)` the
-        /// daemon switches its active tab + that tab's `focused_id`
-        /// to the leaf carrying this session id before forwarding any
-        /// content to the attached client. The host console emits
-        /// this when the operator picks a specific pane out of the
-        /// preview-pane snapshot so the operator lands inside the
-        /// pane they selected. Unknown / missing session ids are
-        /// ignored — the daemon attaches at the current focus and
-        /// the operator can navigate.
         focus_session: Option<u64>,
-        /// `terminal` field.
         terminal: ClientTerminal,
-        /// Optional cross-process trace and product correlation.
         context: Option<Box<TelemetryContext>>,
     },
-    /// `Resize` variant.
     Resize {
-        /// `rows` field.
         rows: u16,
-        /// `cols` field.
         cols: u16,
     },
-    /// `Input` variant.
     Input(Vec<u8>),
-    /// `Command` variant.
     Command(Vec<u8>),
-    /// `Detach` variant.
     Detach,
-    /// `FocusIn` variant.
     FocusIn,
-    /// `FocusOut` variant.
     FocusOut,
-    /// `ClipboardImage` variant.
     ClipboardImage(ClipboardImage),
-    /// `ClipboardImageStart` variant.
     ClipboardImageStart(ClipboardImageStart),
-    /// `ClipboardImageChunk` variant.
     ClipboardImageChunk(ClipboardImageChunk),
-    /// `ClipboardImageEnd` variant.
     ClipboardImageEnd(ClipboardImageEnd),
-    /// `ClipboardImageError` variant.
     ClipboardImageError(ClipboardImageError),
-    /// `HostNotice` variant.
     HostNotice(String),
-    /// Versioned contextual bounded attach control.
     AttachControl(AttachControlRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// `ServerFrame` protocol enum.
 pub enum ServerFrame {
-    /// `Welcome` variant.
-    Welcome {
-        /// Number of sessions currently known to the capsule.
-        session_count: u32,
-    },
-    /// `Output` variant.
+    Welcome { session_count: u32 },
+
     Output(Vec<u8>),
-    /// `SessionList` variant.
     SessionList(Vec<u8>),
-    /// `Shutdown` variant.
-    Shutdown {
-        /// Optional human-readable shutdown reason.
-        reason: Option<String>,
-    },
-    /// `Bell` variant.
+
+    Shutdown { reason: Option<String> },
+
     Bell,
-    /// `HostOpenUrl` variant.
     HostOpenUrl(String),
-    /// `FileExportStart` variant.
     FileExportStart(FileExportStart),
-    /// `FileExportChunk` variant.
     FileExportChunk(FileExportChunk),
-    /// `FileExportEnd` variant.
     FileExportEnd(FileExportEnd),
-    /// `HostRevealPath` variant.
     HostRevealPath(String),
-    /// `HostStageImageFromClipboardPath` variant.
     HostStageImageFromClipboardPath,
-    /// `HostPasteImageFromClipboard` variant.
     HostPasteImageFromClipboard,
-    /// `HostStageImageFromClipboard` variant.
     HostStageImageFromClipboard,
-    /// Completion acknowledgement for a bounded attach control.
     AttachControlResponse(AttachControlResponse),
 }
 
-/// Encode a single attach frame: `[tag][length BE u32][payload]`.
 pub fn encode(tag: u8, payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(5 + payload.len());
     out.push(tag);
@@ -849,7 +571,6 @@ pub fn encode(tag: u8, payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Encode a server frame.
 pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
     match frame {
         ServerFrame::Welcome { session_count } => encode(TAG_WELCOME, &session_count.to_be_bytes()),
@@ -916,10 +637,6 @@ fn encode_file_export_end(end: FileExportEnd) -> Vec<u8> {
     encode(TAG_FILE_EXPORT_END, &payload)
 }
 
-/// Encode a client frame. Returns `Err` for inputs that overflow the
-/// wire field widths (env count, agent slug, env key, env value).
-/// Symmetric with `decode_client` so a producer learns about over-cap
-/// input the same way a peer would, without panicking.
 pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
     Ok(match frame {
         ClientFrame::Hello {
@@ -931,17 +648,6 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             terminal,
             context,
         } => {
-            // Layout:
-            //   rows(2) cols(2) spawn_kind(1)
-            //   agent_len(2) agent_bytes(N)
-            //   env_count(2)
-            //   repeated key_len(2) value_len(4) key_bytes value_bytes
-            //   focus_kind(1) [focus_session_id(8) if focus_kind == 1]
-            //   term_len(2) term_bytes
-            //   term_program_len(2) term_program_bytes
-            //   colorterm_len(2) colorterm_bytes
-            //   fg_present(1) [fg_r(1) fg_g(1) fg_b(1) if 1]
-            //   bg_present(1) [bg_r(1) bg_g(1) bg_b(1) if 1]
             let (spawn_kind, agent_bytes): (u8, &[u8]) = match spawn.as_ref() {
                 None => (0, b""),
                 Some(SpawnRequest::Shell) => (1, b""),
@@ -1209,12 +915,6 @@ fn read_override_bool(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Opt
     }
 }
 
-/// Read one length-prefixed payload from `stream` given the already-
-/// peeked first byte (the frame's tag). Returns `Ok(None)` on EOF /
-/// disconnect, `Err` on oversized length. Used by both
-/// `read_client_frame` and `read_server_frame` — keeping the framing
-/// in one place means a future tightening of `MAX_FRAME_PAYLOAD` (or
-/// a switch to streaming) only has to touch this function.
 async fn read_framed_payload<R>(stream: &mut R, first_byte: u8) -> Result<Option<(u8, Vec<u8>)>>
 where
     R: AsyncRead + Unpin,
@@ -1223,10 +923,6 @@ where
     match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(&mut len_buf)).await {
         Ok(Ok(_)) => {}
         Ok(Err(e)) => {
-            // Clean EOF (peer closed before sending any length byte) is
-            // the expected end-of-stream signal. Anything else — connection
-            // reset, EPIPE, timeout — gets bubbled so the daemon clog
-            // attributes the cause instead of silently treating it as EOF.
             if e.kind() == std::io::ErrorKind::UnexpectedEof {
                 return Ok(None);
             }
@@ -1239,11 +935,6 @@ where
     if len > max_payload {
         bail!("attach frame payload {len} exceeds limit {max_payload}");
     }
-    // Chunked-grow read avoids the eager `vec![0u8; len]` memset that
-    // would zero-touch up to 4 MiB on every frame regardless of whether
-    // the peer ever delivers the bytes. A stalled or trickle attacker
-    // would otherwise burn gigabytes of memset bandwidth per
-    // connection-second.
     let mut payload: Vec<u8> = Vec::with_capacity(len.min(64 * 1024));
     let mut remaining = len;
     let mut chunk = [0u8; 16 * 1024];
@@ -1280,8 +971,6 @@ fn max_frame_payload_for_tag(tag: u8) -> usize {
     }
 }
 
-/// Read the next client frame from the stream. `first_byte` is the
-/// already-peeked first byte (used by the channel-dispatch layer).
 #[expect(
     clippy::large_futures,
     reason = "attach frame reader decodes full ClientFrame/ServerFrame payloads; boxing every call site would add hot-path indirection"
@@ -1296,8 +985,6 @@ where
     Ok(Some(decode_client(tag, payload)?))
 }
 
-/// Read the next server frame from the stream. `first_byte` is the
-/// already-read tag byte.
 #[expect(
     clippy::large_futures,
     reason = "attach frame reader decodes full ClientFrame/ServerFrame payloads; boxing every call site would add hot-path indirection"
@@ -1312,7 +999,6 @@ where
     Ok(Some(decode_server(tag, payload)?))
 }
 
-/// `decode_client` protocol helper.
 pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
     if tag == TAG_ATTACH_CONTROL {
         return contextual::decode_request(&payload).map(ClientFrame::AttachControl);
@@ -1526,7 +1212,6 @@ fn decode_client_legacy(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
     })
 }
 
-/// `decode_server` protocol helper.
 pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
     Ok(match tag {
         TAG_WELCOME => {
@@ -1751,10 +1436,6 @@ impl<'a> PayloadCursor<'a> {
     }
 }
 
-/// Returns true when `url` uses one of the schemes the host-side opener
-/// accepts: `http://`, `https://`, or `mailto:`. Inlined here so the
-/// protocol layer (L0) does not depend on presentation crates for a
-/// three-line policy check.
 fn is_host_open_url_scheme(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")

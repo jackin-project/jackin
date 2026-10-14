@@ -1,19 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Role manifest (`jackin.role.toml`) version migration registry.
-//!
-//! `CURRENT_MANIFEST_VERSION` is defined in `jackin-core` and re-exported
-//! here for backward-compatibility. Migration steps delegate to shared
-//! helpers in `jackin-config`. Not responsible for config or workspace
-//! migrations — those live in `jackin-config`.
-
 use std::path::Path;
 
 use anyhow::bail;
 use toml_edit::DocumentMut;
 
-/// Current role-manifest schema version string (e.g. `"v1alpha7"`).
 pub use jackin_core::CURRENT_MANIFEST_VERSION;
 
 const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
@@ -37,15 +29,11 @@ const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
         to: "v1alpha4",
         migrate: jackin_config::noop_migration,
     },
-    // v1alpha4 -> v1alpha5: add optional `[<agent>.providers.<id>]` per-provider
-    // model overrides. Additive with serde defaults; no transformation needed.
     jackin_config::MigrationStep {
         from: "v1alpha4",
         to: "v1alpha5",
         migrate: jackin_config::noop_migration,
     },
-    // v1alpha5 -> v1alpha6: add optional role `[docker]` security settings.
-    // Additive with serde defaults; no transformation needed.
     jackin_config::MigrationStep {
         from: "v1alpha5",
         to: "v1alpha6",
@@ -73,16 +61,8 @@ fn reject_removed_provider_models(doc: &mut DocumentMut) -> jackin_config::Confi
     Ok(())
 }
 
-/// Serde-default helper returning [`CURRENT_MANIFEST_VERSION`] as a `String`.
 pub use jackin_core::current_manifest_version;
 
-/// Migrate `path` (typically `<repo>/jackin.role.toml`) to
-/// `CURRENT_MANIFEST_VERSION`.
-///
-/// Returns `Some((old, new))` when a migration ran, `None` when the manifest
-/// was already current. `old` and `new` are display strings (`"legacy"`,
-/// `"v1alpha2"`) so CLI callers can print them as-is without needing the
-/// structured `SchemaVersion`.
 pub fn migrate_manifest_file(path: &Path) -> anyhow::Result<Option<(String, String)>> {
     let outcome = jackin_config::migrate_file_if_needed(
         path,
@@ -93,14 +73,6 @@ pub fn migrate_manifest_file(path: &Path) -> anyhow::Result<Option<(String, Stri
     Ok(outcome.map(|old| (old.to_string(), CURRENT_MANIFEST_VERSION.to_owned())))
 }
 
-/// Parse and accept the role-manifest schema version in `doc`.
-///
-/// Accepts versions at or below [`CURRENT_MANIFEST_VERSION`]. Rejects
-/// newer schemas that this binary cannot interpret.
-///
-/// # Errors
-/// Returns an error when the version field is missing/invalid or newer than
-/// this binary understands.
 pub fn validate_manifest_version(
     doc: &DocumentMut,
 ) -> anyhow::Result<jackin_config::SchemaVersion> {

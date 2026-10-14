@@ -119,9 +119,6 @@ async fn capture_combined_merges_stdout_and_stderr() {
 #[cfg(unix)]
 #[tokio::test]
 async fn capture_combined_surfaces_stderr_only_output() {
-    // Pins the `docker logs` diagnose fix: stderr-only output (capsule
-    // `Error: ...` with no TTY) must survive combined capture while
-    // stdout-only `capture` still returns "" for the same command.
     let mut runner = ShellRunner::default();
 
     let combined = runner

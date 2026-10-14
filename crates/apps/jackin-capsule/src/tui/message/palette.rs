@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Palette and confirm routing: command, confirmed-action, and toggle routes.
 
 use crate::tui::components::dialog::{ConfirmKind, PaletteCommand, PickerIntent};
 

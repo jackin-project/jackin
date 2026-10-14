@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Explicit migration from the original durable usage monitor schema.
-
 mod validation;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -42,7 +40,6 @@ const MAX_MODEL_LENGTH: usize = 128;
 const MAX_FUTURE_SKEW_SECS: i64 = 60;
 const LEGACY_BINDING_LABEL: &str = "Migrated V1 binding (unconfirmed)";
 
-/// Decode and migrate one complete V1 snapshot without touching persistence.
 pub(super) fn migrate_v1(bytes: &[u8]) -> Result<StoreState, MonitorIssue> {
     let legacy: V1StoreState = serde_json::from_slice(bytes).map_err(|_| unavailable())?;
     validation::validate_v1(&legacy)?;
@@ -788,9 +785,6 @@ impl V1SpendState {
         SpendState {
             baseline: self.baseline.map(V1SpendRecord::into_spend_record),
             period_anchor: self.period_anchor.map(V1SpendRecord::into_spend_record),
-            // V1 did not retain the last closed receipt folded into its
-            // cumulative value. Preserve its totals; reconciliation marks any
-            // already-rolled state incomplete instead of guessing this value.
             closed_period_anchor: None,
             cumulative_goal_spend: self.cumulative_goal_spend.map(V1Money::into_money),
             rollover_unknown: self.rollover_unknown,

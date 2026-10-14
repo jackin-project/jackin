@@ -1,27 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Typed operation facade — the structured telemetry API for jackin❯.
-//!
-//! Console/file tiers still render through `emit_debug_line` / `emit_compact_line`
-//! (bracket prefixes live only at that render boundary). Exported OTLP bodies are
-//! the clean message with attributes as dimensions — never a baked-in prefix.
-//!
-//! Attribute rules: low-cardinality only. Full command strings, full URLs, raw
-//! payloads, and container ids are forbidden as attrs — pass redacted or
-//! summarized values only. Free-text `body` is redacted before emission.
-//!
-//! Dynamic attributes are stamped on the current span (tracing macros require
-//! static field names). Definitions come from the Weaver-validated telemetry
-//! schema rather than a second runtime registry.
-
 use jackin_telemetry::schema::enums::{
     ConnectionPeerType, DindMode, ErrorType, NetworkMode, OutcomeValue, WorkspaceIsolationMode,
 };
 use std::future::Future;
 
-/// Emit the resolved workspace/container isolation policy without identifiers
-/// or filesystem details.
 pub fn isolation_decision(workspace: WorkspaceIsolationMode, network: NetworkMode, dind: DindMode) {
     let attrs = [
         jackin_telemetry::Attr {
@@ -47,7 +31,6 @@ pub fn isolation_decision(workspace: WorkspaceIsolationMode, network: NetworkMod
     );
 }
 
-/// Emit the fail-closed firewall decision at the exact application failure.
 pub fn isolation_firewall_failed(network: NetworkMode) {
     let attrs = [
         jackin_telemetry::Attr {
@@ -69,10 +52,6 @@ pub fn isolation_firewall_failed(network: NetworkMode) {
     );
 }
 
-/// Run one asynchronous client connection attempt under its bounded span.
-///
-/// The returned transport is deliberately outside the span: callers own the
-/// later handshake, control request, and close boundaries independently.
 pub async fn connection_attempt<F, T>(peer: ConnectionPeerType, attempt: F) -> std::io::Result<T>
 where
     F: Future<Output = std::io::Result<T>>,
@@ -90,7 +69,6 @@ where
     result
 }
 
-/// Synchronous counterpart to [`connection_attempt`] for readiness probes.
 pub fn connection_attempt_sync<T>(
     peer: ConnectionPeerType,
     attempt: impl FnOnce() -> std::io::Result<T>,

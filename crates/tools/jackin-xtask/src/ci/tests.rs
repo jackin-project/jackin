@@ -97,10 +97,6 @@ fn assert_no_sccache_env(text: &str, context: &str) {
     }
 }
 
-/// Post-#1110 CI surface: velnor-actions 0.1.0 `ci.yml` only. The legacy
-/// per-lane workflows were deleted by main commit 6c389d38e, and the two
-/// advisory evidence-observer stubs were dropped by the all-branches
-/// consolidation because the pinned renderer rejects non-generated files.
 const GENERATED_WORKFLOWS: [&str; 1] = [".github/workflows/ci.yml"];
 
 #[test]
@@ -115,7 +111,6 @@ fn sccache_is_absent_from_generated_workflow_environment() {
 fn sccache_is_absent_from_installer_environment() {
     for workflow in GENERATED_WORKFLOWS {
         let text = workspace_file(workflow);
-        // velnor-actions emits "Setup Mise" (kept tolerant of "Set up Mise").
         let setup = ["- name: Set up Mise", "- name: Setup Mise"]
             .iter()
             .filter_map(|marker| text.find(marker))
@@ -124,11 +119,3 @@ fn sccache_is_absent_from_installer_environment() {
         assert_no_sccache_env(&text[..setup], &format!("{workflow} installer prefix"));
     }
 }
-
-// NOTE: the desktop merge/scheduled cadence contract test was removed with the
-// post-#1110 CI surface (main commit 6c389d38e deleted desktop-merge.yml,
-// desktop-scheduled.yml, ci-main.yml, ci-pr.yml, and ci-unit-swift.yml; no
-// surviving workflow invokes desktop tasks, runs macOS, or mentions
-// plan_digest / SELECTION_PLAN_DIGEST / product_transport_ready). The surviving
-// mise task-graph assertions live in
-// desktop::tests::cadence_tasks_define_the_canonical_graph.

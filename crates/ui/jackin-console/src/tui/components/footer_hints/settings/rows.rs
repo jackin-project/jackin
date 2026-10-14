@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Settings row and context footer items.
 
 use super::{
     global_mount_row_footer_items, secret_add_row_footer_items, secret_op_ref_row_footer_items,
@@ -14,7 +13,6 @@ use termrock::scroll::scroll_hint_spans;
 
 #[must_use]
 pub fn settings_general_row_footer_items() -> Vec<HintSpan<'static>> {
-    // `content_footer_items` already prepends ↑↓ navigate; only add the tab-specific action.
     SETTINGS_GENERAL_TOGGLE_KEYMAP.hint_spans()
 }
 
@@ -114,17 +112,12 @@ pub fn settings_contextual_row_footer_items(
 
 #[must_use]
 pub fn add_row_footer_items(label: &'static str) -> Vec<HintSpan<'static>> {
-    vec![
-        // UNREGISTERABLE(multi-key-display-group): combined Enter/A display; Enter and A are separate chords.
-        super::super::key_span("↵/A"),
-        HintSpan::Text(label),
-    ]
+    vec![super::super::key_span("↵/A"), HintSpan::Text(label)]
 }
 
 pub fn append_generate_token_footer_item(items: &mut Vec<HintSpan<'static>>) {
     items.extend([
         HintSpan::GroupSep,
-        // UNREGISTERABLE(auth-form-no-keymap): G triggers token generation inline; no AUTH_FORM_KEYMAP.
         super::super::key_span("G"),
         HintSpan::Text("generate"),
     ]);

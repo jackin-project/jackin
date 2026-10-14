@@ -95,8 +95,6 @@ fn ensure_leaves_existing_and_non_cache_mounts_untouched() {
 
 #[test]
 fn ensure_falls_through_when_recreation_fails() {
-    // A cache root that is a regular file makes `create_dir_all` fail;
-    // the mount must be kept so existence validation still reports it.
     let temp = tempfile::tempdir().unwrap();
     let root_file = temp.path().join("cache");
     std::fs::write(&root_file, "not a dir").unwrap();
@@ -191,8 +189,6 @@ fn validate_default_launch_list_reports_each_invalid_entry() {
         errors.iter().any(|error| error.contains("not assigned")),
         "{errors:?}"
     );
-    // Authorization and admission stay distinct: the unknown id is never
-    // reported as unauthorized, and vice versa.
     assert!(
         errors
             .iter()
@@ -223,8 +219,6 @@ fn validate_default_launch_list_skips_authorization_for_global_scope() {
 
 #[test]
 fn validate_default_launch_list_matches_save_time_validation() {
-    // Editor previews must agree with `AppConfig::validate_accounts`:
-    // whatever it rejects, the surfacing helper flags with the same words.
     use crate::{AccountConfig, AccountCredential};
     use jackin_core::EnvValue;
     let configurations = launch_configurations();

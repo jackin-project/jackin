@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Per-source validation and diagnostics.
 
 use crate::{
     DiscoveredCredentialSource, ProfileCredentialReader, ProfileValidation,
@@ -35,13 +34,11 @@ pub(crate) fn validate_source(
                 profile_credential_revision(profile_reader, agent, &root, &operator_home);
             let source = match &outcome {
                 ProfileValidation::Authenticated { material, .. }
-                | ProfileValidation::Anonymous(material) => material.clone().map_or(
-                    // A material-less local profile (Muse identity, omp/hermes
-                    // attribution) is unpollable by design — never a forwarded
-                    // trust-domain token, so never `Capability`.
-                    ValidatedCredentialSource::Unpollable,
-                    |material| ValidatedCredentialSource::Profile(*material),
-                ),
+                | ProfileValidation::Anonymous(material) => material
+                    .clone()
+                    .map_or(ValidatedCredentialSource::Unpollable, |material| {
+                        ValidatedCredentialSource::Profile(*material)
+                    }),
                 _ => ValidatedCredentialSource::Capability,
             };
             let outcome = match outcome {

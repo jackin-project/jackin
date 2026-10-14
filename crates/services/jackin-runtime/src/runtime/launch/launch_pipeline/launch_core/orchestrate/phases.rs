@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! `run_launch_phases` phase chain entry.
 
 use crate::runtime::launch::launch_pipeline::launch_core::LaunchCore;
 
@@ -14,7 +13,6 @@ where
     D: DockerApi,
     R: CommandRunner,
 {
-    // Destructure captured names so verbatim original block statements work.
     let LaunchCore {
         paths,
         config,
@@ -98,8 +96,6 @@ where
         admission_config,
         initialized,
     };
-    // Start the sidecar future before image materialization so network/DinD
-    // setup can make progress while runtime binaries and Docker build run.
     launch.steps.stage_started(
         crate::runtime::progress::LaunchStage::Network,
         "wiring private network",

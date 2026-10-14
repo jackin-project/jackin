@@ -4,8 +4,6 @@
 use super::*;
 pub(super) fn authority(paths: &JackinPaths) -> PathBuf {
     let directory = coordination::universe_dir(paths).unwrap();
-    // Fixtures create the same private namespace as production without
-    // selecting a second root or mutating its boundary generation.
     drop(coordination::open_in_namespace(&directory, "universe-lock").unwrap());
     directory
 }

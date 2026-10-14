@@ -1,4 +1,3 @@
-# Sample per-workspace file carried through the legacy migration chain.
 
 workdir = "/workspace/prod"
 

@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
-//! Sibling image prewarm and recipe git SHA.
 
 #[cfg(not(test))]
 use jackin_core::Agent;

@@ -344,10 +344,6 @@ fn account_reset_barrier_satisfied(
             && reset_advanced
     };
 
-    // The quota guard belongs to the account, so any source may confirm the
-    // reset. Each candidate is one stored full-window observation, preserving
-    // the source/session pairing and preventing fields from separate callbacks
-    // from being combined to release the guard.
     account
         .sessions
         .values()
@@ -388,8 +384,6 @@ fn apply_session_window(
         .reset_at_epoch
         .is_some_and(|reset| watermark.is_some_and(|latest| reset < latest))
     {
-        // A callback from an older overlapping session cannot replace the
-        // current reset or lower its utilization.
         return (false, None);
     }
     let mut changed = false;

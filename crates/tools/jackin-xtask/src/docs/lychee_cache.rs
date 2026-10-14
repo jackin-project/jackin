@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Durable transport for lychee responses when the bounded Actions cache evicts them.
-
 use std::env;
 use std::fs;
 use std::io::Write;
