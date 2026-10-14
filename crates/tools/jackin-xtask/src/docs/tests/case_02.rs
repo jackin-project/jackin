@@ -31,7 +31,7 @@ fn research_validation_rejects_published_prompt() {
 
     let err = validate_tree(r, "research").unwrap_err().to_string();
     assert!(
-        err.contains("briefs belong under prompts/research"),
+        err.contains("briefs do not belong in published docs"),
         "{err}"
     );
 }
@@ -84,45 +84,8 @@ fn research_validation_rejects_literal_ellipsis_and_oversized_page() {
 }
 
 #[test]
-fn research_scaffold_does_not_overwrite_existing_brief() {
-    let research = tempfile::tempdir().unwrap();
-    let prompts = tempfile::tempdir().unwrap();
-    let r = research.path();
-    fs::create_dir_all(r.join("agents")).unwrap();
-    fs::create_dir_all(prompts.path().join("agents")).unwrap();
-    write_meta(
-        &r.join("agents/meta.json"),
-        &json!({ "pages": ["other-study"] }),
-    )
-    .unwrap();
-    let parent_before = fs::read(r.join("agents/meta.json")).unwrap();
-    write(&prompts.path().join("agents/my-study.md"), "keep me\n");
-
-    let err = research_scaffold_in(
-        r,
-        prompts.path(),
-        ResearchScaffoldArgs {
-            slug: "my-study".to_owned(),
-            group: "agents".to_owned(),
-            title: None,
-        },
-    )
-    .unwrap_err()
-    .to_string();
-
-    assert!(err.contains("research brief already exists"), "{err}");
-    assert_eq!(
-        fs::read_to_string(prompts.path().join("agents/my-study.md")).unwrap(),
-        "keep me\n"
-    );
-    assert!(!r.join("agents/my-study").exists());
-    assert_eq!(fs::read(r.join("agents/meta.json")).unwrap(), parent_before);
-}
-
-#[test]
 fn research_scaffold_rolls_back_partial_writes_when_parent_meta_is_invalid() {
     let research = tempfile::tempdir().unwrap();
-    let prompts = tempfile::tempdir().unwrap();
     let r = research.path();
     fs::create_dir_all(r.join("agents")).unwrap();
     let invalid_meta = b"{ invalid json }\n";
@@ -130,7 +93,6 @@ fn research_scaffold_rolls_back_partial_writes_when_parent_meta_is_invalid() {
 
     let err = research_scaffold_in(
         r,
-        prompts.path(),
         ResearchScaffoldArgs {
             slug: "my-study".to_owned(),
             group: "agents".to_owned(),
@@ -142,14 +104,12 @@ fn research_scaffold_rolls_back_partial_writes_when_parent_meta_is_invalid() {
 
     assert!(err.contains("meta.json"), "{err}");
     assert!(!r.join("agents/my-study").exists());
-    assert!(!prompts.path().join("agents/my-study.md").exists());
     assert_eq!(fs::read(r.join("agents/meta.json")).unwrap(), invalid_meta);
 }
 
 #[test]
 fn research_scaffold_rejects_group_traversal_and_multiline_title() {
     let research = tempfile::tempdir().unwrap();
-    let prompts = tempfile::tempdir().unwrap();
     let r = research.path();
     fs::create_dir_all(r.join("agents")).unwrap();
     write_meta(&r.join("agents/meta.json"), &json!({ "pages": [] })).unwrap();
@@ -157,7 +117,6 @@ fn research_scaffold_rejects_group_traversal_and_multiline_title() {
     for (group, title) in [("../roadmap", None), ("agents", Some("Bad\ntitle"))] {
         let err = research_scaffold_in(
             r,
-            prompts.path(),
             ResearchScaffoldArgs {
                 slug: "my-study".to_owned(),
                 group: group.to_owned(),
@@ -177,7 +136,6 @@ fn research_scaffold_rejects_group_traversal_and_multiline_title() {
 #[test]
 fn research_scaffold_escapes_quoted_title_in_frontmatter() {
     let research = tempfile::tempdir().unwrap();
-    let prompts = tempfile::tempdir().unwrap();
     let r = research.path();
     write_meta(&r.join("meta.json"), &json!({ "pages": [] })).unwrap();
     fs::create_dir_all(r.join("agents")).unwrap();
@@ -185,7 +143,6 @@ fn research_scaffold_escapes_quoted_title_in_frontmatter() {
 
     research_scaffold_in(
         r,
-        prompts.path(),
         ResearchScaffoldArgs {
             slug: "quoted-study".to_owned(),
             group: "agents".to_owned(),
@@ -204,7 +161,6 @@ fn research_scaffold_escapes_quoted_title_in_frontmatter() {
 #[test]
 fn research_scaffold_never_removes_preexisting_dossier() {
     let research = tempfile::tempdir().unwrap();
-    let prompts = tempfile::tempdir().unwrap();
     let r = research.path();
     fs::create_dir_all(r.join("agents/my-study")).unwrap();
     write(&r.join("agents/my-study/keep.md"), "keep me\n");
@@ -212,7 +168,6 @@ fn research_scaffold_never_removes_preexisting_dossier() {
 
     let err = research_scaffold_in(
         r,
-        prompts.path(),
         ResearchScaffoldArgs {
             slug: "my-study".to_owned(),
             group: "agents".to_owned(),
@@ -227,25 +182,21 @@ fn research_scaffold_never_removes_preexisting_dossier() {
         fs::read_to_string(r.join("agents/my-study/keep.md")).unwrap(),
         "keep me\n"
     );
-    assert!(!prompts.path().join("agents/my-study.md").exists());
 }
 
 #[test]
 fn concurrent_research_scaffolds_keep_both_sidebar_entries() {
     let research = tempfile::tempdir().unwrap();
-    let prompts = tempfile::tempdir().unwrap();
     let r = research.path();
     write_meta(&r.join("meta.json"), &json!({ "pages": [] })).unwrap();
     fs::create_dir_all(r.join("agents")).unwrap();
     write_meta(&r.join("agents/meta.json"), &json!({ "pages": [] })).unwrap();
-    let prompts_path = prompts.path();
 
     std::thread::scope(|scope| {
         for slug in ["first-study", "second-study"] {
             scope.spawn(move || {
                 research_scaffold_in(
                     r,
-                    prompts_path,
                     ResearchScaffoldArgs {
                         slug: slug.to_owned(),
                         group: "agents".to_owned(),

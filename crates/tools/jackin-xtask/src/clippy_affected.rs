@@ -23,11 +23,10 @@
 //!
 //! Three gaps the shared graph cannot see are closed here:
 //!
-//! * Detached (non-member) packages — `fuzz/*`, `vendor/arrayref`
-//!   — are linted via `cargo clippy --manifest-path`. A member change
-//!   pulls in nested packages with `path` dependencies into it; a nested
-//!   change pulls in members whose resolve closure names it (covers the
-//!   `[patch]`-replaced `arrayref`).
+//! * Detached (non-member) packages — `fuzz/*` — are linted via
+//!   `cargo clippy --manifest-path`. A member change pulls in nested
+//!   packages with `path` dependencies into it; a nested change pulls in
+//!   members whose resolve closure names it.
 //! * `crates/tools/jackin-lints` is excluded: it needs the nightly dylint
 //!   toolchain (its own `rust-toolchain` pin) and stable Clippy cannot
 //!   compile it. No member depends on it.

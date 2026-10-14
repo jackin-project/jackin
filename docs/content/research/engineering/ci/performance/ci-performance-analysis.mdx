@@ -26,7 +26,7 @@ The single fact that should drive prioritization: **the measured pipeline spent 
 - The same cold full compile recurred in `clippy` (2m29), `check-default` (2m16), `msrv` (2m19), `bench-build`, `fuzz`, each of the five nextest shards, `docker-e2e`, and inside the construct image — and **none of those measured jobs shared compiled objects**, because they set `SCCACHE_GHA_ENABLED: "off"`.
 - The measured cache went cold because `Swatinem/rust-cache`'s key included the <RepoFile path="Cargo.lock" /> hash, and <RepoFile path="Cargo.lock" /> changed in ~48% of recent commits (PR #641 included). `docker/construct/**` changed in ~43% of recent commits, so E2E serialization affected nearly half of the sampled PRs.
 
-So the biggest levers either **compile fewer times** or **make the compiler cache survive <RepoFile path="Cargo.lock" /> churn**. Everything else is secondary. Preserve PR/main verification parity when implementing a speedup. Workflow policy is documented in <RepoFile path="PULL_REQUESTS.md" />; generator ownership is documented in <RepoFile path=".github/AGENTS.md" />; changes must be implemented through the generator and verified after regeneration.
+So the biggest levers either **compile fewer times** or **make the compiler cache survive <RepoFile path="Cargo.lock" /> churn**. Everything else is secondary. Preserve PR/main verification parity when implementing a speedup. Generator ownership is documented in <RepoFile path=".github/AGENTS.md" />; changes must be implemented through the generator and verified after regeneration.
 
 ## Relationship to the CI/CD speed roadmap
 

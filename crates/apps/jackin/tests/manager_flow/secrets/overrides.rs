@@ -515,8 +515,8 @@ fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
 // one) used to fall through to the tab-cycle handler — operators saw the
 // active editor tab change unexpectedly when arrowing on
 // `▼ Role: <name>` / `▶ Role: <name>`. The header now absorbs ←/→ in
-// both states; semantics codified in RULES.md
-// § "TUI Keybindings → Contextual key absorption".
+// both states (contextual key absorption: header keybindings win over
+// tab-cycle while the header has focus).
 
 /// `→` on a collapsed role header expands the section AND leaves the
 /// active tab on Secrets. Already covered by

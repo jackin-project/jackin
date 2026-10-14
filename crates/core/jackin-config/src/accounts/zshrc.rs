@@ -303,7 +303,7 @@ fn split_statements(code: &str) -> Vec<String> {
 /// classifier below, which needs the original quoting to tell substitution
 /// from literal text. Quote-stripping tokenizers (`shell-words`) have an
 /// API-awkward-for-this-call-site contract, and no crate classifies
-/// `UnresolvedKind` — so this splitter stays local (ENGINEERING.md escape).
+/// `UnresolvedKind` — so this splitter stays local.
 fn split_words(statement: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();

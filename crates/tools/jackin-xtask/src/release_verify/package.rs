@@ -7,11 +7,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use anyhow::{Context, Result, ensure};
-use clap::Args;
 use flate2::read::GzDecoder;
 use serde::Deserialize;
 use serde_json::Value;
@@ -93,9 +92,6 @@ const SUPPORTING_ASSETS: [&str; 21] = [
     "capsule-manifest.json.bundle",
 ];
 
-#[derive(Debug, Args)]
-pub(crate) struct ReleaseVerifyPackageArgs {}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PackageAsset {
@@ -147,17 +143,6 @@ enum BinaryArchitecture {
 struct BinaryMetadata {
     format: BinaryFormat,
     architecture: BinaryArchitecture,
-}
-
-pub(crate) fn run_package(_args: ReleaseVerifyPackageArgs) -> Result<()> {
-    let package_dir = env::var_os("VELNOR_VERIFIED_PACKAGE_DIR")
-        .map(PathBuf::from)
-        .context("missing VELNOR_VERIFIED_PACKAGE_DIR")?;
-    let source_checkout =
-        env::var_os("VELNOR_SOURCE_CHECKOUT_DIR").map_or_else(|| PathBuf::from("."), PathBuf::from);
-    verify_preview_package(&package_dir, &source_checkout)?;
-    println!("ok: verified preview package {}", package_dir.display());
-    Ok(())
 }
 
 pub(crate) fn verify_preview_package(package_dir: &Path, source_checkout: &Path) -> Result<()> {

@@ -1,4 +1,4 @@
-//! Schema-migration gate: enforce the five-artifact rule from `PRERELEASE.md`.
+//! Schema-migration gate: enforce the five-artifact rule for versioned schemas.
 //!
 //! When a PR bumps a versioned schema (`config.toml`, per-workspace files, or
 //! `jackin.role.toml`), the rule requires a version bump, a migration step, a

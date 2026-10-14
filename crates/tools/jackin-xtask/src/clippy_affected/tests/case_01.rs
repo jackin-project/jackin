@@ -44,7 +44,7 @@ fn classify_routes_members_nested_config_and_drops_noise() {
         Some(Owner::Nested(0))
     ));
     assert!(matches!(
-        member("vendor/arrayref/src/lib.rs"),
+        member("crates/adapters/jackin-image/fuzz/src/main.rs"),
         Some(Owner::Nested(1))
     ));
     assert!(member("crates/tools/jackin-lints/src/lib.rs").is_none());
@@ -120,10 +120,12 @@ fn select_nested_direct_change_pulls_resolve_dependents() {
         &graph,
         &nested,
         &inputs_fixture(),
-        &[PathBuf::from("vendor/arrayref/src/lib.rs")],
+        &[PathBuf::from(
+            "crates/adapters/jackin-image/fuzz/src/main.rs",
+        )],
     )
     .expect("select");
-    // arrayref feeds jackin-image (fixture resolve graph), which feeds jackin.
+    // jackin-image-fuzz feeds jackin-image (fixture resolve graph), which feeds jackin.
     assert_eq!(
         selection.members,
         vec!["jackin".to_owned(), "jackin-image".to_owned()]
@@ -205,7 +207,7 @@ fn member_clippy_args_match_ci_flags() {
 
 #[test]
 fn nested_clippy_args_use_manifest_path_with_ci_flags() {
-    let args = nested_clippy_args(Path::new("vendor/arrayref"));
+    let args = nested_clippy_args(Path::new("crates/adapters/jackin-image/fuzz"));
     let rendered: Vec<String> = args
         .iter()
         .map(|arg| arg.to_string_lossy().into_owned())
@@ -215,7 +217,7 @@ fn nested_clippy_args_use_manifest_path_with_ci_flags() {
         vec![
             "clippy",
             "--manifest-path",
-            "vendor/arrayref/Cargo.toml",
+            "crates/adapters/jackin-image/fuzz/Cargo.toml",
             "--locked",
             "--profile",
             "test",

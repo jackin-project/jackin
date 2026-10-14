@@ -8,7 +8,7 @@
 //! ```sh
 //! cargo xtask change new <slug> --group <group>   # scaffold a roadmap item
 //! cargo xtask docs repo-links                     # validate repo-file links
-//! cargo xtask docs brand                          # brand-prose lint (RULES.md)
+//! cargo xtask docs brand                          # brand-prose lint
 //! cargo xtask docs specs                          # spec↔test citation gate
 //! cargo xtask docs map-check                      # workspace crates named in Codebase Map
 //! cargo xtask research scaffold <slug> --group <domain> # scaffold a research dossier
@@ -18,7 +18,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::Write as _;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -40,28 +39,14 @@ const RESEARCH_REL: &str = "research";
 const REPO_FILE_PREFIXES: &[&str] = &[
     "crates/", "src/", "docs/", "docker/", ".github/", "scripts/",
 ];
-const REPO_LINK_ROOT_DOCS: &[&str] = &[
-    "AGENTS.md",
-    "ENGINEERING.md",
-    "PROJECT_STRUCTURE.md",
-    "PULL_REQUESTS.md",
-    "README.md",
-    "RULES.md",
-    "TESTING.md",
-    "TODO.md",
-];
+const REPO_LINK_ROOT_DOCS: &[&str] = &["AGENTS.md", "README.md"];
 const REPO_TOP_LEVEL_FILES: &[&str] = &[
     "AGENTS.md",
     "BRANCHING.md",
     "Cargo.lock",
     "Cargo.toml",
     "COMMITS.md",
-    "ENGINEERING.md",
-    "PROJECT_STRUCTURE.md",
-    "PULL_REQUESTS.md",
     "README.md",
-    "TESTING.md",
-    "TODO.md",
     "docker-bake.hcl",
     "mise.toml",
     "release.toml",
@@ -595,17 +580,11 @@ fn change_new_in(roadmap: &Path, args: ChangeNewArgs) -> Result<()> {
 
 fn research_scaffold(args: ResearchScaffoldArgs) -> Result<()> {
     let root = repo_root()?;
-    research_scaffold_in(
-        &root.join(DOCS_ROOT).join(RESEARCH_REL),
-        &root.join("prompts/research"),
-        args,
-    )
+    research_scaffold_in(&root.join(DOCS_ROOT).join(RESEARCH_REL), args)
 }
 
 struct ResearchScaffoldRollback {
     dossier: PathBuf,
-    prompt: PathBuf,
-    prompt_owned: bool,
     committed: bool,
 }
 
@@ -614,18 +593,11 @@ impl Drop for ResearchScaffoldRollback {
         if self.committed {
             return;
         }
-        if self.prompt_owned {
-            drop(fs::remove_file(&self.prompt));
-        }
         drop(fs::remove_dir_all(&self.dossier));
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "jackin-xtask is a synchronous CLI; exclusive creation prevents scaffold races"
-)]
-fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldArgs) -> Result<()> {
+fn research_scaffold_in(research: &Path, args: ResearchScaffoldArgs) -> Result<()> {
     validate_slug(&args.slug)?;
     let title = args.title.unwrap_or_else(|| title_from_slug(&args.slug));
     if title.contains(['\n', '\r']) {
@@ -657,10 +629,6 @@ fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldA
         .with_context(|| format!("`pages` is not an array in {}", group_meta.display()))?;
 
     let dossier = group_dir.join(&args.slug);
-    let prompt_dir = prompts.join(group);
-    let prompt = prompt_dir.join(format!("{}.md", args.slug));
-    fs::create_dir_all(&prompt_dir)
-        .with_context(|| format!("creating {}", prompt_dir.display()))?;
     match fs::create_dir(&dossier) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -672,8 +640,6 @@ fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldA
     }
     let mut rollback = ResearchScaffoldRollback {
         dossier: dossier.clone(),
-        prompt: prompt.clone(),
-        prompt_owned: false,
         committed: false,
     };
 
@@ -683,47 +649,15 @@ fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldA
         format!(
             "---\ntitle: {title_yaml}\ndescription: \"<!-- One-sentence research question. -->\"\n---\n\n\
              **Research state:** Incomplete\n\n\
-             **Research brief:** <RepoFile path=\"prompts/research/{}/{}.md\" />\n\n\
              ## Research question\n\n<!-- What must this dossier establish? -->\n\n\
              ## Headline findings\n\n<!-- Key findings, each with a source. -->\n\n\
              ## Method and evidence\n\n<!-- Sources, measurements, dates, and confidence limits. -->\n\n\
              ## Limitations and open questions\n\n<!-- What remains uncertain? -->\n\n\
              ## How to read\n\n<!-- Chapter map and recommended order. -->\n\n\
              ## Related work\n\n<!-- Link research, reference, and roadmap pages without scheduling work here. -->\n",
-            group,
-            args.slug
         ),
     )
     .with_context(|| format!("writing {}", index.display()))?;
-
-    let prompt_result = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&prompt);
-    let mut prompt_file = match prompt_result {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            bail!("research brief already exists: {}", prompt.display());
-        }
-        Err(error) => {
-            return Err(error).with_context(|| format!("creating {}", prompt.display()));
-        }
-    };
-    rollback.prompt_owned = true;
-    prompt_file
-        .write_all(
-            format!(
-            "# {title} research brief\n\n## Mission\n\n<!-- What to establish and why. -->\n\n\
-             ## Scope\n\n<!-- In scope, out of scope, and evidence cutoff. -->\n\n\
-             ## Evidence requirements\n\n<!-- Primary sources, local measurements, confidence labels, and freshness rules. -->\n\n\
-             ## Required output\n\n<!-- Chapter list and completion criteria. -->\n\n\
-             ## Run\n\n`/goal Follow prompts/research/{}/{}.md`\n",
-            group,
-            args.slug
-        )
-            .as_bytes(),
-        )
-        .with_context(|| format!("writing {}", prompt.display()))?;
 
     let meta = dossier.join("meta.json");
     write_meta(
@@ -735,12 +669,7 @@ fn research_scaffold_in(research: &Path, prompts: &Path, args: ResearchScaffoldA
     append_page(&group_meta, &research.join("meta.json"), &args.slug)?;
     rollback.committed = true;
 
-    report_created(&[
-        index.as_path(),
-        prompt.as_path(),
-        meta.as_path(),
-        group_meta.as_path(),
-    ]);
+    report_created(&[index.as_path(), meta.as_path(), group_meta.as_path()]);
     Ok(())
 }
 
@@ -1373,7 +1302,7 @@ fn validate_research_pages(
             || stem.ends_with("-brief")
         {
             problems.push(format!(
-                "{}: research briefs belong under prompts/research/, not published docs",
+                "{}: research briefs do not belong in published docs",
                 path.display()
             ));
         }

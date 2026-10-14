@@ -43,17 +43,17 @@ fn clean_file_passes() {
 }
 
 #[test]
-fn scans_roadmap_tree() {
+fn scans_docs_content_tree() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    fs::create_dir_all(root.join("roadmap/topic")).unwrap();
+    fs::create_dir_all(root.join("docs/content/topic")).unwrap();
     fs::write(
-        root.join("roadmap/topic/README.md"),
-        "The jackin' roadmap item.\n",
+        root.join("docs/content/topic/page.mdx"),
+        "The jackin' docs page.\n",
     )
     .unwrap();
     let err = check_brand(root).unwrap_err().to_string();
-    assert!(err.contains("roadmap/topic/README.md"), "{err}");
+    assert!(err.contains("docs/content/topic/page.mdx"), "{err}");
 }
 
 #[test]

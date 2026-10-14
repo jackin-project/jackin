@@ -91,7 +91,7 @@ enum Command {
     /// Run every bounded fuzz target owned by one crate.
     #[command(name = "ci-fuzz")]
     CiFuzz(ci_fuzz::CiFuzzArgs),
-    /// Analyze one `JUnit` report and enforce the flake quarantine.
+    /// Summarize one `JUnit` report (slowest tests) for the CI step summary.
     #[command(name = "ci-junit")]
     CiJunit(ci_junit::CiJunitArgs),
     /// Resolve reusable per-crate CI results.
@@ -104,8 +104,8 @@ enum Command {
     ///
     /// Pre-commit hook entry point (`cargo xtask clippy-affected`): selects
     /// workspace members via the shared affected-crates closure plus
-    /// detached packages (`fuzz/*`, `vendor/arrayref`) and runs
-    /// Clippy with the exact CI flags.
+    /// detached packages (`fuzz/*`) and runs Clippy with the exact CI
+    /// flags.
     #[command(name = "clippy-affected")]
     ClippyAffected(clippy_affected::ClippyAffectedArgs),
     /// Stage the prepared CI binary set as one atomic artifact operation.
@@ -203,12 +203,6 @@ enum Command {
     /// Use as `cargo xtask release-verify <archive>.tar.gz` or `.zip` (usage menu-bar).
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
-    /// Verify the complete six-payload preview package handoff.
-    ///
-    /// Use as `cargo xtask release-verify-package` with
-    /// `VELNOR_VERIFIED_PACKAGE_DIR` set.
-    #[command(name = "release-verify-package")]
-    ReleaseVerifyPackage(release_verify::ReleaseVerifyPackageArgs),
     /// Preview-package migration operations.
     #[command(subcommand)]
     Preview(preview::PreviewCommand),
@@ -352,7 +346,6 @@ fn main() -> ExitCode {
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::Preview(command) => preview::run(command),
         Command::ReleaseVerify(args) => release_verify::run(args),
-        Command::ReleaseVerifyPackage(args) => release_verify::run_package(args),
         Command::ReleaseArchives(args) => release_archive::run(args),
         Command::Health(args) => health::run(args),
         Command::Lint { command, strict } => run_lint(command, strict),

@@ -1,7 +1,6 @@
 //! Container-side path chokepoint — single source for paths under `/jackin`.
 //!
-//! Hard rule (`AGENTS.md` / `HOST_AND_CONTAINER.md`): every container path any
-//! builder emits must live under `/jackin/`. No FHS roots (`/run`, `/var`,
+//! Hard rule: every container path any builder emits must live under `/jackin/`. No FHS roots (`/run`, `/var`,
 //! `/opt`, `/etc`, `/tmp/jackin*`). Callers construct paths via these
 //! constants or [`join`]; the policy suite and the `cargo xtask lint
 //! container-paths` gate keep stragglers from regrowing.

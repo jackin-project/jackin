@@ -7,7 +7,7 @@
 
 //! Minimal read-only `SQLite` parser shared by the store enumerators.
 //!
-//! Scoped `ENGINEERING.md` waiver of the turso-only rule: turso 0.7.2 has
+//! Scoped waiver of the turso-only rule: turso 0.7.2 has
 //! no read-only/immutable open (`Builder::build` takes no flags), so opening
 //! the live third-party databases (`.omp`, `opencode`) through turso would
 //! open them read-write, risking `-shm`/`-journal` side effects and locks

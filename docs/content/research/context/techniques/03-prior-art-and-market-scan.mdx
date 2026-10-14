@@ -280,7 +280,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 - **Expected savings:** LOCAL: 630-line synthetic test log 10,108 -> 590 tok = **-94.2% with all 3 failures preserved** (local measurement, table above). Cited: 94% per web page (38,381 -> 2,788), "80-99% compression on build and test logs" (firecrawl.dev blog). Tool results ride the 29%+32% cache lines.
 - **Evidence tier:** T1 (official pattern) + local reproduction + T3 (Firecrawl, vendor-interested).
 - **Quality risk:** RISKY if filters hide the error the model needed; NEGATIVE-COST when failure signal is preserved — the local run shows both at once are achievable. Falsify by injecting novel error shapes and checking the filter passes them.
-- **Availability:** CLAUDE-CODE-TODAY (hooks, settings.json); this repo's filtered test runners (<RepoFile path="TESTING.md">TESTING.md</RepoFile>) are the same idea already shipped. **Effort to adopt:** hours.
+- **Availability:** CLAUDE-CODE-TODAY (hooks, settings.json); this repo's filtered test runners are the same idea already shipped. **Effort to adopt:** hours.
 - **Composability:** stacks with everything; the Claude Code-native sibling of programmatic tool calling (11).
 - **Validation protocol:** per filter, a red-team set of 10 unusual failure modes; require 10/10 surfaced post-filter; track tokens saved per call from JSONL.
 

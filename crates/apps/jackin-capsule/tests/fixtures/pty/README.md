@@ -10,8 +10,7 @@ cargo xtask pty-fixture <capture.bin> <out.bin>
 ```
 
 The capture gate is explicit test tooling and is disabled when the variable is
-unset. It is not a telemetry or log artifact. See the "Recording capsule
-render-conformance fixtures" section in the repository's `TESTING.md`.
+unset. It is not a telemetry or log artifact.
 
 Committed fixtures:
 

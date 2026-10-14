@@ -1,10 +1,10 @@
 //! Brand-prose gate: `cargo xtask docs brand`.
 //!
-//! Enforces RULES.md: product name is always `jackin❯` in prose. Forbidden:
-//! `jackin'`, `Jackin`, `Jackin'`, and bare `jackin` used as the product name
-//! (not as an identifier/command/path). Classification strips fenced code,
-//! inline backticks, URLs, path-like tokens, and identifier shapes
-//! (`jackin-…`, `jackin_…`, `JACKIN_…`, `jackin.…`).
+//! Product name is always `jackin❯` in prose. Forbidden: `jackin'`,
+//! `Jackin`, `Jackin'`, and bare `jackin` used as the product name (not as
+//! an identifier/command/path). Classification strips fenced code, inline
+//! backticks, URLs, path-like tokens, and identifier shapes (`jackin-…`,
+//! `jackin_…`, `JACKIN_…`, `jackin.…`).
 //!
 //! ## Prose trees (include / exclude)
 //!
@@ -13,8 +13,7 @@
 //! | Root `*.md` | include (non-recursive) |
 //! | `crates/*/README.md`, `crates/*/AGENTS.md`, `crates/AGENTS.md` | include |
 //! | `docs/content/**` (`*.md`/`*.mdx`) | include |
-//! | `roadmap/**/*.md` | include |
-//! | `security-review/`, `docker/`, `.github/` | exclude — ops/CI prose; revisit if brand copy moves there |
+//! | `docker/`, `.github/` | exclude — ops/CI prose; revisit if brand copy moves there |
 //! | Code / binary crates `src/**` | exclude (not prose) |
 
 use std::fs;
@@ -54,14 +53,14 @@ pub(super) fn check_brand(root: &Path) -> Result<()> {
                     continue;
                 }
                 problems.push(format!(
-                    "{rel}:{}: forbidden brand spelling `{token}` — write `jackin❯`; for possessives rewrite the sentence (RULES.md). matched line: {}",
+                    "{rel}:{}: forbidden brand spelling `{token}` — write `jackin❯`; for possessives rewrite the sentence. matched line: {}",
                     line_no + 1,
                     line.trim()
                 ));
             }
             if contains_bare_brand_prose(line) && !is_allowlisted(&rel, line) {
                 let msg = format!(
-                    "{rel}:{}: bare brand `jackin` in prose — write `jackin❯` for the product name, or backtick identifiers/commands/paths (RULES.md). matched line: {}",
+                    "{rel}:{}: bare brand `jackin` in prose — write `jackin❯` for the product name, or backtick identifiers/commands/paths. matched line: {}",
                     line_no + 1,
                     line.trim()
                 );
@@ -205,10 +204,6 @@ fn collect_prose_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     let content = root.join("docs/content");
     if content.is_dir() {
         walk_mdx(&content, out)?;
-    }
-    let roadmap = root.join("roadmap");
-    if roadmap.is_dir() {
-        walk_mdx(&roadmap, out)?;
     }
     Ok(())
 }

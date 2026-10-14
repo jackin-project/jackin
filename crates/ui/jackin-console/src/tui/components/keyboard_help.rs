@@ -4,8 +4,7 @@
 //! Keyboard-help overlay (`?` from any console stage) — builds the merged
 //! [`HelpEntry`] list for the active route from the live console keymaps.
 //!
-//! TODO(keyboard-help-mouse): pointer input is not routed to the overlay yet —
-//! see TODO.md "Follow-ups" → "keyboard-help-mouse".
+//! TODO(keyboard-help-mouse): pointer input is not routed to the overlay yet.
 
 use termrock::keymap::{KeyBinding, Keymap};
 use termrock::style::DesignSystem;
