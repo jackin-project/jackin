@@ -1,0 +1,17 @@
+{
+  "generated_at_utc": "2026-10-12T20:55:33.508804+00:00",
+  "status": "PASSED",
+  "scope": "Planning artifact structure only; not GitHub fact verification, Jackin tests or independent semantic review.",
+  "counts": {
+    "markdown_files": 95,
+    "branches": 79,
+    "distinct_tips": 50,
+    "observations": 50,
+    "branch_dossiers": 79,
+    "tasks": 20,
+    "seed_decisions": 33,
+    "internal_links_checked": 1879,
+    "external_links_not_fetched": 413
+  },
+  "errors": []
+}

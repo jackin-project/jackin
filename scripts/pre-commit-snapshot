@@ -1,0 +1,233 @@
+#!/bin/sh
+# shellcheck disable=SC2329 # Signal and exit traps invoke functions.
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+snapshot_root=
+gate_pid=
+cleanup() {
+    status=$?
+    trap - EXIT HUP INT TERM
+    if [ -n "$gate_pid" ]; then
+        kill -TERM "-$gate_pid" 2>/dev/null || true
+        kill -TERM "$gate_pid" 2>/dev/null || true
+        kill -KILL "-$gate_pid" 2>/dev/null || true
+        kill -KILL "$gate_pid" 2>/dev/null || true
+        wait "$gate_pid" 2>/dev/null || true
+    fi
+    # Only this invocation's mktemp directory is owned by the launcher.
+    if [ -n "$snapshot_root" ]; then
+        rm -rf "$snapshot_root"
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+original_index=$(git rev-parse --path-format=absolute --git-path index)
+original_objects=$(git rev-parse --path-format=absolute --git-path objects)
+original_git_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+original_worktree_git_dir=$(git rev-parse --absolute-git-dir)
+original_shallow=$(git rev-parse --path-format=absolute --git-path shallow)
+original_alternates=${GIT_ALTERNATE_OBJECT_DIRECTORIES:-}
+object_format=$(git rev-parse --show-object-format)
+head_oid=$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)
+
+snapshot_root=$(mktemp -d "${TMPDIR:-/tmp}/jackin-pre-commit.XXXXXX")
+snapshot_root=$(cd "$snapshot_root" && pwd -P)
+snapshot_worktree="$snapshot_root/worktree"
+snapshot_git_dir="$snapshot_worktree/.git"
+
+# Never point a mutating Git operation at the live index, object storage, or
+# worktree. The original object database is a read-only alternate; all new
+# objects and index extensions belong to the isolated repository.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY
+unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_PREFIX GIT_SHALLOW_FILE
+
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+git init --quiet --template= --object-format="$object_format" "$snapshot_worktree"
+export GIT_DIR="$snapshot_git_dir" GIT_WORK_TREE="$snapshot_worktree"
+export GIT_INDEX_FILE="$snapshot_git_dir/index"
+export GIT_OBJECT_DIRECTORY="$snapshot_git_dir/objects"
+# The alternates file uses Git's quoted-path grammar, avoiding the colon
+# separator ambiguity of GIT_ALTERNATE_OBJECT_DIRECTORIES.
+python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' \
+    "$original_objects" > "$snapshot_git_dir/objects/info/alternates"
+if [ -n "$original_alternates" ]; then
+    export GIT_ALTERNATE_OBJECT_DIRECTORIES="$original_alternates"
+fi
+if [ -f "$original_shallow" ]; then
+    cp "$original_shallow" "$snapshot_git_dir/shallow"
+fi
+git config core.sparseCheckout false
+git config core.sparseCheckoutCone false
+
+# Materialize a private index first. Copying split-index backing files keeps
+# Git's write-tree operation independent of the original index extensions.
+if [ -f "$original_index" ]; then
+    cp "$original_index" "$GIT_INDEX_FILE"
+    for shared_index in "$(dirname "$original_index")"/sharedindex.*; do
+        [ -f "$shared_index" ] || continue
+        cp "$shared_index" "$snapshot_git_dir/"
+    done
+else
+    git read-tree --empty
+fi
+index_tree=$(git write-tree)
+# Rebuild a full index from the exact tree, eliminating sparse/split index
+# flags while retaining every staged blob, executable bit, and symlink.
+rm -f "$GIT_INDEX_FILE"
+git read-tree "$index_tree"
+if [ -n "$head_oid" ]; then
+    git update-ref refs/heads/jackin-pre-commit "$head_oid"
+fi
+git symbolic-ref HEAD refs/heads/jackin-pre-commit
+for merge_state in MERGE_HEAD MERGE_MSG MERGE_MODE; do
+    if [ -f "$original_worktree_git_dir/$merge_state" ]; then
+        cp "$original_worktree_git_dir/$merge_state" "$snapshot_git_dir/$merge_state"
+    fi
+done
+git config core.fileMode true
+git config core.symlinks true
+git checkout-index --all --force
+
+cd "$snapshot_worktree"
+# A staged link escaping the snapshot lets formatters mutate the live tree.
+# Reject it before tools run, resolving link chains as the filesystem does.
+python3 - "$snapshot_worktree" <<'PYTHON'
+import os
+import subprocess
+import sys
+for entry in subprocess.check_output(["git", "ls-files", "--stage", "-z"]).split(b"\0"):
+    if entry.startswith(b"160000 "):
+        sys.exit("error: staged submodules require an isolated source checkout")
+root = os.path.realpath(sys.argv[1])
+for directory, directories, files in os.walk(root, followlinks=False):
+    if directory == root:
+        directories.remove(".git")
+    for name in directories + files:
+        path = os.path.join(directory, name)
+        if not os.path.islink(path):
+            continue
+        target = os.readlink(path)
+        resolved = os.path.realpath(path)
+        if os.path.isabs(target) or os.path.commonpath((root, resolved)) != root:
+            sys.exit("error: staged symlink escapes pre-commit snapshot: " + os.path.relpath(path, root))
+PYTHON
+# An inherited target path may point at the live checkout or shared compiler
+# state. Gate artifacts must have the same isolation boundary as its sources.
+export CARGO_TARGET_DIR="$snapshot_root/target"
+export CARGO_BUILD_BUILD_DIR="$snapshot_root/build"
+mise_bin=$(command -v mise)
+# The staged mise config is the same reviewed gate input, now at an owned
+# temporary path. Trust only that path for this process; persist no trust.
+export MISE_TRUSTED_CONFIG_PATHS="$snapshot_worktree"
+set +e
+# The process group owns hk and all compiler children. Signals terminate the
+# group before cleanup removes its sources/artifacts.
+# Resolve and qualify tools inside mise's environment, then install the pinned
+# Rust bin directory FIRST. No ambient shim or workspace compiler cache may
+# intercept the gate. Empty wrapper variables override global Cargo config.
+python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' \
+    "$mise_bin" x -- python3 -c '
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import tomllib
+
+def output(*args):
+    return subprocess.check_output(args, text=True).strip()
+
+mise, owned, *arguments = sys.argv[1:]
+channel = tomllib.loads(pathlib.Path("rust-toolchain.toml").read_text())["toolchain"]["channel"]
+if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", channel):
+    sys.exit("error: hook requires an exact Rust release pin")
+os.environ["RUSTUP_TOOLCHAIN"] = channel
+rustup = output(mise, "which", "rustup")
+paths = {name: pathlib.Path(output(rustup, "which", "--toolchain", channel, name)).resolve(strict=True)
+         for name in ("cargo", "rustc", "rustdoc", "clippy-driver", "rustfmt")}
+bin_dir = paths["rustc"].parent
+if any(path.parent != bin_dir for path in paths.values()):
+    sys.exit("error: hook Rust tools do not belong to one toolchain")
+versions = {name: output(str(path), "--version", "--verbose") for name, path in paths.items()}
+for name in ("cargo", "rustc", "rustdoc"):
+    if f"release: {channel}" not in versions[name].splitlines():
+        sys.exit(f"error: hook {name} does not match Rust {channel}")
+commit = next(line.split(": ", 1)[1] for line in versions["rustc"].splitlines() if line.startswith("commit-hash: "))
+if f"commit-hash: {commit}" not in versions["rustdoc"].splitlines():
+    sys.exit("error: hook rustdoc compiler identity mismatch")
+clippy = re.fullmatch(r"clippy [^ ]+ \(([0-9a-f]+) [^)]+\)", versions["clippy-driver"])
+if not clippy or not commit.startswith(clippy[1]):
+    sys.exit("error: hook Clippy compiler identity mismatch")
+formatter = re.fullmatch(r"rustfmt [^ ]+ \(([0-9a-f]+) [^)]+\)", versions["rustfmt"])
+if not formatter or not commit.startswith(formatter[1]):
+    sys.exit("error: hook rustfmt compiler identity mismatch")
+# Cargo environment aliases outrank the reviewed workspace alias and can
+# replace xtask with an unrelated executable. Use only the staged definition.
+for name in list(os.environ):
+    if name.startswith("CARGO_ALIAS_"):
+        del os.environ[name]
+# Resolve hk and platform lint tools from mise, avoiding inherited PATH shims.
+managed = pathlib.Path(owned) / "tools"
+managed.mkdir()
+for name in ("hk", "actionlint") + (("swiftlint",) if sys.platform == "darwin" else ()):
+    path = pathlib.Path(output(mise, "which", name)).resolve(strict=True)
+    (managed / name).symlink_to(path)
+if sys.platform == "darwin":
+    (managed / "xcrun").symlink_to("/usr/bin/xcrun")
+os.environ.update(RUSTC=str(paths["rustc"]), RUSTDOC=str(paths["rustdoc"]),
+                  CLIPPY_DRIVER=str(paths["clippy-driver"]), RUSTFMT=str(paths["rustfmt"]), CARGO_BUILD_RUSTC=str(paths["rustc"]),
+                  CARGO_BUILD_RUSTDOC=str(paths["rustdoc"]), RUSTC_WRAPPER="",
+                  RUSTC_WORKSPACE_WRAPPER="", CARGO_BUILD_RUSTC_WRAPPER="",
+                  CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER="",
+                  CARGO_BUILD_JOBS="2", NEXTEST_TEST_THREADS="4",
+                  CARGO_TARGET_DIR=str(pathlib.Path(owned) / "target"),
+                  CARGO_BUILD_BUILD_DIR=str(pathlib.Path(owned) / "build"))
+os.environ["PATH"] = os.pathsep.join((str(bin_dir), str(managed), os.environ["PATH"]))
+print(f"hook toolchain: Rust {channel}; cargo={paths["cargo"]}; rustc={paths["rustc"]}; rustdoc={paths["rustdoc"]}; clippy={paths["clippy-driver"]}; rustfmt={paths["rustfmt"]}", flush=True)
+os.execv(str(managed / "hk"), ["hk", "run", "pre-commit", "--from-hook", *arguments])
+' "$mise_bin" "$snapshot_root" "$@" &
+gate_pid=$!
+wait "$gate_pid"
+hook_status=$?
+kill -KILL "-$gate_pid" 2>/dev/null || true
+gate_pid=
+set -e
+
+# hk fix mode can change files and return success. Certify only the original
+# staged source: report any tracked fix privately and reject the commit.
+# Diff against the captured tree also catches a gate that stages its fixes.
+new_paths="$snapshot_root/new-paths"
+git ls-files --others -z > "$new_paths"
+if [ -s "$new_paths" ]; then
+    git --literal-pathspecs add --force --intent-to-add \
+        --pathspec-from-file="$new_paths" --pathspec-file-nul
+fi
+patch_file="$snapshot_root/fixes.patch"
+git diff --binary "$index_tree" -- > "$patch_file"
+if [ -s "$patch_file" ]; then
+    evidence_root="$original_git_dir/jackin-hook-evidence"
+    if [ -L "$evidence_root" ]; then
+        printf '%s\n' 'error: hook evidence directory must not be a symlink' >&2
+        exit 1
+    fi
+    if [ ! -d "$evidence_root" ]; then
+        (umask 077; mkdir "$evidence_root")
+    fi
+    python3 -c 'import os, stat, sys; sys.exit(bool(stat.S_IMODE(os.stat(sys.argv[1]).st_mode) & 0o077))' "$evidence_root"
+    evidence_dir=$(mktemp -d "$evidence_root/pre-commit.XXXXXX")
+    (umask 077; cp "$patch_file" "$evidence_dir/fixes.patch")
+    chmod 600 "$evidence_dir/fixes.patch"
+    printf '%s\n' "error: hook changed staged source; review private patch: $evidence_dir/fixes.patch" >&2
+    printf '%s\n' 'Run mise x -- hk fix, review and stage the fixes, then retry the commit.' >&2
+    if [ "$hook_status" -eq 0 ]; then
+        hook_status=1
+    fi
+fi
+exit "$hook_status"

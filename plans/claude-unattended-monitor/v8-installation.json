@@ -1,0 +1,118 @@
+{
+  "source_commit": "dba3a1811a06436a5e087f127b19d7828fa343a5",
+  "source_tree_sha1": "4e7dd1c48486300fe18741fef955d705d51ef5c8",
+  "installed_source_commit": "dba3a1811a06436a5e087f127b19d7828fa343a5",
+  "installed_source_tree_sha1": "4e7dd1c48486300fe18741fef955d705d51ef5c8",
+  "installed_source_matches_commit": true,
+  "branch": "fix/claude-usage-live-repair",
+  "base_commit": "1c3dd1be4a3b1ed518133ec3899c084c792370ff",
+  "build_working_directory": "/private/tmp/jackin-claude-usage-live-repair",
+  "build_command": [
+    "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx",
+    "+1.97.1",
+    "install",
+    "--debug",
+    "--locked",
+    "--path",
+    "crates/jackin",
+    "--root",
+    "/Users/donbeave/.local/share/jackin-claude-monitor-v8",
+    "--bin",
+    "jackin",
+    "--bin",
+    "jackin-usage-broker"
+  ],
+  "rust": "1.97.1 (8bab26f4f 2026-07-14)",
+  "mbx": "1.22.0",
+  "build_profile": "dev",
+  "cargo_profile_elapsed": "2m 09s",
+  "cli_version": "0.6.4",
+  "broker_version": "0.6.4",
+  "install_root": "/Users/donbeave/.local/share/jackin-claude-monitor-v8",
+  "source_worktree_clean_at_install": false,
+  "source_code_matches_commit": true,
+  "uncommitted_paths_at_install": [
+    "plans/claude-unattended-monitor/task-queue.md",
+    "plans/claude-unattended-monitor/verification.md"
+  ],
+  "uncommitted_source_paths_at_install": [],
+  "binaries": [
+    {
+      "name": "jackin",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin",
+      "sha256": "c49af789ca18dbc3478d13ba3d3a4c6c5c2ff05aed21a50a6a4ba13aabe16bee",
+      "size_bytes": 209304280,
+      "mode": "0755"
+    },
+    {
+      "name": "jackin-usage-broker",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin-usage-broker",
+      "sha256": "19ba4957ce28f4acb9890704419dbf90349969efc9b16bdc28e612e989c5e985",
+      "size_bytes": 57907896,
+      "mode": "0755"
+    }
+  ],
+  "focused_verification": [
+    {
+      "command": "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 test -p jackin-usage ticker_publishes_completed_provider_evidence_for_approved_observer",
+      "result": "1 passed, 0 failed, 719 filtered"
+    },
+    {
+      "command": "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 test -p jackin-usage ticker_collector_preserves_minimum_attempt_floor_and_retry_after",
+      "result": "1 passed, 0 failed, 719 filtered"
+    },
+    {
+      "command": "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 test -p jackin-usage",
+      "result": "720 passed, 0 failed; doc-tests 0 passed, 0 failed"
+    },
+    {
+      "command": "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 clippy -p jackin-usage --all-targets -- -D warnings",
+      "result": "passed"
+    },
+    {
+      "command": "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx +1.97.1 fmt --all -- --check",
+      "result": "passed"
+    }
+  ],
+  "installed_version_checks": {
+    "commands": [
+      "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin --version",
+      "/Users/donbeave/.local/share/jackin-claude-monitor-v8/bin/jackin-usage-broker --version"
+    ],
+    "result": [
+      "jackin 0.6.4",
+      "jackin-usage-broker 0.6.4"
+    ],
+    "auth_or_service_started": false
+  },
+  "v7_prefix_unchanged": {
+    "verified_before_and_after_install": true,
+    "binaries": {
+      "jackin": {
+        "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v7/bin/jackin",
+        "sha256": "526b5d842a26217e880367f9aef107219d2b019fe998a921ff32c7750b495d3a"
+      },
+      "jackin-usage-broker": {
+        "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v7/bin/jackin-usage-broker",
+        "sha256": "08ddc7a618ae02f8288d763169dcdfca433fb013587b7f4161ee9cbd42cc8317"
+      }
+    }
+  },
+  "fresh_prefix": {
+    "v8_state_directory_created": false,
+    "v7_state_directory_accessed": false
+  },
+  "dependency_fetch_note": "The first install attempt used --offline and failed before installing binaries because aws-lc-fips-sys v0.14.2 was not cached. The successful --locked debug install fetched the missing build dependencies from crates.io. No provider or authentication endpoint was accessed.",
+  "independent_installed_review": {
+    "result": "pending",
+    "review_scope": "Read-only verification of dba3a181 source identity, installed CLI and broker hashes and versions, and unchanged v7 binary hashes. No Keychain, live authentication, provider, service, or state access."
+  },
+  "operator_next_step": {
+    "status": "pending attended operator action; not run",
+    "required_existing_data_dir": "/Users/donbeave/.local/share/jackin-claude-monitor-v7/state",
+    "instruction": "When the operator chooses to swap to v8, use the existing v7 state directory to retain its monitor ID, source binding, and cooldowns. Keep the v7 installation and state available until the attended v8 check is complete.",
+    "actual_account_status": "unknown",
+    "dispatch_policy_approved": false
+  },
+  "verification_scope": "The locked debug CLI and broker pair was installed from the committed runtime source. Only --version checks and local file hashing were run. No credential, authentication, provider request, service status, service start or stop, v7 state directory, or monitor data was accessed. Live real-account status remains unverified."
+}

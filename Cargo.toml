@@ -565,8 +565,12 @@ libraries = [
     { path = "crates/tools/jackin-lints" },
 ]
 
-# arrayref is transitive (tiny-skia <- termrock-raster). crates.io 0.3.10 is a
-# malicious publish. Cargo.lock pins the registry crate arrayref 0.3.9
-# (checksum 76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb).
-# deny.toml rejects arrayref 0.3.10. Do not vendor the crate and do not run
-# `cargo update -p arrayref` without `--precise 0.3.9`.
+# arrayref 0.3.10 on crates.io is a malicious publish (pulls the proc-macro1
+# typosquat whose build.rs downloads and executes a remote payload); 0.3.9
+# was yanked. Pin the ecosystem to a vendored copy of the known-good 0.3.9
+# (checksum-verified against the pre-attack lockfile:
+# 76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb).
+# Transitive via tiny-skia <- termrock-raster. Remove once a trustworthy
+# upstream resolution exists.
+[patch.crates-io]
+arrayref = { path = "vendor/arrayref" }

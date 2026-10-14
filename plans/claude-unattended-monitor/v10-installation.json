@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "installed_source_commit": "9809c24400e9f24ad86e83e45dca7bf5d9bab278",
+  "installed_source_tree_sha1": "2af8f8b98c61c47a92b071e0d77072446aa965f1",
+  "source_commit": "9809c24400e9f24ad86e83e45dca7bf5d9bab278",
+  "source_tree_sha1": "2af8f8b98c61c47a92b071e0d77072446aa965f1",
+  "installed_source_matches_commit": true,
+  "source_code_matches_commit": true,
+  "branch": "fix/claude-usage-live-repair",
+  "build_working_directory": "/private/tmp/jackin-claude-usage-live-repair",
+  "source_worktree_clean_at_install": false,
+  "uncommitted_paths_at_install": [
+    "plans/claude-unattended-monitor/bootstrap-contract.md",
+    "plans/claude-unattended-monitor/task-queue.md",
+    "plans/claude-unattended-monitor/v10-installation.json",
+    "plans/claude-unattended-monitor/v10-live-verification.md"
+  ],
+  "uncommitted_source_paths_at_install": [],
+  "build_command": [
+    "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx",
+    "+1.97.1",
+    "install",
+    "--debug",
+    "--locked",
+    "--force",
+    "--path",
+    "crates/jackin",
+    "--root",
+    "/Users/donbeave/.local/share/jackin-claude-monitor-v10",
+    "--bin",
+    "jackin",
+    "--bin",
+    "jackin-usage-broker"
+  ],
+  "features": "default features; test-support not enabled",
+  "mbx": "1.22.0",
+  "rust": "1.97.1 (8bab26f4f 2026-07-14)",
+  "build_profile": "dev",
+  "cargo_profile_elapsed": "54.15s",
+  "install_result": "success",
+  "install_root": "/Users/donbeave/.local/share/jackin-claude-monitor-v10",
+  "cli_version": "0.6.4",
+  "broker_version": "0.6.4",
+  "binaries": [
+    {
+      "name": "jackin",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v10/bin/jackin",
+      "sha256": "9c73d480ecdaeb9280666641217a0b521a70be1414c39a86ab7c1b54b74db3b2",
+      "size_bytes": 209577144,
+      "mode": "0755",
+      "version": "jackin 0.6.4"
+    },
+    {
+      "name": "jackin-usage-broker",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v10/bin/jackin-usage-broker",
+      "sha256": "fafeb4765667a40c8a9395e391cc07e3ca7e2d33b9d2daebe88fc0a5a6639fcf",
+      "size_bytes": 58530440,
+      "mode": "0755",
+      "version": "jackin-usage-broker 0.6.4"
+    }
+  ],
+  "source_gate_summary": "Before commit 9809c244, root/reviewer reported provider-flow fixture 4/4, default offline CLI regressions 9/9, strict feature-enabled Clippy, formatting, and diff-check passed. The install task did not rerun source gates.",
+  "install_observation": "MBX reported 42 cache hits, 1 miss, 4 not looked up, 5 incremental, 2 bypassed, 0 B downloaded, 0 B uploaded, and 0 B stored locally. Cargo updated the crates.io index. Cargo warned that dockerfile-parser-rs v3.3.0 is yanked and the arrayref v0.3.9 workspace patch was unused; locked install succeeded.",
+  "installed_version_checks": {
+    "commands": [
+      "/Users/donbeave/.local/share/jackin-claude-monitor-v10/bin/jackin --version",
+      "/Users/donbeave/.local/share/jackin-claude-monitor-v10/bin/jackin-usage-broker --version"
+    ],
+    "result": [
+      "jackin 0.6.4",
+      "jackin-usage-broker 0.6.4"
+    ],
+    "performed_before_fixture_smoke": true,
+    "real_data_service_started": false,
+    "successful_auth_or_provider_call": false
+  },
+  "installation_history": [
+    {
+      "schema_version": 1,
+      "installed_source_commit": "019de448ef8a6590b0a847046cf6a71c03d2079b",
+      "installed_source_tree_sha1": "6b6a650fe15acfd28b66e8abb87211e766d06fa9",
+      "source_commit": "019de448ef8a6590b0a847046cf6a71c03d2079b",
+      "source_tree_sha1": "6b6a650fe15acfd28b66e8abb87211e766d06fa9",
+      "installed_source_matches_commit": true,
+      "source_code_matches_commit": true,
+      "branch": "fix/claude-usage-live-repair",
+      "build_working_directory": "/private/tmp/jackin-claude-usage-live-repair",
+      "source_worktree_clean_at_install": true,
+      "uncommitted_paths_at_install": [],
+      "uncommitted_source_paths_at_install": [],
+      "build_command": [
+        "/Users/donbeave/.local/share/mise/installs/mr-boxington/1.22.0/mbx",
+        "+1.97.1",
+        "install",
+        "--debug",
+        "--locked",
+        "--path",
+        "crates/jackin",
+        "--root",
+        "/Users/donbeave/.local/share/jackin-claude-monitor-v10",
+        "--bin",
+        "jackin",
+        "--bin",
+        "jackin-usage-broker"
+      ],
+      "features": "default features; test-support not enabled",
+      "mbx": "1.22.0",
+      "rust": "1.97.1 (8bab26f4f 2026-07-14)",
+      "build_profile": "dev",
+      "cargo_profile_elapsed": "32.24s",
+      "install_result": "success",
+      "install_root": "/Users/donbeave/.local/share/jackin-claude-monitor-v10",
+      "fresh_prefix_contents": [
+        "bin/jackin",
+        "bin/jackin-usage-broker",
+        ".crates.toml",
+        ".crates2.json"
+      ],
+      "fresh_state_directory_created": false,
+      "cli_version": "0.6.4",
+      "broker_version": "0.6.4",
+      "binaries": [
+        {
+          "name": "jackin",
+          "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v10/bin/jackin",
+          "sha256": "8ff06ff34a7fd9bea3daaae1c8efc8e1af2ff2ff36e1974ead7c368cb8db8184",
+          "size_bytes": 209351032,
+          "mode": "0755",
+          "version": "jackin 0.6.4"
+        },
+        {
+          "name": "jackin-usage-broker",
+          "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v10/bin/jackin-usage-broker",
+          "sha256": "1ead2904ef50560d7100df0bc93240ed8aedd826375811939690b8fb376b8563",
+          "size_bytes": 58411512,
+          "mode": "0755",
+          "version": "jackin-usage-broker 0.6.4"
+        }
+      ],
+      "source_gate_summary": "Source test gates were not rerun by this install task. Current checkpoint test evidence is recorded in verification.md.",
+      "install_observation": "MBX reported 42 cache hits, 6 misses, 1 not looked up, 2 bypassed, 0 B downloaded, and 0 B uploaded. Cargo updated the crates.io index. Cargo warned that dockerfile-parser-rs v3.3.0 is yanked and the arrayref v0.3.9 workspace patch was unused; locked install succeeded.",
+      "installed_version_checks": {
+        "commands": [
+          "/Users/donbeave/.local/share/jackin-claude-monitor-v10/bin/jackin --version",
+          "/Users/donbeave/.local/share/jackin-claude-monitor-v10/bin/jackin-usage-broker --version"
+        ],
+        "result": [
+          "jackin 0.6.4",
+          "jackin-usage-broker 0.6.4"
+        ],
+        "performed_before_fixture_smoke": true,
+        "real_data_service_started": false,
+        "successful_auth_or_provider_call": false
+      },
+      "offline_fixture_smoke": {
+        "status": "PASS",
+        "command": "python3 plans/claude-unattended-monitor/installed-smoke.py --bin-dir /Users/donbeave/.local/share/jackin-claude-monitor-v10/bin --provenance-manifest plans/claude-unattended-monitor/v10-installation.json",
+        "script_sha256": "97f48cd374bbf1268db2d1e3ac10d40730a7dfeb9c9454b55c29bd08b136dcb8",
+        "provenance_manifest_sha256_at_smoke": "fb34f1ae5dd1d60b6f3536fb6d69374e811cdab2f312369fd1a2e8c9e649c1c3",
+        "schema_version_asserted": 5,
+        "installed_cli_and_broker_versions": [
+          "jackin 0.6.4",
+          "jackin-usage-broker 0.6.4"
+        ],
+        "broker_process_selection": "verified fixture broker PID 74761 argv resolved to the exact installed v10 sibling with private fixture arguments",
+        "headless_auth_negative_check": {
+          "exit_code": 2,
+          "error_code": "interaction_required",
+          "fake_broker_launches": 0,
+          "shell_credential_tripwires": 0,
+          "http_proxy_requests": 0
+        },
+        "watch_deadline_check": {
+          "requested_seconds": 35,
+          "minimum_elapsed_seconds_asserted": 34.5,
+          "one_initial_event": true,
+          "event_sequence_unchanged": true
+        },
+        "other_fixture_results": {
+          "service_started_and_stopped_in_private_fixture": true,
+          "synthetic_unbound_and_bound_observers": true,
+          "dispatch_authority_granted": false,
+          "experimental_collector_started": false,
+          "credential_tripwires": 0,
+          "local_http_proxy_requests": 0,
+          "native_security_framework_calls_instrumented": false,
+          "foreground_auth_success_exercised": false,
+          "fixture_cleanup": "orderly service stop; fixture directory removed"
+        },
+        "fixture_path_removed": "/tmp/jkin-installed-smoke-38y23v7_",
+        "result_summary": "The installed v10 pair passed the isolated synthetic fixture smoke. The fixture verified the exact installed sibling broker, monitor schema 5, and a 35-second watch deadline with one unchanged event. The fake headless-auth broker, shell credential tripwires, and local HTTP proxy each recorded zero launches or requests. This does not instrument native Security Framework calls or OS-level egress. No successful auth or provider collection was exercised."
+      },
+      "verification_scope": "Installed the default-feature CLI/broker pair from source commit 019de448ef8a6590b0a847046cf6a71c03d2079b into the fresh v10 prefix and passed the isolated installed smoke using temporary HOME/config/data, synthetic statusline evidence, and a local broker. No real data directory or real service was accessed. The smoke includes a non-TTY auth-preparation negative check that returned interaction_required before launching the fake broker; it did not perform successful authentication or provider collection. Credential shell tripwires and the HTTP proxy observed zero requests. Native Security Framework calls and OS-level egress were not instrumented.",
+      "recorded_at": "2026-10-11T15:10:38+07:00"
+    }
+  ],
+  "replaced_existing_install": true,
+  "prefix_contents": [
+    "bin/jackin",
+    "bin/jackin-usage-broker",
+    ".crates.toml",
+    ".crates2.json"
+  ],
+  "real_data_or_state_touched": false,
+  "offline_fixture_smoke": {
+    "status": "PASS",
+    "command": "python3 plans/claude-unattended-monitor/installed-smoke.py --bin-dir /Users/donbeave/.local/share/jackin-claude-monitor-v10/bin --provenance-manifest plans/claude-unattended-monitor/v10-installation.json",
+    "script_sha256": "97f48cd374bbf1268db2d1e3ac10d40730a7dfeb9c9454b55c29bd08b136dcb8",
+    "provenance_manifest_sha256_at_smoke": "caabfa403a852d2a8c9359825afe4e76d207d4b7cfb8d3401df66ba1b635cc29",
+    "schema_version_asserted": 5,
+    "installed_cli_and_broker_versions": [
+      "jackin 0.6.4",
+      "jackin-usage-broker 0.6.4"
+    ],
+    "broker_process_selection": "verified fixture broker PID 88550 argv resolved to the exact installed v10 sibling with private fixture arguments",
+    "headless_auth_negative_check": {
+      "exit_code": 2,
+      "error_code": "interaction_required",
+      "fake_broker_launches": 0,
+      "shell_credential_tripwires": 0,
+      "http_proxy_requests": 0
+    },
+    "watch_deadline_check": {
+      "requested_seconds": 35,
+      "actual_elapsed_seconds": 35.07,
+      "initial_watch_events": 1,
+      "deadline_watch_events": 1,
+      "event_sequence_unchanged": true,
+      "status_unchanged_without_fixture_input": true
+    },
+    "other_fixture_results": {
+      "service_started_and_stopped_in_private_fixture": true,
+      "monitor_schema_version_5": true,
+      "synthetic_unbound_and_bound_observers": true,
+      "dispatch_authority_granted": false,
+      "experimental_collector_started": false,
+      "credential_tripwires": 0,
+      "local_http_proxy_requests": 0,
+      "native_security_framework_calls_instrumented": false,
+      "foreground_auth_success_exercised": false,
+      "fixture_cleanup": "orderly service stop; fixture directory removed"
+    },
+    "fixture_path_removed": "/tmp/jkin-installed-smoke-ezhkii6j",
+    "result_summary": "The reinstalled v10 pair from commit 9809c244 passed the isolated synthetic fixture smoke. The smoke verified the exact installed sibling broker, monitor schema 5, and an unchanged one-event watch across the 35-second deadline. The fake headless-auth broker, shell credential tripwires, and local HTTP proxy each recorded zero launches or requests. Native Security Framework calls and OS-level egress are not instrumented. No successful auth or provider collection was exercised."
+  },
+  "verification_scope": "Reinstalled the default-feature CLI/broker pair from source commit 9809c24400e9f24ad86e83e45dca7bf5d9bab278 into the existing v10 prefix and passed the isolated installed smoke using temporary HOME/config/data, synthetic statusline evidence, and a local broker. The initial v10 install from 019de448 and its smoke are preserved in installation_history. No real data directory or real service was accessed. The smoke includes a non-TTY auth-preparation negative check that returned interaction_required before launching the fake broker; it did not perform successful authentication or provider collection. Credential shell tripwires and the HTTP proxy observed zero requests. Native Security Framework calls and OS-level egress were not instrumented.",
+  "recorded_at": "2026-10-11T15:32:31+07:00"
+}

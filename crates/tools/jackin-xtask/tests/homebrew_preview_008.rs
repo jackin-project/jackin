@@ -587,7 +587,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn producer_script() -> String {
-    let path = repo_root().join("crates/tools/jackin-xtask/release-preview-package");
+    let path = repo_root().join("scripts/release-preview-package");
     let script = fs::read_to_string(&path).unwrap();
     assert!(
         script.starts_with("#!/usr/bin/env bash\n"),

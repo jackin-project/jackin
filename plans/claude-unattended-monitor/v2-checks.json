@@ -1,0 +1,119 @@
+{
+  "cargo_binary": "/Users/donbeave/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin/cargo",
+  "source_commit": "4492d3cb91d9e45fafec2aa8acb8158268618cd9",
+  "notice": "Counts overlap; tests use isolated/fake state, not live provider or native Keychain. Telemetry full xtask fails pre-existing unrelated literals; see verification.md. Tooling installer traffic occurred; the whole session was not offline.",
+  "gates": [
+    {
+      "command": "cargo test --offline --locked -p jackin-usage-broker -p jackin-protocol -p jackin-runtime-usage-relay -p jackin-usage-coordinator -p jackin-usage-provider-claude -p jackin-usage -p jackin-usage-host-runtime -p jackin-usage-output",
+      "exit_code": 0,
+      "local_log": "/private/tmp/jackin-v2-final-core.log",
+      "sha256": "66db18f2000c36126e121914dd85ee6855c30551c167dd684ceabc2b1f082b01",
+      "results": [
+        "test result: ok. 129 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s",
+        "test result: ok. 6 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.33s",
+        "test result: ok. 128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.54s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "command": "cargo test --offline --locked -p jackin --lib cli::",
+      "exit_code": 0,
+      "local_log": "/private/tmp/jackin-v2-cli-unit-final.log",
+      "sha256": "85affa936101de34cc5358033b8f6127f6945296e6f71758efd11f64f48c0737",
+      "results": [
+        "test result: ok. 216 passed; 0 failed; 0 ignored; 0 measured; 324 filtered out; finished in 0.59s"
+      ]
+    },
+    {
+      "command": "cargo test --offline --locked -p jackin --test usage_monitor_offline --test broker_installation --test broker_service_lifecycle",
+      "exit_code": 0,
+      "local_log": "/private/tmp/jackin-v2-app-tests-final.log",
+      "sha256": "f47d5025c35318cf14855b4fed06f20285e2775271a99e3732d24f43b0d41129",
+      "results": [
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.76s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.96s"
+      ]
+    },
+    {
+      "command": "cargo test --offline --locked -p jackin-usage-provider-core -p jackin-usage-discovery -p jackin-usage-credential-resolver",
+      "exit_code": 0,
+      "local_log": "/private/tmp/jackin-v2-auth-tests.log",
+      "sha256": "6de5b2b67326f57c59c72a4f6b24978c1be7d34cb747e9d018b1674634652eea",
+      "results": [
+        "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.27s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.89s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 83 filtered out; finished in 0.02s",
+        "test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "command": "cargo test --offline --locked -p jackin-usage-broker",
+      "exit_code": 0,
+      "local_log": "/private/tmp/jackin-v2-broker-final.log",
+      "sha256": "707db62c5fcc1c3b20be4916280c1a8d40129c1825293a01b49ae6b59ee28bb8",
+      "results": [
+        "test result: ok. 128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.71s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "command": "cargo test --offline --locked -p jackin-usage-broker --lib tests::case_10:: [five consecutive runs]",
+      "exit_code": 0,
+      "local_log": "/private/tmp/jackin-v2-retry-repeat.log",
+      "sha256": "df0364df6252861b0744145a76a3ca585e3a41a508118aa3c4bf11c4f7d70bbe",
+      "results": [
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 126 filtered out; finished in 0.16s",
+        "EXIT 0",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 126 filtered out; finished in 0.10s",
+        "EXIT 0",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 126 filtered out; finished in 0.11s",
+        "EXIT 0",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 126 filtered out; finished in 0.11s",
+        "EXIT 0",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 126 filtered out; finished in 0.11s",
+        "EXIT 0"
+      ]
+    },
+    {
+      "command": "cargo clippy --offline --locked -p jackin -p jackin-usage-broker -p jackin-protocol -p jackin-runtime-usage-relay -p jackin-usage-provider-claude --all-targets -- -D warnings",
+      "exit_code": 0,
+      "local_log": "/private/tmp/jackin-v2-clippy.log",
+      "sha256": "a270d89c44c21cbe6e9233406d0552cd31b5b2eab212e893c44265227b989c91",
+      "results": []
+    },
+    {
+      "command": "cargo build --offline --locked -p jackin --bin jackin --bin jackin-usage-broker",
+      "exit_code": 0,
+      "local_log": "/private/tmp/jackin-v2-build.log",
+      "sha256": "eeec11882e5acc9f3c4c69e7ff18fee381a16a68e4f12152b25222095b3f0f25",
+      "results": []
+    }
+  ]
+}

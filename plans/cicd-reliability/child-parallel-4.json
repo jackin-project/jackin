@@ -1,0 +1,23 @@
+{
+ "complete": true,
+ "evidence": [
+  "AGENTS.md:1-21 genericity: no estate names/pins; scan-driven; config outside .github",
+  "schema: s1 config/mod.rs:31 =1 (:1784 reject other); s2 s2/config/mod.rs:31-32 =2 provider-set, s1 lanes unread",
+  "Unit has NO phase type: lib.rs:624-640 (pr/full+4 lane Vec<String>); runtime.rs:119-146 CiUnit, :172 commands(lane,scope); s2/runtime.rs:181 scope-only",
+  "rust expansion scan/rust.rs:454-481 fmt,clippy(--profile test,-D warnings),nextest(--no-tests pass); s2 identical :454-481; no doctest in scan",
+  "single step ir.rs:5245-5259 + s2/ir.rs:5290-5299: one 'Run unit checks' -> velnor-workflow run --config project.toml",
+  "executor runtime.rs:2760-2768 + s2:2851-2859 run_unit: sequential ::group::, ? fail-fast; err :2662",
+  "substring hacks: prereq :2569-2586 (' clippy '->' check '); is_workspace_check :185-207; mbxify lib.rs:1534; order test :11653-11694",
+  "check profiles check_profiles.rs:537-542 one 'Run {task}'/mise run per task; lanes :549-576; s2:462 same",
+  "setup action yml: :59 closure resolve, :102-120 runtime-v1-<d16> download, :123-127 attestation verify, :171-184 --closure/--revision verify",
+  "selection: lib.rs:5544-5574 6-field file; reuse.rs:220-300 select_affected; plan runtime.rs:1505",
+  "provider: RunnerMode lib.rs:344; RunnerLane runtime.rs:149; platform.rs:1-60 provider-independent; s2/provider.rs:1-60 strict ProviderId; s2 providers.rs matrix",
+  "only estate names: estate.rs:63-64 + s2/estate.rs:23 fleet owners (documented boundary); full-crate grep verified",
+  "units merge lib.rs:2676-2704, :2738-2747 row-over-scan; ci_tasks append-only",
+  "SPLIT SITES: scan/rust.rs:473-481+s2 phase tags; Unit/CiUnit phase vec (deny_unknown_fields-safe); ir.rs:5245+s2:5290 per-phase steps or run --phase; replace :2569 rewrite; fixtures synthetic-workspace, polyglot, rust_order_render.rs, scheduled_check_profiles.rs",
+  "job106105226160: diag.log:740 fmt, :742 nextest, no clippy; :855 FAIL partial_success left7/right1 :870-873; :881 107/1/1; :890 exit100; invok :707",
+  "job106090835001: desktop.log:4257 canceled; cause desktop-merge.yml:12-14 concurrency; step :41-42; tests passing at cancel",
+  "drift: jackin project.toml:214-224 order fmt-nextest-clippy (pin 4fa7a3a) vs HEAD fmt-clippy-nextest; step ci-unit-rust.yml:434"
+ ],
+ "unresolved": []
+}

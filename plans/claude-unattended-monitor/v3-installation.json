@@ -1,0 +1,51 @@
+{
+  "source_commit": "8abfa235cce150d5382d99a5679afab49e098525",
+  "build_command": [
+    "CARGO_HOME=/private/tmp/jackin-usage-cargo-home-pkfelzdu",
+    "MISE_AUTO_INSTALL=false",
+    "mise",
+    "exec",
+    "--",
+    "sh",
+    "-c",
+    "export PATH=\"/Users/donbeave/.local/share/mise/command-wrappers/bin:/Users/donbeave/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin:$PATH\"; exec mbx build --offline --locked -p jackin --bin jackin --bin jackin-usage-broker"
+  ],
+  "build_log": "/private/tmp/jackin-mbx-build-8abfa235.log",
+  "rust": "1.97.1",
+  "mbx": "1.22.0",
+  "cli_version": "0.6.4",
+  "broker_version": "0.6.4",
+  "broker_protocol": 8,
+  "projection_envelope_schema": 3,
+  "statusline_input_schema": 2,
+  "monitor_schema": 4,
+  "install_root": "/Users/donbeave/.local/share/jackin-claude-monitor-v3",
+  "state_dir": "/Users/donbeave/.local/share/jackin-claude-monitor-v3/state",
+  "broker_selection": "installed smoke must verify exact installed sibling with JACKIN_USAGE_BROKER_BIN unset",
+  "binaries": [
+    {
+      "name": "jackin",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin",
+      "built_path": "/Users/donbeave/Library/Caches/mbx/targets/v1/36fc15a60d93a06cc01fd219079b34bfc60b422fdb07037233807370e40b3159/debug/jackin",
+      "sha256": "b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d"
+    },
+    {
+      "name": "jackin-usage-broker",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v3/bin/jackin-usage-broker",
+      "built_path": "/Users/donbeave/Library/Caches/mbx/targets/v1/36fc15a60d93a06cc01fd219079b34bfc60b422fdb07037233807370e40b3159/debug/jackin-usage-broker",
+      "sha256": "30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550"
+    }
+  ],
+  "verification_scope": "MBX offline/locked build; runtime validation is limited to the referenced isolated fixture; no live Keychain authorization, foreground auth success, provider/account readiness, or dispatch approval",
+  "known_limitations": [
+    "Native Security Framework calls are not instrumented by the installed fixture.",
+    "Successful foreground authentication and live provider/account readiness are not exercised.",
+    "An abrupt forward wall-clock step between process restarts can make an epoch-based deadline expire early; this build does not claim protection against arbitrary clock tampering."
+  ],
+  "previous_pair_source_commit": "45a33093df524c03440ed524e71375953ee6834b",
+  "previous_pair_sha256": {
+    "jackin": "b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d",
+    "jackin-usage-broker": "30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550"
+  },
+  "source_worktree_clean_at_build": true
+}

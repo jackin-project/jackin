@@ -20,7 +20,7 @@ fn e2e_partition_selects_the_complete_docker_suite() {
 }
 
 #[test]
-fn tests_partition_starts_with_workspace_check() {
+fn tests_partition_runs_the_pre_commit_snapshot_fixture() {
     let args = CiArgs {
         fast: true,
         e2e: false,
@@ -30,13 +30,9 @@ fn tests_partition_starts_with_workspace_check() {
         only: vec!["tests".to_owned()],
     };
 
-    let names = step_names(&args).unwrap();
-    assert_eq!(names.first().map(String::as_str), Some("cargo check"));
-    assert!(
-        names
-            .iter()
-            .all(|name| name != "pre-commit snapshot fixture"),
-        "the tests partition must not invoke the removed scripts/ fixture"
+    assert_eq!(
+        step_names(&args).unwrap().first().map(String::as_str),
+        Some("pre-commit snapshot fixture")
     );
 }
 
