@@ -406,7 +406,7 @@ The binary is written to the standard cache path and subsequent `jackin load` in
 | `--debug` | Convenience alias for `--profile debug`. |
 | `--export` | Print only `export JACKIN_CAPSULE_BIN=<path>` for `eval` |
 
-Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml" />; run `mise install zig cargo:cargo-zigbuild` if missing.
+Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml" />; run `mise install zig aqua:rust-cross/cargo-zigbuild` if missing.
 
 First build takes 2–3 minutes; subsequent builds are incremental via cargo's dependency cache.
 
