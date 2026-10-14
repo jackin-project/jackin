@@ -120,6 +120,11 @@ pub const fn workflow_command_name(command: &WorkflowCommand) -> CliCommandName 
     match command {
         WorkflowCommand::Validate(_) => CliCommandName::WorkflowValidate,
         WorkflowCommand::Plan(_) => CliCommandName::WorkflowPlan,
+        WorkflowCommand::Run(_) => CliCommandName::WorkflowRun,
+        WorkflowCommand::Status(_) => CliCommandName::WorkflowStatus,
+        WorkflowCommand::Pause(_) => CliCommandName::WorkflowPause,
+        WorkflowCommand::Resume(_) => CliCommandName::WorkflowResume,
+        WorkflowCommand::Cancel(_) => CliCommandName::WorkflowCancel,
     }
 }
 

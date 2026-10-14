@@ -146,6 +146,17 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
             &["workflow", "plan", "repair.pkl", "--json"],
             Name::WorkflowPlan,
         ),
+        (&["workflow", "run", "ebc1278f"], Name::WorkflowRun),
+        (&["workflow", "status"], Name::WorkflowStatus),
+        (
+            &["workflow", "pause", "run-1", "--reason", "hold"],
+            Name::WorkflowPause,
+        ),
+        (&["workflow", "resume", "run-1"], Name::WorkflowResume),
+        (
+            &["workflow", "cancel", "run-1", "--reason", "done"],
+            Name::WorkflowCancel,
+        ),
     ];
 
     assert_command_names(cases);

@@ -9,6 +9,9 @@ use anyhow::{Context, Result, bail};
 use jackin_core::{ContainerId, JackinPaths};
 use jackin_protocol::control::AgentState;
 use jackin_protocol::{InstanceSnapshot, TelemetryContext};
+use jackin_workflow::{
+    InstanceInventory, OperatorDecision, RecoveryReport, RunSummary, WorkflowBackend,
+};
 use serde::{Deserialize, Serialize};
 
 pub const DAEMON_PROTOCOL_VERSION: u16 = 2;
@@ -39,6 +42,35 @@ pub enum DaemonRequestKind {
         panes: Vec<AttentionPaneStatus>,
     },
     Shutdown,
+    WorkflowStart {
+        plan_hash: String,
+        max_repair_turns: u32,
+        idempotency_key: String,
+    },
+    WorkflowStatus {
+        run_id: Option<String>,
+    },
+    WorkflowPause {
+        run_id: String,
+        reason: String,
+        checkpoint: bool,
+    },
+    WorkflowResume {
+        run_id: String,
+    },
+    WorkflowCancel {
+        run_id: String,
+        reason: String,
+    },
+    WorkflowResolve {
+        run_id: String,
+        command_id: String,
+        decision: String,
+        observed_session_state: String,
+    },
+    WorkflowRecover {
+        inventory: InstanceInventory,
+    },
 }
 
 impl DaemonRequestKind {
@@ -49,6 +81,13 @@ impl DaemonRequestKind {
             Self::TelemetryHealth => "jackin.host.Daemon/TelemetryHealth",
             Self::AttentionSnapshot { .. } => "jackin.host.Daemon/AttentionSnapshot",
             Self::Shutdown => "jackin.host.Daemon/Shutdown",
+            Self::WorkflowStart { .. } => "jackin.host.Daemon/WorkflowStart",
+            Self::WorkflowStatus { .. } => "jackin.host.Daemon/WorkflowStatus",
+            Self::WorkflowPause { .. } => "jackin.host.Daemon/WorkflowPause",
+            Self::WorkflowResume { .. } => "jackin.host.Daemon/WorkflowResume",
+            Self::WorkflowCancel { .. } => "jackin.host.Daemon/WorkflowCancel",
+            Self::WorkflowResolve { .. } => "jackin.host.Daemon/WorkflowResolve",
+            Self::WorkflowRecover { .. } => "jackin.host.Daemon/WorkflowRecover",
         }
     }
 }
@@ -76,6 +115,12 @@ pub enum DaemonResponseKind {
     },
     Shutdown {
         accepted: bool,
+    },
+    WorkflowRun {
+        summary: RunSummary,
+    },
+    WorkflowRecovery {
+        report: RecoveryReport,
     },
     Error {
         message: String,
@@ -397,6 +442,32 @@ pub fn bind_control_socket(layout: &DaemonLayout) -> Result<UnixListener> {
 }
 
 pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
+    match jackin_workflow::WorkflowService::open(
+        &layout.run_dir.join("workflow-runs.db"),
+        &layout.run_dir.join("workflow-artifacts"),
+    ) {
+        Ok(mut workflow) => serve_with_workflow(layout, build_id, &mut workflow),
+        Err(error) => serve_with_workflow(
+            layout,
+            build_id,
+            &mut jackin_workflow::UnavailableBackend::new(error.to_string()),
+        ),
+    }
+}
+
+/// Serve with an injected workflow backend (trait-param injection for
+/// run control, mirroring [`AttentionNotifierAdapter`]). Opening the
+/// service persists the incremented owner epoch, so every `serve()`
+/// startup invalidates automatic input stamped with older epochs.
+///
+/// This blocks the calling thread (synchronous socket loop plus
+/// blocking store calls). Callers on an async runtime must move it to
+/// a blocking thread instead of stalling the executor.
+pub fn serve_with_workflow(
+    layout: &DaemonLayout,
+    build_id: &str,
+    workflow: &mut dyn WorkflowBackend,
+) -> Result<ServeOutcome> {
     let open =
         jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
     let listener = match bind_control_socket(layout).and_then(|listener| {
@@ -429,6 +500,7 @@ pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
                 build_id,
                 &coredump_policy,
                 &mut attention,
+                workflow,
             )?;
             if matches!(
                 response.kind,
@@ -532,6 +604,34 @@ fn daemon_response_matches_method(method: &str, response: &DaemonResponseKind) -
                 "jackin.host.Daemon/Shutdown",
                 DaemonResponseKind::Shutdown { .. }
             )
+            | (
+                "jackin.host.Daemon/WorkflowStart",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowStatus",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowPause",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowResume",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowCancel",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowResolve",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecover",
+                DaemonResponseKind::WorkflowRecovery { .. }
+            )
     )
 }
 
@@ -594,6 +694,7 @@ fn handle_stream(
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
+    workflow: &mut dyn WorkflowBackend,
 ) -> Result<DaemonResponse> {
     let mut line = String::new();
     let read = BufReader::new(stream.try_clone().context("cloning daemon stream")?)
@@ -612,6 +713,7 @@ fn handle_stream(
             build_id,
             coredump_policy,
             attention,
+            workflow,
         )
     };
     let response = handled.response;
@@ -673,7 +775,29 @@ pub fn handle_request_line(
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
 ) -> DaemonResponse {
-    handle_request_line_inner(line, layout, build_id, coredump_policy, attention)
+    let mut workflow = jackin_workflow::UnavailableBackend::new("no workflow service on this path");
+    handle_request_line_inner(
+        line,
+        layout,
+        build_id,
+        coredump_policy,
+        attention,
+        &mut workflow,
+    )
+    .complete_without_transport()
+}
+
+/// Request-line entry point with an injected workflow backend for
+/// run control.
+pub fn handle_request_line_with_workflow(
+    line: &str,
+    layout: &DaemonLayout,
+    build_id: &str,
+    coredump_policy: &CoredumpPolicy,
+    attention: &mut impl AttentionNotifierAdapter,
+    workflow: &mut dyn WorkflowBackend,
+) -> DaemonResponse {
+    handle_request_line_inner(line, layout, build_id, coredump_policy, attention, workflow)
         .complete_without_transport()
 }
 
@@ -683,6 +807,7 @@ fn handle_request_line_inner(
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
+    workflow: &mut dyn WorkflowBackend,
 ) -> HandledResponse {
     if line.is_empty() {
         return HandledResponse::without_operation(error_response(
@@ -691,7 +816,14 @@ fn handle_request_line_inner(
         ));
     }
     match serde_json::from_str::<DaemonRequest>(line) {
-        Ok(request) => handle_request(request, layout, build_id, coredump_policy, attention),
+        Ok(request) => handle_request(
+            request,
+            layout,
+            build_id,
+            coredump_policy,
+            attention,
+            workflow,
+        ),
         Err(error) => HandledResponse::without_operation(error_response(
             "unknown",
             format!("invalid daemon request: {error}"),
@@ -705,6 +837,7 @@ fn handle_request(
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
+    workflow: &mut dyn WorkflowBackend,
 ) -> HandledResponse {
     let extracted = jackin_telemetry::propagation::extract(&request.ctx);
     if matches!(
@@ -803,6 +936,15 @@ fn handle_request(
                 id,
                 kind: DaemonResponseKind::Shutdown { accepted: true },
             },
+            kind @ (DaemonRequestKind::WorkflowStart { .. }
+            | DaemonRequestKind::WorkflowStatus { .. }
+            | DaemonRequestKind::WorkflowPause { .. }
+            | DaemonRequestKind::WorkflowResume { .. }
+            | DaemonRequestKind::WorkflowCancel { .. }
+            | DaemonRequestKind::WorkflowResolve { .. }
+            | DaemonRequestKind::WorkflowRecover { .. }) => {
+                handle_workflow_request(id, kind, workflow)
+            }
         }
     };
     let response = if let Some(operation) = operation.as_ref() {
@@ -961,6 +1103,81 @@ fn error_response(id: impl Into<String>, message: impl Into<String>) -> DaemonRe
         kind: DaemonResponseKind::Error {
             message: message.into(),
         },
+    }
+}
+
+/// Run-control dispatch: every variant drives the injected
+/// workflow backend as the `operator` actor.
+fn handle_workflow_request(
+    id: String,
+    kind: DaemonRequestKind,
+    workflow: &mut dyn WorkflowBackend,
+) -> DaemonResponse {
+    match kind {
+        DaemonRequestKind::WorkflowStart {
+            plan_hash,
+            max_repair_turns,
+            idempotency_key,
+        } => workflow_response(
+            id,
+            workflow.start_run(&plan_hash, max_repair_turns, &idempotency_key),
+        ),
+        DaemonRequestKind::WorkflowStatus { run_id } => {
+            workflow_response(id, workflow.run_status(run_id.as_deref()))
+        }
+        DaemonRequestKind::WorkflowPause {
+            run_id,
+            reason,
+            checkpoint,
+        } => workflow_response(
+            id,
+            workflow.pause_run(&run_id, "operator", &reason, checkpoint),
+        ),
+        DaemonRequestKind::WorkflowResume { run_id } => {
+            workflow_response(id, workflow.resume_run(&run_id, "operator"))
+        }
+        DaemonRequestKind::WorkflowCancel { run_id, reason } => {
+            workflow_response(id, workflow.cancel_run(&run_id, "operator", &reason))
+        }
+        DaemonRequestKind::WorkflowResolve {
+            run_id,
+            command_id,
+            decision,
+            observed_session_state,
+        } => match OperatorDecision::parse(&decision) {
+            Some(parsed) => workflow_response(
+                id,
+                workflow.resolve_input(
+                    &run_id,
+                    &command_id,
+                    parsed,
+                    "operator",
+                    &observed_session_state,
+                ),
+            ),
+            None => error_response(id, format!("unknown operator decision `{decision}`")),
+        },
+        DaemonRequestKind::WorkflowRecover { inventory } => match workflow.recover(&inventory) {
+            Ok(report) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowRecovery { report },
+            },
+            Err(error) => error_response(id, error.to_string()),
+        },
+        _ => error_response(id, "not a workflow request"),
+    }
+}
+
+fn workflow_response(
+    id: String,
+    result: Result<RunSummary, jackin_workflow::WorkflowError>,
+) -> DaemonResponse {
+    match result {
+        Ok(summary) => DaemonResponse {
+            id,
+            kind: DaemonResponseKind::WorkflowRun { summary },
+        },
+        Err(error) => error_response(id, error.to_string()),
     }
 }
 

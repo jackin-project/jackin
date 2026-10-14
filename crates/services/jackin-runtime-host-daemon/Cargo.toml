@@ -26,6 +26,7 @@ jackin-protocol = { workspace = true }
 jackin-runtime-process-telemetry = { workspace = true }
 jackin-telemetry = { workspace = true }
 anyhow = { workspace = true }
+jackin-workflow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 

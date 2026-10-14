@@ -35,7 +35,126 @@ pub(super) fn handle(
     match command {
         WorkflowCommand::Validate(args) => validate(&args),
         WorkflowCommand::Plan(args) => plan(&args, config, paths),
+        run_control => run_control_command(run_control, config, paths),
     }
+}
+
+/// Durable run control (`run`, `status`, `pause`, `resume`,
+/// `cancel`): the CLI verifies the stored plan for `run`, then drives
+/// the host daemon's workflow service over the daemon socket.
+#[cfg(unix)]
+fn run_control_command(
+    command: WorkflowCommand,
+    _config: &jackin_config::AppConfig,
+    paths: &jackin_core::JackinPaths,
+) -> Result<()> {
+    use crate::cli::workflow::{
+        WorkflowCancelArgs, WorkflowPauseArgs, WorkflowResumeArgs, WorkflowRunArgs,
+        WorkflowStatusArgs,
+    };
+    use jackin_runtime::host_daemon::{DaemonLayout, DaemonRequestKind};
+
+    let layout = DaemonLayout::new(paths);
+    let kind = match command {
+        WorkflowCommand::Validate(_) | WorkflowCommand::Plan(_) => {
+            anyhow::bail!("not a run-control command")
+        }
+        WorkflowCommand::Run(args) => {
+            let WorkflowRunArgs {
+                plan_hash,
+                idempotency_key,
+            } = args;
+            let plan = read_stored_plan(paths, &plan_hash)?;
+            DaemonRequestKind::WorkflowStart {
+                plan_hash,
+                max_repair_turns: plan.max_repair_turns,
+                idempotency_key: idempotency_key.unwrap_or_else(|| plan.plan_hash.clone()),
+            }
+        }
+        WorkflowCommand::Status(WorkflowStatusArgs { run_id }) => {
+            DaemonRequestKind::WorkflowStatus { run_id }
+        }
+        WorkflowCommand::Pause(WorkflowPauseArgs {
+            run_id,
+            reason,
+            checkpoint,
+        }) => DaemonRequestKind::WorkflowPause {
+            run_id,
+            reason,
+            checkpoint,
+        },
+        WorkflowCommand::Resume(WorkflowResumeArgs { run_id }) => {
+            DaemonRequestKind::WorkflowResume { run_id }
+        }
+        WorkflowCommand::Cancel(WorkflowCancelArgs { run_id, reason }) => {
+            DaemonRequestKind::WorkflowCancel { run_id, reason }
+        }
+    };
+    let summary = daemon_run_summary(&layout, kind)?;
+    print_summary(&summary);
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn run_control_command(
+    _command: WorkflowCommand,
+    _config: &jackin_config::AppConfig,
+    _paths: &jackin_core::JackinPaths,
+) -> Result<()> {
+    anyhow::bail!("workflow run control needs the host daemon socket (unix only)")
+}
+
+/// Read and digest-verify a stored plan before starting a run for its
+/// hash, so `run` never starts an unknown or edited plan.
+#[cfg(unix)]
+fn read_stored_plan(
+    paths: &jackin_core::JackinPaths,
+    plan_hash: &str,
+) -> Result<jackin_workflow_spec::model::ExecutionPlan> {
+    use jackin_workflow_spec::store::InputStore;
+
+    let store = InputStore::open(&paths.data_dir.join("workflow-plans")).map_err(|error| {
+        anyhow::anyhow!("cannot open the workflow plan store: {}", render(error))
+    })?;
+    store
+        .read_plan(plan_hash)
+        .map_err(|error| anyhow::anyhow!("unknown plan hash `{plan_hash}`: {}", render(error)))
+}
+
+#[cfg(unix)]
+fn daemon_run_summary(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    kind: jackin_runtime::host_daemon::DaemonRequestKind,
+) -> Result<jackin_workflow::RunSummary> {
+    use jackin_runtime::host_daemon::{DaemonResponseKind, request};
+
+    let response = request(&layout.socket_path, env!("JACKIN_VERSION"), kind)?;
+    match response.kind {
+        DaemonResponseKind::WorkflowRun { summary } => Ok(summary),
+        DaemonResponseKind::Error { message } => anyhow::bail!("{message}"),
+        other => anyhow::bail!("unexpected daemon response: {other:?}"),
+    }
+}
+
+fn print_summary(summary: &jackin_workflow::RunSummary) {
+    println!("run: {}", summary.run_id);
+    println!("plan: {}", summary.plan_hash);
+    if summary.status == "paused" {
+        println!(
+            "status: paused({})",
+            summary.pause_kind.as_deref().unwrap_or("operator")
+        );
+    } else {
+        println!("status: {}", summary.status);
+    }
+    println!("stage: {}", summary.stage);
+    println!("round: {}/{}", summary.round, summary.max_repair_turns);
+    println!(
+        "candidate: {}",
+        summary.candidate.as_deref().unwrap_or("none")
+    );
+    println!("version: {}", summary.version);
+    println!("owner_epoch: {}", summary.owner_epoch);
 }
 
 struct LoadedDefinition {

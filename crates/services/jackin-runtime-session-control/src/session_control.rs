@@ -503,5 +503,20 @@ pub fn control_socket_path(paths: &JackinPaths, container_name: &str) -> PathBuf
     socket_path(paths, container_name)
 }
 
+/// Mint a workflow command ID for session input correlation.
+///
+/// The Capsule `SessionSend`/`SessionSent` wire shape stays ID-less
+/// for backward compatibility, so correlation lives host-side in the
+/// workflow service: generate the ID BEFORE sending, commit the
+/// command as `dispatching`, run the transport call
+/// ([`send_session_text`]), then match the returned receipt to record
+/// `written` and match later session events to record `turn_ended`.
+/// A lost receipt leaves `dispatching`; restart recovery moves it to
+/// `delivery_unknown` and never resubmits automatically.
+#[must_use]
+pub fn new_command_id() -> String {
+    format!("cmd-{}", uuid::Uuid::new_v4().as_simple())
+}
+
 #[cfg(test)]
 mod tests;

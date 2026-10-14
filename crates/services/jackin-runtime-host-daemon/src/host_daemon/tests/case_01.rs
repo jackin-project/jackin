@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_workflow::UnavailableBackend;
 
 #[test]
 fn notification_dispatch_exports_spawn_failure_without_command_material() {
@@ -104,12 +105,14 @@ fn daemon_socket_exports_client_parent_server_and_completes_after_response_write
         tracing::dispatcher::with_default(&dispatcher, || {
             let (mut stream, _) = listener.accept().expect("accept daemon client");
             let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+            let mut workflow = UnavailableBackend::new("test has no workflow service");
             handle_stream(
                 &mut stream,
                 &server_layout,
                 "test-build",
                 &CoredumpPolicy::Disabled,
                 &mut attention,
+                &mut workflow,
             )
             .expect("serve daemon request")
         })
@@ -161,12 +164,14 @@ fn conformance_wire_real_daemon_socket_exports_bounded_parented_rpc() -> Result<
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept daemon client");
         let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+        let mut workflow = UnavailableBackend::new("test has no workflow service");
         handle_stream(
             &mut stream,
             &server_layout,
             "wire-private-daemon-build",
             &CoredumpPolicy::Disabled,
             &mut attention,
+            &mut workflow,
         )
         .expect("serve daemon request")
     });
@@ -293,12 +298,14 @@ fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
     drop(client);
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let guard = tracing::subscriber::set_default(subscriber);
+    let mut workflow = UnavailableBackend::new("test has no workflow service");
     handle_stream(
         &mut server,
         &layout,
         "test-build",
         &CoredumpPolicy::Disabled,
         &mut attention,
+        &mut workflow,
     )
     .expect_err("closed client must fail the daemon response write");
     drop(guard);

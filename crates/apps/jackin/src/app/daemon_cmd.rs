@@ -16,7 +16,15 @@ pub(super) async fn handle(command: DaemonCommand, paths: &JackinPaths) -> Resul
     let layout = DaemonLayout::new(paths);
     match command {
         DaemonCommand::Serve => {
-            serve(&layout, env!("JACKIN_VERSION"))?;
+            // `serve` is a synchronous socket loop that also drives the
+            // workflow store's blocking Turso calls. Run it on a
+            // blocking-pool thread: the CLI runs a current-thread
+            // runtime, and blocking that thread would deadlock any
+            // nested `block_on` (the workflow store opens its own
+            // runtime for its dedicated DB file).
+            tokio::task::spawn_blocking(move || serve(&layout, env!("JACKIN_VERSION")))
+                .await
+                .context("joining daemon serve")??;
             Ok(())
         }
         DaemonCommand::Install => install(paths),
