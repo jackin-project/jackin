@@ -362,7 +362,7 @@ rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled
 security-framework = "3.7"
 semver = "1"
 serde = "1.0"
-serde_json = "=1.0.151"
+serde_json = "=1.0.154"
 serde_yaml_ng = "0.10.0"
 sha2 = "0.11"
 syn = { version = "3.0.6", features = ["full", "visit"] }
@@ -370,7 +370,7 @@ tabled = "0.22.0"
 tar = "0.4"
 tempfile = "=3.27.0"
 thiserror = "2.0"
-tokio = { version = "=1.53.2", default-features = false }
+tokio = { version = "=1.53.3", default-features = false }
 tokio-util = "0.7"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 toml = "=1.1.6"
@@ -380,7 +380,7 @@ tracing-opentelemetry = "0.34"
 tower = "0.5.3"
 tracing-subscriber = "0.3"
 tonic = { version = "0.14.1", default-features = false, features = ["transport", "router", "codegen", "gzip"] }
-turso = { version = "=0.8.2", default-features = false }
+turso = { version = "=0.8.3", default-features = false }
 unicode-width = "0.2"
 url = "2"
 uuid = { version = "1", features = ["v4"] }

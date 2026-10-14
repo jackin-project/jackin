@@ -427,7 +427,7 @@ fn configured_native_build_is_mac26_bounded_locked_and_mbx_routed() -> Result<()
         .get("github:boltffi/boltffi")
         .context("Boltffi uses its pinned upstream release")?;
     ensure!(
-        boltffi.get("version").and_then(TomlValue::as_str) == Some("0.31.0"),
+        boltffi.get("version").and_then(TomlValue::as_str) == Some("0.31.1"),
         "Boltffi version matches its desktop dependency"
     );
     let native_mise: TomlValue = toml::from_str(
