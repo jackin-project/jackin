@@ -5,9 +5,9 @@
 //! relative to the workflow file's directory and hashed before the
 //! plan hash is computed. The repository `HEAD` selector is resolved to
 //! an exact commit once via `git`; the selector itself is never stored.
-//! Agent selections are explicit facts: live selection wiring arrives
-//! in a later step, and a missing selection is a typed error, never an
-//! interactive prompt.
+//! Agent selections are explicit facts gathered by the workflow CLI
+//! from the existing workspace configuration. A missing or ambiguous
+//! selection is a typed error, never an interactive prompt.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -232,14 +232,185 @@ pub fn resolve_repository(
     })
 }
 
-/// Resolve live agent selections. Live selection wiring arrives in a
-/// later step; this always reports the gap as a typed error.
-pub fn resolve_live_selections(file_label: &str) -> WorkflowResult<Selections> {
-    Err(WorkflowError::single(Diagnostic::new(
-        file_label,
-        "implementer.account",
-        ErrorCode::MissingInput,
-        "live agent selection is not wired in this release",
-        "rerun once the workflow CLI resolves the existing workspace selections",
-    )))
+/// Live facts for one agent gathered by the workflow CLI from the
+/// existing workspace configuration. Every field is an identifier, a
+/// digest, or a reference: token, password, and key material must
+/// never appear here (the type carries no field that could hold it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveAgentFacts {
+    /// Agent runtime name (`claude` or `codex` in this release).
+    pub runtime: String,
+    /// Agent slug from the existing selection.
+    pub agent_slug: String,
+    /// Account ID resolved from the existing selection.
+    pub account_id: String,
+    /// Authentication mode identifier (for example `profile`).
+    pub auth_mode: String,
+    /// Requested model ID, `None` when the operator configured none.
+    pub requested_model: Option<String>,
+    /// Vendor-reported model ID, `None` when the vendor cannot
+    /// report it (per C1 the plan keeps requested and actual apart).
+    pub actual_model: Option<String>,
+    /// `sha256:<hex>` over the agent binary bytes.
+    pub binary_digest: String,
+    /// Digest of the role image the worker runs.
+    pub image_digest: String,
+}
+
+/// Live facts for both workers gathered by the workflow CLI from the
+/// existing workspace configuration: the workspace named by the
+/// definition (or the current workspace context), its role manifest,
+/// and the resolved account bindings. Identifiers and digests only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveSelectionEnv {
+    /// Workspace name the selections were read from.
+    pub workspace_name: String,
+    /// Role ID shared by both workers in this release.
+    pub role_id: String,
+    /// Exact role revision (digest over the role manifest bytes).
+    pub role_revision: String,
+    /// Implementer facts (claude in this release).
+    pub implementer: LiveAgentFacts,
+    /// Reviewer facts (codex in this release).
+    pub reviewer: LiveAgentFacts,
+}
+
+/// Resolve live agent selections from facts the workflow CLI read out
+/// of the existing workspace configuration. A missing or ambiguous
+/// selection is a typed [`ErrorCode::MissingInput`] error, never an
+/// interactive prompt.
+pub fn resolve_live_selections(
+    file_label: &str,
+    env: &LiveSelectionEnv,
+) -> WorkflowResult<Selections> {
+    let missing = |field: String, message: String, action: &str| {
+        WorkflowError::single(Diagnostic::new(
+            file_label,
+            field,
+            ErrorCode::MissingInput,
+            message,
+            action,
+        ))
+    };
+    if env.workspace_name.is_empty() {
+        return Err(missing(
+            "workspace".to_owned(),
+            "no workspace selection was provided".to_owned(),
+            "select the existing workspace before planning",
+        ));
+    }
+    if env.role_id.is_empty() {
+        return Err(missing(
+            "role".to_owned(),
+            format!("workspace `{}` has no role selected", env.workspace_name),
+            "run `jackin load <role>` to select a role for the workspace",
+        ));
+    }
+    if env.role_revision.is_empty() {
+        return Err(missing(
+            "role.revision".to_owned(),
+            format!("role `{}` has no resolvable revision", env.role_id),
+            "refresh the cached role checkout and retry",
+        ));
+    }
+    Ok(Selections {
+        implementer: resolve_live_agent(
+            file_label,
+            "implementer",
+            "claude",
+            &env.role_id,
+            &env.role_revision,
+            &env.implementer,
+            &missing,
+        )?,
+        reviewer: resolve_live_agent(
+            file_label,
+            "reviewer",
+            "codex",
+            &env.role_id,
+            &env.role_revision,
+            &env.reviewer,
+            &missing,
+        )?,
+    })
+}
+
+/// Resolve one agent's facts, checking the fixed runtime pairing and
+/// that every identifier the plan freezes is present.
+fn resolve_live_agent(
+    file_label: &str,
+    side: &str,
+    expected_runtime: &str,
+    role_id: &str,
+    role_revision: &str,
+    facts: &LiveAgentFacts,
+    missing: &dyn Fn(String, String, &str) -> WorkflowError,
+) -> WorkflowResult<crate::model::AgentSelection> {
+    if facts.runtime != expected_runtime {
+        return Err(WorkflowError::single(Diagnostic::new(
+            file_label,
+            format!("{side}.runtime"),
+            ErrorCode::InvalidDefinition,
+            format!(
+                "{side} selection uses runtime `{}`, expected `{expected_runtime}`",
+                facts.runtime
+            ),
+            format!("resolve the {side} selection for the definition runtime"),
+        )));
+    }
+    let require = |name: &'static str, value: &str, action: &'static str| {
+        if value.is_empty() {
+            Err(missing(
+                format!("{side}.{name}"),
+                format!("{side} selection is missing `{name}`"),
+                action,
+            ))
+        } else {
+            Ok(())
+        }
+    };
+    require(
+        "agent",
+        &facts.agent_slug,
+        "repair the workspace agent selection",
+    )?;
+    require(
+        "account",
+        &facts.account_id,
+        "assign an account to the workspace",
+    )?;
+    require(
+        "auth_mode",
+        &facts.auth_mode,
+        "repair the workspace account configuration",
+    )?;
+    require(
+        "binary",
+        &facts.binary_digest,
+        "install the agent binary on PATH",
+    )?;
+    require("image", &facts.image_digest, "build or pull the role image")?;
+    let Some(requested_model) = facts
+        .requested_model
+        .as_deref()
+        .filter(|model| !model.is_empty())
+    else {
+        return Err(missing(
+            format!("{side}.model"),
+            format!("{side} selection has no requested model"),
+            "set a model on the agent configuration or account",
+        ));
+    };
+    Ok(crate::model::AgentSelection {
+        runtime: facts.runtime.clone(),
+        agent_slug: facts.agent_slug.clone(),
+        role_id: role_id.to_owned(),
+        role_revision: role_revision.to_owned(),
+        account_id: facts.account_id.clone(),
+        auth_mode: facts.auth_mode.clone(),
+        requested_model: requested_model.to_owned(),
+        actual_model: facts.actual_model.clone(),
+        binary_digest: facts.binary_digest.clone(),
+        image_digest: facts.image_digest.clone(),
+    })
 }

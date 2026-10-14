@@ -172,7 +172,7 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
             Command::Status(args) => crate::cli::status::run(&args, &paths).await,
             Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
             Command::Role(command) => crate::role_authoring::run(command),
-            Command::Workflow(command) => workflow_cmd::handle(command),
+            Command::Workflow(command) => workflow_cmd::handle(command, &config, &paths),
             Command::Help { .. } => {
                 unreachable!(
                     "Command::Help is dispatched to Action::PrintHelp before run() is called"

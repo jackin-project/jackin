@@ -26,7 +26,8 @@ use jackin_workflow_spec::error::ErrorCode;
 use jackin_workflow_spec::eval::{EvalLimits, FrozenBundle, evaluate_bounded};
 use jackin_workflow_spec::model::RepositoryInput;
 use jackin_workflow_spec::resolve::{
-    FrozenInput, ResolvedInputs, resolve_repository, resolve_workflow_files,
+    FrozenInput, LiveAgentFacts, LiveSelectionEnv, ResolvedInputs, resolve_live_selections,
+    resolve_repository, resolve_workflow_files,
 };
 use jackin_workflow_spec::rules::{
     CheckedDefinition, HostGrant, Selections, compile_plan, repair_nodes, validate_definition,
@@ -794,4 +795,199 @@ fn workflow_frozen_bundle_digest_stable() {
     assert_eq!(left.digest(), right.digest());
     let other = fixture_bundle(&format!("{}{}", fixture_repair_text(), "\n"));
     assert_ne!(left.digest(), other.digest());
+}
+
+/// Build a live-selection env from temp fixtures only (a fake role
+/// manifest and fake agent binaries under a scratch dir, never
+/// `~/.jackin`), hashing the files the way the CLI hashes the real
+/// role manifest and agent binaries.
+fn live_env_fixture() -> (tempfile::TempDir, LiveSelectionEnv) {
+    use jackin_workflow_spec::digest::sha256_hex;
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = b"role = \"temp-fixture\"\n";
+    std::fs::write(dir.path().join("jackin.role.toml"), manifest).unwrap();
+    let claude_bin = b"fake-claude-binary";
+    let codex_bin = b"fake-codex-binary";
+    std::fs::write(dir.path().join("claude"), claude_bin).unwrap();
+    std::fs::write(dir.path().join("codex"), codex_bin).unwrap();
+    let agent = |runtime: &str, account: &str, binary: &[u8]| LiveAgentFacts {
+        runtime: runtime.to_owned(),
+        agent_slug: runtime.to_owned(),
+        account_id: account.to_owned(),
+        auth_mode: "profile".to_owned(),
+        requested_model: Some(format!("{runtime}-requested")),
+        actual_model: None,
+        binary_digest: format!("sha256:{}", sha256_hex(binary)),
+        image_digest: "sha256:temp-role-image".to_owned(),
+    };
+    let env = LiveSelectionEnv {
+        workspace_name: "temp-workspace".to_owned(),
+        role_id: "temp-role".to_owned(),
+        role_revision: sha256_hex(manifest),
+        implementer: agent("claude", "temp-claude", claude_bin),
+        reviewer: agent("codex", "temp-codex", codex_bin),
+    };
+    (dir, env)
+}
+
+#[test]
+fn workflow_live_resolution_ok() {
+    let (_dir, env) = live_env_fixture();
+    let selections = resolve_live_selections("repair.pkl", &env).unwrap();
+    assert_eq!(selections.implementer.runtime, "claude");
+    assert_eq!(selections.reviewer.runtime, "codex");
+    assert_eq!(selections.implementer.role_id, "temp-role");
+    assert_eq!(selections.reviewer.role_id, "temp-role");
+    assert_eq!(selections.implementer.account_id, "temp-claude");
+    assert_eq!(selections.reviewer.account_id, "temp-codex");
+    // C1 keeps requested and actual apart: the request is recorded,
+    // the vendor-reported model stays unknown until a run reports it.
+    assert_eq!(selections.implementer.requested_model, "claude-requested");
+    assert_eq!(selections.implementer.actual_model, None);
+    assert_eq!(selections.reviewer.requested_model, "codex-requested");
+    assert_eq!(selections.reviewer.actual_model, None);
+    assert!(selections.implementer.binary_digest.starts_with("sha256:"));
+    assert!(selections.reviewer.binary_digest.starts_with("sha256:"));
+    assert_ne!(
+        selections.implementer.binary_digest,
+        selections.reviewer.binary_digest
+    );
+}
+
+#[test]
+fn workflow_live_resolution_missing_table() {
+    let (_dir, base) = live_env_fixture();
+    let cases: Vec<(&str, &str, LiveSelectionEnv)> = vec![
+        (
+            "workspace",
+            "workspace",
+            LiveSelectionEnv {
+                workspace_name: String::new(),
+                ..base.clone()
+            },
+        ),
+        (
+            "role",
+            "role",
+            LiveSelectionEnv {
+                role_id: String::new(),
+                ..base.clone()
+            },
+        ),
+        (
+            "role.revision",
+            "role.revision",
+            LiveSelectionEnv {
+                role_revision: String::new(),
+                ..base.clone()
+            },
+        ),
+        (
+            "implementer.account",
+            "implementer.account",
+            LiveSelectionEnv {
+                implementer: LiveAgentFacts {
+                    account_id: String::new(),
+                    ..base.implementer.clone()
+                },
+                ..base.clone()
+            },
+        ),
+        (
+            "implementer.model",
+            "implementer.model",
+            LiveSelectionEnv {
+                implementer: LiveAgentFacts {
+                    requested_model: None,
+                    ..base.implementer.clone()
+                },
+                ..base.clone()
+            },
+        ),
+        (
+            "implementer.binary",
+            "implementer.binary",
+            LiveSelectionEnv {
+                implementer: LiveAgentFacts {
+                    binary_digest: String::new(),
+                    ..base.implementer.clone()
+                },
+                ..base.clone()
+            },
+        ),
+        (
+            "implementer.image",
+            "implementer.image",
+            LiveSelectionEnv {
+                implementer: LiveAgentFacts {
+                    image_digest: String::new(),
+                    ..base.implementer.clone()
+                },
+                ..base.clone()
+            },
+        ),
+        (
+            "reviewer.account",
+            "reviewer.account",
+            LiveSelectionEnv {
+                reviewer: LiveAgentFacts {
+                    account_id: String::new(),
+                    ..base.reviewer.clone()
+                },
+                ..base.clone()
+            },
+        ),
+    ];
+    for (name, field, env) in cases {
+        let error = expect_error(
+            resolve_live_selections("repair.pkl", &env),
+            ErrorCode::MissingInput,
+            field,
+            "",
+        );
+        assert!(
+            error.diagnostics.iter().all(|diagnostic| {
+                !diagnostic.message.contains("token")
+                    && !diagnostic.message.contains("secret")
+                    && !diagnostic.message.contains("key")
+            }),
+            "case {name}: diagnostic must not carry credential material"
+        );
+    }
+}
+
+#[test]
+fn workflow_live_resolution_runtime_mismatch() {
+    let (_dir, mut env) = live_env_fixture();
+    env.implementer.runtime = "codex".to_owned();
+    expect_error(
+        resolve_live_selections("repair.pkl", &env),
+        ErrorCode::InvalidDefinition,
+        "implementer.runtime",
+        "expected `claude`",
+    );
+}
+
+#[test]
+fn workflow_live_resolution_plan_hash_stable() {
+    let (_dir, env) = live_env_fixture();
+    let selections = resolve_live_selections("repair.pkl", &env).unwrap();
+    let repair = fixture_repair_text();
+    let evaluated = evaluate_fixture(&repair, &EvalLimits::defaults()).unwrap();
+    let scratch = scratch_repo();
+    let (checked, inputs) = compile_inputs(scratch.path(), &evaluated, &selections);
+    let first = compile_plan(&checked, &inputs, &fixture_grant(), "repair.pkl").unwrap();
+    let second = compile_plan(&checked, &inputs, &fixture_grant(), "repair.pkl").unwrap();
+    assert_eq!(first.plan_hash, second.plan_hash);
+    assert_eq!(
+        canonical_plan_bytes(&first).unwrap(),
+        canonical_plan_bytes(&second).unwrap()
+    );
+    // Requested-vs-actual survives compilation into the frozen plan.
+    assert_eq!(first.implementer.requested_model, "claude-requested");
+    assert_eq!(first.implementer.actual_model, None);
+    // The frozen plan carries identifiers and digests only.
+    let canonical = String::from_utf8(canonical_plan_bytes(&first).unwrap()).unwrap();
+    assert!(canonical.contains("temp-claude"));
+    assert!(!canonical.contains("fake-claude-binary"));
 }
