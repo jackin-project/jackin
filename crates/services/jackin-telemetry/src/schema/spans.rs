@@ -117,6 +117,9 @@ pub const APP_SHUTDOWN_DEF: super::SpanMetadata = super::SpanMetadata {
                 "usage.spend.record",
                 "usage.auth",
                 "usage.auth.prepare",
+                "workflow",
+                "workflow.validate",
+                "workflow.plan",
             ],
         },
         super::AttributeRequirement {
@@ -274,6 +277,9 @@ pub const APP_STARTUP_DEF: super::SpanMetadata = super::SpanMetadata {
                 "usage.spend.record",
                 "usage.auth",
                 "usage.auth.prepare",
+                "workflow",
+                "workflow.validate",
+                "workflow.plan",
             ],
         },
         super::AttributeRequirement {
@@ -483,6 +489,9 @@ pub const CLI_COMMAND_DEF: super::SpanMetadata = super::SpanMetadata {
                 "usage.spend.record",
                 "usage.auth",
                 "usage.auth.prepare",
+                "workflow",
+                "workflow.validate",
+                "workflow.plan",
             ],
         },
         super::AttributeRequirement {

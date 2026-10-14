@@ -229,6 +229,9 @@ pub const CLI_COMMAND_NAME_DEF: super::AttributeMetadata = super::AttributeMetad
         "usage.spend.record",
         "usage.auth",
         "usage.auth.prepare",
+        "workflow",
+        "workflow.validate",
+        "workflow.plan",
     ],
 };
 pub const CLI_INVOCATION_ID: &str = "cli.invocation.id";

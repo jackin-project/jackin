@@ -319,6 +319,9 @@ bound = 4
 key = "clippy::print_stderr@jackin-dev"
 bound = 1
 [[family.entry]]
+key = "clippy::print_stderr@jackin-workflow-spec"
+bound = 1
+[[family.entry]]
 key = "clippy::print_stderr@jackin-instance-agents"
 bound = 3
 [[family.entry]]
@@ -524,6 +527,9 @@ key = "clippy::unwrap_used@jackin-runtime-launch-restore"
 bound = 1
 [[family.entry]]
 key = "clippy::unwrap_used@jackin-test-support"
+bound = 1
+[[family.entry]]
+key = "clippy::unwrap_used@jackin-workflow-spec"
 bound = 1
 [[family.entry]]
 key = "clippy::useless_let_if_seq@jackin"
@@ -976,6 +982,9 @@ bound = 6514
 key = "crates/adapters/jackin-usage-ffi/README.md"
 bound = 3078
 [[family.entry]]
+key = "crates/core/jackin-workflow-spec/README.md"
+bound = 3205
+[[family.entry]]
 key = "crates/services/jackin-usage-provider-core/README.md"
 bound = 2050
 [[family.entry]]
@@ -1152,6 +1161,9 @@ bound = 11
 [[family.entry]]
 key = "jackin-telemetry"
 bound = 15
+[[family.entry]]
+key = "jackin-workflow-spec"
+bound = 7
 [[family.entry]]
 key = "jackin-docker"
 bound = 3

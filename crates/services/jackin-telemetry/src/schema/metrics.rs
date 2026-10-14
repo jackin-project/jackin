@@ -444,6 +444,9 @@ pub const CLI_DURATION_DEF: super::MetricMetadata = super::MetricMetadata {
                 "usage.spend.record",
                 "usage.auth",
                 "usage.auth.prepare",
+                "workflow",
+                "workflow.validate",
+                "workflow.plan",
             ],
         },
         super::AttributeRequirement {
@@ -585,6 +588,9 @@ pub const CLI_FAILURES_DEF: super::MetricMetadata = super::MetricMetadata {
                 "usage.spend.record",
                 "usage.auth",
                 "usage.auth.prepare",
+                "workflow",
+                "workflow.validate",
+                "workflow.plan",
             ],
         },
         super::AttributeRequirement {
@@ -726,6 +732,9 @@ pub const CLI_INVOCATIONS_DEF: super::MetricMetadata = super::MetricMetadata {
                 "usage.spend.record",
                 "usage.auth",
                 "usage.auth.prepare",
+                "workflow",
+                "workflow.validate",
+                "workflow.plan",
             ],
         },
         super::AttributeRequirement {

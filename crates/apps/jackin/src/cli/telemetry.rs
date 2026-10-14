@@ -16,6 +16,7 @@ use super::usage::{
     UsageAuthCommand, UsageBindingCommand, UsageMonitorCommand, UsagePolicyCommand, UsageScope,
     UsageServiceCommand, UsageSpendCommand, UsageStatuslineCommand,
 };
+use super::workflow::WorkflowCommand;
 
 #[must_use]
 pub const fn command_name(command: &Command) -> CliCommandName {
@@ -47,6 +48,7 @@ pub const fn command_name(command: &Command) -> CliCommandName {
             DiagnosticsCommand::Validate => CliCommandName::DiagnosticsValidate,
         },
         Command::Status(_) => CliCommandName::Status,
+        Command::Workflow(command) => workflow_command_name(command),
         Command::Usage(args) => usage_command_name(args.scope.as_ref()),
         Command::Help { .. } => CliCommandName::Help,
     }
@@ -110,6 +112,14 @@ const fn usage_command_name(scope: Option<&UsageScope>) -> CliCommandName {
         Some(UsageScope::Auth(args)) => match &args.command {
             UsageAuthCommand::Prepare(_) => CliCommandName::UsageAuthPrepare,
         },
+    }
+}
+
+#[must_use]
+pub const fn workflow_command_name(command: &WorkflowCommand) -> CliCommandName {
+    match command {
+        WorkflowCommand::Validate(_) => CliCommandName::WorkflowValidate,
+        WorkflowCommand::Plan(_) => CliCommandName::WorkflowPlan,
     }
 }
 

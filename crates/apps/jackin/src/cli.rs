@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 
 use cleanup::{EjectArgs, PurgeArgs};
 use role::{ConsoleArgs, HardlineArgs, LoadArgs, RoleCommand};
+use workflow::WorkflowCommand;
 
 pub(super) const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
@@ -34,6 +35,7 @@ pub mod role;
 pub mod status;
 pub mod telemetry;
 pub mod usage;
+pub mod workflow;
 pub mod workspace;
 
 pub use config::{
@@ -116,6 +118,8 @@ pub enum Command {
     Diagnostics(DiagnosticsCommand),
     #[command(about = "Show fleet status — workspaces, instances, and agents", long_about = "Show fleet status — workspaces, instances, and agents", before_help = BANNER, styles = HELP_STYLES, visible_alias = "ps")]
     Status(status::StatusArgs),
+    #[command(about = "Validate and plan repair workflows", long_about = "Validate and plan repair workflows", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Workflow(WorkflowCommand),
     #[command(about = "Read broker-owned cached usage and manage durable usage monitors", long_about = "Read broker-owned cached usage and manage durable usage monitors", before_help = BANNER, styles = HELP_STYLES)]
     Usage(usage::UsageArgs),
     #[command(about = "Print help documentation for a jackin command", long_about = "Print help documentation for a jackin command

@@ -138,6 +138,14 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
         #[cfg(unix)]
         (&["daemon", "status"], Name::DaemonStatus),
         (&["diagnostics", "validate"], Name::DiagnosticsValidate),
+        (
+            &["workflow", "validate", "repair.pkl"],
+            Name::WorkflowValidate,
+        ),
+        (
+            &["workflow", "plan", "repair.pkl", "--json"],
+            Name::WorkflowPlan,
+        ),
     ];
 
     assert_command_names(cases);

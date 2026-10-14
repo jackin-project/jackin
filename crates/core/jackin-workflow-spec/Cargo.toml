@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-workflow-spec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Typed repair-workflow definitions: frozen Pkl evaluation in a killable helper, immutable plan compilation, and plan digests."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_workflow_spec"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jackin-workflow-eval"
+path = "src/bin/jackin-workflow-eval.rs"
+
+[dependencies]
+cap = { workspace = true }
+jackin-process = { workspace = true }
+hex = { workspace = true }
+pklr = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
