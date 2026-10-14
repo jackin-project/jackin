@@ -251,7 +251,7 @@ fn target_triple(arch: &str) -> &'static str {
 
 fn check_zigbuild_installed(workspace: &Path) -> Result<()> {
     const INSTALL_HINT: &str = "Install the pinned toolchain from mise.toml with:\n  \
-                                mise install zig cargo:cargo-zigbuild";
+                                mise install zig aqua:rust-cross/cargo-zigbuild";
     let args = [
         OsString::from("cargo-zigbuild"),
         OsString::from("--version"),
