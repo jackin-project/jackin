@@ -1,8 +1,0 @@
-# Enable retroactive DCO sign-off so historical branch tips can be merged
-# without rewriting their commits. Remediation commits must themselves be
-# signed off. See https://github.com/cncf/dco2#remediation-commits
-allowRemediationCommits:
-  individual: true
-  thirdParty: true
-require:
-  members: true

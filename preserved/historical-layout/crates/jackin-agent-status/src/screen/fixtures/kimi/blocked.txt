@@ -1,6 +1,0 @@
-
-  Kimi wants permission:
-
-  approve once
-  approve for session
-  reject
