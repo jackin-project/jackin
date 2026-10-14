@@ -161,115 +161,6 @@ checksum = "sha256:79463de3b10811fcebe91a3771f9658a2e40178eb6de66a2d379d12fe5317
 url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.23.4/cargo-zigbuild-x86_64-apple-darwin.tar.xz"
 url_api = "https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/assets/541272875"
 
-[[tools."aqua:rustsec/rustsec/cargo-audit"]]
-version = "0.22.2"
-backend = "aqua:rustsec/rustsec/cargo-audit"
-specifiers = ["0.22.2"]
-
-[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.linux-arm64"]
-checksum = "sha256:c6603814ddaa45e51263dafd31c0ac98808f688d26f7395804f9670b0fd599dd"
-url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-aarch64-unknown-linux-gnu-v0.22.2.tgz"
-url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292355"
-
-[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.linux-arm64-musl"]
-checksum = "sha256:c6603814ddaa45e51263dafd31c0ac98808f688d26f7395804f9670b0fd599dd"
-url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-aarch64-unknown-linux-gnu-v0.22.2.tgz"
-url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292355"
-
-[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.linux-x64"]
-checksum = "sha256:ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39"
-url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-gnu-v0.22.2.tgz"
-url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439291614"
-
-[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.linux-x64-baseline"]
-checksum = "sha256:ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39"
-url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-gnu-v0.22.2.tgz"
-url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439291614"
-
-[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.linux-x64-musl"]
-checksum = "sha256:7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428"
-url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-musl-v0.22.2.tgz"
-url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292222"
-
-[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428"
-url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-musl-v0.22.2.tgz"
-url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292222"
-
-[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.macos-arm64"]
-checksum = "sha256:847831323de932155b226ab60ee4a180e13e5d007a019f0d4b7b4d89a6de2ab2"
-url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-apple-darwin-v0.22.2.tgz"
-url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292734"
-
-[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.macos-x64"]
-checksum = "sha256:847831323de932155b226ab60ee4a180e13e5d007a019f0d4b7b4d89a6de2ab2"
-url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-apple-darwin-v0.22.2.tgz"
-url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292734"
-
-[tools."aqua:rustsec/rustsec/cargo-audit"."platforms.macos-x64-baseline"]
-checksum = "sha256:847831323de932155b226ab60ee4a180e13e5d007a019f0d4b7b4d89a6de2ab2"
-url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-apple-darwin-v0.22.2.tgz"
-url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292734"
-
-[[tools."aqua:taiki-e/cargo-llvm-cov"]]
-version = "0.9.1"
-backend = "aqua:taiki-e/cargo-llvm-cov"
-specifiers = ["0.9.1"]
-
-[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-arm64"]
-checksum = "sha256:abf5f13c1520f8756d2192bfaaeadb0208f5b7eaa8cadc15bf847befa42b7360"
-url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403281"
-provenance = "github-attestations"
-
-[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-arm64-musl"]
-checksum = "sha256:49c0085628392a8d727c4464d91ec417c613c5015f5197cd16d5c05aa3fb5ad1"
-url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403283"
-provenance = "github-attestations"
-
-[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64"]
-checksum = "sha256:b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a"
-url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403171"
-provenance = "github-attestations"
-
-[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64-baseline"]
-checksum = "sha256:b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a"
-url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403171"
-provenance = "github-attestations"
-
-[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64-musl"]
-checksum = "sha256:3fca950394a3c49457657c158b1619cec8dfd2647ae5b48746734c0ab969a522"
-url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403186"
-provenance = "github-attestations"
-
-[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:3fca950394a3c49457657c158b1619cec8dfd2647ae5b48746734c0ab969a522"
-url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403186"
-provenance = "github-attestations"
-
-[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.macos-arm64"]
-checksum = "sha256:7e821a6c90c0884f79f759f5d9be50799ade67bb82515186d922f26032ef43b8"
-url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403359"
-provenance = "github-attestations"
-
-[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.macos-x64"]
-checksum = "sha256:ddf949b82a63017441ea76aa068bdd7e2dde8055f47cd3ef736fdbbd633bc33e"
-url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403156"
-provenance = "github-attestations"
-
-[tools."aqua:taiki-e/cargo-llvm-cov"."platforms.macos-x64-baseline"]
-checksum = "sha256:ddf949b82a63017441ea76aa068bdd7e2dde8055f47cd3ef736fdbbd633bc33e"
-url = "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/taiki-e/cargo-llvm-cov/releases/assets/547403156"
-provenance = "github-attestations"
-
 [[tools.bun]]
 version = "1.4.3"
 backend = "core:bun"
@@ -425,11 +316,6 @@ version = "0.22.2"
 backend = "cargo:cargo-audit"
 specifiers = ["0.22.2"]
 
-[[tools."cargo:cargo-deny"]]
-version = "0.20.2"
-backend = "cargo:cargo-deny"
-specifiers = ["0.20.2"]
-
 [[tools."cargo:cargo-dylint"]]
 version = "6.1.1"
 backend = "cargo:cargo-dylint"
@@ -445,30 +331,10 @@ version = "0.6.45"
 backend = "cargo:cargo-hack"
 specifiers = ["0.6.45"]
 
-[[tools."cargo:cargo-hakari"]]
-version = "0.9.39"
-backend = "cargo:cargo-hakari"
-specifiers = ["0.9.39"]
-
-[[tools."cargo:cargo-llvm-cov"]]
-version = "0.9.1"
-backend = "cargo:cargo-llvm-cov"
-specifiers = ["0.9.1"]
-
-[[tools."cargo:cargo-mutants"]]
-version = "27.1.0"
-backend = "cargo:cargo-mutants"
-specifiers = ["27.1.0"]
-
 [[tools."cargo:cargo-shear"]]
 version = "1.14.0"
 backend = "cargo:cargo-shear"
 specifiers = ["1.14.0"]
-
-[[tools."cargo:cargo-zigbuild"]]
-version = "0.23.4"
-backend = "cargo:cargo-zigbuild"
-specifiers = ["0.23.4"]
 
 [[tools."cargo:dylint-link"]]
 version = "6.1.1"
@@ -787,15 +653,6 @@ checksum = "sha256:07d4e286e31dd79164df39097e0b59f533c94badbe18158464a455ea88a16
 url = "https://github.com/peripheryapp/periphery/releases/download/3.8.0/periphery-3.8.0.zip"
 url_api = "https://api.github.com/repos/peripheryapp/periphery/releases/assets/489291944"
 
-[[tools."pipx:fsfe/reuse-tool"]]
-version = "v6.2.0"
-backend = "pipx:fsfe/reuse-tool"
-specifiers = ["v6.2.0"]
-
-[tools."pipx:fsfe/reuse-tool".options]
-extras = "charset-normalizer"
-package_name = "reuse"
-
 [[tools.python]]
 version = "3.14.8"
 backend = "core:python"
@@ -850,6 +707,15 @@ provenance = "github-attestations"
 version = "1.99.0"
 backend = "core:rust"
 specifiers = ["1.99.0"]
+
+[[tools.rust]]
+version = "1.99.0"
+backend = "core:rust"
+specifiers = ["1.99.0"]
+
+[tools.rust.options]
+components = "clippy,rustfmt"
+targets = "aarch64-unknown-linux-gnu,x86_64-unknown-linux-gnu"
 
 [[tools.shellcheck]]
 version = "0.11.0"
@@ -1009,65 +875,6 @@ checksum = "sha256:2956322838b2f64e470eea474495f0cd96be4f222b1ac037258cdc47d9650
 url = "https://github.com/anchore/syft/releases/download/v1.54.1/syft_1.54.1_darwin_amd64.tar.gz"
 url_api = "https://api.github.com/repos/anchore/syft/releases/assets/615916329"
 provenance = "cosign"
-
-[[tools.uv]]
-version = "0.13.0"
-backend = "aqua:astral-sh/uv"
-specifiers = ["0.13.0"]
-
-[tools.uv."platforms.linux-arm64"]
-checksum = "sha256:3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003012"
-provenance = "github-attestations"
-
-[tools.uv."platforms.linux-arm64-musl"]
-checksum = "sha256:281ca6cf43f4e26e35474839ad4861be86de42af2682f74134460f5b2071b96d"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003041"
-provenance = "github-attestations"
-
-[tools.uv."platforms.linux-x64"]
-checksum = "sha256:1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003332"
-provenance = "github-attestations"
-
-[tools.uv."platforms.linux-x64-baseline"]
-checksum = "sha256:1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003332"
-provenance = "github-attestations"
-
-[tools.uv."platforms.linux-x64-musl"]
-checksum = "sha256:b0828fc4cdc47d65951e94b5f0a15a5364420e8dcd88723f3b21e7a2eb30bbc3"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003353"
-provenance = "github-attestations"
-
-[tools.uv."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:b0828fc4cdc47d65951e94b5f0a15a5364420e8dcd88723f3b21e7a2eb30bbc3"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003353"
-provenance = "github-attestations"
-
-[tools.uv."platforms.macos-arm64"]
-checksum = "sha256:a9c1b29002cf3c83f07fa9cd8a887a3be0107d90e23189721221e7257db8e3d6"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626002972"
-provenance = "github-attestations"
-
-[tools.uv."platforms.macos-x64"]
-checksum = "sha256:5f44dcbde809b632f47c36fadb241cb4d6f9af71d0c8f172b5d2026d3dde742c"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003261"
-provenance = "github-attestations"
-
-[tools.uv."platforms.macos-x64-baseline"]
-checksum = "sha256:5f44dcbde809b632f47c36fadb241cb4d6f9af71d0c8f172b5d2026d3dde742c"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003261"
-provenance = "github-attestations"
 
 [[tools.xcbeautify]]
 version = "3.2.1"
