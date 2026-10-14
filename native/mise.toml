@@ -5,7 +5,7 @@ run = "find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/Jacki
 
 [tasks.format-check]
 description = "Fail on jackin❯ desktop Swift formatting violations"
-run = "export DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer; find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
+run = "export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer; find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
 
 [tasks.lint]
 description = "Fail on jackin❯ desktop SwiftLint violations"

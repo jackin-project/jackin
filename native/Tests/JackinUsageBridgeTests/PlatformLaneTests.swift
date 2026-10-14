@@ -27,16 +27,16 @@ final class PlatformLaneTests: XCTestCase {
                 "\(name) must record the macOS 27.0 minimum deployment target"
             )
             XCTAssertTrue(
-                content.contains("Xcode 26.6"),
-                "\(name) must record the shipping lane (Xcode 26.6)"
+                content.contains("Xcode 27.0"),
+                "\(name) must record the shipping lane (Xcode 27.0)"
             )
             XCTAssertTrue(
-                content.contains("macOS 26.5 SDK"),
+                content.contains("macOS 27 SDK"),
                 "\(name) must record the shipping SDK"
             )
             XCTAssertTrue(
-                content.contains("Xcode 27") && content.contains("nonblocking"),
-                "\(name) must record the nonblocking Xcode 27 forward-validation lane"
+                content.contains("nonblocking"),
+                "\(name) must record the nonblocking forward-validation lane"
             )
         }
     }
