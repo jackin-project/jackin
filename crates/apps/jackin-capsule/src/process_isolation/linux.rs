@@ -43,6 +43,10 @@ pub(crate) fn run(
     args: &[String],
 ) -> Result<()> {
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     let effective_uid = unsafe { libc::geteuid() };
     anyhow::ensure!(
         effective_uid == 0,

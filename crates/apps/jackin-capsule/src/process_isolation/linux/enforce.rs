@@ -15,6 +15,10 @@ use std::mem::size_of;
 
 pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
     #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     let abi = unsafe {
         libc::syscall(
             libc::SYS_landlock_create_ruleset,
@@ -35,6 +39,10 @@ pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
             },
     };
     #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     let ruleset = unsafe {
         libc::syscall(
             libc::SYS_landlock_create_ruleset,
@@ -62,6 +70,10 @@ pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
         let path = CString::new(rule.path.as_os_str().as_encoded_bytes())
             .with_context(|| format!("invalid isolated path {}", rule.path.display()))?;
         #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+        )]
         let parent = unsafe { libc::open(path.as_ptr(), libc::O_PATH | libc::O_CLOEXEC) };
         if parent < 0 {
             close_fd(ruleset);
@@ -82,6 +94,10 @@ pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
             parent_fd: parent,
         };
         #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
+        #[expect(
+            clippy::undocumented_unsafe_blocks,
+            reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+        )]
         let result = unsafe {
             libc::syscall(
                 libc::SYS_landlock_add_rule,
@@ -99,12 +115,20 @@ pub(crate) fn install_landlock(rules: &[Rule]) -> Result<()> {
         }
     }
     #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     if unsafe { libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
         close_fd(ruleset);
         return Err(std::io::Error::last_os_error())
             .context("enable no-new-privileges for Landlock");
     }
     #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     let result = unsafe { libc::syscall(libc::SYS_landlock_restrict_self, ruleset, 0u32) };
     close_fd(ruleset);
     if result < 0 {
@@ -120,19 +144,35 @@ pub(crate) fn drop_privileges(identity: SessionIdentity) -> Result<()> {
         "session identity cannot be root"
     );
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     if unsafe { libc::prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) } != 0 {
         return Err(std::io::Error::last_os_error()).context("retain session DAC capabilities");
     }
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     if unsafe { libc::setgroups(0, std::ptr::null()) } != 0 {
         return Err(std::io::Error::last_os_error())
             .context("clear supervisor supplementary groups");
     }
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     if unsafe { libc::setresgid(identity.gid, identity.gid, identity.gid) } != 0 {
         return Err(std::io::Error::last_os_error()).context("drop session gid");
     }
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     if unsafe { libc::setresuid(identity.uid, identity.uid, identity.uid) } != 0 {
         return Err(std::io::Error::last_os_error()).context("drop session uid");
     }
@@ -155,22 +195,38 @@ pub(crate) fn drop_privileges(identity: SessionIdentity) -> Result<()> {
         },
     ];
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     if unsafe { libc::syscall(libc::SYS_capset, &header, data.as_mut_ptr()) } != 0 {
         return Err(std::io::Error::last_os_error()).context("retain session DAC capabilities");
     }
     let capability = CAP_DAC_OVERRIDE;
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     if unsafe { libc::prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, capability, 0, 0) } != 0 {
         return Err(std::io::Error::last_os_error())
             .context("make session DAC boundary capabilities survive exec");
     }
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     let effective_uid = unsafe { libc::geteuid() };
     anyhow::ensure!(
         effective_uid == identity.uid,
         "session uid drop did not stick"
     );
     #[expect(unsafe_code, reason = "audited privilege-drop boundary syscall")]
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     let effective_gid = unsafe { libc::getegid() };
     anyhow::ensure!(
         effective_gid == identity.gid,
@@ -185,6 +241,10 @@ pub(crate) const fn retained_capability_mask() -> u32 {
 
 #[expect(unsafe_code, reason = "audited Landlock isolation-boundary syscall")]
 pub(crate) fn close_fd(fd: libc::c_int) {
+    #[expect(
+        clippy::undocumented_unsafe_blocks,
+        reason = "process-isolation syscalls whose arguments are constructed and validated by this module"
+    )]
     unsafe {
         libc::close(fd);
     }
