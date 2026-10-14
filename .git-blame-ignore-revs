@@ -1,0 +1,8 @@
+# Commits to ignore in git blame (mass mechanical changes only).
+# Configure locally:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Include only layout moves / fmt sweeps — when unsure, leave the commit out.
+
+# refactor(workspace): enforce codebase health layout (#664)
+46511939da0439a14575bde4903f608e4bbb8966

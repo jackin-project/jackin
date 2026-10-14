@@ -1,0 +1,4 @@
+worktree /Users/donbeave/Projects/jackin-project/jackin
+HEAD 1c3dd1be4a3b1ed518133ec3899c084c792370ff
+branch refs/heads/main
+

@@ -235,7 +235,8 @@ impl WorkspaceGraph {
 
     /// Names of members whose resolved forward closure contains a package
     /// with this name. Used to pull in members affected by an on-disk
-    /// change to a non-member package (for example a detached fuzz crate).
+    /// change to a non-member package (e.g. the `[patch]`-replaced
+    /// `vendor/arrayref`).
     pub(crate) fn members_depending_on_package(&self, package: &str) -> Vec<String> {
         let changed = BTreeSet::from([package.to_owned()]);
         let mut names = self

@@ -1,0 +1,1808 @@
+{
+  "artifact_version": 1,
+  "purpose": "Sanitized record of the v11 live broker cutover, two natural provider generations, and observe-only monitor readiness.",
+  "classification": "Public sanitized summary. Full raw status/projection JSON remains in the private 0700 evidence directory; raw monetary amounts are omitted from this artifact.",
+  "created_at_epoch": 1791724352,
+  "timezone": "Asia/Ho_Chi_Minh",
+  "scope": {
+    "cli": "~/.local/share/jackin-claude-monitor-v11/bin/jackin",
+    "data_dir": "~/.local/share/jackin-claude-monitor-v7/state",
+    "provider": "claude",
+    "monitor_id": "<redacted monitor identifier>",
+    "purpose_mode": "observe_only",
+    "binding_id": "<redacted binding identifier>",
+    "binding_revision": 1,
+    "account_label": "<redacted local account label>",
+    "source_scope": "claude_keychain_service",
+    "source_handle": "<redacted local source handle>",
+    "identity_claim": "<redacted local identity claim>",
+    "raw_credentials_or_tokens_recorded": false
+  },
+  "operator_cutover": {
+    "explicit_user_authorization_for_v10_replacement": "Replace your v10 broker with v11; I’m present to approve Keychain access.",
+    "v10_normal_stop": {
+      "result": "service_stopped",
+      "exit_code": 0,
+      "terminal_exit": "normal exit code 0; no Ctrl+C",
+      "operator_source": "Root-reported; authorized by the exact user message above."
+    },
+    "v11_attended_bootstrap": {
+      "operator_present_for_Keychain_approval": true,
+      "result": "service_ready",
+      "terminal_session": "35711",
+      "active_process_ids": [
+        3127,
+        3128
+      ],
+      "source_match": "root verified match to default Claude Code Keychain service; source handle redacted"
+    },
+    "actions_by_this_verifier": {
+      "auth_or_credential_access": false,
+      "service_stop_or_mutation": false,
+      "provider_refresh_command": false,
+      "watch_command": false
+    },
+    "followup_UI_or_native_activity": "Prompt counts, native credential reads, and follow-up UI responses were not instrumented; no counts are inferred."
+  },
+  "private_evidence_storage": {
+    "directory": "~/.local/share/jackin-claude-monitor-v11/private-evidence",
+    "directory_mode_octal": "0o700",
+    "snapshot_file_mode_octal": "0o600",
+    "raw_capture_policy": "Full CLI status/projection JSON was saved privately. Public status identity fields are redacted and public monetary amounts are omitted."
+  },
+  "cli_status_observations": [
+    {
+      "capture": "initial post-cutover read",
+      "captured_at_epoch": 1791723316,
+      "private_source_file": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791723316-status.json",
+      "file_mode_octal": "0o600",
+      "exit_code": 2,
+      "elapsed_ms": null,
+      "exit_code_interpretation": "The status payload was returned; exit 2 reflects non-runnable monitor readiness, not a failed read.",
+      "sanitized_full_cli_json": {
+        "result": "status",
+        "status": {
+          "account_id": "<redacted local identity>",
+          "budget": null,
+          "claude_code_version": null,
+          "cumulative_goal_spend": null,
+          "evidence": [
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 683,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 93,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 5400,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 683,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 94,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1791723000,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 683,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 95,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 9200,
+                "window": "seven_day"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 683,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 96,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1792134000,
+                "window": "seven_day"
+              }
+            }
+          ],
+          "expected_model": null,
+          "five_hour": {
+            "reset_at_epoch": 1791723000,
+            "reset_evidence": {
+              "age_seconds": 683,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 94,
+              "freshness": "stale"
+            },
+            "reset_validity": "due",
+            "used_evidence": {
+              "age_seconds": 683,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 93,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 5400
+          },
+          "goal_id": null,
+          "issues": [
+            {
+              "code": "quota_stale",
+              "message": "fresh quota utilization evidence is unavailable",
+              "retry_at_epoch": null
+            },
+            {
+              "code": "reset_due_unverified",
+              "message": "the reported reset elapsed without verified post-reset quota evidence",
+              "retry_at_epoch": 1791723060
+            }
+          ],
+          "latest_decision": {
+            "actions": [],
+            "decided_at_epoch": 1791723060,
+            "evidence_sequences": [
+              93,
+              94,
+              95,
+              96
+            ],
+            "sequence": 48
+          },
+          "lifecycle": "needs_evidence",
+          "model": null,
+          "model_evidence": null,
+          "model_guard_validity": "not_configured",
+          "monitor_id": "<redacted monitor identifier>",
+          "policy": null,
+          "provider": "claude",
+          "purpose": "observe_only",
+          "readiness": {
+            "budget": "unknown",
+            "dispatch": "not_authorized",
+            "provider": "current",
+            "quota": "stale",
+            "tracking": "waiting"
+          },
+          "runnable": false,
+          "schema_version": 6,
+          "scope": {
+            "binding_id": "<redacted binding identifier>",
+            "binding_revision": 1,
+            "scope": "bound_account",
+            "session_id": null
+          },
+          "session_id": null,
+          "seven_day": {
+            "reset_at_epoch": 1792134000,
+            "reset_evidence": {
+              "age_seconds": 683,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 96,
+              "freshness": "stale"
+            },
+            "reset_validity": "future",
+            "used_evidence": {
+              "age_seconds": 683,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 95,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 9200
+          },
+          "spend_period_baseline": null,
+          "updated_at_epoch": 1791723060
+        }
+      },
+      "command_template": "~/.local/share/jackin-claude-monitor-v11/bin/jackin usage status --monitor [redacted-monitor-id] --data-dir ~/.local/share/jackin-claude-monitor-v7/state --format json"
+    },
+    {
+      "capture": "pre-floor passive read 1",
+      "captured_at_epoch": 1791723439,
+      "private_source_file": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791723439-status-burst-1.json",
+      "file_mode_octal": "0o600",
+      "exit_code": 2,
+      "elapsed_ms": 52.3,
+      "exit_code_interpretation": "The status payload was returned; exit 2 reflects non-runnable monitor readiness, not a failed read.",
+      "sanitized_full_cli_json": {
+        "result": "status",
+        "status": {
+          "account_id": "<redacted local identity>",
+          "budget": null,
+          "claude_code_version": null,
+          "cumulative_goal_spend": null,
+          "evidence": [
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 93,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 5400,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 94,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1791723000,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 95,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 9200,
+                "window": "seven_day"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 96,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1792134000,
+                "window": "seven_day"
+              }
+            }
+          ],
+          "expected_model": null,
+          "five_hour": {
+            "reset_at_epoch": 1791723000,
+            "reset_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 94,
+              "freshness": "stale"
+            },
+            "reset_validity": "due",
+            "used_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 93,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 5400
+          },
+          "goal_id": null,
+          "issues": [
+            {
+              "code": "quota_stale",
+              "message": "fresh quota utilization evidence is unavailable",
+              "retry_at_epoch": null
+            },
+            {
+              "code": "reset_due_unverified",
+              "message": "the reported reset elapsed without verified post-reset quota evidence",
+              "retry_at_epoch": 1791723060
+            }
+          ],
+          "latest_decision": {
+            "actions": [],
+            "decided_at_epoch": 1791723060,
+            "evidence_sequences": [
+              93,
+              94,
+              95,
+              96
+            ],
+            "sequence": 48
+          },
+          "lifecycle": "needs_evidence",
+          "model": null,
+          "model_evidence": null,
+          "model_guard_validity": "not_configured",
+          "monitor_id": "<redacted monitor identifier>",
+          "policy": null,
+          "provider": "claude",
+          "purpose": "observe_only",
+          "readiness": {
+            "budget": "unknown",
+            "dispatch": "not_authorized",
+            "provider": "current",
+            "quota": "stale",
+            "tracking": "waiting"
+          },
+          "runnable": false,
+          "schema_version": 6,
+          "scope": {
+            "binding_id": "<redacted binding identifier>",
+            "binding_revision": 1,
+            "scope": "bound_account",
+            "session_id": null
+          },
+          "session_id": null,
+          "seven_day": {
+            "reset_at_epoch": 1792134000,
+            "reset_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 96,
+              "freshness": "stale"
+            },
+            "reset_validity": "future",
+            "used_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 95,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 9200
+          },
+          "spend_period_baseline": null,
+          "updated_at_epoch": 1791723060
+        }
+      },
+      "command_template": "~/.local/share/jackin-claude-monitor-v11/bin/jackin usage status --monitor [redacted-monitor-id] --data-dir ~/.local/share/jackin-claude-monitor-v7/state --format json"
+    },
+    {
+      "capture": "pre-floor passive read 2",
+      "captured_at_epoch": 1791723439,
+      "private_source_file": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791723439-status-burst-2.json",
+      "file_mode_octal": "0o600",
+      "exit_code": 2,
+      "elapsed_ms": 48.3,
+      "exit_code_interpretation": "The status payload was returned; exit 2 reflects non-runnable monitor readiness, not a failed read.",
+      "sanitized_full_cli_json": {
+        "result": "status",
+        "status": {
+          "account_id": "<redacted local identity>",
+          "budget": null,
+          "claude_code_version": null,
+          "cumulative_goal_spend": null,
+          "evidence": [
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 93,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 5400,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 94,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1791723000,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 95,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 9200,
+                "window": "seven_day"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 96,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1792134000,
+                "window": "seven_day"
+              }
+            }
+          ],
+          "expected_model": null,
+          "five_hour": {
+            "reset_at_epoch": 1791723000,
+            "reset_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 94,
+              "freshness": "stale"
+            },
+            "reset_validity": "due",
+            "used_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 93,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 5400
+          },
+          "goal_id": null,
+          "issues": [
+            {
+              "code": "quota_stale",
+              "message": "fresh quota utilization evidence is unavailable",
+              "retry_at_epoch": null
+            },
+            {
+              "code": "reset_due_unverified",
+              "message": "the reported reset elapsed without verified post-reset quota evidence",
+              "retry_at_epoch": 1791723060
+            }
+          ],
+          "latest_decision": {
+            "actions": [],
+            "decided_at_epoch": 1791723060,
+            "evidence_sequences": [
+              93,
+              94,
+              95,
+              96
+            ],
+            "sequence": 48
+          },
+          "lifecycle": "needs_evidence",
+          "model": null,
+          "model_evidence": null,
+          "model_guard_validity": "not_configured",
+          "monitor_id": "<redacted monitor identifier>",
+          "policy": null,
+          "provider": "claude",
+          "purpose": "observe_only",
+          "readiness": {
+            "budget": "unknown",
+            "dispatch": "not_authorized",
+            "provider": "current",
+            "quota": "stale",
+            "tracking": "waiting"
+          },
+          "runnable": false,
+          "schema_version": 6,
+          "scope": {
+            "binding_id": "<redacted binding identifier>",
+            "binding_revision": 1,
+            "scope": "bound_account",
+            "session_id": null
+          },
+          "session_id": null,
+          "seven_day": {
+            "reset_at_epoch": 1792134000,
+            "reset_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 96,
+              "freshness": "stale"
+            },
+            "reset_validity": "future",
+            "used_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 95,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 9200
+          },
+          "spend_period_baseline": null,
+          "updated_at_epoch": 1791723060
+        }
+      },
+      "command_template": "~/.local/share/jackin-claude-monitor-v11/bin/jackin usage status --monitor [redacted-monitor-id] --data-dir ~/.local/share/jackin-claude-monitor-v7/state --format json"
+    },
+    {
+      "capture": "pre-floor passive read 3",
+      "captured_at_epoch": 1791723439,
+      "private_source_file": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791723439-status-burst-3.json",
+      "file_mode_octal": "0o600",
+      "exit_code": 2,
+      "elapsed_ms": 53.8,
+      "exit_code_interpretation": "The status payload was returned; exit 2 reflects non-runnable monitor readiness, not a failed read.",
+      "sanitized_full_cli_json": {
+        "result": "status",
+        "status": {
+          "account_id": "<redacted local identity>",
+          "budget": null,
+          "claude_code_version": null,
+          "cumulative_goal_spend": null,
+          "evidence": [
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 93,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 5400,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 94,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1791723000,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 95,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 9200,
+                "window": "seven_day"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 806,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 96,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1792134000,
+                "window": "seven_day"
+              }
+            }
+          ],
+          "expected_model": null,
+          "five_hour": {
+            "reset_at_epoch": 1791723000,
+            "reset_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 94,
+              "freshness": "stale"
+            },
+            "reset_validity": "due",
+            "used_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 93,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 5400
+          },
+          "goal_id": null,
+          "issues": [
+            {
+              "code": "quota_stale",
+              "message": "fresh quota utilization evidence is unavailable",
+              "retry_at_epoch": null
+            },
+            {
+              "code": "reset_due_unverified",
+              "message": "the reported reset elapsed without verified post-reset quota evidence",
+              "retry_at_epoch": 1791723060
+            }
+          ],
+          "latest_decision": {
+            "actions": [],
+            "decided_at_epoch": 1791723060,
+            "evidence_sequences": [
+              93,
+              94,
+              95,
+              96
+            ],
+            "sequence": 48
+          },
+          "lifecycle": "needs_evidence",
+          "model": null,
+          "model_evidence": null,
+          "model_guard_validity": "not_configured",
+          "monitor_id": "<redacted monitor identifier>",
+          "policy": null,
+          "provider": "claude",
+          "purpose": "observe_only",
+          "readiness": {
+            "budget": "unknown",
+            "dispatch": "not_authorized",
+            "provider": "current",
+            "quota": "stale",
+            "tracking": "waiting"
+          },
+          "runnable": false,
+          "schema_version": 6,
+          "scope": {
+            "binding_id": "<redacted binding identifier>",
+            "binding_revision": 1,
+            "scope": "bound_account",
+            "session_id": null
+          },
+          "session_id": null,
+          "seven_day": {
+            "reset_at_epoch": 1792134000,
+            "reset_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 96,
+              "freshness": "stale"
+            },
+            "reset_validity": "future",
+            "used_evidence": {
+              "age_seconds": 806,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 95,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 9200
+          },
+          "spend_period_baseline": null,
+          "updated_at_epoch": 1791723060
+        }
+      },
+      "command_template": "~/.local/share/jackin-claude-monitor-v11/bin/jackin usage status --monitor [redacted-monitor-id] --data-dir ~/.local/share/jackin-claude-monitor-v7/state --format json"
+    },
+    {
+      "capture": "after first natural collection",
+      "captured_at_epoch": 1791723558,
+      "private_source_file": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791723558-first-natural-status.json",
+      "file_mode_octal": "0o600",
+      "exit_code": 2,
+      "elapsed_ms": null,
+      "exit_code_interpretation": "The status payload was returned; exit 2 reflects non-runnable monitor readiness, not a failed read.",
+      "sanitized_full_cli_json": {
+        "result": "status",
+        "status": {
+          "account_id": "<redacted local identity>",
+          "budget": null,
+          "claude_code_version": null,
+          "cumulative_goal_spend": null,
+          "evidence": [
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 925,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 93,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 5400,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 925,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 94,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1791723000,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 35,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791723523,
+              "evidence_received_at_epoch": 1791723524,
+              "sequence": 97,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 9200,
+                "window": "seven_day"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 35,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791723523,
+              "evidence_received_at_epoch": 1791723524,
+              "sequence": 98,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1792134000,
+                "window": "seven_day"
+              }
+            }
+          ],
+          "expected_model": null,
+          "five_hour": {
+            "reset_at_epoch": 1791723000,
+            "reset_evidence": {
+              "age_seconds": 925,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 94,
+              "freshness": "stale"
+            },
+            "reset_validity": "due",
+            "used_evidence": {
+              "age_seconds": 925,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 93,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 5400
+          },
+          "goal_id": null,
+          "issues": [
+            {
+              "code": "quota_stale",
+              "message": "fresh quota utilization evidence is unavailable",
+              "retry_at_epoch": null
+            },
+            {
+              "code": "reset_due_unverified",
+              "message": "the reported reset elapsed without verified post-reset quota evidence",
+              "retry_at_epoch": 1791723060
+            }
+          ],
+          "latest_decision": {
+            "actions": [],
+            "decided_at_epoch": 1791723060,
+            "evidence_sequences": [
+              93,
+              94,
+              95,
+              96
+            ],
+            "sequence": 48
+          },
+          "lifecycle": "needs_evidence",
+          "model": null,
+          "model_evidence": null,
+          "model_guard_validity": "not_configured",
+          "monitor_id": "<redacted monitor identifier>",
+          "policy": null,
+          "provider": "claude",
+          "purpose": "observe_only",
+          "readiness": {
+            "budget": "unknown",
+            "dispatch": "not_authorized",
+            "provider": "current",
+            "quota": "stale",
+            "tracking": "waiting"
+          },
+          "runnable": false,
+          "schema_version": 6,
+          "scope": {
+            "binding_id": "<redacted binding identifier>",
+            "binding_revision": 1,
+            "scope": "bound_account",
+            "session_id": null
+          },
+          "session_id": null,
+          "seven_day": {
+            "reset_at_epoch": 1792134000,
+            "reset_evidence": {
+              "age_seconds": 35,
+              "evidence_at_epoch": 1791723523,
+              "evidence_received_at_epoch": 1791723524,
+              "evidence_sequence": 98,
+              "freshness": "current"
+            },
+            "reset_validity": "future",
+            "used_evidence": {
+              "age_seconds": 35,
+              "evidence_at_epoch": 1791723523,
+              "evidence_received_at_epoch": 1791723524,
+              "evidence_sequence": 97,
+              "freshness": "current"
+            },
+            "used_percentage_basis_points": 9200
+          },
+          "spend_period_baseline": null,
+          "updated_at_epoch": 1791723060
+        }
+      },
+      "command_template": "~/.local/share/jackin-claude-monitor-v11/bin/jackin usage status --monitor [redacted-monitor-id] --data-dir ~/.local/share/jackin-claude-monitor-v7/state --format json"
+    },
+    {
+      "capture": "after second natural collection",
+      "captured_at_epoch": 1791724056,
+      "private_source_file": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791724056-second-natural-status.json",
+      "file_mode_octal": "0o600",
+      "exit_code": 2,
+      "elapsed_ms": null,
+      "exit_code_interpretation": "The status payload was returned; exit 2 reflects non-runnable monitor readiness, not a failed read.",
+      "sanitized_full_cli_json": {
+        "result": "status",
+        "status": {
+          "account_id": "<redacted local identity>",
+          "budget": null,
+          "claude_code_version": null,
+          "cumulative_goal_spend": null,
+          "evidence": [
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 1423,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 93,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 5400,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 1423,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "sequence": 94,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1791723000,
+                "window": "five_hour"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 231,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791723825,
+              "evidence_received_at_epoch": 1791723826,
+              "sequence": 99,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_used_percentage",
+                "used_percentage_basis_points": 9200,
+                "window": "seven_day"
+              }
+            },
+            {
+              "account_id": "<redacted local identity>",
+              "age_seconds": 231,
+              "claude_code_version": null,
+              "evidence_at_epoch": 1791723825,
+              "evidence_received_at_epoch": 1791723826,
+              "sequence": 100,
+              "session_id": null,
+              "source": "broker_projection",
+              "value": {
+                "kind": "quota_reset",
+                "reset_at_epoch": 1792134000,
+                "window": "seven_day"
+              }
+            }
+          ],
+          "expected_model": null,
+          "five_hour": {
+            "reset_at_epoch": 1791723000,
+            "reset_evidence": {
+              "age_seconds": 1423,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 94,
+              "freshness": "stale"
+            },
+            "reset_validity": "due",
+            "used_evidence": {
+              "age_seconds": 1423,
+              "evidence_at_epoch": 1791722633,
+              "evidence_received_at_epoch": 1791722633,
+              "evidence_sequence": 93,
+              "freshness": "stale"
+            },
+            "used_percentage_basis_points": 5400
+          },
+          "goal_id": null,
+          "issues": [
+            {
+              "code": "quota_stale",
+              "message": "fresh quota utilization evidence is unavailable",
+              "retry_at_epoch": null
+            },
+            {
+              "code": "reset_due_unverified",
+              "message": "the reported reset elapsed without verified post-reset quota evidence",
+              "retry_at_epoch": 1791723060
+            }
+          ],
+          "latest_decision": {
+            "actions": [],
+            "decided_at_epoch": 1791723060,
+            "evidence_sequences": [
+              93,
+              94,
+              95,
+              96
+            ],
+            "sequence": 48
+          },
+          "lifecycle": "needs_evidence",
+          "model": null,
+          "model_evidence": null,
+          "model_guard_validity": "not_configured",
+          "monitor_id": "<redacted monitor identifier>",
+          "policy": null,
+          "provider": "claude",
+          "purpose": "observe_only",
+          "readiness": {
+            "budget": "unknown",
+            "dispatch": "not_authorized",
+            "provider": "current",
+            "quota": "stale",
+            "tracking": "waiting"
+          },
+          "runnable": false,
+          "schema_version": 6,
+          "scope": {
+            "binding_id": "<redacted binding identifier>",
+            "binding_revision": 1,
+            "scope": "bound_account",
+            "session_id": null
+          },
+          "session_id": null,
+          "seven_day": {
+            "reset_at_epoch": 1792134000,
+            "reset_evidence": {
+              "age_seconds": 231,
+              "evidence_at_epoch": 1791723825,
+              "evidence_received_at_epoch": 1791723826,
+              "evidence_sequence": 100,
+              "freshness": "current"
+            },
+            "reset_validity": "future",
+            "used_evidence": {
+              "age_seconds": 231,
+              "evidence_at_epoch": 1791723825,
+              "evidence_received_at_epoch": 1791723826,
+              "evidence_sequence": 99,
+              "freshness": "current"
+            },
+            "used_percentage_basis_points": 9200
+          },
+          "spend_period_baseline": null,
+          "updated_at_epoch": 1791723060
+        }
+      },
+      "command_template": "~/.local/share/jackin-claude-monitor-v11/bin/jackin usage status --monitor [redacted-monitor-id] --data-dir ~/.local/share/jackin-claude-monitor-v7/state --format json"
+    }
+  ],
+  "pre_floor_passive_read_burst": {
+    "reads_measured": 3,
+    "elapsed_ms": [
+      52.3,
+      48.3,
+      53.8
+    ],
+    "total_monotonic_seconds": 0.16,
+    "coordinator_before": {
+      "generation": 125,
+      "phase": "completed",
+      "provider_invoked_at_epoch": 1791722935,
+      "completed_at_epoch": 1791722936,
+      "success_deadline_epoch": 1791723236,
+      "retry_deadline_epoch": null,
+      "rate_limit_deadline_epoch": null
+    },
+    "coordinator_after": {
+      "generation": 125,
+      "phase": "completed",
+      "provider_invoked_at_epoch": 1791722935,
+      "completed_at_epoch": 1791722936,
+      "success_deadline_epoch": 1791723236,
+      "retry_deadline_epoch": null,
+      "rate_limit_deadline_epoch": null
+    },
+    "coordinator_generation_delta": 0,
+    "provider_invocation_timestamp_delta": 0,
+    "limits": "These are measured CLI reads and coordinator metadata only. HTTP request count, native credential activity, and UI prompt counts are unmeasured.",
+    "command_template": "v11 usage status --monitor [redacted-monitor-id]; passive status only"
+  },
+  "projection_observations": [
+    {
+      "capture": "initial post-cutover read",
+      "captured_at_epoch": 1791723316,
+      "private_source_file": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791723316-projection.json",
+      "file_mode_octal": "0o600",
+      "exit_code": 0,
+      "projection_schema_version": 1,
+      "generated_at_epoch": 1791723222,
+      "broker_generation": 249,
+      "refresh_state": "idle",
+      "providers": [
+        {
+          "provider_display_name": "Anthropic",
+          "account_freshness": {
+            "generation": 125,
+            "phase": "current",
+            "is_stale": false,
+            "last_good_at_epoch": 1791722935
+          },
+          "metric_groups": [
+            {
+              "label": "Session",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "period": "provider_defined"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 46,
+              "remaining_raw_percent": 46,
+              "observed_at_epoch": 1791722935,
+              "fetched_at_epoch": 1791722935,
+              "last_success_at_epoch": 1791722935,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": 1791722999,
+              "quota_state": "available",
+              "issues": []
+            },
+            {
+              "label": "All models",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "granularity": "weekly",
+                "period": "calendar"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 8,
+              "remaining_raw_percent": 8,
+              "observed_at_epoch": 1791722935,
+              "fetched_at_epoch": 1791722935,
+              "last_success_at_epoch": 1791722935,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": 1792133999,
+              "quota_state": "exhausted",
+              "issues": [],
+              "derived_used_percent": 92,
+              "derived_used_percent_note": "Arithmetic complement of remaining_percent; not a provider used_percent field."
+            },
+            {
+              "label": "Fable",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "period": "unknown"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 73,
+              "remaining_raw_percent": 73,
+              "observed_at_epoch": 1791722935,
+              "fetched_at_epoch": 1791722935,
+              "last_success_at_epoch": 1791722935,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": 1792133999,
+              "quota_state": "available",
+              "issues": []
+            },
+            {
+              "label": "Extra usage",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "period": "unknown"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 79,
+              "remaining_raw_percent": 79,
+              "observed_at_epoch": 1791722935,
+              "fetched_at_epoch": 1791722935,
+              "last_success_at_epoch": 1791722935,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "available",
+              "issues": []
+            },
+            {
+              "label": "Extra usage spend",
+              "kind": "spend_cap",
+              "value_type": "spend_cap",
+              "scope": {},
+              "period": null,
+              "percent_fields_present": [],
+              "observed_at_epoch": 1791722935,
+              "fetched_at_epoch": 1791722935,
+              "last_success_at_epoch": 1791722935,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "available",
+              "issues": [],
+              "money_fields": {
+                "cap": {
+                  "present": true,
+                  "currency": "SGD",
+                  "exponent": 2
+                },
+                "spent": {
+                  "present": true,
+                  "currency": "SGD",
+                  "exponent": 2
+                },
+                "remaining": {
+                  "present": true,
+                  "currency": "SGD",
+                  "exponent": 2
+                }
+              },
+              "minor_amounts_in_public_artifact": false,
+              "billing_authority": false
+            },
+            {
+              "label": "Plan",
+              "kind": "plan",
+              "value_type": "plan",
+              "scope": {},
+              "period": null,
+              "percent_fields_present": [],
+              "observed_at_epoch": 1791722935,
+              "fetched_at_epoch": 1791722935,
+              "last_success_at_epoch": 1791722935,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "not_applicable",
+              "issues": []
+            }
+          ]
+        }
+      ],
+      "public_amount_handling": "No monetary minor amounts are included. Spend-cap field presence, currency, and exponent only are recorded.",
+      "command_template": "~/.local/share/jackin-claude-monitor-v11/bin/jackin usage --data-dir ~/.local/share/jackin-claude-monitor-v7/state --format json"
+    },
+    {
+      "capture": "after first natural collection",
+      "captured_at_epoch": 1791723558,
+      "private_source_file": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791723558-first-natural-projection.json",
+      "file_mode_octal": "0o600",
+      "exit_code": 0,
+      "projection_schema_version": 1,
+      "generated_at_epoch": 1791723524,
+      "broker_generation": 251,
+      "refresh_state": "idle",
+      "providers": [
+        {
+          "provider_display_name": "Anthropic",
+          "account_freshness": {
+            "generation": 126,
+            "phase": "current",
+            "is_stale": false,
+            "last_good_at_epoch": 1791723523
+          },
+          "metric_groups": [
+            {
+              "label": "Session",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "period": "provider_defined"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 100,
+              "remaining_raw_percent": 100,
+              "observed_at_epoch": 1791723523,
+              "fetched_at_epoch": 1791723523,
+              "last_success_at_epoch": 1791723523,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "available",
+              "issues": []
+            },
+            {
+              "label": "All models",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "granularity": "weekly",
+                "period": "calendar"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 8,
+              "remaining_raw_percent": 8,
+              "observed_at_epoch": 1791723523,
+              "fetched_at_epoch": 1791723523,
+              "last_success_at_epoch": 1791723523,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": 1792134000,
+              "quota_state": "exhausted",
+              "issues": [],
+              "derived_used_percent": 92,
+              "derived_used_percent_note": "Arithmetic complement of remaining_percent; not a provider used_percent field."
+            },
+            {
+              "label": "Fable",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "period": "unknown"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 73,
+              "remaining_raw_percent": 73,
+              "observed_at_epoch": 1791723523,
+              "fetched_at_epoch": 1791723523,
+              "last_success_at_epoch": 1791723523,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": 1792134000,
+              "quota_state": "available",
+              "issues": []
+            },
+            {
+              "label": "Extra usage",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "period": "unknown"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 79,
+              "remaining_raw_percent": 79,
+              "observed_at_epoch": 1791723523,
+              "fetched_at_epoch": 1791723523,
+              "last_success_at_epoch": 1791723523,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "available",
+              "issues": []
+            },
+            {
+              "label": "Extra usage spend",
+              "kind": "spend_cap",
+              "value_type": "spend_cap",
+              "scope": {},
+              "period": null,
+              "percent_fields_present": [],
+              "observed_at_epoch": 1791723523,
+              "fetched_at_epoch": 1791723523,
+              "last_success_at_epoch": 1791723523,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "available",
+              "issues": [],
+              "money_fields": {
+                "cap": {
+                  "present": true,
+                  "currency": "SGD",
+                  "exponent": 2
+                },
+                "spent": {
+                  "present": true,
+                  "currency": "SGD",
+                  "exponent": 2
+                },
+                "remaining": {
+                  "present": true,
+                  "currency": "SGD",
+                  "exponent": 2
+                }
+              },
+              "minor_amounts_in_public_artifact": false,
+              "billing_authority": false
+            },
+            {
+              "label": "Plan",
+              "kind": "plan",
+              "value_type": "plan",
+              "scope": {},
+              "period": null,
+              "percent_fields_present": [],
+              "observed_at_epoch": 1791723523,
+              "fetched_at_epoch": 1791723523,
+              "last_success_at_epoch": 1791723523,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "not_applicable",
+              "issues": []
+            }
+          ]
+        }
+      ],
+      "public_amount_handling": "No monetary minor amounts are included. Spend-cap field presence, currency, and exponent only are recorded.",
+      "command_template": "~/.local/share/jackin-claude-monitor-v11/bin/jackin usage --data-dir ~/.local/share/jackin-claude-monitor-v7/state --format json"
+    },
+    {
+      "capture": "after second natural collection",
+      "captured_at_epoch": 1791724056,
+      "private_source_file": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791724056-second-natural-projection.json",
+      "file_mode_octal": "0o600",
+      "exit_code": 0,
+      "projection_schema_version": 1,
+      "generated_at_epoch": 1791723826,
+      "broker_generation": 253,
+      "refresh_state": "idle",
+      "providers": [
+        {
+          "provider_display_name": "Anthropic",
+          "account_freshness": {
+            "generation": 127,
+            "phase": "current",
+            "is_stale": false,
+            "last_good_at_epoch": 1791723825
+          },
+          "metric_groups": [
+            {
+              "label": "Session",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "period": "provider_defined"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 100,
+              "remaining_raw_percent": 100,
+              "observed_at_epoch": 1791723825,
+              "fetched_at_epoch": 1791723825,
+              "last_success_at_epoch": 1791723825,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "available",
+              "issues": []
+            },
+            {
+              "label": "All models",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "granularity": "weekly",
+                "period": "calendar"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 8,
+              "remaining_raw_percent": 8,
+              "observed_at_epoch": 1791723825,
+              "fetched_at_epoch": 1791723825,
+              "last_success_at_epoch": 1791723825,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": 1792134000,
+              "quota_state": "exhausted",
+              "issues": [],
+              "derived_used_percent": 92,
+              "derived_used_percent_note": "Arithmetic complement of remaining_percent; not a provider used_percent field."
+            },
+            {
+              "label": "Fable",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "period": "unknown"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 73,
+              "remaining_raw_percent": 73,
+              "observed_at_epoch": 1791723825,
+              "fetched_at_epoch": 1791723825,
+              "last_success_at_epoch": 1791723825,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": 1792134000,
+              "quota_state": "available",
+              "issues": []
+            },
+            {
+              "label": "Extra usage",
+              "kind": "window",
+              "value_type": "window",
+              "scope": {},
+              "period": {
+                "period": "unknown"
+              },
+              "percent_fields_present": [
+                "remaining_percent",
+                "remaining_raw_percent"
+              ],
+              "remaining_percent": 79,
+              "remaining_raw_percent": 79,
+              "observed_at_epoch": 1791723825,
+              "fetched_at_epoch": 1791723825,
+              "last_success_at_epoch": 1791723825,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "available",
+              "issues": []
+            },
+            {
+              "label": "Extra usage spend",
+              "kind": "spend_cap",
+              "value_type": "spend_cap",
+              "scope": {},
+              "period": null,
+              "percent_fields_present": [],
+              "observed_at_epoch": 1791723825,
+              "fetched_at_epoch": 1791723825,
+              "last_success_at_epoch": 1791723825,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "available",
+              "issues": [],
+              "money_fields": {
+                "cap": {
+                  "present": true,
+                  "currency": "SGD",
+                  "exponent": 2
+                },
+                "spent": {
+                  "present": true,
+                  "currency": "SGD",
+                  "exponent": 2
+                },
+                "remaining": {
+                  "present": true,
+                  "currency": "SGD",
+                  "exponent": 2
+                }
+              },
+              "minor_amounts_in_public_artifact": false,
+              "billing_authority": false
+            },
+            {
+              "label": "Plan",
+              "kind": "plan",
+              "value_type": "plan",
+              "scope": {},
+              "period": null,
+              "percent_fields_present": [],
+              "observed_at_epoch": 1791723825,
+              "fetched_at_epoch": 1791723825,
+              "last_success_at_epoch": 1791723825,
+              "phase": "current",
+              "is_stale": false,
+              "reset_at_epoch": null,
+              "quota_state": "not_applicable",
+              "issues": []
+            }
+          ]
+        }
+      ],
+      "public_amount_handling": "No monetary minor amounts are included. Spend-cap field presence, currency, and exponent only are recorded.",
+      "command_template": "~/.local/share/jackin-claude-monitor-v11/bin/jackin usage --data-dir ~/.local/share/jackin-claude-monitor-v7/state --format json"
+    }
+  ],
+  "coordinator_generations": [
+    {
+      "generation": 125,
+      "phase": "completed",
+      "started_at_epoch": 1791722934,
+      "provider_invoked_at_epoch": 1791722935,
+      "completed_at_epoch": 1791722936,
+      "success_deadline_epoch": 1791723236,
+      "retry_deadline_epoch": null,
+      "rate_limit_deadline_epoch": null,
+      "role": "pre-cutover last-good generation; its success deadline elapsed before the v11 reload floor"
+    },
+    {
+      "generation": 126,
+      "phase": "completed",
+      "started_at_epoch": 1791723522,
+      "provider_invoked_at_epoch": 1791723523,
+      "completed_at_epoch": 1791723524,
+      "success_deadline_epoch": 1791723824,
+      "retry_deadline_epoch": null,
+      "rate_limit_deadline_epoch": null,
+      "consecutive_failures": 0,
+      "role": "first natural post-restart collection"
+    },
+    {
+      "generation": 127,
+      "phase": "completed",
+      "started_at_epoch": 1791723824,
+      "provider_invoked_at_epoch": 1791723825,
+      "completed_at_epoch": 1791723826,
+      "success_deadline_epoch": 1791724126,
+      "retry_deadline_epoch": null,
+      "rate_limit_deadline_epoch": null,
+      "consecutive_failures": 0,
+      "role": "second natural collection"
+    }
+  ],
+  "natural_interval_comparison": {
+    "second_start_minus_first_completion_seconds": 300,
+    "second_provider_invocation_minus_first_provider_invocation_seconds": 302,
+    "count_interpretation": "Two successful coordinator generations were observed. This is not a measured HTTP request count."
+  },
+  "restart_floor": {
+    "coordinator_source": "crates/jackin-usage/src/coordinator/entries.rs and crates/jackin-usage/src/coordinator/policy.rs",
+    "policy_interval_seconds": 300,
+    "behavior": "On Claude account reload with reload_safety_fence, the coordinator establishes a fresh in-process monotonic fence. Effective due is the maximum of cadence, persisted deadline, and that fence.",
+    "wall_deadline_note": "The exact monotonic fence is not persisted as an invocation timestamp. The observed first natural generation started at 1791723522 after the v11 bootstrap window."
+  },
+  "root_watch": {
+    "private_artifact": "~/.local/share/jackin-claude-monitor-v11/private-evidence/1791723608-watch.jsonl",
+    "file_mode_octal": "0o600",
+    "timeout_requested_seconds": 300,
+    "wall_time_seconds": 300.059,
+    "exit_code": 0,
+    "event_count": 16,
+    "sequence_range": [
+      173,
+      188
+    ],
+    "selected_events": [
+      {
+        "sequence": 183,
+        "occurred_at_epoch": 1791723824,
+        "readiness": {
+          "tracking": "waiting",
+          "provider": "refreshing",
+          "quota": "stale",
+          "budget": "unknown",
+          "dispatch": "not_authorized"
+        },
+        "lifecycle": "needs_evidence",
+        "runnable": false,
+        "five_hour": {
+          "used_percentage_basis_points": 5400,
+          "reset_at_epoch": 1791723000,
+          "reset_validity": "due",
+          "used_evidence": {
+            "evidence_sequence": 93,
+            "evidence_at_epoch": 1791722633,
+            "evidence_received_at_epoch": 1791722633,
+            "age_seconds": 1191,
+            "freshness": "stale"
+          },
+          "reset_evidence": {
+            "evidence_sequence": 94,
+            "evidence_at_epoch": 1791722633,
+            "evidence_received_at_epoch": 1791722633,
+            "age_seconds": 1191,
+            "freshness": "stale"
+          }
+        },
+        "seven_day": {
+          "used_percentage_basis_points": 9200,
+          "reset_at_epoch": 1792134000,
+          "reset_validity": "future",
+          "used_evidence": {
+            "evidence_sequence": 97,
+            "evidence_at_epoch": 1791723523,
+            "evidence_received_at_epoch": 1791723524,
+            "age_seconds": 301,
+            "freshness": "stale"
+          },
+          "reset_evidence": {
+            "evidence_sequence": 98,
+            "evidence_at_epoch": 1791723523,
+            "evidence_received_at_epoch": 1791723524,
+            "age_seconds": 301,
+            "freshness": "stale"
+          }
+        },
+        "issue_codes": [
+          "quota_stale",
+          "reset_due_unverified"
+        ]
+      },
+      {
+        "sequence": 185,
+        "occurred_at_epoch": 1791723826,
+        "readiness": {
+          "tracking": "waiting",
+          "provider": "current",
+          "quota": "stale",
+          "budget": "unknown",
+          "dispatch": "not_authorized"
+        },
+        "lifecycle": "needs_evidence",
+        "runnable": false,
+        "five_hour": {
+          "used_percentage_basis_points": 5400,
+          "reset_at_epoch": 1791723000,
+          "reset_validity": "due",
+          "used_evidence": {
+            "evidence_sequence": 93,
+            "evidence_at_epoch": 1791722633,
+            "evidence_received_at_epoch": 1791722633,
+            "age_seconds": 1193,
+            "freshness": "stale"
+          },
+          "reset_evidence": {
+            "evidence_sequence": 94,
+            "evidence_at_epoch": 1791722633,
+            "evidence_received_at_epoch": 1791722633,
+            "age_seconds": 1193,
+            "freshness": "stale"
+          }
+        },
+        "seven_day": {
+          "used_percentage_basis_points": 9200,
+          "reset_at_epoch": 1792134000,
+          "reset_validity": "future",
+          "used_evidence": {
+            "evidence_sequence": 99,
+            "evidence_at_epoch": 1791723825,
+            "evidence_received_at_epoch": 1791723826,
+            "age_seconds": 1,
+            "freshness": "current"
+          },
+          "reset_evidence": {
+            "evidence_sequence": 100,
+            "evidence_at_epoch": 1791723825,
+            "evidence_received_at_epoch": 1791723826,
+            "age_seconds": 1,
+            "freshness": "current"
+          }
+        },
+        "issue_codes": [
+          "quota_stale",
+          "reset_due_unverified"
+        ]
+      }
+    ],
+    "metadata_provenance": "Watch wall duration and exit code were reported by root; event count/sequences and selected event payload fields were read from the private JSONL."
+  },
+  "result": {
+    "fixture_vs_live": "All evidence here comes from the installed v11 CLI against the existing v7 state, the coordinator account envelope, and the private root watch JSONL. No fixture data was used for these live observations.",
+    "weekly": "Current at both post-restart captures: All models remaining_percent=8, calendar weekly, reset 1792134000; monitor used evidence is 9200 basis points (92%) from the natural observations.",
+    "five_hour": "Not current in the monitor. Both post-restart provider projections contain a current Session group with remaining_percent=100 and remaining_raw_percent=100, but no used_percent/used_raw_percent field and reset_at_epoch=null. The monitor retains its prior 5400-basis-point (54%) evidence from epoch 1791722633 with reset 1791723000, marked stale/reset due. Do not report this as a verified fresh five-hour used value or as a reset.",
+    "monitor_readiness": "Not ready: schema 6, lifecycle needs_evidence, readiness quota=stale and dispatch=not_authorized, runnable=false, status CLI exit 2. Issues include quota_stale and reset_due_unverified. The full sanitized CLI payloads above retain every status field, scope, source, evidence age, issue, latest decision, and readiness value.",
+    "gap_review": "At the captures, a current Session group with reset_at_epoch=null did not update the monitor five_hour fields; the monitor retained stale prior evidence. The cause and expected contract are under contract/security review. This artifact records the observed behavior and does not characterize it as correct.",
+    "spend_metadata": "The current projection contains typed Extra usage spend fields cap, spent, and remaining; all carry SGD with exponent 2. Monetary amounts are omitted here. This telemetry is not billing authority.",
+    "dispatch_and_handoff": "Acceptance is false. The monitor is observe-only and non-runnable; fresh weekly evidence is at 92% used, and five-hour evidence remains stale. Do not treat this state as ready for a handoff.",
+    "request_and_UI_counts": "Two natural coordinator generations and three passive status reads are measured. HTTP/native credential/UI counts are unmeasured; no zero-count claim is made."
+  },
+  "command_redaction_notice": "Captured CLI strings are redacted evidence templates, not directly executable verified examples."
+}

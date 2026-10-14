@@ -14,41 +14,86 @@ Employer contributions: confirm authorization before submitting. Use personal em
 
 1. Fork. Branch feature off `main`.
 2. Run `mise install` from the repo root to install the pinned toolchain and dev tools.
-3. Run `hk install` once per checkout to install the git hooks (see "Git hooks" below).
+3. Run `scripts/hooks-install` once per checkout to install the pre-commit hooks (see "Git hooks" below).
 4. Change. Sign every commit: `git commit -s`.
-5. Open a PR describing the problem solved. CI must pass.
+4. Open PR describing problem solved. CI must pass.
+5. Optional blame hygiene: `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` skips mass layout/fmt sweeps listed in that file.
 
 ## Git hooks
 
-Pre-commit and pre-push checks run via [hk](https://hk.jdx.dev) (`hk.pkl` at
-the repo root; the version is pinned in `mise.toml`/`mise.lock`). Install per
-checkout — idempotent, safe to re-run:
+Pre-commit checks run via [hk](https://hk.jdx.dev) (`hk.pkl` at the repo
+root; the version is pinned in `mise.toml`/`mise.lock`). Install per checkout —
+idempotent, safe to re-run:
 
 ```sh
-mise install
-hk install
+scripts/hooks-install   # installs scripts/pre-commit-snapshot
 ```
 
-Rust formatting and Clippy use hk's builtins, once per Cargo workspace:
+No shell activation needed. Requirements: Git 2.54+ (config-based hooks;
+Apple Git 2.54 meets the floor exactly) and `mise` on Git's runtime PATH —
+true in terminals with mise shims, otherwise the hook fails closed with
+`mise: command not found` (use a terminal or add the shims directory to
+the GUI client's PATH). Each hook invocation builds in its own temporary Cargo target directory.
+Compiler artifacts cannot collide with builds in the live checkout.
+Python 3 (pinned in mise) provides process group isolation and symlink checks. A global hk pre-commit
+hook is rejected because it would bypass the repository-owned snapshot
+boundary.
 
-- `cargo-fmt`: `cargo fmt --manifest-path Cargo.toml` (check and fix)
-- `cargo-clippy`: `cargo clippy --locked --manifest-path Cargo.toml --all-targets --all-features -- -D warnings`
+What runs on every commit (see `hk.pkl` for the exact commands — each
+mirrors the CI definition it cites):
 
-`actionlint` lints `.github/workflows/*.yml`. `swiftlint` and `swift-format`
-cover `native/**` on macOS and skip themselves where those tools are absent.
+- `fmt`: `mise exec -- mbx +1.99.0 fmt --check` (workspace; fix: `mise exec -- mbx +1.99.0 fmt`)
+- `clippy`: `mise exec -- mbx +1.99.0 xtask clippy-affected` — Clippy with the exact CI flags
+  over the affected closure (changed crates + reverse dependents +
+  detached fuzz/arrayref packages + cross-crate file inputs; widens to
+  the workspace when unprovable)
+- `actionlint`: workflows (`*.yml` only, matching CI)
+- `swiftlint`, `swift-format`: `native/**` on macOS; skipped elsewhere
+
+Review mode, not auto-stage: the launcher validates the exact staged tree in
+an isolated temporary repository. Original tracked, untracked, ignored files,
+file metadata, the index, stash stack, and compiler outputs stay untouched.
+The isolated repository preserves the original HEAD and merge index, so hk
+and affected-package selection see the original staged diff. Unmerged index
+entries or staged symlinks escaping the snapshot fail before tools run.
+
+If a fixer changes source, the commit fails. The launcher saves a private
+patch under the common Git directory's `jackin-hook-evidence/pre-commit.*/`
+with directory mode 0700 and patch mode 0600. It prints the patch path, never
+its contents. Review and apply the fixes explicitly:
 
 ```sh
-hk check          # checks changed files
-hk check --all    # checks every matching file
-hk fix            # apply fixes in the checkout
+git commit -m "..."       # isolated fix fails for review
+mise x -- hk fix          # apply fixes in your checkout
+git diff                 # review all unstaged changes
+git add -p && git commit -m "..."
 ```
 
-The pre-commit hook stashes unstaged changes, runs fixes, and stages the
-fixed files. Bypass with `HK=0 git commit` (emergencies only).
+`hk check` runs checks on modified files outside a commit. Partial commits
+remain safe: the hook never clears, restores, or cleans the live worktree.
+Success, failure, and catchable signals remove only the invocation's temporary
+repository and build outputs after terminating its tool process group. Review
+patches remain until the author removes them. Bypass with `HK=0 git commit`
+(emergencies only).
 
-Linux developers use the same setup (`mise install`, `hk install`). CI on
-`ubuntu-26.04` runs workspace `cargo fmt --check` and
-`cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+Two intentional divergences from CI: hook Clippy is closure-scoped while
+CI lints the workspace (same flags; full coverage stays in CI /
+`mise exec -- mbx +1.99.0 xtask ci --only lint`), and `hk check --all` scopes Clippy by `git status`
+(skips green on a clean tree). The global install
+(`hk install --global --mise`) is GUI-robust but forces `--staged`,
+which disables stashing — hence the repo-owned bootstrap above. Do not
+install hk globally for this repository: a global hk hook is rejected by
+`scripts/hooks-install` because it does not use the repository-owned
+snapshot boundary.
+
+Linux developers: same setup (`mise install`, `scripts/hooks-install`;
+hook commands are POSIX `sh` and the Swift steps skip themselves where
+`swiftlint`/`xcrun` are absent). CI-on-Linux (the velnor Rust lane on
+`ubuntu-26.04`) proves the shared pieces there: per-package `fmt`,
+`clippy -- -D warnings`, and the `jackin-xtask` nextest suite including
+the affected-closure tests. Hook firing/isolation behavior is verified on
+macOS; it rides identical hk + mise artifacts on Linux (both pinned in
+`mise.lock`).
 
 ## Branching
 

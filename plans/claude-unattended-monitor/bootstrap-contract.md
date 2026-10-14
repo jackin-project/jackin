@@ -1,0 +1,304 @@
+# Foreground Claude bootstrap and explicit usage collection
+
+**Status: implemented in source. Signed, pushed source checkpoint `8abfa235`
+passed the clean, locked MBX build in 1.29 seconds, and its installed v3 fixture
+passed. The fixture exercised the actual installed v3 path with
+`JACKIN_USAGE_BROKER_BIN` unset and recorded zero HTTP-proxy requests and zero
+credential-command executions. Current fixture artifacts and provenance are
+published in [v3-installation.json](v3-installation.json),
+[v3-checks.json](v3-checks.json), and [v3-installed-smoke.log](v3-installed-smoke.log).
+GitHub Actions run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+for this exact source commit completed successfully: Required, all Rust matrix
+jobs, and Actionlint passed; the baseline publication job was skipped by its
+workflow rules. This source-head result does not substitute for checks on the
+separate documentation/evidence PR head. Native Security Framework calls,
+successful attended Keychain authorization and foreground bootstrap,
+real-account binding, and live provider collection remain unverified. The
+initial attended Keychain
+read may prompt; later unattended reads run under a no-UI guard and fail with
+`interaction_required` if UI would be required. That guard does not guarantee
+credential availability or validity.**
+The `45a33093` checkpoint and its installed fixture are historical; its
+source-gate record is in [v3-checks.json](v3-checks.json), and its exact
+installation provenance and smoke transcript are in
+[v3-installed-smoke-checkpoint-45a.log](v3-installed-smoke-checkpoint-45a.log).
+The earlier 22ac pair is also historical; its record is indexed in
+[v3-checks.json](v3-checks.json), with the exact fixture transcript in
+[v3-installed-smoke-checkpoint-22ac.log](v3-installed-smoke-checkpoint-22ac.log).
+
+## Implemented path and limits
+
+The direct CLI path is implemented in source and does not require Claude
+settings, a statusline, or project edits. An attended foreground `auth
+prepare` bootstraps the selected Claude Keychain service into a volatile,
+zeroizing process cache and keeps the broker running under its no-UI guard.
+After explicit local-source binding and collector approval, an observation-only
+monitor can use the experimental Claude usage collector. The statusline remains
+an optional, separate evidence source. The installed fixture did not exercise
+successful foreground authentication or a live account/provider request, so
+neither live readiness nor continuous credential availability is established.
+The passive local service and ordinary observer do not bootstrap credentials or
+make provider requests; collection requires the running foreground bootstrap,
+the stored binding approval, and the explicit observer flag.
+
+The new path must keep attended auth, provider collection, account scope, and
+dispatch approval separate. `auth prepare` prepares a local foreground service;
+it does not contact the provider. Collection remains off until an operator
+selects and binds a scope and explicitly opts that binding into the
+experimental collector.
+
+## Implemented CLI surface
+
+The following source CLI shapes were also present in the recorded installed
+fixture's help. `--data-dir` is global; these examples place it before the
+subcommand:
+
+```text
+jackin usage --data-dir PATH auth prepare --provider claude [--keychain-service SERVICE]
+
+jackin usage --data-dir PATH binding confirm --provider claude --account LOCAL_ID --provider-account LOCAL_SOURCE_ID --operator-label LABEL --confirm --approve-experimental-collector --format json
+
+jackin usage --data-dir PATH monitor observe --provider claude --binding BINDING_ID --binding-revision REVISION --idempotency-key KEY --experimental-collector --format json
+```
+
+`--approve-experimental-collector` is a separate, explicit operator decision
+on the binding confirmation. It records
+`binding.experimental_collector_approved=true` on that audited binding revision;
+the default is false. The later `monitor observe --experimental-collector`
+flag can consume only an already-approved mapping. It cannot create approval,
+and no unattended caller may enable provider collection by itself. Neither
+flag authorizes dispatch. `auth prepare` requires all three standard streams
+to be terminals. Binding confirmation is also an attended operator action. Do
+not pipe or redirect either confirmation command or capture their output. A
+successful foreground bootstrap emits secret-free `service_ready` metadata
+once, including `source.account_id` and
+`source.scope: "claude_keychain_service"`. The account ID is Jackin's canonical
+local source ID, not an authenticated provider identity; readiness does not
+establish endpoint availability or provider support. The public account
+projection labels this locally derived hash as
+`identity_kind: "local_source_handle"`; it is not a provider-issued account
+identity. The command stays attached to the foreground service until it exits,
+releasing the lease and cache. Do not background or detach it. Current source
+versions are broker wire v8, normalized statusline input v2, and durable
+monitor state v4. Wire v8 adds the explicit `LocalSourceHandle` identity kind;
+it does not change the statusline input or durable monitor schema.
+
+Sequence: run `auth prepare` in one attended terminal and leave it in the
+foreground after `service_ready`. From a second attended terminal using the
+same data directory, use the reported local source ID in the confirmed
+binding, then create the explicitly opted-in observer. Do not start another
+bootstrap process or stop an owner to make room. If a known or unrecognized
+service already owns the broker lease, bootstrap returns `broker_conflict`
+before Keychain access; resolve its owner without stopping or replacing it. If
+the foreground owner exits, its cache is gone and a new attended bootstrap is
+required.
+
+## Bootstrap lifetime and secret boundary
+
+1. The caller and foreground broker independently require stdin, stdout, and
+   stderr to be TTYs. Fail before any Keychain access if that condition is not
+   met.
+2. Claim the exact broker lifetime lease before touching Keychain. If another
+   or unrecognized owner holds it, return a stable `broker_conflict` without
+   probing, attaching to, stopping, replacing, or unlinking that service.
+3. Read only the selected Claude Keychain service. Do not fall back to files,
+   environment variables, another service, another profile, or broad account
+   discovery. Keep the one selected credential in a bounded process-local
+   `Zeroizing<String>` cache; do not write it to state, logs, environment, or
+   IPC. Expose only secret-free status/opaque capability data.
+4. Establish the no-UI guard after the attended credential read, then serve the
+   normal broker in the same foreground process while retaining the lease.
+   `auth prepare` does not issue an HTTP request. Stop/restart closes the
+   collector generation and revokes its cached credential. There is no
+   detached bootstrap or auth-bootstrap IPC operation. The initial attended
+   read may use normal macOS authorization. Subsequent unattended Keychain
+   reads are guarded: if they would require UI, return
+   `interaction_required` without presenting a dialog. This no-UI behavior
+   does not ensure that credentials remain present, valid, or accepted by the
+   provider, and native live authorization has not been verified here.
+
+## Collector generation admission and shutdown
+
+Each foreground bootstrap binds a collector lifecycle gate to one exact
+credential-cache generation. Admission checks that the gate is active, the
+cached generation is still current, and the selected source and explicit
+collection approval still match. The admission check is synchronized with
+deactivation. Stop closes the gate and revokes only that generation's cache
+entry; later operations cannot obtain a permit from it.
+
+A permit keeps the generation's no-UI guard alive but does not hold the
+lifecycle lock across provider or Keychain I/O. Deactivation does not physically
+cancel or join an operation that already received a permit. Such I/O may finish
+after stop; the stopped generation cannot admit another operation. A new
+foreground bootstrap creates a new generation.
+
+The selected credential source is not a provider identity assertion. A local
+monitor account must be explicitly bound to the canonical local source handle
+shown in the broker's public account projection. That projection marks it
+`LocalSourceHandle`; the handle is locally derived and is not provider-issued
+or authenticated identity. The operator confirms the mapping; Jackin must not
+infer it from a token, session ID, or display label. A binding and collector
+opt-in apply only to that mapped source scope.
+
+The broker's ordinary discovery path must use the scoped cache while bootstrap
+is active; it must not clone plaintext into general credential material or
+resolve a different Claude source. Only the explicitly enabled collector may
+make the narrow usage request. Do not let a whole-projection refresh, a bare
+`usage` display, statusline ingress, or another caller implicitly enable it.
+
+## Statusline compose output and operator merge
+
+`usage statusline compose` reads the supplied settings file but prints a JSON
+Merge Patch with exactly one top-level property: `statusLine`. Its value is the
+proposed statusline object. If the input already has a command statusline, the
+proposal preserves its `type` and other statusline command metadata/options,
+changing only `command` to compose the existing command with Jackin ingestion.
+If the input has no statusline, the proposal adds a command statusline. The
+new-statusline patch shape is:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "<composed command>"
+  }
+}
+```
+
+When an existing statusline is present, its additional `statusLine` properties
+are also preserved in the patch. The output does not echo unrelated top-level
+settings or environment values.
+
+Composition is read-only: Jackin never applies the patch or writes or modifies
+Claude settings. The operator reviews the patch and, if choosing to enable the
+integration, manually merges only its `statusLine` property into the existing
+settings file. Preserve every other setting. Never replace the complete
+settings file with the patch. This contract authorizes no live Claude settings
+change.
+
+## Experimental collector and evidence
+
+Research targets the observed Claude usage route `GET /api/oauth/usage`. It is
+undocumented and has no supported public contract established here. The
+collector must identify itself with an honest Jackin user agent, such as
+`jackin/<version>`; never impersonate Claude Code. Describe the route and
+collector as experimental, disclose that fields and availability may change,
+and make no provider-support or live-readiness claim. No live request is
+authorized or verified by this plan.
+
+The request is limited to the operator-confirmed local source scope and an
+explicit experimental opt-in. Preserve persisted attempt floors, backoff, and
+429 handling for that account. On the first 401 only, reread the exact same
+selected service under no-UI policy and retry once only if access material
+changed, the parsed account still matches the bound scope, and the bounded
+attempt permits it. Unchanged, missing, denied, or different-account
+credentials get no retry. Never rotate tokens, switch sources, or persist
+credentials. Do not use `claude -p /usage` as an auth or collector fallback.
+
+On restart, the coordinator reconstructs a 300-second monotonic minimum-attempt
+floor only when persisted Claude state records an actual provider invocation;
+queued work without an invocation timestamp gets no attempt floor. Automatic
+scheduling waits until the latest applicable time among that floor, persisted
+provider rate-limit, retry and success-cooldown deadlines, the in-process
+monotonic cooldown, and periodic cadence. Dispatch admission independently
+enforces the applicable cooldown deadlines. When a purge has a pending attempt
+or active cooldown, catalog removal or rotation writes a cooldown tombstone or
+pending-attempt marker before purging state, retaining the invocation and
+deadline fence for a later re-add. Explicit force cannot bypass the attempt
+floor, provider rate-limit deadline, or retry deadline; it may bypass only
+success cooldown.
+Persisted deadlines use wall-clock epochs. A sufficiently large clock change
+between restarts can make an epoch deadline appear expired early, so this does
+not guarantee that a `Retry-After` interval survives arbitrary clock jumps.
+At historical checkpoint `45a33093`, lifecycle and recovery fixes passed the
+57-test coordinator scope and 28-test Claude provider and lease lifecycle
+scope. Those counts are not the current checkpoint's verification. The latest
+source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+passed for `8abfa235`, including Required, the Rust matrix, and Actionlint.
+This result does not cover a later documentation/evidence commit and is not a
+claim of live-provider rate-limit behavior.
+
+An observation may collect quota evidence without an SGD receipt, goal, or
+dispatch policy. It remains `observe_only`, `goal_id=null`,
+dispatch-not-authorized, and `runnable=false`; enabling the collector does not
+authorize agent work. Preserve strict policy and its history. Any dispatch
+policy is a separate operator decision. Strict SGD retains its verified-baseline
+requirements. Quota-only requires separate explicit approval and acknowledgment
+that it has no SGD cap. Never claim a strict policy can be downgraded, reset
+spend history, treat a collector opt-in as quota-only consent, or permit
+intentional overage.
+
+## Durable-state migration
+
+The current source uses broker wire v8, normalized statusline input v2, and
+durable monitor schema v4. Migrate V1, V2, and V3 snapshots explicitly to V4.
+Preserve strict policy, baselines, spend and other history, action/event
+sequences, evidence ages, cooldowns, and existing unknown/latched state. V2
+preserves its known state. V3 has no persisted correction horizon (it defaults
+to `None`); for a strict goal with a baseline and a retained forward rollover
+signal in the account's current-period record or the goal-period anchor,
+migration preserves the known estimate while latching cumulative completeness
+false and rollover unknown. It synthesizes a horizon at the latest affected
+anchored period start, bounded by the store clock. Same-period goals remain
+unchanged; if no affected goal is found, the account horizon remains `None`. A
+closed-period anchor can indicate a rollover but
+cannot prove that older corrections were retained. The V4 durable field
+`historical_correction_horizon_epoch` records a period boundary after which
+goal-spend completeness cannot be asserted from retained receipts. In V3
+migration it represents conservative uncertainty, not proof that a correction
+was received. It prevents later receipts from rolling an affected goal back to
+a complete/known state. An older unretained correction remains audit-only and
+unverified. A strict goal whose baseline is earlier than the horizon retains
+its known cumulative-spend estimate but latches cumulative completeness false
+and rollover unknown; a baseline exactly at the horizon remains known. Fresh
+newer receipts must not clear an affected-goal latch; goals whose baseline is
+later than the horizon remain independently evaluated.
+
+Initialize provider-account mappings and experimental-collector opt-ins empty.
+Existing records must not gain collection permission automatically; unmapped
+active guards remain blocked/unknown until explicit operator reconfirmation.
+Keep strict history intact. Any migration incompatibility fails closed.
+
+## Recorded implementation evidence and remaining limits
+
+The current source implements the foreground bootstrap, selected-service
+zeroizing cache, no-UI guard, explicit binding approval, and opt-in observer
+path. Signed, pushed checkpoint `8abfa235` passed the clean, locked MBX build
+in 1.29 seconds and its installed v3 fixture passed. That fixture exercised
+only the actual installed v3 path with `JACKIN_USAGE_BROKER_BIN` unset; it
+recorded zero HTTP-proxy requests and zero credential-command executions.
+Fixture artifacts and provenance are published in [v3-installation.json](v3-installation.json),
+[v3-checks.json](v3-checks.json), and [v3-installed-smoke.log](v3-installed-smoke.log).
+The final local formatting, source-check, and strict-Clippy checks passed for
+all seven affected packages. Current focused checks passed: FFI (11 tests),
+scope verification (7 tests), docs (5 tests), the V1 migration proof, host
+broker (184 tests), and capsule (1 test).
+Source-head CI run [38044592706](https://github.com/jackin-project/jackin/actions/runs/38044592706)
+passed for `8abfa235`, including Required, the Rust matrix, and Actionlint. PR
+documentation/evidence head `56181d4d` then passed exact-head run
+`38045612792`, including Required, the Rust matrix, Actionlint, and DCO. The
+documentation corrections in this commit create a new head requiring its own
+exact-head checks.
+
+The `45a33093` installed pair is historical. Its MBX build took 15.93 seconds;
+its local provider/lease lifecycle, host broker, and discovery scopes passed
+with 28, 183, and 41 tests respectively. The separate 22ac bounded source
+record includes the 57-test coordinator scope. The 22ac installed pair is
+historical as well.
+
+The 8abfa235 fixture did not instrument native Security Framework calls or
+exercise successful foreground authentication. It used fixture state, not a
+real account or configured evidence store. The historical 45a source gates
+and installed fixture are identified by [v3-checks.json](v3-checks.json) and
+[its checkpoint smoke transcript](v3-installed-smoke-checkpoint-45a.log).
+Neither the build, fixture, nor source tests establish successful authorization
+on this Mac, a stable provider-account identity, or successful live collection.
+The no-UI guarantee applies to unattended Keychain reads after the guard is
+established; the attended initial read may prompt, and credential availability
+and provider acceptance are not guaranteed. The route remains experimental,
+undocumented, and unsupported; it can return 403 or change without notice.
+This document does not make a provider-readiness claim or authorize live
+credential/provider checks.
+
+No auth/settings/Claude-project writes, live Keychain or provider checks,
+operator setup, or PR completion are part of this contract-writing task.

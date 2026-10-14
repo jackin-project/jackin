@@ -44,3 +44,5 @@ G, and H are appended below with the recorded human decision rationale.
   out-of-scope boundaries.
 - [Native component map](NativeComponentMap.md) — system-owned replacements and
   forbidden customizations.
+- [Apple-native research](../../../research/agent-usage-platform/02-apple-native-design.md)
+  — primary-source component and material constraints.

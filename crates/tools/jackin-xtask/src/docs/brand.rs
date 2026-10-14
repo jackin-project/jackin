@@ -14,7 +14,7 @@
 //! | `crates/*/README.md`, `crates/*/AGENTS.md`, `crates/AGENTS.md` | include |
 //! | `docs/content/**` (`*.md`/`*.mdx`) | include |
 //! | `roadmap/**/*.md` | include |
-//! | `docker/`, `.github/` | exclude — ops/CI prose; revisit if brand copy moves there |
+//! | `security-review/`, `docker/`, `.github/` | exclude — ops/CI prose; revisit if brand copy moves there |
 //! | Code / binary crates `src/**` | exclude (not prose) |
 
 use std::fs;

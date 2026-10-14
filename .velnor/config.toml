@@ -26,6 +26,7 @@ exclude = [
   "**/fuzz/**",
   "fuzz/**",
   "crates/tools/jackin-lints/**",
+  "vendor/**",
   "crates/adapters/jackin-omp-store/**",
   "crates/adapters/jackin-oppicker/**",
   "crates/core/jackin-brand/**",
@@ -153,7 +154,8 @@ exclude = [
   "fuzz/jackin-config/**",
   "fuzz/jackin-env/**",
   "fuzz/jackin-manifest/**",
-  "fuzz/jackin-protocol/**"
+  "fuzz/jackin-protocol/**",
+  "vendor/arrayref/**"
 ]
 
 [stacks.rust]

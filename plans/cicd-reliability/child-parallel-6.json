@@ -1,0 +1,17 @@
+{
+ "complete": true,
+ "evidence": [
+  "PRIMARY /Users/donbeave/Projects/tailrocks/jackin-project/jackin main clean HEAD fce94cea8a15de0c2db3bb4ff880d741baf5c00a (#1012, 2026-09-20); describe jackin-dev-v0.1.52-47-gfce94cea; origin jackin-project/jackin.",
+  "UPSTREAM /tmp/velnor main clean HEAD 5939604042ae5191b1b6d742e19e0db2c163ea1d (PR#982, 2026-09-21); pin 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d present.",
+  "JACKIN .github-gen/velnor-workflow.toml: schema=1, rev 4fa7a3a..., runtime velnor-workflow-runtime-v1-af140ad4d8d84326, closure af140ad4...3270e7, runners/automatic github, ubuntu-26.04/macos-26.",
+  "VELNOR .github-gen/velnor-workflow.toml: schema=2, rev 38dbf85e0bbf278cee3ec39ab90a9acc9b5b67a9.",
+  "CONTRACT .github/ci/project.toml: schema=2, verified, 15 files, 40 units, mbx 1.12.0. Workflows pin setup-velnor-workflow@4fa7a3a.",
+  "RUNTIME RELEASE published 2026-09-20T09:47:38Z with manifest.json + Linux-X64 + Linux-ARM64 + macOS-ARM64; manifest body verified (rev/closure/sha256). Covers ubuntu-26.04 + macos-26.",
+  "TOOLCHAINS: rust 1.97.1 (jackin) / 1.98.1 (velnor); Cargo 0.6.4; mise 41 tasks; Xcode_26.6; MACOSX_DEPLOYMENT_TARGET 26.0.",
+  "POLICY: ci-policy.yml pull_request_target, ruleset DCO,Policy,ci-required; actionlint labels ubuntu-26.04/macos-26/self-hosted/velnor-target-mvp; desktop-merge cancel-in-progress.",
+  "JOB1 run 35521080097 (main fce94cea, failure) job 106105226160: FAIL conformance_partial_success_is_not_retried, wire_failure_support/mod.rs:51, left 7 right 1; 107 passed/1 failed/1 skipped.",
+  "JOB2 run 35515575859 (main 0163d1b7, cancelled) job 106090835001: cancelled 35m28s, superseded by newer push (concurrency), not a test failure.",
+  "REGEN LIVE-VERIFIED read-only: binary --revision/--closure match pin; `velnor-workflow --plain --check .` EXIT=0 'Generated files are current'. Regen: verify --plain --check; inspect --dry-run; write `velnor-workflow [generate] <t> --output <root>`."
+ ],
+ "unresolved": []
+}

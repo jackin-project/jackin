@@ -1,0 +1,105 @@
+{
+  "source_commit": "31dc0574a8d0a052e115fa4031740eef31664af5",
+  "source_tree_sha1": "ea7246252602ed897f0027ff448050219f191533",
+  "installed_source_commit": "842f0e0f65bc682230f40aa510a38c3e1a2bc506",
+  "installed_source_tree_sha1": "ea7246252602ed897f0027ff448050219f191533",
+  "installed_source_tree_matches_branch": true,
+  "base_commit": "3f3ddd7c48284b648b083305f969ee3e709b74b7",
+  "branch": "fix/auth-malformed-diagnostic-dco",
+  "build_command": [
+    "mbx",
+    "+1.97.1",
+    "install",
+    "--debug",
+    "--offline",
+    "--locked",
+    "--path",
+    "crates/jackin",
+    "--root",
+    "/Users/donbeave/.local/share/jackin-claude-monitor-v4",
+    "--bin",
+    "jackin",
+    "--bin",
+    "jackin-usage-broker",
+    "--force"
+  ],
+  "rust": "1.97.1",
+  "mbx": "1.22.0",
+  "build_profile": "dev",
+  "cargo_profile_elapsed": "44.35s incremental reinstall",
+  "cli_version": "0.6.4",
+  "broker_version": "0.6.4",
+  "install_root": "/Users/donbeave/.local/share/jackin-claude-monitor-v4",
+  "source_worktree_clean_at_install": false,
+  "source_code_matches_commit": true,
+  "uncommitted_paths_at_install": [
+    "plans/claude-unattended-monitor/task-queue.md",
+    "plans/claude-unattended-monitor/verification.md",
+    "plans/claude-unattended-monitor/v4-installation.json"
+  ],
+  "binaries": [
+    {
+      "name": "jackin",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v4/bin/jackin",
+      "sha256": "c281e31a0d5365bfeea552029cda0037d6e361792e64cbdc404ae94db76d154b"
+    },
+    {
+      "name": "jackin-usage-broker",
+      "path": "/Users/donbeave/.local/share/jackin-claude-monitor-v4/bin/jackin-usage-broker",
+      "sha256": "c35f73bf9e035c8533d59d089156cc7ec21d8cae2cea3718132efb3b32701406"
+    }
+  ],
+  "focused_verification": [
+    {
+      "command": "mbx +1.97.1 check -p jackin-usage -p jackin --bin jackin-usage-broker",
+      "result": "passed"
+    },
+    {
+      "command": "mbx +1.97.1 fmt -p jackin-usage -p jackin -- --check",
+      "result": "passed"
+    },
+    {
+      "command": "mbx +1.97.1 test --offline --locked -p jackin-usage --lib diagnostic_",
+      "result": "9 passed, 0 failed"
+    },
+    {
+      "command": "mbx +1.97.1 test --offline --locked -p jackin-usage --lib bootstrap_payload_validation",
+      "result": "1 passed, 0 failed"
+    },
+    {
+      "command": "mbx +1.97.1 test --offline --locked -p jackin-usage --lib malformed_foreground_bootstrap_reads_once_and_never_starts_collection",
+      "result": "1 passed, 0 failed; one bootstrap read, zero guard/ready calls"
+    },
+    {
+      "command": "mbx +1.97.1 test --locked -p jackin --bin jackin-usage-broker malformed_auth_json",
+      "result": "1 passed, 0 failed"
+    },
+    {
+      "command": "mbx +1.97.1 test --offline --locked -p jackin --bin jackin-usage-broker foreground_bootstrap",
+      "result": "3 passed, 0 failed"
+    },
+    {
+      "command": "mbx +1.97.1 test --offline --locked -p jackin-usage --lib usage::claude::lease::tests",
+      "result": "15 passed, 0 failed"
+    }
+  ],
+  "installed_non_tty_check": {
+    "command": "/Users/donbeave/.local/share/jackin-claude-monitor-v4/bin/jackin usage --data-dir /private/tmp/jackin-authdiag-v4-nontty.46s2ZU auth prepare --provider claude --format json",
+    "exit_code": 2,
+    "output": "{\"version\":1,\"error\":{\"code\":\"interaction_required\",\"message\":\"authentication preparation requires stdin, stdout, and stderr attached to a terminal\"}}",
+    "diagnostic_present": false,
+    "broker_called": false
+  },
+  "unchanged_v3_pair_sha256": {
+    "jackin": "b57e60f2f13b026ae2ec47034b61ecddc69644b230157e621c5ddb5cf447007d",
+    "jackin-usage-broker": "30b6f3b1f0777dbe9181851f83fbc2efb3f0356d290e1896bf2ccaf434fbf550"
+  },
+  "review": "Independent read-only parser and installed-pair review found no blocker; v4 version/help and the non-TTY gate passed.",
+  "verification_scope": "Fixture-only verification of bounded diagnostic behavior and operator TTY gate. No live bootstrap, Keychain item read, credential access, provider request, account identity, or account readiness was tested.",
+  "actual_account_status": "unknown",
+  "known_limitations": [
+    "The installed non-TTY invocation rejects before calling the foreground broker; it does not exercise the TTY-only diagnostic against a real Keychain item.",
+    "Synthetic fixtures establish parser and redaction behavior only.",
+    "Successful foreground authentication and live provider/account readiness remain unverified."
+  ]
+}

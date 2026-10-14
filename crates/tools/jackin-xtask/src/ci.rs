@@ -182,6 +182,12 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
     }
 
     if partition_selected(args, "tests") {
+        steps.push(Step::new(
+            "pre-commit snapshot fixture",
+            "scripts/test-pre-commit-snapshot",
+            &[],
+            "tests",
+        ));
         steps.push(cargo(
             "check",
             &["check", "--workspace", "--all-targets", "--locked"],
