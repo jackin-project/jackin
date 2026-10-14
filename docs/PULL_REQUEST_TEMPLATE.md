@@ -1,14 +1,14 @@
 <!--
-PR body template. Read the canonical PR guide and the shared repository rules before use:
+PR body template. Read the contributor guide and the shared repository rules before use:
 
-  - PULL_REQUESTS.md at the repo root — canonical PR flow, body shape,
+  - CONTRIBUTING.md at the repo root — canonical PR flow, body shape,
     verification, review, merge, and agent-specific procedures.
   - AGENTS.md at the repo root — shared repository rules.
   - .github/AGENTS.md — generated-files ownership notice only; it requires
     Velnor input changes and regeneration, and contains no PR policy.
 
-Read PULL_REQUESTS.md before authoring. The root AGENTS.md applies to all
-contributors; agent-specific procedures are included in PULL_REQUESTS.md.
+Read CONTRIBUTING.md before authoring. The root AGENTS.md applies to all
+contributors; agent-specific procedures are included in CONTRIBUTING.md.
 
 Rules in one line each:
 - One paragraph per section, no hard-wrap (GitHub flows the text).
@@ -18,7 +18,7 @@ Rules in one line each:
 - No deployed-docs URLs (they break post-merge). Refer to docs by name only.
 - No mechanical CI-shaped checks (sidebar diffs, link audits). Those belong in CI.
   Exception: the docs verification gate (`### Docs checks`) is the one sanctioned
-  copy-paste block — PULL_REQUESTS.md requires docs authors run it before merge.
+  copy-paste block — CONTRIBUTING.md requires docs authors run it before merge.
 - Verify-locally URLs use http://localhost:3000/... only — never deployed.
 - Each verify-locally docs page: bold URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
