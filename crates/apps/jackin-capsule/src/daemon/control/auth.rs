@@ -41,6 +41,12 @@ pub(crate) fn control_request_allowed(
         | ClientMsg::SessionSend {
             session: session_id,
             ..
+        }
+        | ClientMsg::TakeControl {
+            session: session_id,
+        }
+        | ClientMsg::ReleaseControl {
+            session: session_id,
         } => Some(*session_id),
         ClientMsg::Events {
             session: Some(session_id),

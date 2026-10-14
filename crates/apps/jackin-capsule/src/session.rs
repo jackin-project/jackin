@@ -22,9 +22,9 @@ use pty_exit::{error_type as pty_exit_error_type, reason as pty_exit_reason};
 pub use shell_cmd::build_shell_command;
 pub use spawn::validate_spawn_token_syntax;
 pub use types::{
-    BranchName, EXPLICIT_CAPABILITY_ENV_NAMES, GitContext, Oid, PullRequestLookupOutcome,
-    SCROLLBACK_LEN, SESSION_ENV_PASSTHROUGH, SessionEvent, SessionProvider, SessionSpawnSpec,
-    SessionTerminal, StatusTick, StatusTransition, next_id,
+    BranchName, EXPLICIT_CAPABILITY_ENV_NAMES, GitContext, InputOwnership, Oid,
+    PullRequestLookupOutcome, SCROLLBACK_LEN, SESSION_ENV_PASSTHROUGH, SessionEvent,
+    SessionProvider, SessionSpawnSpec, SessionTerminal, StatusTick, StatusTransition, next_id,
 };
 
 #[cfg(test)]
@@ -77,6 +77,7 @@ pub struct Session {
     osc: crate::agent_status::evidence::OscEvidence,
     osc_status_decoder: crate::agent_status::OscStatusDecoder,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
+    pub input_ownership: InputOwnership,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
     termination_requested: Arc<AtomicBool>,
@@ -144,6 +145,7 @@ impl Session {
             osc: crate::agent_status::evidence::OscEvidence::default(),
             osc_status_decoder: crate::agent_status::OscStatusDecoder::default(),
             input_tx,
+            input_ownership: InputOwnership::Automatic,
             pty_master,
             child_killer,
             termination_requested: Arc::new(AtomicBool::new(false)),

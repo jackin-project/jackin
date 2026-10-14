@@ -133,6 +133,10 @@ pub(crate) fn control_response_matches(request: &ClientMsg, response: &ServerMsg
                 ClientMsg::SessionSend { .. },
                 ServerMsg::SessionSent { .. } | ServerMsg::SessionSendDenied { .. },
             )
+            | (
+                ClientMsg::TakeControl { .. } | ClientMsg::ReleaseControl { .. },
+                ServerMsg::Ack | ServerMsg::SessionSendDenied { .. },
+            )
     )
 }
 

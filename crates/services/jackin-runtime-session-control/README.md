@@ -7,6 +7,8 @@ Host client for capsule
 
 - Send (`session_control`):
   `send_session_text`,
+  `take_session_control`,
+  `release_session_control`,
   `control_socket_path`,
   `ControlTransport`.
 - Events (`session_control`):
@@ -24,6 +26,8 @@ Host client for capsule
 ## Public API
 
 `session_control::send_session_text`,
+`session_control::take_session_control`,
+`session_control::release_session_control`,
 `session_control::SessionEvents`,
 `session_control::ControlTransport`,
 `session_control::control_socket_path`.

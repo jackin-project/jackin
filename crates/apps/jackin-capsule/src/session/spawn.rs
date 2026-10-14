@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    OscPolicy, SCROLLBACK_LEN, Session, SessionEvent, SessionSpawnSpec, SessionTerminal,
-    capture_pty_fixture_bytes, child_exit_reason, emit_pty_exit, emit_pty_spawn, inject_status_env,
-    lock_or_record_poison, next_id, record_terminal_bytes,
+    InputOwnership, OscPolicy, SCROLLBACK_LEN, Session, SessionEvent, SessionSpawnSpec,
+    SessionTerminal, capture_pty_fixture_bytes, child_exit_reason, emit_pty_exit, emit_pty_spawn,
+    inject_status_env, lock_or_record_poison, next_id, record_terminal_bytes,
 };
 
 use crate::agent_status::SessionStatus;
@@ -230,6 +230,7 @@ impl Session {
                 osc: crate::agent_status::evidence::OscEvidence::default(),
                 osc_status_decoder: crate::agent_status::OscStatusDecoder::default(),
                 input_tx,
+                input_ownership: InputOwnership::Automatic,
                 pty_master: master,
                 child_killer,
                 termination_requested,

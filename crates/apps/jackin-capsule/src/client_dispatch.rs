@@ -34,6 +34,8 @@ SUBCOMMANDS:
     status                         Print daemon status to stdout
     snapshot                       Write a screen snapshot to stdout
     send <session_id> <text>       Type text into a running session's PTY (verbatim)
+    take-control <session_id>     Take exclusive operator input ownership of a session
+    release-control <session_id>  Release operator input ownership of a session
     events [--session <id>]        Stream session state/exit/activity events as NDJSON
     attach-proxy                   Relay attach protocol bytes over stdio
     usage accounts                 Print cached account quota rows as JSON
@@ -68,6 +70,8 @@ connecting as a client.",
         Some("status") => client::run_status().await,
         Some("snapshot") => client::run_snapshot().await,
         Some("send") => client::run_session_send(args).await,
+        Some("take-control") => client::run_session_take_control(args).await,
+        Some("release-control") => client::run_session_release_control(args).await,
         Some("events") => client::run_session_events(args).await,
         Some("report-event") => client::run_report_event(args).await,
         Some("token-usage") => client::run_token_usage(args).await,

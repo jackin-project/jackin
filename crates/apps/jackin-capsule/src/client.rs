@@ -12,7 +12,9 @@ mod usage;
 pub use agents::{AgentsFormat, run_agents};
 pub use attach::{run_attach_proxy, run_client, run_protocol_check};
 pub use report::run_report_event;
-pub use session_cmds::{run_session_events, run_session_send};
+pub use session_cmds::{
+    run_session_events, run_session_release_control, run_session_send, run_session_take_control,
+};
 pub use status::{
     run_snapshot, run_status, run_status_capture, run_status_explain, run_token_usage,
 };

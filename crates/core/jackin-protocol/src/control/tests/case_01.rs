@@ -296,6 +296,55 @@ fn session_send_roundtrips_text_verbatim() {
 }
 
 #[test]
+fn operator_ownership_messages_roundtrip() {
+    for msg in [
+        ClientMsg::TakeControl { session: 3 },
+        ClientMsg::ReleaseControl { session: 3 },
+    ] {
+        let json = serde_json::to_string(&msg).unwrap();
+        let decoded = serde_json::from_str::<ClientMsg>(&json).unwrap();
+        assert!(
+            matches!(
+                (&msg, &decoded),
+                (
+                    ClientMsg::TakeControl { session: 3 },
+                    ClientMsg::TakeControl { session: 3 }
+                ) | (
+                    ClientMsg::ReleaseControl { session: 3 },
+                    ClientMsg::ReleaseControl { session: 3 }
+                )
+            ),
+            "ownership message must roundtrip, got {decoded:?}"
+        );
+        assert!(!decoded.is_subscription());
+    }
+    assert_eq!(
+        ClientMsg::TakeControl { session: 3 }.rpc_method(),
+        "jackin.capsule.Control/TakeControl"
+    );
+    assert_eq!(
+        ClientMsg::ReleaseControl { session: 3 }.rpc_method(),
+        "jackin.capsule.Control/ReleaseControl"
+    );
+    assert_eq!(
+        SessionSendRejection::OperatorOwned.label(),
+        "session input is owned by an operator"
+    );
+    let json = serde_json::to_string(&ServerMsg::SessionSendDenied {
+        session: 9,
+        reason: SessionSendRejection::OperatorOwned,
+    })
+    .unwrap();
+    match serde_json::from_str::<ServerMsg>(&json).unwrap() {
+        ServerMsg::SessionSendDenied { session, reason } => {
+            assert_eq!(session, 9);
+            assert_eq!(reason, SessionSendRejection::OperatorOwned);
+        }
+        other => panic!("decoded wrong variant: {other:?}"),
+    }
+}
+
+#[test]
 fn session_send_replies_roundtrip() {
     let json = serde_json::to_string(&ServerMsg::SessionSent {
         session: 3,
