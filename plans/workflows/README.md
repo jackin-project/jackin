@@ -1,5 +1,7 @@
 # Jackin Workflows — research and implementation specification
 
+> MVP work happens in [mvp/](mvp/). That pack supersedes the build order below for the first release. The older design files stay as later product research. The `implementation/01-build-sequence.md` file still names the removed `TESTING.md`; do not use that file as a current instruction.
+
 **Pack version:** 1.0 — proposed build contract  
 **Research date:** 14 October 2026  
 **Jackin source baseline:** `453bf611fd974ff88f18caa97aa225af1f8edb2c`  

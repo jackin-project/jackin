@@ -11,6 +11,7 @@ use crate::report::{self, FormatArgs};
 mod brand;
 pub(crate) mod contract;
 mod lychee_cache;
+mod mvp_links;
 mod site_links;
 mod specs;
 
@@ -54,6 +55,7 @@ pub(crate) enum DocsCommand {
     #[command(hide = true)]
     CiLycheeCache,
     SiteLinks,
+    MvpLinks(DocsGateArgs),
 }
 
 #[derive(Args, Clone, Copy)]
@@ -147,6 +149,14 @@ pub(crate) fn run_docs(command: DocsCommand) -> Result<()> {
         DocsCommand::CiLinkResult => contract::run_ci_link_result(),
         DocsCommand::CiLycheeCache => lychee_cache::run(),
         DocsCommand::SiteLinks => site_links::run(),
+        DocsCommand::MvpLinks(args) => run_docs_gate(
+            args,
+            "mvp-links",
+            "plans/workflows/mvp/",
+            "fix the broken local link in the MVP pack",
+            "cargo xtask docs mvp-links",
+            mvp_links::check_mvp_links,
+        ),
     }
 }
 
