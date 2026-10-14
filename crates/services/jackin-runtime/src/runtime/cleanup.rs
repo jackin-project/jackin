@@ -25,5 +25,25 @@ pub(crate) use jackin_runtime_cleanup_timing::timing::{cleanup_failure, cleanup_
 pub(crate) use purge::purge_container_filesystem;
 pub(crate) use purge_absent::{ensure_backend_absent_for_purge, remove_socket_dir};
 
+/// Refuse destructive container cleanup while a durable preservation hold
+/// protects anything in the container state directory.
+///
+/// Holds are keyed by resource (worktree path, checkpoint ID); eject, purge,
+/// and prune remove the whole container, so any hold in its state directory
+/// blocks the operation. Enforcement lives here — not only in workflow CLI
+/// code — so normal cancellation, failure, retention expiry, and prune obey
+/// holds. Uses [`jackin_isolation::holds`] as the single source of truth.
+pub(crate) fn ensure_no_preservation_hold(
+    paths: &jackin_core::JackinPaths,
+    container_name: &str,
+) -> anyhow::Result<()> {
+    let state_dir = paths.data_dir.join(container_name);
+    for hold in jackin_isolation::holds::list_holds(&state_dir)? {
+        jackin_isolation::holds::check_removal(&state_dir, &hold.resource_id)
+            .map_err(|err| anyhow::anyhow!("refusing cleanup of `{container_name}`: {err:#}"))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

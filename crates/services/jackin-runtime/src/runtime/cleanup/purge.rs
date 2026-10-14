@@ -7,7 +7,10 @@ use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 
-use super::{cleanup_failure, cleanup_timing, ensure_backend_absent_for_purge, remove_socket_dir};
+use super::{
+    cleanup_failure, cleanup_timing, ensure_backend_absent_for_purge, ensure_no_preservation_hold,
+    remove_socket_dir,
+};
 
 pub async fn purge_class_data(
     paths: &JackinPaths,
@@ -64,6 +67,7 @@ pub(crate) async fn purge_container_filesystem(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let _timing = cleanup_timing("container_filesystem");
+    ensure_no_preservation_hold(paths, container_name)?;
     crate::runtime::coordination::ensure_prunable_async(
         paths,
         &paths.data_dir.join(container_name),

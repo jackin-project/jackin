@@ -19,6 +19,7 @@ pub async fn eject_role(
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     let _timing = cleanup_timing("eject_role");
+    super::ensure_no_preservation_hold(paths, container_name)?;
     match crate::runtime::backend::backend_for_state(paths, container_name) {
         InstanceBackend::Docker => eject_docker_role(paths, container_name, docker).await,
         InstanceBackend::AppleContainer => {
@@ -34,6 +35,7 @@ pub(crate) async fn eject_docker_role(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
+    super::ensure_no_preservation_hold(paths, container_name)?;
     let (resources, role, dind) =
         resolve_cleanup_handles_for_state(paths, container_name, None, docker).await?;
     let role = role.ok_or_else(|| anyhow::anyhow!("container {container_name} is not present"))?;
@@ -55,6 +57,7 @@ pub(crate) async fn eject_docker_role_with_handles(
     role_handle: &ContainerHandle,
     dind_handle: Option<&ContainerHandle>,
 ) -> anyhow::Result<()> {
+    super::ensure_no_preservation_hold(paths, container_name)?;
     let manifest = InstanceManifest::read_optional(&paths.data_dir.join(container_name))?;
     if let Some(manifest) = manifest.as_ref() {
         let identity = manifest.docker_identity.as_ref().ok_or_else(|| anyhow::anyhow!(

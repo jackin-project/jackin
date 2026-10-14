@@ -85,9 +85,15 @@ pub async fn prune_instances(
 
     let mut removed: Vec<String> = Vec::new();
     let mut skipped: Vec<(String, anyhow::Error)> = Vec::new();
+    let mut held: Vec<(String, anyhow::Error)> = Vec::new();
 
     for container_base in candidates {
         let row = prune_output::start("Deleting", &container_base);
+        if let Err(hold) = super::ensure_no_preservation_hold(paths, &container_base) {
+            row.skip(format!("preservation hold: {hold:#}"));
+            held.push((container_base, hold));
+            continue;
+        }
         match purge_container_filesystem(paths, &container_base, docker, runner).await {
             Ok(()) => {
                 row.ok();
@@ -120,7 +126,7 @@ pub async fn prune_instances(
                 removed.len()
             ));
         }
-    } else if skipped.is_empty() {
+    } else if skipped.is_empty() && held.is_empty() {
         prune_output::ok("no instances to prune");
     }
 
@@ -135,6 +141,16 @@ pub async fn prune_instances(
         eprintln!(
             "Use `jackin eject <selector> --purge` to remove Docker resources and state together."
         );
+    }
+
+    if !held.is_empty() {
+        prune_output::skip(format!(
+            "held {} instance(s) by preservation hold",
+            held.len()
+        ));
+        for (name, error) in &held {
+            eprintln!("  {name}: {error:#}");
+        }
     }
 
     Ok(())
