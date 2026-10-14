@@ -17,11 +17,27 @@ Examples:
   jackin eject k7p9m2xq
   jackin eject jk-k7p9m2xq-agentsmith"
 )]
+#[command(
+    about = "Stop a role and clean up its container",
+    long_about = "Stop a role and clean up its container"
+)]
 pub struct EjectArgs {
+    #[arg(
+        help = "Role class selector, instance ID, or container name to stop",
+        long_help = "Role class selector, instance ID, or container name to stop"
+    )]
     pub selector: String,
-    #[arg(long)]
+    #[arg(
+        help = "Stop every matching instance (otherwise errors if multiple exist)",
+        long_help = "Stop every matching instance (otherwise errors if multiple exist)",
+        long
+    )]
     pub all: bool,
-    #[arg(long)]
+    #[arg(
+        help = "Also delete persisted state after stopping",
+        long_help = "Also delete persisted state after stopping",
+        long
+    )]
     pub purge: bool,
 }
 
@@ -36,9 +52,21 @@ Examples:
   jackin purge k7p9m2xq
   jackin purge chainargos/the-architect"
 )]
+#[command(
+    about = "Delete persisted state for a role class",
+    long_about = "Delete persisted state for a role class"
+)]
 pub struct PurgeArgs {
+    #[arg(
+        help = "Role class selector, instance ID, or container name",
+        long_help = "Role class selector, instance ID, or container name"
+    )]
     pub selector: String,
-    #[arg(long)]
+    #[arg(
+        help = "Delete state for every matching instance (otherwise errors if multiple exist)",
+        long_help = "Delete state for every matching instance (otherwise errors if multiple exist)",
+        long
+    )]
     pub all: bool,
 }
 

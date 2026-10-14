@@ -5,6 +5,10 @@ use clap::Subcommand;
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum DiagnosticsCommand {
+    #[command(
+        about = "Emit one marked log, trace, and metric and confirm OTLP delivery",
+        long_about = "Emit one marked log, trace, and metric and confirm OTLP delivery"
+    )]
     Validate,
 }
 

@@ -42,16 +42,50 @@ const GH_PR_CMD: &str = "gh pr view --json number,title,url,statusCheckRollup 2>
         Run `jackin status <workspace> <instance-id>` for full detail including\n\
         branch, PR, CI, and per-agent codename table."
 )]
+#[command(
+    about = "`jackin status` — three-level fleet overview.",
+    long_about = "`jackin status` — three-level fleet overview.
+
+- `jackin status`                     workspace summary - `jackin status <workspace>`         instances in that workspace - `jackin status <workspace> <id>`    full instance detail"
+)]
 pub struct StatusArgs {
+    #[arg(
+        help = "Workspace name to drill into (optional)",
+        long_help = "Workspace name to drill into (optional)"
+    )]
     pub workspace: Option<String>,
+    #[arg(
+        help = "Instance ID to show full detail for (requires workspace)",
+        long_help = "Instance ID to show full detail for (requires workspace)"
+    )]
     pub instance_id: Option<String>,
-    #[arg(long)]
+    #[arg(
+        help = "Show agent counts at Level 0 (requires in-container queries per instance)",
+        long_help = "Show agent counts at Level 0 (requires in-container queries per instance)",
+        long
+    )]
     pub detail: bool,
-    #[arg(long, value_name = "STATE")]
+    #[arg(
+        help = "Filter by instance state",
+        long_help = "Filter by instance state",
+        long,
+        value_name = "STATE"
+    )]
     pub state: Option<String>,
-    #[arg(long, value_name = "KEY=VALUE")]
+    #[arg(
+        help = "Filter by agent type (e.g. `--filter agent=claude`)",
+        long_help = "Filter by agent type (e.g. `--filter agent=claude`)",
+        long,
+        value_name = "KEY=VALUE"
+    )]
     pub filter: Option<String>,
-    #[arg(long, value_name = "FORMAT", default_value = "human")]
+    #[arg(
+        help = "Output format",
+        long_help = "Output format",
+        long,
+        value_name = "FORMAT",
+        default_value = "human"
+    )]
     pub format: String,
 }
 

@@ -19,20 +19,29 @@ use jackin_telemetry::spawn::JoinSetExt as _;
     styles = HELP_STYLES,
     about = "Prewarm jackin-owned runtime caches before launch"
 )]
+#[command(
+    about = "`jackin prewarm` — fill jackin-owned runtime caches before launch.",
+    long_about = "`jackin prewarm` — fill jackin-owned runtime caches before launch."
+)]
 pub struct PrewarmArgs {
-    #[arg(long = "agent", value_parser = parse_agent)]
+    #[arg(help = "Agent runtime binary to prewarm. Repeat to choose several. Defaults to all agents.", long_help = "Agent runtime binary to prewarm. Repeat to choose several. Defaults to all agents.", long = "agent", value_parser = parse_agent)]
     pub agents: Vec<Agent>,
     #[command(flatten)]
     pub flags: PrewarmFlags,
 
-    #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
+    #[arg(help = "Role selector whose repo cache and/or derived image(s) should be prewarmed.", long_help = "Role selector whose repo cache and/or derived image(s) should be prewarmed.", long, conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
-    #[arg(long, conflicts_with_all = ["role", "all_workspaces"])]
+    #[arg(help = "Saved workspace whose default role repo and/or agent image should be prewarmed.", long_help = "Saved workspace whose default role repo and/or agent image should be prewarmed.", long, conflicts_with_all = ["role", "all_workspaces"])]
     pub workspace: Option<String>,
 
-    #[arg(long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
+    #[arg(help = "Role git URL override for role/image prewarm. Defaults to configured role source.", long_help = "Role git URL override for role/image prewarm. Defaults to configured role source.", long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role_git: Option<String>,
-    #[arg(long, requires = "image")]
+    #[arg(
+        help = "Role branch to prewarm. Uses branch-scoped image tags.",
+        long_help = "Role branch to prewarm. Uses branch-scoped image tags.",
+        long,
+        requires = "image"
+    )]
     pub role_branch: Option<String>,
 }
 
@@ -48,22 +57,51 @@ mod tests;
               this struct flattens into."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::Args)]
+#[command(
+    about = "Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics).",
+    long_about = "Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics)."
+)]
 pub struct PrewarmFlags {
-    #[arg(long)]
+    #[arg(
+        help = "Also prewarm derived Docker image(s) for a role.",
+        long_help = "Also prewarm derived Docker image(s) for a role.",
+        long
+    )]
     pub image: bool,
-    #[arg(long)]
+    #[arg(
+        help = "Prewarm a kept Docker-in-Docker daemon for one-shot adoption by the next fresh launch.",
+        long_help = "Prewarm a kept Docker-in-Docker daemon for one-shot adoption by the next fresh launch.",
+        long
+    )]
     pub daemon: bool,
-    #[arg(long)]
+    #[arg(
+        help = "Also prefetch/update every configured role repo cache.",
+        long_help = "Also prefetch/update every configured role repo cache.",
+        long
+    )]
     pub roles: bool,
-    #[arg(long)]
+    #[arg(
+        help = "Also prewarm the Docker-in-Docker sidecar image used by fresh launches.",
+        long_help = "Also prewarm the Docker-in-Docker sidecar image used by fresh launches.",
+        long
+    )]
     pub sidecar: bool,
-    #[arg(long)]
+    #[arg(
+        help = "Also start a disposable Docker-in-Docker sidecar and wait for readiness.",
+        long_help = "Also start a disposable Docker-in-Docker sidecar and wait for readiness.",
+        long
+    )]
     pub sidecar_container: bool,
-    #[arg(long, requires = "sidecar_container")]
+    #[arg(
+        help = "Keep the prewarmed sidecar container running for future daemon/runtime reuse.",
+        long_help = "Keep the prewarmed sidecar container running for future daemon/runtime reuse.",
+        long,
+        requires = "sidecar_container"
+    )]
     pub keep_sidecar_container: bool,
-    #[arg(long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]
+    #[arg(help = "Prewarm targets for every saved workspace with a default role.", long_help = "Prewarm targets for every saved workspace with a default role.", long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]
     pub all_workspaces: bool,
-    #[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]
+    #[arg(help = "Prewarm image targets for every configured role.", long_help = "Prewarm image targets for every configured role.", long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]
     pub all_roles: bool,
 }
 

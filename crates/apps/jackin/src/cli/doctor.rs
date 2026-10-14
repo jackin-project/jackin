@@ -12,7 +12,13 @@ use jackin_core::JackinPaths;
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(about = "Run health checks for your jackin❯ setup")]
 pub struct DoctorArgs {
-    #[arg(long, value_name = "FORMAT", default_value = "human")]
+    #[arg(
+        help = "Output format (`human` or `json`)",
+        long_help = "Output format (`human` or `json`)",
+        long,
+        value_name = "FORMAT",
+        default_value = "human"
+    )]
     pub format: String,
 }
 

@@ -24,15 +24,33 @@ fn parse_agent(s: &str) -> Result<jackin_core::Agent, String> {
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
+#[command(
+    about = "Shared args for read-only workspace subcommands that support `--format`.",
+    long_about = "Shared args for read-only workspace subcommands that support `--format`."
+)]
 pub struct WorkspaceFormatArgs {
-    #[arg(long, value_name = "FORMAT", default_value = "human")]
+    #[arg(
+        help = "Output format (`human` or `json`)",
+        long_help = "Output format (`human` or `json`)",
+        long,
+        value_name = "FORMAT",
+        default_value = "human"
+    )]
     pub format: String,
 }
 
 pub type WorkspaceListArgs = WorkspaceFormatArgs;
 
 #[derive(Debug, Args, PartialEq, Eq)]
+#[command(
+    about = "Args for `jackin workspace show`",
+    long_about = "Args for `jackin workspace show`"
+)]
 pub struct WorkspaceShowArgs {
+    #[arg(
+        help = "Name of the workspace to display",
+        long_help = "Name of the workspace to display"
+    )]
     pub name: String,
     #[command(flatten)]
     pub fmt: WorkspaceFormatArgs,
@@ -51,17 +69,44 @@ Examples:
   jackin workspace create monorepo --workdir /workspace --mount ~/src:/workspace
   jackin workspace create restricted --workdir ~/app --mount ~/app --allowed-role agent-smith --default-role agent-smith"
     )]
+    #[command(
+        about = "Create a new workspace definition",
+        long_about = "Create a new workspace definition
+
+The workdir is the path jackin starts the agent in. It is not mounted implicitly; provide one or more --mount entries for the directories the container should see."
+    )]
     Create {
+        #[arg(
+            help = "Unique name for this workspace",
+            long_help = "Unique name for this workspace"
+        )]
         name: String,
-        #[arg(long)]
+        #[arg(
+            help = "Working directory inside the container",
+            long_help = "Working directory inside the container",
+            long
+        )]
         workdir: String,
-        #[arg(long = "mount", required = true)]
+        #[arg(
+            help = "Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)",
+            long_help = "Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)",
+            long = "mount",
+            required = true
+        )]
         mounts: Vec<String>,
-        #[arg(long = "allowed-role")]
+        #[arg(
+            help = "Restrict which roles may use this workspace (repeatable)",
+            long_help = "Restrict which roles may use this workspace (repeatable)",
+            long = "allowed-role"
+        )]
         allowed_roles: Vec<String>,
-        #[arg(long = "default-role")]
+        #[arg(
+            help = "Role to select by default when loading this workspace",
+            long_help = "Role to select by default when loading this workspace",
+            long = "default-role"
+        )]
         default_role: Option<String>,
-        #[arg(long, value_parser = parse_agent)]
+        #[arg(help = "Default agent for this workspace (claude, codex, amp, kimi, opencode, grok, antigravity, gemini, cursor, muse, omp, or hermes)", long_help = "Default agent for this workspace (claude, codex, amp, kimi, opencode, grok, antigravity, gemini, cursor, muse, omp, or hermes)", long, value_parser = parse_agent)]
         default_agent: Option<jackin_core::Agent>,
         #[arg(
             long = "mount-isolation",
@@ -69,13 +114,27 @@ Examples:
             value_parser = parse_mount_isolation,
             action = clap::ArgAction::Append
         )]
+        #[arg(
+            help = "Set isolation mode for a mount destination. Repeatable. Format: `<container-dst>=<shared|worktree|clone>`.",
+            long_help = "Set isolation mode for a mount destination. Repeatable. Format: `<container-dst>=<shared|worktree|clone>`."
+        )]
         mount_isolation: Vec<(String, MountIsolation)>,
-        #[arg(long = "keep-awake", default_value_t = false)]
+        #[arg(
+            help = "Opt the workspace into the macOS keep-awake reconciler. While any role in this workspace is running, jackin holds a `caffeinate -imsu` assertion so the host stays awake. Silent no-op on Linux/Windows.",
+            long_help = "Opt the workspace into the macOS keep-awake reconciler. While any role in this workspace is running, jackin holds a `caffeinate -imsu` assertion so the host stays awake. Silent no-op on Linux/Windows.",
+            long = "keep-awake",
+            default_value_t = false
+        )]
         keep_awake: bool,
-        #[arg(long = "git-pull", default_value_t = false)]
+        #[arg(
+            help = "Run `git pull` on all mounted git repositories before starting the agent. Executed on the host. Failures are warnings — the launch continues even when offline.",
+            long_help = "Run `git pull` on all mounted git repositories before starting the agent. Executed on the host. Failures are warnings — the launch continues even when offline.",
+            long = "git-pull",
+            default_value_t = false
+        )]
         git_pull: bool,
     },
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(about = "List all saved workspaces", long_about = "List all saved workspaces", before_help = BANNER, styles = HELP_STYLES)]
     List(WorkspaceListArgs),
     #[command(
         before_help = BANNER,
@@ -83,6 +142,10 @@ Examples:
         after_long_help = "\
 Examples:
   jackin workspace show my-app"
+    )]
+    #[command(
+        about = "Display details of a saved workspace",
+        long_about = "Display details of a saved workspace"
     )]
     Show(WorkspaceShowArgs),
     #[command(
@@ -104,35 +167,93 @@ Examples:
   jackin workspace edit my-app --mount ~/Projects/my-app --yes
   jackin workspace edit my-app --prune"
     )]
+    #[command(
+        about = "Modify an existing workspace",
+        long_about = "Modify an existing workspace"
+    )]
     Edit {
+        #[arg(
+            help = "Name of the workspace to modify",
+            long_help = "Name of the workspace to modify"
+        )]
         name: String,
-        #[arg(long)]
+        #[arg(
+            help = "Update the container working directory",
+            long_help = "Update the container working directory",
+            long
+        )]
         workdir: Option<String>,
-        #[arg(long = "mount")]
+        #[arg(
+            help = "Add a bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)",
+            long_help = "Add a bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)",
+            long = "mount"
+        )]
         mounts: Vec<String>,
-        #[arg(long = "remove-destination")]
+        #[arg(
+            help = "Remove a mount by its container destination path (repeatable)",
+            long_help = "Remove a mount by its container destination path (repeatable)",
+            long = "remove-destination"
+        )]
         remove_destinations: Vec<String>,
-        #[arg(long, default_value_t = false)]
+        #[arg(
+            help = "Remove the auto-mounted workdir (the mount where src = dst = workdir)",
+            long_help = "Remove the auto-mounted workdir (the mount where src = dst = workdir)",
+            long,
+            default_value_t = false
+        )]
         no_workdir_mount: bool,
-        #[arg(long = "allowed-role")]
+        #[arg(
+            help = "Grant a role access to this workspace (repeatable)",
+            long_help = "Grant a role access to this workspace (repeatable)",
+            long = "allowed-role"
+        )]
         allowed_roles: Vec<String>,
-        #[arg(long = "remove-allowed-role")]
+        #[arg(
+            help = "Revoke a role's access to this workspace (repeatable)",
+            long_help = "Revoke a role's access to this workspace (repeatable)",
+            long = "remove-allowed-role"
+        )]
         remove_allowed_roles: Vec<String>,
-        #[arg(long = "default-role")]
+        #[arg(
+            help = "Set the default role for this workspace",
+            long_help = "Set the default role for this workspace",
+            long = "default-role"
+        )]
         default_role: Option<String>,
         #[arg(
             long = "clear-default-role",
             conflicts_with = "default_role",
             default_value_t = false
         )]
+        #[arg(
+            help = "Clear the current default role",
+            long_help = "Clear the current default role"
+        )]
         clear_default_role: bool,
-        #[arg(long, value_parser = parse_agent)]
+        #[arg(help = "Set the default agent for this workspace", long_help = "Set the default agent for this workspace", long, value_parser = parse_agent)]
         default_agent: Option<jackin_core::Agent>,
-        #[arg(long, conflicts_with = "default_agent", default_value_t = false)]
+        #[arg(
+            help = "Clear the explicit default agent so the workspace falls back to claude",
+            long_help = "Clear the explicit default agent so the workspace falls back to claude",
+            long,
+            conflicts_with = "default_agent",
+            default_value_t = false
+        )]
         clear_default_agent: bool,
-        #[arg(long = "yes", short = 'y', default_value_t = false)]
+        #[arg(
+            help = "Skip confirmation prompts for mount collapses",
+            long_help = "Skip confirmation prompts for mount collapses",
+            long = "yes",
+            short = 'y',
+            default_value_t = false
+        )]
         assume_yes: bool,
-        #[arg(long, default_value_t = false)]
+        #[arg(
+            help = "Also remove pre-existing redundant mounts (rule-C violations) as part of this edit",
+            long_help = "Also remove pre-existing redundant mounts (rule-C violations) as part of this edit",
+            long,
+            default_value_t = false
+        )]
         prune: bool,
         #[arg(
             long = "mount-isolation",
@@ -140,23 +261,49 @@ Examples:
             value_parser = parse_mount_isolation,
             action = clap::ArgAction::Append
         )]
+        #[arg(
+            help = "Set isolation mode for a mount destination. Repeatable. Format: `<container-dst>=<shared|worktree|clone>`.",
+            long_help = "Set isolation mode for a mount destination. Repeatable. Format: `<container-dst>=<shared|worktree|clone>`."
+        )]
         mount_isolation: Vec<(String, MountIsolation)>,
-        #[arg(long)]
+        #[arg(
+            help = "Allow this edit to delete preserved isolated worktree state. Required when --mount source changes for a mount whose dst has active isolation records on a stopped container.",
+            long_help = "Allow this edit to delete preserved isolated worktree state. Required when --mount source changes for a mount whose dst has active isolation records on a stopped container.",
+            long
+        )]
         delete_isolated_state: bool,
-        #[arg(long = "keep-awake", default_value_t = false)]
+        #[arg(
+            help = "Opt the workspace into the macOS keep-awake reconciler. Mutually exclusive with `--no-keep-awake`. See `workspace create`.",
+            long_help = "Opt the workspace into the macOS keep-awake reconciler. Mutually exclusive with `--no-keep-awake`. See `workspace create`.",
+            long = "keep-awake",
+            default_value_t = false
+        )]
         keep_awake: bool,
         #[arg(
             long = "no-keep-awake",
             conflicts_with = "keep_awake",
             default_value_t = false
         )]
+        #[arg(
+            help = "Opt the workspace OUT of the keep-awake reconciler. Mutually exclusive with `--keep-awake`.",
+            long_help = "Opt the workspace OUT of the keep-awake reconciler. Mutually exclusive with `--keep-awake`."
+        )]
         no_keep_awake: bool,
-        #[arg(long = "git-pull", default_value_t = false)]
+        #[arg(
+            help = "Enable git pull on entry for this workspace. Mutually exclusive with `--no-git-pull`.",
+            long_help = "Enable git pull on entry for this workspace. Mutually exclusive with `--no-git-pull`.",
+            long = "git-pull",
+            default_value_t = false
+        )]
         git_pull: bool,
         #[arg(
             long = "no-git-pull",
             conflicts_with = "git_pull",
             default_value_t = false
+        )]
+        #[arg(
+            help = "Disable git pull on entry for this workspace. Mutually exclusive with `--git-pull`.",
+            long_help = "Disable git pull on entry for this workspace. Mutually exclusive with `--git-pull`."
         )]
         no_git_pull: bool,
         #[arg(
@@ -164,11 +311,19 @@ Examples:
             value_name = "CONFIG_ID",
             action = clap::ArgAction::Append
         )]
+        #[arg(
+            help = "Set the workspace launch admission set: agent-configuration IDs admitted to this workspace's containers (repeatable). Replaces the inherited global default entirely.",
+            long_help = "Set the workspace launch admission set: agent-configuration IDs admitted to this workspace's containers (repeatable). Replaces the inherited global default entirely."
+        )]
         default_launch: Vec<String>,
         #[arg(
             long = "clear-default-launch",
             conflicts_with = "default_launch",
             default_value_t = false
+        )]
+        #[arg(
+            help = "Clear the workspace launch admission set so the workspace inherits the global default again.",
+            long_help = "Clear the workspace launch admission set so the workspace inherits the global default again."
         )]
         clear_default_launch: bool,
     },
@@ -180,9 +335,23 @@ Examples:
   jackin workspace prune my-app
   jackin workspace prune my-app --yes"
     )]
+    #[command(
+        about = "Remove redundant mounts (rule-C violations) from a saved workspace",
+        long_about = "Remove redundant mounts (rule-C violations) from a saved workspace"
+    )]
     Prune {
+        #[arg(
+            help = "Name of the workspace to prune",
+            long_help = "Name of the workspace to prune"
+        )]
         name: String,
-        #[arg(long = "yes", short = 'y', default_value_t = false)]
+        #[arg(
+            help = "Skip the confirmation prompt",
+            long_help = "Skip the confirmation prompt",
+            long = "yes",
+            short = 'y',
+            default_value_t = false
+        )]
         assume_yes: bool,
     },
     #[command(
@@ -192,11 +361,21 @@ Examples:
 Examples:
   jackin workspace remove my-app"
     )]
-    Remove { name: String },
+    #[command(
+        about = "Delete a saved workspace",
+        long_about = "Delete a saved workspace"
+    )]
+    Remove {
+        #[arg(
+            help = "Name of the workspace to delete",
+            long_help = "Name of the workspace to delete"
+        )]
+        name: String,
+    },
 
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    #[command(about = "Manage operator env vars at workspace and workspace-role scope", long_about = "Manage operator env vars at workspace and workspace-role scope", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(WorkspaceEnvCommand),
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    #[command(about = "Assign accounts and choose agent defaults for this workspace", long_about = "Assign accounts and choose agent defaults for this workspace", subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Account(super::account::WorkspaceAccountCommand),
 }
 
@@ -212,15 +391,42 @@ Examples:
   jackin workspace env set prod DEBUG \"1\" --comment \"temporary; remove after Q2\"
   jackin workspace env set prod OP_TOKEN \"op://Work/svc/credential\" --on-demand"
     )]
+    #[command(
+        about = "Set an env var at workspace or workspace-role scope",
+        long_about = "Set an env var at workspace or workspace-role scope
+
+Without `--role`, scopes the env var to the whole workspace. With `--role <SELECTOR>`, narrows it to that role within the workspace. The role selector is not pre-validated."
+    )]
     Set {
+        #[arg(help = "Workspace name", long_help = "Workspace name")]
         workspace: String,
+        #[arg(
+            help = "Env var name (stored verbatim; no POSIX validation)",
+            long_help = "Env var name (stored verbatim; no POSIX validation)"
+        )]
         key: String,
+        #[arg(
+            help = "Env var value (use `op://...`, `$VAR`, `${VAR}`, or literal)",
+            long_help = "Env var value (use `op://...`, `$VAR`, `${VAR}`, or literal)"
+        )]
         value: String,
-        #[arg(long)]
+        #[arg(
+            help = "Apply to a specific role inside this workspace",
+            long_help = "Apply to a specific role inside this workspace",
+            long
+        )]
         role: Option<String>,
-        #[arg(long)]
+        #[arg(
+            help = "Attach a comment to the key (recorded alongside the value)",
+            long_help = "Attach a comment to the key (recorded alongside the value)",
+            long
+        )]
         comment: Option<String>,
-        #[arg(long = "on-demand")]
+        #[arg(
+            help = "Inject on demand at `jackin-exec` time instead of at launch. The value is never resolved during launch; the agent asks for it and the operator approves each use.",
+            long_help = "Inject on demand at `jackin-exec` time instead of at launch. The value is never resolved during launch; the agent asks for it and the operator approves each use.",
+            long = "on-demand"
+        )]
         on_demand: bool,
     },
     #[command(
@@ -231,10 +437,22 @@ Examples:
   jackin workspace env unset prod DB_URL
   jackin workspace env unset prod OPENAI_KEY --role agent-smith"
     )]
+    #[command(
+        about = "Unset an env var at workspace or workspace-role scope",
+        long_about = "Unset an env var at workspace or workspace-role scope
+
+Idempotent: if the key is not present, prints \"KEY not set.\" and exits 0 without saving the config."
+    )]
     Unset {
+        #[arg(help = "Workspace name", long_help = "Workspace name")]
         workspace: String,
+        #[arg(help = "Env var name to remove", long_help = "Env var name to remove")]
         key: String,
-        #[arg(long)]
+        #[arg(
+            help = "Unset from a specific role inside this workspace",
+            long_help = "Unset from a specific role inside this workspace",
+            long
+        )]
         role: Option<String>,
     },
     #[command(
@@ -245,9 +463,18 @@ Examples:
   jackin workspace env list prod
   jackin workspace env list prod --role agent-smith"
     )]
+    #[command(
+        about = "List env vars at workspace or workspace-role scope",
+        long_about = "List env vars at workspace or workspace-role scope"
+    )]
     List {
+        #[arg(help = "Workspace name", long_help = "Workspace name")]
         workspace: String,
-        #[arg(long)]
+        #[arg(
+            help = "List vars for a specific role inside this workspace",
+            long_help = "List vars for a specific role inside this workspace",
+            long
+        )]
         role: Option<String>,
     },
 }
