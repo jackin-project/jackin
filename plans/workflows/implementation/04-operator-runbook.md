@@ -62,4 +62,4 @@ If storage is full, free only unheld/verified redundant data or export a verifie
 
 ## Implementation team handoff
 
-Start with the README reading order, then [current-state audit](../research/01-current-state.md), [gap register](../research/02-gap-register.md), [architecture](../architecture/01-system-boundaries.md), the owning component and [task backlog](02-task-backlog.md). Recheck the pinned existing code before implementing. Keep capabilities unverified until tests prove them. Do not publish or merge changes merely because this specification describes a publication component.
+Start with the README reading order, then [architecture](../architecture/01-system-boundaries.md), the owning component and [task backlog](02-task-backlog.md). Recheck the pinned existing code before implementing. Keep capabilities unverified until tests prove them. Do not publish or merge changes merely because this specification describes a publication component.

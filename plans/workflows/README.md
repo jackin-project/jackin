@@ -11,31 +11,27 @@ This pack defines what to reuse, what to build, how components communicate, how 
 
 | Reading order | Document | What it answers |
 |---|---|---|
-| 1 | [Current-state audit](research/01-current-state.md) | What Jackin already has and which assumptions need correcting |
-| 2 | [Gap register](research/02-gap-register.md) | The 25 identified gaps, priorities, owners and closure proof |
-| 3 | [System boundaries](architecture/01-system-boundaries.md) | Host/worker trust, crate ownership and non-negotiable invariants |
-| 4 | [Domain contracts](architecture/02-domain-contracts.md) and [state/recovery](architecture/03-state-and-recovery.md) | Exact identities, outputs, transitions and crash behavior |
-| 5 | [Build sequence](implementation/01-build-sequence.md) and [40-task backlog](implementation/02-task-backlog.md) | Dependency-ordered implementation instructions |
-| 6 | [Acceptance matrix](implementation/03-acceptance-and-test-matrix.md) | Proof required for all fourteen product acceptance criteria |
+| 1 | [System boundaries](architecture/01-system-boundaries.md) | Host/worker trust, crate ownership and non-negotiable invariants |
+| 2 | [Domain contracts](architecture/02-domain-contracts.md) and [state/recovery](architecture/03-state-and-recovery.md) | Exact identities, outputs, transitions and crash behavior |
+| 3 | [Build sequence](implementation/01-build-sequence.md) and [40-task backlog](implementation/02-task-backlog.md) | Dependency-ordered implementation instructions |
+| 4 | [Acceptance matrix](implementation/03-acceptance-and-test-matrix.md) | Proof required for all fourteen product acceptance criteria |
 
 ## Main research conclusions
 
-The implementation should reuse existing programmatic launch, runtime/isolation services, Capsule PTYs/control, agent registry, credential boundaries and Docker profile helpers. The current registry has twelve built-ins, including Muse; workflow support must not be reduced to a four-agent assumption. The new layer is durable orchestration and its enforcement/evidence contracts. See the [source-backed audit](research/01-current-state.md) and [evidence register](research/04-evidence-register.md).
+The implementation should reuse existing programmatic launch, runtime/isolation services, Capsule PTYs/control, agent registry, credential boundaries and Docker profile helpers. The current registry has twelve built-ins, including Muse; workflow support must not be reduced to a four-agent assumption. The new layer is durable orchestration and its enforcement/evidence contracts.
 
 Three particularly important distinctions shape the design: existing Docker grants generally widen profile capabilities, so workflow ceilings need their own final authorization boundary; Capsule PTY-writer acknowledgement is not agent processing or exactly-once input; and the project-standard embedded DB is `turso`, not an arbitrary new SQLite binding. Immutable checkpoints, finalization fences, independently trusted tests/reviews and scoped publication gates close the remaining control gaps.
 
 ## Pack contents and authority
 
-There are **22 component contracts**, **12 execution-block contracts** and **13 adapter contracts** covering all twelve registered built-ins plus the approved generic CLI path. The supplied Parallel / Join category is split into separate Parallel and Join execution kinds. The original product specification, research, architecture, implementation tasks, examples and export checks are separate Markdown files.
+There are **22 component contracts**, **12 execution-block contracts** and **13 adapter contracts** covering all twelve registered built-ins plus the approved generic CLI path. The supplied Parallel / Join category is split into separate Parallel and Join execution kinds. The original product specification, architecture, implementation tasks, examples and export checks are separate Markdown files. The upstream research surveys and registers carry no build contract and are not part of this pack; the reading order above cites only the kept normative documents.
 
-[Source product specification](00-product-specification.md) preserves user scope. Research reports current evidence. Architecture/components define proposed normative behavior; block and adapter files specialize it. Examples are explicitly labeled fixtures, not current executable product support. A certification gate marked unverified is not permission to advertise that capability as implemented.
+[Source product specification](00-product-specification.md) preserves user scope. Architecture/components define proposed normative behavior; block and adapter files specialize it. Examples are explicitly labeled fixtures, not current executable product support. A certification gate marked unverified is not permission to advertise that capability as implemented.
 
-## Architecture and research
+## Architecture
 
 | Document | Purpose |
 |---|---|
-| [External compatibility](research/03-external-compatibility.md) | pklr, actual agent transports, backends, Git, storage and editor limits |
-| [Evidence register](research/04-evidence-register.md) | 37 source entries with pinned repository links and inspected ranges |
 | [System boundaries](architecture/01-system-boundaries.md) | Trust model, invariants, scope and crate direction |
 | [Domain/wire contracts](architecture/02-domain-contracts.md) | Types, identities, hashes, ports, errors and records |
 | [State/recovery](architecture/03-state-and-recovery.md) | Run/node/command transitions, durable effects and crash matrix |
@@ -121,6 +117,6 @@ Each component describes purpose/ownership, current foundation and gap, API/data
 
 All substantive content is Markdown. The ZIP preserves this directory structure and relative links; open this README as the entry point. The separately supplied combined Markdown export embeds every document and rewrites local links to internal anchors. It is a reading/export copy, while these separate files remain the easiest implementation handoff units.
 
-[Documentation validation](DOCUMENTATION-VALIDATION.md) records file/link/fence/schema-example checks and their limits. [SHA-256 manifest](MANIFEST.md) lists the exact separate-file digests; it excludes itself to avoid a circular hash. A Markdown renderer may support Mermaid; the text contracts do not depend on diagrams rendering.
+A Markdown renderer may support Mermaid; the text contracts do not depend on diagrams rendering.
 
 Product tests and conformance scenarios are **not run** in this research. Documentation structural checks do not prove runtime security or correctness. The final release must close the explicit certification gates and preserve existing manual Jackin functionality.
