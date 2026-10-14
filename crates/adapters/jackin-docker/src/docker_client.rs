@@ -20,8 +20,9 @@ use bollard::query_parameters::{
 use futures_util::StreamExt;
 
 pub use jackin_core::{
-    ContainerHandle, ContainerInspection, ContainerRow, ContainerSpec, ContainerState, DockerApi,
-    NetworkRow, RemoveImageOutcome,
+    ContainerFullInspection, ContainerHandle, ContainerHandleSnapshot, ContainerInspection,
+    ContainerMountSnapshot, ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow,
+    RemoveImageOutcome,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,6 +43,8 @@ const CONTAINER_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/containers/{i
 const CONTAINER_LIST: DockerRoute = DockerRoute::new("GET", "/containers/json");
 const CONTAINER_CREATE: DockerRoute = DockerRoute::new("POST", "/containers/create");
 const CONTAINER_START: DockerRoute = DockerRoute::new("POST", "/containers/{id}/start");
+const CONTAINER_PAUSE: DockerRoute = DockerRoute::new("POST", "/containers/{id}/pause");
+const CONTAINER_UNPAUSE: DockerRoute = DockerRoute::new("POST", "/containers/{id}/unpause");
 const VOLUME_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/volumes/{name}");
 const NETWORK_CREATE: DockerRoute = DockerRoute::new("POST", "/networks/create");
 const NETWORK_REMOVE: DockerRoute = DockerRoute::new("DELETE", "/networks/{id}");
@@ -379,6 +382,83 @@ fn container_state_from_inspect(info: &ContainerInspectResponse) -> ContainerSta
                 state.status
             ))
         }
+    }
+}
+
+fn full_inspection_from_response(
+    container: &ContainerHandle,
+    info: &ContainerInspectResponse,
+) -> ContainerFullInspection {
+    let (running, paused) = match info.state.as_ref() {
+        Some(state) => (
+            state.running.unwrap_or(false),
+            state.paused.unwrap_or(false),
+        ),
+        None => (false, false),
+    };
+    let host_config = info.host_config.as_ref();
+    let config = info.config.as_ref();
+    let security_opt: Vec<String> = host_config
+        .and_then(|h| h.security_opt.clone())
+        .unwrap_or_default();
+    let no_new_privileges = security_opt.iter().any(|opt| {
+        let normalized: String = opt
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        matches!(
+            normalized.as_str(),
+            "no-new-privileges" | "no-new-privileges:true" | "nonewprivileges:true"
+        )
+    });
+    let mounts: Vec<ContainerMountSnapshot> = info
+        .mounts
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|mount| ContainerMountSnapshot {
+            source: mount.source.unwrap_or_default(),
+            destination: mount.destination.unwrap_or_default(),
+            mode: mount.mode.unwrap_or_default(),
+            read_write: mount.rw.unwrap_or(false),
+        })
+        .collect();
+    ContainerFullInspection {
+        handle: ContainerHandleSnapshot {
+            name: container.name().to_owned(),
+            id: container.id().to_owned(),
+        },
+        running,
+        paused,
+        privileged: host_config.and_then(|h| h.privileged).unwrap_or(false),
+        user: config.and_then(|c| c.user.clone()).unwrap_or_default(),
+        readonly_rootfs: host_config.and_then(|h| h.readonly_rootfs).unwrap_or(false),
+        no_new_privileges,
+        memory_bytes: host_config
+            .and_then(|h| h.memory)
+            .and_then(|m| u64::try_from(m).ok()),
+        memory_reservation_bytes: host_config
+            .and_then(|h| h.memory_reservation)
+            .and_then(|m| u64::try_from(m).ok()),
+        nano_cpus: host_config.and_then(|h| h.nano_cpus),
+        pids_limit: host_config.and_then(|h| h.pids_limit),
+        cap_add: host_config
+            .and_then(|h| h.cap_add.clone())
+            .unwrap_or_default(),
+        cap_drop: host_config
+            .and_then(|h| h.cap_drop.clone())
+            .unwrap_or_default(),
+        security_opt,
+        network_mode: host_config
+            .and_then(|h| h.network_mode.clone())
+            .unwrap_or_default(),
+        extra_hosts: host_config
+            .and_then(|h| h.extra_hosts.clone())
+            .unwrap_or_default(),
+        mounts,
+        labels: config.and_then(|c| c.labels.clone()).unwrap_or_default(),
+        image: config.and_then(|c| c.image.clone()).unwrap_or_default(),
     }
 }
 
@@ -857,6 +937,65 @@ impl DockerApi for BollardDockerClient {
         }
 
         Ok(output_buf.trim().to_owned())
+    }
+
+    async fn pause_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
+        docker_http(CONTAINER_PAUSE, async {
+            self.inner
+                .pause_container(container.id())
+                .await
+                .with_context(|| {
+                    format!(
+                        "pausing container {} ({})",
+                        container.name(),
+                        container.id()
+                    )
+                })
+        })
+        .await
+    }
+
+    async fn unpause_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
+        docker_http(CONTAINER_UNPAUSE, async {
+            self.inner
+                .unpause_container(container.id())
+                .await
+                .with_context(|| {
+                    format!(
+                        "resuming container {} ({})",
+                        container.name(),
+                        container.id()
+                    )
+                })
+        })
+        .await
+    }
+
+    async fn inspect_full_container_by_id(
+        &self,
+        container: &ContainerHandle,
+    ) -> anyhow::Result<ContainerFullInspection> {
+        let operation = begin_docker_http(CONTAINER_INSPECT);
+        let result = self
+            .inner
+            .inspect_container(container.id(), None::<InspectContainerOptions>)
+            .await;
+        let info = match result {
+            Ok(info) => info,
+            Err(e) => {
+                operation.complete(
+                    jackin_telemetry::schema::enums::OutcomeValue::Failure,
+                    Some(jackin_telemetry::schema::enums::ErrorType::HttpError),
+                );
+                return Err(anyhow::Error::from(e).context(format!(
+                    "inspecting container {} ({})",
+                    container.name(),
+                    container.id()
+                )));
+            }
+        };
+        operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
+        Ok(full_inspection_from_response(container, &info))
     }
 
     async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {

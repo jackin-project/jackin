@@ -125,6 +125,12 @@ pub async fn force_cleanup_isolated(
     container_state_dir: &Path,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    // Preservation holds are enforced here — not only in workflow CLI code —
+    // so normal cancellation, failure, retention expiry, and prune cannot
+    // remove held sources. A clean repository can still contain the only
+    // unpushed commit.
+    crate::holds::check_removal(container_state_dir, &record.worktree_path)
+        .map_err(|e| anyhow::anyhow!("{e:#}; record retained"))?;
     let journal_name = crate::state::worktree_cleanup_journal_name(&record.mount_dst);
     if matches!(record.isolation, crate::MountIsolation::Clone) {
         anyhow::ensure!(
