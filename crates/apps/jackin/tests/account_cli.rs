@@ -43,7 +43,6 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         home.join(".codex/auth.json"),
         r#"{"tokens":{"access_token":"synthetic-default-token"}}"#,
     )?;
-
     fs::create_dir(home.join(".claude"))?;
     fs::write(
         home.join(".claude/.credentials.json"),
@@ -147,7 +146,6 @@ fn account_cli_onboards_and_enforces_workspace_assignments() -> anyhow::Result<(
         .success()
         .stdout(predicate::str::contains("default-codex").not());
     command(home)?.args(["account", "scan"]).assert().success();
-
     assert!(!registry(home)?.accounts.contains_key("default-codex"));
     Ok(())
 }

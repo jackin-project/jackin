@@ -66,7 +66,6 @@ pub fn build_workspace_choice(
                 input: LoadWorkspaceInput::Saved(name.clone()),
             }))
         }
-
         LoadWorkspaceInput::Path { .. } => Ok(None),
     }
 }

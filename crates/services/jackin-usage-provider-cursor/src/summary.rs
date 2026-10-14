@@ -137,7 +137,6 @@ pub fn cursor_summary_buckets(summary: &CursorUsageSummary, now: i64) -> Vec<Quo
             UsageSnapshotStatus::Fresh,
         ));
     }
-
     if let Some(overall) = summary.overall_raw {
         buckets.push(bucket(
             "Overall",

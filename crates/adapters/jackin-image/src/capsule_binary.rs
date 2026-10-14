@@ -28,7 +28,6 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
             ))
             .into());
         }
-
         crate::telemetry_boundary::cache_decision(
             jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
             jackin_telemetry::schema::enums::CacheResult::Bypass,
@@ -465,10 +464,8 @@ struct RekorHash {
 #[serde(rename_all = "camelCase")]
 struct RekorSig {
     content: String,
-
     public_key: RekorPublicKey,
 }
-
 #[derive(serde::Deserialize)]
 struct RekorPublicKey {
     content: String,

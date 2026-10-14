@@ -1,7 +1,6 @@
 pub mod agent_status;
 pub(crate) mod alloc_telemetry;
 pub mod attach_context;
-
 pub mod attach_protocol;
 pub mod client;
 pub(crate) mod client_writer;
@@ -16,7 +15,6 @@ pub mod firewall;
 pub mod git_context;
 pub mod mcp_server;
 pub mod output;
-
 pub mod perf_budgets;
 pub mod pid1;
 pub mod pr_context;

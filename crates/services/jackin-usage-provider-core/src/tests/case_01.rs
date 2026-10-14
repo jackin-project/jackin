@@ -112,7 +112,6 @@ fn provider_labels_resolve_all_account_refresh_surfaces() {
         broker_surface_id("opencode", Some("OpenRouter")),
         Some("openrouter")
     );
-
     assert_eq!(resolve_surface("antigravity", None), UsageSurface::Google);
     for agent in ["muse", "omp", "hermes"] {
         assert_eq!(
@@ -146,13 +145,11 @@ fn capability_matches_newly_wired_surfaces_only() {
         Some("OpenRouter"),
         &capability("openrouter")
     ));
-
     assert!(!capability_matches_surface(
         "cursor",
         Some("Cursor"),
         &capability("google")
     ));
-
     assert!(capability_matches_surface(
         "antigravity",
         None,
@@ -306,7 +303,6 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
     ];
     expected.sort();
     assert_eq!(ids, expected);
-
     let active: Vec<&UsageProviderTab> = snapshot.tabs.iter().filter(|tab| tab.active).collect();
     assert_eq!(active.len(), 1);
     assert_eq!(
@@ -322,7 +318,6 @@ fn two_claude_accounts_and_codex_produce_three_tabs_with_distinct_ids() {
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].id, id_a);
     assert_eq!(active[0].account_label, "a@example.com");
-
     let mut labels: Vec<String> = selected.tabs.iter().map(|tab| tab.label.clone()).collect();
     labels.sort();
     labels.dedup();

@@ -18,11 +18,8 @@ pub enum Action {
     RunConsole { args: ConsoleArgs, explicit: bool },
 
     RunCommand(Box<Command>),
-
     PrintHelpAndExit,
-
     PrintHelp { command: Vec<String> },
-
     ErrorNotTtyCapable,
 }
 

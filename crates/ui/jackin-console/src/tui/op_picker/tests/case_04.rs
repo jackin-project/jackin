@@ -15,7 +15,6 @@ fn vault_list_uses_injected_runner_in_async_worker() {
     });
     let runner_for_assert: Arc<RecorderRunner> = Arc::clone(&runner);
     let mut s = new_picker_with_runner(runner);
-
     drain_initial_account_load(&mut s);
     *runner_for_assert.vault_list_calls.lock().unwrap() = 0;
     *runner_for_assert.last_vault_list_account.lock().unwrap() = None;
@@ -166,7 +165,6 @@ fn picker_commit_embeds_subtitle_when_item_name_collides_in_vault() {
         .build_op_ref_on_commit(&field)
         .expect("fixture IDs form a valid secret reference");
     assert_eq!(r.op, "op://v_uuid/i_uuid_a/s_security_uuid/f_uuid");
-
     assert!(
         r.op.starts_with("op://v_uuid/i_uuid_a/"),
         "op had wrong prefix: {}",
@@ -287,7 +285,6 @@ fn picker_commit_3seg_fallback_preserved_when_sibling_has_reference() {
         the_item,
         no_ref_field.clone(),
     );
-
     state.fields.push(sectioned_field);
 
     let r = state

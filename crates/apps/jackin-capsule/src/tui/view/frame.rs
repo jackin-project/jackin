@@ -108,7 +108,6 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             prefix_mode: view.prefix_mode,
             hovered_tab: view.hovered_tab,
             menu_hovered: view.menu_hovered,
-
             focused: view.focus_owner.is_tab_bar(),
         },
         status_area,
@@ -123,7 +122,6 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
                 .term_rows
                 .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS),
         };
-
         frame.render_widget(termrock::widgets::Backdrop::reset(), backdrop_area);
         if let Some((snapshot, rect)) = view.dialog_snapshot {
             render_dialog_ratatui(frame, *rect, snapshot);

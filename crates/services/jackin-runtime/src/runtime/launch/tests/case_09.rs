@@ -179,9 +179,7 @@ model = "gpt-5"
         .iter()
         .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
-
     assert!(!build_cmd.contains("--pull"));
-
     assert!(
         build_cmd.contains("--build-arg JACKIN_CACHE_BUST="),
         "supported set includes a cache-bust agent (claude); got: {build_cmd}"
@@ -205,7 +203,6 @@ model = "gpt-5"
         "initial instance must be passed as container argv"
     );
     assert!(!run_cmd.contains("/jackin/codex/config.toml"));
-
     assert!(!run_cmd.contains("/home/agent/.claude"));
     assert!(run_cmd.contains("/home/agent/.codex"));
     let container_name = launched_role_container_name(&runner);

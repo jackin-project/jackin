@@ -151,7 +151,6 @@ impl TelemetryImports {
                 .map_or((candidate.as_str(), None), |(head, tail)| {
                     (head, Some(tail))
                 });
-
             let local_module_path = tail.is_some() && self.modules.contains(head);
             if let Some(targets) = self.aliases.get(head).filter(|_| !local_module_path) {
                 if !alias_path.insert(head.to_owned()) {
@@ -564,7 +563,6 @@ fn source_module(path: &str) -> Option<Vec<String>> {
     let parts = path.split('/').collect::<Vec<_>>();
     let crates = parts.iter().position(|part| *part == "crates")?;
     let src = parts[crates + 2..].iter().position(|part| *part == "src")? + crates + 2;
-
     let mut module = vec![parts.get(crates + 2)?.replace('-', "_")];
     let relative = &parts[src + 1..];
     for (index, part) in relative.iter().enumerate() {

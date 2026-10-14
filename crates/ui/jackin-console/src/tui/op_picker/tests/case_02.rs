@@ -61,14 +61,12 @@ fn section_choices_returns_root_plus_distinct_sections() {
 #[test]
 fn create_mode_existing_field_commits_edit_item_field() {
     let mut s = create_at_section(vec![field("token", "CONCEALED", true)]);
-
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::Field);
     assert_eq!(s.selected_section, None);
-
     s.field_list_state.set_active(Some(0));
     match s.handle_key(key(KeyCode::Enter)) {
         ModalOutcome::Commit(OpPickerSelection::EditItemField {
@@ -78,7 +76,6 @@ fn create_mode_existing_field_commits_edit_item_field() {
             ..
         }) => {
             assert_eq!(item.id, "i-login");
-
             assert_eq!(
                 field,
                 FieldTarget::Existing {
@@ -106,7 +103,6 @@ fn create_mode_selecting_section_scopes_field_stage() {
         ],
         vec![auth.clone()],
     );
-
     s.section_list_state.set_active(Some(1));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
@@ -114,11 +110,9 @@ fn create_mode_selecting_section_scopes_field_stage() {
     ));
     assert_eq!(s.stage, OpPickerStage::Field);
     assert_eq!(s.selected_section, Some(auth.clone()));
-
     let rows = s.build_field_display_rows();
     assert_eq!(rows.len(), 3, "two auth fields + new-field sentinel");
     assert!(matches!(rows[2], FieldDisplayRow::NewFieldSentinel));
-
     s.field_list_state.set_active(Some(0));
     match s.handle_key(key(KeyCode::Enter)) {
         ModalOutcome::Commit(OpPickerSelection::EditItemField { section, field, .. }) => {
@@ -135,13 +129,11 @@ fn create_mode_new_field_in_root_commits_section_none() {
         "user",
         "op://Personal/login/user",
     )]);
-
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::Field);
-
     s.field_list_state.set_active(Some(1));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
@@ -160,14 +152,12 @@ fn create_mode_new_field_in_root_commits_section_none() {
 #[test]
 fn create_mode_new_section_flow_threads_section_into_commit() {
     let mut s = create_at_section(vec![]);
-
     s.section_list_state.set_active(Some(1));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::NewSectionName);
-
     for c in "creds".chars() {
         drop(s.handle_key(key(KeyCode::Char(c))));
     }
@@ -200,7 +190,6 @@ fn field_label_cancel_clears_pending_section() {
         s.pending_section,
         Some(OpSectionTarget::NewLabel("foo".into()))
     );
-
     drop(s.handle_key(key(KeyCode::Esc)));
     assert_eq!(s.stage, OpPickerStage::NewSectionName);
     assert!(
@@ -212,7 +201,6 @@ fn field_label_cancel_clears_pending_section() {
 #[test]
 fn field_label_commit_trims_whitespace() {
     let mut s = create_at_section(vec![]);
-
     drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.stage, OpPickerStage::Field);
     s.field_label_input = field_label_input_state("  oauth-token  ");
@@ -256,10 +244,8 @@ fn left_collapse_via_header_keeps_selection_in_range() {
         label: "auth".to_owned(),
     }];
     s.stage = OpPickerStage::Field;
-
     let last = s.build_field_display_rows().len() - 1;
     s.field_list_state.set_active(Some(last));
-
     let header_idx = s
         .build_field_display_rows()
         .iter()
@@ -296,7 +282,6 @@ fn create_mode_esc_chain_field_to_section_to_item() {
             label: "auth".to_owned(),
         }],
     );
-
     s.section_list_state.set_active(Some(1));
     drop(s.handle_key(key(KeyCode::Enter)));
     assert_eq!(s.stage, OpPickerStage::Field);

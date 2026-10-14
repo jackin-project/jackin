@@ -27,13 +27,11 @@ pub struct PrewarmArgs {
 
     #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
-
     #[arg(long, conflicts_with_all = ["role", "all_workspaces"])]
     pub workspace: Option<String>,
 
     #[arg(long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role_git: Option<String>,
-
     #[arg(long, requires = "image")]
     pub role_branch: Option<String>,
 }
@@ -53,25 +51,18 @@ mod tests;
 pub struct PrewarmFlags {
     #[arg(long)]
     pub image: bool,
-
     #[arg(long)]
     pub daemon: bool,
-
     #[arg(long)]
     pub roles: bool,
-
     #[arg(long)]
     pub sidecar: bool,
-
     #[arg(long)]
     pub sidecar_container: bool,
-
     #[arg(long, requires = "sidecar_container")]
     pub keep_sidecar_container: bool,
-
     #[arg(long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]
     pub all_workspaces: bool,
-
     #[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]
     pub all_roles: bool,
 }

@@ -205,7 +205,6 @@ pub fn render_build_log_dialog(
     scroll.scroll_y = u16::try_from(view.build_log_scroll.to_top_offset(lines_len, viewport_h))
         .unwrap_or(u16::MAX);
     let theme = termrock::style::DesignSystem::default();
-
     let content_revision = (view.build_log_wrapped_width as u64)
         .wrapping_mul(1_000_003)
         .wrapping_add(lines_len as u64);
@@ -242,7 +241,6 @@ fn wrap_build_log_line(line: &str, width: usize) -> Vec<Line<'static>> {
     }
 
     let default_style = Style::default().fg(Color::Gray).bg(Color::Reset);
-
     let parsed = termrock::ansi_text::line_from_ansi(line.trim_end(), default_style);
     wrap_build_log_spans(parsed.spans, width)
 }

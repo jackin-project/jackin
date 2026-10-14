@@ -262,20 +262,15 @@ fn apply_wal(pages: &mut Vec<Vec<u8>>, page_size: usize, wal: &[u8]) -> Result<(
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TableRow {
     pub(crate) rowid: i64,
-
     pub(crate) values: Vec<SqlValue>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum SqlValue {
     Null,
-
     Int(i64),
-
     Float(f64),
-
     Text(String),
-
     Blob(Vec<u8>),
 }
 

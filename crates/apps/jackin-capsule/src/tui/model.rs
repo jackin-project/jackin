@@ -111,7 +111,6 @@ pub(crate) enum HoverTarget {
     BranchContext,
     UsageStatus,
     Container,
-
     DebugChip,
     DialogCopyTarget,
 }
@@ -329,10 +328,8 @@ pub(crate) fn tab_auto_label(
 #[derive(Debug, Clone)]
 pub(crate) struct DragState {
     pub(crate) tab_idx: usize,
-
     pub(crate) path: Vec<u8>,
     pub(crate) orient: SplitOrient,
-
     pub(crate) rect: Rect,
 }
 

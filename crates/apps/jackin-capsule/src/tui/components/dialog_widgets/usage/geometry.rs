@@ -80,7 +80,6 @@ pub(crate) fn usage_panel_title(
     width: u16,
 ) -> String {
     let base = state.title();
-
     if width >= 68 || base != "Usage" {
         return base.to_owned();
     }

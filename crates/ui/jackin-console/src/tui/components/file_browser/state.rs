@@ -11,23 +11,15 @@ use termrock::widgets::ListState;
 #[derive(Debug)]
 pub struct FileBrowserState {
     pub root: PathBuf,
-
     pub cwd: PathBuf,
-
     pub entries: Vec<FolderEntry>,
-
     pub list_state: ListState<usize>,
-
     pub rejected_reason: Option<String>,
-
     pub show_hidden: bool,
-
     pub pending_git_prompt: Option<PathBuf>,
-
     pub pending_git_url: Option<String>,
     pub(super) pending_git_url_rx:
         Option<crate::tui::runtime::BlockingSubscription<Option<String>>>,
-
     pub pending_git_focus: GitPromptFocus,
 }
 

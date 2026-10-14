@@ -3,12 +3,10 @@
 
 pub const LIST_HEADER_HEIGHT: u16 = 2;
 pub const LIST_FOOTER_HEIGHT: u16 = 2;
-
 pub const MIN_DRAGGABLE_WIDTH: u16 = 40;
 pub const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 1;
 pub const MOUSE_VERTICAL_SCROLL_STEP: i16 = 1;
 pub const SCREEN_HEADER_HEIGHT: u16 = 3;
-
 pub const SEAM_HIT_SLACK: u16 = 1;
 pub const TAB_STRIP_HEIGHT: u16 = 2;
 
@@ -164,7 +162,6 @@ pub fn apply_scrollbar_drag(
                 1,
                 u16::try_from(scroll_viewport_height(area)).unwrap_or(u16::MAX),
             );
-
             scroll.set_offset_y(offset);
         }
     }

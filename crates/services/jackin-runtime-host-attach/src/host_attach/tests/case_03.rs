@@ -85,7 +85,6 @@ async fn attach_protocol_forwards_bytes_around_a_staged_paste() {
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
     };
-
     let mut raw_input = b"\x1b[200~".to_vec();
     raw_input.extend_from_slice(image_path.display().to_string().as_bytes());
     raw_input.extend_from_slice(b"\x1b[201~\x1b[<0;1;1M");
@@ -157,7 +156,6 @@ async fn attach_protocol_forwards_typed_prefix_before_a_staged_paste() {
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
     };
-
     let mut raw_input = b"ab\x1b[200~".to_vec();
     raw_input.extend_from_slice(image_path.display().to_string().as_bytes());
     raw_input.extend_from_slice(b"\x1b[201~");
@@ -229,7 +227,6 @@ async fn attach_protocol_forwards_prefix_image_suffix_in_wire_order() {
         terminal: ClientTerminal::default(),
         export_subdir: "jk-agent-smith".to_owned(),
     };
-
     let mut raw_input = b"ab\x1b[200~".to_vec();
     raw_input.extend_from_slice(image_path.display().to_string().as_bytes());
     raw_input.extend_from_slice(b"\x1b[201~\x1b[<0;1;1M");

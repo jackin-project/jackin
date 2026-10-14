@@ -20,31 +20,26 @@ async fn non_trigger_does_not_probe_clipboard() {
 #[test]
 fn split_paste_requires_a_start_marker_and_partitions_the_read() {
     let e = b"".as_slice();
-
     assert_eq!(
         split_paste(&bracketed("/tmp/x.png")),
         Some((e, b"/tmp/x.png".as_slice(), e))
     );
-
     let mut trailing = bracketed("/tmp/x.png");
     trailing.extend_from_slice(b"\x1b[<0;1;1M");
     assert_eq!(
         split_paste(&trailing),
         Some((e, b"/tmp/x.png".as_slice(), b"\x1b[<0;1;1M".as_slice()))
     );
-
     let mut leading = b"ab".to_vec();
     leading.extend_from_slice(&bracketed("/tmp/x.png"));
     assert_eq!(
         split_paste(&leading),
         Some((b"ab".as_slice(), b"/tmp/x.png".as_slice(), e))
     );
-
     assert_eq!(
         split_paste(b"\x1b[200~/tmp/x.png"),
         Some((e, b"/tmp/x.png".as_slice(), e))
     );
-
     assert_eq!(split_paste(b"/tmp/x.png"), None);
 }
 
@@ -53,7 +48,6 @@ fn looks_like_image_path_gates_to_absolute_image_files() {
     assert!(looks_like_image_path("/Users/me/shot.png"));
     assert!(looks_like_image_path("\"/Users/me/my shot.jpeg\""));
     assert!(looks_like_image_path("file:///Users/me/shot.gif"));
-
     assert!(!looks_like_image_path("/Users/me/notes.txt"));
     assert!(!looks_like_image_path("relative/shot.png"));
     assert!(!looks_like_image_path("/Users/me/a.png\n/Users/me/b.png"));
@@ -327,7 +321,6 @@ fn bounded_reader_maps_empty_and_failed_commands_to_none() {
             .unwrap()
             .is_none()
     );
-
     assert!(
         read_command_stdout_bounded(
             Path::new("/bin/sh"),

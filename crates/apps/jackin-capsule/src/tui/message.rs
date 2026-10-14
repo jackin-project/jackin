@@ -8,7 +8,6 @@ use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand, is_wheel_button};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     OpenPalette,
-
     RequestExit,
     OpenContainerInfo,
     OpenGithubContext,
@@ -140,7 +139,6 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
                 col: *col,
             })
         }
-
         InputEvent::MousePress { col, row, button }
             if context.dialog_captures_input && is_wheel_button(*button) =>
         {
@@ -304,7 +302,6 @@ pub(crate) fn branch_context_bar_click_action(hit: Option<BranchContextBarHit>) 
         Some(BranchContextBarHit::Context) => Some(Action::OpenGithubContext),
         Some(BranchContextBarHit::UsageStatus) => Some(Action::OpenUsage),
         Some(BranchContextBarHit::Container) => Some(Action::OpenContainerInfo),
-
         Some(BranchContextBarHit::DebugChip) => Some(Action::OpenContainerInfo),
         None => None,
     }

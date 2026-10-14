@@ -7,7 +7,6 @@ use jackin_protocol::usage_broker::UsageAccountCapability;
 
 use crate::{ForwardedUsageSources, capability_for_binding, forwarding_requirement};
 use jackin_usage_discovery::{ValidatedCredentialSource, ValidatedUsageDiscovery};
-
 #[must_use]
 pub(crate) fn forwarded_usage_capabilities(
     discovery: &ValidatedUsageDiscovery,

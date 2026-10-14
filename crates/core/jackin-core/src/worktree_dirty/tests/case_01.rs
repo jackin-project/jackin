@@ -7,7 +7,6 @@ use super::*;
 fn clean_worktree_at_base_is_clean() {
     let mut mock = MockGit {
         porcelain: String::new(),
-
         for_each_ref: format!("scratch\t{BASE}\t\t"),
         symbolic_ref_ok: true,
         ..MockGit::default()
@@ -37,7 +36,6 @@ fn untracked_files_are_dirty() {
 fn branch_ahead_with_no_upstream_is_unpushed() {
     let mut mock = MockGit {
         porcelain: String::new(),
-
         for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\t\t".to_owned(),
         symbolic_ref_ok: true,
         ..MockGit::default()

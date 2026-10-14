@@ -15,7 +15,6 @@ pub(super) struct EnvRow {
     key: String,
     #[tabled(rename = "Value")]
     value: String,
-
     #[tabled(rename = "On demand")]
     on_demand: String,
 }

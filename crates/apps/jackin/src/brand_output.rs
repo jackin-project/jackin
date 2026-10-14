@@ -20,7 +20,6 @@ pub fn version_splash(version: &str) -> String {
 #[must_use]
 pub fn help_banner(width: u16) -> String {
     const H: usize = 13;
-
     const FADE_ROWS: usize = 4;
     const POOL: &[u8] =
         b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*<>{}[]|/\\~";
@@ -34,7 +33,6 @@ pub fn help_banner(width: u16) -> String {
     let byl_row = H / 2 + 1;
     let lc = w.saturating_sub(PILL_W) / 2;
     let bc = w.saturating_sub(byl_w) / 2;
-
     let box_top = lock_row - 1;
     let box_bot = byl_row + 1;
     let box_lo = lc.min(bc).saturating_sub(3);
@@ -67,7 +65,6 @@ pub fn help_banner(width: u16) -> String {
                 c += 1;
                 continue;
             }
-
             let col_seed = xorshift((c as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5EED);
             let lit = if col_seed % 100 < 55 {
                 let head = (col_seed >> 8) % (H as u64 + 6);

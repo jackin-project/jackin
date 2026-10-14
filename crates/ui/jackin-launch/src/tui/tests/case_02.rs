@@ -51,7 +51,6 @@ fn failure_copy_target_at_ignores_non_copyable_rows() {
     let body_area = bottom_chrome_areas(area).body;
     let rect = failure_popup_rect_for_rows(body_area, &rows);
     let run_id_rect = failure_popup_value_rect(rect, &rows, FailureCopyTarget::RunId).unwrap();
-
     let message_y = run_id_rect.y.saturating_sub(2);
     assert_eq!(
         failure_copy_target_at(area, &failure, run_id, true, run_id_rect.x, message_y, None),

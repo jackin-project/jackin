@@ -6,15 +6,12 @@ use super::*;
 #[test]
 fn resolve_backend_defaults_docker_and_workspace_overrides_config() {
     let mut config = jackin_config::AppConfig::default();
-
     assert_eq!(resolve_backend(&config, None).unwrap(), Backend::Docker);
-
     config.runtime.default_backend = Some("apple-container".to_owned());
     assert_eq!(
         resolve_backend(&config, None).unwrap(),
         Backend::AppleContainer
     );
-
     let mut ws = jackin_config::WorkspaceConfig::default();
     ws.runtime.backend = Some("docker".to_owned());
     config.workspaces.insert("prod".to_owned(), ws);
@@ -22,12 +19,10 @@ fn resolve_backend_defaults_docker_and_workspace_overrides_config() {
         resolve_backend(&config, Some("prod")).unwrap(),
         Backend::Docker
     );
-
     assert_eq!(
         resolve_backend(&config, Some("absent")).unwrap(),
         Backend::AppleContainer
     );
-
     config.runtime.default_backend = Some("aple-container".to_owned());
     resolve_backend(&config, None).unwrap_err();
 }

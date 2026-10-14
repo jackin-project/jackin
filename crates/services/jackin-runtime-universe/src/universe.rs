@@ -109,7 +109,6 @@ pub async fn claim_entry(paths: &JackinPaths, docker: &impl DockerApi) -> EntryC
             Err(_) => return EntryClaim::none(StartKind::ResumeExisting),
         }
     }
-
     boundary_work(&authority, |authority| {
         let _lock = boundary_lock(authority)?;
         advance_generation(authority)?;
@@ -454,7 +453,6 @@ fn take_exit_claim_locked(authority: &Path) -> ExitClaimAttempt {
         record_exit_claim_recovery();
         return ExitClaimAttempt::Complete(ExitClaim::Missing);
     }
-
     let content = match state_read(authority, "universe-since") {
         Ok(Some(content)) => content,
         Ok(None) => return ExitClaimAttempt::Complete(ExitClaim::Missing),

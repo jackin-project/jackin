@@ -228,7 +228,6 @@ fn mouse_up_ends_drag() {
 #[test]
 fn mouse_down_far_from_seam_does_not_start_drag() {
     let mut state = list_state();
-
     handle_mouse(
         &mut state,
         mouse(MouseEventKind::Down(MouseButton::Left), 2),
@@ -246,7 +245,6 @@ fn mouse_down_far_from_seam_does_not_start_drag() {
 #[test]
 fn drag_ignored_when_list_modal_open() {
     let mut state = list_state();
-
     let ws = WorkspaceConfig {
         workdir: "/w".into(),
         mounts: vec![MountConfig {
@@ -257,7 +255,6 @@ fn drag_ignored_when_list_modal_open() {
         }],
         ..Default::default()
     };
-
     drop(crate::github_mounts::resolve_for_workspace(&ws));
     state.list_modal = Some(Modal::GithubPicker {
         state: crate::tui::components::github_picker::GithubPickerState::new(vec![

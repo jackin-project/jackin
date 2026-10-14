@@ -16,7 +16,6 @@ async fn stopped_matching_instance_with_missing_network_recreates_current_role()
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
@@ -164,7 +163,6 @@ async fn related_restore_candidate_requires_rich_dialog_for_fresh_load() {
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-
     let docker = jackin_test_support::FakeDockerClient::default();
 
     let error = resolve_workspace_restore(&paths, "agent-smith", &docker)
@@ -192,7 +190,6 @@ async fn running_related_instance_does_not_block_fresh_load() {
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -218,7 +215,6 @@ async fn stopped_related_instance_does_not_block_fresh_load() {
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
@@ -248,7 +244,6 @@ async fn related_restore_candidates_ignore_finished_instances() {
     );
     manifest.mark_status(InstanceStatus::CleanExited);
     write_indexed_manifest(&paths, &manifest);
-
     let docker = jackin_test_support::FakeDockerClient::default();
 
     let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)

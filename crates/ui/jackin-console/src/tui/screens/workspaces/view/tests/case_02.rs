@@ -219,16 +219,12 @@ fn workspace_list_names_window_matches_literal_visible_indices() {
 
     let first = plan_at(8, 4);
     assert_eq!((first, last(first)), (4, 13));
-
     let first = plan_at(2, 4);
     assert_eq!((first, last(first)), (2, 11));
-
     let first = plan_at(19, 4);
     assert_eq!((first, last(first)), (10, 19));
-
     let first = plan_at(8, 60);
     assert_eq!((first, last(first)), (8, 17));
-
     let plan = workspace_list_names_render_plan(WorkspaceListNamesRenderFacts {
         area: Rect::new(0, 0, 30, 2),
         selected_index: 8,

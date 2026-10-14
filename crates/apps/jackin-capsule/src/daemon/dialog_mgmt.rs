@@ -85,7 +85,6 @@ impl Multiplexer {
 
     pub(super) fn open_github_context_dialog(&mut self, now: Instant) {
         self.dialog_push(Dialog::new_github_context());
-
         let _spawned = self.force_spawn_pull_request_context_lookup(now);
     }
 

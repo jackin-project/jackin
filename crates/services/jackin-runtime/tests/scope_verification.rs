@@ -265,17 +265,14 @@ fn s2_relay_allowlist_admits_exactly_abc() {
             "{id} must be admitted"
         );
     }
-
     let err = allowlist.authorize(&capability("acc-d")).unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::Unauthorized);
-
     let sibling = UsageAccountCapability {
         account_id: "acc-a".into(),
         surface_id: "codex".into(),
     };
     let err = allowlist.authorize(&sibling).unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::Unauthorized);
-
     let err = allowlist.resolve_surface("claude").unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::Unauthorized);
     let err = allowlist.resolve_surface("no-such-surface").unwrap_err();
@@ -327,7 +324,6 @@ fn s2_stale_catalog_capability_is_revoked_for_direct_requests() {
         .request_refresh(&capability("acc-d"), 0, true, NOW)
         .unwrap_err();
     assert_eq!(err.kind, UsageCoordinationErrorKind::CatalogRevoked);
-
     gate.release(1);
     gate.wait_idle();
 
@@ -384,12 +380,10 @@ fn s6_stale_cas_adopts_the_winner() {
         quota_view(),
     )));
     let (coordinator, gate) = coordinator_with(gate);
-
     let cap = capability_for_surface("acc-a", "codex");
 
     let winner = coordinator.request_refresh(&cap, 0, true, NOW).unwrap();
     assert_eq!(winner.phase, UsageRefreshPhase::Queued);
-
     let joiner = coordinator.request_refresh(&cap, 0, true, NOW).unwrap();
     assert_eq!(joiner.generation, winner.generation);
     gate.wait_started(1);
@@ -423,7 +417,6 @@ fn s6_rotation_fences_in_flight_and_discards_late_results() {
         quota_view(),
     )));
     let (coordinator, gate, store) = coordinator_with_store(gate);
-
     let cap = capability_for_surface("acc-a", "codex");
     coordinator
         .reconcile_catalog([entry_for_capability(cap.clone(), "rev-1")], NOW)
@@ -441,10 +434,8 @@ fn s6_rotation_fences_in_flight_and_discards_late_results() {
     assert_eq!(err.kind, UsageCoordinationErrorKind::CatalogRevoked);
 
     gate.release(1);
-
     let completed = store.wait_for_fenced_probe_completion(&cap, stale.generation + 1);
     assert_eq!(completed.phase, UsageRefreshPhase::Idle);
-
     let cursor = coordinator.current(&cap, NOW).unwrap();
     assert_eq!(cursor.phase, UsageRefreshPhase::Idle);
     assert!(cursor.snapshot.is_none(), "rotation must drop last-good");

@@ -66,7 +66,6 @@ pub(crate) fn run(args: SchemaCheckArgs) -> Result<()> {
     for kind in KINDS {
         let head = read_version(&root.join(kind.version_file), kind.const_name)?;
         let base = git_show_version(&root, &args.base, kind.version_file, kind.const_name)?;
-
         if let Some(base) = base
             && base != head
         {

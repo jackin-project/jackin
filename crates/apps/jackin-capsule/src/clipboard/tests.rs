@@ -44,7 +44,6 @@ fn abort_idle_older_than_drops_transfer_past_timeout() {
 fn chunk_activity_resets_idle_window() {
     let clock = Arc::new(ManualClock::new());
     let mut transfers = transfers_with(&clock);
-
     transfers.start(start(1, 16)).expect("start");
 
     clock.advance(Duration::from_mins(4));
@@ -71,7 +70,6 @@ fn abort_idle_only_drops_idle_of_two_transfers() {
     transfers.start(start(2, 8)).expect("start active");
 
     clock.advance(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT + Duration::from_secs(1));
-
     transfers
         .chunk(chunk(2, 0, b"\x89PNG\r\n\x1a\n".to_vec()))
         .expect("refresh active transfer");

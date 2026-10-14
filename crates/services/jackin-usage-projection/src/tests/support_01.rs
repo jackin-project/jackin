@@ -131,7 +131,6 @@ pub(super) struct ParityAccount {
     pub(super) username: Option<&'static str>,
     pub(super) plan_label: Option<&'static str>,
     pub(super) credential_origin: Option<&'static str>,
-
     pub(super) capsule_provider_label: Option<&'static str>,
     pub(super) agent: &'static str,
     pub(super) focused_provider: Option<&'static str>,
@@ -141,7 +140,6 @@ pub(super) struct ParityAccount {
     pub(super) fetched_at: i64,
     pub(super) buckets: Vec<ParityBucket>,
     pub(super) last_error: Option<&'static str>,
-
     pub(super) account_issues: Vec<UsageIssueV1>,
     pub(super) credential_expires_at: Option<i64>,
     pub(super) extra_groups: Vec<ParityExtraGroup>,
@@ -238,7 +236,6 @@ pub(super) fn parity_view_at(account: &ParityAccount, now: i64) -> FocusedUsageV
     if let Some(label) = account.capsule_provider_label {
         view.account.provider_label = label.to_owned();
     }
-
     refresh_cached_updated_label(&mut view, now);
     view
 }

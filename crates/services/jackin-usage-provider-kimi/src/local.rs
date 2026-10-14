@@ -39,7 +39,6 @@ pub(crate) struct KimiExtraUsage {
     pub(crate) balance: Option<i64>,
     #[serde(alias = "total_cents")]
     pub(crate) total: Option<i64>,
-
     #[serde(
         rename = "monthly_cap_cents",
         alias = "cap_cents",

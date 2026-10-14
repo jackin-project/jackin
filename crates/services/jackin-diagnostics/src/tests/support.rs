@@ -56,7 +56,6 @@ pub(super) fn telemetry_volume_artifact_path() -> std::path::PathBuf {
     if let Some(path) = std::env::var_os("JACKIN_TELEMETRY_VOLUME_PATH") {
         return path.into();
     }
-
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/telemetry-volume.json")
 }
 
@@ -167,7 +166,6 @@ pub(super) fn drive_standard_conformance_scenario() -> ConformanceExport {
                 .expect("registered process operation");
         let guard = operation.span().enter();
         conformance_operation_log("process executed");
-
         conformance_operation_error("forced attach failure for conformance");
         drop(guard);
         operation.complete(

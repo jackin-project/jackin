@@ -205,7 +205,6 @@ fn switching_from_sync_to_ignore_revokes_forwarded_credentials() {
 fn token_mode_writes_onboarding_skeleton_and_no_credentials() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 
@@ -238,7 +237,6 @@ fn token_mode_writes_onboarding_skeleton_and_no_credentials() {
 fn api_key_mode_wipes_credentials_and_writes_empty_json() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-
     seed_host_auth(&temp);
     let manifest = simple_manifest(&temp);
 

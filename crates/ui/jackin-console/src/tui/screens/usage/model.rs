@@ -17,7 +17,6 @@ pub type UsageRefreshOutcome = Result<UsageScreenState, String>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsageRefreshRequest {
     pub generation: u64,
-
     pub force: bool,
 }
 
@@ -159,7 +158,6 @@ impl UsageMetricGroup {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageAccount {
     pub provider_id: String,
-
     pub canonical_account_id: String,
     pub unresolved: bool,
     pub provider: String,
@@ -170,14 +168,10 @@ pub struct UsageAccount {
     pub last_good_at_epoch: Option<i64>,
     pub retry_at_epoch: Option<i64>,
     pub is_stale: bool,
-
     pub identity_kind: Option<UsageIdentityKindV1>,
     pub plan_label: Option<String>,
-
     pub credential_expires_at_epoch: Option<i64>,
-
     pub issues: Vec<UsageIssueV1>,
-
     pub provider_issues: Vec<UsageIssueV1>,
     pub windows: Vec<UsageWindow>,
     pub metric_groups: Vec<UsageMetricGroup>,

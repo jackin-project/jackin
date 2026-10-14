@@ -211,7 +211,6 @@ fn usage_provider_tab_renders_meterless_family_bucket_as_plain_row() {
         text.contains("73% left"),
         "metered family bucket must render its percent:\n{text}"
     );
-
     assert!(
         text.contains("Gemini · Weekly No data"),
         "meter-less family bucket must render as a plain row:\n{text}"

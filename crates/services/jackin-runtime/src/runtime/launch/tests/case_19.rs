@@ -66,7 +66,6 @@ plugins = ["code-review@claude-plugins-official"]
     assert!(error.to_string().contains("docker run -d --name jk-"));
     let container_name = launched_role_container_name(&runner);
     let dind = format!("{container_name}-dind");
-
     assert!(
         docker
             .recorded
@@ -146,7 +145,6 @@ plugins = []
     .unwrap();
 
     let (dind, _) = launched_dind_container(&docker);
-
     assert!(
         docker
             .recorded
@@ -160,7 +158,6 @@ plugins = []
         .iter()
         .position(|call| call == &format!("start_container:{dind}"))
         .unwrap();
-
     let dind_info = docker_recorded
         .iter()
         .position(|call| call.contains(&format!("docker exec {dind} docker info")))
@@ -246,7 +243,6 @@ plugins = []
             .contains(&format!("{certs_volume}:/certs/client")),
         "DinD must mount cert volume"
     );
-
     assert!(
         dind_spec
             .env

@@ -16,7 +16,6 @@ use jackin_usage_host_presentation::HostSurfaceId;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostAccountDescriptor {
     pub surface_id: String,
-
     pub provider_column_label: String,
     pub account_key: String,
     pub account_label: String,
@@ -31,7 +30,6 @@ pub struct HostAccountDescriptor {
     pub remaining_label: String,
     pub headline: String,
     pub reset_label: Option<String>,
-
     pub reset_display_label: String,
     pub exact_reset: Option<String>,
     pub status_word: String,
@@ -40,7 +38,6 @@ pub struct HostAccountDescriptor {
     pub updated_label: String,
     pub last_error: Option<String>,
     pub dimmed: bool,
-
     pub accessibility_label: String,
 }
 

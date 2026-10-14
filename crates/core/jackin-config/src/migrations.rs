@@ -20,9 +20,7 @@ pub type Migration = fn(&mut DocumentMut) -> crate::ConfigResult<()>;
 #[derive(Clone, Copy)]
 pub struct MigrationStep {
     pub from: &'static str,
-
     pub to: &'static str,
-
     pub migrate: Migration,
 }
 
@@ -93,7 +91,6 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
         migrate: migrate_config_op_breadcrumbs,
     },
 ];
-
 pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         from: LEGACY_VERSION,
@@ -494,23 +491,19 @@ fn stamp_account_in_env_table(env: Option<&mut toml_edit::Item>, acct: &str) {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SchemaVersion {
     Legacy,
-
     Kubernetes(KubernetesVersion),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KubernetesVersion {
     pub major: NonZeroU32,
-
     pub channel: Channel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Channel {
     Alpha(NonZeroU32),
-
     Beta(NonZeroU32),
-
     Stable,
 }
 
@@ -876,7 +869,6 @@ pub fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
         assert!(steps_taken <= migrations.len(), "registry has a cycle");
     }
     assert_eq!(cursor, current, "registry does not reach {current_raw}");
-
     assert_eq!(
         steps_taken,
         migrations.len(),

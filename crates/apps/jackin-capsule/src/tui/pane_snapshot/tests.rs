@@ -4,7 +4,6 @@ use super::{pane_content_from_damagegrid, pane_content_range_from_damagegrid};
 
 fn grid_with_scrollback(screen_rows: u16, cols: u16, scrollback_rows: usize) -> DamageGrid {
     let mut grid = DamageGrid::new(screen_rows, cols, scrollback_rows.saturating_add(64));
-
     for i in 0..scrollback_rows.saturating_add(usize::from(screen_rows)) {
         let ch = char::from(b'A' + u8::try_from(i % 26).unwrap_or_default());
         let line = format!("{ch}{i:04}\r\n");
@@ -56,7 +55,6 @@ fn ranged_out_of_bounds_clamps() {
     let total = full.len();
 
     assert!(pane_content_range_from_damagegrid(&grid, 12, total..total + 10).is_empty());
-
     assert!(pane_content_range_from_damagegrid(&grid, 12, 5..5).is_empty());
     #[expect(
         clippy::reversed_empty_ranges,
@@ -64,7 +62,6 @@ fn ranged_out_of_bounds_clamps() {
     )]
     let inverted = 8..3;
     assert!(pane_content_range_from_damagegrid(&grid, 12, inverted).is_empty());
-
     let start = total.saturating_sub(2);
     let ranged = pane_content_range_from_damagegrid(&grid, 12, start..total + 50);
     assert_eq!(ranged, full[start..].to_vec());

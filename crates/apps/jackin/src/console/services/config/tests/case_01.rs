@@ -136,7 +136,6 @@ fn account_scan_worker_returns_candidates_without_saving() {
             .any(|(id, _)| id == "default-cursor"),
         "{outcome:?}"
     );
-
     let raw = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(!raw.contains("default-cursor"), "{raw}");
 }
@@ -145,7 +144,6 @@ fn account_scan_worker_returns_candidates_without_saving() {
 fn account_scan_worker_reports_bootstrap_as_committed() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
-
     cursor_credentials_fixture(&paths.home_dir);
 
     let outcome = run_account_scan(&paths).unwrap();
@@ -170,7 +168,6 @@ fn account_scan_worker_reports_bootstrap_as_committed() {
 fn settings_save_preserves_first_run_bootstrap_accounts() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
-
     cursor_credentials_fixture(&paths.home_dir);
     let input = OwnedSettingsSaveInput {
         mounts_original: Vec::new(),

@@ -294,7 +294,6 @@ pub(crate) fn desktop_projection(
         .into_iter()
         .filter(|(row, _)| row.glance_remaining_percent.is_some_and(|value| value > 0))
         .collect::<Vec<_>>();
-
     status_rows.sort_by_key(|(row, reset_at_epoch)| {
         (
             reset_at_epoch.is_none(),

@@ -32,11 +32,8 @@ const COMMAND_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 pub(crate) enum WaitOutcome {
     Exited(std::process::ExitStatus),
-
     Reaped,
-
     TimedOut,
-
     Failed,
 }
 
@@ -85,7 +82,6 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
     );
     let status = match wait_child_with_timeout(&mut child, timeout) {
         WaitOutcome::Exited(status) => Some(status),
-
         WaitOutcome::Reaped => None,
         WaitOutcome::TimedOut => {
             drop(stdout_reader.join());

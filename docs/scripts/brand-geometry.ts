@@ -19,7 +19,6 @@ export const chevronHeight = (fontSize: number) => fontSize * CHEVRON_HEIGHT_RAT
 
 export type Chevron = { d: string; right: number }
 
-
 export function chevron(fontSize: number, left: number, cy: number): Chevron {
   const h = fontSize * CHEVRON_HEIGHT_RATIO
   const half = h / 2
@@ -35,7 +34,6 @@ export function chevron(fontSize: number, left: number, cy: number): Chevron {
 }
 
 export const wordChevronGap = (fontSize: number) => fontSize * WORD_CHEVRON_GAP
-
 
 export function chevronSvg(fontSize: number, color: string): { svg: string; width: number; height: number } {
   const h = round(fontSize * CHEVRON_HEIGHT_RATIO)

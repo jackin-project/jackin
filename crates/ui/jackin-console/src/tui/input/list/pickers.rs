@@ -77,7 +77,6 @@ pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) ->
                 .filter(|account| account.agents.contains(&agent))
                 .cloned()
                 .collect();
-
             sort_account_choices_by_id(&mut accounts);
             if accounts.is_empty() {
                 let message = new_session_no_account_message(agent, &container, state);

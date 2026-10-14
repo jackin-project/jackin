@@ -18,7 +18,6 @@ pub(crate) use usage::{
 #[derive(Debug, Clone)]
 pub(crate) enum PickerItem {
     Item(String),
-
     Section(String),
 }
 
@@ -28,30 +27,23 @@ pub(crate) enum DialogRatatuiSnapshot {
         title: String,
         body: String,
         selected_yes: bool,
-
         data_loss: bool,
     },
-
     FilterPicker {
         title: String,
         filter: String,
         items: Vec<PickerItem>,
-
         selected: usize,
         show_filter: bool,
     },
-
     TextInputDialog {
         dialog_title: String,
         label: String,
         value: String,
         cursor: usize,
     },
-
     ErrorPopup(crate::tui::components::dialog::SpawnFailureState),
-
     DebugInfo(crate::tui::components::container_info_surface::ContainerInfoState),
-
     UsageInfo {
         state: crate::tui::components::container_info_surface::ContainerInfoState,
         tabs: Vec<(String, bool)>,

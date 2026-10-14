@@ -17,9 +17,7 @@ pub(crate) const RENDER_TICK_INTERVAL: std::time::Duration = std::time::Duration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Subscription {
     DaemonFrames,
-
     StdinBytes,
-
     WindowResize,
 }
 

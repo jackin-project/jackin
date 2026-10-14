@@ -4,7 +4,6 @@
 use super::*;
 pub(super) fn authority(paths: &JackinPaths) -> PathBuf {
     let directory = coordination::universe_dir(paths).unwrap();
-
     drop(coordination::open_in_namespace(&directory, "universe-lock").unwrap());
     directory
 }

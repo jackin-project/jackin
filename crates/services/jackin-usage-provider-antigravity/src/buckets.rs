@@ -56,7 +56,6 @@ pub fn antigravity_buckets(usage: &AntigravityUsage, now: i64) -> Vec<QuotaBucke
     for pool in &usage.pools {
         buckets.push(antigravity_pool_bucket(pool, now));
     }
-
     if usage.legacy_fallback {
         for family in [AntigravityFamily::Gemini, AntigravityFamily::Other] {
             let has_session = usage.pools.iter().any(|pool| {
@@ -95,7 +94,6 @@ fn antigravity_pool_bucket(pool: &AntigravityPool, now: i64) -> QuotaBucketView 
         None => None,
     };
     let pace = quota_pace_label(remaining, pool.reset_at, window_seconds, now);
-
     let pace = pace.or_else(|| remaining.is_none().then(|| "No data".to_owned()));
     let mut view = timed_bucket(
         &label,
@@ -107,7 +105,6 @@ fn antigravity_pool_bucket(pool: &AntigravityPool, now: i64) -> QuotaBucketView 
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     );
-
     view.status_slot = match (pool.family, pool.window) {
         (AntigravityFamily::Gemini, Some(AntigravityWindow::Session)) => Some(StatusSlot::Session),
         (AntigravityFamily::Gemini, Some(AntigravityWindow::Weekly)) => Some(StatusSlot::Weekly),

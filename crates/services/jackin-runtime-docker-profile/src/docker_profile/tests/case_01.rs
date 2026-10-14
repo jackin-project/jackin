@@ -215,9 +215,7 @@ fn capability_flags_hardened_adds_extra_on_top_of_minimum() {
         &["CAP_NET_ADMIN".to_owned()],
     );
     assert!(flags.contains(&"--cap-drop=ALL".to_owned()));
-
     assert!(flags.windows(2).any(|w| w == ["--cap-add", "NET_ADMIN"]));
-
     assert!(flags.windows(2).any(|w| w == ["--cap-add", "SETUID"]));
 }
 
@@ -280,7 +278,6 @@ fn apply_grants_cannot_lower_network() {
         network: Some(NetworkGrant::None),
         ..Default::default()
     };
-
     let effective = apply_grants(base, &grants);
     assert_eq!(effective.network, NetworkGrant::Open);
 }
@@ -388,7 +385,6 @@ fn fold_role_grants_raises_dind_when_not_pinned() {
 #[test]
 fn profile_meets_floor_respects_ascending_capability() {
     use DockerSecurityProfile::{Compat, Hardened, Locked};
-
     assert!(!profile_meets_floor(Locked, Hardened));
     assert!(profile_meets_floor(Hardened, Hardened));
     assert!(profile_meets_floor(Compat, Hardened));

@@ -13,9 +13,7 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirtyRepo {
     pub path: String,
-
     pub changed: Vec<ChangedFile>,
-
     pub unpushed: usize,
 }
 
@@ -118,9 +116,7 @@ pub async fn assess_dirty(config: &CapsuleConfig) -> Vec<DirtyRepo> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExitDecision {
     Drain,
-
     DrainWithAction(ExitAction),
-
     ShowModal(Vec<DirtyRepo>),
 }
 
@@ -132,7 +128,6 @@ pub async fn decide_exit(config: &CapsuleConfig) -> ExitDecision {
     match config.dirty_exit_policy.as_deref().unwrap_or("ask") {
         "keep" => ExitDecision::DrainWithAction(ExitAction::Keep),
         "discard" => ExitDecision::DrainWithAction(ExitAction::Discard),
-
         _ => ExitDecision::ShowModal(dirty),
     }
 }

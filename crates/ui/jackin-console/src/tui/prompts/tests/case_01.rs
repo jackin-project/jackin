@@ -263,7 +263,6 @@ fn binding_to_unknown_account_errors_at_every_scope() {
         resolve_agent_default(&config, Some(&ws), ROLE, Agent::Claude),
         AgentDefaultResolution::Invalid(_)
     ));
-
     config
         .workspaces
         .get_mut(ws.as_str())
@@ -276,7 +275,6 @@ fn binding_to_unknown_account_errors_at_every_scope() {
         .unwrap()
         .account_bindings
         .insert(Agent::Claude, "ghost".into());
-
     select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible.clone()).unwrap_err();
     config
         .workspaces
@@ -290,7 +288,6 @@ fn binding_to_unknown_account_errors_at_every_scope() {
         .unwrap()
         .accounts
         .push("ghost".into());
-
     select_launch_account(&config, Some(&ws), ROLE, Agent::Claude, eligible).unwrap_err();
 }
 
@@ -363,7 +360,6 @@ fn binding_for_other_agent_does_not_leak() {
 fn role_default_launch_honored_with_several_accounts() {
     let (mut config, ws) = launch_config();
     set_role_default(&mut config, ws.as_str(), ROLE, &["claude-z"]);
-
     let eligible = accounts_for_launch(&config, Some(&ws), Agent::Claude);
     assert!(eligible.len() > 1);
 

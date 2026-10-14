@@ -9,7 +9,6 @@ async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-k7p9m2xq-agentsmith";
-
     let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: container,
         workspace_name: Some("ws"),
@@ -126,7 +125,6 @@ async fn prune_jackin_home_removes_home() {
 async fn prune_jackin_home_is_ok_when_absent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-
     prune_jackin_home(&paths).unwrap();
 }
 

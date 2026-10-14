@@ -35,7 +35,6 @@ pub fn parse_amp_usage_output(text: &str) -> Option<AmpUsage> {
             usage.workspace_balances.push(balance);
             continue;
         }
-
         if let Some((subscription, renewal, period)) = parse_amp_tier_line(line) {
             usage.subscription = Some(subscription);
             usage.renewal = renewal;

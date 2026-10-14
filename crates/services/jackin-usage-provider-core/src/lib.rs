@@ -43,6 +43,14 @@ pub use self::format::{
     window_minutes_label,
 };
 
+pub use self::format::{CliOutput, percent_before_used, run_cli_with_timeout_full};
+pub use self::format::{
+    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, usage_bucket_presentation,
+    usage_detail_presentation, usage_display_status_label, usage_identity_presentation,
+};
+pub use self::format::{
+    compact_duration_label, exact_reset_parenthetical, percent_headline, reset_label_with_prefs,
+};
 pub use self::refresh::MaterializedUsageAccounts;
 pub use self::refresh::ProviderError;
 pub use self::refresh::ProviderErrorKind;
@@ -61,15 +69,6 @@ pub use self::view::{
     spend_headline_label, status_bar_fresh_or_stale, status_bar_headline_for_surface,
     status_bar_label, status_bar_quota_labels, summary_bucket, timed_bucket, usage_account_tab_id,
     usage_tab_source_label, usage_tab_status_label, with_status_slot,
-};
-
-pub use self::format::{CliOutput, percent_before_used, run_cli_with_timeout_full};
-pub use self::format::{
-    PercentStyle, ResetStyle, UsageBucketPresentation, UsageFormatPrefs, usage_bucket_presentation,
-    usage_detail_presentation, usage_display_status_label, usage_identity_presentation,
-};
-pub use self::format::{
-    compact_duration_label, exact_reset_parenthetical, percent_headline, reset_label_with_prefs,
 };
 
 pub use cache::CachedUsage;

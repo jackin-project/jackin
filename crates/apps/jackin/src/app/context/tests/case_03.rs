@@ -29,6 +29,5 @@ fn skips_prompt_when_manifest_is_missing_or_unreadable() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::parse("ghost").unwrap();
-
     assert!(supported_agents_requiring_prompt(&paths, &selector, None).is_none());
 }

@@ -57,7 +57,6 @@ impl MiniMaxBalanceResponse {
                 parts.push(format!("{label} {amount}"));
             }
         }
-
         vec![bucket(
             "Balance",
             self.available_amount

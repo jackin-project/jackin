@@ -247,7 +247,6 @@ fn conformance_forced_failure_is_typed_and_detach_is_not_failure() {
         conformance_log_attr(&log.record, "error_type").as_deref() == Some("rpc_error")
             || conformance_log_attr(&log.record, "error.type").as_deref() == Some("rpc_error")
     }));
-
     assert!(
         logs.iter().any(|log| {
             log.record.event_name() == Some("capsule.session.detach")
@@ -277,7 +276,6 @@ fn conformance_waterfall_has_distinct_rows() {
         names.len() >= 3,
         "expected at least three span names: {names:?}"
     );
-
     assert!(
         export
             .capsule
@@ -322,10 +320,8 @@ fn conformance_export_volume_stays_within_budget() {
     let spans = export.all_spans();
     let metrics = crate::metrics::collect_hot_path_metric_count()
         .expect("collect conformance metric streams");
-
     assert!(logs.len() <= MAX_DEBUG_LOGS);
     assert!(spans.len() <= MAX_SPANS);
-
     let volume = serde_json::json!({
         "default_mode_logs": logs.len(),
         "default_mode_spans": spans.len(),
@@ -340,7 +336,6 @@ fn conformance_export_volume_stays_within_budget() {
         serde_json::to_string_pretty(&volume).expect("serialize volume"),
     )
     .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
-
     for span in &spans {
         assert_eq!(
             span.dropped_attributes_count, 0,
@@ -360,7 +355,6 @@ fn conformance_no_prohibited_keys_or_bracket_bodies_on_records() {
         for key in ["kind", "stage", "detail", "run_id"] {
             assert!(conformance_log_attr(&log.record, key).is_none());
         }
-
         assert!(
             log.resource
                 .get(&opentelemetry::Key::from_static_str("parallax.run.id"))

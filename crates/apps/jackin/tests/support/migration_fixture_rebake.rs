@@ -291,7 +291,6 @@ fn fixture_rebake_rejects_group_accessible_output_parent() {
     use std::os::unix::fs::PermissionsExt as _;
 
     let parent = tempfile::tempdir().unwrap();
-
     fs::set_permissions(parent.path(), fs::Permissions::from_mode(0o700)).unwrap();
     let staging = tempfile::tempdir_in(parent.path()).unwrap();
     validate_private_output_parent(parent.path(), staging.path()).unwrap();

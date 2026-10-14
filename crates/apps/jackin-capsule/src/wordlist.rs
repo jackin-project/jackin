@@ -156,14 +156,12 @@ pub fn pick_codename(
     offset: usize,
 ) -> String {
     let len = WORDLIST.len();
-
     for i in 0..len {
         let word = WORDLIST[(offset + i) % len];
         if !live.contains(word) && !retired.contains(word) {
             return word.to_owned();
         }
     }
-
     let base = WORDLIST[offset % len];
     for n in 2u32.. {
         let candidate = format!("{base}-{n}");

@@ -12,9 +12,7 @@ use super::{AiProvider, ProfileSelector};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EnvironmentAccountCandidate {
     pub provider: AiProvider,
-
     pub variable: String,
-
     pub base_url: Option<String>,
 }
 
@@ -140,20 +138,15 @@ pub fn discover_environment_oauth_accounts(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CredentialEvidence {
     File(PathBuf),
-
     Keychain(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredAccount {
     pub agent: Agent,
-
     pub provider: Option<AiProvider>,
-
     pub source_selector: Option<ProfileSelector>,
-
     pub directory: PathBuf,
-
     pub evidence: CredentialEvidence,
 }
 
@@ -161,13 +154,10 @@ pub struct DiscoveredAccount {
 pub enum DiscoveryError {
     #[error("credential source cannot be read")]
     Unreadable,
-
     #[error("credential source is not parseable")]
     Malformed,
-
     #[error("credential file exceeds the discovery size limit")]
     TooLarge,
-
     #[error("credential source uses an unsupported layout: {0}")]
     Unsupported(&'static str),
 }
@@ -175,16 +165,13 @@ pub enum DiscoveryError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveryIssue {
     pub agent: Agent,
-
     pub directory: PathBuf,
-
     pub error: DiscoveryError,
 }
 
 #[derive(Debug, Default)]
 pub struct DiscoveryReport {
     pub accounts: Vec<DiscoveredAccount>,
-
     pub issues: Vec<DiscoveryIssue>,
 }
 
@@ -316,7 +303,6 @@ fn inspect_directory(
         }
         return Ok(None);
     }
-
     if matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes) {
         return inspect_store(agent, directory);
     }
@@ -330,14 +316,12 @@ fn inspect_directory(
             unreachable!("handled by early returns above")
         }
     });
-
     if agent == Agent::Amp && !file.exists() {
         let nested = directory.join("data/amp/secrets.json");
         if nested.exists() {
             file = nested;
         }
     }
-
     if agent == Agent::Kimi
         && !matches!(&read_credentials(&file), Ok(Some(value)) if has_credentials(agent, value))
         && let Some(live) = newest_kimi_env_credentials(&directory.join("credentials"))
@@ -356,7 +340,6 @@ fn inspect_directory(
             evidence: CredentialEvidence::File(file),
         }));
     }
-
     if agent == Agent::Claude
         && let Some(scope) = jackin_core::claude_keychain_scope(directory, home, home)
         && keychain_exists(&scope.service)
@@ -507,7 +490,6 @@ fn newest_kimi_env_credentials(dir: &Path) -> Option<PathBuf> {
             if !is_env_grant {
                 return None;
             }
-
             if !entry.file_type().ok()?.is_file() {
                 return None;
             }
@@ -529,7 +511,6 @@ fn read_credentials(path: &Path) -> Result<Option<Value>, DiscoveryError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(DiscoveryError::Unreadable),
     }
-
     const LIMIT: u64 = 1024 * 1024;
     let bytes = match crate::persist::read_bounded_file(path, LIMIT + 1) {
         Ok(bytes) => bytes,
@@ -570,16 +551,13 @@ fn has_credentials(agent: Agent, value: &Value) -> bool {
                     && nonempty(entry.get("key"))
             })
         }),
-
         Agent::Antigravity | Agent::Opencode | Agent::Omp | Agent::Hermes => false,
-
         Agent::Gemini => {
             nonempty(value.get("access_token"))
                 || nonempty(value.get("refresh_token"))
                 || nonempty(value.get("token"))
         }
         Agent::Cursor => nonempty(value.get("accessToken")) || nonempty(value.get("refreshToken")),
-
         Agent::Muse => value.pointer("/providers/meta").is_some(),
     }
 }

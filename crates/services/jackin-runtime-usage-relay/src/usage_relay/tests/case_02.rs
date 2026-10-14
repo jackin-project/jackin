@@ -333,7 +333,6 @@ async fn usage_relay_denies_every_monitor_operation_including_operator_claims() 
     };
 
     let temp = tempfile::tempdir().unwrap();
-
     let broker = UsageBrokerConfig::for_data_dir(temp.path().join("data")).client();
     let allowlist = UsageCapabilitySet::new([]);
     let binding_id = "operator-confirmed-binding".to_owned();

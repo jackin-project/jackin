@@ -100,11 +100,7 @@ name = "console_frame"
 harness = false
 
 [features]
-
-
 default = []
-
-
 e2e = []
 
 [lints]

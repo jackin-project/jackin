@@ -124,7 +124,6 @@ pub fn begin_editor_save(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
     };
-
     editor.save_flow = EditorSaveFlow::Idle;
 
     let save_mode = editor_save_mode_plan(&editor.mode);
@@ -240,7 +239,6 @@ pub fn commit_editor_save_with_runner(
                 &editor.pending.mounts,
                 &plan.effective_removals,
             );
-
             return Ok(Some(WorkspaceSaveEffect::StartDriftCheck {
                 original_name: original_name.clone(),
                 prospective_mounts,

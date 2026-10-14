@@ -49,7 +49,6 @@ fn hello_roundtrips() {
         context: None,
     })
     .unwrap();
-
     assert_eq!(bytes[0], TAG_HELLO);
     assert_ne!(bytes[0], 0x00);
 }
@@ -97,7 +96,6 @@ fn hello_with_spawn_agent_and_env_roundtrips() {
         context: None,
     })
     .unwrap();
-
     let payload = bytes[5..].to_vec();
     let frame = decode_client(TAG_HELLO, payload).unwrap();
     assert_eq!(

@@ -4,8 +4,6 @@ import AppKit
 enum UnifiedAgentUsageProtoMain {
     static func main() {
         let config = ProtoConfig.parse(CommandLine.arguments)
-
-
         let projection = ProtoFixtures.load(config.scenario)
         let store = ProtoStore(projection: projection)
         let app = NSApplication.shared

@@ -29,22 +29,16 @@ pub const DOCKER_BACKEND_NAME: &str = "docker";
 #[derive(Debug, Clone)]
 pub struct AppleContainerSpec {
     pub image: String,
-
     pub user: String,
-
     pub env: Vec<(String, String)>,
-
     pub env_file: Option<PathBuf>,
-
     pub mounts: Vec<AppleContainerMount>,
-
     pub caps_add: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AppleContainerInfo {
     pub name: String,
-
     pub status: String,
 }
 

@@ -23,7 +23,6 @@ all = [
   { not = { contains = "cancelled" } },
 ]
 "#;
-
     let pack: RulePack = toml::from_str(toml).unwrap();
     pack.validate().unwrap();
 
@@ -76,10 +75,8 @@ all = [ { regex = "esc to interrupt" }, { line_regex = '^\s*[*]\s' } ]
         pack.evaluate(&hit).unwrap().state,
         Some(RawAgentState::Working)
     );
-
     let no_line = vec!["see * here".to_owned(), "(esc to interrupt)".to_owned()];
     assert!(pack.evaluate(&no_line).is_none());
-
     let no_regex = vec!["* Thinking…".to_owned(), "all done".to_owned()];
     assert!(pack.evaluate(&no_regex).is_none());
 }

@@ -19,10 +19,8 @@ const TOP_TESTS: usize = 10;
 pub(crate) struct HealthArgs {
     #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
     format: OutputFormat,
-
     #[arg(long)]
     write_baseline: bool,
-
     #[arg(long, default_value_t = 3)]
     min_crates: usize,
 }
@@ -154,7 +152,6 @@ struct Report {
     duplicate_helpers: Vec<DuplicateHelper>,
     advisory: AdvisoryNote,
     verification_map: BTreeMap<String, String>,
-
     trend: TrendSection,
 }
 
@@ -326,7 +323,6 @@ pub(crate) fn parse_suppression_attrs(source: &str) -> Vec<(bool, Vec<String>, b
             let wrapped = format!("mod __jackin_suppression_fragment {{\n{source}\n}}");
             match syn::parse_file(&wrapped) {
                 Ok(file) => file,
-
                 Err(_second) => return Vec::new(),
             }
         }
@@ -349,7 +345,6 @@ impl<'ast> syn::visit::Visit<'ast> for SuppressionVisitor {
 
 fn collect_suppression_attr(attr: &syn::Attribute, out: &mut Vec<(bool, Vec<String>, bool)>) {
     let path = attr.path();
-
     if path.is_ident("cfg_attr") {
         if let syn::Meta::List(list) = &attr.meta
             && let Ok(nested) = list.parse_args_with(

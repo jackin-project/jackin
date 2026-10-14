@@ -1,4 +1,3 @@
-
 interface Character {
   avatar: string;
   role: string;

@@ -23,7 +23,6 @@ impl Default for ClaudeHookInstaller {
 impl HookInstaller for ClaudeHookInstaller {
     fn install(&self, _agent_home: &Path, config_dir: &Path) -> anyhow::Result<()> {
         let settings_path = config_dir.join("settings.json");
-
         let existing = serde_json::Value::Object(read_existing_json_object(&settings_path)?);
         let updated = self.merge_hook_entries(existing);
         write_json_file(&settings_path, &updated)?;
@@ -146,7 +145,6 @@ impl ClaudeHookInstaller {
             let Some(arr) = hooks.get(event).and_then(|v| v.as_array()) else {
                 return false;
             };
-
             #[expect(
                 clippy::excessive_nesting,
                 reason = "JSON hook-array membership check: nested `any` + `as_str` \

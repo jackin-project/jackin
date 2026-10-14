@@ -29,7 +29,6 @@ pub async fn read_image_for_paste_trigger(input: &[u8]) -> Result<Option<Clipboa
 const PASTE_IMAGE_PATHS_ENV: &str = "JACKIN_PASTE_IMAGE_PATHS";
 const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
 const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
-
 const IMAGE_PATH_EXTENSIONS: &[&str] = &[".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".tif"];
 
 #[must_use]
@@ -129,7 +128,6 @@ pub async fn read_image_from_pasted_path(
             if let Some(image) = image_from_path_text(&owned)? {
                 return Ok(Some(image));
             }
-
             if owned.contains('\\') {
                 return image_from_path_text(&unescape_shell_path(&owned));
             }
@@ -543,7 +541,6 @@ fn validate_linux_clipboard_backend(
     if (wayland && wl_paste) || (display && xclip) {
         return Ok(());
     }
-
     if wayland && display {
         anyhow::bail!("{label} needs wl-paste or xclip in host PATH");
     }

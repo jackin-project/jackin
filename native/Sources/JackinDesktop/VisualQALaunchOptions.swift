@@ -4,7 +4,6 @@
 import CoreGraphics
 import Foundation
 
-
 struct VisualQALaunchOptions: Equatable {
     enum Selection: Equatable {
         case fixtureDefault

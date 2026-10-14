@@ -3,9 +3,6 @@
 
 import XCTest
 
-
-
-
 final class BridgeBoundaryTests: XCTestCase {
     private var nativeRoot: URL {
         URL(fileURLWithPath: #filePath)

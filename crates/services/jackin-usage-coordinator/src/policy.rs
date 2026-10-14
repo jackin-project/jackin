@@ -13,26 +13,18 @@ const CLAUDE_RATE_LIMIT_CIRCUIT_FAILURE_THRESHOLD: u32 = 3;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageActivity {
     DirectInteraction,
-
     Recent,
-
     Idle,
-
     LongIdle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsagePolicy {
     pub idle_exit: Duration,
-
     pub lease_duration: Duration,
-
     pub lease_renewal: Duration,
-
     pub provider_timeout: Duration,
-
     pub retry_base: Duration,
-
     pub retry_cap: Duration,
 }
 

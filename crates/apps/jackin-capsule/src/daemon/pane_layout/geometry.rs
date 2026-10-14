@@ -29,7 +29,6 @@ impl Multiplexer {
 
     pub(crate) fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = normalize_size(rows, cols);
-
         self.cancel_drag();
         self.render.term_rows = rows;
         self.render.term_cols = cols;
@@ -39,7 +38,6 @@ impl Multiplexer {
             .ratatui_terminal
             .backend_mut()
             .resize(cols, rows);
-
         self.render
             .ratatui_terminal
             .backend_mut()
@@ -115,7 +113,6 @@ impl Multiplexer {
                     .provider
                     .as_ref()
                     .map(|provider| provider.label.as_str());
-
                 let slug = session.agent.as_deref().map(|stored| {
                     self.launch_env
                         .launch_config

@@ -19,25 +19,17 @@ pub trait CredentialSnapshotVendors {
         Option<ProviderRateLimit>,
         Option<ProviderFailureMetadata>,
     );
-
     fn claude_api_key_view(&self, key_name: &str, secret: &str, now: i64) -> FocusedUsageView;
-
     fn openrouter_key_view(
         &self,
         secret: &str,
         now: i64,
     ) -> (FocusedUsageView, Option<ProviderRateLimit>);
-
     fn amp_key_view(&self, secret: &str, now: i64) -> FocusedUsageView;
-
     fn zai_key_view(&self, key_name: &str, secret: &str, now: i64) -> FocusedUsageView;
-
     fn kimi_key_view(&self, secret: &str, now: i64) -> FocusedUsageView;
-
     fn minimax_key_view(&self, secret: &str, now: i64) -> FocusedUsageView;
-
     fn grok_key_view(&self, key_name: &str, now: i64) -> FocusedUsageView;
-
     fn gemini_key_view(&self, key_name: &str, now: i64) -> FocusedUsageView;
 }
 
@@ -97,7 +89,6 @@ pub fn provider_credential_snapshot_with_metadata<V: CredentialSnapshotVendors>(
             now,
             last_error: Some("OpenAI API-key subscription quota is unavailable".to_owned()),
         }),
-
         "cursor" => usage_view(UsageViewInput {
             agent: "cursor",
             provider: Some("Cursor"),
@@ -114,7 +105,6 @@ pub fn provider_credential_snapshot_with_metadata<V: CredentialSnapshotVendors>(
             last_error: Some("Cursor API-key subscription quota is unavailable".to_owned()),
         }),
         "google" => vendors.gemini_key_view(key_name, now),
-
         _ => unsupported_snapshot(surface_id, None, now),
     };
     (view, None, None)

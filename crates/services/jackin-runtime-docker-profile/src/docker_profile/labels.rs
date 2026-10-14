@@ -49,7 +49,6 @@ pub fn format_session_contract(
     };
     let network_mode = match grants.network {
         NetworkGrant::None => "none (--network none)".to_owned(),
-
         NetworkGrant::Allowlist => format!(
             "allowlist ({} configured hosts + agent/GitHub endpoints)",
             grants.allowed_hosts.len()

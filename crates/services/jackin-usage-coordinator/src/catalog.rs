@@ -100,7 +100,6 @@ pub(crate) fn restore_catalog_preimages(
             CatalogAccountPreimage::Missing => {
                 shared.store.purge(&capability)?;
             }
-
             CatalogAccountPreimage::Corrupt => {}
         }
     }

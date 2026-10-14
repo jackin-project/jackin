@@ -108,7 +108,6 @@ pub(crate) fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 dispatch_manager(state, ManagerMessage::ReturnToList);
             }
         }
-
         Some(_) | None => {}
     }
 }

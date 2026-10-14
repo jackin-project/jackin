@@ -764,7 +764,6 @@ pub(crate) async fn load_role_with(
         .contains_key(workspace.name.as_str())
         .then(|| WorkspaceName::parse(&workspace.name))
         .transpose()?;
-
     if absent_container_can_apply_model_and_effort(docker, opts).await? {
         validate_absent_rebuild_restore_options(paths, opts)?;
     } else {
@@ -837,9 +836,7 @@ pub(crate) async fn load_role_with(
     let role_key = selector.key();
     let selected_agent_before_role = opts.agent.or(workspace.default_agent);
     let mut early_restore_agent = None;
-
     let mut early_current_scan = super::EarlyCurrentRestoreScan::NotRun;
-
     let early_restore_container = if opts.restore_container_base.is_none()
         && current_role_reuse_is_compatible(opts)
     {
@@ -1110,7 +1107,6 @@ pub(crate) async fn load_role_with(
             None,
         );
     }
-
     let persisted_snapshot = persisted_config.as_ref().unwrap_or(&admission_config);
     let account_revision =
         super::account_identity::AccountConfigRevision::acquire_bound(paths, persisted_snapshot)?;
@@ -1183,7 +1179,6 @@ pub(crate) async fn load_role_with(
             }
             super::RestoreResolution::RecreateCurrentRoleWithHandle(container_handle) => {
                 let container = container_handle.name().to_owned();
-
                 let container_state = paths.data_dir.join(&container);
                 if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
                     restore_pinned_sha = stored.role_git_sha;
@@ -1258,7 +1253,6 @@ pub(crate) async fn load_role_with(
                     }
                 }
             }
-
             super::RestoreResolution::PurgeAndRestartFresh(container) => {
                 if let Err(_error) = crate::runtime::cleanup::purge_container_state(
                     paths, &container, docker, runner,
@@ -1273,7 +1267,6 @@ pub(crate) async fn load_role_with(
     };
 
     let mut git_pull_join: Option<DeferredGitPull> = None;
-
     if restore_container.is_none() && workspace.git_pull_on_entry {
         let sources = super::git_pull_sources(workspace);
         if sources.is_empty() {
@@ -1337,7 +1330,6 @@ pub(crate) async fn load_role_with(
             claim_container_name(paths, workspace_typed.as_ref(), selector, docker).await?
         }
     };
-
     opts.record_launched_instance(&container_name);
 
     let image_tag = opts.role_branch.as_deref().map_or_else(
@@ -1438,7 +1430,6 @@ pub(crate) async fn load_role_with(
             merged_vars.push((k.clone(), v.clone()));
         }
     }
-
     for (k, v) in &opts.env {
         anyhow::ensure!(
             !jackin_env::is_account_env(k),
@@ -1457,7 +1448,6 @@ pub(crate) async fn load_role_with(
         .and_then(|n| WorkspaceName::parse(n).ok());
     let mut exec_bindings =
         jackin_env::collect_on_demand_bindings(config, Some(role_key.as_str()), exec_ws.as_ref());
-
     for binding in &opts.on_demand_bindings {
         anyhow::ensure!(
             !jackin_env::is_account_env(&binding.name),
@@ -1562,7 +1552,6 @@ pub(crate) async fn load_role_with(
                     stage: failed_stage,
                 })
                 .await;
-
             steps.finish_progress();
             super::render_exit(paths, docker).await;
             Err(final_error)

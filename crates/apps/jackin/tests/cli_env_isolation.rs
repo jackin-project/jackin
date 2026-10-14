@@ -32,7 +32,6 @@ fn jackin_home_dir_relocates_state_writes() {
         config_root.join("workspaces").is_dir(),
         "workspaces dir not created under JACKIN_CONFIG_DIR",
     );
-
     assert!(
         jackin_root.join("data").is_dir(),
         "data dir not created under JACKIN_HOME_DIR: {}",
@@ -42,7 +41,6 @@ fn jackin_home_dir_relocates_state_writes() {
         jackin_root.join("roles").is_dir(),
         "roles dir not created under JACKIN_HOME_DIR",
     );
-
     assert!(
         !home.join(".config/jackin/config.toml").exists(),
         "config.toml unexpectedly created under HOME/.config/jackin: {}",

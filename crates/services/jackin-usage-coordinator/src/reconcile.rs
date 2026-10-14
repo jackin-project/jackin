@@ -286,7 +286,6 @@ impl UsageCoordinator {
                     CatalogAccountPreimage::Present(Box::new(tombstone.clone())),
                 );
             }
-
             mutated_capabilities.insert(capability.clone());
             if let Err(error) = self.shared.store.store(&tombstone, persist_epoch) {
                 let primary = state_error(error);
@@ -307,7 +306,6 @@ impl UsageCoordinator {
             if prewritten_tombstones.contains(capability) {
                 continue;
             }
-
             mutated_capabilities.insert(capability.clone());
             let result: Result<(), StateStoreError> = match preimages.get(capability) {
                 Some(CatalogAccountPreimage::Corrupt) => self.shared.store.quarantine(capability),

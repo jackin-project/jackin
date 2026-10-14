@@ -179,7 +179,6 @@ impl Lock {
     ) -> anyhow::Result<Self> {
         let (candidate_name, file, identity, marker) =
             recovery.create_lock_candidate(parent, &name)?;
-
         let recovery_fd = recovery.fd.as_fd().try_clone_to_owned()?;
         let recovery_name = recovery.name.clone();
         let candidate_path = candidate_name.clone();
@@ -264,7 +263,6 @@ impl Lock {
             self.recovery_name
         );
         unlinkat(&self.parent, self.name.as_str(), UnlinkatFlags::NoRemoveDir)?;
-
         sync_directory(self.parent.as_fd())?;
         unlinkat(
             &self.recovery_fd,
@@ -519,7 +517,6 @@ pub(crate) fn prepare_with_checkout(
         parent = child;
     }
     let leaf = parts[parts.len() - 1].to_owned();
-
     locks.push(Lock::acquire(
         &mut recovery,
         parent.as_fd(),
@@ -607,7 +604,6 @@ impl PreparedRefDeletion {
             lock.verify()?;
         }
         self.verify_snapshots()?;
-
         if self.loose.is_none() && self.packed_candidate.is_none() && self.reflog.is_none() {
             return Ok(CommittedRefDeletion {
                 locks: self.locks,
@@ -656,7 +652,6 @@ impl PreparedRefDeletion {
                 self.git.as_fd(),
                 "packed-refs",
             )?;
-
             verify_snapshot(recovery, "packed-candidate", self.packed.as_ref())
                 .context("packed refs changed during exchange; displaced entry retained")?;
             verify_snapshot(self.git.as_fd(), "packed-refs", Some(candidate))?;

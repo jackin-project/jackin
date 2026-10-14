@@ -7,11 +7,8 @@ use std::{error::Error, fmt, panic::AssertUnwindSafe};
 #[boltffi::error]
 pub enum UsageBridgeError {
     Rejected { code: String, message: String },
-
     ContainedPanic { message: String },
-
     RuntimeUnavailable,
-
     ResyncRequired,
 }
 

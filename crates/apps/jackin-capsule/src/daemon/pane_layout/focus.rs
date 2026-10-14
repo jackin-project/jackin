@@ -55,14 +55,12 @@ impl Multiplexer {
             return;
         }
         self.record_pane_focus_change();
-
         if let Some(o) = old
             && let Some(s) = self.session_supervisor.sessions.get(o)
             && s.focus_events_enabled()
         {
             let _sent = s.send_input(b"\x1b[O");
         }
-
         if let Some(n) = new
             && let Some(s) = self.session_supervisor.sessions.get(n)
             && s.focus_events_enabled()

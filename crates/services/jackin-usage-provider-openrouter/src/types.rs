@@ -13,7 +13,6 @@ pub struct OpenRouterKeyData {
     pub(crate) usage_weekly: Option<f64>,
     #[serde(default)]
     pub(crate) usage_monthly: Option<f64>,
-
     #[serde(default)]
     pub(crate) limit: Option<f64>,
     #[serde(default)]

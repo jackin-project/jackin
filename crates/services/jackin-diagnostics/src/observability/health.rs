@@ -61,15 +61,10 @@ pub enum TelemetryFlushStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapsuleExportCoverage {
     NotApplicable,
-
     Enabled,
-
     DisabledNoEndpoint,
-
     DisabledNetworkNone,
-
     DisabledUnclassifiedEndpoint,
-
     DisabledUnclassifiedAuth,
 }
 

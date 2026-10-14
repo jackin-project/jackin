@@ -75,7 +75,6 @@ async fn diagnose_with_state_by_target(
             if phase == ExitPhase::PostAttach && *exit_code == 0 && !oom_killed {
                 return None;
             }
-
             let logs = match runner
                 .capture_combined("docker", &["logs", "--tail", "40", container_ref], None)
                 .await
@@ -108,7 +107,6 @@ async fn diagnose_with_state_by_target(
                     "container {container_name} {phase_label} ({reason}) and produced no log output"
                 )
             };
-
             if let Some(run) = jackin_diagnostics::active_run() {
                 run.container_exited((*exit_code).into(), *oom_killed);
             }
@@ -144,7 +142,6 @@ pub async fn inspect_attach_outcome(
     container: &str,
 ) -> anyhow::Result<jackin_isolation::finalize::AttachOutcome> {
     use jackin_isolation::finalize::AttachOutcome;
-
     Ok(
         match docker.inspect_container_by_name(container).await.state {
             ContainerState::Running

@@ -27,7 +27,6 @@ fn derive_version(git_dir_relative: &str) -> String {
 
     println!("cargo:rerun-if-changed={git_dir_relative}/HEAD");
     println!("cargo:rerun-if-changed={git_dir_relative}/refs");
-
     println!("cargo:rerun-if-changed={git_dir_relative}/packed-refs");
 
     let short_sha =

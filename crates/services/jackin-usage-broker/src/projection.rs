@@ -44,7 +44,6 @@ pub(crate) fn load_projection(
     let store = FileProjectionStateStore::under_data_dir(&config.data_dir);
     let loaded = match store.load_for_broker_migration() {
         Ok(loaded) => loaded,
-
         Err(jackin_usage_coordinator::StateStoreError::Corrupt) => None,
         Err(
             jackin_usage_coordinator::StateStoreError::Unavailable

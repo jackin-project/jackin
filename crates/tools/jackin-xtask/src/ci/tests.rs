@@ -111,7 +111,6 @@ fn sccache_is_absent_from_generated_workflow_environment() {
 fn sccache_is_absent_from_installer_environment() {
     for workflow in GENERATED_WORKFLOWS {
         let text = workspace_file(workflow);
-
         let setup = ["- name: Set up Mise", "- name: Setup Mise"]
             .iter()
             .filter_map(|marker| text.find(marker))

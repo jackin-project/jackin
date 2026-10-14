@@ -48,7 +48,6 @@ async fn retry_exhausts_and_returns_last_error() {
     })
     .await;
     assert_eq!(calls.get(), 3);
-
     let err = format!("{:#}", r.unwrap_err());
     assert!(err.contains("giving up after 3 attempts"), "{err}");
     assert!(err.contains("attempt 3 failed"), "{err}");
@@ -74,7 +73,6 @@ async fn retry_backoff_grows_exponentially() {
         anyhow::bail!("nope")
     })
     .await;
-
     assert_eq!(start.elapsed(), Duration::from_millis(300));
 }
 

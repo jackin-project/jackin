@@ -69,7 +69,6 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         " {} ",
         jackin_core::shorten_home(&state.cwd.display().to_string())
     );
-
     let theme = termrock::style::DesignSystem::default();
     let panel = Panel::new(&theme)
         .title(&title)
@@ -78,7 +77,6 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         } else {
             PanelChrome::Focused
         });
-
     let inner = Rect {
         x: area.x.saturating_add(1),
         y: area.y.saturating_add(1),

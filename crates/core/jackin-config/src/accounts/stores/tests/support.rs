@@ -6,13 +6,9 @@ pub(crate) const PAGE_SIZE: usize = 512;
 #[derive(Clone, Debug)]
 pub(crate) enum Value {
     Null,
-
     Int(i64),
-
     Float(f64),
-
     Text(String),
-
     Blob(Vec<u8>),
 }
 

@@ -41,7 +41,6 @@ fn append_page_is_idempotent() {
 fn validate_tree_passes_clean_and_flags_broken_and_orphan() {
     let root = tempfile::tempdir().unwrap();
     let r = root.path();
-
     write(&r.join("index.mdx"), "---\ntitle: I\n---\n");
     write(&r.join("alpha.mdx"), "---\ntitle: A\n---\n");
     write_meta(

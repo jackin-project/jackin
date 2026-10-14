@@ -230,9 +230,7 @@ fn parse_version_accepts_canonical_forms() {
 fn channel_order_is_alpha_beta_stable() {
     assert!(Channel::Alpha(nz(1)) < Channel::Beta(nz(1)));
     assert!(Channel::Beta(nz(1)) < Channel::Stable);
-
     assert!(Channel::Alpha(nz(1)) < Channel::Alpha(nz(2)));
-
     assert!(Channel::Alpha(nz(99)) < Channel::Beta(nz(1)));
 }
 
@@ -247,7 +245,6 @@ fn parse_registry_version_handles_legacy_sentinel() {
         parse_registry_version("legacy").unwrap(),
         SchemaVersion::Legacy
     );
-
     parse_registry_version("legacyfoo").unwrap_err();
     assert_eq!(
         parse_registry_version("v1alpha1").unwrap(),
@@ -292,7 +289,6 @@ fn rejects_when_migration_path_was_removed() {
 fn rejects_when_middle_migration_path_was_removed() {
     let old = parse_version("v1alpha1").unwrap();
     let current = parse_version("v1alpha4").unwrap();
-
     let migrations = [MigrationStep {
         from: "v1alpha2",
         to: "v1alpha3",

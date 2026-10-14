@@ -461,7 +461,6 @@ impl OpPickerState {
                 self.stage = OpPickerStage::Item;
                 ModalOutcome::Continue
             }
-
             ModalOutcome::Commit(_) => {
                 let plan = new_item_name_commit_plan();
                 self.stage = plan.stage;

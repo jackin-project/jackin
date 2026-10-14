@@ -21,7 +21,6 @@ pub fn build_shell_command(
     for name in jackin_core::account_env_names() {
         cmd.env_remove(name);
     }
-
     if let Ok(home) = std::env::var("HOME") {
         cmd.env("HOME", home);
     }
@@ -119,7 +118,6 @@ pub(crate) fn apply_account_env(
         else {
             return;
         };
-
         if entry.agent != command_agent {
             return;
         }

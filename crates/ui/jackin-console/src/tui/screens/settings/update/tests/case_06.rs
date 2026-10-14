@@ -89,10 +89,8 @@ fn reduce_account_scan_message_arms_dedupes_and_ignores_foreign() {
         Some(SettingsEffect::StartAccountScan { generation: 1 })
     );
     assert!(auth.scan.in_flight);
-
     let duplicate = reduce_account_scan_message(&mut auth, &SettingsMessage::RequestAccountScan);
     assert_eq!(duplicate, None);
-
     let foreign = reduce_account_scan_message(&mut auth, &SettingsMessage::FocusTabBar);
     assert_eq!(foreign, None);
     assert!(auth.scan.in_flight);
@@ -102,7 +100,6 @@ fn reduce_account_scan_message_arms_dedupes_and_ignores_foreign() {
         None
     );
     assert!(!auth.scan.in_flight);
-
     let outcome = model::AccountScanOutcome::default();
     assert_eq!(
         reduce_account_scan_message(
@@ -149,7 +146,6 @@ fn reduce_account_scan_completion_joins_candidates_and_committed() {
     );
     assert_eq!(effect, None);
     assert!(!auth.scan.in_flight);
-
     assert!(auth.pending.contains_key("bootstrap"));
     assert!(auth.original.contains_key("bootstrap"));
     assert!(auth.pending.contains_key("cand"));
@@ -171,7 +167,6 @@ fn reduce_account_scan_completion_joins_candidates_and_committed() {
 fn scan_merge_never_touches_present_or_deleted_ids() {
     use super::model::AccountScanOutcome;
     let mut auth = scan_test_auth();
-
     auth.original
         .insert("gone".to_owned(), scan_key_account("GONE_KEY"));
     auth.pending.remove("gone");
@@ -193,7 +188,6 @@ fn scan_merge_never_touches_present_or_deleted_ids() {
     let summary = auth.merge_account_scan_outcome(&outcome);
     assert_eq!(summary.joined, vec!["fresh".to_owned()]);
     assert_eq!(summary.skipped.len(), 4);
-
     assert_eq!(auth.pending.get("keep"), Some(&before));
     assert!(!auth.pending.contains_key("gone"));
     assert!(!auth.pending.contains_key("alias"));
@@ -232,7 +226,6 @@ fn discard_orphans_in_flight_scan() {
     auth.panel_discard();
     assert!(!auth.scan.in_flight);
     assert!(auth.scan.scanned_ids.is_empty());
-
     let outcome = model::AccountScanOutcome {
         candidates: vec![("cand".to_owned(), scan_key_account("CAND_KEY"))],
         ..model::AccountScanOutcome::default()
@@ -250,28 +243,23 @@ fn scanned_source_in_draft_mirrors_upsert_rule() {
         ),
         ("key".to_owned(), scan_key_account("MINE_KEY")),
     ]);
-
     assert!(scanned_source_in_draft(
         &pending,
         &scan_profile_account("/home/op/.claude")
     ));
-
     assert!(!scanned_source_in_draft(
         &pending,
         &scan_profile_account("/home/op/.claude-work")
     ));
-
     assert!(scanned_source_in_draft(
         &pending,
         &scan_key_account("MINE_KEY")
     ));
-
     let mut forked = scan_key_account("MINE_KEY");
     if let jackin_config::AccountCredential::ApiKey { base_url, .. } = &mut forked.credential {
         *base_url = Some("https://proxy.example".into());
     }
     assert!(!scanned_source_in_draft(&pending, &forked));
-
     let mut other_provider = scan_key_account("MINE_KEY");
     other_provider.provider = jackin_config::AiProvider::OpenAi;
     assert!(!scanned_source_in_draft(&pending, &other_provider));

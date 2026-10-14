@@ -18,9 +18,7 @@ use crate::schema::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalMountRow {
     pub scope: Option<String>,
-
     pub name: String,
-
     pub mount: MountConfig,
 }
 
@@ -28,10 +26,8 @@ pub struct GlobalMountRow {
 pub enum WorkspaceGlobalMountRows {
     Applicable {
         role: String,
-
         rows: Vec<GlobalMountRow>,
     },
-
     Ambiguous {
         candidates: Vec<String>,
     },
@@ -250,7 +246,6 @@ impl AppConfig {
                     "global mount name cannot be empty"
                 )));
             }
-
             if !seen_keys.insert((row.scope.as_deref(), row.name.as_str())) {
                 let scope = row.scope.as_deref().unwrap_or("global");
                 return Err(ConfigError::msg(format_args!(

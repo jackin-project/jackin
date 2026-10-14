@@ -84,7 +84,6 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.failure_revealed = None;
             view.failure_opened = None;
             view.failure_scroll = termrock::scroll::DialogScroll::new();
-
             view.build_log_open = false;
             view.build_log_scroll_dragging = false;
             view.container_info_open = false;

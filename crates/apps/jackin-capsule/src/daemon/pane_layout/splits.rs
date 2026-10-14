@@ -24,7 +24,6 @@ impl Multiplexer {
                     .map_err(|reason| anyhow::anyhow!("rejected spawn target {raw:?}: {reason}"))
             })
             .transpose()?;
-
         self.cancel_drag();
         let Some(tab) = self
             .session_supervisor
@@ -104,7 +103,6 @@ impl Multiplexer {
             if let Some(orphan) = self.session_supervisor.sessions.remove(new_id) {
                 orphan.terminate();
             }
-
             self.mark_agent_session_exited(new_id);
             let _warning = jackin_telemetry::record_recovered_degradation();
             return Ok(());
@@ -166,7 +164,6 @@ impl Multiplexer {
         if let Some(session) = self.session_supervisor.sessions.remove(id) {
             session.terminate();
         }
-
         tab.zoomed = tab.zoomed.filter(|&zid| zid != id);
         if let Some(nf) = next_focus {
             tab.focused_id = nf;

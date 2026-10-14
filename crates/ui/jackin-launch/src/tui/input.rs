@@ -159,7 +159,6 @@ pub(super) fn write_forced_terminal_restore<W: std::io::Write>(out: &mut W) -> s
         termrock::osc::PointerShape::Default,
     ))?;
     disable_mouse_capture(out)?;
-
     out.write_all(b"\x1b[?1004l\x1b[?2004l\x1b[?25h")?;
     out.flush()
 }

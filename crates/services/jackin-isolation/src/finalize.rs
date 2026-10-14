@@ -18,9 +18,7 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachOutcome {
     StillRunning,
-
     Stopped(i32),
-
     OomKilled,
 }
 
@@ -64,7 +62,6 @@ impl FinalizeDecision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreservedReason {
     Dirty,
-
     Unpushed,
 }
 
@@ -87,9 +84,7 @@ impl PreservedReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitDialogChoice {
     ReturnToRole,
-
     KeepAll,
-
     DiscardAll,
 }
 

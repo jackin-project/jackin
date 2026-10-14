@@ -19,7 +19,6 @@ use termrock::widgets::{Action, ActionBar, ActionBarState};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MountDstChoice {
     SamePath,
-
     Edit,
 }
 

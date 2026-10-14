@@ -197,7 +197,6 @@ fn exec_binding_names_joins_names_in_order() {
             source: "v".to_owned(),
         },
     ];
-
     assert_eq!(exec_binding_names(&bindings), "A,B");
     assert_eq!(exec_binding_names(&[]), "");
 }

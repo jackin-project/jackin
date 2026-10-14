@@ -129,7 +129,6 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let branch = "feat/instant-launch";
-
     let image = image_name_for_branch(&selector, branch, Some("abc123"));
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let local_base = role_base_image_name(&selector, Some(branch), Some("abc123"));

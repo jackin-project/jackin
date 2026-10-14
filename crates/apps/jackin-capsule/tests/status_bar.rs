@@ -3,7 +3,6 @@
 
 use jackin_capsule::tui::components::chrome::StatusBarWidget;
 use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar, status_bar_plan};
-
 use jackin_capsule::tui::layout::Tab;
 use jackin_capsule::tui::model::VisibleAgentState;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
@@ -116,7 +115,6 @@ fn tab_click_region_includes_state_glyph_width() {
     let states = vec![(7u64, VisibleAgentState::Done)];
     let (bar, _) = draw(80, &tabs, 0, &states, None, PrefixMode::Idle);
     let (start, end) = bar.tab_regions[0];
-
     assert_eq!(end - start, 9);
 }
 

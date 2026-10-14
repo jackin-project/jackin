@@ -146,9 +146,7 @@ pub enum SplitOrient {
 }
 
 pub const SPLIT_RATIO_MIN: f32 = 0.05;
-
 pub const SPLIT_RATIO_MAX: f32 = 0.95;
-
 pub const SPLIT_RATIO_DEFAULT: f32 = 0.5;
 
 #[must_use]
@@ -167,11 +165,8 @@ pub struct Tab {
     pub tree: PaneTree,
     pub focused_id: u64,
     pub zoomed: Option<u64>,
-
     pub codename: String,
-
     pub instance: Option<String>,
-
     pub account_id: Option<String>,
 }
 

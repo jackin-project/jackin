@@ -103,8 +103,6 @@ pub(crate) async fn upsert_account_snapshot_rows(
         )
         .await
         {
-
-
             let _rollback =
                 jackin_usage_store_backend::operation(DbOperation::Rollback, conn.execute("ROLLBACK", ()))
                     .await

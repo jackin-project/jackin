@@ -10,9 +10,7 @@ pub use focus::{SurfaceFocus, SurfaceFocusTarget};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubscriptionPoll<Event> {
     Ready(Event),
-
     Pending,
-
     Closed,
 }
 
@@ -25,7 +23,6 @@ pub trait Subscription {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dirty {
     Clean,
-
     Redraw,
 }
 

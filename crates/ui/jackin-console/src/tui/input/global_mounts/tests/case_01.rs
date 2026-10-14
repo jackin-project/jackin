@@ -244,7 +244,6 @@ fn settings_tab_navigation_reaches_all_config_tabs() {
     let config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
     state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
-
     assert!(
         matches!(&state.stage, ManagerStage::Settings(s) if s.tab_bar_focused()),
         "must start on tab bar"
@@ -321,7 +320,6 @@ fn settings_focus_owner_exclusivity() {
             "tab_bar must yield focus when content gains it"
         );
     }
-
     handle_settings_key(&mut state, key(KeyCode::Esc));
     handle_settings_key(&mut state, key(KeyCode::Right));
     handle_settings_key(&mut state, key(KeyCode::Down));

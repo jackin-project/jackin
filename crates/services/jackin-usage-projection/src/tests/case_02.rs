@@ -22,7 +22,6 @@ fn parity_antigravity_capsule_tabs_and_detail() {
         view.tabs[0].source_label.as_deref(),
         Some("fresh · managed CLI")
     );
-
     assert!(
         view.tabs[0].status_label.starts_with("41% left"),
         "tab status traces the ranked weekly window: {}",
@@ -65,7 +64,6 @@ fn parity_antigravity_capsule_tabs_and_detail() {
             row.display_label
         );
     }
-
     assert!(
         bucket_rows[0].display_label.contains("Resets in 1h 30m"),
         "capsule reset label: {}",
@@ -95,7 +93,6 @@ fn parity_duplicate_provider_accounts_stay_distinct() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     assert_eq!(screen.accounts.len(), 2);
-
     assert_eq!(screen.accounts[0].account, "work@example.test");
     assert_eq!(screen.accounts[1].account, "personal@example.test");
     assert_ne!(
@@ -106,7 +103,6 @@ fn parity_duplicate_provider_accounts_stay_distinct() {
         screen.accounts[0].canonical_account_id,
         screen.accounts[1].canonical_account_id
     );
-
     assert_eq!(
         screen.accounts[0].identity_kind,
         Some(UsageIdentityKindV1::ProviderAccountId)
@@ -185,13 +181,11 @@ fn parity_cursor_groups_money_and_units() {
         .map(UsageWindow::meter_percent)
         .collect::<Vec<_>>();
     assert_eq!(meters, [Some(62), Some(55), None, Some(76)]);
-
     assert_eq!(account.windows[0].quota_state, UsageQuotaStateV1::Warning);
     assert_eq!(
         account.windows[0].reset_at_epoch,
         Some(PARITY_NOW + 1_200_000)
     );
-
     assert_eq!(account.windows[2].quota_state, UsageQuotaStateV1::Available);
     assert_eq!(account.windows[2].value, "$8.30");
 
@@ -213,7 +207,6 @@ fn parity_cursor_groups_money_and_units() {
             UsageMetricGroupKindV1::RateLimit,
         ]
     );
-
     match &account.metric_groups[2].value {
         UsageMetricValueV1::SpendCap {
             cap,
@@ -235,7 +228,6 @@ fn parity_cursor_groups_money_and_units() {
         }
         other => panic!("expected spend-cap value, got {other:?}"),
     }
-
     match &account.metric_groups[4].value {
         UsageMetricValueV1::SpendCap {
             cap,
@@ -311,14 +303,12 @@ fn parity_exhausted_zero_is_not_unknown() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
-
     assert_eq!(account.status, "Available");
     assert_eq!(account.windows.len(), 1);
     assert_eq!(account.windows[0].meter_percent(), Some(0));
     assert_eq!(account.windows[0].value, "0% left");
     assert_eq!(account.windows[0].quota_state, UsageQuotaStateV1::Exhausted);
     assert_ne!(account.windows[0].quota_state, UsageQuotaStateV1::Unknown);
-
     assert_eq!(account.metric_groups.len(), 1);
     assert_eq!(account.plan_label, None);
 

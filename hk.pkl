@@ -1,64 +1,22 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 amends "package://github.com/jdx/hk/releases/download/v2.5.0/hk@2.5.0#/Config.pkl"
 import "package://github.com/jdx/hk/releases/download/v2.5.0/hk@2.5.0#/Builtins.pkl"
 
 steps {
   ["cargo_fmt"] = Builtins.cargo_fmt
   ["cargo_clippy"] = Builtins.cargo_clippy
-
-
-
-
-
-
   ["actionlint"] {
-
-
     glob = ".github/workflows/*.yml"
     check = "actionlint {{files}}"
   }
   ["swiftlint"] {
-
-
-
-
-
     glob = "native/**/*.swift"
     condition = "exec('command -v swiftlint || true') != ''"
     check = "cd native && swiftlint lint --strict"
   }
   ["swift-format"] {
-
-
-
-
     glob = "native/**/*.swift"
     condition = "exec('command -v xcrun || true') != ''"
     check = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
@@ -69,8 +27,6 @@ steps {
 hooks {
   ["pre-commit"] {
     fix = true
-
-
     stash = "none"
     stage = false
     fail_on_fix = true

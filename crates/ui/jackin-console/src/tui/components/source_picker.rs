@@ -15,7 +15,6 @@ pub enum SourceChoice {
 #[derive(Debug, Clone)]
 pub struct SourcePickerState {
     pub key: String,
-
     pub op_available: bool,
     pub focused: SourceChoice,
 }

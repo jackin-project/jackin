@@ -35,10 +35,6 @@ extension EnvironmentValues {
 
 
 
-
-
-
-
 enum JackinBrand {
     static let phosphorDarkSRGB = (r: 0x5C / 255.0, g: 0xF0 / 255.0, b: 0x7A / 255.0)
     static let phosphorLightSRGB = (r: 0x0B / 255.0, g: 0x77 / 255.0, b: 0x4E / 255.0)
@@ -73,13 +69,6 @@ enum JackinBrand {
                 srgbRed: phosphorLightSRGB.r, green: phosphorLightSRGB.g,
                 blue: phosphorLightSRGB.b, alpha: 1)
         })
-
-
-
-
-
-
-
 
     static let phosphorWashNSColor = dynamicColor(
         name: "jackinPhosphorWash",
@@ -168,9 +157,6 @@ enum JackinBrand {
     }
 }
 
-
-
-
 enum JackinSpace {
     static let xxs: CGFloat = 4
     static let xs: CGFloat = 8
@@ -179,7 +165,6 @@ enum JackinSpace {
     static let lg: CGFloat = 20
     static let xl: CGFloat = 24
 }
-
 
 enum JackinType {
     static let heroMetric = Font.system(size: 28, weight: .semibold, design: .monospaced)
@@ -191,12 +176,10 @@ enum JackinType {
 }
 
 extension Color {
-
     static var jackinPhosphor: Color { JackinBrand.phosphor }
     static var jackinMuted: Color { JackinBrand.muted }
     static var jackinQuiet: Color { JackinBrand.quiet }
 }
-
 
 func meterTint(_ state: ProtoState) -> Color {
     switch state {
@@ -205,8 +188,6 @@ func meterTint(_ state: ProtoState) -> Color {
     default: .jackinPhosphor
     }
 }
-
-
 
 struct BrandMarkChip: View {
     let iconKey: String
@@ -241,7 +222,6 @@ struct BrandMarkChip: View {
     }
 }
 
-
 @MainActor
 enum JackinBrandIdentity {
     static func wordmark(for colorScheme: ColorScheme) -> NSImage? {
@@ -269,7 +249,6 @@ enum JackinBrandIdentity {
     }
 }
 
-
 struct JackinBrandSignature: View {
     @Environment(\.colorScheme) private var colorScheme
     var width: CGFloat = 76
@@ -287,9 +266,6 @@ struct JackinBrandSignature: View {
         .accessibilityHidden(true)
     }
 }
-
-
-
 
 struct JackinStageBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -382,19 +358,10 @@ struct JackinStageBackground: View {
     }
 }
 
-
-
-
-
-
-
-
-
 @MainActor
 enum ProviderMarks {
     static func templateImage(forIconKey iconKey: String) -> NSImage? {
         for ext in ["pdf", "png"] {
-
             let candidates = [
                 Bundle.module.url(
                     forResource: iconKey, withExtension: ext,

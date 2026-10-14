@@ -178,7 +178,6 @@ fn parse_used_percentage(value: &Value) -> Result<i32, MonitorIssue> {
             "used_percentage must be a finite number from 0 through 100",
         ));
     }
-
     let basis_points = (percentage * 100.0).ceil();
     if !(0.0..=10_000.0).contains(&basis_points) {
         return Err(issue(

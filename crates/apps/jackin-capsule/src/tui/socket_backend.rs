@@ -13,15 +13,11 @@ use ratatui::{
 #[derive(Debug)]
 pub struct SocketBackend {
     size: (u16, u16),
-
     output: Vec<u8>,
-
     current_style: CellStyle,
     current_metadata: SgrMetadata,
-
     hyperlink_regions: Vec<(ratatui::layout::Rect, String)>,
     sgr_regions: Vec<(ratatui::layout::Rect, SgrMetadata)>,
-
     suppress_clear_escapes: bool,
 }
 
@@ -91,7 +87,6 @@ impl SocketBackend {
         if style == self.current_style && metadata == self.current_metadata {
             return;
         }
-
         self.output.extend_from_slice(b"\x1b[0m");
 
         if style.modifiers.contains(Modifier::BOLD) {
@@ -234,7 +229,6 @@ impl Backend for SocketBackend {
                 if self.suppress_clear_escapes {
                     return Ok(());
                 }
-
                 b"\x1b[0m\x1b[2J\x1b[H"
             }
             ClearType::AfterCursor => b"\x1b[0J",

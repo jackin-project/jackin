@@ -12,7 +12,6 @@ fn fixture(budget_text: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let crates = dir.path().join("crates");
     fs::create_dir_all(&crates).unwrap();
-
     write(&crates.join("small.rs"), "fn tiny() {}\n");
     write(&crates.join("big.rs"), &"// padding line\n".repeat(1500));
     fs::create_dir_all(crates.join("pkg")).unwrap();

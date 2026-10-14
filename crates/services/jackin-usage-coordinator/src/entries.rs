@@ -32,11 +32,8 @@ pub(crate) struct AccountEntry {
     pub(crate) cadence: AccountCadence,
     pub(crate) catalog_revision: Option<String>,
     pub(crate) revoked: bool,
-
     pub(crate) cooldown_not_before_monotonic: Option<Duration>,
-
     pub(crate) pending_provider_generation: Option<u64>,
-
     pub(crate) fenced_generations: BTreeSet<u64>,
 }
 
@@ -179,7 +176,6 @@ pub(crate) struct CoordinatorState {
 
 pub(crate) struct Shared {
     pub(crate) state: Mutex<CoordinatorState>,
-
     pub(crate) catalog_lifecycle: Mutex<()>,
     pub(crate) changed: Condvar,
     pub(crate) executor: Arc<dyn UsageProviderExecutor>,
@@ -192,7 +188,6 @@ pub(crate) struct Shared {
 pub(crate) enum CatalogAccountPreimage {
     Missing,
     Present(Box<AccountStateEnvelope>),
-
     Corrupt,
 }
 

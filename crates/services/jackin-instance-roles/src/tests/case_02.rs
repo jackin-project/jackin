@@ -193,7 +193,6 @@ fn prepare_for_bindings_provisions_two_instances_of_same_agent_independently() {
         assert!(!slot.forward_auth);
         assert!(slot.home_dir.is_none());
     }
-
     assert_eq!(work.slot_suffix, None);
     assert_eq!(work.container_home_rel, ".claude");
     assert_eq!(work.container_store_rel, "claude");

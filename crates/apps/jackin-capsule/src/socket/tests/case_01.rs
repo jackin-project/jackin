@@ -6,7 +6,6 @@ use super::*;
 #[tokio::test]
 async fn read_control_msg_rejects_oversize_length_prefix() {
     let (mut a, mut b) = UnixStream::pair().unwrap();
-
     let len_bytes = (5u32 * 1024 * 1024).to_be_bytes();
     a.write_all(&len_bytes[1..]).await.unwrap();
     a.shutdown().await.unwrap();

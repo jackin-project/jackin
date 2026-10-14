@@ -10,10 +10,8 @@ pub enum GithubAuthMode {
     #[default]
     #[serde(rename = "sync")]
     Sync,
-
     #[serde(rename = "token")]
     Token,
-
     #[serde(rename = "ignore")]
     Ignore,
 }
@@ -48,7 +46,6 @@ impl std::str::FromStr for GithubAuthMode {
 pub struct GithubAuthConfig {
     #[serde(default)]
     pub auth_forward: GithubAuthMode,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, EnvValue>,
 }

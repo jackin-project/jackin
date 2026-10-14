@@ -12,7 +12,6 @@ use clap::{Args, ValueEnum};
 pub(crate) struct ProfileMatrixArgs {
     #[arg(value_enum)]
     matrix: Matrix,
-
     #[arg(long)]
     dry_run: bool,
 }
@@ -207,7 +206,6 @@ fn docker_rm(name: &str) {
     cmd.args(["rm", "-f", name])
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-
     let _unused = crate::cmd::run(&mut cmd);
 }
 

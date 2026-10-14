@@ -132,13 +132,10 @@ pub(crate) fn profile_identity(
         }
         Agent::Grok => grok_profile_identity(reader, &root.join("auth.json")),
         Agent::Opencode => opencode_profile_identity(reader, &root.join("auth.json")),
-
         Agent::Antigravity => antigravity_profile_identity(reader),
         Agent::Gemini => gemini_profile_identity(reader, &root.join("oauth_creds.json")),
         Agent::Cursor => cursor_profile_identity(reader, root),
-
         Agent::Muse => muse_profile_identity(reader, &root.join("auth.json")),
-
         Agent::Omp => {
             if reader.exists(&root.join("agent/agent.db")) {
                 ProfileValidation::Anonymous(None)
@@ -146,7 +143,6 @@ pub(crate) fn profile_identity(
                 ProfileValidation::Missing
             }
         }
-
         Agent::Hermes => anonymous_when_present(reader, &root.join("auth.json")),
     }
 }

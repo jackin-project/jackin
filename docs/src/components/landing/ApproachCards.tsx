@@ -1,4 +1,3 @@
-
 import { TabbedBuilder } from './TabbedBuilder';
 
 const manifestBody = (

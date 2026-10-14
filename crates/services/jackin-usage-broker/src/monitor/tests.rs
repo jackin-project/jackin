@@ -492,7 +492,6 @@ fn quota_thresholds_emit_every_crossed_action_and_keep_repeated_actions_idempote
 fn quota_threshold_direct_jumps_emit_every_crossed_action() {
     let (_directory, store) = open_store();
     let reset = NOW + 3_600;
-
     ingest(
         &store,
         "acct-jump",
@@ -1188,7 +1187,6 @@ fn lower_usage_from_the_old_reset_cannot_pair_with_a_later_reset_only_observatio
         ),
         deadline + 1,
     );
-
     ingest(
         &store,
         "acct-reset-pair",

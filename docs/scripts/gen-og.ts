@@ -1,5 +1,4 @@
 
-
 import ImageResponse from '@takumi-rs/image-response'
 import React from 'react'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -18,8 +17,6 @@ const BG = '#0a0a0a'
 const TEXT = '#ffffff'
 const MUTED = '#9ca8a1'
 const ACCENT = '#5cf07a'
-
-
 const CHEVRON = ACCENT
 const RAIN_COLS = 80
 const RAIN_ROWS = 24
@@ -78,8 +75,6 @@ function Rain({ width, height }: { width: number; height: number }) {
 
   return React.createElement('div', { style: { position: 'absolute', inset: 0, display: 'flex' } }, children)
 }
-
-
 
 function Chevron({ fontSize, marginLeft = 0 }: { fontSize: number; marginLeft?: number }) {
   const c = chevronSvg(fontSize, CHEVRON)
@@ -194,9 +189,6 @@ function Card({ width, height }: { width: number; height: number }) {
   )
 }
 
-
-
-
 function rainSvgField(width: number, height: number): string {
   const rng = seeded(0x1acc1a11)
   const state = createRainState(RAIN_COLS, RAIN_ROWS, rng)
@@ -243,8 +235,6 @@ async function generate(width: number, height: number, output: string) {
 const heroWord = outlineWord('jackin', 138, TEXT)
 const heroWordGroup = placeWord(heroWord, Math.round((586 - heroWord.width / 2) * 100) / 100, 338)
 const heroCaret = chevron(138, 842, 314)
-
-
 const heroByline = outlineWord('by tailrocks', 26, MUTED, interFont)
 const heroBylineGroup = placeWord(heroByline, 626 - heroByline.width / 2, 446)
 const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="jackin❯ by tailrocks">

@@ -33,9 +33,7 @@ fn prelude_edit_opens_textinput_preserving_chain_to_workdir_pick() {
         }
         other => panic!("expected TextInput(MountDst); got {other:?}"),
     }
-
     assert!(prelude.pending_mount_dst.is_none());
-
     assert_eq!(prelude.wizard.step(), CREATE_PRELUDE_STEP_MOUNT_DST_EDIT);
 }
 
@@ -86,7 +84,6 @@ fn prelude_esc_at_mount_dst_choice_returns_to_file_browser_at_last_cwd() {
 #[test]
 fn prelude_esc_at_text_input_dst_returns_to_mount_dst_choice() {
     let mut prelude = prelude_with_browser_committed("/home/user/project");
-
     handle_prelude_modal(&mut prelude, key(KeyCode::Char('e')));
     assert!(matches!(prelude.modal, Some(Modal::TextInput { .. })));
 
@@ -144,7 +141,6 @@ fn prelude_esc_at_name_step_returns_to_workdir_pick() {
     prelude.accept_mount_src(std::path::PathBuf::from("/home/user/project"));
     prelude.accept_mount_dst("/home/user/project".into(), false);
     prelude.accept_workdir("/home/user/project".into());
-
     prelude.wizard.next();
     prelude.wizard.next();
     prelude.wizard.skip();
@@ -195,7 +191,6 @@ fn golden_walk_1_same_path_forward_completes() {
 
     handle_prelude_modal(&mut prelude, key(KeyCode::Char('m')));
     steps.push(observed_step(&prelude));
-
     assert_eq!(
         prelude.wizard.progress(),
         progress(

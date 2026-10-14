@@ -6,27 +6,16 @@ use jackin_core::Agent;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum HostSurfaceId {
     Claude,
-
     Codex,
-
     Amp,
-
     Grok,
-
     Zai,
-
     Kimi,
-
     Minimax,
-
     OpenCode,
-
     Google,
-
     Cursor,
-
     Meta,
-
     OpenRouter,
 }
 
@@ -232,7 +221,6 @@ impl HostSurfaceId {
             Agent::Antigravity | Agent::Gemini => Self::Google,
             Agent::Cursor => Self::Cursor,
             Agent::Muse => Self::Meta,
-
             Agent::Omp | Agent::Hermes => Self::OpenCode,
         }
     }
@@ -241,12 +229,8 @@ impl HostSurfaceId {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostSurfaceDescriptor {
     pub id: String,
-
     pub label: String,
-
     pub agent: String,
-
     pub provider: Option<String>,
-
     pub enabled: bool,
 }

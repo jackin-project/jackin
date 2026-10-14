@@ -46,7 +46,6 @@ pub(crate) fn main_view_hint(
         if !spans.is_empty() {
             spans.push(HintSpan::GroupSep);
         }
-
         spans.push(key_span("Esc"));
         spans.push(HintSpan::Text("exit scrollback"));
         spans.push(HintSpan::GroupSep);
@@ -68,7 +67,6 @@ pub(crate) fn main_view_hint(
         spans.push(HintSpan::GroupSep);
         spans.extend(RESIZE_PANE_KEYMAP.hint_spans());
         spans.push(HintSpan::GroupSep);
-
         spans.push(key_span("click"));
         spans.push(HintSpan::Text("focus pane"));
         spans.push(HintSpan::GroupSep);

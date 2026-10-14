@@ -3,7 +3,6 @@ import SwiftUI
 
 
 
-
 struct PopoverView: View {
     static let contentSize = CGSize(width: 380, height: 520)
 
@@ -80,10 +79,6 @@ struct PopoverView: View {
             get: { store.account(for: provider)?.key ?? "" },
             set: { store.selectAccount($0, for: provider) })
     }
-
-
-
-
 
     private var controls: some View {
         HStack(spacing: JackinSpace.sm) {

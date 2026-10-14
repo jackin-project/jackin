@@ -228,7 +228,6 @@ pub(crate) fn setup_omp(mode: AuthMode) -> Result<AuthMaterialization> {
             label: "omp",
             forwarded: &forwarded,
             target: &target,
-
             api_key_envs: &[
                 "OPENROUTER_API_KEY",
                 "ANTHROPIC_API_KEY",

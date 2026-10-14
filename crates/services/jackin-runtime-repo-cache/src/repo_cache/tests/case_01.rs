@@ -243,7 +243,6 @@ plugins = []
             .to_string()
             .contains("cached role repo remote mismatch")
     );
-
     assert!(repo_dir.join(".git").is_dir());
 }
 

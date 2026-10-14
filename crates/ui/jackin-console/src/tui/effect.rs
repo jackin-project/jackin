@@ -48,7 +48,6 @@ pub enum ConsoleManagerEffect<RoleSelector, RoleSource, OpRef> {
         op_ref: OpRef,
         is_settings: bool,
     },
-
     StartAccountScan {
         generation: u64,
     },

@@ -22,7 +22,6 @@ const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlTransport {
     DirectSocket,
-
     DockerExecFallback,
 }
 
@@ -64,7 +63,6 @@ fn bytes_sent(msg: ServerMsg) -> Result<u64> {
                 reason.label()
             )
         }
-
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
         other => bail!("daemon replied with {}; expected SessionSent", other.kind()),
     }
@@ -127,7 +125,6 @@ pub struct SessionEvents {
     records: mpsc::Receiver<Result<SessionEventRecord>>,
     transport: ControlTransport,
     child: Option<std::process::Child>,
-
     operation: Option<jackin_runtime_process_telemetry::process_telemetry::ChildOperation>,
 }
 
@@ -145,7 +142,6 @@ impl Drop for SessionEvents {
             drop(child.kill());
             drop(child.wait());
         }
-
         if let Some(operation) = self.operation.take() {
             operation.complete_success();
         }
@@ -246,7 +242,6 @@ impl SessionEvents {
             || std::os::unix::net::UnixStream::connect(path),
         )
         .with_context(|| format!("connecting to daemon socket {}", path.display()))?;
-
         stream
             .set_write_timeout(Some(Duration::from_secs(2)))
             .context("setting write timeout")?;
@@ -348,7 +343,6 @@ fn read_framed_events(
         let mut len_buf = [0u8; 4];
         match stream.read_exact(&mut len_buf) {
             Ok(()) => {}
-
             Err(_) => return,
         }
         let len = u32::from_be_bytes(len_buf) as usize;

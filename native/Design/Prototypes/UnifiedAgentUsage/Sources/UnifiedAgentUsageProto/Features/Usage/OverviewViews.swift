@@ -51,25 +51,12 @@ struct OverviewContentView: View {
                 .frame(maxWidth: 940)
                 .frame(maxWidth: .infinity)
             }
-
-
             .background(JackinStageBackground())
             .accessibilityLabel("Usage overview")
             .accessibilityIdentifier("usage.overview.grid")
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
 
 struct ProviderCardView: View {
     let store: ProtoStore
@@ -267,10 +254,6 @@ private struct OverviewAccountButtonStyle: ButtonStyle {
     }
 }
 
-
-
-
-
 private struct ProviderCardSurface: ViewModifier {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.jackinIncreaseContrast) private var processContrast
@@ -290,9 +273,6 @@ private struct ProviderCardSurface: ViewModifier {
             )
     }
 }
-
-
-
 
 struct QuotaMeter: View {
     let percent: Int

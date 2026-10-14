@@ -265,7 +265,6 @@ fn retire_apply_fails_on_dangling_inbound_link() {
         err.contains("shipme") && err.contains("guides/foo.mdx"),
         "should flag dangling link: {err}"
     );
-
     let d = docs.path();
     assert!(
         d.join("roadmap/(grp)/shipme.mdx").exists(),

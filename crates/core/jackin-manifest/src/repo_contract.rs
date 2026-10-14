@@ -9,21 +9,15 @@ use dockerfile_parser_rs::{Dockerfile, Instruction};
 use crate::repo::RoleRepoValidationError;
 
 pub use jackin_core::DOCKERFILE_NAME;
-
 pub use jackin_core::MANIFEST_FILENAME;
 
 pub const CONSTRUCT_REGISTRY_IMAGE: &str = "projectjackin/construct";
-
 pub const CONSTRUCT_STABLE_TAG: &str = "trixie";
-
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
-
 pub const CONSTRUCT_PINNED_TAG: &str = "0.1-trixie";
-
 pub const BASE_DOCKERFILE_FROM: &str = "FROM projectjackin/construct:0.1-trixie\n";
 
 pub const LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct.version";
-
 pub const LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA: &str = "jackin.role.git.sha";
 
 pub fn published_image_labels(construct_version: &str, role_git_sha: &str) -> [String; 2] {
@@ -52,13 +46,9 @@ pub fn construct_image() -> String {
 #[non_exhaustive]
 pub struct ValidatedDockerfile {
     pub dockerfile_path: PathBuf,
-
     pub dockerfile_contents: String,
-
     pub final_stage_image: String,
-
     pub final_stage_alias: Option<String>,
-
     pub construct_version: String,
 }
 
@@ -91,7 +81,6 @@ pub fn validate_agent_dockerfile(
     };
 
     let image_str = image.as_str();
-
     let base_ref = image_str
         .split_once('@')
         .map_or(image_str, |(base, _)| base);

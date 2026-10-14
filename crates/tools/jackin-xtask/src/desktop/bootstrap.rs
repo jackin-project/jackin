@@ -220,7 +220,6 @@ fn op_read(reference: &str) -> Result<String> {
 
 fn base64_file(path: &Path) -> Result<String> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-
     Ok(base64_nopad_std(&bytes))
 }
 

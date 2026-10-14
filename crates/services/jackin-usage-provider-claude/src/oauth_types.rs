@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 pub struct ClaudeOAuthUsageResponse {
     #[serde(rename = "five_hour")]
     pub five_hour: Option<ClaudeOAuthUsageWindow>,
-
     #[serde(rename = "seven_day")]
     pub seven_day: Option<ClaudeOAuthUsageWindow>,
     #[serde(rename = "seven_day_sonnet")]
@@ -22,15 +21,12 @@ pub struct ClaudeOAuthUsageResponse {
     #[serde(alias = "seven_day_cowork")]
     #[serde(rename = "seven_day_routines")]
     pub seven_day_routines: Option<ClaudeOAuthUsageWindow>,
-
     #[serde(default)]
     pub limits: Vec<ClaudeOAuthLimit>,
     #[serde(rename = "extra_usage")]
     pub extra_usage: Option<ClaudeOAuthExtraUsage>,
-
     #[serde(rename = "spend")]
     pub spend: Option<ClaudeOAuthSpend>,
-
     #[serde(flatten)]
     pub other_windows: BTreeMap<String, serde_json::Value>,
 }
@@ -69,7 +65,6 @@ pub struct ClaudeOAuthUsageWindow {
     pub utilization: Option<f64>,
     #[serde(rename = "resets_at")]
     pub resets_at: Option<String>,
-
     #[serde(rename = "limit_dollars")]
     pub limit_dollars: Option<f64>,
     #[serde(rename = "used_dollars")]
@@ -107,7 +102,6 @@ pub struct ClaudeOAuthExtraUsage {
     pub used_credits: Option<f64>,
     pub utilization: Option<f64>,
     pub currency: Option<String>,
-
     #[serde(rename = "decimal_places")]
     pub decimal_places: Option<u8>,
     #[serde(rename = "disabled_reason")]

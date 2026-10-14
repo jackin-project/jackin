@@ -65,7 +65,6 @@ pub(crate) async fn open_store(path: &Path) -> Result<Connection, String> {
         .await
         .map_err(|err| format!("open usage snapshot store failed: {err}"))?;
     record_connection_build(&path);
-
     static INITIALIZED_DBS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     let initialized = INITIALIZED_DBS.get_or_init(|| Mutex::new(HashSet::new()));
     let already_initialized = initialized.lock().is_ok_and(|set| set.contains(&path));

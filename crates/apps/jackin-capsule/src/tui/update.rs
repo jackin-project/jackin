@@ -26,7 +26,6 @@ pub(crate) enum FullRedrawReason {
     PaneClear,
     ExplicitRedraw,
     StatusChange,
-
     PtyOutput,
 }
 

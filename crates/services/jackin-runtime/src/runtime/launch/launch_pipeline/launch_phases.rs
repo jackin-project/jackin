@@ -16,14 +16,12 @@ use super::{bail_on_grant_errors, tag_errors, tagged_grant_errors};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImagePhaseClass {
     ReuseOrBackgroundRefresh,
-
     BuildRequired,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImagePhaseClassified {
     pub class: ImagePhaseClass,
-
     pub selected_image_reused: bool,
 }
 
@@ -50,26 +48,18 @@ pub fn classify_image_phase(
 #[derive(Debug, Clone)]
 pub struct GrantsValidated {
     pub effective_grants: EffectiveGrants,
-
     pub resolved_profile: DockerSecurityProfile,
-
     pub profile_source: ProfileSource,
-
     pub dind_started: bool,
 }
 
 #[derive(Debug)]
 pub struct GrantPhaseInput<'a> {
     pub config: &'a AppConfig,
-
     pub workspace_label: &'a str,
-
     pub workspace_docker: Option<&'a WorkspaceDockerConfig>,
-
     pub opts_docker_profile: Option<DockerSecurityProfile>,
-
     pub selector: &'a RoleSelector,
-
     pub role_manifest: &'a RoleManifest,
 }
 
@@ -142,7 +132,6 @@ pub fn validate_launch_grants(input: GrantPhaseInput<'_>) -> anyhow::Result<Gran
 #[must_use]
 pub(crate) struct ImageMaterialized {
     pub image: String,
-
     pub selected_image_reused: bool,
 }
 
@@ -150,13 +139,9 @@ pub(crate) struct ImageMaterialized {
 #[must_use]
 pub(crate) struct InstancePrepared {
     pub image: String,
-
     pub selected_image_reused: bool,
-
     pub instance_manifest: InstanceManifest,
-
     pub container_state: std::path::PathBuf,
-
     pub host_workdir_fingerprint: String,
 }
 
@@ -164,17 +149,11 @@ pub(crate) struct InstancePrepared {
 #[must_use]
 pub(crate) struct EnvironmentResolved {
     pub state: crate::instance::RoleState,
-
     pub github_resolved_env: std::collections::BTreeMap<String, String>,
-
     pub workspace_name_str: String,
-
     pub workspace_opt: Option<jackin_core::WorkspaceName>,
-
     pub github_mode: jackin_config::GithubAuthMode,
-
     pub github_env_decls: std::collections::BTreeMap<String, jackin_config::EnvValue>,
-
     pub credential_scope: jackin_protocol::usage_broker::UsageCredentialScope,
 }
 
@@ -182,7 +161,6 @@ pub(crate) struct EnvironmentResolved {
 #[must_use]
 pub(crate) struct TrustSeeded {
     pub environment: EnvironmentResolved,
-
     pub instances: Vec<jackin_config::ResolvedInstance>,
 }
 
@@ -190,9 +168,7 @@ pub(crate) struct TrustSeeded {
 #[must_use]
 pub(crate) struct WorkspaceMaterialized {
     pub materialized: crate::isolation::materialize::MaterializedWorkspace,
-
     pub launch_config: jackin_protocol::CapsuleConfig,
-
     pub environment: EnvironmentResolved,
 }
 
@@ -200,11 +176,8 @@ pub(crate) struct WorkspaceMaterialized {
 #[must_use]
 pub(crate) struct RuntimeLaunched {
     pub instance_manifest: InstanceManifest,
-
     pub container_state: std::path::PathBuf,
-
     pub cleanup: LoadCleanup,
-
     pub account_revision: crate::runtime::launch::account_identity::AccountConfigRevision,
 }
 

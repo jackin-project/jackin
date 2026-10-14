@@ -112,7 +112,6 @@ fn minimax_exhausted_and_unlimited_windows_render() {
     assert_eq!(buckets[1].label, "General · Weekly");
     assert_eq!(buckets[1].remaining_percent, None);
     assert_eq!(buckets[1].pace_label.as_deref(), Some("Unlimited"));
-
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
 }
@@ -178,7 +177,6 @@ fn minimax_remains_time_normalizes_milliseconds() {
         minimax_reset_epoch(None, Some(14_400_000), 1_782_315_600),
         Some(1_782_330_000)
     );
-
     assert_eq!(
         minimax_reset_epoch(Some(1_782_400_000), Some(14_400_000), 1_782_315_600),
         Some(1_782_400_000)

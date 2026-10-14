@@ -140,13 +140,11 @@ fn schema_migration_adds_columns_to_pre_v4_table() {
         .iter()
         .find(|r| r.account_key_hash == "sha256:legacy")
         .expect("legacy row survived the migration");
-
     assert_eq!(legacy.view_status, "unavailable");
     assert_eq!(legacy.updated_label, "Unavailable");
     assert_eq!(legacy.status_bar_label, "usage unavailable");
     assert!(legacy.plan_label.is_none());
     assert!(legacy.remaining_percent.is_none());
-
     assert!(rows.iter().any(|r| r.account_key_hash != "sha256:legacy"));
     assert_eq!(
         schema_version(&db).expect("schema version"),
@@ -173,7 +171,6 @@ fn focused_usage_view_rebuilds_snapshot_from_account_rows() {
     assert_eq!(view.buckets[0].label, "Session");
     assert_eq!(view.buckets[0].remaining_percent, Some(37));
     assert_eq!(view.buckets[1].label, "Credits");
-
     assert!(
         view.buckets
             .iter()

@@ -82,7 +82,6 @@ pub const fn instance_action_accepts_status(
             | S::FailedSetup => true,
             S::Purged => false,
         },
-
         (A::NewSession | A::Shell | A::Stop, status) => match status {
             S::Active | S::Running => true,
             S::CleanExited
@@ -94,7 +93,6 @@ pub const fn instance_action_accepts_status(
             | S::Purged
             | S::FailedSetup => false,
         },
-
         (A::Purge, status) => match status {
             S::Active
             | S::Running

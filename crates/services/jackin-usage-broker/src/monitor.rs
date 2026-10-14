@@ -64,9 +64,7 @@ use self::spend::{
 pub use statusline::parse_statusline;
 
 pub(crate) const MONITOR_EVIDENCE_TTL_SECS: i64 = 300;
-
 pub(crate) const MONITOR_RESET_GRACE_SECS: i64 = 60;
-
 pub(crate) const MONITOR_WATCH_TIMEOUT_CAP_MS: u64 = 30_000;
 
 const MAX_MONITORS: usize = 128;
@@ -92,7 +90,6 @@ const DECISION_MAX_PARALLEL: u32 = 1;
 struct MonitorStoreInner {
     directory: File,
     state: Mutex<StoreState>,
-
     collector_admission: Mutex<()>,
     #[cfg(test)]
     collector_admission_waiters: AtomicUsize,
@@ -1564,7 +1561,6 @@ fn metric_group_time(
                             | jackin_protocol::usage_broker::UsageCalendarPeriodV1::Monthly
                     ))
         }
-
         UsageMetricPeriodV1::ProviderDefined => window_index == 0,
         UsageMetricPeriodV1::Unknown => false,
     };
@@ -1601,7 +1597,6 @@ fn metric_group_time(
             }
             let group_used = (*group_used)
                 .or_else(|| group_remaining.map(|remaining| 100i32.saturating_sub(remaining)));
-
             (used_raw_percent.is_none() || group_used == used_raw_percent)
                 && group.reset_at_epoch == reset_at_epoch
         })

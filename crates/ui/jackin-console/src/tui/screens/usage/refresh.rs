@@ -15,7 +15,6 @@ impl UsageScreenState {
         self.projection_issues = snapshot.projection_issues;
         self.last_refresh_at = Some(now);
         self.consume_refresh_intent();
-
         self.scroll = 0;
         match &self.selected_id {
             None => self.selected = 0,

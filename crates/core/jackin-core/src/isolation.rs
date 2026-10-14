@@ -23,9 +23,7 @@ impl std::error::Error for ParseMountIsolationError {}
 pub enum MountIsolation {
     #[default]
     Shared,
-
     Worktree,
-
     Clone,
 }
 

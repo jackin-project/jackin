@@ -26,28 +26,17 @@ pub(crate) mod zshrc;
 #[serde(rename_all = "snake_case")]
 pub enum AiProvider {
     Anthropic,
-
     #[serde(rename = "openai")]
     OpenAi,
-
     Amp,
-
     Xai,
-
     Opencode,
-
     Moonshot,
-
     Zai,
-
     Minimax,
-
     Google,
-
     Cursor,
-
     Meta,
-
     #[serde(rename = "openrouter")]
     OpenRouter,
 }
@@ -83,7 +72,6 @@ impl AiProvider {
             Self::OpenRouter => "openrouter",
         }
     }
-
     pub const fn for_agent(agent: Agent) -> Option<Self> {
         match agent {
             Agent::Claude => Some(Self::Anthropic),
@@ -131,7 +119,6 @@ impl std::str::FromStr for AiProvider {
 #[serde(deny_unknown_fields)]
 pub struct ProfileSelector {
     pub entry: String,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
 }
@@ -161,40 +148,29 @@ impl ProfileSelector {
 pub enum AccountCredential {
     Profile {
         agent: Agent,
-
         directory: PathBuf,
-
         #[serde(default, skip_serializing_if = "Option::is_none")]
         xdg_roots: Option<XdgRoots>,
-
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source_selector: Option<ProfileSelector>,
     },
-
     ApiKey {
         value: EnvValue,
-
         #[serde(default, skip_serializing_if = "Option::is_none")]
         base_url: Option<String>,
-
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
     },
-
     OAuthToken {
         agent: Agent,
-
         value: EnvValue,
     },
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct XdgRoots {
     pub data: PathBuf,
-
     pub config: PathBuf,
-
     pub cache: PathBuf,
 }
 
@@ -202,7 +178,6 @@ pub struct XdgRoots {
 #[serde(deny_unknown_fields)]
 pub struct WrapperSpec {
     pub identity: String,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
 }
@@ -235,11 +210,8 @@ impl std::fmt::Debug for AccountCredential {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedCredentialDescriptor {
     pub agent: Agent,
-
     pub provider: AiProvider,
-
     pub mode: AuthForwardMode,
-
     pub env_name: &'static str,
 }
 
@@ -251,11 +223,8 @@ pub struct AccountConfig {
         skip_serializing_if = "crate::schema::bool_matches::<true>"
     )]
     pub enabled: bool,
-
     pub name: String,
-
     pub provider: AiProvider,
-
     pub credential: AccountCredential,
 }
 const fn account_enabled_by_default() -> bool {
@@ -289,7 +258,6 @@ impl AccountConfig {
                                 AiProvider::Moonshot | AiProvider::Zai | AiProvider::Minimax
                             )
                         }
-
                         Agent::Opencode | Agent::Omp | Agent::Hermes => {
                             !matches!(self.provider, AiProvider::Amp)
                         }
@@ -312,11 +280,9 @@ impl AccountConfig {
             Agent::Amp => AMP_API_KEY_ENV_NAME,
             Agent::Kimi => KIMI_API_KEY_ENV_NAME,
             Agent::Grok => XAI_API_KEY_ENV_NAME,
-
             Agent::Antigravity | Agent::Gemini => GEMINI_API_KEY_ENV_NAME,
             Agent::Cursor => CURSOR_API_KEY_ENV_NAME,
             Agent::Muse => META_API_KEY_ENV_NAME,
-
             Agent::Opencode | Agent::Omp | Agent::Hermes => match self.provider {
                 AiProvider::Anthropic => ANTHROPIC_API_KEY_ENV_NAME,
                 AiProvider::OpenAi => OPENAI_API_KEY_ENV_NAME,
@@ -374,11 +340,9 @@ impl AccountConfig {
             (Agent::Codex, AiProvider::Moonshot) => Some("https://api.kimi.com/coding/v1"),
             (Agent::Codex, AiProvider::Zai) => Some("https://api.z.ai/api/v1"),
             (Agent::Codex, AiProvider::Minimax) => Some("https://api.minimax.io/v1"),
-
             (Agent::Opencode | Agent::Omp | Agent::Hermes, AiProvider::OpenRouter) => {
                 Some("https://openrouter.ai/api/v1")
             }
-
             _ => None,
         }
     }
@@ -480,14 +444,12 @@ impl AccountConfig {
             AccountCredential::OAuthToken { .. } => AuthForwardMode::OAuthToken,
         }
     }
-
     pub fn source_directory(&self) -> Option<&Path> {
         match &self.credential {
             AccountCredential::Profile { directory, .. } => Some(directory),
             _ => None,
         }
     }
-
     pub fn credential_env(&self, agent: Agent) -> ConfigResult<BTreeMap<String, EnvValue>> {
         self.credential_env_for_endpoint(agent, None)
     }
@@ -585,7 +547,6 @@ impl AccountConfig {
                         self.name
                     )));
                 }
-
                 if !matches!(agent, Agent::Opencode | Agent::Omp | Agent::Hermes)
                     && let Some(url) = endpoint.or(default_url)
                 {
@@ -691,7 +652,6 @@ fn hash_env_value(digest: &mut Sha256, value: &EnvValue) {
         EnvValue::OpRef(value) => {
             hash_component(digest, "op_ref");
             hash_component(digest, &value.op);
-
             hash_component(
                 digest,
                 &jackin_core::display_op_breadcrumb_path(&value.path),
@@ -701,7 +661,6 @@ fn hash_env_value(digest: &mut Sha256, value: &EnvValue) {
         }
     }
 }
-
 pub fn validate_account_id(id: &str) -> ConfigResult<()> {
     if id.is_empty()
         || id.len() > 64
@@ -719,7 +678,6 @@ pub fn validate_account_id(id: &str) -> ConfigResult<()> {
     }
     Ok(())
 }
-
 pub fn resolve_account<'a>(
     cfg: &'a AppConfig,
     agent: Agent,
@@ -774,14 +732,12 @@ pub fn resolve_account<'a>(
     }
     Ok(selected)
 }
-
 pub const BOOTSTRAP_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BootstrapState {
     pub version: u32,
-
     #[serde(default)]
     pub fresh_install: bool,
 }
@@ -799,18 +755,13 @@ impl BootstrapState {
 #[serde(deny_unknown_fields)]
 pub struct AgentConfiguration {
     pub agent: Agent,
-
     pub account: String,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_label: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invoked_via_wrapper: Option<WrapperSpec>,
 }
@@ -885,19 +836,12 @@ impl AgentConfiguration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedInstance {
     pub config_id: String,
-
     pub agent: Agent,
-
     pub account_id: String,
-
     pub model: Option<String>,
-
     pub base_url: Option<String>,
-
     pub xdg_roots: Option<XdgRoots>,
-
     pub label: String,
-
     pub synthesized: bool,
 }
 
@@ -1006,7 +950,6 @@ pub fn resolve_launch(
             let config = cfg.agent_configurations.get(id).ok_or_else(|| {
                 ConfigError::msg(format_args!("unknown agent configuration {id:?}"))
             })?;
-
             if scope_is_global && !authorized(&config.account) {
                 continue;
             }
@@ -1027,7 +970,6 @@ pub fn resolve_launch(
             &id, committed, selected,
         )]);
     }
-
     let agents: &[Agent] = match agent.as_slice() {
         [committed] => std::slice::from_ref(committed),
         _ => Agent::ALL,
@@ -1173,7 +1115,6 @@ impl AppConfig {
                 }
             }
         }
-
         agents.extend(
             Agent::ALL
                 .iter()

@@ -3,10 +3,6 @@
 
 import XCTest
 
-
-
-
-
 final class LintPolicyTests: XCTestCase {
     private var nativeRoot: URL {
         URL(fileURLWithPath: #filePath)
@@ -19,7 +15,6 @@ final class LintPolicyTests: XCTestCase {
         let url = nativeRoot.appendingPathComponent(relative)
         return try String(contentsOf: url, encoding: .utf8)
     }
-
 
     private func disabledRules(
         _ text: String, file: StaticString = #filePath, line: UInt = #line

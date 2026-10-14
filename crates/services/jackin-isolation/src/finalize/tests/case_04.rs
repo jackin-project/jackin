@@ -70,14 +70,12 @@ async fn bare_gone_track_with_remote_reachability_is_safe_to_delete() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = [
         ferow("jackin/scratch/x", "abc", "", ""),
         ferow("feature/x", "newhead", "origin/feature/x", "gone"),
     ]
     .join("\n")
         + "\n";
-
     let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -109,9 +107,7 @@ async fn detached_head_past_base_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
-
     let mut runner = fake_failing_capture(&["", &branches, "deadbeef"], "symbolic-ref");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -139,9 +135,7 @@ async fn detached_head_at_base_is_safe_to_delete() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
-
     let mut runner = fake_failing_capture(&["", &branches, "abc\n"], "symbolic-ref");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -193,7 +187,6 @@ async fn detached_head_rev_parse_failure_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
     let mut runner = FakeRunner {
         capture_queue: VecDeque::from(vec![String::new(), branches]),
@@ -227,7 +220,6 @@ async fn keep_policy_preserves_dirty_record_without_prompt() {
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
-
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -255,7 +247,6 @@ async fn discard_policy_skips_dialog_on_dirty_record() {
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
-
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -271,7 +262,6 @@ async fn discard_policy_skips_dialog_on_dirty_record() {
     })
     .await
     .unwrap();
-
     assert!(
         matches!(dec, FinalizeDecision::Cleaned | FinalizeDecision::Preserved),
         "discard policy must never return ReturnToAgent; got {dec:?}"
@@ -284,18 +274,15 @@ fn exit_action_prompt_reads_recorded_choice() {
     let mut prompt = ExitActionPrompt {
         state_dir: dir.path().to_path_buf(),
     };
-
     assert_eq!(
         prompt.ask_exit_dialog("c", &[]).expect("prompt"),
         ExitDialogChoice::KeepAll
     );
-
     std::fs::write(dir.path().join("exit-action.json"), "\"discard\"").expect("write");
     assert_eq!(
         prompt.ask_exit_dialog("c", &[]).expect("prompt"),
         ExitDialogChoice::DiscardAll
     );
-
     std::fs::write(dir.path().join("exit-action.json"), "\"keep\"").expect("write");
     assert_eq!(
         prompt.ask_exit_dialog("c", &[]).expect("prompt"),

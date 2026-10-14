@@ -10,7 +10,6 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
     paths.ensure_base_dirs().unwrap();
     let mut config = AppConfig::default();
     let mut ws = empty_ws();
-
     ws.env.insert("API_TOKEN".into(), "ws-value".into());
     let mut ag_env = std::collections::BTreeMap::new();
     ag_env.insert("API_TOKEN".into(), "role-value".into());
@@ -88,7 +87,6 @@ fn cursor_skips_section_spacer_on_down_arrow() {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
-
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
@@ -296,7 +294,6 @@ fn tui_text_entry_op_uri_always_commits_as_plain() {
         "text-entry commit of op:// string must store EnvValue::Plain, \
              not EnvValue::OpRef — the picker is the only path to OpRef"
     );
-
     assert!(
         !matches!(stored, jackin_core::EnvValue::OpRef(_)),
         "text entry must never produce EnvValue::OpRef"

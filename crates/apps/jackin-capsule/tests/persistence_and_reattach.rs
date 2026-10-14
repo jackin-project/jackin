@@ -29,7 +29,6 @@ async fn attach_hello_roundtrips_over_socket() {
             .unwrap();
         let mut first = [0u8; 1];
         stream.read_exact(&mut first).await.unwrap();
-
         assert_ne!(first[0], 0x00);
         let frame = read_client_frame(&mut stream, first[0])
             .await
@@ -47,7 +46,6 @@ async fn attach_hello_roundtrips_over_socket() {
                 context: None,
             }
         );
-
         stream
             .write_all(&encode_server(ServerFrame::Welcome { session_count: 1 }))
             .await
@@ -105,9 +103,7 @@ async fn control_channel_status_roundtrip() {
             .unwrap();
         let mut first = [0u8; 1];
         stream.read_exact(&mut first).await.unwrap();
-
         assert_eq!(first[0], 0x00);
-
         let mut rest = [0u8; 3];
         stream.read_exact(&mut rest).await.unwrap();
         let len = u32::from_be_bytes([first[0], rest[0], rest[1], rest[2]]) as usize;
@@ -116,7 +112,6 @@ async fn control_channel_status_roundtrip() {
         let req: ControlRequest = serde_json::from_slice(&body).unwrap();
         assert_eq!(req.ctx.v, 1);
         assert!(matches!(req.msg, ClientMsg::Status));
-
         let reply = ServerMsg::SessionList { sessions: vec![] };
         stream.write_all(&frame(&reply)).await.unwrap();
     });
@@ -161,13 +156,11 @@ async fn second_attach_takes_over_first() {
             jackin_protocol::capsule_transport::server_handshake_async(&mut stream)
                 .await
                 .unwrap();
-
             if let Some(mut prev) = first_stream.take() {
                 prev.write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
                     .await
                     .unwrap();
             }
-
             let mut t = [0u8; 1];
             stream.read_exact(&mut t).await.unwrap();
             drop(read_client_frame(&mut stream, t[0]).await.unwrap());

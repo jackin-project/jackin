@@ -75,7 +75,6 @@ impl Drop for TerminalInput {
 
 fn forward_input<I: Read + AsFd>(input: I, mut sender: BlockingStream) -> io::Result<()> {
     let result = forward_input_inner(input, &mut sender);
-
     let _shutdown = sender.shutdown(Shutdown::Write);
     result
 }

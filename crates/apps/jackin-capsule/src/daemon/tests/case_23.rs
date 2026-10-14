@@ -10,7 +10,6 @@ fn exit_dirty_down_arrow_recomposes_a_changed_frame() {
         vec!["holla   1 changed".to_owned()],
         Arc::from([]),
     ));
-
     let first = mux.compose_pending_frame();
 
     mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
@@ -160,25 +159,20 @@ fn build_exit_inspect_rows_groups_repos_with_header_and_file_rows() {
         },
     ];
     let rows = build_exit_inspect_rows(&repos);
-
     assert!(matches!(rows.first(), Some(InspectRow::Repo(_))));
-
     let repo_count = rows
         .iter()
         .filter(|r| matches!(r, InspectRow::Repo(_)))
         .count();
     assert_eq!(repo_count, 2, "one header per repo");
-
     let file_count = rows
         .iter()
         .filter(|r| matches!(r, InspectRow::File(_)))
         .count();
     assert_eq!(file_count, 2, "only changed files produce File rows");
-
     if let Some(InspectRow::Repo(label)) = rows.first() {
         assert_eq!(label, "alpha");
     }
-
     let file_rows: Vec<_> = rows
         .iter()
         .filter_map(|r| {
@@ -279,7 +273,6 @@ fn remove_exited_session_retires_codename_inv_d8() {
     let mut mux = single_pane_tab_mux();
     let (session, _rx) = test_session(24, 80);
     mux.session_supervisor.sessions.insert(1, session);
-
     mux.session_supervisor
         .codename_live
         .insert("test".to_owned());
@@ -353,7 +346,6 @@ fn session_send_writes_the_payload_verbatim_into_the_addressed_pty() {
             bytes: 16
         }
     ));
-
     assert_eq!(
         input_rx.try_recv().expect("payload reached the PTY writer"),
         b"review the diff\r".to_vec()

@@ -36,7 +36,6 @@ impl Multiplexer {
                 let was_active = tab_idx == self.session_supervisor.active_tab;
                 let closed_codename = self.session_supervisor.tabs[tab_idx].codename.clone();
                 self.session_supervisor.tabs.remove(tab_idx);
-
                 use super::super::ports::{PORTS, StatusPort};
                 let now = self.wall_now_utc();
                 PORTS.retire_codename(&mut self.session_supervisor, &closed_codename, now);

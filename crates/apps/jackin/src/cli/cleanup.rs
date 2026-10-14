@@ -19,10 +19,8 @@ Examples:
 )]
 pub struct EjectArgs {
     pub selector: String,
-
     #[arg(long)]
     pub all: bool,
-
     #[arg(long)]
     pub purge: bool,
 }
@@ -40,7 +38,6 @@ Examples:
 )]
 pub struct PurgeArgs {
     pub selector: String,
-
     #[arg(long)]
     pub all: bool,
 }

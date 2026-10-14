@@ -131,7 +131,6 @@ pub(super) fn assert_manual_refresh_join_preserves_periodic_cadence(
             "joined intent is consumed together"
         );
     }
-
     let completed = started + Duration::from_secs(1);
     let outcome = screen.poll_refresh().expect("ready active generation");
     match outcome {

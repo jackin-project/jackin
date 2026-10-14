@@ -20,7 +20,6 @@ pub enum ImageInvalidationReason {
     CapsuleVersionChanged,
     PublishedImageStale,
     InspectFailed,
-
     AgentVersionChanged,
 }
 

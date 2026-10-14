@@ -295,7 +295,6 @@ fn boot_spawns_initial_instance_first_then_config_order() {
             SpawnRequest::Instance("oc-c-inst".to_owned()),
         ]
     );
-
     assert_eq!(
         initial_spawn_requests("oc-c-inst", &config),
         vec![
@@ -318,7 +317,6 @@ fn boot_spawns_single_tab_for_solo_and_shell_launches() {
         initial_spawn_requests("", &shell_only),
         vec![SpawnRequest::Shell]
     );
-
     let config = launch_config_with_instances(&["cx-a-inst", "cx-b-inst"]);
     assert_eq!(
         initial_spawn_requests("", &config),

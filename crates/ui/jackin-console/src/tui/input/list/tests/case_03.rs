@@ -77,7 +77,6 @@ fn t_key_shows_no_instance_popup_when_no_running_instance() {
         ..Default::default()
     };
     let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
-
     state.instances = vec![instance_entry(
         "jackin-demo-architect-stale",
         InstanceStatus::CleanExited,
@@ -174,7 +173,6 @@ fn a_and_x_return_continue_for_non_running_instance() {
         ..Default::default()
     };
     let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
-
     state.instances = vec![instance_entry(
         "jackin-demo-architect-123456",
         InstanceStatus::RestoreAvailable,
@@ -219,7 +217,6 @@ fn moving_selection_resets_mount_scroll_state() {
             ..Default::default()
         },
     );
-
     let mut state = ManagerState::from_config(&config, cwd);
     state.selected = 0;
     crate::tui::scroll_block::scroll_area_set_x(&mut state.list_mounts_scroll, 24);
@@ -252,7 +249,6 @@ fn down_key_with_focused_block_clamps_vertical_scroll_without_selection_move() {
             ..Default::default()
         },
     );
-
     let mut state = ManagerState::from_config(&config, cwd);
     state.selected = 0;
     state.set_list_scroll_focus(Some(MountScrollFocus::Workspace));
@@ -277,7 +273,6 @@ fn resolve_github_mounts_returns_one_per_github_repo() {
     let repo_b = make_github_repo(tmp.path(), "repo-b", "dev");
     let plain = tmp.path().join("plain");
     std::fs::create_dir(&plain).unwrap();
-
     let gitlab = tmp.path().join("gl");
     let gl_git = gitlab.join(".git");
     std::fs::create_dir_all(&gl_git).unwrap();
@@ -300,11 +295,9 @@ fn resolve_github_mounts_returns_one_per_github_repo() {
 
     let choices = crate::github_mounts::resolve_for_workspace(&ws);
     assert_eq!(choices.len(), 2);
-
     let urls: Vec<&str> = choices.iter().map(|c| c.url.as_str()).collect();
     assert!(urls.contains(&"https://github.com/owner/repo-a/tree/main"));
     assert!(urls.contains(&"https://github.com/owner/repo-b/tree/dev"));
-
     let branches: Vec<&str> = choices.iter().map(|c| c.branch.as_str()).collect();
     assert!(branches.contains(&"main"));
     assert!(branches.contains(&"dev"));

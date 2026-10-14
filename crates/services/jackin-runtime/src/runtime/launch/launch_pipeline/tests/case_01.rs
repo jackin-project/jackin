@@ -124,7 +124,6 @@ async fn run_launch_core_happy_path_returns_container_name() {
     );
     let name = future.await.expect("happy path");
     assert_eq!(name, fix.container_name);
-
     let recorded = fix.docker.recorded.borrow();
     assert!(
         !recorded.is_empty(),
@@ -321,7 +320,6 @@ async fn run_launch_core_suite_a_grant_failure_cleans_up_before_return() {
         "suite A must surface grant validation: {err}"
     );
     let recorded = fix.docker.recorded.borrow();
-
     assert!(
         !recorded
             .iter()
@@ -334,13 +332,11 @@ async fn run_launch_core_suite_a_grant_failure_cleans_up_before_return() {
 async fn run_launch_core_finalize_error_runs_cleanup_before_return() {
     let mut fix = LaunchCoreFixture::new();
     let isolation_path = fix.plant_valid_isolation_for_finalize_error();
-
     let _corruption = schedule_isolation_corruption(
         format!("create_container:{}", fix.container_name),
         isolation_path,
     );
     fix.docker.operation_hook = Some(corrupt_isolation_on_operation);
-
     fix.docker.exec_capture_queue = std::cell::RefCell::new(VecDeque::from([
         String::new(),
         String::new(),

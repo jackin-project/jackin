@@ -11,7 +11,6 @@ fn enter_on_git_repo_opens_prompt() {
     std::fs::create_dir_all(repo.join(".git")).unwrap();
 
     let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-
     handle_with_services(&mut state, key(KeyCode::Down));
     let outcome = handle_with_services(&mut state, key(KeyCode::Enter));
     match outcome {
@@ -190,7 +189,6 @@ fn o_shortcut_without_url_is_silent_noop() {
 
     let outcome = handle_with_services(&mut state, key(KeyCode::Char('o')));
     assert!(matches!(outcome, FileBrowserOutcome::Continue));
-
     assert!(state.pending_git_prompt.is_some());
     assert_eq!(state.pending_git_focus, focus_before);
 }
@@ -205,7 +203,6 @@ fn o_shortcut_with_url_returns_open_request_and_keeps_prompt_open() {
     let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
     handle_with_services(&mut state, key(KeyCode::Down));
     handle_with_services(&mut state, key(KeyCode::Enter));
-
     state.pending_git_url = Some("file:///tmp/definitely-not-real".to_owned());
 
     let outcome = handle_with_services(&mut state, key(KeyCode::Char('O')));
@@ -214,7 +211,6 @@ fn o_shortcut_with_url_returns_open_request_and_keeps_prompt_open() {
         FileBrowserOutcome::OpenGitUrl(url) if url == "file:///tmp/definitely-not-real"
     ));
     assert!(state.pending_git_prompt.is_some());
-
     assert_eq!(
         state.pending_git_url.as_deref(),
         Some("file:///tmp/definitely-not-real"),
@@ -248,7 +244,6 @@ fn git_prompt_hint_includes_open_segment_when_url_is_present() {
         rendered.contains("open"),
         "hint should mention 'open' when URL resolved: {rendered:?}"
     );
-
     assert!(rendered.contains('M'));
     assert!(rendered.contains('P'));
     assert!(rendered.contains("C/Esc"));

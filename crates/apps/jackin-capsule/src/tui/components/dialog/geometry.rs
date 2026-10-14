@@ -158,7 +158,6 @@ impl Dialog {
             Self::Usage { view, .. } if view.tabs.is_empty() => usage_empty_hint(axes),
             Self::Usage { .. } => usage_hint(axes),
             Self::ConfirmAction { .. } => confirm_hint(),
-
             Self::ExitDirty { .. } => flat_picker_hint(),
             Self::ExitInspect { .. } => read_only_hint(),
         }

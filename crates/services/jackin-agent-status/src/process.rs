@@ -57,15 +57,10 @@ mod procfs {
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
     pub pid: u32,
-
     pub pgid: u32,
-
     pub tpgid: i32,
-
     pub cmdline: Vec<String>,
-
     pub exe_path: Option<PathBuf>,
-
     pub comm: String,
 }
 
@@ -185,7 +180,6 @@ pub fn descendant_process_count(root_pid: u32) -> u32 {
     let Ok(iter) = procfs::process::all_processes() else {
         return 0;
     };
-
     let parents = iter.filter_map(|proc_result| {
         let stat = proc_result.ok()?.stat().ok()?;
         (stat.pid > 0 && stat.ppid > 0).then_some((
@@ -359,9 +353,7 @@ pub fn identify_agent(info: &ProcessInfo) -> Option<Agent> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForegroundGroup {
     None,
-
     Unrecognized { pgid: u32 },
-
     Agent { agent: Agent, pgid: u32 },
 }
 

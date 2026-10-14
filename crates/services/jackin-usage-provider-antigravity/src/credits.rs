@@ -98,7 +98,6 @@ pub fn antigravity_credits_bucket(credits: &AntigravityCredits) -> Option<QuotaB
         None,
         UsageSnapshotStatus::Fresh,
     );
-
     if credits.used_money.is_some() {
         view.status_slot = Some(StatusSlot::Spend);
         view.used_money = credits.used_money.clone();

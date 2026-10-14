@@ -11,7 +11,6 @@ use crate::boundary::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartKind {
     FreshConstruct,
-
     ResumeExisting,
 }
 

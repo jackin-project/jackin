@@ -12,7 +12,6 @@ const SYNC_END: &[u8] = b"\x1b[?2026l";
 pub(crate) struct ClientWriter {
     tx: Option<mpsc::UnboundedSender<Vec<u8>>>,
     completion_tx: Option<mpsc::UnboundedSender<crate::attach_protocol::AttachResponseCompletion>>,
-
     out_of_band: Vec<Vec<u8>>,
 }
 

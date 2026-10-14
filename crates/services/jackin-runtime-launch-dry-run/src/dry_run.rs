@@ -7,18 +7,14 @@ use jackin_core::{Agent, WorkspaceName};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DryRunIdentity {
     pub account_id: Option<String>,
-
     pub model: Option<String>,
-
     pub instances: Vec<ResolvedInstance>,
-
     pub admitted_instances: Vec<ResolvedInstance>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DryRunModelProjection {
     pub model: Option<String>,
-
     pub instances: std::collections::BTreeMap<String, String>,
 }
 

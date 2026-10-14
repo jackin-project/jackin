@@ -68,7 +68,6 @@ pub fn handle_list_key(
     };
     match plan {
         WorkspaceListKeyPlan::Exit => Ok(InputOutcome::ExitJackin),
-
         WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta } => {
             handle_list_left_right(state, config, cwd, delta);
             Ok(InputOutcome::Continue)

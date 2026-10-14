@@ -83,7 +83,6 @@ async fn reconcile_inner(
         return Ok(());
     }
     let want_running = any_keep_awake_enabled && count_keep_awake_agents(docker).await? > 0;
-
     let liveness = if let Some(pid) = current_pid {
         jackin_telemetry::spawn::joined_blocking(move || is_caffeinate_alive_at(pid))
             .await
@@ -121,7 +120,6 @@ async fn reconcile_inner(
             let Some(pid) = current_pid else {
                 return Ok(());
             };
-
             jackin_diagnostics::emit_compact_line(
                 "keep_awake",
                 &format!(
@@ -159,7 +157,6 @@ fn read_pid_file(path: &Path) -> anyhow::Result<Option<u32>> {
     match std::fs::read_to_string(path) {
         Ok(contents) => {
             let trimmed = contents.trim();
-
             if trimmed.is_empty() {
                 return Ok(None);
             }
@@ -182,9 +179,7 @@ fn write_pid_file(path: &Path, pid: u32) -> anyhow::Result<()> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Liveness {
     Alive,
-
     Gone,
-
     Unknown,
 }
 

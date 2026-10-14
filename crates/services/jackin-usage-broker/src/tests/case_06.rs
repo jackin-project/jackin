@@ -159,7 +159,6 @@ fn join_publication_timeout_leaves_broker_ownership_intact() {
     .unwrap();
     client.subscribe(capability()).unwrap();
     started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-
     let refreshing = loop {
         let first = client.current_projection().unwrap();
         thread::park_timeout(Duration::from_millis(250));

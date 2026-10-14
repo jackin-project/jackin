@@ -46,7 +46,6 @@ mod usage;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickerIntent {
     NewTab,
-
     Split(SplitDirection),
 }
 
@@ -101,38 +100,29 @@ pub enum Dialog {
         intent: PickerIntent,
         filter: String,
     },
-
     RenameTab {
         tab_idx: usize,
         input: termrock::widgets::TextInputState,
     },
-
     ExportFile {
         input: termrock::widgets::TextInputState,
         reveal_after_export: bool,
         open_after_export: bool,
     },
-
     ContainerInfo {
         container_name: String,
         role: String,
         focused_agent: Option<String>,
         workdir: String,
         diagnostics: ContainerInfoDiagnostics,
-
         copied_row: Option<usize>,
-
         hovered_row: Option<usize>,
-
         scroll: termrock::scroll::DialogScroll,
     },
-
     GitHubContext {
         copied: bool,
-
         scroll: termrock::scroll::DialogScroll,
     },
-
     Usage {
         view: Box<jackin_protocol::control::FocusedUsageView>,
         selected: UsageDialogTab,
@@ -140,7 +130,6 @@ pub enum Dialog {
         hovered_tab: Option<usize>,
         scroll: termrock::scroll::DialogScroll,
     },
-
     SpawnFailure(SpawnFailureState),
 
     SplitDirectionPicker {
@@ -157,20 +146,14 @@ pub enum Dialog {
         kind: ConfirmKind,
         selected_yes: bool,
     },
-
     ExecPicker(crate::exec::ExecPickerState),
-
     ExitDirty {
         summary: Vec<String>,
-
         selected: usize,
-
         inspect_rows: Arc<[InspectRow]>,
     },
-
     ExitInspect {
         lines: Arc<[InspectRow]>,
-
         selected: usize,
     },
 }

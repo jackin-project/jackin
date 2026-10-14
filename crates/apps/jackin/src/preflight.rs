@@ -276,7 +276,6 @@ fn check_config_dir(config_dir: &Path) -> CheckResult {
             format!("Run: mkdir -p {}", config_dir.display()),
         );
     }
-
     let probe = config_dir.join(".jackin_probe");
     match std::fs::write(&probe, b"") {
         Ok(()) => {
@@ -384,7 +383,6 @@ fn check_mise() -> CheckResult {
 
 fn check_clock_skew() -> CheckResult {
     use std::time::{SystemTime, UNIX_EPOCH};
-
     let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(d) => d.as_secs(),
         Err(_) => {

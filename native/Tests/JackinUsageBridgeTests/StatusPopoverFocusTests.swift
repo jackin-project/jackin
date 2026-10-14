@@ -5,7 +5,6 @@ import XCTest
 
 @testable import JackinUsageBridge
 
-
 final class StatusPopoverFocusTests: XCTestCase {
     func testProviderClickSelectsSurface() {
         let outcome = StatusPopoverFocus.outcome(surfaceId: "claude", isFallbackItem: false)
@@ -25,7 +24,6 @@ final class StatusPopoverFocusTests: XCTestCase {
     }
 
     func testSurfaceIdMapLookup() {
-
         let buttonA = NSObject()
         let buttonB = NSObject()
         let identityA = ObjectIdentifier(buttonA)

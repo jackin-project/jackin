@@ -27,7 +27,6 @@ fn drag_ignored_on_non_list_stage() {
 #[test]
 fn drag_ignored_when_terminal_too_narrow() {
     let mut state = list_state();
-
     handle_mouse(
         &mut state,
         mouse(MouseEventKind::Down(MouseButton::Left), 13),
@@ -322,7 +321,6 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
         }
         other => panic!("expected OpenUrl effect, got {other:?}"),
     }
-
     assert!(
         state.drag_state.is_none(),
         "URL click must not start a seam drag",
@@ -357,7 +355,6 @@ fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
     state.stage = ManagerStage::CreatePrelude(prelude);
 
     handle_mouse(&mut state, mouse_down_at(60, 0), term_120x40());
-
     assert!(state.drag_state.is_none());
 }
 

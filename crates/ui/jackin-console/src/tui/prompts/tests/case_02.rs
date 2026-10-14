@@ -89,7 +89,6 @@ fn workspace_default_outside_allowlist_hard_errors() {
 #[test]
 fn incompatible_default_configuration_errors() {
     let (mut config, ws) = launch_config();
-
     config.agent_configurations.insert(
         "claude-bogus".into(),
         agent_configuration(Agent::Claude, "o-codex"),
@@ -119,7 +118,6 @@ fn several_admitted_instances_open_picker_in_id_order() {
 #[test]
 fn shared_account_instances_open_picker_with_exact_configurations() {
     let (mut config, ws) = launch_config();
-
     for (id, model) in [("claude-a-fast", "fast"), ("claude-a-deep", "deep")] {
         let mut configuration = agent_configuration(Agent::Claude, "a-claude");
         configuration.model = Some(model.into());

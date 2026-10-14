@@ -13,7 +13,6 @@ use crate::Agent;
 #[serde(deny_unknown_fields)]
 pub struct ProfileCredentialSourceIdentity {
     pub agent: Agent,
-
     pub descriptor_fingerprint: String,
 }
 
@@ -21,7 +20,6 @@ pub struct ProfileCredentialSourceIdentity {
 #[serde(deny_unknown_fields)]
 pub struct ProfileCredentialSourceMaterial {
     pub source: ProfileCredentialSourceIdentity,
-
     pub material_revision: String,
 }
 

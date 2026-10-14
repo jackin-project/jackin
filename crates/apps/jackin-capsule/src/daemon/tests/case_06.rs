@@ -183,7 +183,6 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session(20, 78);
     session.feed_pty(b"\x1b[1;1Hstable pane");
-
     for i in 0..30 {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }

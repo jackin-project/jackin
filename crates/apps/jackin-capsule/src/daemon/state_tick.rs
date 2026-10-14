@@ -24,7 +24,6 @@ pub(crate) async fn handle_state_tick(
 ) {
     mux.record_resource_metrics().await;
     mux.maybe_spawn_pull_request_context_lookup(Instant::now());
-
     let stale_image_transfer_ids = mux
         .clipboard
         .clipboard_image_transfers
@@ -48,9 +47,7 @@ pub(crate) async fn handle_state_tick(
         ));
         mux.invalidate(status_change_redraw_reason());
     }
-
     let now = Instant::now();
-
     let token_sessions: Vec<(u64, Agent)> = mux
         .session_supervisor
         .sessions
@@ -58,7 +55,6 @@ pub(crate) async fn handle_state_tick(
         .filter_map(|(id, s)| Some((id, Agent::from_slug(s.agent.as_deref()?)?)))
         .collect();
     mux.usage.token_monitor.reconcile_sessions(&token_sessions);
-
     if mux.usage.token_monitor.due_session_count() == 0 {
         record_skipped_provider_probe();
     } else {
@@ -78,7 +74,6 @@ pub(crate) async fn handle_state_tick(
             }
         }
     }
-
     let states_before: Vec<_> = mux
         .session_supervisor
         .sessions
@@ -89,7 +84,6 @@ pub(crate) async fn handle_state_tick(
         let tick = session.advance_status(rule_registry, now);
         record_agent_status_tick(session, tick);
     }
-
     if let Some(focused) = mux.active_focused_id()
         && let Some(session) = mux.session_supervisor.sessions.get_mut(focused)
         && let Some(effective) = session.status.acknowledge()
@@ -119,7 +113,6 @@ pub(crate) async fn handle_state_tick(
         mux.invalidate(dialog_change_redraw_reason());
         return;
     }
-
     if mux.dialog_open() {
         return;
     }

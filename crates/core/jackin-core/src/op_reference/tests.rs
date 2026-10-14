@@ -102,7 +102,6 @@ fn legacy_breadcrumb_migration_treats_percent_as_literal_and_checks_structure() 
         ),
         Some("Vault/Item/Team%252FBlue/Token?attribute=username".to_owned())
     );
-
     assert_eq!(
         encode_legacy_op_breadcrumb(
             "Vault/Item/Token",

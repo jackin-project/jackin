@@ -27,7 +27,6 @@ pub(super) async fn cancelled_before_poll(close_before_spawn: bool) {
         future_polled.store(true, Ordering::SeqCst);
         std::future::pending().await
     });
-
     drop(reply_rx);
     tokio::time::timeout(std::time::Duration::from_secs(1), dropped_rx)
         .await

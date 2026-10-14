@@ -52,7 +52,6 @@ pub(super) fn build_resource_for_sources(
         std_attrs::PROCESS_RUNTIME_VERSION,
         env!("RUSTC_VERSION"),
     ));
-
     if identity == ServiceIdentity::CAPSULE
         && let Some(cgroup) = cgroup()
         && let Some(container_id) = container_id_from_cgroup(&cgroup)

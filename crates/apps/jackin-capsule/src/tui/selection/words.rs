@@ -124,7 +124,6 @@ pub(crate) fn url_word_bounds(cells: &[DisplayCell<'_>], clicked: usize) -> Opti
             idx = end + 1;
             continue;
         }
-
         while end > idx {
             let Some(ch) = cell_char(&cells[end]) else {
                 break;

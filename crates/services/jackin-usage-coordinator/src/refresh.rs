@@ -35,7 +35,6 @@ impl UsageCoordinator {
             .accounts
             .get(capability)
             .ok_or_else(unavailable_error)?;
-
         Ok(generation_view(&entry.envelope))
     }
 

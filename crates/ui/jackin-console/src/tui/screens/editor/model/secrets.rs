@@ -19,7 +19,6 @@ pub enum SecretsRow {
     RoleHeader { role: String, expanded: bool },
     RoleKeyRow { role: String, key: String },
     RoleAddSentinel(String),
-
     SectionSpacer,
 }
 

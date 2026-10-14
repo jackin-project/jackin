@@ -7,9 +7,7 @@ use super::SecretsScopeTag;
 pub struct PendingSaveCommit<M> {
     pub effective_removals: Vec<String>,
     pub final_mounts: Option<Vec<M>>,
-
     pub delete_isolated_acknowledged: bool,
-
     pub isolated_cleanup_complete: bool,
 }
 

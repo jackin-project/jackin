@@ -74,7 +74,6 @@ pub fn state_read(directory: &Path, key: &str) -> std::io::Result<Option<Vec<u8>
 pub fn state_write(directory: &Path, key: &str, value: &[u8]) -> std::io::Result<()> {
     let mut file =
         jackin_runtime_coordination::coordination::open_state_in_namespace(directory, key, true)?;
-
     file.set_len(0)?;
     file.write_all(value)
 }

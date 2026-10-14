@@ -77,7 +77,6 @@ where
     let Ok(_worker) = worker else {
         return Err(ProbeBudgetExpired);
     };
-
     match receiver.recv_timeout(budget) {
         Ok(Ok(result)) => Ok(result),
         Ok(Err(payload)) => std::panic::resume_unwind(payload),

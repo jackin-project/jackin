@@ -66,23 +66,19 @@ pub(super) fn exec_picker_handle_key(
             state.toggle_cursor();
             DialogAction::Redraw
         }
-
         b"\x1b[A" | b"\x10" => {
             state.cursor_up();
             DialogAction::Redraw
         }
-
         b"\x1b[B" | b"\x0e" => {
             state.cursor_down();
             DialogAction::Redraw
         }
-
         b"\r" | b"\n" => DialogAction::ExecConfirm {
             command: state.command.clone(),
             args: state.args.clone(),
             selected: state.selected_refs(),
         },
-
         b"\x1b" | b"\x03" => DialogAction::ExecCancel,
         _ => DialogAction::Consume,
     }
@@ -185,7 +181,6 @@ pub(super) fn step_selectable(rows: &[PickerRow], from: usize, forward: bool) ->
             return idx;
         }
     }
-
     if rows[idx].is_selectable() {
         idx
     } else if forward {

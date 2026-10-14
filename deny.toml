@@ -3,11 +3,7 @@
 
 [advisories]
 ignore = [
-
-
-
     { id = "RUSTSEC-2023-0071", reason = "No safe upgrade is available; current use is not network-observable RSA decryption." },
-
     { id = "RUSTSEC-2026-0173", reason = "No safe upgrade is available in current tabled/sigstore/oci-client releases; proc-macro-error2 is build-time only." },
 ]
 yanked = "deny"
@@ -18,8 +14,6 @@ allow = [
     "MIT",
 ]
 confidence-threshold = 0.8
-
-
 exceptions = [
     { crate = "arrayref@0.3.9", allow = ["BSD-2-Clause"] },
     { crate = "adler2@2.0.1", allow = ["0BSD", "MIT", "Apache-2.0"] },
@@ -117,9 +111,6 @@ deny = [
     { crate = "yaml-rust", reason = "Use serde_yaml_ng for YAML parsing." },
     { crate = "uniffi", reason = "Native FFI bindings are boltffi-only (jackin-usage-ffi); UniFFI was removed and must not return." },
 ]
-
-
-
 skip = [
     { crate = "allocator-api2@0.2.21", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "base64@0.21.7", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
@@ -182,14 +173,6 @@ skip = [
     { crate = "windows-sys@0.52.0", reason = "ring 0.17.14 retains 0.52 while bindgen's which 4.4.2 requires 0.59." },
     { crate = "x509-cert@0.2.5", reason = "sigstore 0.14.0 pins x509-cert 0.2.5; workspace direct dependency moved to 0.3. Remove when sigstore updates." },
 ]
-
-
-
-
-
-
-
-
 
 [bans.workspace-dependencies]
 duplicates = "deny"

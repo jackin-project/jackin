@@ -13,39 +13,14 @@
 
 
 
-
-
-
-
-
-
-
-
-
 [net]
 retry = 10
-
-
-
-
 
 [registries.crates-io]
 protocol = "sparse"
 
-
-
-
 [build]
 dep-info-basedir = "."
 
-
-
-
-
 [alias]
-
-
-
-
-
 xtask = "run --quiet --locked --package jackin-xtask --"

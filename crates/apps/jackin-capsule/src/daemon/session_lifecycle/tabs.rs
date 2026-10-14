@@ -50,7 +50,6 @@ impl Multiplexer {
         if self.session_supervisor.active_tab >= self.session_supervisor.tabs.len() {
             return;
         }
-
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let tab_ids = self.session_supervisor.tabs[self.session_supervisor.active_tab]

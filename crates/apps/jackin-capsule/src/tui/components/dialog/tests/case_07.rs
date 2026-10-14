@@ -11,7 +11,6 @@ fn s8_usage_extreme_scroll_still_renders_chrome() {
         assert_eq!(d.handle_key(b"j", None), DialogAction::Redraw);
     }
     assert!(s8_usage_scroll(&d).1 >= 500);
-
     let snapshot = d.to_ratatui_snapshot(None);
     let rect = d.box_rect(18, 60);
     let backend = TestBackend::new(60, 18);

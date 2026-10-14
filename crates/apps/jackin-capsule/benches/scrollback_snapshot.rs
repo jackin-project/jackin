@@ -8,10 +8,8 @@ use termpane::DamageGrid;
 
 const SCREEN_ROWS: u16 = 40;
 const SCREEN_COLS: u16 = 120;
-
 const SCROLLBACK_ROWS: usize = 8_000;
 const VIEWPORT_COLS: u16 = SCREEN_COLS;
-
 const NARROW_WINDOW: usize = 1;
 
 fn make_deep_scrollback_grid() -> DamageGrid {
@@ -32,7 +30,6 @@ fn bench_scrollback_snapshot(c: &mut Criterion) {
     let grid = make_deep_scrollback_grid();
     let filled = grid.scrollback_len();
     let total = filled.saturating_add(usize::from(SCREEN_ROWS));
-
     let anchor = filled / 2;
     let narrow = anchor..anchor.saturating_add(NARROW_WINDOW);
 

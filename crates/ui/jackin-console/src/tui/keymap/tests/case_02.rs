@@ -368,21 +368,18 @@ fn bridged_dispatch_ignores_release_events() {
 #[test]
 fn visibility_shown_bindings_advertise_hidden_aliases_do_not() {
     let keys = hint_keys(WORKSPACE_LIST_KEYMAP.hint_spans());
-
     for glyph in ["↑↓", "↵", "E", "D", "O", "S", "⇥", "←", "→"] {
         assert!(
             keys.iter().any(|key| key == glyph),
             "shown glyph {glyph}: {keys:?}"
         );
     }
-
     for glyph in ["W", "R", "A", "X", "I", "T", "P"] {
         assert!(
             !keys.iter().any(|key| key == glyph),
             "hidden-alias glyph {glyph} must stay out of hints: {keys:?}"
         );
     }
-
     assert!(
         !keys.iter().any(|key| key == "Ctrl-Q"),
         "internal binding must not self-advertise: {keys:?}"

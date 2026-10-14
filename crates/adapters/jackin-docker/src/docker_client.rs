@@ -238,7 +238,6 @@ struct DockerContextEndpointInspect {
 
 fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
     let env_set = docker_host_env_is_set();
-
     let ctx_endpoint = if env_set {
         None
     } else {
@@ -292,7 +291,6 @@ fn active_docker_context_endpoint() -> Option<DockerContextEndpoint> {
         "docker",
         ["context", "inspect", "--format", "{{json .}}"],
     );
-
     if let Some(ctx) = std::env::var("DOCKER_CONTEXT")
         .ok()
         .filter(|v| !v.is_empty())

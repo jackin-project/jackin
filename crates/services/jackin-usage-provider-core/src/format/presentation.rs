@@ -4,11 +4,8 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageBucketPresentation {
     pub remaining_label: Option<String>,
-
     pub display_segments: Vec<String>,
-
     pub display_label: String,
-
     pub meter_percent: Option<u8>,
 }
 
@@ -160,7 +157,6 @@ pub fn usage_bucket_presentation(
         {
             segments.push(limit.clone());
         }
-
         if segments.is_empty()
             && let Some(limit) = &bucket.limit_label
         {
@@ -224,7 +220,6 @@ pub fn usage_detail_presentation(
 
     for (index, bucket) in view.buckets.iter().enumerate() {
         let presentation = usage_bucket_presentation(bucket);
-
         let layout_lines: Vec<UsagePresentationLine> = presentation
             .display_segments
             .iter()

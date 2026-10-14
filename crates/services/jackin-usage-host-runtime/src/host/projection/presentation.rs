@@ -19,7 +19,6 @@ const SELECTED_PROJECTION_ACCOUNTS_FILE: &str = "selected-projection-accounts.js
 #[derive(Debug, Clone)]
 pub struct HostUsageProjectionConfig {
     pub data_dir: PathBuf,
-
     pub enabled_surface_ids: Vec<String>,
 }
 
@@ -36,18 +35,14 @@ impl HostUsageProjectionConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HostUsageProjectionAccountPresentation<'a> {
     pub surface_id: &'static str,
-
     pub provider: &'a UsageProviderV1,
-
     pub account: &'a UsageAccountV1,
-
     pub selected: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostUsageProjectionSelectedAccount<'a> {
     Unselected,
-
     Available {
         canonical_account_id: &'a str,
         account: &'a UsageAccountV1,
@@ -61,17 +56,11 @@ pub enum HostUsageProjectionSelectedAccount<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostUsageProjectionProviderPresentation<'a> {
     pub surface_id: &'static str,
-
     pub provider_id: &'static str,
-
     pub provider: Option<&'a UsageProviderV1>,
-
     pub unresolved_capabilities: Vec<&'a UsageUnresolvedV1>,
-
     pub selected_account: HostUsageProjectionSelectedAccount<'a>,
-
     pub glance_metric_group: Option<&'a UsageMetricGroupV1>,
-
     pub detail_metric_groups: &'a [UsageMetricGroupV1],
 }
 

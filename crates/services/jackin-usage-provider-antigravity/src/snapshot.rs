@@ -52,7 +52,6 @@ pub fn antigravity_snapshot(agent: &str, provider: Option<&str>, now: i64) -> Fo
     let mut view = usage_view(UsageViewInput {
         agent,
         provider: provider.or(Some("Antigravity")),
-
         surface: UsageSurface::Unsupported,
         account_label: usage
             .as_ref()

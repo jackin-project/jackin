@@ -1,7 +1,4 @@
 
-
-
-
 [suppressions]
 allow_attrs = 4
 expect_attrs = 517

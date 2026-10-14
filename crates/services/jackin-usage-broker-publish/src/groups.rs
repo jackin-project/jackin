@@ -169,14 +169,12 @@ pub fn project_plan_group(
         last_success_at_epoch,
         phase,
         is_stale: phase == UsageFreshnessPhaseV1::Stale,
-
         quota_state: UsageQuotaStateV1::NotApplicable,
         value: UsageMetricValueV1::Plan {
             plan_label: Some(plan_label.to_owned()),
             tier: None,
         },
         reset_at_epoch: None,
-
         renews_at_epoch: None,
         issues: Vec::new(),
     })
@@ -241,7 +239,6 @@ pub fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => {
             match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
                 (Some(used), Some(limit)) => spend_ratio_state(used, limit),
-
                 (Some(_), None) => UsageQuotaStateV1::NotApplicable,
                 _ => UsageQuotaStateV1::Unknown,
             }

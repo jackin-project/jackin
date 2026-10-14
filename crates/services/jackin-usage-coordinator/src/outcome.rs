@@ -12,12 +12,9 @@ pub(crate) const TERMINAL_HISTORY_LIMIT: usize = 8;
 #[derive(Debug, Clone)]
 pub enum ProviderProbeOutcome {
     Success(Box<FocusedUsageView>),
-
     Failure {
         kind: UsageCoordinationErrorKind,
-
         message: String,
-
         retry_at_epoch: Option<i64>,
     },
 }

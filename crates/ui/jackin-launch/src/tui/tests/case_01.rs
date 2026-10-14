@@ -332,7 +332,6 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     let rendered = format!("{:?}", terminal.backend().buffer());
     assert!(rendered.contains("Loading agent-smith in big-monorepo"));
     assert!(rendered.contains("construct"));
-
     assert!(rendered.contains("k7p9m2xq"));
 
     view.failure = Some(LaunchFailure {
@@ -350,7 +349,6 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
     let rendered = format!("{:?}", terminal.backend().buffer());
     assert!(rendered.contains("Docker unavailable"));
     assert!(rendered.contains("docker daemon is not responding"));
-
     assert!(rendered.contains("dismiss"));
 }
 
@@ -371,7 +369,6 @@ fn failure_copy_target_at_hits_run_id_value() {
         Some(target),
         "click at value-column start must hit {target:?}",
     );
-
     assert_eq!(
         failure_copy_target_at(
             area,

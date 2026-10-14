@@ -34,25 +34,20 @@ use std::collections::BTreeMap;
 #[serde(rename_all = "snake_case")]
 pub enum ExecKind {
     Op,
-
     Env,
-
     Literal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecBinding {
     pub name: String,
-
     pub kind: ExecKind,
-
     pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CredRequest {
     pub ctx: TelemetryContext,
-
     pub refs: Vec<ExecBinding>,
 }
 
@@ -79,9 +74,7 @@ pub const SESSION_CAPABILITY_ENV: &str = "JACKIN_SESSION_CAPABILITY";
 pub const ISOLATION_SESSION_ID_ENV: &str = "JACKIN_ISOLATION_SESSION_ID";
 
 pub const SESSION_ID_ENV: &str = "JACKIN_SESSION_ID";
-
 pub const SESSION_STATE_DIR_ENV: &str = "JACKIN_SESSION_STATE_DIR";
-
 pub const AUTH_MODE_ENV: &str = "JACKIN_AUTH_MODE";
 
 pub const INSTANCE_ENV: &str = "JACKIN_INSTANCE";
@@ -117,7 +110,6 @@ pub fn account_credentials_container_path(instance: &str) -> String {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionIdentity {
     pub uid: u32,
-
     pub gid: u32,
 }
 
@@ -125,14 +117,12 @@ pub struct SessionIdentity {
 #[serde(rename_all = "snake_case")]
 pub enum ExitAction {
     Keep,
-
     Discard,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapsuleConfig {
     pub role: String,
-
     pub workdir: String,
     #[serde(default)]
     pub instances: Vec<String>,
@@ -140,64 +130,44 @@ pub struct CapsuleConfig {
     pub agents: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub efforts: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub auth_modes: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub accounts: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub usage_capabilities: BTreeMap<String, usage_broker::UsageAccountCapability>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub credential_provider_surfaces: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claude_marketplaces: Vec<ClaudeMarketplace>,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claude_plugins: Vec<String>,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exec_bindings: Vec<ExecBinding>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dirty_exit_policy: Option<String>,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub isolated_worktrees: Vec<String>,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspace_mounts: Vec<String>,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub worktree_git_targets: Vec<String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub instance_home_dirs: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub instance_cache_dirs: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub instance_forwarded_dirs: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub instance_credential_files: BTreeMap<String, String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub instance_mount_paths: BTreeMap<String, Vec<String>>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub instance_identities: BTreeMap<String, SessionIdentity>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell_identity: Option<SessionIdentity>,
 }
@@ -212,13 +182,9 @@ pub struct ClaudeMarketplace {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Provider {
     Anthropic,
-
     Openai,
-
     Zai,
-
     Minimax,
-
     Kimi,
 }
 

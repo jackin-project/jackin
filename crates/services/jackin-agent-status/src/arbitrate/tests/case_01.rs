@@ -15,7 +15,6 @@ fn process_exit_wins() {
     assert_eq!(result.raw_state, RawAgentState::Idle);
     assert_eq!(result.winner, EvidenceWinner::ProcessExit);
     assert!(result.has_note(EvidenceNote::ProcessExited));
-
     assert_eq!(result.confidence, AgentStatusConfidence::Strong);
 }
 
@@ -61,7 +60,6 @@ fn pending_permission_blocks_immediately() {
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
     assert_eq!(result.raw_state, RawAgentState::Blocked);
-
     assert_eq!(
         result.winner,
         EvidenceWinner::Authority {
@@ -85,7 +83,6 @@ fn fresh_screen_blocker_overrides_non_blocked_authority() {
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
     assert_eq!(result.raw_state, RawAgentState::Blocked);
-
     assert_eq!(result.winner, EvidenceWinner::Blocked);
 }
 
@@ -98,7 +95,6 @@ fn fresh_authority_wins_after_blocker_checks() {
     let result = arbitrate(&snapshot, RawAgentState::Idle, now);
 
     assert_eq!(result.raw_state, RawAgentState::Working);
-
     assert_eq!(
         result.winner,
         EvidenceWinner::Authority {

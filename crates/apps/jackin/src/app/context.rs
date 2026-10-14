@@ -224,7 +224,6 @@ pub(crate) async fn resolve_running_container_from_context(
                     .iter()
                     .filter(|n| instance::naming::class_family_matches_with_slug(&role_slug, n));
                 let first = family.next()?.clone();
-
                 if family.next().is_some() {
                     return None;
                 }
@@ -295,7 +294,6 @@ fn hardline_candidate_prompt_options(
 
 fn hardline_candidate_prompt_label(paths: &JackinPaths, candidate: &HardlineCandidate) -> String {
     let container = candidate.name.as_str();
-
     let docker_state = format!("docker:{}", candidate.state.short_label());
     let session_summary = "sessions:unknown".to_owned();
 
@@ -497,7 +495,6 @@ pub(crate) fn remember_last_agent(
     if !config.workspaces.contains_key(workspace_name) {
         return;
     }
-
     let mut editor = match jackin_config::ConfigEditor::open(paths) {
         Ok(editor) => editor,
         Err(error) => {

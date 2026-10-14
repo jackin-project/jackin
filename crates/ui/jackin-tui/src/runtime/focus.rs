@@ -7,7 +7,6 @@ use termrock::interaction::{FocusGraph, FocusNode};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SurfaceFocusTarget<Content> {
     TabBar,
-
     Content(Content),
 }
 
@@ -38,7 +37,6 @@ impl<Content: Clone + Copy + Eq> SurfaceFocus<Content> {
 
     fn register(&mut self) {
         self.graph.begin_frame();
-
         self.graph.register(FocusNode::leaf(
             SurfaceFocusTarget::TabBar,
             Rect::new(0, 0, 0, 0),

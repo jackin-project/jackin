@@ -87,7 +87,6 @@ fn repair_executable_file_sets_exec_bit_on_regular_file() {
 fn parse_sha256_hex_accepts_valid_and_rejects_garbage() {
     let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     assert_eq!(parse_sha256_hex(digest).unwrap(), digest);
-
     assert_eq!(
         parse_sha256_hex(&format!("{}  some-asset.tar.gz", digest.to_uppercase())).unwrap(),
         digest

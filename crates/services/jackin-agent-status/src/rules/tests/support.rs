@@ -43,7 +43,6 @@ pub(super) fn fixture_for_detection(path: &Path) -> (Option<RawAgentState>, Vec<
     if forbidden.is_some() {
         rows.remove(0);
     }
-
     rows.retain(|line| !line.trim_start().starts_with('#'));
     (forbidden, rows)
 }

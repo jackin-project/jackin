@@ -273,7 +273,6 @@ fn keyboard_selection_wraps_at_both_ends() {
     let outcome = s.handle_key(key(KeyCode::Up));
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(s.vault_list_state.active().copied(), Some(2));
-
     let outcome = s.handle_key(key(KeyCode::Down));
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(s.vault_list_state.active().copied(), Some(0));
@@ -288,7 +287,6 @@ fn wheel_selection_clamps_at_both_ends() {
     assert!(!s.scroll_selection(1));
     assert_eq!(s.vault_list_state.active().copied(), Some(2));
     s.vault_list_state.set_active(Some(0));
-
     assert!(!s.scroll_selection(-1));
     assert_eq!(s.vault_list_state.active().copied(), Some(0));
     assert!(s.scroll_selection(1));
@@ -341,7 +339,6 @@ fn cached_load_resolves_on_first_poll_and_clears_slot() {
 #[test]
 fn worker_load_reports_pending_until_delivery_then_clears_slot() {
     let mut s = picker_ready();
-
     let (gate_tx, gate_rx) = std::sync::mpsc::channel::<()>();
     s.attach_load_receiver(jackin_oppicker::spawn_named_worker_subscription(
         "jackin-op-picker-load-test",

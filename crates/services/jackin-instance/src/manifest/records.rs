@@ -33,38 +33,28 @@ pub struct InstanceManifest {
     pub status: InstanceStatus,
     pub last_attach_outcome: Option<String>,
     pub docker: DockerResources,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docker_identity: Option<DockerIdentity>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<BackendResources>,
     #[serde(default)]
     pub sessions: Vec<SessionRecord>,
-
     #[serde(default)]
     pub role_git_sha: Option<String>,
-
     #[serde(default)]
     pub base_image_ref: Option<String>,
-
     #[serde(default)]
     pub base_image_digest: Option<String>,
-
     #[serde(default)]
     pub supported_agents: Vec<Agent>,
-
     pub admitted_instances: Vec<AdmittedInstance>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdmittedInstance {
     pub config_id: String,
-
     pub agent: Agent,
-
     pub account_id: String,
-
     #[serde(default)]
     pub registration_state: RegistrationState,
 }
@@ -74,9 +64,7 @@ pub struct AdmittedInstance {
 pub enum RegistrationState {
     #[default]
     Current,
-
     Disabled,
-
     Removed,
 }
 
@@ -132,13 +120,9 @@ pub struct NewInstanceManifest<'a> {
     pub role_source_ref: Option<&'a str>,
     pub image_tag: &'a str,
     pub docker: DockerResources,
-
     pub role_git_sha: Option<String>,
-
     pub base_image_ref: Option<String>,
-
     pub base_image_digest: Option<String>,
-
     pub supported_agents: Vec<Agent>,
 }
 

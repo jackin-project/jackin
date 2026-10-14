@@ -200,7 +200,6 @@ plugins = []
             base_image: "docker.io/myorg/my-role:latest".to_owned(),
         }
     );
-
     assert!(
         runner.recorded.iter().all(|c| c.contains("rev-parse HEAD")),
         "missing-image path should run only the role-SHA git capture; got: {:?}",

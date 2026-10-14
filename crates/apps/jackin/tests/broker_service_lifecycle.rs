@@ -163,7 +163,6 @@ fn broker_detaches_from_activating_session() {
         "broker must leave the activating session"
     );
     client.current_projection().expect("detached broker serves");
-
     let revived = ensure_usage_monitor_process(config, &scope)
         .expect("reactivation reuses local-only broker");
     revived

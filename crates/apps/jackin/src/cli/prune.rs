@@ -9,16 +9,12 @@ use super::{BANNER, HELP_STYLES};
 pub enum PruneCommand {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Roles,
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Cache,
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Images,
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Instances(PruneInstancesArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     System(PruneSystemArgs),
 }
@@ -35,7 +31,6 @@ pub struct PruneInstancesArgs {
 pub struct PruneSystemArgs {
     #[arg(long, short = 'y')]
     pub yes: bool,
-
     #[arg(long, short = 'a')]
     pub all: bool,
 }

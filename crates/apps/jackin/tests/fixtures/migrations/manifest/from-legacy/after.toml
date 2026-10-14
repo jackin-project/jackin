@@ -3,7 +3,6 @@ version = "v1alpha7"
 # SPDX-License-Identifier: Apache-2.0
 
 
-
 dockerfile = "Dockerfile"
 agents = ["claude"]
 

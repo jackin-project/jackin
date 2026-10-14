@@ -112,7 +112,6 @@ fn hello_env_value_over_cap_rejected_by_decoder() {
     let bogus_value_len = u32::try_from(MAX_HELLO_ENV_VALUE + 1).expect("fits u32");
     payload.extend_from_slice(&bogus_value_len.to_be_bytes());
     payload.extend_from_slice(b"PWD");
-
     let err = decode_client(TAG_HELLO, payload)
         .expect_err("over-cap env value length must be rejected at decode");
     let msg = format!("{err:#}");
@@ -148,7 +147,6 @@ fn read_client_frame_eof_after_tag_returns_none() {
         .unwrap();
     runtime.block_on(async {
         let (mut a, mut b) = UnixStream::pair().unwrap();
-
         a.shutdown().await.unwrap();
         drop(a);
         let result = read_client_frame(&mut b, TAG_INPUT).await.unwrap();
@@ -168,7 +166,6 @@ fn hello_rejects_unknown_color_presence_byte() {
         context: None,
     })
     .expect("hello encode");
-
     let mut payload = bytes[5..].to_vec();
     let context_wire_len = 2 + serde_json::to_vec(&None::<TelemetryContext>).unwrap().len();
     let fg_presence = payload.len() - 8 - context_wire_len;
@@ -205,7 +202,6 @@ fn decode_server_rejects_truncated_payloads_without_panic() {
         drop(decode_server(tag, vec![0x00]));
         drop(decode_server(tag, vec![0xFF, 0xFF, 0xFF, 0xFF]));
     }
-
     for tag in 0x80u8..=0x8f {
         drop(decode_server(tag, Vec::new()));
         drop(decode_server(tag, vec![0x00]));
@@ -222,7 +218,6 @@ fn decode_rejects_unknown_tags() {
 #[test]
 fn truncated_valid_frame_fails_closed() {
     let frame = encode_server(ServerFrame::Welcome { session_count: 7 });
-
     let tag = frame[0];
     assert!(frame.len() > 5, "encoded welcome must carry a body");
     let body = &frame[5..frame.len() - 1];
@@ -281,7 +276,6 @@ fn clipboard_image_error_variants_roundtrip() {
         match decoded {
             ClientFrame::ClipboardImageError(got) => {
                 assert_eq!(got.reason_code(), original.reason_code());
-
                 if matches!(original, ClipboardImageError::Other(_)) {
                     assert_eq!(got, original);
                 } else {

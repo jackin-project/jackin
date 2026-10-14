@@ -45,7 +45,6 @@ pub(crate) fn control_request_allowed(
         ClientMsg::Events {
             session: Some(session_id),
         } => Some(*session_id),
-
         ClientMsg::Events { session: None }
         | ClientMsg::TelemetryHealth
         | ClientMsg::Status

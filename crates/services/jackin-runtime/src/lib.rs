@@ -8,7 +8,6 @@ mod process_telemetry;
 pub mod reactive_daemon;
 pub mod runtime;
 pub mod spin_wait;
-
 pub use jackin_runtime_usage_relay::usage_relay;
 
 pub use jackin_instance as instance;

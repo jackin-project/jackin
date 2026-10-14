@@ -51,7 +51,6 @@ fn period_parses_with_team_inference() {
     assert_eq!(buckets[0].remaining_percent, Some(66));
     assert_eq!(buckets[1].label, "Spend (actual)");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Spend));
-
     assert!(buckets[1].used_money.is_none());
 
     let team = serde_json::json!({
@@ -130,12 +129,10 @@ fn plan_and_grants_parse() {
         parse_cursor_plan_info(&serde_json::json!({"planName": "pro_plus"})),
         Some("Pro Plus".to_owned())
     );
-
     assert_eq!(
         parse_cursor_plan_info(&serde_json::json!({"planInfo": {"planName": "ultra"}})),
         Some("Ultra".to_owned())
     );
-
     assert_eq!(
         parse_cursor_plan_info(
             &serde_json::json!({"planInfo": {"planName": "  "}, "planName": "pro"})
@@ -156,7 +153,6 @@ fn plan_and_grants_parse() {
         ),
         150
     );
-
     assert_eq!(
         parse_cursor_credit_grants(&serde_json::json!({
             "grantTotal": 150,
@@ -164,7 +160,6 @@ fn plan_and_grants_parse() {
         })),
         150
     );
-
     assert_eq!(
         parse_cursor_credit_grants(&serde_json::json!({"grantTotal": 150, "grants": []})),
         150
@@ -224,7 +219,6 @@ fn summary_preserves_every_pool_without_invention() {
     );
     assert_eq!(buckets[0].remaining_percent, Some(59));
     assert!(buckets[0].resets_at.is_some());
-
     assert_eq!(buckets[4].used_label.as_deref(), Some("77"));
     assert!(buckets[4].used_money.is_none());
 }
@@ -344,7 +338,6 @@ fn snapshot_with_auth_serves_personal_quota_from_canned_rpc() {
 
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
-
     let server = std::thread::spawn(move || {
         for _ in 0..4 {
             let (mut stream, _) = listener.accept().unwrap();

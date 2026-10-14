@@ -38,11 +38,8 @@ pub struct RunDiagnostics {
     run_id: String,
     scope: PathBuf,
     debug: bool,
-
     stage_starts: Mutex<HashMap<String, Instant>>,
-
     stage_spans: Mutex<HashMap<crate::DiagnosticStage, tracing::Span>>,
-
     timing_starts: Mutex<HashMap<String, Instant>>,
 }
 
@@ -64,7 +61,6 @@ impl Drop for ActiveRunGuard {
         if let Some(active_dir) = self.active_dir.take() {
             locked(active_run_by_dir()).remove(&active_dir);
         }
-
         crate::observability::shutdown_otlp();
     }
 }
@@ -84,16 +80,12 @@ impl RunDiagnostics {
             || jackin_telemetry::identity::InvocationId::mint().to_string(),
             |id| id.to_string(),
         );
-
         let (otlp_active, otlp_error) =
             match crate::observability::init_tracing_for(debug, &run_id, identity) {
                 Ok(active) => (active, None),
-
                 Err(error) if error.to_string().contains("already installed") => (false, None),
-
                 Err(error) => (false, Some(error.to_string())),
             };
-
         let otlp_error = otlp_error.or_else(|| {
             (!otlp_active && crate::observability::otlp_endpoint_configured()).then(|| {
                 "OTLP endpoint configured but incomplete (traces and logs endpoints required)"
@@ -175,7 +167,6 @@ impl RunDiagnostics {
         _detail: Option<&str>,
     ) {
         let stage_label = stage.as_str();
-
         let mut foreground_wait_ms: Option<u64> = None;
         match kind {
             "stage_started" => {
@@ -550,7 +541,6 @@ fn launch_stage_span(stage: crate::DiagnosticStage) -> tracing::Span {
     );
     {
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-
         if stage == crate::DiagnosticStage::DerivedImage {
             use opentelemetry::trace::TraceContextExt as _;
             let parent_ctx = tracing::Span::current().context();

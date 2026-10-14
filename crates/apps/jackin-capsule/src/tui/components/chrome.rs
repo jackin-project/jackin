@@ -45,9 +45,7 @@ pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) scrollback_active: bool,
     pub(crate) scroll_axes: termrock::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
-
     pub(crate) prefix_awaiting: bool,
-
     pub(crate) palette_key: u8,
 }
 

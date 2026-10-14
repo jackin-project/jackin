@@ -53,22 +53,16 @@ Examples:
     )]
     Create {
         name: String,
-
         #[arg(long)]
         workdir: String,
-
         #[arg(long = "mount", required = true)]
         mounts: Vec<String>,
-
         #[arg(long = "allowed-role")]
         allowed_roles: Vec<String>,
-
         #[arg(long = "default-role")]
         default_role: Option<String>,
-
         #[arg(long, value_parser = parse_agent)]
         default_agent: Option<jackin_core::Agent>,
-
         #[arg(
             long = "mount-isolation",
             value_name = "DST=TYPE",
@@ -76,17 +70,13 @@ Examples:
             action = clap::ArgAction::Append
         )]
         mount_isolation: Vec<(String, MountIsolation)>,
-
         #[arg(long = "keep-awake", default_value_t = false)]
         keep_awake: bool,
-
         #[arg(long = "git-pull", default_value_t = false)]
         git_pull: bool,
     },
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     List(WorkspaceListArgs),
-
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -95,7 +85,6 @@ Examples:
   jackin workspace show my-app"
     )]
     Show(WorkspaceShowArgs),
-
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -117,47 +106,34 @@ Examples:
     )]
     Edit {
         name: String,
-
         #[arg(long)]
         workdir: Option<String>,
-
         #[arg(long = "mount")]
         mounts: Vec<String>,
-
         #[arg(long = "remove-destination")]
         remove_destinations: Vec<String>,
-
         #[arg(long, default_value_t = false)]
         no_workdir_mount: bool,
-
         #[arg(long = "allowed-role")]
         allowed_roles: Vec<String>,
-
         #[arg(long = "remove-allowed-role")]
         remove_allowed_roles: Vec<String>,
-
         #[arg(long = "default-role")]
         default_role: Option<String>,
-
         #[arg(
             long = "clear-default-role",
             conflicts_with = "default_role",
             default_value_t = false
         )]
         clear_default_role: bool,
-
         #[arg(long, value_parser = parse_agent)]
         default_agent: Option<jackin_core::Agent>,
-
         #[arg(long, conflicts_with = "default_agent", default_value_t = false)]
         clear_default_agent: bool,
-
         #[arg(long = "yes", short = 'y', default_value_t = false)]
         assume_yes: bool,
-
         #[arg(long, default_value_t = false)]
         prune: bool,
-
         #[arg(
             long = "mount-isolation",
             value_name = "DST=TYPE",
@@ -165,37 +141,30 @@ Examples:
             action = clap::ArgAction::Append
         )]
         mount_isolation: Vec<(String, MountIsolation)>,
-
         #[arg(long)]
         delete_isolated_state: bool,
-
         #[arg(long = "keep-awake", default_value_t = false)]
         keep_awake: bool,
-
         #[arg(
             long = "no-keep-awake",
             conflicts_with = "keep_awake",
             default_value_t = false
         )]
         no_keep_awake: bool,
-
         #[arg(long = "git-pull", default_value_t = false)]
         git_pull: bool,
-
         #[arg(
             long = "no-git-pull",
             conflicts_with = "git_pull",
             default_value_t = false
         )]
         no_git_pull: bool,
-
         #[arg(
             long = "default-launch",
             value_name = "CONFIG_ID",
             action = clap::ArgAction::Append
         )]
         default_launch: Vec<String>,
-
         #[arg(
             long = "clear-default-launch",
             conflicts_with = "default_launch",
@@ -203,7 +172,6 @@ Examples:
         )]
         clear_default_launch: bool,
     },
-
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -214,11 +182,9 @@ Examples:
     )]
     Prune {
         name: String,
-
         #[arg(long = "yes", short = 'y', default_value_t = false)]
         assume_yes: bool,
     },
-
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -230,7 +196,6 @@ Examples:
 
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(WorkspaceEnvCommand),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Account(super::account::WorkspaceAccountCommand),
 }
@@ -249,21 +214,15 @@ Examples:
     )]
     Set {
         workspace: String,
-
         key: String,
-
         value: String,
-
         #[arg(long)]
         role: Option<String>,
-
         #[arg(long)]
         comment: Option<String>,
-
         #[arg(long = "on-demand")]
         on_demand: bool,
     },
-
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -274,13 +233,10 @@ Examples:
     )]
     Unset {
         workspace: String,
-
         key: String,
-
         #[arg(long)]
         role: Option<String>,
     },
-
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -291,7 +247,6 @@ Examples:
     )]
     List {
         workspace: String,
-
         #[arg(long)]
         role: Option<String>,
     },

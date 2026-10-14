@@ -4,32 +4,22 @@
 import AppKit
 import SwiftUI
 
-
-
-
-
-
 @MainActor
 public enum ProviderMarks {
-
     public static func templateImage(forIconKey iconKey: String) -> NSImage? {
         loadPDF(named: iconKey, template: true)
     }
-
 
     public static func swiftUIImage(forIconKey iconKey: String) -> Image? {
         guard let ns = templateImage(forIconKey: iconKey) else { return nil }
         return Image(nsImage: ns)
     }
 
-
     public static func hasMark(forIconKey iconKey: String) -> Bool {
         templateImage(forIconKey: iconKey) != nil
     }
 
     private static func loadPDF(named name: String, template: Bool) -> NSImage? {
-
-
         for url in candidateURLs(named: name, extensions: ["png", "pdf"]) {
             guard let image = NSImage(contentsOf: url) else { continue }
             let copy = image.copy() as? NSImage ?? image

@@ -52,7 +52,6 @@ fn disc_source_cache_alias_request_refreshes_through_governed_name() {
         }
         other => panic!("governed-name refresh must hit the alias cache: {other:?}"),
     }
-
     let mut governed_config = AppConfig::default();
     governed_config.env.insert(
         "OPENAI_API_KEY".to_owned(),

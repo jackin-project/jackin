@@ -34,7 +34,6 @@ fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
     );
 
     let last_col = last_printable_indent(&term, 4).expect("beta row has content");
-
     assert_eq!(
         last_col,
         SUBPANEL_CONTENT_INDENT + "beta".len() - 1,
@@ -209,7 +208,6 @@ fn preview_agents_block_no_longer_lists_overrides() {
         }
         joined.push('\n');
     }
-
     assert!(
         !joined.contains("API_KEY"),
         "override key API_KEY must NOT appear in the Roles block; got {joined}"
@@ -226,7 +224,6 @@ fn preview_agents_block_no_longer_lists_overrides() {
         !joined.contains("(no overrides)"),
         "`(no overrides)` placeholder must NOT appear in the Roles block; got {joined}"
     );
-
     assert!(
         joined.contains("Default") && joined.contains("alpha"),
         "Roles block must still show default + role name; got {joined}"
@@ -295,12 +292,10 @@ fn preview_includes_environments_block_with_workspace_env_keys() {
         joined.contains("DB_URL"),
         "DB_URL env key must appear; got {joined}"
     );
-
     assert!(
         !joined.contains("All roles:"),
         "flat layout must not render the `All roles:` sub-header; got {joined}"
     );
-
     assert!(
         !joined.contains("postgres://"),
         "plain env values must not render; got {joined}"

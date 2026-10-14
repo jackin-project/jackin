@@ -82,7 +82,6 @@ fn apply_forwarded_credential_first_seed_reseed_and_no_clobber() {
     let forwarded = tmp.path().join("forwarded.json");
     let target = tmp.path().join("auth.json");
     fs::write(&forwarded, b"FORWARDED").expect("write forwarded");
-
     let spec = ForwardedCredential {
         label: "test",
         forwarded: &forwarded,
@@ -306,7 +305,6 @@ fn seed_home_dir_absent_dst_uses_atomic_rename() {
         dst.join("config.json").exists(),
         "renamed tree must contain seeded file"
     );
-
     let siblings: Vec<_> = fs::read_dir(tmp.path())
         .unwrap()
         .filter_map(std::result::Result::ok)

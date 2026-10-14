@@ -274,7 +274,6 @@ async fn find_local_branch_tip_skips_malformed_packed_refs_lines() {
              noseparator\n\
              1111111111111111111111111111111111111111\trefs/heads/jackin/scratch/x\n",
     );
-
     assert_eq!(
         find_local_branch_tip(&repo.path().to_string_lossy(), "jackin/scratch/x"),
         Some("1111111111111111111111111111111111111111".into()),
@@ -295,7 +294,6 @@ async fn stale_scratch_branch_is_adopted_when_record_absent() {
     );
 
     let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
-
     let mut runner = fake_with_outputs(&[
         &repo.path().to_string_lossy(),
         "",
@@ -348,7 +346,6 @@ async fn stale_scratch_branch_is_adopted_when_record_absent() {
 
     let recs = read_records(&container_dir).unwrap();
     assert_eq!(recs.len(), 1);
-
     assert_eq!(
         recs[0].base_commit,
         "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",

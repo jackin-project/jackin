@@ -25,7 +25,6 @@ fn size_check_accepts_large() {
 fn bare_jackin_on_tty_runs_console_implicitly() {
     let cli = Cli::try_parse_from(["jackin"]).unwrap();
     let action = classify(cli, true);
-
     assert!(matches!(
         action,
         Action::RunConsole {
@@ -60,7 +59,6 @@ fn bare_jackin_without_tty_prints_help_silently() {
 fn console_subcommand_routes_to_console_runner() {
     let cli = Cli::try_parse_from(["jackin", "console"]).unwrap();
     let action = classify(cli, true);
-
     assert!(matches!(
         action,
         Action::RunConsole {
@@ -109,7 +107,6 @@ fn non_console_subcommand_passes_through_even_without_tty() {
 fn console_requires_tty_error_mentions_tty_and_size() {
     assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("TTY"));
     assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("40x15"));
-
     assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("jackin❯"));
 }
 

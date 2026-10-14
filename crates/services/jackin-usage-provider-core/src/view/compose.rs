@@ -63,7 +63,6 @@ pub fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         tabs: Vec::new(),
         last_error: input.last_error,
     };
-
     view.tabs = provider_tabs(&[&view]);
     view
 }

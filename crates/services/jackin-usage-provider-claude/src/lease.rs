@@ -17,7 +17,6 @@ pub enum ClaudeCredentialBootstrapOutcome {
     Missing,
     Denied,
     InteractionRequired,
-
     Malformed(ClaudeCredentialPayloadDiagnostic),
     Acquired(ClaudeCredentialLease),
 }

@@ -193,7 +193,6 @@ fn bottom_context_click_opens_github_context_dialog() {
         rendered.contains(&format!("\x1b[{hint_row};")),
         "dialog hint should render in the reserved hint region: {rendered:?}"
     );
-
     assert!(
         !rendered.contains(&format!("\x1b[{bottom_row};")),
         "bottom branch/context bar must be hidden under a dialog outside debug: {rendered:?}"
@@ -266,7 +265,6 @@ fn container_info_id_click_copies_and_renders_feedback() {
         &mut mux,
         InputEvent::MousePress {
             row: box_row + 1,
-
             col: box_col + 22,
             button: 0,
         },

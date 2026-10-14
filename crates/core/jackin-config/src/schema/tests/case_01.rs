@@ -189,7 +189,6 @@ fn validate_default_launch_list_reports_each_invalid_entry() {
         errors.iter().any(|error| error.contains("not assigned")),
         "{errors:?}"
     );
-
     assert!(
         errors
             .iter()

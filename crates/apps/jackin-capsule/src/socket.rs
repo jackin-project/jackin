@@ -72,13 +72,11 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
-
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
             .with_context(|| format!("locking socket parent {} to 0o700", parent.display()))?;
     }
 
     let listener = UnixListener::bind(path)?;
-
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("locking socket {} to 0o600", path.display()))?;
     let (tx, rx) = mpsc::unbounded_channel();
@@ -92,7 +90,6 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
             match listener.accept().await {
                 Ok((stream, _)) => {
                     consecutive_failures = 0;
-
                     let Ok(permit) = Arc::clone(&limiter).try_acquire_owned() else {
                         drop(stream);
                         continue;
@@ -121,7 +118,6 @@ fn start_listener_at_inner_uninstrumented(path: &Path) -> Result<ListenerWithLim
                         return;
                     }
                     let _retry_event = jackin_telemetry::record_retry_scheduled();
-
                     let shift = consecutive_failures.saturating_sub(1).min(16);
                     let backoff_ms = 50u64.saturating_mul(1u64 << shift).min(5_000);
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;

@@ -270,7 +270,6 @@ pub fn validate_commit(root: &Path, target: &Path) -> Result<PathBuf, String> {
     if canonical == root {
         return Err("Cannot use $HOME itself — navigate into a subfolder.".into());
     }
-
     let jackin_data = canonicalize_or_self(root.join(".jackin"));
     if canonical.starts_with(&jackin_data) {
         return Err("Cannot use ~/.jackin/* — those paths are reserved.".into());

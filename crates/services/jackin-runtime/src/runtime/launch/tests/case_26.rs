@@ -277,7 +277,6 @@ async fn verify_github_token_present_errors_when_token_missing() {
     assert!(s.contains("workspace 'customer-acme'"), "got: {s}");
     assert!(s.contains("role 'release-bot'"), "got: {s}");
     assert!(s.contains("GH_TOKEN"), "got: {s}");
-
     assert!(s.contains("[github.env]"), "got: {s}");
     assert!(
         s.contains("[workspaces.customer-acme.github.env]"),
@@ -337,7 +336,6 @@ async fn resolve_github_env_map_resolves_plain_values() {
 #[tokio::test]
 async fn resolve_github_env_map_aggregates_failures() {
     use std::collections::BTreeMap;
-
     let mut decls: BTreeMap<String, jackin_core::EnvValue> = BTreeMap::new();
     decls.insert(
         "GH_TOKEN".into(),
@@ -347,7 +345,6 @@ async fn resolve_github_env_map_aggregates_failures() {
         "GH_HOST".into(),
         jackin_core::EnvValue::Plain("$JACKIN_TEST_MISSING_HOST".into()),
     );
-
     let host_env = BTreeMap::new();
     let err = resolve_github_env_map(&decls, None, Some(&host_env)).unwrap_err();
     let s = err.to_string();

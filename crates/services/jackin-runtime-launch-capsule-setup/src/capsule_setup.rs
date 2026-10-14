@@ -404,7 +404,6 @@ pub fn capsule_config(
         usage_capabilities: std::collections::BTreeMap::new(),
         credential_provider_surfaces: std::collections::BTreeMap::new(),
         labels,
-
         instance_home_dirs: std::collections::BTreeMap::new(),
         instance_cache_dirs: std::collections::BTreeMap::new(),
         instance_forwarded_dirs: std::collections::BTreeMap::new(),
@@ -414,7 +413,6 @@ pub fn capsule_config(
         shell_identity: None,
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
-
         exec_bindings: Vec::new(),
         dirty_exit_policy: Some(dirty_exit_policy.to_owned()),
         isolated_worktrees,

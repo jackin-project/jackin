@@ -36,7 +36,6 @@ pub(crate) fn run(args: CiFuzzArgs) -> Result<()> {
         "--locked",
         "--offline",
     ]))?;
-
     for target in contract.targets {
         cmd::run_streaming(Command::new(&cargo_fuzz).args([
             "fuzz",

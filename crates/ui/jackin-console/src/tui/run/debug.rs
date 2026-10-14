@@ -8,7 +8,6 @@ pub fn split_debug_area(area: Rect, debug_mode: bool) -> (Rect, Option<Rect>) {
     if !debug_mode || area.height < 3 {
         return (area, None);
     }
-
     let main = Rect {
         height: area.height - 2,
         ..area

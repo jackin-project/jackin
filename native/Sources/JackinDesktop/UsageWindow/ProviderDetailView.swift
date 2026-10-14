@@ -4,9 +4,6 @@
 import JackinUsageBridge
 import SwiftUI
 
-
-
-
 public struct ProviderDetailView: View {
     public let content: UsageWindowModel.Content
     public let providerError: String?

@@ -16,7 +16,6 @@ async fn load_agent_injects_op_cli_resolved_value() {
     let bin_dir = temp.path().join("fake-bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
     let bin_path = bin_dir.join("op");
-
     std::fs::write(
             &bin_path,
             "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ]; then\n  for arg in \"$@\"; do\n    if [ \"$arg\" = \"op://abc-vault/abc-item/api-token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\n  done\nfi\nexit 99\n",
@@ -117,7 +116,6 @@ async fn claim_container_name_not_found_claims_unique_ad_hoc_name() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
-
     let docker = jackin_test_support::FakeDockerClient::default();
     let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
         .await
@@ -174,7 +172,6 @@ async fn claim_container_name_running_collision_tries_another_unique_name() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
-
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Running,
@@ -213,7 +210,6 @@ async fn claim_container_name_clean_exit_removes_and_reclaims() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
-
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -242,7 +238,6 @@ async fn claim_container_name_crashed_collision_tries_another_unique_name() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
-
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
             ContainerState::Stopped {
@@ -308,7 +303,6 @@ async fn missing_matching_instance_recreates_current_role() {
     manifest
         .write(&paths.data_dir.join(container_name))
         .unwrap();
-
     let docker = jackin_test_support::FakeDockerClient::default();
 
     let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
@@ -359,7 +353,6 @@ async fn stopped_matching_instance_starts_current_role() {
         jackin_core::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,

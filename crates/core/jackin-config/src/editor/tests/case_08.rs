@@ -243,7 +243,6 @@ fn scan_for_accounts_reads_live_home_and_environment() {
     minimal_config_file(&paths);
     claude_credentials_fixture(&paths.home_dir);
     let mut editor = ConfigEditor::open(&paths).unwrap();
-
     let report = editor.scan_for_accounts().unwrap();
     assert!(report.added_accounts.contains(&"default-claude".to_owned()));
 }
@@ -281,7 +280,6 @@ fn scan_for_accounts_skips_sources_registered_under_other_ids() {
     claude_credentials_fixture(&paths.home_dir);
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-
     let mut renamed = profile_account();
     renamed.credential = crate::AccountCredential::Profile {
         agent: Agent::Claude,
@@ -325,7 +323,6 @@ fn scan_for_accounts_imports_environment_references_without_values() {
         };
         assert_eq!(persisted, expected);
     }
-
     let dumped = format!("{report:?}");
     assert!(!dumped.contains("live-secret"), "{dumped}");
     assert!(!dumped.contains("live-token"), "{dumped}");

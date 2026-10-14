@@ -332,7 +332,6 @@ fn expired_successor_lease_fences_old_owner_renewal_and_cleanup() {
     let mut expired = old_owner.lease.clone();
     expired.renewed_at_epoch -= 31;
     write_lease(&mut old_owner.file, &expired).unwrap();
-
     old_owner.file.unlock().unwrap();
     let mut successor = claim_leader(&lease_path, "build", Duration::from_secs(30))
         .unwrap()
@@ -418,7 +417,6 @@ fn saturated_join_waiters_do_not_block_refresh_or_current() {
         response_tx.send((short_wait, elapsed, result)).unwrap();
     });
     let response = response_rx.recv_timeout(Duration::from_secs(2));
-
     release_tx.send(()).unwrap();
     request.join().unwrap();
     let (short_wait, elapsed, response) =
@@ -452,7 +450,6 @@ fn stalled_response_reader_does_not_hold_worker_shutdown() {
         done_tx.send(()).unwrap();
     });
     let finished = done_rx.recv_timeout(Duration::from_secs(1));
-
     drop(client);
     worker.join().unwrap();
     assert!(

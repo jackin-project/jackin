@@ -7,9 +7,7 @@ use crate::OpSection;
 #[serde(untagged)]
 pub enum EnvValue {
     OpRef(OpRef),
-
     Extended(Extended),
-
     Plain(String),
 }
 
@@ -175,6 +173,5 @@ impl FieldTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpSectionTarget {
     Existing(OpSection),
-
     NewLabel(String),
 }

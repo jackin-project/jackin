@@ -43,10 +43,8 @@ pub struct UsageArgs {
     pub instance: Option<String>,
     #[command(subcommand)]
     pub scope: Option<UsageScope>,
-
     #[arg(long, global = true, value_name = "FORMAT", default_value = "human")]
     pub format: String,
-
     #[arg(long, global = true, value_name = "PATH")]
     pub data_dir: Option<PathBuf>,
 }
@@ -55,43 +53,30 @@ pub struct UsageArgs {
 pub enum UsageScope {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Accounts(UsageAccountsArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Verify,
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Doctor(UsageDoctorArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Service(UsageServiceArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Monitor(UsageMonitorArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Binding(UsageBindingArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Policy(UsagePolicyArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Status(UsageMonitorIdArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Refresh(UsageMonitorIdArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Watch(UsageWatchArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Wait(UsageWaitArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Statusline(UsageStatuslineArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Spend(UsageSpendArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Auth(UsageAuthArgs),
 }
@@ -119,7 +104,6 @@ impl From<UsageProviderArg> for MonitorProvider {
 pub struct UsageDoctorArgs {
     #[arg(long, value_enum, required = true)]
     pub provider: UsageProviderArg,
-
     #[arg(long, required = true)]
     pub unattended: bool,
 }
@@ -133,9 +117,7 @@ pub struct UsageServiceArgs {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageServiceCommand {
     Start,
-
     Stop,
-
     Status,
 }
 
@@ -148,9 +130,7 @@ pub struct UsageMonitorArgs {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageMonitorCommand {
     Observe(UsageMonitorObserveArgs),
-
     Start(UsageMonitorStartArgs),
-
     Stop(UsageMonitorIdArgs),
 }
 
@@ -178,10 +158,8 @@ pub struct UsageMonitorStartArgs {
 pub struct UsageMonitorObserveArgs {
     #[arg(long, value_enum, required = true)]
     pub provider: UsageProviderArg,
-
     #[arg(long, value_name = "ID", required_unless_present = "binding")]
     pub session: Option<String>,
-
     #[arg(long, value_name = "ID", requires = "binding_revision")]
     pub binding: Option<String>,
     #[arg(long, value_name = "REVISION", requires = "binding")]
@@ -190,7 +168,6 @@ pub struct UsageMonitorObserveArgs {
     pub idempotency_key: String,
     #[arg(long, value_name = "MODEL")]
     pub expected_model: Option<String>,
-
     #[arg(long)]
     pub experimental_collector: bool,
 }
@@ -212,15 +189,12 @@ pub struct UsageBindingConfirmArgs {
     pub provider: UsageProviderArg,
     #[arg(long, value_name = "ACCOUNT", required = true)]
     pub account: String,
-
     #[arg(long = "source-capability-id", value_name = "SOURCE_ID")]
     pub source_capability_id: Option<String>,
-
     #[arg(long)]
     pub approve_experimental_collector: bool,
     #[arg(long, value_name = "LABEL", required = true)]
     pub operator_label: String,
-
     #[arg(long, required = true)]
     pub confirm: bool,
 }
@@ -261,15 +235,12 @@ pub struct UsagePolicyApproveArgs {
     pub goal: String,
     #[arg(long, value_enum, required = true)]
     pub policy: UsageMonitorPolicyArg,
-
     #[arg(long, value_name = "SGD", value_parser = parse_sgd_budget_arg)]
     pub budget_sgd: Option<String>,
     #[arg(long, value_name = "LABEL", required = true)]
     pub operator_label: String,
-
     #[arg(long, required = true)]
     pub confirm: bool,
-
     #[arg(long)]
     pub acknowledge_no_sgd_cap: bool,
     #[arg(long, value_name = "REVISION")]
@@ -286,7 +257,6 @@ pub struct UsageMonitorIdArgs {
 pub struct UsageWatchArgs {
     #[arg(long, value_name = "ID", required = true)]
     pub monitor: String,
-
     #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..=300))]
     pub timeout_secs: Option<u64>,
 }
@@ -302,7 +272,6 @@ pub struct UsageWaitArgs {
     pub monitor: String,
     #[arg(long, value_enum, required = true)]
     pub until: UsageWaitCondition,
-
     #[arg(long = "timeout-secs", default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=300))]
     pub timeout_secs: u64,
 }
@@ -316,7 +285,6 @@ pub struct UsageStatuslineArgs {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum UsageStatuslineCommand {
     Ingest(UsageStatuslineIngestArgs),
-
     Compose(UsageStatuslineComposeArgs),
 }
 
@@ -338,7 +306,6 @@ pub struct UsageStatuslineComposeArgs {
 pub struct UsageStatuslineScopeArgs {
     #[arg(long, required_unless_present = "binding", conflicts_with = "binding")]
     pub session_only: bool,
-
     #[arg(long, value_name = "ID", requires = "binding_revision")]
     pub binding: Option<String>,
     #[arg(long, value_name = "REVISION", requires = "binding")]
@@ -362,7 +329,6 @@ pub struct UsageSpendRecordArgs {
     pub account: String,
     #[arg(long, value_name = "PATH", required = true)]
     pub file: PathBuf,
-
     #[arg(long)]
     pub verified: bool,
 }
@@ -382,7 +348,6 @@ pub enum UsageAuthCommand {
 pub struct UsageProviderArgs {
     #[arg(long, value_enum, required = true)]
     pub provider: UsageProviderArg,
-
     #[arg(long, value_name = "SERVICE")]
     pub keychain_service: Option<String>,
 }
@@ -1075,7 +1040,6 @@ fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
     let deadline = args
         .timeout_secs
         .map(|timeout| Instant::now() + Duration::from_secs(timeout.min(300)));
-
     let mut sequence = 0_u64;
     loop {
         let timeout_ms = watch_timeout_ms(deadline, Instant::now());
@@ -1113,7 +1077,6 @@ fn run_watch(paths: &JackinPaths, args: &UsageWatchArgs) -> Result<()> {
             }
             println!("{}", serde_json::to_string(&event)?);
         }
-
         if watch_deadline_reached(deadline, Instant::now()) {
             return Ok(());
         }

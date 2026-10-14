@@ -13,94 +13,52 @@ use crate::TelemetryContext;
 mod contextual;
 
 pub const TAG_HELLO: u8 = 0x01;
-
 pub const TAG_RESIZE: u8 = 0x02;
-
 pub const TAG_INPUT: u8 = 0x03;
-
 pub const TAG_COMMAND: u8 = 0x04;
-
 pub const TAG_DETACH: u8 = 0x05;
-
 pub const TAG_FOCUS_IN: u8 = 0x06;
-
 pub const TAG_FOCUS_OUT: u8 = 0x07;
-
 pub const TAG_CLIPBOARD_IMAGE: u8 = 0x08;
-
 pub const TAG_CLIPBOARD_IMAGE_START: u8 = 0x09;
-
 pub const TAG_CLIPBOARD_IMAGE_CHUNK: u8 = 0x0a;
-
 pub const TAG_CLIPBOARD_IMAGE_END: u8 = 0x0b;
-
 pub const TAG_CLIPBOARD_IMAGE_ERROR: u8 = 0x0c;
-
 pub const TAG_HOST_NOTICE: u8 = 0x0d;
-
 pub const TAG_ATTACH_CONTROL: u8 = 0x0e;
 
 pub const TAG_WELCOME: u8 = 0x81;
-
 pub const TAG_OUTPUT: u8 = 0x82;
-
 pub const TAG_SESSION_LIST: u8 = 0x83;
-
 pub const TAG_SHUTDOWN: u8 = 0x84;
-
 pub const TAG_BELL: u8 = 0x85;
-
 pub const TAG_HOST_OPEN_URL: u8 = 0x86;
-
 pub const TAG_FILE_EXPORT_START: u8 = 0x87;
-
 pub const TAG_FILE_EXPORT_CHUNK: u8 = 0x88;
-
 pub const TAG_FILE_EXPORT_END: u8 = 0x89;
-
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH: u8 = 0x8a;
-
 pub const TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD: u8 = 0x8b;
-
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD: u8 = 0x8c;
-
 pub const TAG_HOST_REVEAL_PATH: u8 = 0x8d;
-
 pub const TAG_ATTACH_CONTROL_RESPONSE: u8 = 0x8e;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
-
 pub const MAX_FILE_EXPORT_PATH_BYTES: usize = 4096;
-
 pub const MAX_FILE_EXPORT_NAME_BYTES: usize = 255;
-
 pub const MAX_FILE_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
-
 pub const FILE_EXPORT_DIGEST_BYTES: usize = 32;
-
 pub const MAX_CLIPBOARD_IMAGE_ERROR_BYTES: usize = 1024;
-
 pub const MAX_HOST_NOTICE_BYTES: usize = 2048;
-
 pub const MAX_HOST_REVEAL_PATH_BYTES: usize = 4096;
-
 pub const MAX_CLIPBOARD_IMAGE_CHUNK_BYTES: usize = 1024 * 1024;
-
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
-
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES as u64;
-
 pub const MAX_CLIPBOARD_IMAGE_BYTES: usize = MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD - 1;
-
 pub const MAX_CONTEXTUAL_CLIPBOARD_IMAGE_BYTES: usize = MAX_CLIPBOARD_IMAGE_BYTES - 2048;
-
 pub const MAX_HELLO_ENV: usize = 64;
-
 pub const MAX_HELLO_ENV_VALUE: usize = 8 * 1024;
-
 pub const MAX_HELLO_ENV_KEY: usize = 1024;
-
 pub const MAX_CLIENT_TERMINAL_FIELD: usize = 1024;
 
 const TERM_LABEL: &str = "TERM";
@@ -110,10 +68,8 @@ const COLORTERM_LABEL: &str = "COLORTERM";
 const FRAME_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub enum SpawnRequest {
     Shell,
-
     Instance(String),
 }
 
@@ -130,15 +86,10 @@ impl SpawnRequest {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ClientTerminal {
     pub term: Option<String>,
-
     pub term_program: Option<String>,
-
     pub colorterm: Option<String>,
-
     pub default_fg: Option<(u8, u8, u8)>,
-
     pub default_bg: Option<(u8, u8, u8)>,
-
     pub capability_overrides: AttachCapabilityOverrides,
 }
 
@@ -154,17 +105,11 @@ pub struct ClientTerminal {
 )]
 pub struct AttachCapabilities {
     pub pointer_shapes: bool,
-
     pub truecolor: bool,
-
     pub synchronized_output: bool,
-
     pub osc8_hyperlinks: bool,
-
     pub underline_style: bool,
-
     pub image_protocol: ImageProtocolCapability,
-
     pub sources: AttachCapabilitySources,
 }
 
@@ -179,38 +124,26 @@ pub struct AttachCapabilities {
 )]
 pub struct AttachCapabilitySources {
     pub handshake_identity: bool,
-
     pub terminfo_name: bool,
-
     pub safe_color_probe: bool,
-
     pub user_override: bool,
-
     pub denylist: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-
 pub struct AttachCapabilityOverrides {
     pub pointer_shapes: Option<bool>,
-
     pub truecolor: Option<bool>,
-
     pub synchronized_output: Option<bool>,
-
     pub osc8_hyperlinks: Option<bool>,
-
     pub underline_style: Option<bool>,
-
     pub image_protocol: Option<ImageProtocolCapability>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-
 pub enum ImageProtocolCapability {
     #[default]
     Unsupported,
-
     Kitty,
 }
 
@@ -351,16 +284,11 @@ fn env_image_protocol(key: &str) -> Option<ImageProtocolCapability> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub enum ClipboardImageFormat {
     Png,
-
     Jpeg,
-
     Gif,
-
     Webp,
-
     Tiff,
 }
 
@@ -399,143 +327,97 @@ impl ClipboardImageFormat {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub struct ClipboardImage {
     pub format: ClipboardImageFormat,
-
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub struct ClipboardImageStart {
     pub transfer_id: u64,
-
     pub format: ClipboardImageFormat,
-
     pub size: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub struct ClipboardImageChunk {
     pub transfer_id: u64,
-
     pub offset: u64,
-
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub struct ClipboardImageEnd {
     pub transfer_id: u64,
-
     pub sha256: [u8; FILE_EXPORT_DIGEST_BYTES],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub struct AttachControlRequest {
     pub request_id: u64,
-
     pub context: TelemetryContext,
-
     pub operation: AttachControlOperation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub enum AttachControlOperation {
     Detach,
-
     FocusIn,
-
     FocusOut,
-
     ClipboardImage(ClipboardImage),
-
     ClipboardImageStart(ClipboardImageStart),
-
     ClipboardImageChunk(ClipboardImageChunk),
-
     ClipboardImageEnd(ClipboardImageEnd),
-
     ClipboardImageError(ClipboardImageError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-
 pub enum AttachControlResult {
     Success,
-
     InvalidCorrelation,
-
     Rejected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-
 pub struct AttachControlResponse {
     pub request_id: u64,
-
     pub result: AttachControlResult,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub struct FileExportStart {
     pub transfer_id: u64,
-
     pub source_path: String,
-
     pub file_name: String,
-
     pub size: u64,
-
     pub reveal_after_export: bool,
-
     pub open_after_export: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub struct FileExportChunk {
     pub transfer_id: u64,
-
     pub offset: u64,
-
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub struct FileExportEnd {
     pub transfer_id: u64,
-
     pub sha256: [u8; FILE_EXPORT_DIGEST_BYTES],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipboardImageError {
     Empty,
-
     TooLarge,
-
     UnsupportedFormat,
-
     DigestMismatch,
-
     ChunkSequence,
-
     MissingTransfer,
-
     DuplicateTransfer,
-
     BackendUnavailable,
-
     Io,
-
     Other(String),
 }
 
@@ -632,84 +514,52 @@ impl std::fmt::Display for ClipboardImageError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub enum ClientFrame {
     Hello {
         rows: u16,
-
         cols: u16,
-
         spawn: Option<SpawnRequest>,
-
         env: Vec<(String, String)>,
-
         focus_session: Option<u64>,
-
         terminal: ClientTerminal,
-
         context: Option<Box<TelemetryContext>>,
     },
-
     Resize {
         rows: u16,
-
         cols: u16,
     },
-
     Input(Vec<u8>),
-
     Command(Vec<u8>),
-
     Detach,
-
     FocusIn,
-
     FocusOut,
-
     ClipboardImage(ClipboardImage),
-
     ClipboardImageStart(ClipboardImageStart),
-
     ClipboardImageChunk(ClipboardImageChunk),
-
     ClipboardImageEnd(ClipboardImageEnd),
-
     ClipboardImageError(ClipboardImageError),
-
     HostNotice(String),
-
     AttachControl(AttachControlRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-
 pub enum ServerFrame {
     Welcome { session_count: u32 },
 
     Output(Vec<u8>),
-
     SessionList(Vec<u8>),
 
     Shutdown { reason: Option<String> },
 
     Bell,
-
     HostOpenUrl(String),
-
     FileExportStart(FileExportStart),
-
     FileExportChunk(FileExportChunk),
-
     FileExportEnd(FileExportEnd),
-
     HostRevealPath(String),
-
     HostStageImageFromClipboardPath,
-
     HostPasteImageFromClipboard,
-
     HostStageImageFromClipboard,
-
     AttachControlResponse(AttachControlResponse),
 }
 
@@ -1085,7 +935,6 @@ where
     if len > max_payload {
         bail!("attach frame payload {len} exceeds limit {max_payload}");
     }
-
     let mut payload: Vec<u8> = Vec::with_capacity(len.min(64 * 1024));
     let mut remaining = len;
     let mut chunk = [0u8; 16 * 1024];

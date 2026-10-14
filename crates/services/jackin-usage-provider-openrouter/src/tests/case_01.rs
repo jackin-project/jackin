@@ -220,7 +220,6 @@ fn openrouter_byok_fallback_ignores_caps() {
             .all(|bucket| bucket.label != "BYOK spend"),
         "caps never become a spend row"
     );
-
     let quota = parse_openrouter_key_usage(
         serde_json::json!({
             "data": {"usage_monthly": 12.5, "byok_spend_total": 3.0}
@@ -260,7 +259,6 @@ fn openrouter_snapshot_with_base_serves_key_quota_from_canned_api() {
 
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
-
     let server = std::thread::spawn(move || {
         for _ in 0..2 {
             let (mut stream, _) = listener.accept().unwrap();

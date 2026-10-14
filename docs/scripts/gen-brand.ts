@@ -1,16 +1,4 @@
 
-
-
-
-
-
-
-
-
-
-
-
-
 import { Resvg } from '@resvg/resvg-js'
 import ImageResponse from '@takumi-rs/image-response'
 import React from 'react'
@@ -25,15 +13,9 @@ const WHITE = '#ffffff'
 const GREEN = '#5cf07a'
 const DARK = '#0a0a0a'
 const GREY = '#9ca8a1'
-
-
-
-
 const DARK_WORD = '#15181c'
 const GREY_DARK = '#5d6460'
 const round = (n: number) => Math.round(n * 100) / 100
-
-
 
 function wordmarkSvg(
   word: string,
@@ -68,7 +50,6 @@ function wordmarkSvg(
 `
 }
 
-
 function faviconSvg(size: number): string {
   const fontSize = round(size * 0.46)
   const w = outlineWord('j', fontSize, WHITE)
@@ -76,10 +57,8 @@ function faviconSvg(size: number): string {
   const contentW = w.width + gap + chevron(fontSize, 0, 0).right
   const startX = round((size - contentW) / 2)
   const cy = round(size / 2)
-
   const baseline = round(cy + (font.capHeight / 2) * (fontSize / font.unitsPerEm))
   const wg = placeWord(w, startX, baseline)
-
   const c = chevron(fontSize, round(startX + w.width + gap), round(cy + fontSize * 0.06))
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
   <rect width="${size}" height="${size}" fill="${DARK}"/>
@@ -95,17 +74,10 @@ const pub = join(root, 'public')
 mkdirSync(brandDir, { recursive: true })
 mkdirSync(nativeBrandDir, { recursive: true })
 
-
-
-
-
-
 function assertBylineAligned(svg: string, tolUnits = 3) {
   const vbW = Number(svg.match(/viewBox="0 0 ([0-9.]+)/)?.[1])
   const { pixels, width, height } = new Resvg(svg, { fitTo: { mode: 'width', value: 2000 } }).render()
   const toVb = (px: number) => (px / width) * vbW
-
-
   let wordRight = -1
   let bylineRight = -1
   for (let y = 0; y < height; y++) {
@@ -131,9 +103,6 @@ function assertBylineAligned(svg: string, tolUnits = 3) {
   console.log(`✓ byline aligned to the word (Δ ${delta.toFixed(2)} units)`)
 }
 
-
-
-
 const wordmark = wordmarkSvg('jackin', 200, WHITE, GREEN, true)
 assertBylineAligned(wordmark)
 writeFileSync(join(brandDir, 'jackin-wordmark.svg'), wordmark)
@@ -144,16 +113,12 @@ const monogram = wordmarkSvg('j', 200, WHITE, GREEN, false)
 writeFileSync(join(brandDir, 'jackin-monogram.svg'), monogram)
 console.log('wrote public/brand/jackin-monogram.svg')
 
-
-
 const wordmarkOnlight = wordmarkSvg('jackin', 200, DARK_WORD, GREEN, true, GREY_DARK)
 writeFileSync(join(brandDir, 'jackin-wordmark-onlight.svg'), wordmarkOnlight)
 console.log('wrote public/brand/jackin-wordmark-onlight.svg')
 writeFileSync(join(brandDir, 'jackin-lockup-onlight.svg'), wordmarkOnlight)
 console.log('wrote public/brand/jackin-lockup-onlight.svg')
 const monogramOnlight = wordmarkSvg('j', 200, DARK_WORD, GREEN, false)
-
-
 
 for (const [name, svg] of [
   ['JackinWordmarkDark.svg', wordmark],
@@ -165,10 +130,8 @@ for (const [name, svg] of [
   console.log(`wrote native/Sources/JackinDesktop/Resources/Brand/${name}`)
 }
 
-
 writeFileSync(join(pub, 'favicon.svg'), faviconSvg(512))
 console.log('wrote public/favicon.svg')
-
 
 function wordmarkElement(word: string, fontSize: number, withBg: boolean, byline = false) {
   const chev = chevronSvg(fontSize, GREEN)
@@ -251,7 +214,6 @@ for (const [name, word] of [['jackin-wordmark', 'jackin'], ['jackin-monogram', '
   writeFileSync(join(brandDir, `${name}.png`), png)
   console.log(`wrote public/brand/${name}.png (${png.byteLength.toLocaleString()} bytes)`)
 }
-
 
 async function iconPng(size: number): Promise<Buffer> {
   return renderPng(wordmarkElement('j', Math.round(size * 0.5), true), size, size)

@@ -68,7 +68,6 @@ fn antigravity_pool_from_summary_entry(entry: &serde_json::Value) -> Option<Anti
         .filter_map(|key| entry.get(key).and_then(serde_json::Value::as_str))
         .map(str::trim)
         .find(|id| !id.is_empty())?;
-
     let remaining_percent = antigravity_remaining_from_entry(entry);
     let reset_at = antigravity_reset_from_entry(entry);
     let (family, window) = match id {
@@ -185,11 +184,9 @@ fn antigravity_pools_from_legacy_models(value: &serde_json::Value) -> Vec<Antigr
             .filter_map(|key| model.get(key).and_then(serde_json::Value::as_str))
             .map(str::trim)
             .find(|label| !label.is_empty());
-
         if label.is_none() {
             continue;
         }
-
         let Some(remaining) = antigravity_remaining_from_entry(model) else {
             continue;
         };

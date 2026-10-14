@@ -21,7 +21,6 @@ use termrock::widgets::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatorInfoOutcome {
     Continue,
-
     Cancel,
 }
 
@@ -32,7 +31,6 @@ pub struct ContainerInfoRow {
     href: Option<String>,
     copyable: bool,
     emphasised: bool,
-
     accent: Option<Color>,
 }
 
@@ -102,15 +100,11 @@ impl ContainerInfoRow {
 #[derive(Debug, Clone, Default)]
 pub struct DebugInfo {
     pub jackin_version: Option<String>,
-
     pub capsule_version: Option<String>,
-
     pub container_id: Option<String>,
     pub role: Option<String>,
     pub agent: Option<String>,
-
     pub target: Option<String>,
-
     pub run_id: Option<String>,
 }
 
@@ -150,7 +144,6 @@ pub struct ContainerInfoState {
     copied_row: Option<usize>,
     hovered_row: Option<usize>,
     viewport: Option<Rect>,
-
     pub scroll: DialogScroll,
 }
 
@@ -191,7 +184,6 @@ impl ContainerInfoState {
             let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
             return self.handle_scroll_key(key, viewport_height, viewport_width, axes);
         }
-
         self.handle_scroll_key(
             key,
             0,
@@ -216,7 +208,6 @@ impl ContainerInfoState {
     ) -> OperatorInfoOutcome {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q' | 'Q') => OperatorInfoOutcome::Cancel,
-
             KeyCode::Up
             | KeyCode::Down
             | KeyCode::Left
@@ -326,15 +317,12 @@ pub fn debug_info_hint_spans(axes: termrock::scroll::ScrollAxes) -> Vec<HintSpan
     if axes.any() {
         spans.push(HintSpan::GroupSep);
     }
-
     spans.push(HintSpan::Key("↵"));
     spans.push(HintSpan::Text("copy value"));
     spans.push(HintSpan::GroupSep);
-
     spans.push(HintSpan::Key("Esc"));
     spans.push(HintSpan::Text("dismiss"));
     spans.push(HintSpan::GroupSep);
-
     spans.push(HintSpan::Key("click"));
     spans.push(HintSpan::Text("copy value"));
     spans

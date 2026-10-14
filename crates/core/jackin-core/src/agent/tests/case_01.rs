@@ -142,7 +142,6 @@ RUN set -euxo pipefail && \\
 fn fallback_install_blocks_use_official_installers() {
     let curl_flags =
         "--connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-connrefused";
-
     let cases = [
         (
             Agent::Claude,

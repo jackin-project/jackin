@@ -6,6 +6,5 @@ pub mod shell_runner;
 
 pub use docker_client::BollardDockerClient;
 pub use error::DockerError;
-pub use shell_runner::ShellRunner;
-
 pub use jackin_core::{CommandRunner, DockerApi, RunOptions};
+pub use shell_runner::ShellRunner;

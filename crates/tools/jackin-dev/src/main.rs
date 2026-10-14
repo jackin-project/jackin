@@ -17,7 +17,6 @@ const CAPSULE_PATH_DEPS: [(&str, &str); 5] = [
     ("crates/core/jackin-protocol/", "jackin-protocol"),
     ("crates/core/jackin-build-meta/", "jackin-build-meta"),
 ];
-
 const LOCAL_CONSTRUCT_REGISTRY: &str = "jackin-local/construct";
 const CONSTRUCT_STABLE_TAG: &str = "trixie";
 
@@ -37,25 +36,18 @@ enum TopCommand {
 #[derive(Subcommand)]
 enum PrCommand {
     Sync(SyncArgs),
-
     Clean(PrPathArgs),
-
     Env(PrPathArgs),
-
     Path(PrPathArgs),
-
     Status(PrRepoArgs),
-
     Explain(PrRepoArgs),
 }
 
 #[derive(Args)]
 struct PrRepoArgs {
     pr: u64,
-
     #[arg(long, default_value = DEFAULT_REPO)]
     repo: String,
-
     #[arg(long)]
     test_dir: Option<PathBuf>,
 }
@@ -64,10 +56,8 @@ struct PrRepoArgs {
 struct SyncArgs {
     #[command(flatten)]
     common: PrRepoArgs,
-
     #[arg(long, value_enum, default_value_t = ConfigSource::Copy)]
     config: ConfigSource,
-
     #[arg(long)]
     force: bool,
 }
@@ -75,7 +65,6 @@ struct SyncArgs {
 #[derive(Args)]
 struct PrPathArgs {
     pr: u64,
-
     #[arg(long)]
     test_dir: Option<PathBuf>,
 }
@@ -83,7 +72,6 @@ struct PrPathArgs {
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ConfigSource {
     Blank,
-
     Copy,
 }
 

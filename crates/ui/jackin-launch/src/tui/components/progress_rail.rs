@@ -102,7 +102,6 @@ fn blocks_line(view: &LaunchView, frozen: bool) -> Line<'static> {
         if i > 0 {
             spans.push(Span::raw(" ".repeat(BLOCK_GAP)));
         }
-
         let (glyph, color) = match status {
             StageStatus::Done | StageStatus::Skipped => (
                 '━',

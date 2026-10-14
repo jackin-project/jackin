@@ -15,7 +15,6 @@ function storeTheme(theme: Theme) {
   try {
     localStorage.setItem(storageKey, theme)
   } catch {
-
   }
 }
 

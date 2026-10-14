@@ -14,42 +14,29 @@ use crate::{DindGrant, DockerSecurityProfile};
 pub struct RoleManifest {
     #[serde(default = "current_manifest_version", rename = "version")]
     pub version: String,
-
     pub dockerfile: String,
-
     #[serde(default)]
     pub published_image: Option<String>,
-
     #[serde(default)]
     pub identity: Option<IdentityConfig>,
-
     #[serde(default)]
     pub agents: Option<Vec<Agent>>,
-
     #[serde(default)]
     pub claude: Option<ClaudeConfig>,
-
     #[serde(default)]
     pub codex: Option<CodexConfig>,
-
     #[serde(default)]
     pub amp: Option<AmpConfig>,
-
     #[serde(default)]
     pub kimi: Option<KimiConfig>,
-
     #[serde(default)]
     pub opencode: Option<OpencodeConfig>,
-
     #[serde(default)]
     pub grok: Option<GrokConfig>,
-
     #[serde(default)]
     pub hooks: Option<HooksConfig>,
-
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
-
     #[serde(default)]
     pub docker: Option<ManifestDockerConfig>,
 }
@@ -59,13 +46,10 @@ pub struct RoleManifest {
 pub struct ManifestDockerConfig {
     #[serde(default)]
     pub min_profile: Option<DockerSecurityProfile>,
-
     #[serde(default)]
     pub dind: Option<DindGrant>,
-
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
-
     #[serde(default)]
     pub capabilities_add: Vec<String>,
 }
@@ -89,7 +73,6 @@ impl RoleManifest {
             Agent::Kimi => self.kimi.is_some(),
             Agent::Opencode => self.opencode.is_some(),
             Agent::Grok => self.grok.is_some(),
-
             Agent::Antigravity
             | Agent::Gemini
             | Agent::Cursor
@@ -107,7 +90,6 @@ impl RoleManifest {
             Agent::Kimi => self.kimi.as_ref().and_then(|c| c.model.as_deref()),
             Agent::Opencode => self.opencode.as_ref().and_then(|c| c.model.as_deref()),
             Agent::Grok => self.grok.as_ref().and_then(|c| c.model.as_deref()),
-
             Agent::Antigravity
             | Agent::Gemini
             | Agent::Cursor
@@ -155,18 +137,13 @@ pub struct GrokConfig {
 pub struct EnvVarDecl {
     #[serde(rename = "default")]
     pub default_value: Option<String>,
-
     #[serde(default)]
     pub interactive: bool,
-
     #[serde(default)]
     pub skippable: bool,
-
     pub prompt: Option<String>,
-
     #[serde(default)]
     pub options: Vec<String>,
-
     #[serde(default)]
     pub depends_on: Vec<String>,
 }
@@ -176,10 +153,8 @@ pub struct EnvVarDecl {
 pub struct HooksConfig {
     #[serde(default)]
     pub setup_once: Option<String>,
-
     #[serde(default)]
     pub source: Option<String>,
-
     #[serde(default)]
     pub preflight: Option<String>,
 }
@@ -187,9 +162,7 @@ pub struct HooksConfig {
 #[derive(Debug, Clone, Copy)]
 pub struct HookEntry<'a> {
     pub label: &'static str,
-
     pub filename: &'static str,
-
     pub path: &'a str,
 }
 
@@ -225,7 +198,6 @@ pub struct IdentityConfig {
 #[serde(deny_unknown_fields)]
 pub struct ClaudeMarketplaceConfig {
     pub source: String,
-
     #[serde(default)]
     pub sparse: Vec<String>,
 }
@@ -235,10 +207,8 @@ pub struct ClaudeMarketplaceConfig {
 pub struct ClaudeConfig {
     #[serde(default)]
     pub model: Option<String>,
-
     #[serde(default)]
     pub marketplaces: Vec<ClaudeMarketplaceConfig>,
-
     #[serde(default)]
     pub plugins: Vec<String>,
 }

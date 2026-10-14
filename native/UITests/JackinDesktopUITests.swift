@@ -31,8 +31,6 @@ final class JackinDesktopUITests: XCTestCase {
         XCTAssertEqual(brandTitle.label, "jackin❯ desktop")
         let detailPane = element("usage.detail-pane")
         XCTAssertTrue(detailPane.waitForExistence(timeout: 5))
-
-
         XCTAssertEqual(brandTitle.frame.midX, usageWindow.frame.midX, accuracy: 2)
         let refresh = element("usage.refresh")
         XCTAssertTrue(refresh.waitForExistence(timeout: 5))
@@ -354,8 +352,6 @@ final class JackinDesktopUITests: XCTestCase {
         XCTAssertTrue(controlsReady, application.debugDescription)
         guard controlsReady else { return }
         XCTAssertTrue(scroll(lastLimit, intoViewThrough: provider))
-
-
         application.activate()
         XCTAssertTrue(lastLimit.waitForHittable(timeout: 3))
         XCTAssertTrue(refresh.waitForHittable(timeout: 3))
@@ -473,8 +469,6 @@ final class JackinDesktopUITests: XCTestCase {
         XCTAssertTrue(overview.waitForExistence(timeout: 5))
         XCTAssertEqual(overview.label, "Usage overview")
         XCTAssertEqual(element("usage.sidebar").label, "Usage providers sidebar")
-
-
         var snapshot: UsageAuditSnapshot?
         for _ in 0..<3 {
             guard ensureUsageWindowVisible(contentIdentifier: "usage.overview.table") else {
@@ -502,9 +496,6 @@ final class JackinDesktopUITests: XCTestCase {
     }
 
     private func overviewAuditSnapshot(overview: XCUIElement) -> UsageAuditSnapshot {
-
-
-
         let refresh = element("usage.refresh")
         let badge = element("usage.fixture-badge")
         let overviewLabel = overview.exists ? overview.label : nil
@@ -587,8 +578,6 @@ final class JackinDesktopUITests: XCTestCase {
         }
         application.launchArguments = arguments
         application.launch()
-
-
         application.activate()
         var opened = application.windows["usage-window"].waitForExistence(timeout: 8)
         if !opened {
@@ -602,8 +591,6 @@ final class JackinDesktopUITests: XCTestCase {
         }
         XCTAssertTrue(opened, application.debugDescription)
         guard opened else { return false }
-
-
         application.activate()
         return true
     }
@@ -628,8 +615,6 @@ final class JackinDesktopUITests: XCTestCase {
         }
         XCTAssertTrue(opened, application.debugDescription)
         guard opened else { return false }
-
-
         application.activate()
         return true
     }
@@ -645,12 +630,9 @@ final class JackinDesktopUITests: XCTestCase {
         for _ in 0..<8 {
             if target.isHittable { return true }
             guard container.waitForHittable(timeout: 3) else {
-
-
                 application.activate()
                 continue
             }
-
             container.scroll(byDeltaX: 0, deltaY: -1_200)
         }
         return target.waitForHittable(timeout: 3)
@@ -698,9 +680,6 @@ final class JackinDesktopUITests: XCTestCase {
     private func ensureUsageWindowVisible(contentIdentifier: String? = nil) -> Bool {
         let usageWindow = application.windows["usage-window"]
         if usageWindow.exists {
-
-
-
             application.activate()
             guard let contentIdentifier else { return true }
             if element(contentIdentifier).waitForExistence(timeout: 1) {
@@ -716,8 +695,6 @@ final class JackinDesktopUITests: XCTestCase {
         guard usageWindow.waitForExistence(timeout: 3) else { return false }
         application.activate()
         if !usageWindow.waitForExistence(timeout: 1) {
-
-
             DistributedNotificationCenter.default().postNotificationName(
                 Notification.Name("com.jackin-project.desktop.visual-qa.show-usage"),
                 object: nil,
@@ -736,8 +713,6 @@ final class JackinDesktopUITests: XCTestCase {
         popoverSnapshot: PopoverAuditSnapshot? = nil
     ) -> Bool {
         let auditingPopover = popoverSnapshot != nil
-
-
         guard let element = issue.element, element.exists else {
             return handlesOrphanAccessibilityAuditIssue(
                 issue,
@@ -749,15 +724,12 @@ final class JackinDesktopUITests: XCTestCase {
 
         if issue.auditType == .sufficientElementDescription {
             if auditingPopover, elementType == .popover {
-
                 return true
             }
             if elementType == .touchBar {
                 return true
             }
             if elementType == .group {
-
-
                 return true
             }
         }
@@ -768,7 +740,6 @@ final class JackinDesktopUITests: XCTestCase {
             issue.auditType == .elementDetection,
             identifier.hasPrefix("popover.limit.")
         {
-
             return true
         }
 
@@ -776,8 +747,6 @@ final class JackinDesktopUITests: XCTestCase {
             if ["usage.provider-identity", "popover.provider-identity"].contains(
                 identifier)
             {
-
-
                 return true
             }
         }
@@ -794,12 +763,8 @@ final class JackinDesktopUITests: XCTestCase {
             elementType == .popover,
             identifier.isEmpty
         {
-
-
             return true
         }
-
-
 
         if issue.auditType == .contrast,
             elementType == .staticText,
@@ -809,8 +774,6 @@ final class JackinDesktopUITests: XCTestCase {
             return true
         }
 
-
-
         if issue.auditType == .contrast,
             elementType == .staticText,
             identifier.hasPrefix("usage.section.")
@@ -819,18 +782,12 @@ final class JackinDesktopUITests: XCTestCase {
             return true
         }
 
-
         if issue.auditType == .contrast,
             elementType == .staticText,
             (element.value as? String) == "Account"
         {
             return true
         }
-
-
-
-
-
 
         if issue.auditType == .contrast,
             elementType == .staticText,
@@ -839,10 +796,6 @@ final class JackinDesktopUITests: XCTestCase {
         {
             return true
         }
-
-
-
-
 
         if issue.auditType == .contrast,
             elementType == .staticText,
@@ -860,8 +813,6 @@ final class JackinDesktopUITests: XCTestCase {
                 "usage.sidebar.provider.minimax",
             ].contains(identifier)
         {
-
-
             return true
         }
 
@@ -879,10 +830,6 @@ final class JackinDesktopUITests: XCTestCase {
         return false
     }
 
-
-
-
-
     private func handlesOrphanAccessibilityAuditIssue(
         _ issue: XCUIAccessibilityAuditIssue,
         usageSnapshot: UsageAuditSnapshot?,
@@ -896,8 +843,6 @@ final class JackinDesktopUITests: XCTestCase {
                     issue.detailedDescription.contains($0)
                 })
             {
-
-
                 return true
             }
             if issue.auditType == .sufficientElementDescription,
@@ -907,8 +852,6 @@ final class JackinDesktopUITests: XCTestCase {
                     issue.compactDescription
                 )
             {
-
-
                 return true
             }
         }
@@ -918,8 +861,6 @@ final class JackinDesktopUITests: XCTestCase {
                     issue.detailedDescription.contains($0)
                 })
             {
-
-
                 return true
             }
             if issue.auditType == .sufficientElementDescription,
@@ -929,9 +870,6 @@ final class JackinDesktopUITests: XCTestCase {
                     issue.compactDescription
                 )
             {
-
-
-
                 return true
             }
             if issue.auditType == .action,
@@ -939,14 +877,10 @@ final class JackinDesktopUITests: XCTestCase {
                 popoverSnapshot.controlsVerified,
                 issue.compactDescription == "Action is missing"
             {
-
-
                 return true
             }
         }
         if issue.auditType == .parentChild {
-
-
             return true
         }
         XCTContext.runActivity(
@@ -954,15 +888,6 @@ final class JackinDesktopUITests: XCTestCase {
         ) { _ in }
         return false
     }
-
-
-
-
-
-
-
-
-
 
     private func waitForOverviewOutlineSettled(timeout: TimeInterval = 8) -> Bool {
         let outline = application.outlines["usage.overview.table"]
@@ -996,8 +921,6 @@ final class JackinDesktopUITests: XCTestCase {
         let matches = application.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", identifierPrefix)
         )
-
-
         guard matches.firstMatch.exists else { return [] }
         return matches.allElementsBoundByIndex.flatMap { element -> [String] in
             guard element.exists else { return [] }

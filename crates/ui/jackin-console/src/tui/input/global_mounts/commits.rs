@@ -183,7 +183,6 @@ pub(crate) fn commit_settings_env_scope_picker(
             let plan = settings_env_new_key_text_plan(scope);
             let input_state =
                 settings_env_key_input_state(&env.pending, &plan.scope, plan.label, "");
-
             env.open_sub_modal(SettingsModal::EnvText {
                 target: plan.target,
                 pending_value: None,

@@ -75,7 +75,6 @@ pub(crate) fn execute_prelude_file_browser_outcome(
             prelude.modal = None;
             prelude.last_browser_cwd = browser_cwd;
             prelude.accept_mount_src(path);
-
             prelude.wizard.next();
             let src = prelude
                 .pending_mount_src

@@ -28,7 +28,6 @@ pub struct RulePack {
     pub schema_version: u32,
     pub agent: String,
     pub validated_versions: String,
-
     #[serde(default = "default_min_engine_version")]
     pub min_engine_version: u32,
     #[serde(default)]
@@ -43,7 +42,6 @@ pub struct Rule {
     pub region: Region,
     #[serde(default)]
     pub strength: RuleStrength,
-
     #[serde(default)]
     requires_all: Vec<String>,
     #[serde(default)]
@@ -52,23 +50,18 @@ pub struct Rule {
     forbids: Vec<String>,
     #[serde(default)]
     regex: Vec<String>,
-
     #[serde(default)]
     line_regex: Vec<String>,
-
     #[serde(default)]
     forbids_regex: Vec<String>,
-
     #[serde(default)]
     gate: Option<Gate>,
-
     #[serde(skip)]
     compiled_regex: Vec<regex::Regex>,
     #[serde(skip)]
     compiled_line_regex: Vec<regex::Regex>,
     #[serde(skip)]
     compiled_forbids_regex: Vec<regex::Regex>,
-
     #[serde(skip)]
     compiled_gate: Option<CompiledGate>,
 }
@@ -77,15 +70,10 @@ pub struct Rule {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Gate {
     All(Vec<Gate>),
-
     Any(Vec<Gate>),
-
     Not(Box<Gate>),
-
     Contains(String),
-
     Regex(String),
-
     LineRegex(String),
 }
 
@@ -209,11 +197,8 @@ pub enum Region {
     LastPromptMarker,
     OscTitle,
     OscProgress,
-
     AfterLastPromptMarker,
-
     BeforeCurrentPromptMarker,
-
     WholeRecentWithoutCurrentPromptMarker,
 }
 
@@ -256,7 +241,6 @@ pub struct RulePackRegistry {
 pub enum PackSource {
     Embedded,
     LocalDir(PathBuf),
-
     SignedRemoteBundle(SignedPackBundle),
 }
 
@@ -427,7 +411,6 @@ fn load_bundle_entries(
 
 fn verify_signed_bundle(bundle: &SignedPackBundle) -> anyhow::Result<&[SignedPackEntry]> {
     let _ = bundle;
-
     anyhow::bail!("remote pack bundles require a production signature verifier");
 }
 
@@ -463,7 +446,6 @@ impl RulePack {
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(self.schema_version == 1, "unsupported rule schema");
         anyhow::ensure!(!self.agent.trim().is_empty(), "agent is required");
-
         anyhow::ensure!(
             self.min_engine_version >= 1,
             "min_engine_version must be >= 1 in pack {}",
@@ -479,7 +461,6 @@ impl RulePack {
             !self.validated_versions.trim().is_empty(),
             "validated_versions is required"
         );
-
         let req = semver::VersionReq::parse(self.validated_versions.trim())
             .with_context(|| format!("invalid validated_versions in pack {}", self.agent))?;
         anyhow::ensure!(
@@ -524,7 +505,6 @@ impl RulePack {
             {
                 anyhow::ensure!(matcher.len() <= 512, "matcher too long in rule {}", rule.id);
             }
-
             for matcher in rule
                 .regex
                 .iter()
@@ -861,7 +841,6 @@ fn load_packs_from_dir(packs: &mut HashMap<String, RulePack>, dir: &Path) -> any
         if path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
             continue;
         }
-
         match RulePack::load(&path) {
             Ok(pack) => {
                 packs.insert(pack.agent.clone(), pack);

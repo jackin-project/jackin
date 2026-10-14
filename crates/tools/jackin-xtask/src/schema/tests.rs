@@ -101,10 +101,8 @@ fn doc_timeline_entry_is_backtick_bounded() {
     let doc = "## Timeline\n\n### `v1alpha10` — d\n\n### Manifest `v1alpha5` — d\n";
     assert!(doc_has_timeline_entry(doc, "v1alpha10"));
     assert!(doc_has_timeline_entry(doc, "v1alpha5"));
-
     assert!(!doc_has_timeline_entry(doc, "v1alpha1"));
     assert!(!doc_has_timeline_entry(doc, "v1alpha6"));
-
     assert!(!doc_has_timeline_entry(
         "see v1alpha6 in passing",
         "v1alpha6"

@@ -85,7 +85,6 @@ fn render_body(
         horizontal: 1,
         vertical: 0,
     });
-
     let parts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

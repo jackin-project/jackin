@@ -15,7 +15,6 @@ final-status-level = "flaky"
 [profile.docker-e2e.junit]
 path = "junit.xml"
 
-
 [profile.ci]
 retries = { backoff = "fixed", count = 2, delay = "1s" }
 failure-output = "immediate-final"
@@ -31,8 +30,6 @@ failure-output = "immediate-final"
 
 [test-groups]
 docker-e2e = { max-threads = 1 }
-
-
 load-agent = { max-threads = 2 }
 
 [[profile.default.overrides]]
@@ -47,9 +44,6 @@ test-group = 'load-agent'
 slow-timeout = { period = "90s", terminate-after = 3, grace-period = "5s" }
 
 [[profile.default.overrides]]
-
-
-
 filter = 'test(/png_baselines_screens_match/)'
 slow-timeout = { period = "120s", terminate-after = 3, grace-period = "5s" }
 

@@ -86,7 +86,6 @@ pub(crate) async fn finalize_reconnected_foreground_session_with_handle(
     );
     crate::runtime::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
-
     let mut prompt = crate::isolation::finalize::ExitActionPrompt {
         state_dir: paths.data_dir.join(container_name).join("state"),
     };

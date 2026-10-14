@@ -6,12 +6,6 @@ import XCTest
 
 @testable import JackinUsageBridge
 
-
-
-
-
-
-
 final class UsageWindowModelTests: XCTestCase {
     private func glance(
         _ surfaceId: String, headline: String = "H"
@@ -215,7 +209,6 @@ final class UsageWindowModelTests: XCTestCase {
         )
         guard let content = model.content else { return XCTFail("missing provider content") }
         let row = content.detail.rows[0]
-
         let flattened = row.layoutLines.flatMap { [$0.leading, $0.trailing].compactMap { $0 } }
         XCTAssertEqual(
             flattened,
@@ -455,8 +448,6 @@ final class UsageWindowModelTests: XCTestCase {
     }
 
     func testSentinelRowsTransmittedUnchanged() {
-
-
         let ampDaily = detailRow(
             "bucket:0",
             kind: .bucket,

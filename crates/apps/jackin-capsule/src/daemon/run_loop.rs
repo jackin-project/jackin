@@ -68,12 +68,10 @@ pub(crate) async fn run_daemon_loop(
     let initial_spawns = initial_spawn_requests(&initial_agent, &launch_config);
     let mut mux = Multiplexer::new(rows, cols, launch_config)?;
     start_git_context_watcher(mux.launch_env.workdir.clone(), mux.control.event_tx.clone());
-
     let mut pending_initial_spawns = initial_spawns;
 
     let mut new_clients = socket::start_listener_at(socket_path)?;
     telemetry.listener_ready();
-
     let rule_registry = match RulePackRegistry::bundled() {
         Ok(registry) => Some(registry),
         Err(e) => {
@@ -89,20 +87,17 @@ pub(crate) async fn run_daemon_loop(
     let mut sigint = signal(SignalKind::interrupt())?;
 
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ClientFrame>();
-
     let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
     let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlRequest>();
 
     let escape_time = configured_escape_time();
 
     let mut esc_deadline: Option<tokio::time::Instant> = None;
-
     let mut last_frame_at: Option<tokio::time::Instant> = None;
     loop {
         if let Some(action) = mux.control.exit_request.take() {
             if let Err(error) = crate::exit_assess::write_exit_action(action) {
                 let _warning = jackin_telemetry::record_recovered_degradation();
-
                 crate::output::stderr_line(format_args!(
                     "[daemon] exit: failed to write exit-action file, retrying: {error}"
                 ));
@@ -143,13 +138,6 @@ pub(crate) async fn run_daemon_loop(
                 return Ok(());
             }
 
-
-
-
-
-
-
-
             Some((stream, client_permit)) = new_clients.recv() => {
                 let handshake_tx = handshake_tx.clone();
                 let control_tx = control_tx.clone();
@@ -160,7 +148,6 @@ pub(crate) async fn run_daemon_loop(
             }
 
             Some(request) = control_rx.recv() => handle_control_request(&mut mux, request),
-
 
             Some(ready) = handshake_rx.recv() => {
                 accept_attach_handshake(
@@ -173,10 +160,7 @@ pub(crate) async fn run_daemon_loop(
                 .await?;
             }
 
-
             Some(frame) = cmd_rx.recv() => {
-
-
                 let (frames, _coalesced) =
                     coalesce_client_frames(frame, || cmd_rx.try_recv().ok());
                 for frame in frames {
@@ -197,24 +181,15 @@ pub(crate) async fn run_daemon_loop(
                 }
             }
 
-
-
-
-
-
             _ = state_ticker.tick() => {
                 handle_state_tick(&mut mux, rule_registry.as_ref()).await;
             }
-
 
             Some(event) = mux.control.event_rx.recv() => {
                 if handle_session_event(&mut mux, event).await {
                     return Ok(());
                 }
             }
-
-
-
 
             () = async {
                 match esc_deadline {
@@ -229,11 +204,6 @@ pub(crate) async fn run_daemon_loop(
                 }
             }
 
-
-
-
-
-
             () = async {
                 match render_deadline {
                     Some(deadline) => tokio::time::sleep_until(deadline).await,
@@ -245,15 +215,9 @@ pub(crate) async fn run_daemon_loop(
                 last_frame_at = Some(tokio::time::Instant::now());
             }
 
-
-
-
-
             _ = branch_context_ticker.tick() => {
                 mux.maybe_spawn_git_branch_context_lookup(Instant::now());
             }
-
-
 
             _ = usage_account_ticker.tick() => {
                 let refreshed = mux.finish_usage_account_refresh_if_ready().await;

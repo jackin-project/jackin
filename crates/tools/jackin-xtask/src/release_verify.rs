@@ -26,10 +26,8 @@ pub(crate) use package::{
 #[derive(Debug, Args)]
 pub(crate) struct ReleaseVerifyArgs {
     archive: PathBuf,
-
     #[arg(long)]
     skip_attestation: bool,
-
     #[arg(long)]
     skip_signature: bool,
 }

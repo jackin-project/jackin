@@ -232,7 +232,6 @@ model = "sonnet"
         !role_run_cmd.contains("docker.sock"),
         "role container must never bind-mount the host Docker socket; run cmd was: {role_run_cmd}"
     );
-
     for (name, spec) in docker.created_containers.borrow().iter() {
         assert!(
             !spec.binds.iter().any(|b| b.contains("docker.sock")),

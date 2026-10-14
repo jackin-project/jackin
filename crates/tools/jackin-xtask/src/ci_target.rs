@@ -21,17 +21,11 @@ mod tests;
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiTargetCommand {
     ResolveKey(ResolveKeyArgs),
-
     Find(FindArgs),
-
     Download(DownloadArgs),
-
     Restore(RestoreArgs),
-
     Prepare(PrepareArgs),
-
     ValidateLocal(ValidateLocalArgs),
-
     Pack(PackArgs),
 }
 
@@ -41,7 +35,6 @@ pub(crate) struct ResolveKeyArgs {
     package: String,
     #[arg(long)]
     cache_keys_json: String,
-
     #[arg(long)]
     github_output: bool,
 }
@@ -60,10 +53,8 @@ pub(crate) struct FindArgs {
     runner_arch: String,
     #[arg(long)]
     repository: String,
-
     #[arg(long, default_value = "")]
     supplied_results: String,
-
     #[arg(long)]
     github_output: bool,
 }

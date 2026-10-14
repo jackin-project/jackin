@@ -1,4 +1,3 @@
-
 #![no_main]
 use jackin_config::AppConfig;
 use jackin_core::EnvVarDecl;
@@ -31,7 +30,6 @@ impl EnvPrompter for NoPrompt {
 }
 
 fn keys_from_bytes(data: &[u8]) -> Vec<String> {
-
     data.split(|&b| b == 0)
         .take(8)
         .map(|chunk| {
@@ -83,9 +81,7 @@ fuzz_target!(|data: &[u8]| {
     match validate_reserved_names(&config) {
         Ok(()) => assert!(!reserved_present, "reserved key should fail validate"),
         Err(_) => {
-
             if reserved_present {
-
             }
         }
     }

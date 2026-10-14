@@ -25,9 +25,7 @@ pub(crate) const fn bool_matches<const EXPECTED: bool>(v: &bool) -> bool {
 pub enum DirtyExitPolicy {
     #[default]
     Ask,
-
     Keep,
-
     Discard,
 }
 
@@ -44,12 +42,9 @@ impl DirtyExitPolicy {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MountConfig {
     pub src: String,
-
     pub dst: String,
-
     #[serde(default)]
     pub readonly: bool,
-
     #[serde(default)]
     pub isolation: MountIsolation,
 }
@@ -72,13 +67,10 @@ impl KeepAwakeConfig {
 pub struct WorkspaceRoleOverride {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_bindings: BTreeMap<Agent, String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_launch: Option<Vec<String>>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, EnvValue>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
 }
@@ -107,9 +99,7 @@ impl RuntimeConfig {
 #[serde(rename_all = "snake_case")]
 pub enum TelemetryLevelConfig {
     Info,
-
     Debug,
-
     Trace,
 }
 
@@ -128,7 +118,6 @@ impl TelemetryLevelConfig {
 pub struct TelemetryConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub level: Option<TelemetryLevelConfig>,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub categories: Vec<String>,
 }
@@ -158,54 +147,37 @@ impl WorkspaceRuntimeConfig {
 pub struct WorkspaceConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accounts: Vec<String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_bindings: BTreeMap<Agent, String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_launch: Option<Vec<String>>,
-
     #[serde(default = "current_workspace_version", rename = "version")]
     pub version: String,
-
     pub workdir: String,
-
     #[serde(default)]
     pub mounts: Vec<MountConfig>,
-
     #[serde(default)]
     pub allowed_roles: Vec<String>,
-
     #[serde(default)]
     pub default_role: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_agent: Option<Agent>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_role: Option<String>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, EnvValue>,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub roles: BTreeMap<String, WorkspaceRoleOverride>,
-
     #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
     pub keep_awake: KeepAwakeConfig,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
-
     #[serde(default, skip_serializing_if = "bool_matches::<false>")]
     pub git_pull_on_entry: bool,
-
     #[serde(default, skip_serializing_if = "WorkspaceRuntimeConfig::is_default")]
     pub runtime: WorkspaceRuntimeConfig,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dirty_exit_policy: Option<DirtyExitPolicy>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docker: Option<WorkspaceDockerConfig>,
 }
@@ -215,7 +187,6 @@ pub struct WorkspaceConfig {
 pub struct WorkspaceDockerConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<DockerSecurityProfile>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grants: Option<DockerGrants>,
 }
@@ -283,10 +254,8 @@ impl WorkspaceConfig {
 #[serde(deny_unknown_fields)]
 pub struct RoleSource {
     pub git: String,
-
     #[serde(default, skip_serializing_if = "bool_matches::<false>")]
     pub trusted: bool,
-
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, EnvValue>,
 }
@@ -295,9 +264,7 @@ pub struct RoleSource {
 #[serde(deny_unknown_fields)]
 pub struct GlobalMountConfig {
     pub src: String,
-
     pub dst: String,
-
     #[serde(default)]
     pub readonly: bool,
 }
@@ -317,7 +284,6 @@ impl From<GlobalMountConfig> for MountConfig {
 #[serde(untagged)]
 pub enum MountEntry {
     Mount(GlobalMountConfig),
-
     Scoped(BTreeMap<String, GlobalMountConfig>),
 }
 
@@ -350,10 +316,8 @@ impl DockerMounts {
 pub struct DockerConfig {
     #[serde(default)]
     pub mounts: DockerMounts,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<DockerSecurityProfile>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grants: Option<DockerGrants>,
 }
@@ -361,35 +325,25 @@ pub struct DockerConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedWorkspace {
     pub name: String,
-
     pub label: String,
-
     pub workdir: String,
-
     pub mounts: Vec<MountConfig>,
-
     pub keep_awake_enabled: bool,
-
     pub default_agent: Option<Agent>,
-
     pub git_pull_on_entry: bool,
-
     pub mount_heal: MountHealReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HealedMountSource {
     pub name: Option<String>,
-
     pub src: String,
-
     pub dst: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MountHealReport {
     pub recreated: Vec<HealedMountSource>,
-
     pub skipped: Vec<HealedMountSource>,
 }
 
@@ -527,7 +481,6 @@ pub fn ensure_mount_sources(
             kept.push(mount);
             continue;
         }
-
         let file_like = std::path::Path::new(&mount.src)
             .extension()
             .is_some_and(|extension| !extension.is_empty());
@@ -556,27 +509,16 @@ pub fn ensure_mount_sources(
 #[derive(Debug, Default, Clone)]
 pub struct WorkspaceEdit {
     pub workdir: Option<String>,
-
     pub upsert_mounts: Vec<MountConfig>,
-
     pub remove_destinations: Vec<String>,
-
     pub no_workdir_mount: bool,
-
     pub allowed_roles_to_add: Vec<String>,
-
     pub allowed_roles_to_remove: Vec<String>,
-
     pub default_role: Option<Option<String>>,
-
     pub default_agent: Option<Option<Agent>>,
-
     pub mount_isolation_overrides: Vec<(String, MountIsolation)>,
-
     pub keep_awake_enabled: Option<bool>,
-
     pub git_pull_on_entry_enabled: Option<bool>,
-
     pub default_launch: Option<Option<Vec<String>>>,
 }
 
@@ -585,7 +527,6 @@ pub struct WorkspaceEdit {
 pub struct GitConfig {
     #[serde(default, skip_serializing_if = "bool_matches::<false>")]
     pub coauthor_trailer: bool,
-
     #[serde(default, skip_serializing_if = "bool_matches::<false>")]
     pub dco: bool,
 }

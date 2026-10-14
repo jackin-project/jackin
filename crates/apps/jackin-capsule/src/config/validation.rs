@@ -148,7 +148,6 @@ pub(crate) fn validate_instance(
             "instance {instance:?} has an invalid XDG cache path"
         );
     }
-
     let paired_xdg_config_root = config
         .agent_for_instance(instance)
         .and_then(jackin_core::Agent::from_slug)

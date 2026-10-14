@@ -8,11 +8,8 @@ use crate::tui::components::palette::PaletteCommand;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitDirtyRow {
     StartNewAgent,
-
     Inspect,
-
     Keep,
-
     Discard,
 }
 
@@ -26,7 +23,6 @@ pub const EXIT_DIRTY_ROWS: [(ExitDirtyRow, &str); 4] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InspectRow {
     Repo(String),
-
     File(String),
 }
 
@@ -67,13 +63,9 @@ pub(crate) const CLOSE_TARGET_ITEMS: &[(ConfirmKind, &str)] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DialogAction {
     Command(PaletteCommand),
-
     SplitDirection(SplitDirection),
-
     PickedCloseTarget(ConfirmKind),
-
     ConfirmedAction(ConfirmKind),
-
     SpawnAgent {
         agent: Option<String>,
         intent: PickerIntent,
@@ -89,34 +81,23 @@ pub enum DialogAction {
         reveal_after_export: bool,
         open_after_export: bool,
     },
-
     CopyToClipboard(String),
-
     ExitDirty(ExitDirtyRow),
-
     OpenHostUrl(String),
-
     RevealHostPath(String),
-
     Dismiss,
-
     RefreshUsage,
-
     SwitchUsageProvider {
         provider_label: String,
         account_id: String,
     },
-
     Redraw,
-
     ExecConfirm {
         command: String,
         args: Vec<String>,
         selected: Vec<jackin_protocol::ExecBinding>,
     },
-
     ExecCancel,
-
     Consume,
 }
 

@@ -213,7 +213,6 @@ fn contains_bare_brand_prose(line: &str) -> bool {
     while i < bytes.len() {
         if bytes[i..].starts_with(b"jackin") {
             let after = i + 6;
-
             let before_ok = i == 0
                 || !(is_ident_byte(bytes[i - 1])
                     || bytes[i - 1] == b'`'

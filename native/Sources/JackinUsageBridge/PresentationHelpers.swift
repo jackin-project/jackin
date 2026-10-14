@@ -3,9 +3,6 @@
 
 import SwiftUI
 
-
-
-
 public func severityTint(_ severity: String) -> Color {
     switch severity {
     case "danger": return .red
@@ -14,11 +11,7 @@ public func severityTint(_ severity: String) -> Color {
     }
 }
 
-
 public let statusBarMaxChips = 3
-
-
-
 
 public func selectStatusBarGlanceRows(
     from rows: [PresentationStore.GlanceProviderRow],
@@ -31,7 +24,6 @@ public func selectStatusBarGlanceRows(
             .prefix(cap)
     )
 }
-
 
 public func statusBarOrderRequiresRebuild(previous: [String], next: [String]) -> Bool {
     previous != next

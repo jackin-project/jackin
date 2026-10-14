@@ -84,7 +84,6 @@ fn new_provider_keys_are_discovered() {
         );
         assert!(jackin_core::is_account_env(name));
     }
-
     let env = std::collections::BTreeMap::from([
         ("GEMINI_API_KEY".to_owned(), "primary-fixture".to_owned()),
         ("GOOGLE_API_KEY".to_owned(), "alias-fixture".to_owned()),
@@ -137,7 +136,6 @@ fn antigravity_discovery_is_keychain_only() {
     let home = tempfile::tempdir().unwrap();
     let directory = home.path().join(".gemini/antigravity-cli");
     std::fs::create_dir_all(&directory).unwrap();
-
     std::fs::write(directory.join("settings.json"), r#"{"model":"fixture"}"#).unwrap();
     assert_eq!(
         inspect_directory(Agent::Antigravity, &directory, home.path(), |_| false).unwrap(),
@@ -162,7 +160,6 @@ fn hermes_discovery_enumerates_profiles_through_stores() {
     std::fs::create_dir_all(&directory).unwrap();
     let inspect = || inspect_directory(Agent::Hermes, &directory, home.path(), |_| false);
     assert_eq!(inspect().unwrap(), None, "empty directory");
-
     std::fs::write(
         directory.join("auth.json"),
         r#"{"openai":{"type":"api","key":"fixture"}}"#,
@@ -228,7 +225,6 @@ fn omp_discovery_without_database_is_not_an_account() {
 #[test]
 fn kimi_default_discovery_accepts_cli_home_without_duplicate_accounts() {
     let home = tempfile::tempdir().unwrap();
-
     std::fs::create_dir_all(home.path().join(".claude")).unwrap();
     std::fs::write(
         home.path().join(".claude/.credentials.json"),

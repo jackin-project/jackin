@@ -19,13 +19,11 @@
   --sl-color-gray-6: var(--color-gray10);
   --sl-color-gray-7: var(--color-gray11);
 
-
   --sl-font: 'Inter', system-ui, sans-serif;
   --sl-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
   --sl-font-system-mono: 'JetBrains Mono', 'SF Mono', monospace;
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
-
 
   --sl-sidebar-width: 15.25rem;
   --sl-content-width: 56rem;
@@ -312,7 +310,6 @@ body {
   display: none;
 }
 
-
 .jk-brand-mark--lockup {
   flex-direction: column;
   align-items: flex-start;
@@ -408,7 +405,6 @@ body {
   padding-bottom: 1.5rem;
   border-bottom: 1px solid var(--jk-ui);
 }
-
 
 .jk-page-actions button {
   border-color: color-mix(in srgb, var(--jk-accent) 35%, transparent);
@@ -857,7 +853,6 @@ html.theme-init *::after {
   animation-duration: 320ms;
   animation-timing-function: ease;
 }
-
 
 ::view-transition-old(root) {
   animation-name: jk-theme-fade-out;
@@ -1523,7 +1518,6 @@ header.header {
   opacity: 1;
 }
 
-
 .sl-markdown-content .sl-heading-wrapper {
   --sl-anchor-icon-gap: 12px;
 }
@@ -1667,7 +1661,6 @@ header.header {
   border-color: var(--jk-brand);
   color: var(--jk-bg);
 }
-
 
 .sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'][aria-selected='true']::after {
   display: none;
@@ -2064,7 +2057,6 @@ site-search dialog {
   font-weight: inherit;
 }
 
-
 :where(h1, h2, h3, h4, h5, h6) .jk-name {
   font-weight: inherit;
 }
@@ -2093,7 +2085,6 @@ site-search dialog {
   box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
 }
 
-
 #nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > div:first-child {
   display: inline-flex;
   align-items: center;
@@ -2107,7 +2098,6 @@ site-search dialog {
   width: 100%;
   height: 100%;
 }
-
 
 #nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) p {
   font-weight: 600;

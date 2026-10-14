@@ -20,7 +20,6 @@ pub fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let handoff_secrets = Path::new(AMP_HANDOFF_SECRETS_PATH);
     let amp_env_key = env_value("AMP_API_KEY");
     let env_present = amp_env_key.is_some();
-
     let amp_file = if env_present {
         None
     } else {
@@ -36,7 +35,6 @@ pub fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let (cli_usage, cli_error) = split_fetch(api_usage.is_none().then(fetch_amp_cli_usage));
     let provider_error = api_error.as_ref().or(cli_error.as_ref()).cloned();
     let has_auth = amp_api_key.is_some() || amp_secrets.exists() || handoff_secrets.exists();
-
     let credential_origin = if env_present {
         Some("API key · env AMP_API_KEY".to_owned())
     } else if let Some((path, _)) = amp_file.as_ref() {

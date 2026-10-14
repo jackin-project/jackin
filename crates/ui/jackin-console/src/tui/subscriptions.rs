@@ -21,7 +21,6 @@ pub const fn instance_refresh_interval(exec_fallback_seen: bool) -> std::time::D
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Subscription {
     TerminalEvents,
-
     AnimationTick,
 }
 
@@ -150,7 +149,6 @@ pub enum ConfigSaveResult<AppConfig, RoleSource> {
 
 pub struct PendingOpCommit<OpRef> {
     pub op_ref: OpRef,
-
     pub rx: BlockingSubscription<anyhow::Result<()>>,
 }
 

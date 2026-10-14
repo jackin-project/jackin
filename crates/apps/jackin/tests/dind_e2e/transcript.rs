@@ -43,7 +43,6 @@ where
     #[cfg(target_os = "macos")]
     {
         let path = cwd.join(MACOS_TYPESCRIPT_NAME);
-
         let pipe_handle = drain_pipe_to_sink(reader);
         let log = std::fs::File::create(cwd.join("e2e-launch-stdout.log"))
             .expect("create live launch transcript");
@@ -123,7 +122,6 @@ fn read_typescript_delta(path: &std::path::Path, offset: u64) -> Option<(Vec<u8>
     use std::io::Seek as _;
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
-
     let offset = if len < offset { 0 } else { offset };
     file.seek(std::io::SeekFrom::Start(offset)).ok()?;
     let mut bytes = Vec::new();

@@ -13,7 +13,6 @@ pub(super) fn canonicalize_with_appearing_directory(
         *retry_calls += 1;
         if *retry_calls == 1 {
             assert_eq!(result.as_ref().unwrap_err().kind(), io::ErrorKind::NotFound);
-
             std::fs::create_dir(raced).unwrap();
         }
     }

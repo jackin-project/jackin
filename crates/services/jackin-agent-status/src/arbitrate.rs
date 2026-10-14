@@ -60,7 +60,6 @@ pub fn arbitrate(
         if snapshot.process.foreground_returned_to_shell {
             summary.notes.push(EvidenceNote::ForegroundReturnedToShell);
         }
-
         return finish(
             RawAgentState::Idle,
             AgentStatusConfidence::Strong,
@@ -147,7 +146,6 @@ pub fn arbitrate(
             summary,
         );
     }
-
     if snapshot.process.foreground_is_agent && snapshot.osc.progress_cleared_at.is_some() {
         return finish(
             RawAgentState::Idle,

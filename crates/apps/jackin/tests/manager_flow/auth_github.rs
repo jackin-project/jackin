@@ -56,7 +56,6 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         cwd,
         key(KeyCode::Char(' ')),
     )?;
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
@@ -107,10 +106,8 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         cwd,
         key(KeyCode::Char('s')),
     )?;
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-
     mark_pending_save_drift_checked_for_test(&mut state);
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
     wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
@@ -137,7 +134,6 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         jackin_core::EnvValue::Extended(e) => assert_eq!(e.value, "ghp_round_trip"),
         jackin_core::EnvValue::OpRef(_) => panic!("expected literal credential"),
     }
-
     assert!(
         !ws_on_disk.env.contains_key("GH_TOKEN"),
         "GH_TOKEN must not appear in [env]; only in [github.env]"

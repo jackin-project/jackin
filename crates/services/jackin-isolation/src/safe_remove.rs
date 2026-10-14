@@ -513,7 +513,6 @@ impl OwnedRemoval {
             .ancestors
             .first()
             .ok_or_else(|| std::io::Error::other("missing containment root"))?;
-
         let current_root = pin_dir(&root.path)?
             .ok_or_else(|| std::io::Error::other("containment root disappeared after admission"))?;
         if dev_id(&current_root.identity) != dev_id(&root.identity)
@@ -583,7 +582,6 @@ fn absolute_segments(path: &Path) -> std::io::Result<Vec<CString>> {
             path.display()
         ));
     }
-
     if path
         .as_os_str()
         .as_bytes()

@@ -55,65 +55,40 @@ use crate::protocol::AgentState;
 )]
 pub struct Session {
     pub label: String,
-
     pub agent: Option<String>,
-
     pub account_id: Option<String>,
-
     pub usage_capability: Option<jackin_protocol::usage_broker::UsageAccountCapability>,
-
     pub identity: jackin_protocol::SessionIdentity,
-
     pub(crate) control_capability: String,
     pub conversation_id: Option<String>,
     pub provider: Option<SessionProvider>,
-
     pub state: AgentState,
-
     pub status: SessionStatus,
-
     pub pending_transition: crate::agent_status::policy::PendingTransition,
     status_transition_times: std::collections::VecDeque<std::time::Instant>,
     status_flapping: bool,
-
     pub gate_states:
         std::collections::HashMap<String, crate::agent_status::gating::SourceGateState>,
-
     pub authority: Option<crate::agent_status::evidence::AuthorityEvidence>,
-
     pub subagents_active: u32,
-
     pub child_pid: Option<u32>,
-
     cpu_sample: Option<crate::agent_status::process::ProcessCpuSample>,
-
     saw_agent_foreground: bool,
-
     osc: crate::agent_status::evidence::OscEvidence,
-
     osc_status_decoder: crate::agent_status::OscStatusDecoder,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
     termination_requested: Arc<AtomicBool>,
     pub last_output_at: std::time::Instant,
-
     pub last_input_at: std::time::Instant,
-
     pub received_output: bool,
-
     pub shadow_grid: Box<termpane::DamageGrid>,
-
     osc_policy: OscPolicy,
-
     title: Option<String>,
-
     icon_name: Option<String>,
-
     cwd: Option<String>,
-
     pending_passthrough: Vec<Vec<u8>>,
-
     modify_other_keys: Option<u16>,
 }
 

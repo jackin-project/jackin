@@ -15,7 +15,6 @@ fn parity_unresolved_stays_console_only() {
     projection.unresolved = parity_unresolved_entries();
     projection.validate().unwrap();
     let screen = UsageScreenState::from_projection(&projection);
-
     assert_eq!(screen.accounts.len(), 3);
     assert_eq!(screen.accounts[0].provider, "OpenAI");
     assert_eq!(screen.accounts[0].account, "zero@example.test");

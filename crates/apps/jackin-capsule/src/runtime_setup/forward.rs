@@ -11,11 +11,8 @@ use std::path::Path;
 
 pub(crate) struct ForwardedCredential<'a> {
     pub(crate) label: &'a str,
-
     pub(crate) forwarded: &'a Path,
-
     pub(crate) target: &'a Path,
-
     pub(crate) api_key_envs: &'a [&'a str],
 }
 

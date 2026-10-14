@@ -9,23 +9,17 @@ use super::{
 #[derive(Debug, Clone)]
 pub struct EffectiveGrants {
     pub network: NetworkGrant,
-
     pub allowed_hosts: Vec<String>,
     pub dind: DindGrant,
-
     pub user: String,
     pub sudo: bool,
     pub system_writes: bool,
-
     pub memory_bytes: Option<u64>,
-
     pub memory_reservation_bytes: Option<u64>,
     pub cpus: Option<f64>,
     pub pids: Option<i64>,
     pub nofile: Option<u64>,
-
     pub capabilities_add: Vec<String>,
-
     pub no_new_privileges: bool,
 }
 
@@ -64,10 +58,8 @@ pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
         DockerSecurityProfile::Standard => EffectiveGrants {
             network: NetworkGrant::Open,
             allowed_hosts: Vec::new(),
-
             dind: DindGrant::None,
             user: "agent".to_owned(),
-
             sudo: false,
             system_writes: true,
             memory_bytes: Some(16 * GB),
@@ -76,7 +68,6 @@ pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
             pids: Some(2048),
             nofile: Some(8192),
             capabilities_add: Vec::new(),
-
             no_new_privileges: false,
         },
         DockerSecurityProfile::Compat => EffectiveGrants {

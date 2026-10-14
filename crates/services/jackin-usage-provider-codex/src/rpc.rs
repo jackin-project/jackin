@@ -21,7 +21,6 @@ pub fn decode_codex_rpc_usage(
         serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value).map_err(|err| {
             ProviderError::from(format!("Codex app-server rate limit decode failed: {err}"))
         })?;
-
     let account = account_value
         .and_then(|value| serde_json::from_value::<CodexRpcAccountResponse>(value).ok());
     Ok(CodexRpcUsage::from_rpc(limits, account))
@@ -92,7 +91,6 @@ pub fn fetch_codex_rpc_usage(
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )?;
-
         let account_value = codex_rpc_request(
             &mut stdin,
             &rx,

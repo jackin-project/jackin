@@ -161,11 +161,9 @@ fn secrets_flat_rows_sequence_is_canonical() {
         ..WorkspaceConfig::default()
     };
     let mut editor = EditorState::new_edit("ws".into(), ws);
-
     editor.secrets_expanded.insert("agent-a".into());
 
     let rows = editor.secrets_flat_rows();
-
     assert_eq!(rows.len(), 11, "unexpected row count: {rows:?}");
     assert!(matches!(&rows[0], SecretsRow::WorkspaceKeyRow(k) if k == "ALPHA"));
     assert!(matches!(&rows[1], SecretsRow::WorkspaceKeyRow(k) if k == "BETA"));
@@ -250,7 +248,6 @@ fn op_row_breadcrumb_render_three_segment() {
         !dump.contains("op://"),
         "op:// scheme prefix must not appear in the breadcrumb; dump:\n{dump}"
     );
-
     assert!(
         editor.unmasked_rows.is_empty(),
         "default state is all-masked; OpRef rows must still bypass masking"
@@ -282,7 +279,6 @@ fn op_row_breadcrumb_render_four_segment_with_section() {
     editor.active_field = FieldFocus::Row(0);
 
     let dump = render_to_dump(&editor);
-
     assert!(
         dump.contains("Personal"),
         "vault must render; dump:\n{dump}"
@@ -300,7 +296,6 @@ fn op_row_breadcrumb_render_four_segment_with_section() {
         dump.contains("\u{2192}"),
         "arrow glyph must precede the field; dump:\n{dump}"
     );
-
     assert!(
         !dump.contains('@'),
         "4-segment refs must not render an account email prefix; dump:\n{dump}"

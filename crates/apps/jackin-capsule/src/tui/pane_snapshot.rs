@@ -76,7 +76,6 @@ pub fn draw_scrollbar(
     if pane_cols == 0 || pane_rows < 2 {
         return;
     }
-
     let interior_rows = pane_rows.saturating_sub(2);
     let Some(thumb) = termrock::scroll::tail_vertical_thumb(interior_rows, filled, offset) else {
         return;

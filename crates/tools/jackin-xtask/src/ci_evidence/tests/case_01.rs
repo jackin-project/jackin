@@ -148,7 +148,6 @@ fn github_run_and_jobs_decode_real_rest_identity_fields() {
     .unwrap()
     .trim()
     .to_owned();
-
     let run_payload = serde_json::json!({
         "id": 35475235267_u64,
         "repository": {"id": TARGET_REPOSITORY_ID, "full_name": TARGET_REPOSITORY},

@@ -13,11 +13,8 @@ use super::{
 pub struct TokenSession {
     pub agent: Agent,
     pub totals: TokenTotals,
-
     pub last_rowid: i64,
-
     pub last_polled: Instant,
-
     pub silent_polls: u32,
 }
 
@@ -47,12 +44,9 @@ impl TokenSession {
             Agent::Claude => claude::poll_session(self),
             Agent::Codex => codex::poll_session(self),
             Agent::Kimi => kimi::poll_session(self),
-
             Agent::Opencode => opencode::poll_session(self).await,
             Agent::Amp => amp::poll_session(self),
-
             Agent::Grok => PollStatus::Unchanged,
-
             Agent::Antigravity
             | Agent::Gemini
             | Agent::Cursor
@@ -62,7 +56,6 @@ impl TokenSession {
         };
         if changed == PollStatus::Changed {
             self.silent_polls = 0;
-
             if self.totals.cost_usd.is_none() {
                 let model = self.totals.model.as_deref().unwrap_or(self.agent.slug());
                 self.totals.cost_usd = pricing::estimate_cost_usd(

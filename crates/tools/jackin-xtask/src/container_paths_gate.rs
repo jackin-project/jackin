@@ -18,7 +18,6 @@ const CHOKEPOINT: &str = "crates/core/jackin-core/src/container_paths.rs";
 pub(crate) struct LintContainerPathsArgs {
     #[command(flatten)]
     output: FormatArgs,
-
     #[arg(long)]
     print_allowlist: bool,
 }
@@ -35,7 +34,6 @@ struct Allowlist {
 struct AllowlistFile {
     path: String,
     literals: usize,
-
     #[serde(default)]
     #[expect(dead_code, reason = "documentational allowlist field")]
     note: String,
@@ -266,7 +264,6 @@ fn measure_jackin_literals(root: &Path) -> Result<Vec<LiteralHit>> {
                     line: line_no + 1,
                     literal: lit,
                 });
-
                 let next = after.get(end..).unwrap_or("");
                 rest = next.get(1..).unwrap_or("");
             }
@@ -359,7 +356,6 @@ fn line_of_span(source: &str, span: proc_macro2::Span) -> usize {
     if start.line > 0 {
         return start.line;
     }
-
     let _ = source;
     1
 }
@@ -445,7 +441,6 @@ pub(crate) fn check_turso_sole_owner(root: &Path) -> Result<()> {
             if trimmed.starts_with("//") {
                 continue;
             }
-
             if let Some(col) = turso_import_column(trimmed) {
                 let _ = col;
                 problems.push(format!(

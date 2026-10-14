@@ -21,7 +21,6 @@ fn grok_omitted_weekly_percent_is_unknown_not_zero() {
     assert_eq!(buckets[0].remaining_percent, None);
     assert_eq!(buckets[0].pace_label.as_deref(), Some("No data"));
     assert_eq!(buckets[0].status_slot, None);
-
     assert!(buckets[0].resets_at.is_some());
 
     let zero: GrokBillingResponse = serde_json::from_value(serde_json::json!({

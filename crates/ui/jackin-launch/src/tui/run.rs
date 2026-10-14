@@ -41,9 +41,7 @@ pub fn rich_launch_dialog_required_message(what: &str) -> String {
 pub struct RichRenderer {
     terminal: ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     no_motion: bool,
-
     entered_alt_screen: bool,
-
     rain: Option<crate::tui::components::rain::RainState>,
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,
@@ -103,13 +101,11 @@ impl RichDriver {
                         &cancel_token,
                         &rr.input,
                     );
-
                     if outcome == CockpitOutcome::HardExit {
                         rr.host.set_rich_surface_active(false);
                         restore_renderer_terminal_for_process_exit(&mut rr.terminal);
                         std::process::exit(0);
                     }
-
                     if cancel_token.is_cancelled() {
                         rr.restore_terminal();
                         break;
@@ -324,7 +320,6 @@ impl RichRenderer {
     ) -> anyhow::Result<Self> {
         terminal_check()?;
         let mut stdout = std::io::stdout();
-
         let entered_alt_screen = !host.host_screen_owned();
         if entered_alt_screen {
             crossterm::terminal::enable_raw_mode().context("entering raw mode for launch TUI")?;
@@ -335,12 +330,10 @@ impl RichRenderer {
         stdout.execute(crossterm::cursor::Hide)?;
         let backend = ratatui::backend::CrosstermBackend::new(stdout);
         let mut terminal = ratatui::Terminal::new(backend)?;
-
         terminal
             .backend_mut()
             .clear()
             .context("clearing launch screen")?;
-
         host.set_rich_surface_active(true);
         let mut screen_tracker = jackin_telemetry::ui::ScreenVisitTracker::new();
         let _screen_result =
@@ -385,7 +378,6 @@ impl RichRenderer {
 
     pub fn render(&mut self, view: &LaunchView, run_id: &str) -> anyhow::Result<()> {
         let no_motion = self.no_motion;
-
         if let Ok(size) = self.terminal.size() {
             let (cols, rows) = (size.width as usize, size.height as usize);
             let stale = self
@@ -417,7 +409,6 @@ impl RichRenderer {
                 jackin_version: self.jackin_version,
             },
         };
-
         let render_started = std::time::Instant::now();
         jackin_tui::runtime::drive_frame(&mut self.terminal, &adapter, view, area, |_| {})
             .map(|_| ())
@@ -723,7 +714,6 @@ impl RichRenderer {
                     .context("rendering launch dialog")?;
 
                     let key = read_pressed_key(&self.input, "reading launch dialog input")?;
-
                     let sel = picker.selected_index();
                     if key.code == KeyCode::Char('i') || key.code == KeyCode::Char('I') {
                         if let Some(s) = sel
@@ -846,9 +836,7 @@ impl RichRenderer {
                 );
             }
             let mut state = DiffState::new();
-
             state.show_line_numbers = false;
-
             state.show_cursor = false;
             Some(InspectDiff { lines, state })
         };
@@ -1150,7 +1138,6 @@ impl Drop for RichRenderer {
         let _screen_result = self
             .screen_tracker
             .exit(jackin_telemetry::schema::enums::TransitionReason::Completion);
-
         self.restore_terminal();
     }
 }

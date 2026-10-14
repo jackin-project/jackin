@@ -362,12 +362,10 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
         Some("secret"),
         "the committed key/value must land in the role's env map"
     );
-
     assert!(
         editor(&state).secrets_expanded.contains("agent-smith"),
         "value commit must auto-expand the role's section"
     );
-
     assert!(
         editor(&state).modal.is_none(),
         "value commit must close every modal; got {:?}",
@@ -419,7 +417,6 @@ fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
         seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
-
     editor_mut(&mut state)
         .secrets_expanded
         .insert("agent-smith".into());
@@ -455,7 +452,6 @@ fn right_on_collapsed_agent_header_expands_does_not_change_tab() -> Result<()> {
         seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     assert!(matches!(editor(&state).active_field, FieldFocus::Row(2)));
     assert!(
@@ -486,7 +482,6 @@ fn right_on_expanded_agent_header_does_nothing_does_not_change_tab() -> Result<(
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
-
     editor_mut(&mut state)
         .secrets_expanded
         .insert("agent-smith".into());
@@ -541,7 +536,6 @@ fn left_on_collapsed_agent_header_does_nothing_does_not_change_tab() -> Result<(
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
-
     assert!(!editor(&state).secrets_expanded.contains("agent-smith"));
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Left))?;
@@ -566,7 +560,6 @@ fn tab_on_agent_header_advances_tab_normally() -> Result<()> {
         seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     assert!(matches!(editor(&state).active_field, FieldFocus::Row(2)));
 

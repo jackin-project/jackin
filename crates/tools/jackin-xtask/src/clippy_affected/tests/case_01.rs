@@ -125,7 +125,6 @@ fn select_nested_direct_change_pulls_resolve_dependents() {
         )],
     )
     .expect("select");
-
     assert_eq!(
         selection.members,
         vec!["jackin".to_owned(), "jackin-image".to_owned()]
@@ -370,7 +369,6 @@ fn scanner_parses_all_compilable_cooked_escapes() {
         parse_string_literal("\"a\\\n   b\""),
         Some(("ab".to_owned(), 9))
     );
-
     assert_eq!(parse_string_literal("rb\"a\""), None);
     assert_eq!(parse_string_literal("br\"a\""), None);
     assert_eq!(parse_string_literal("\"\\x80\""), None);

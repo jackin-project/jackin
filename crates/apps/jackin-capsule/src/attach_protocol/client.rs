@@ -129,7 +129,6 @@ pub(crate) async fn handle_attach_client_with_handshake(
     for (_, completion) in completions {
         completion.complete_delivery_failure();
     }
-
     drop(cmd_tx.send(ClientFrame::Detach));
     match terminal_error {
         Some(error) => close.complete_error(error),

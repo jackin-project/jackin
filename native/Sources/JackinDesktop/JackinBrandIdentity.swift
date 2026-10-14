@@ -4,7 +4,6 @@
 import AppKit
 import SwiftUI
 
-
 @MainActor
 public enum JackinBrandIdentity {
     public static func wordmark(for colorScheme: ColorScheme) -> NSImage? {
@@ -42,7 +41,6 @@ public enum JackinBrandIdentity {
         #endif
     }
 }
-
 
 public struct JackinBrandSignature: View {
     @Environment(\.colorScheme) private var colorScheme

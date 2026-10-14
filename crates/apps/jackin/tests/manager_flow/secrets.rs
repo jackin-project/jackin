@@ -58,7 +58,6 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
     for ch in "new-value".chars() {
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
     }
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     assert_eq!(
@@ -78,7 +77,6 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
         cwd,
         key(KeyCode::Char('S')),
     )?;
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     mark_pending_save_drift_checked_for_test(&mut state);
@@ -115,7 +113,6 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
         cwd,
         key(KeyCode::Char('D')),
     )?;
-
     handle_key(
         &mut state,
         &mut config,
@@ -136,7 +133,6 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
         cwd,
         key(KeyCode::Char('S')),
     )?;
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     mark_pending_save_drift_checked_for_test(&mut state);
@@ -234,7 +230,6 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
 
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
-
     editor_mut(&mut state).unmasked_rows.insert((
         jackin::console::adapter::state::SecretsScopeTag::Role("agent-smith".into()),
         "LOG_LEVEL".into(),
@@ -321,14 +316,12 @@ fn secrets_add_new_key_flow() -> Result<()> {
     for ch in "API_KEY".chars() {
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
     }
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
         matches!(editor(&state).modal, Some(Modal::SourcePicker { .. })),
         "EnvKey commit must open SourcePicker; got {:?}",
         editor(&state).modal
     );
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     for ch in "s3cret".chars() {
@@ -370,7 +363,6 @@ fn op_picker_opens_on_p_from_secrets_key_row() -> Result<()> {
         matches!(editor(&state).modal, Some(Modal::OpPicker { .. })),
         "P on a key row must open the OpPicker modal directly"
     );
-
     match &editor(&state).modal {
         Some(Modal::OpPicker {
             secrets_target: Some(SecretsPickerTarget::Existing { key, .. }),
@@ -407,7 +399,6 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
         "Esc-cancel must close the picker entirely; got {:?}",
         editor(&state).modal
     );
-
     assert_eq!(
         editor(&state)
             .pending
@@ -473,7 +464,6 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
                 picker.field_list_state.set_active(Some(0));
                 picker.stage = OpPickerStage::Field;
                 picker.load_state = OpLoadState::Ready;
-
                 picker.cancel_in_flight_load();
             }
             other => panic!("expected OpPicker modal; got {other:?}"),
@@ -506,7 +496,6 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
-
     let mut config = seed_config(&paths, temp.path())?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
@@ -563,7 +552,6 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
                 picker.field_list_state.set_active(Some(0));
                 picker.stage = OpPickerStage::Field;
                 picker.load_state = OpLoadState::Ready;
-
                 picker.cancel_in_flight_load();
             }
             other => panic!("expected OpPicker modal; got {other:?}"),
@@ -618,14 +606,11 @@ fn drive_to_source_picker<'a>(
     key_name: &str,
 ) -> Result<ManagerState<'a>> {
     let mut state = manager_on_secrets_tab(config, cwd);
-
     handle_key(&mut state, config, paths, cwd, key(KeyCode::Enter))?;
     handle_key(&mut state, config, paths, cwd, key(KeyCode::Enter))?;
-
     for ch in key_name.chars() {
         handle_key(&mut state, config, paths, cwd, key(KeyCode::Char(ch)))?;
     }
-
     handle_key(&mut state, config, paths, cwd, key(KeyCode::Enter))?;
     Ok(state)
 }
@@ -638,7 +623,6 @@ fn enter_on_sentinel_opens_envkey_then_sourcepicker_then_value_modal() -> Result
     let cwd = temp.path();
 
     let mut state = drive_to_source_picker(&mut config, &paths, cwd, "API_KEY")?;
-
     assert!(
         matches!(editor(&state).modal, Some(Modal::SourcePicker { .. })),
         "EnvKey commit on a sentinel must open SourcePicker; got {:?}",
@@ -729,7 +713,6 @@ fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
     let cwd = temp.path();
 
     let mut state = manager_on_secrets_tab(&config, cwd);
-
     {
         let editor_state = editor_mut(&mut state);
         editor_state.modal = Some(Modal::SourcePicker {
@@ -800,7 +783,6 @@ fn source_picker_op_disabled_when_op_missing() -> Result<()> {
         }
         other => panic!("expected SourcePicker still active; got {other:?}"),
     }
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
         matches!(
@@ -824,7 +806,6 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
     let cwd = temp.path();
 
     let mut state = drive_to_source_picker(&mut config, &paths, cwd, "API_KEY")?;
-
     assert!(
         matches!(
             editor(&state).modal,
@@ -896,7 +877,6 @@ fn op_picker_multi_account_flow() -> Result<()> {
                 picker.selected_account = None;
                 picker.stage = OpPickerStage::Account;
                 picker.load_state = OpLoadState::Ready;
-
                 picker.cancel_in_flight_load();
             }
             other => panic!("expected OpPicker modal; got {other:?}"),
@@ -949,7 +929,6 @@ fn op_picker_multi_account_flow() -> Result<()> {
                 picker.field_list_state.set_active(Some(0));
                 picker.stage = OpPickerStage::Field;
                 picker.load_state = OpLoadState::Ready;
-
                 picker.cancel_in_flight_load();
             }
             other => panic!("expected OpPicker modal; got {other:?}"),

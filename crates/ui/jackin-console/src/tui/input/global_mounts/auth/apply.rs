@@ -119,7 +119,6 @@ pub fn apply_op_picker_to_settings_auth_form_committed(
         record_missing_auth_return_path();
         return;
     };
-
     state.set_op_ref(op_ref);
     auth.set_modal(SettingsModal::AuthForm {
         target,

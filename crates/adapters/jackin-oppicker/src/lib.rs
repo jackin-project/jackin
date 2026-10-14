@@ -49,7 +49,6 @@ pub fn section_name_input_state<'a>(initial: impl Into<String>) -> TextInputStat
 #[derive(Debug, Clone)]
 pub enum OpPickerMode {
     Browse,
-
     Create {
         item_name_default: String,
         field_label_default: String,
@@ -328,7 +327,6 @@ pub struct OpPickerPendingLoad<LoadResult, LoadRequest, Runner> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
     Existing(Reference),
-
     NewItem {
         account: Option<Account>,
         vault: Vault,
@@ -336,7 +334,6 @@ pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
         section: Option<OpSectionTarget>,
         field_label: String,
     },
-
     EditItemField {
         account: Option<Account>,
         vault: Vault,
@@ -349,7 +346,6 @@ pub enum OpPickerSelection<Reference, Account, Vault, Item, FieldTarget> {
 pub use jackin_core::{
     OpAccount as OpPickerAccount, OpSection, OpSectionTarget, OpVault as OpPickerVault,
 };
-
 pub use jackin_core::{OpField as OpPickerField, OpItem as OpPickerItem};
 
 pub type OpPickerCache =
@@ -368,7 +364,6 @@ pub enum FieldDisplayRow {
     },
 
     NewFieldSentinel,
-
     NewSectionSentinel,
 }
 
@@ -396,9 +391,7 @@ pub struct OpPickerFieldRef<'a> {
     pub id: &'a str,
     pub label: &'a str,
     pub reference: &'a str,
-
     pub section_id: Option<&'a str>,
-
     pub section_label: Option<&'a str>,
 }
 
@@ -996,7 +989,6 @@ pub fn classify_probe_error(error: &anyhow::Error) -> OpPickerError {
             jackin_core::OpProbeError::NotSignedIn { .. } => {
                 OpPickerError::Fatal(OpPickerFatalState::NotSignedIn)
             }
-
             jackin_core::OpProbeError::Timeout { .. } | jackin_core::OpProbeError::Other { .. } => {
                 OpPickerError::Fatal(OpPickerFatalState::GenericFatal {
                     message: error.to_string(),

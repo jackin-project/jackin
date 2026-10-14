@@ -46,7 +46,6 @@ impl BrokerLease {
 pub struct BrokerLeaseOwner {
     pub lease: BrokerLease,
     pub file: File,
-
     pub stale_lease_reclaimed: bool,
 }
 

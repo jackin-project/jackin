@@ -4,21 +4,16 @@
 pub use jackin_docker::docker_client::ContainerState;
 
 pub(crate) use jackin_runtime_attach_admission::admission;
-
 pub(crate) use jackin_runtime_attach_capsule_ready::capsule_ready;
-
 pub(crate) use jackin_runtime_attach_exec_args::exec_args;
 mod finalize;
 mod hardline;
 mod hardline_start;
-
 pub(crate) use jackin_runtime_attach_inspect::inspect;
 mod reconnect;
 mod reconnect_lease;
-
 pub(crate) use jackin_runtime_attach_sessions::sessions;
 mod spawn;
-
 pub(crate) use jackin_runtime_attach_transport::transport;
 
 pub use hardline::{hardline_agent, hardline_agent_with_focus};
@@ -37,9 +32,7 @@ pub(crate) use admission::{
     require_current_instance_admission, validate_current_account_admission,
     validate_recorded_role_handle,
 };
-
 pub(crate) use capsule_ready::wait_for_capsule_daemon_with_handle;
-
 #[cfg(test)]
 pub(crate) use capsule_ready::wait_for_dind;
 pub(crate) use exec_args::{

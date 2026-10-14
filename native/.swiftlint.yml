@@ -7,7 +7,6 @@ included:
 excluded:
   - .build
   - DerivedData
-
   - Sources/JackinUsageBindings
 
 analyzer_rules:
@@ -63,15 +62,9 @@ opt_in_rules:
   - yoda_condition
 
 disabled_rules:
-
-
-
   - closure_parameter_position
   - opening_brace
-
   - attributes
-
-
   - trailing_comma
 
 force_cast: error

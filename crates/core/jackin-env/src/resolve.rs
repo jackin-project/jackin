@@ -22,13 +22,11 @@ pub enum OperatorEnvError {
 
     #[error("not an op:// reference")]
     NotOpRef,
-
     #[error(
         "jackin does not support shell variable substitution inside `op://` URIs. \
          Use a plain string value, or substitute before passing."
     )]
     ShellVarInRef,
-
     #[error("malformed op:// URI (expected 3 or 4 path segments, received {segment_count})")]
     MalformedRef { segment_count: usize },
 
@@ -44,41 +42,28 @@ pub enum OperatorEnvError {
     #[error("{count} items named {item:?} in vault {vault:?}. Disambiguate with:\n{suggestions}")]
     AmbiguousItem {
         count: usize,
-
         item: String,
-
         vault: String,
-
         suggestions: String,
     },
-
     #[error("{count} sections named {section:?} in item {item:?}; disambiguate with a section ID")]
     AmbiguousSection {
         count: usize,
-
         section: String,
-
         item: String,
     },
-
     #[error("section {section:?} for field {field:?} in item {item:?} has no matching section ID")]
     SectionIdentityUnavailable {
         section: String,
-
         field: String,
-
         item: String,
     },
-
     #[error("{count} fields match {field:?} in item {item:?}; disambiguate with a field ID")]
     AmbiguousField {
         count: usize,
-
         field: String,
-
         item: String,
     },
-
     #[error("field {field:?} not found in item {item:?}")]
     FieldNotFound { field: String, item: String },
 
@@ -87,7 +72,6 @@ pub enum OperatorEnvError {
         #[source]
         source: anyhow::Error,
     },
-
     #[error("operator env resolution failed for {count} var(s):\n{summary}")]
     Aggregated { count: usize, summary: String },
 }
@@ -95,13 +79,9 @@ pub enum OperatorEnvError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatorEnvKeyStatus {
     Resolved,
-
     Missing,
-
     DeniedOrUnavailable,
-
     Malformed,
-
     InteractionRequired,
 }
 
@@ -729,7 +709,6 @@ pub fn collect_on_demand_bindings(
                         (ExecKind::Literal, e.value)
                     }
                 }
-
                 EnvValue::Plain(s) => (ExecKind::Literal, s),
             };
             jackin_protocol::ExecBinding { name, kind, source }
@@ -791,7 +770,6 @@ where
                     resolved.insert(resolution.key, value);
                 }
             }
-
             OperatorEnvKeyStatus::InteractionRequired => {}
             OperatorEnvKeyStatus::Missing
             | OperatorEnvKeyStatus::DeniedOrUnavailable
@@ -1018,7 +996,6 @@ fn write_launch_diagnostic<W: std::io::Write>(
     debug: bool,
 ) -> std::io::Result<()> {
     let mut attributed = build_attributed_layers(config, role_selector, workspace_name);
-
     attributed.retain(|k, _| resolved.contains_key(k));
 
     if debug {
@@ -1072,7 +1049,6 @@ impl ValueKind {
     fn of_env_value(value: &EnvValue) -> Self {
         match value {
             EnvValue::OpRef(_) => Self::Op,
-
             EnvValue::Plain(s) => Self::of_str(s),
             EnvValue::Extended(e) => Self::of_str(&e.value),
         }

@@ -29,7 +29,6 @@ pub fn resolve_grok_billing_auth(
 pub struct GrokBillingResponse {
     pub(crate) config: Option<GrokBillingConfig>,
     pub(crate) on_demand_enabled: Option<bool>,
-
     pub(crate) subscription_tier: Option<String>,
 }
 
@@ -45,7 +44,6 @@ pub struct GrokBillingConfig {
     pub(crate) prepaid_balance: Option<GrokCent>,
     pub(crate) billing_period_start: Option<String>,
     pub(crate) billing_period_end: Option<String>,
-
     pub(crate) period_start: Option<String>,
     pub(crate) period_end: Option<String>,
 }

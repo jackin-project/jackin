@@ -19,7 +19,6 @@ fn classify_mount_diffs_keeps_genuine_remove_add_separate() {
     }];
     let diffs = classify_mount_diffs(&original, &pending);
     assert_eq!(diffs.len(), 2);
-
     assert!(matches!(diffs[0], MountDiff::Added(_)));
     assert!(matches!(diffs[1], MountDiff::Removed(_)));
 }
@@ -48,7 +47,6 @@ fn change_count_env_remove_counts_as_one() {
 #[test]
 fn change_count_agent_env_delta() {
     use jackin_config::WorkspaceRoleOverride;
-
     let mut ws = empty_ws("/a");
     let mut role_x_env = std::collections::BTreeMap::new();
     role_x_env.insert("LOG_LEVEL".into(), EnvValue::Plain("info".into()));
@@ -122,17 +120,14 @@ fn completed_returns_none_when_name_missing() {
     p.accept_mount_src(PathBuf::from("/home/user/proj"));
     p.accept_mount_dst("/home/user/proj".into(), false);
     p.accept_workdir("/home/user/proj".into());
-
     assert!(p.completed().is_none());
 }
 
 #[test]
 fn completed_returns_none_when_mount_src_missing() {
     let mut p = CreatePreludeState::new();
-
     p.pending_workdir = Some("/home/user/proj".into());
     p.pending_name = Some("proj".into());
-
     assert!(p.completed().is_none());
 }
 
@@ -141,7 +136,6 @@ fn completed_returns_none_when_workdir_missing() {
     let mut p = CreatePreludeState::new();
     p.accept_mount_src(PathBuf::from("/home/user/proj"));
     p.accept_mount_dst("/home/user/proj".into(), false);
-
     p.pending_name = Some("proj".into());
     assert!(p.completed().is_none());
 }

@@ -8,9 +8,7 @@ use tokio::io::AsyncReadExt;
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct HostColors {
     pub fg: Option<(u8, u8, u8)>,
-
     pub bg: Option<(u8, u8, u8)>,
-
     pub leftover_input: Vec<u8>,
 }
 

@@ -16,13 +16,10 @@ const FRAME_MIN_BYTES: usize = 256;
 pub(crate) struct FrameTimingArgs {
     #[arg(long, default_value = "target/debug/jackin")]
     binary: PathBuf,
-
     #[arg(long, default_value = "target/frame-timing.json")]
     output: PathBuf,
-
     #[arg(long, default_value_t = 3)]
     samples: usize,
-
     #[arg(long, default_value_t = 10_000)]
     timeout_ms: u64,
 }

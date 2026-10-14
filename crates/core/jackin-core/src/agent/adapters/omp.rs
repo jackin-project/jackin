@@ -71,7 +71,6 @@ RUN set -euxo pipefail && \\
             config_dir: None,
 
             credential_file: Some(".omp/agent/agent.db"),
-
             folder_env_var: Some(FolderVar {
                 name: "PI_CODING_AGENT_DIR",
                 kind: FolderVarKind::Dir,

@@ -39,7 +39,6 @@ async fn while_waiting_passes_through_inner_error() {
 async fn cancel_after_while_waiting_started_interrupts_pending_future() {
     let progress = test_progress();
     let token = progress.cancel_token();
-
     tokio::spawn(async move {
         tokio::task::yield_now().await;
         token.cancel();
@@ -187,7 +186,6 @@ fn update_stage_sets_one_rows_status_and_detail() {
         .unwrap();
     assert_eq!(net.status, StageStatus::Done);
     assert_eq!(net.detail, "up");
-
     let cap = view
         .stages
         .iter()

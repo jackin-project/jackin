@@ -74,7 +74,6 @@ fn main() -> Result<()> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BuildProfile {
     Release,
-
     Debug,
 }
 
@@ -82,7 +81,6 @@ impl BuildProfile {
     const fn cargo_profile_arg(self) -> &'static str {
         match self {
             Self::Release => "release",
-
             Self::Debug => "capsule-debug",
         }
     }
@@ -181,7 +179,6 @@ fn parse_args() -> Result<Args> {
             s if s.starts_with("--arch=") => {
                 arch = Some(s.trim_start_matches("--arch=").to_owned());
             }
-
             "--debug" => profile = BuildProfile::Debug,
             "--profile" => {
                 let name = args
@@ -214,7 +211,6 @@ fn parse_args() -> Result<Args> {
             s if s.starts_with("--features=") => {
                 append_features(&mut features, s.trim_start_matches("--features="));
             }
-
             other => anyhow::bail!(
                 "unknown argument {other:?}; recognized flags: --arch <arm64|amd64>, --profile <release|debug>, --debug, --features <list>, --export"
             ),

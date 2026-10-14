@@ -6,11 +6,8 @@ use jackin_config::GithubAuthMode;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthProvisionOutcome {
     Skipped,
-
     Synced,
-
     HostMissing,
-
     TokenMode,
 }
 
@@ -47,20 +44,15 @@ pub enum GithubProvisionOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GithubTokenSource {
     ConfiguredEnv,
-
     GhCli,
-
     HostsFile,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostMissingReason {
     NoGhAndNoHostsFile,
-
     GhCliFailed { stderr: String },
-
     GhCliEmpty,
-
     HostsFileMalformed,
 }
 

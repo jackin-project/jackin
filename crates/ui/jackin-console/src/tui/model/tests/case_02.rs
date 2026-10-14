@@ -206,7 +206,6 @@ fn console_input_dispatch_plan_routes_modal_precedence_before_stage() {
         console_input_dispatch_plan(base),
         ConsoleInputDispatchPlan::Stage(ConsoleManagerStageRoute::Settings)
     );
-
     assert_eq!(
         console_input_dispatch_plan(ConsoleInputDispatchFacts {
             keyboard_help_open: true,

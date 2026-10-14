@@ -174,7 +174,6 @@ fn symlink_to_outside_root_is_excluded_from_listing() {
     std::fs::create_dir_all(&root).unwrap();
     std::fs::create_dir_all(&outside).unwrap();
     std::fs::create_dir_all(root.join("normal_dir")).unwrap();
-
     std::os::unix::fs::symlink(&outside, root.join("escape_link")).unwrap();
 
     let fb = state_rooted_at(root.clone(), root);

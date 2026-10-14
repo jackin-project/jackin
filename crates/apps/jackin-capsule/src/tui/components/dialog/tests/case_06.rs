@@ -19,14 +19,11 @@ fn exec_picker_space_toggles_enter_confirms_esc_cancels() {
         },
     ];
     let state = ExecPickerState::from_bindings("ssh".into(), vec!["sentry".into()], &bindings);
-
     assert_eq!(state.items.len(), 2);
     assert!(state.items.iter().all(|i| !i.selected));
 
     let mut dialog = Dialog::ExecPicker(state);
-
     assert_eq!(dialog.handle_key(b" ", None), DialogAction::Redraw);
-
     let action = dialog.handle_key(b"\r", None);
     let DialogAction::ExecConfirm {
         command,
@@ -93,7 +90,6 @@ fn exit_dirty_navigation_clamps_at_ends() {
         top.handle_key(b"\r", None),
         DialogAction::ExitDirty(ExitDirtyRow::StartNewAgent)
     ));
-
     let mut bottom = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     for _ in 0..10 {
         bottom.handle_key(b"\x1b[B", None);
@@ -190,7 +186,6 @@ fn trparity_capsule_exit_inspect_arrows_scroll_without_dismissing() {
         InspectRow::File("M a.rs".to_owned()),
     ]));
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
-
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
     assert_eq!(d.handle_key(b"\x1b[A", None), DialogAction::Redraw);
 }
@@ -232,7 +227,6 @@ fn s8_usage_esc_reverses_focus_then_dismisses() {
 #[test]
 fn s8_usage_content_arrows_scroll_two_axes() {
     let mut d = Dialog::new_usage(usage_view_fixture());
-
     assert_eq!(
         d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {

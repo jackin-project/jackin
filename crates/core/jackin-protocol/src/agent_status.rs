@@ -7,11 +7,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum AgentRawState {
     Unknown,
-
     Working,
-
     Blocked,
-
     Idle,
 }
 
@@ -19,11 +16,8 @@ pub enum AgentRawState {
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatusConfidence {
     Unknown,
-
     Weak,
-
     Strong,
-
     Authoritative,
 }
 
@@ -31,11 +25,8 @@ pub enum AgentStatusConfidence {
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatusSource {
     None,
-
     VisibleScreen,
-
     ShellIntegration,
-
     ForegroundProcess,
 
     Reported { source_id: String },
@@ -53,29 +44,17 @@ pub enum AgentStatusSource {
 )]
 pub struct AgentStatusReport {
     pub raw_state: AgentRawState,
-
     pub source: AgentStatusSource,
-
     pub confidence: AgentStatusConfidence,
-
     pub detected_agent: Option<String>,
-
     pub foreground_pgid: Option<u32>,
-
     pub visible_blocker: bool,
-
     pub visible_idle: bool,
-
     pub visible_working: bool,
-
     pub process_exited: bool,
-
     pub foreground_returned_to_shell: bool,
-
     pub stale_report: bool,
-
     pub subagents_active: u32,
-
     pub revision: u64,
 }
 

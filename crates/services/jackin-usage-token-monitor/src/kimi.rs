@@ -34,7 +34,6 @@ fn find_wire_files() -> Result<Vec<PathBuf>, super::ProviderReadDegraded> {
         let Some(sessions) = provider_entries(group.path())? else {
             continue;
         };
-
         for session in sessions {
             let session = session
                 .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
@@ -60,7 +59,6 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> super::PollStatus {
             if let Some(model) = val.get("model").and_then(|v| v.as_str()) {
                 acc.model = Some(model.to_owned());
             }
-
             if let Some(usage) = val.get("token_usage") {
                 acc.input += json_u64(usage, "input_other");
                 acc.output += json_u64(usage, "output");

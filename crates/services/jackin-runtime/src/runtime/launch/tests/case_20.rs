@@ -74,7 +74,6 @@ plugins = []
             .lines()
             .any(|line| line == "HTTPS_PROXY=http://proxy.internal:8305")
     );
-
     assert!(
         observed
             .contents

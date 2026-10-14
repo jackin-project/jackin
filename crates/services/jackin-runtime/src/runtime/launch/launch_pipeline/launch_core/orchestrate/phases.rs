@@ -96,7 +96,6 @@ where
         admission_config,
         initialized,
     };
-
     launch.steps.stage_started(
         crate::runtime::progress::LaunchStage::Network,
         "wiring private network",

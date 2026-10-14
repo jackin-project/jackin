@@ -81,7 +81,6 @@ impl Session {
         self.gate_states.clear();
         self.saw_agent_foreground = false;
         self.subagents_active = 0;
-
         self.osc.clear_agent_signals();
     }
 
@@ -139,7 +138,6 @@ impl Session {
         if foreground_is_agent {
             self.saw_agent_foreground = true;
         }
-
         let foreground_returned_to_shell = self.saw_agent_foreground
             && !foreground_is_agent
             && foreground.has_group()
@@ -182,7 +180,6 @@ impl Session {
 
         let process = self.sample_process_evidence_with(sampler, now);
         let exiting = process.process_exited || process.foreground_returned_to_shell;
-
         let screen = rule_registry
             .and_then(|registry| {
                 let rows = self.visible_screen_rows();
@@ -211,17 +208,14 @@ impl Session {
             },
         };
         let candidate = apply_watchdog(arbitrate(&snapshot, self.status.raw, now), now);
-
         let stuck = candidate
             .notes
             .iter()
             .any(|n| matches!(n, EvidenceNote::WatchdogDemoted));
-
         let mut transition = None;
         let mut flap = false;
         if debounce(self.state, &candidate, &mut self.pending_transition, now).is_some() {
             let previous = self.state;
-
             let winner = candidate.winner.clone();
             if let Some(effective) = self.status.publish_raw(candidate) {
                 self.state = effective;

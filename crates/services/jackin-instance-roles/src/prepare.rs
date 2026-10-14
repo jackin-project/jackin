@@ -96,7 +96,6 @@ impl RoleState {
         let jackin_state_dir = root.join("state");
 
         std::fs::create_dir_all(&home_dir)?;
-
         std::fs::create_dir_all(&jackin_state_dir)?;
 
         let hosts_yml = gh_config_dir.join("hosts.yml");

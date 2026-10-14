@@ -17,10 +17,8 @@ pub enum AntigravityWindow {
 pub struct AntigravityPool {
     pub(crate) family: AntigravityFamily,
     pub(crate) window: Option<AntigravityWindow>,
-
     pub(crate) remaining_percent: Option<u8>,
     pub(crate) reset_at: Option<i64>,
-
     pub(crate) source_label: Option<String>,
 }
 
@@ -29,6 +27,5 @@ pub struct AntigravityUsage {
     pub(crate) pools: Vec<AntigravityPool>,
     pub(crate) identity: Option<String>,
     pub(crate) plan: Option<String>,
-
     pub(crate) legacy_fallback: bool,
 }

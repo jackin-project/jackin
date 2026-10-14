@@ -154,7 +154,6 @@ async fn clone_materialization_runs_local_shared_clone_and_writes_record() {
         "clone mode must not create or switch to a scratch branch: {:?}",
         runner.run_recorded
     );
-
     assert!(
         runner
             .run_recorded

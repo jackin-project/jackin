@@ -19,13 +19,9 @@ use jackin_usage_provider_core::{canonical_usage_key, dispatch_key_for_route};
 
 pub enum ProviderCredentialSecretOutcome {
     Resolved(String),
-
     Missing,
-
     Denied,
-
     Malformed,
-
     InteractionRequired,
 }
 
@@ -43,7 +39,6 @@ impl std::fmt::Debug for ProviderCredentialSecretOutcome {
 
 pub struct ProviderCredentialSecretResolution {
     pub declaration: EnvValue,
-
     pub outcome: ProviderCredentialSecretOutcome,
 }
 
@@ -77,7 +72,6 @@ pub trait ProviderCredentialSecretSource: Send + Sync {
 
 struct CachedResolution {
     key: String,
-
     dispatch_key: String,
     owner: UsageCredentialOwner,
     declaration: EnvValue,
@@ -146,7 +140,6 @@ impl<S: ProviderCredentialSecretSource> CachedProviderCredentialResolver<S> {
         let declaration = self
             .source
             .lookup_declaration(config, workspace, role, entry)?;
-
         let cache_key = canonical_usage_key(entry.owner);
         let governed_name =
             jackin_usage_host_credentials::governed_name_for_account_alias(entry.name);

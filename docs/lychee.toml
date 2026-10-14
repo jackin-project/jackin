@@ -7,100 +7,48 @@
 
 
 
-
-
 cache = true
-
-
 
 accept = ["100..=103", "200..=299", "429"]
 exclude = [
-
-
   "https://ampcode\\.com/",
-
   "https://chatgpt\\.com/",
-
   "https://openai\\.com/index/introducing-gpt-5-3-codex-spark/",
   "https://help\\.openai\\.com/en/articles/9793128-about-chatgpt-pro-tiers",
-
-
   "https://api\\.github\\.com/repos/jackin-project/jackin/issues",
-
-
-
   "https://api\\.github\\.com/repos/[^/]+/[^/]+/contents/",
-
-
   "https://api\\.github\\.com/repos/",
-
   "https://api\\.github\\.com/users/[^/]+/repos",
-
   "https://dl\\.acm\\.org/doi/10\\.1145/3735636",
-
-
   "https://milvus\\.io/blog/claude-context-vs-claude-code-complete-code-context-solution-for-ai-coding-assistants\\.md",
   "https://milvus\\.io/blog/claude-context-reduce-claude-code-token-usage\\.md",
   "https://milvus\\.io/docs/overview\\.md",
-
   "https://grok\\.com/supergrok",
-
   "https://paul-hackenberger\\.medium\\.com/the-ultimate-token-saving-stack-rtk-caveman-and-tokensave-163badadd9ec",
-
   "https://git\\.joshthomas\\.dev/mirrors/claude-code-sandbox/src/commit/b44cf1a84e0bab3f5f2ded8a871cbdc43ce50249/docs/lift-and-shift-credentials\\.md",
   "https://winbuzzer\\.com/2026/02/24/openai-chatgpt-pro-lite-100-dollar-plan-found-checkout-code-xcxwbn/",
   "https://pranoti\\.thesciencetalk\\.com/perspectives/claude-5-hour-session-limit-how-it-works/",
-
   "https://xygeni\\.io/blog/dockerfile-secrets-why-layers-keep-your-sensitive-data-forever/",
-
   "https://www\\.infoq\\.com/news/2025/11/toon-reduce-llm-cost-tokens/",
-
-
   "https://handler\\.dev/",
-
-
   "https://vibe-kb\\.com/",
-
-
   "https://www\\.nngroup\\.com/",
-
-
   "https://code\\.visualstudio\\.com/",
-
-
   "https://code\\.claude\\.com/",
-
-
   "https://qdrant\\.tech/benchmarks/",
-
-
   "https://wezterm\\.org/",
-
-
   "https://xtermjs\\.org/",
-
   "https://www\\.reddit\\.com/r/rust/comments/1rxbygj/curated_list_of_clippy_lints_worth_adding_to_the/",
-
-
-
-
   "https://raw\\.githubusercontent\\.com/nguyenphutrong/quotio/HEAD/Quotio/Services/GLMQuotaFetcher\\.swift",
   "https://github\\.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-shell/src/auth/model\\.rs",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
 
-
 format = "compact"
 index_files = ["index.html"]
-
-
-
 max_concurrency = 128
 max_redirects = 10
-
-
-
 
 max_retries = 2
 mode = "plain"
@@ -115,8 +63,6 @@ scheme = ["https", "http", "file", "mailto"]
 [hosts."github.com"]
 concurrency = 16
 request_interval = "50ms"
-
-
 
 [hosts."api.github.com"]
 concurrency = 8

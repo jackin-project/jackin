@@ -23,9 +23,8 @@ pub use env_impls::*;
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
 pub use general_impls::*;
-pub use trust_impls::*;
-
 use std::collections::BTreeMap;
+pub use trust_impls::*;
 
 use crate::tui::auth::AuthKind;
 

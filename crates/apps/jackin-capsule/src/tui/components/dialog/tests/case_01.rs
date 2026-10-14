@@ -167,7 +167,6 @@ fn picker_enter_on_section_label_is_noop() {
 #[test]
 fn click_outside_dialog_dismisses() {
     let mut d = palette();
-
     assert_eq!(d.handle_click(0, 0, 40, 100, None), DialogAction::Dismiss);
 }
 
@@ -175,7 +174,6 @@ fn click_outside_dialog_dismisses() {
 fn clickable_at_reports_container_info_copy_target() {
     let d = container_info_fixture();
     let (row, col, _, _) = d.box_rect(40, 100);
-
     assert!(d.clickable_at(row + 2, col + 22, 40, 100, None));
     assert!(!d.clickable_at(row + 3, col + 22, 40, 100, None));
     assert!(!d.clickable_at(0, 0, 40, 100, None));
@@ -199,7 +197,6 @@ fn clickable_at_skips_agent_picker_section_labels() {
 #[test]
 fn palette_typing_filters_items_and_resets_selection() {
     let mut d = palette_with(3, String::new());
-
     for &c in b"split" {
         d.handle_key(&[c], None);
     }
@@ -236,7 +233,6 @@ fn split_direction_picker_enter_emits_split_direction() {
         selected: 0,
         filter: String::new(),
     };
-
     match d.handle_key(b"\r", None) {
         DialogAction::SplitDirection(dir) => assert_eq!(dir, SplitDirection::Right),
         other => panic!("expected SplitDirection(Right), got {other:?}"),
@@ -275,7 +271,6 @@ fn palette_enter_after_filter_emits_matching_command() {
     for &c in b"close" {
         d.handle_key(&[c], None);
     }
-
     match d.handle_key(b"\r", None) {
         DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Close),
         other => panic!("expected Close, got {other:?}"),
@@ -348,7 +343,6 @@ fn picker_typing_cla_filters_to_claude() {
     for &c in b"cla" {
         d.handle_key(&[c], None);
     }
-
     match d.handle_key(b"\r", None) {
         DialogAction::SpawnAgent { agent, .. } => {
             assert_eq!(agent.as_deref(), Some("claude"));

@@ -152,7 +152,6 @@ fn failure_popup_renders_over_stale_build_log_overlay() {
 #[test]
 fn long_failure_body_is_reachable_by_scrolling() {
     let area = Rect::new(0, 0, 90, 18);
-
     let long_body = format!("FIRST {}", "filler ".repeat(150)) + "LAST";
     let mut view = initial_view();
     view.failure = Some(LaunchFailure {

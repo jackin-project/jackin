@@ -190,7 +190,6 @@ impl LaunchCoreFixture {
         let selector = RoleSelector::new(None, "agent-smith");
         let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
         seed_valid_role_repo(&cached_repo.repo_dir);
-
         std::fs::write(
             cached_repo.repo_dir.join("jackin.role.toml"),
             r#"version = "v1alpha3"

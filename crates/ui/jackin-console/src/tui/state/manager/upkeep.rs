@@ -24,10 +24,8 @@ impl ManagerState<'_> {
         self.instance_snapshots = snapshot.snapshots;
         self.instances_refresh_interval = snapshot.next_interval;
         self.instances_last_error = None;
-
         self.preview_pane_cursor
             .retain(|key, _| self.instance_snapshots.contains_key(key));
-
         self.selected = selected_index(self.selected, self.row_count());
     }
 
@@ -37,7 +35,6 @@ impl ManagerState<'_> {
         self.instance_session_errors.clear();
         self.live_instance_admissions.clear();
         self.expanded_workspaces.clear();
-
         self.instance_snapshots.clear();
         self.preview_pane_cursor.clear();
         self.current_dir_expanded = false;

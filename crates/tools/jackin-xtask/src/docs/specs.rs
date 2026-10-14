@@ -194,7 +194,6 @@ fn verify_citation(root: &Path, citation: &str) -> Result<String, String> {
         path.push("tests.rs");
         candidates.push(path);
     }
-
     if let Some(suite) = candidates.first()
         && let Some(suite_dir) = suite.parent()
     {
@@ -364,7 +363,6 @@ fn reconcile_with_nextest(
             ));
             continue;
         };
-
         let suffix = format!("::{fn_name}");
         let hit = names
             .iter()
@@ -406,7 +404,6 @@ fn load_nextest_tests(
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut names = BTreeSet::new();
-
         for line in stdout.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -435,7 +432,6 @@ fn collect_test_ids(value: &serde_json::Value, out: &mut BTreeSet<String>) {
             if let Some(id) = map.get("id").and_then(|v| v.as_str()) {
                 out.insert(id.to_owned());
             }
-
             for (k, v) in map {
                 if matches!(k.as_str(), "testcases" | "tests") {
                     collect_testcase_entries(v, out);

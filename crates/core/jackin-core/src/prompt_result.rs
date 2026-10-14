@@ -4,6 +4,5 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptResult {
     Value(String),
-
     Skipped,
 }

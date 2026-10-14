@@ -15,12 +15,9 @@ use crate::cmd;
 #[derive(Args)]
 pub(crate) struct SignNotarizeArgs {
     app: Option<PathBuf>,
-
     out_zip: Option<PathBuf>,
-
     #[arg(long)]
     version: Option<String>,
-
     #[arg(long)]
     build: Option<String>,
 }
@@ -220,7 +217,6 @@ fn run_notarytool(submit_zip: &Path, notary_json: &Path) -> Result<()> {
 
     let out = cmd::output_string(&mut base).context("notarytool submit")?;
     fs::write(notary_json, &out)?;
-
     progress(out.trim());
     Ok(())
 }
@@ -232,7 +228,6 @@ fn parse_notary_status(path: &Path) -> Result<String> {
     {
         return Ok(status.to_owned());
     }
-
     if let Some(last) = raw.lines().last()
         && let Ok(v) = serde_json::from_str::<Value>(last)
         && let Some(status) = v.get("status").and_then(Value::as_str)
@@ -289,7 +284,6 @@ fn check_expected_team(app: &Path) -> Result<()> {
     if expected.is_empty() {
         return Ok(());
     }
-
     #[expect(
         clippy::disallowed_methods,
         reason = "codesign -dv emits identity on stderr; cmd helpers only surface stdout on success"

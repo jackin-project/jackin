@@ -28,7 +28,6 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
-
         if let Self::ExecPicker(state) = self {
             return exec_picker_handle_key(state, key);
         }
@@ -48,7 +47,6 @@ impl Dialog {
                 DialogAction::Redraw
             };
         }
-
         if matches!(self, Self::Usage { .. }) {
             if matches!(key, b"r" | b"R") {
                 return DialogAction::RefreshUsage;
@@ -124,7 +122,6 @@ impl Dialog {
             {
                 return DialogAction::Dismiss;
             }
-
             let body_scroll = match self {
                 Self::ContainerInfo { scroll, .. } | Self::GitHubContext { scroll, .. } => {
                     Some(scroll)
@@ -208,7 +205,6 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
-
         if key.len() > 1 && !key.contains(&0x1B) {
             let mut result = DialogAction::Redraw;
             for byte in key {

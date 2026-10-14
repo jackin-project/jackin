@@ -57,10 +57,8 @@ fn golden_walk_5a_direction_change_edit_branch_matches_uninterrupted() {
     steps.push(observed_step(&prelude));
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
     steps.push(observed_step(&prelude));
-
     handle_prelude_modal(&mut prelude, key(KeyCode::Esc));
     steps.push(observed_step(&prelude));
-
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
     steps.push(observed_step(&prelude));
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
@@ -114,10 +112,8 @@ fn golden_walk_5b_direction_change_same_path_branch_matches_uninterrupted() {
     steps.push(observed_step(&prelude));
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
     steps.push(observed_step(&prelude));
-
     handle_prelude_modal(&mut prelude, key(KeyCode::Esc));
     steps.push(observed_step(&prelude));
-
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));
     steps.push(observed_step(&prelude));
     handle_prelude_modal(&mut prelude, key(KeyCode::Enter));

@@ -24,23 +24,17 @@ pub struct ManagerState<'a> {
     pub instances: Vec<jackin_core::InstanceIndexEntry>,
     pub current_dir: String,
     pub selected: usize,
-
     pub list_modal: Option<Modal<'a>>,
-
     pub status_overlay: Option<crate::tui::components::StatusPopupState>,
-
     pub keyboard_help: Option<termrock::widgets::KeyboardHelpState>,
     pub inline_role_picker: Option<RolePickerState>,
     pub inline_agent_picker: Option<(jackin_core::RoleSelector, AgentChoiceState)>,
-
     pub inline_new_session_picker: Option<(
         String,
         AgentChoiceState,
         Vec<crate::services::launch::AccountChoice>,
     )>,
-
     pub inline_account_picker: Option<AccountPickerState<String>>,
-
     pub launch_account_picker: Option<AccountPickerState<jackin_core::RoleSelector>>,
     pub list_mounts_scroll: termrock::widgets::ScrollAreaState,
     pub list_global_mounts_scroll: termrock::widgets::ScrollAreaState,
@@ -51,18 +45,12 @@ pub struct ManagerState<'a> {
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
     pub hover_target: Option<ManagerHoverTarget>,
-
     pub hover: termrock::interaction::HoverState<crate::tui::input::mouse::ConsoleHoverTarget>,
     pub mount_info_cache: MountInfoCache,
-
     pub op_cache: Rc<RefCell<OpCache>>,
-
     pub op_available: bool,
-
     pub(in crate::tui) pending_effects: Vec<ManagerEffect>,
-
     pub cached_term_size: Rect,
-
     pub instances_last_refresh: Option<std::time::Instant>,
     pub(in crate::tui) instances_refresh_interval: std::time::Duration,
     pub(in crate::tui) instances_refresh_generation: u64,
@@ -80,28 +68,17 @@ pub struct ManagerState<'a> {
             Result<crate::tui::screens::settings::model::AccountScanOutcome, String>,
         )>,
     >,
-
     pub(in crate::tui) instances_last_error: Option<String>,
-
     pub expanded_workspaces: BTreeSet<usize>,
-
     pub current_dir_expanded: bool,
-
     pub instance_sessions: HashMap<String, Vec<jackin_core::SessionRecord>>,
-
     pub(in crate::tui) instance_session_errors: HashSet<String>,
-
     pub live_instance_admissions:
         HashMap<String, Vec<crate::services::launch::LiveInstanceAdmission>>,
-
     pub instance_snapshots: HashMap<String, jackin_protocol::InstanceSnapshot>,
-
     pub preview_focused: bool,
-
     pub preview_pane_cursor: HashMap<String, usize>,
-
     pub usage: UsageRouteState,
-
     pub usage_snapshot: UsageScreenState,
 }
 

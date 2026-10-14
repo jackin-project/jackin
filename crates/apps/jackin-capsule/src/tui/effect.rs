@@ -4,6 +4,5 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     SendAttachInput(Vec<u8>),
-
     ResizeAttachClient { rows: u16, cols: u16 },
 }

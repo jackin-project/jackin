@@ -31,7 +31,6 @@ fn as_str_matches_serde() {
         NetworkGrant::Open,
     ] {
         let serde_form = serde_json::to_string(&grant).expect("serialize NetworkGrant");
-
         assert_eq!(serde_form, format!("{:?}", grant.as_str()));
     }
 }

@@ -281,12 +281,10 @@ fn s8_removal_while_detail_open_returns_to_overview() {
     let manager = s8_manager(state);
     let text = s8_render_full(&manager, 80, 24);
     assert!(text.contains("Overview"), "{text}");
-
     assert!(
         text.contains("Previously selected account unavailable"),
         "{text}"
     );
-
     assert!(manager.usage.screen.as_ref().unwrap().detail);
 }
 
@@ -366,7 +364,6 @@ fn s8_long_unicode_labels_render() {
     assert!(text.contains("Anthropic / Claude"), "{text}");
     assert!(text.contains("🚀"), "{text}");
     assert!(text.contains("73% left"), "{text}");
-
     let squeezed: String = text.chars().filter(|c| !c.is_whitespace()).collect();
     assert!(squeezed.contains("巴黎"), "{text}");
     assert!(squeezed.contains("每周配额"), "{text}");

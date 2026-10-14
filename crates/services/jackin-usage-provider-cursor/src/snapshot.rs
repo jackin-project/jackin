@@ -86,7 +86,6 @@ pub fn cursor_snapshot_with_auth(
     let (grants, grants_error) =
         split_fetch(Some(fetch_cursor_credit_grants(dashboard_base, token)));
     let (sand, sand_error) = split_fetch(Some(fetch_cursor_sand_usage(dashboard_base, token)));
-
     let rest = auth.user_id.as_deref().filter(|_| cursor_default_base());
     let (summary, summary_error) =
         split_fetch(rest.map(|user| fetch_cursor_usage_summary(user, token)));
@@ -144,7 +143,6 @@ pub fn cursor_snapshot_with_auth(
     } else {
         UsageSnapshotStatus::Stale
     };
-
     let mut failures = Vec::new();
     failures.extend(
         [

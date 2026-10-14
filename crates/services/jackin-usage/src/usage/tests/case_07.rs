@@ -16,7 +16,6 @@ fn summary_bucket_selects_first_ranked_limit_over_tighter_spend() {
         }
     }))
     .expect("valid Claude OAuth usage");
-
     let buckets = usage.into_buckets(1_781_185_560);
     let chosen = summary_bucket(&buckets).expect("a ranked bucket");
     assert_eq!(chosen.status_slot, Some(StatusSlot::Weekly));
@@ -26,7 +25,6 @@ fn summary_bucket_selects_first_ranked_limit_over_tighter_spend() {
 #[test]
 fn usage_tab_status_label_selects_ranked_limit_and_names_unslotted_winner() {
     let reset_at = "2026-07-03T06:59:59Z";
-
     let ranked_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
         "limits": [
             { "kind": "session", "group": "session", "percent": 50,
@@ -131,7 +129,6 @@ fn codex_oauth_response_maps_primary_weekly_spark_and_credits() {
     assert!(buckets.iter().any(
         |bucket| bucket.label == "Codex Spark 5-hour" && bucket.remaining_percent == Some(100)
     ));
-
     assert!(buckets.iter().all(|bucket| {
         !bucket.label.starts_with("Codex Spark") || bucket.status_slot.is_none()
     }));

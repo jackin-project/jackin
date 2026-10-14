@@ -11,17 +11,13 @@ pub struct WorkspaceName(String);
 pub enum WorkspaceNameError {
     #[error("workspace name cannot be empty")]
     Empty,
-
     #[error("workspace name {0:?} is reserved")]
     Reserved(String),
-
     #[error("workspace name {0:?} cannot contain path separators")]
     PathSeparator(String),
-
     #[cfg(windows)]
     #[error("workspace name {0:?} is reserved on Windows")]
     WindowsReserved(String),
-
     #[cfg(windows)]
     #[error("workspace name {0:?} cannot end with a dot or space on Windows")]
     WindowsTrailing(String),

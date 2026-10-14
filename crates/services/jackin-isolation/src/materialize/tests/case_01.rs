@@ -9,7 +9,6 @@ fn materialize_api_accepts_path_label_rejected_as_config_stem() {
     WorkspaceName::parse(path).unwrap_err();
     let label = WorkspaceLabel::parse(path).expect("path label");
     assert_eq!(label.as_str(), path);
-
     let _ctx = PreflightContext {
         workspace_label: label,
         force: false,
@@ -130,7 +129,6 @@ async fn write_git_overrides_writes_two_files_with_correct_content() {
     assert_eq!(aux.host_git_dir, "/host/jackin/.git");
     assert_eq!(aux.host_git_target, "/jackin/host/workspace/jackin/.git");
     assert_eq!(aux.git_file_target, "/workspace/jackin/.git");
-
     assert_eq!(
         aux.gitdir_back_target,
         "/jackin/host/workspace/jackin/.git/worktrees/jackin-the-architect/gitdir",
@@ -176,7 +174,6 @@ async fn write_git_overrides_is_idempotent() {
         "/host/jackin",
     )
     .unwrap();
-
     assert_eq!(first, second);
 }
 

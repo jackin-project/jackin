@@ -211,7 +211,6 @@ fn unauthorized_errors_are_distinguished_from_transient() {
     assert!(!usage_error_is_unauthorized(&ProviderError::from(
         ProviderHttpError::Decode("payload mentions 403".to_owned()),
     )));
-
     assert!(!usage_error_is_unauthorized(&ProviderError::from(
         ProviderHttpError::HttpStatus {
             status: 429,

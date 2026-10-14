@@ -15,7 +15,6 @@ pub struct RolePickerState<R: RoleChoice> {
     pub list_state: ListState<usize>,
     pub filter: String,
     pub filtered: Vec<R>,
-
     pub confirm_label: String,
 }
 
@@ -136,7 +135,6 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
 
     let theme = termrock::style::DesignSystem::default();
     let mut filter = TextInputState::new(&state.filter).with_allow_empty(true);
-
     let filter_columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(7), Constraint::Min(1)])

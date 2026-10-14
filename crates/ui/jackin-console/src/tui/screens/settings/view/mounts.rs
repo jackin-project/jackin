@@ -125,7 +125,6 @@ pub fn clamp_mounts_scroll_x_for_frame(
     scroll: &mut termrock::widgets::ScrollAreaState,
 ) {
     let areas = settings_frame_areas(area, 2);
-
     scroll.set_content_size(u16::try_from(content_width).unwrap_or(u16::MAX), u16::MAX);
     scroll.set_viewport(
         u16::try_from(termrock::scroll::viewport_width(areas.body)).unwrap_or(u16::MAX),

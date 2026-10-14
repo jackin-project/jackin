@@ -162,10 +162,8 @@ const DEV_CYCLE_ALLOWLIST: &[(&str, &str)] = &[];
 pub(crate) struct LintArchArgs {
     #[command(flatten)]
     output: FormatArgs,
-
     #[arg(long)]
     dump: bool,
-
     #[arg(long)]
     strict: bool,
 }
@@ -202,9 +200,7 @@ pub(crate) fn run(args: LintArchArgs) -> Result<()> {
 
 fn run_inner(args: LintArchArgs) -> Result<()> {
     let root = repo_root()?;
-
     crate::container_paths_gate::check_turso_sole_owner(&root)?;
-
     crate::ratchet::check_curated_pub_mods(&root)?;
     check_tui_ownership(&root)?;
     let metadata = read_metadata(&root)?;

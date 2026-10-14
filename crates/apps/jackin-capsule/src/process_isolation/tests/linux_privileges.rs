@@ -335,6 +335,5 @@ fn open(path: &Path, flags: libc::c_int) -> libc::c_int {
     let Ok(path) = std::ffi::CString::new(path.to_string_lossy().as_bytes()) else {
         return -1;
     };
-
     unsafe { libc::open(path.as_ptr(), flags, 0o600) }
 }

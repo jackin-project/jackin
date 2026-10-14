@@ -12,7 +12,6 @@ const BENCH_ROWS: u16 = 50;
 
 fn make_test_grid() -> DamageGrid {
     let mut grid = DamageGrid::new(BENCH_ROWS, BENCH_COLS, 1000);
-
     for row in 0..BENCH_ROWS {
         let line = format!(
             "{:04}: {}\r\n",
@@ -169,7 +168,6 @@ fn bench_socket_backend_output(c: &mut Criterion) {
                         frame.render_widget(CustomPaneBlit { grid: &grid }, area);
                     })
                     .unwrap();
-
                 let output = terminal.backend_mut().take_output();
                 black_box(output.len());
             });

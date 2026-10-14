@@ -84,7 +84,6 @@ fn private_folders_collapse_to_a_count() {
     ];
     let (headline, rows) = summary(&running, &idx);
     assert!(headline.contains("3 agents"));
-
     assert!(rows.iter().any(|r| r == "2 folders"), "rows: {rows:?}");
     assert!(
         !rows.iter().any(|r| r.contains("proj-a")),

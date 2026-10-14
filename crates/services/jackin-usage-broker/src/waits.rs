@@ -108,7 +108,6 @@ impl Drop for WaitPool {
             .workers
             .get_mut()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-
         for worker in workers.drain(..) {
             drop(worker.join());
         }

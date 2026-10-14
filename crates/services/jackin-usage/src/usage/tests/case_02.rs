@@ -8,7 +8,6 @@ fn first_credential_uses_home_first_then_handoff_fallback() {
     let dir = tempfile::tempdir().expect("tempdir");
     let home = dir.path().join("home.credentials.json");
     let handoff = dir.path().join("handoff.credentials.json");
-
     fs::write(&home, r#"{"oauthAccount":{"emailAddress":"a@b.c"}}"#).expect("write home");
     fs::write(
         &handoff,
@@ -24,7 +23,6 @@ fn first_credential_uses_home_first_then_handoff_fallback() {
             .as_ref()
             .is_some_and(|c| { c.access_token.as_str() == "handoff-token" })
     );
-
     fs::write(&home, r#"{"claudeAiOauth":{"accessToken":"home-token"}}"#).expect("rewrite home");
     let resolved = first_credential(&[home, handoff], load_claude_oauth_credentials);
     assert!(
@@ -66,6 +64,5 @@ fn codex_rpc_maps_spark_windows_and_reset_credits() {
     assert!(labels.contains(&"Codex Spark 5-hour".to_owned()));
     assert!(labels.contains(&"Codex Spark Weekly".to_owned()));
     assert!(labels.contains(&"Limit Reset Credits".to_owned()));
-
     assert_eq!(labels.iter().filter(|l| l.as_str() == "Session").count(), 1);
 }

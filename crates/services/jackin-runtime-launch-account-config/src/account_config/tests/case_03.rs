@@ -339,7 +339,6 @@ fn codex_catalog_rotation_preserves_stale_container_reference() {
         None,
     )];
     let second_config = config;
-
     configure_for_test(temp.path(), &second_config, &second_instances).unwrap();
     let document: toml::Value =
         toml::from_str(&std::fs::read_to_string(directory.join("config.toml")).unwrap()).unwrap();

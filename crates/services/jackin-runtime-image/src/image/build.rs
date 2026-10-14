@@ -151,7 +151,6 @@ pub async fn ensure_local_role_base(
     let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
 
     let mut args = local_image_build_args();
-
     let construct_is_locally_built = construct != jackin_manifest::repo_contract::CONSTRUCT_IMAGE;
     if rebuild && !construct_is_locally_built {
         args.push("--pull");
@@ -279,7 +278,6 @@ pub async fn build_agent_image(
         "create_build_context",
         None,
     );
-
     let agents_to_install = validated_repo.manifest.supported_agents();
     let build_result = create_derived_build_context_for_agents(
         &cached_repo.repo_dir,
@@ -337,9 +335,7 @@ pub async fn build_agent_image(
         "JACKIN_RUN_UID={}",
         jackin_runtime_identity::identity::host_uid().unwrap_or(1000)
     );
-
     let current_construct = jackin_manifest::repo_contract::construct_image();
-
     let construct_mismatch = if force_base_rebuild {
         false
     } else {
@@ -385,7 +381,6 @@ pub async fn build_agent_image(
     for label in &recipe_labels {
         build_args.extend(["--label", label]);
     }
-
     let agent_version_labels: Vec<String> = runtime_binaries
         .prefetched_agent_versions
         .iter()
@@ -430,7 +425,6 @@ pub async fn build_agent_image(
         ..RunOptions::default()
     };
     let build_future = runner.run("docker", &build_args, None, &build_options);
-
     let build_result = match progress.as_deref() {
         Some(p) => p.while_waiting(build_future).await,
         None => build_future.await,

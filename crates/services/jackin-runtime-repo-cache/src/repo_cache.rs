@@ -51,7 +51,6 @@ fn repo_lock_gate(path: &std::path::Path) -> Arc<RepoLockGate> {
     let mut gates = REPO_LOCK_GATES
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-
     gates.retain(|_, gate| {
         Arc::strong_count(gate) > 1
             || gate
@@ -88,14 +87,12 @@ async fn acquire_repo_lock(path: &std::path::Path) -> anyhow::Result<RepoLock> {
 pub fn parse_repo_name(url: &str) -> Option<String> {
     let url = url.trim();
     let stripped = url.strip_suffix(".git").unwrap_or(url);
-
     if let Some(rest) = stripped
         .strip_prefix("https://")
         .or_else(|| stripped.strip_prefix("http://"))
     {
         return rest.find('/').map(|i| rest[i + 1..].to_string());
     }
-
     stripped.rsplit_once(':').map(|(_, p)| p.to_owned())
 }
 
@@ -305,7 +302,6 @@ pub async fn register_agent_repo(
         .map_err(RepoError::CloneFailed)?;
 
     let validated_repo = validate_role_repo(&temp_repo).map_err(RepoError::InvalidRoleRepo)?;
-
     std::fs::rename(&temp_repo, &cached_repo.repo_dir).with_context(|| {
         format!(
             "failed to install role repository at {}",
@@ -447,7 +443,6 @@ pub async fn resolve_agent_repo_with(
         .repo_dir
         .strip_prefix(&selector_base)
         .unwrap_or_else(|_| std::path::Path::new(""));
-
     let lock_path = {
         let rel_str = rel.to_string_lossy();
         let file_name = if rel_str.is_empty() {

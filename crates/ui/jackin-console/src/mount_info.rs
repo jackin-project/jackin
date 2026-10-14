@@ -6,9 +6,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub enum MountKind {
     Missing,
-
     Folder,
-
     Git {
         branch: GitBranch,
         origin: Option<GitOrigin>,
@@ -18,7 +16,6 @@ pub enum MountKind {
 #[derive(Debug, Clone)]
 pub enum GitOrigin {
     Github { remote_url: String, web_url: String },
-
     Other { remote_url: String },
 }
 
@@ -61,7 +58,6 @@ fn resolve_gitdirs(workdir: &Path) -> Option<(PathBuf, PathBuf)> {
     if !dotgit.is_file() {
         return None;
     }
-
     let content = std::fs::read_to_string(&dotgit).ok()?;
     let gitdir_line = content.lines().find_map(|line| {
         line.strip_prefix("gitdir:")
@@ -75,7 +71,6 @@ fn resolve_gitdirs(workdir: &Path) -> Option<(PathBuf, PathBuf)> {
     if !abs.is_dir() {
         return None;
     }
-
     let commondir_ptr = abs.join("commondir");
     if commondir_ptr.is_file()
         && let Ok(raw) = std::fs::read_to_string(&commondir_ptr)
@@ -90,7 +85,6 @@ fn resolve_gitdirs(workdir: &Path) -> Option<(PathBuf, PathBuf)> {
             return Some((abs, common));
         }
     }
-
     Some((abs.clone(), abs))
 }
 
@@ -139,12 +133,10 @@ fn remote_points_at_github(remote: &str) -> bool {
     if let Some(rest) = remote.strip_prefix("git@") {
         return rest.starts_with("github.com:");
     }
-
     if let Some(rest) = remote.strip_prefix("ssh://") {
         let rest = rest.strip_prefix("git@").unwrap_or(rest);
         return rest.starts_with("github.com/");
     }
-
     remote.starts_with("https://github.com/") || remote.starts_with("http://github.com/")
 }
 
@@ -172,7 +164,6 @@ fn remote_to_web(remote: &str) -> Option<String> {
     if !remote_points_at_github(remote) {
         return None;
     }
-
     let remote = remote.strip_suffix(".git").unwrap_or(remote);
 
     if let Some(rest) = remote.strip_prefix("git@")
@@ -180,11 +171,9 @@ fn remote_to_web(remote: &str) -> Option<String> {
     {
         return Some(format!("https://{host}/{path}"));
     }
-
     if remote.starts_with("https://") || remote.starts_with("http://") {
         return Some(remote.to_owned());
     }
-
     if let Some(rest) = remote.strip_prefix("ssh://") {
         let rest = rest.strip_prefix("git@").unwrap_or(rest);
         if let Some((host, path)) = rest.split_once('/') {

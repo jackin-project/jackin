@@ -286,7 +286,6 @@ fn plan_parses_op_read_references() {
     assert_eq!(plan.op_refs[1].reference.op, "op://work/zai/dev/field");
     assert_eq!(plan.op_refs[1].reference.path, "work/zai/dev/field");
     assert_eq!(plan.op_refs[1].reference.account.as_deref(), Some("work"));
-
     let long_arg = "x".repeat(80);
     let parsed = parse_zshrc_source(&format!(
         "A_API_KEY=$(op item get x)\nB_API_KEY=$(op read op://{long_arg}/i/f)\n"

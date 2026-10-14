@@ -164,7 +164,6 @@ fn credentials_nested_symlink_is_rejected_not_skipped() {
 
     assert!(error.to_string().contains("symlink"), "{error:#}");
     assert!(!kimi_dir.exists(), "failed source must not publish a tree");
-
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "must_not_leak");
 }
 

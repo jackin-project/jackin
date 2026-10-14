@@ -1,8 +1,6 @@
 
 
-
 export const RAIN_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*<>{}[]|/\\~';
-
 
 export function ageToColor(age: number): string | null {
   if (age === 0)  return 'rgb(255,255,255)';
@@ -13,7 +11,6 @@ export function ageToColor(age: number): string | null {
   if (age <= 24)  return 'rgb(0,80,18)';
   return null;
 }
-
 
 export function shouldMutate(age: number, rng: () => number = Math.random): boolean {
   const roll = rng() * 100;
@@ -61,7 +58,6 @@ export function createRainState(cols: number, rows: number, rng: () => number = 
 }
 
 export function tickRain(state: RainState, rng: () => number = Math.random): void {
-
   for (let r = 0; r < state.rows; r++) {
     const row = state.grid[r];
     for (let c = 0; c < state.cols; c++) {
@@ -75,7 +71,6 @@ export function tickRain(state: RainState, rng: () => number = Math.random): voi
       }
     }
   }
-
 
   for (let c = 0; c < state.cols; c++) {
     const col = state.columns[c];

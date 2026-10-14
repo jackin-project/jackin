@@ -162,7 +162,6 @@ fn api_key_mode_wipes_role_auth_json() {
     let temp = tempdir().unwrap();
     let auth_json = temp.path().join("auth.json");
     std::fs::write(&auth_json, "{\"stale\":\"creds\"}").unwrap();
-
     let (host_home, _) = stage_host_auth_json(&temp, "should-not-be-copied");
 
     let (outcome, mounted) =
@@ -232,7 +231,6 @@ fn rejects_symlink_at_auth_json_under_ignore() {
         err.to_string().contains("symlink"),
         "expected symlink rejection, got: {err}"
     );
-
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "secret");
 }
 
@@ -292,7 +290,6 @@ fn surfaces_unreadable_host_auth_json_as_error() {
     std::fs::create_dir_all(&host_codex).unwrap();
     let host_auth_json = host_codex.join("auth.json");
     std::fs::write(&host_auth_json, "{\"auth_mode\":\"chatgpt\"}").unwrap();
-
     std::fs::set_permissions(&host_auth_json, std::fs::Permissions::from_mode(0o000)).unwrap();
     if std::fs::read_to_string(&host_auth_json).is_ok() {
         return;

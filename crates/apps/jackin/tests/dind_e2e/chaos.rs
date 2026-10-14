@@ -53,7 +53,6 @@ pub(super) enum Fault {
 
 pub(super) struct ScheduledFault {
     pub fault: Fault,
-
     pub delay: Duration,
 }
 
@@ -129,7 +128,6 @@ pub(super) fn apply_fault(fault: Fault, container: &str) {
                 .args(["exec", container, "kill", "-9", "1"])
                 .status()
                 .expect("docker exec kill -9 1");
-
             let _ = status;
         }
         Fault::DropControlSocket => {
@@ -190,7 +188,6 @@ pub(super) fn primary_running_container(role_key: &str) -> Option<String> {
 
 pub(super) fn assert_cleanup_classified(home: &Path) {
     let diag = home.join(".local/share/jackin/diagnostics");
-
     if diag.is_dir() {
         let has_any = std::fs::read_dir(&diag)
             .map(|rd| rd.filter_map(Result::ok).next().is_some())

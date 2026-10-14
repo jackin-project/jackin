@@ -133,7 +133,6 @@ pub const fn workspace_list_footer_facts(
         selected_instance_is_live: facts.selected_instance_is_live,
         selected_saved_workspace: row_facts.selected_saved_workspace,
         selected_new_workspace: row_facts.selected_new_workspace,
-
         show_prewarm: row_facts.selected_saved_workspace,
         show_expand: facts.show_expand,
         show_collapse: facts.show_collapse,

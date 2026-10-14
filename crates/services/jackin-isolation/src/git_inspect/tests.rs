@@ -25,7 +25,6 @@ fn changed_files_sync_reports_real_edits_against_a_repo() {
     std::fs::write(dir.join("tracked.txt"), b"original\n").unwrap();
     git(dir, &["add", "."]);
     git(dir, &["commit", "-q", "-m", "init"]);
-
     std::fs::write(dir.join("tracked.txt"), b"changed\n").unwrap();
     std::fs::write(dir.join("untracked.txt"), b"new\n").unwrap();
 
@@ -51,7 +50,6 @@ fn changed_files_sync_reports_real_edits_against_a_repo() {
         working_content_sync(dir.to_str().unwrap(), "tracked.txt").as_deref(),
         Some("changed\n")
     );
-
     assert_eq!(
         head_content_sync(dir.to_str().unwrap(), "untracked.txt"),
         None

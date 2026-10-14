@@ -12,8 +12,6 @@ publish = false
 
 [features]
 default = []
-
-
 codex-app-server-authority = []
 
 [dependencies]

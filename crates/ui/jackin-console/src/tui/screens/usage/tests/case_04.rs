@@ -215,14 +215,12 @@ fn sort_filter_keys_cycle_reanchor_and_render_state() {
     press_key(&mut manager, KeyCode::Char('s'));
     let screen = manager.usage.screen.as_ref().unwrap();
     assert_eq!(screen.sort, UsageSort::Remaining);
-
     assert_eq!(screen.selected, 1);
     assert_eq!(screen.selected_id, Some("openai:a".to_owned()));
 
     press_key(&mut manager, KeyCode::Char('f'));
     let screen = manager.usage.screen.as_ref().unwrap();
     assert_eq!(screen.filter, UsageFilter::Issues);
-
     assert_eq!(screen.selected, 0);
     assert_eq!(screen.selected_id, Some("openai:a".to_owned()));
 

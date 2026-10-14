@@ -9,14 +9,12 @@ use crate::constants::CONTAINER_PREFIX_DASH;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Selector {
     Role(RoleSelector),
-
     Container(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleSelector {
     pub namespace: Option<String>,
-
     pub name: String,
 }
 
@@ -35,7 +33,6 @@ impl fmt::Display for RoleSelector {
 pub enum SelectorError {
     #[error("selector cannot be empty")]
     Empty,
-
     #[error("invalid selector: {0}")]
     Invalid(String),
 }

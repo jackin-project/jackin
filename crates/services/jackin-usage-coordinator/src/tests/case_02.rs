@@ -300,7 +300,6 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
                 .generation,
             1
         );
-
         assert_eq!(restarted.next_due_epoch(), Some(attempt_floor + 299));
         assert!(restarted.poll_due(attempt_floor - 1).is_empty());
         let forced_early = restarted
@@ -1646,7 +1645,6 @@ fn catalog_revision_keeps_pending_marker_and_completion_floor_across_readd() {
     clock.advance(Duration::from_secs(20));
     executor.release(1);
     executor.wait_idle();
-
     let persistence_deadline = Instant::now() + Duration::from_secs(2);
     let completed_tombstone = loop {
         let persisted = store.states.lock().unwrap().get(&account).cloned();

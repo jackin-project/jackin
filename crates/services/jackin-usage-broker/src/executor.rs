@@ -292,7 +292,6 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
             .iter()
             .map(|entry| entry.capability.clone())
             .collect::<BTreeSet<_>>();
-
         let mut bindings =
             rediscover_all_bindings(&self.scope, self.resolver.as_ref()).unwrap_or_default();
         bindings.retain(|capability, _| admitted.contains(capability));
@@ -386,7 +385,6 @@ impl UsageProviderExecutor for DiscoveryProviderExecutor {
             .iter()
             .map(|entry| entry.capability.clone())
             .collect::<BTreeSet<_>>();
-
         let mut bindings = grouped_bindings(&discovery);
         bindings.retain(|capability, _| admitted.contains(capability));
         self.bindings

@@ -30,7 +30,6 @@ pub(crate) fn render_dialog_ratatui(
         width,
         height,
     };
-
     if area.right() > frame.area().width || area.bottom() > frame.area().height {
         return;
     }
@@ -100,7 +99,6 @@ pub(crate) fn render_confirm_action(
     data_loss: bool,
 ) {
     let theme = DesignSystem::default();
-
     let body = if data_loss {
         "Exit jackin❯?\n\n! Exiting force-stops the container immediately.\n! Work not saved outside the container will be lost.".to_owned()
     } else {
@@ -163,7 +161,6 @@ pub(crate) fn render_usage_info(
         .map(|tab| tab.id);
     tabs_state.hovered = hovered_tab;
     tabs_state.focused = tab_bar_focused;
-
     let base = DesignSystem::default();
     let active_hovered = base
         .style(termrock::style::Role::TabActiveHovered)
@@ -179,7 +176,6 @@ pub(crate) fn render_usage_info(
         tab_area,
         &mut tabs_state,
     );
-
     let body = usage_body_rect(area);
     let lines = usage_info_lines_for_width(state, body.width);
     let mut scroll = state.scroll.clone();
@@ -221,7 +217,6 @@ pub(crate) fn render_filter_picker(
         if inner.height < 3 {
             return;
         }
-
         Rect {
             y: inner.y + 2,
             height: inner.height.saturating_sub(2),

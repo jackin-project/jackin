@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct AgentRuntimeState {
     pub agent: jackin_core::Agent,
-
     pub model: Option<String>,
 }
 
@@ -29,9 +28,7 @@ pub struct ProvisionedInstanceAuth {
     pub container_home_rel: String,
     pub container_store_rel: String,
     pub folder_target: String,
-
     pub cache_source_dir: Option<PathBuf>,
-
     pub container_cache_rel: Option<String>,
 }
 
@@ -103,11 +100,8 @@ pub struct InstanceAuthBinding {
     pub account_id: String,
     pub mode: AuthForwardMode,
     pub sync_source_dir: Option<PathBuf>,
-
     pub source_provider: Option<jackin_config::AiProvider>,
-
     pub source_selector: Option<ProfileSelector>,
-
     pub xdg_roots: Option<jackin_config::XdgRoots>,
     pub selected_source: Option<crate::SelectedAuthSourceSnapshot>,
 }

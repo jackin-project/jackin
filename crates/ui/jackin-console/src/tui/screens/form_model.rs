@@ -5,7 +5,6 @@ use crate::tui::components::editor_rows::{FieldEmphasis, labeled_field_line};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldRow {
     pub label: String,
-
     pub value: String,
 }
 
@@ -24,7 +23,6 @@ pub struct FormSection {
     pub rows: Vec<FieldRow>,
     pub cursor: usize,
     pub show_cursor: bool,
-
     pub label_width: usize,
 }
 

@@ -144,7 +144,6 @@ agents = ["amp"]
         git_pull_on_entry: false,
         mount_heal: jackin_config::MountHealReport::default(),
     };
-
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let docker = FakeDockerClient::default();
 
@@ -293,7 +292,6 @@ agents = ["amp"]
         git_pull_on_entry: false,
         mount_heal: jackin_config::MountHealReport::default(),
     };
-
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let docker = FakeDockerClient::default();
 
@@ -317,7 +315,6 @@ agents = ["amp"]
         "Sync mode must mount secrets.json into the container: {:?}",
         spec.binds
     );
-
     assert!(
         !spec
             .env

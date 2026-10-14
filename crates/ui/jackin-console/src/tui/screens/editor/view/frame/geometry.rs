@@ -127,7 +127,6 @@ pub(crate) fn clamp_editor_scroll_for_frame(
         mounts_scroll.set_viewport(u16::try_from(viewport_w).unwrap_or(u16::MAX), 1);
         mounts_scroll.clamp();
     }
-
     tab_scroll.set_content_size(
         if geometry.active_mounts {
             1

@@ -68,7 +68,6 @@ pub struct PreviewFocusPlan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListFocusOwner {
     ListNames,
-
     Preview,
 }
 

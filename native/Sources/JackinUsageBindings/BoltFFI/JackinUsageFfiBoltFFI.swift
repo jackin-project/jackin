@@ -1,7 +1,4 @@
 
-
-
-
 import Foundation
 import JackinUsageFFI
 
@@ -13,18 +10,11 @@ public struct FfiError: Error {
     }
 }
 
-
 public struct OpenConfig: Hashable, Equatable, Sendable {
-
     public var dataDirOverride: String?
-
     public var configRootOverride: String?
-
     public var refreshFloorSecs: UInt64
-
     public var enabledSurfaceIds: [String]
-
-
     public var allowLiveProbes: Bool
 
     public init(
@@ -59,7 +49,6 @@ public struct OpenConfig: Hashable, Equatable, Sendable {
         writer.writeBool(self.allowLiveProbes)
     }
 }
-
 
 public struct SurfaceDescriptorDto: Hashable, Equatable, Sendable {
     public var id: String
@@ -101,7 +90,6 @@ public struct SurfaceDescriptorDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct DiscoveryDiagnosticDto: Hashable, Equatable, Sendable {
     public var surfaceId: String?
     public var scopeLabel: String
@@ -142,7 +130,6 @@ public struct DiscoveryDiagnosticDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct MoneyDto: Hashable, Equatable, Sendable {
     public var amountMinor: Int64
     public var currency: String
@@ -165,7 +152,6 @@ public struct MoneyDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct QuotaBucketDto: Hashable, Equatable, Sendable {
     public var label: String
     public var usedLabel: String?
@@ -179,13 +165,9 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
     public var usedMoney: MoneyDto?
     public var limitMoney: MoneyDto?
     public var severity: String
-
     public var remainingLabel: String?
-
     public var displaySegments: [String]
-
     public var displayLabel: String
-
     public var meterPercent: UInt8?
 
     public init(
@@ -265,8 +247,6 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
     }
 }
 
-
-
 public struct UsagePresentationLineDto: Hashable, Equatable, Sendable {
     public var leading: String?
     public var trailing: String?
@@ -286,18 +266,13 @@ public struct UsagePresentationLineDto: Hashable, Equatable, Sendable {
     }
 }
 
-
-
-
 public struct UsageDetailRowDto: Hashable, Equatable, Sendable {
     public var rowId: String
-
     public var kind: String
     public var label: String
     public var layoutLines: [UsagePresentationLineDto]
     public var displayLabel: String
     public var meterPercent: UInt8?
-
     public var severity: String
 
     public init(
@@ -341,8 +316,6 @@ public struct UsageDetailRowDto: Hashable, Equatable, Sendable {
     }
 }
 
-
-
 public struct UsageDetailPresentationDto: Hashable, Equatable, Sendable {
     public var rows: [UsageDetailRowDto]
 
@@ -359,12 +332,10 @@ public struct UsageDetailPresentationDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct UsageIdentityPresentationDto: Hashable, Equatable, Sendable {
     public var providerTitle: String
     public var accountLabel: String
     public var activityLabel: String
-
     public var activityKind: String
     public var accessibilityLabel: String
 
@@ -400,9 +371,6 @@ public struct UsageIdentityPresentationDto: Hashable, Equatable, Sendable {
         writer.writeString(self.accessibilityLabel)
     }
 }
-
-
-
 
 public struct ProviderGlanceRowDto: Hashable, Equatable, Sendable {
     public var surfaceId: String
@@ -534,7 +502,6 @@ public struct ProviderGlanceRowDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct UsageViewDto: Hashable, Equatable, Sendable {
     public var identity: UsageIdentityPresentationDto
     public var focusedAgent: String?
@@ -552,10 +519,7 @@ public struct UsageViewDto: Hashable, Equatable, Sendable {
     public var updatedLabel: String
     public var statusBarLabel: String
     public var lastError: String?
-
     public var estimateCaption: String?
-
-
     public var detailPresentation: UsageDetailPresentationDto
 
     public init(
@@ -643,11 +607,8 @@ public struct UsageViewDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct UsageFormatPrefsDto: Hashable, Equatable, Sendable {
-
     public var percentStyle: String
-
     public var resetStyle: String
 
     public init(percentStyle: String, resetStyle: String) {
@@ -664,7 +625,6 @@ public struct UsageFormatPrefsDto: Hashable, Equatable, Sendable {
         writer.writeString(self.resetStyle)
     }
 }
-
 
 public struct OverviewRowDto: Hashable, Equatable, Sendable {
     public var surfaceId: String
@@ -715,7 +675,6 @@ public struct OverviewRowDto: Hashable, Equatable, Sendable {
         writer.writeString(self.severity)
     }
 }
-
 
 public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
     public var surfaceId: String
@@ -852,7 +811,6 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct DesktopProviderStateDto: Hashable, Equatable, Sendable {
     public var statusWord: String
     public var statusLabel: String
@@ -892,7 +850,6 @@ public struct DesktopProviderStateDto: Hashable, Equatable, Sendable {
         writer.writeBool(self.isRefreshing)
     }
 }
-
 
 public struct DesktopProviderGroupDto: Hashable, Equatable, Sendable {
     public var surfaceId: String
@@ -969,7 +926,6 @@ public struct DesktopProviderGroupDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct DesktopInventoryDto: Hashable, Equatable, Sendable {
     public var groups: [DesktopProviderGroupDto]
 
@@ -985,7 +941,6 @@ public struct DesktopInventoryDto: Hashable, Equatable, Sendable {
         writer.writeArray(self.groups) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
     }
 }
-
 
 public struct DesktopProviderProjectionDto: Hashable, Equatable, Sendable {
     public var group: DesktopProviderGroupDto
@@ -1008,7 +963,6 @@ public struct DesktopProviderProjectionDto: Hashable, Equatable, Sendable {
         self.selectedUsage.encode(to: &writer)
     }
 }
-
 
 public struct DesktopProjectionDto: Hashable, Equatable, Sendable {
     public var generation: UInt64
@@ -1070,7 +1024,6 @@ public struct DesktopProjectionDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct UsageEventDto: Hashable, Equatable, Sendable {
     public var sequence: UInt64
     public var kind: String
@@ -1106,7 +1059,6 @@ public struct UsageEventDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public struct UsageEventBatchDto: Hashable, Equatable, Sendable {
     public var nextCursor: UInt64
     public var events: [UsageEventDto]
@@ -1129,15 +1081,10 @@ public struct UsageEventBatchDto: Hashable, Equatable, Sendable {
     }
 }
 
-
 public enum UsageBridgeError: Hashable, Equatable, Sendable, Error {
-
     case rejected(code: String, message: String)
-
     case containedPanic(message: String)
-
     case runtimeUnavailable
-
     case resyncRequired
 
     @inlinable static func decode(from reader: inout WireReader) -> UsageBridgeError {
@@ -1184,11 +1131,9 @@ public final class UsageMenuBarBridge {
         boltffi_release_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge(handle)
     }
 
-
     public init() {
         self.handle = boltffi_init_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_create()
     }
-
 
     public func openRuntime(config: OpenConfig) throws {
         let boltffiConfigBytes = boltffiEncode { boltffiConfigWriter in config.encode(to: &boltffiConfigWriter) }
@@ -1201,7 +1146,6 @@ public final class UsageMenuBarBridge {
         }
     }
 
-
     public func listSurfaces() throws -> [SurfaceDescriptorDto] {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_list_surfaces(self.handle, &boltffiResult)
@@ -1213,7 +1157,6 @@ public final class UsageMenuBarBridge {
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in SurfaceDescriptorDto.decode(from: &boltffiReader) } }
     }
 
-
     public func discoveryDiagnostics() throws -> [DiscoveryDiagnosticDto] {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_discovery_diagnostics(self.handle, &boltffiResult)
@@ -1224,7 +1167,6 @@ public final class UsageMenuBarBridge {
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in DiscoveryDiagnosticDto.decode(from: &boltffiReader) } }
     }
-
 
     public func setEnabled(surfaceId: String, enabled: Bool) throws {
         let boltffiSurfaceIdBytes = boltffiEncode { boltffiSurfaceIdWriter in boltffiSurfaceIdWriter.writeString(surfaceId) }
@@ -1242,10 +1184,6 @@ public final class UsageMenuBarBridge {
         }
     }
 
-
-
-
-
     public func refresh(surfaceId: String?, force: Bool) throws {
         let boltffiSurfaceIdBytes = boltffiEncode { boltffiSurfaceIdWriter in boltffiSurfaceIdWriter.writeOptional(surfaceId) { boltffiSurfaceIdWriter, boltffiValue0 in boltffiSurfaceIdWriter.writeString(boltffiValue0) } }
         try boltffiSurfaceIdBytes.withUnsafeBufferPointer { boltffiSurfaceIdBuffer -> Void in
@@ -1262,7 +1200,6 @@ public final class UsageMenuBarBridge {
         }
     }
 
-
     public func refreshInProgress() throws -> Bool {
         var boltffiResult: Bool = Bool()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_refresh_in_progress(self.handle, &boltffiResult)
@@ -1273,7 +1210,6 @@ public final class UsageMenuBarBridge {
         return boltffiResult
     }
 
-
     public func setRefreshFloorSecs(secs: UInt64) throws {
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_set_refresh_floor_secs(self.handle, secs)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
@@ -1281,7 +1217,6 @@ public final class UsageMenuBarBridge {
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in UsageBridgeError.decode(from: &boltffiErrorReader) }
         }
     }
-
 
     public func refreshDue() throws -> Bool {
         var boltffiResult: Bool = Bool()
@@ -1292,7 +1227,6 @@ public final class UsageMenuBarBridge {
         }
         return boltffiResult
     }
-
 
     public func snapshot(surfaceId: String) throws -> UsageViewDto {
         let boltffiSurfaceIdBytes = boltffiEncode { boltffiSurfaceIdWriter in boltffiSurfaceIdWriter.writeString(surfaceId) }
@@ -1313,7 +1247,6 @@ public final class UsageMenuBarBridge {
         }
     }
 
-
     public func listAccounts(surfaceId: String?) throws -> [AccountDescriptorDto] {
         let boltffiSurfaceIdBytes = boltffiEncode { boltffiSurfaceIdWriter in boltffiSurfaceIdWriter.writeOptional(surfaceId) { boltffiSurfaceIdWriter, boltffiValue0 in boltffiSurfaceIdWriter.writeString(boltffiValue0) } }
         return try boltffiSurfaceIdBytes.withUnsafeBufferPointer { boltffiSurfaceIdBuffer in
@@ -1333,7 +1266,6 @@ public final class UsageMenuBarBridge {
         }
     }
 
-
     public func desktopInventory() throws -> DesktopInventoryDto {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_desktop_inventory(self.handle, &boltffiResult)
@@ -1345,9 +1277,6 @@ public final class UsageMenuBarBridge {
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in DesktopInventoryDto.decode(from: &boltffiReader) }
     }
 
-
-
-
     public func desktopProjection(statusBarMax: UInt32) throws -> DesktopProjectionDto {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_desktop_projection(self.handle, statusBarMax, &boltffiResult)
@@ -1358,7 +1287,6 @@ public final class UsageMenuBarBridge {
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in DesktopProjectionDto.decode(from: &boltffiReader) }
     }
-
 
     public func setSelectedAccount(surfaceId: String, accountKey: String) throws {
         let boltffiSurfaceIdBytes = boltffiEncode { boltffiSurfaceIdWriter in boltffiSurfaceIdWriter.writeString(surfaceId) }
@@ -1380,7 +1308,6 @@ public final class UsageMenuBarBridge {
         }
     }
 
-
     public func statusBarLabel(surfaceId: String) throws -> String? {
         let boltffiSurfaceIdBytes = boltffiEncode { boltffiSurfaceIdWriter in boltffiSurfaceIdWriter.writeString(surfaceId) }
         return try boltffiSurfaceIdBytes.withUnsafeBufferPointer { boltffiSurfaceIdBuffer in
@@ -1400,7 +1327,6 @@ public final class UsageMenuBarBridge {
         }
     }
 
-
     public func mergedStatusBarLabel() throws -> String {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_merged_status_bar_label(self.handle, &boltffiResult)
@@ -1411,7 +1337,6 @@ public final class UsageMenuBarBridge {
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
     }
-
 
     public func compactStatusBarLabel() throws -> String {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
@@ -1424,7 +1349,6 @@ public final class UsageMenuBarBridge {
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
     }
 
-
     public func setFormatPrefs(prefs: UsageFormatPrefsDto) throws {
         let boltffiPrefsBytes = boltffiEncode { boltffiPrefsWriter in prefs.encode(to: &boltffiPrefsWriter) }
         try boltffiPrefsBytes.withUnsafeBufferPointer { boltffiPrefsBuffer -> Void in
@@ -1435,7 +1359,6 @@ public final class UsageMenuBarBridge {
             }
         }
     }
-
 
     public func compactStatusBarLabelFor(surfaceId: String) throws -> String? {
         let boltffiSurfaceIdBytes = boltffiEncode { boltffiSurfaceIdWriter in boltffiSurfaceIdWriter.writeString(surfaceId) }
@@ -1456,7 +1379,6 @@ public final class UsageMenuBarBridge {
         }
     }
 
-
     public func compactStatusBarStrip(max: UInt32) throws -> String {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_compact_status_bar_strip(self.handle, max, &boltffiResult)
@@ -1467,7 +1389,6 @@ public final class UsageMenuBarBridge {
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
     }
-
 
     public func overviewRows() throws -> [OverviewRowDto] {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
@@ -1480,9 +1401,6 @@ public final class UsageMenuBarBridge {
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in OverviewRowDto.decode(from: &boltffiReader) } }
     }
 
-
-
-
     public func providerGlanceRows() throws -> [ProviderGlanceRowDto] {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_provider_glance_rows(self.handle, &boltffiResult)
@@ -1493,10 +1411,6 @@ public final class UsageMenuBarBridge {
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in ProviderGlanceRowDto.decode(from: &boltffiReader) } }
     }
-
-
-
-
 
     public func statusBarProviderGlanceRows(max: UInt32) throws -> [ProviderGlanceRowDto] {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
@@ -1509,7 +1423,6 @@ public final class UsageMenuBarBridge {
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in ProviderGlanceRowDto.decode(from: &boltffiReader) } }
     }
 
-
     public func nextRefreshLabel() throws -> String {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_next_refresh_label(self.handle, &boltffiResult)
@@ -1520,11 +1433,6 @@ public final class UsageMenuBarBridge {
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readString() }
     }
-
-
-
-
-
 
     public func nextEvents(cursor: UInt64, max: UInt32) throws -> UsageEventBatchDto {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
@@ -1542,7 +1450,6 @@ public final class UsageMenuBarBridge {
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in UsageEventBatchDto.decode(from: &boltffiReader) }
     }
 
-
     public func refreshFloorSecs() throws -> UInt64 {
         var boltffiResult: UInt64 = UInt64()
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_refresh_floor_secs(self.handle, &boltffiResult)
@@ -1553,7 +1460,6 @@ public final class UsageMenuBarBridge {
         return boltffiResult
     }
 
-
     public func shutdown() throws {
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_shutdown(self.handle)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
@@ -1561,7 +1467,6 @@ public final class UsageMenuBarBridge {
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in UsageBridgeError.decode(from: &boltffiErrorReader) }
         }
     }
-
 
     public func panicProbe() throws {
         let boltffiError = boltffi_method_class_jackin_usage_ffi_bridge_usage_menu_bar_bridge_panic_probe(self.handle)
@@ -1928,15 +1833,9 @@ public final class UsageMenuBarBridge {
     return [UInt8](writer.finalize())
 }
 
-
 private let boltffiUnexpectedCallbackErrorMarker = Array("BOLTFFI_CALLBACK".utf8)
 
-
 private let boltffiUnexpectedCallbackErrorVersion: UInt8 = 1
-
-
-
-
 
 func boltffiEncodeUnexpectedCallbackError(_ error: Error) -> [UInt8] {
     var writer = WireWriter()

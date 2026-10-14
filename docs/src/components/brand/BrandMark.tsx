@@ -1,15 +1,7 @@
 type BrandMarkProps = {
-
-
   byline?: boolean
   className?: string
 }
-
-
-
-
-
-
 
 export function BrandMark({ byline = false, className }: BrandMarkProps) {
   const onDark = byline ? '/brand/jackin-lockup.svg' : '/brand/jackin-wordmark.svg'

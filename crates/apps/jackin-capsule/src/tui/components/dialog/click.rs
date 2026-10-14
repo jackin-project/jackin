@@ -36,18 +36,15 @@ impl Dialog {
             width,
             height,
         };
-
         if !area.contains(ratatui::layout::Position { x: col, y: row }) {
             return DialogAction::Dismiss;
         }
-
         if matches!(self, Self::RenameTab { .. } | Self::ExportFile { .. }) {
             return DialogAction::Consume;
         }
         if matches!(self, Self::SpawnFailure(_)) {
             return DialogAction::Consume;
         }
-
         if matches!(self, Self::ContainerInfo { .. }) {
             let hit = self.container_info_state().and_then(|state| {
                 crate::tui::components::container_info_surface::container_info_copy_payload_at(
@@ -117,7 +114,6 @@ impl Dialog {
                 None => DialogAction::Consume,
             };
         }
-
         if let Self::ConfirmAction { kind, selected_yes } = self {
             let body = if matches!(kind, ConfirmKind::Exit) {
                 "Exit jackin❯?\n\n! Exiting force-stops the container immediately.\n! Work not saved outside the container will be lost.".to_owned()
@@ -165,7 +161,6 @@ impl Dialog {
                 _ => DialogAction::Consume,
             };
         }
-
         let first_item_row = box_row + 3;
         let visible_count: u16 = match self {
             Self::CommandPalette {
@@ -255,7 +250,6 @@ impl Dialog {
                     }
                 }
             }
-
             Self::RenameTab { .. }
             | Self::ExportFile { .. }
             | Self::ContainerInfo { .. }

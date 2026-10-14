@@ -12,7 +12,6 @@ pub const AUTHORITY_TTL: Duration = Duration::from_secs(30);
 pub const OSC_SHELL_TTL: Duration = AUTHORITY_TTL;
 pub const WATCHDOG_QUIET: Duration = Duration::from_secs(10);
 pub const IDLE_CONFIRMATIONS: u8 = 3;
-
 pub const IDLE_HOLD_CAP: Duration = Duration::from_millis(700);
 pub const CPU_SAMPLE_WINDOW: Duration = Duration::from_secs(2);
 
@@ -20,7 +19,6 @@ pub const CPU_SAMPLE_WINDOW: Duration = Duration::from_secs(2);
 pub struct PendingTransition {
     pub candidate: Option<AgentState>,
     pub confirmations: u8,
-
     pub started_at: Option<Instant>,
 }
 
@@ -42,7 +40,6 @@ pub fn debounce(
             clear_pending(pending);
             publish_if_changed(prev_public, next)
         }
-
         AgentState::Idle | AgentState::Done => {
             if candidate.osc_progress_active || candidate.cpu_jiffies_delta > 0 {
                 clear_pending(pending);
@@ -85,7 +82,6 @@ pub fn apply_watchdog(mut candidate: EvidenceSummary, now: Instant) -> EvidenceS
     {
         return candidate;
     }
-
     if !candidate.physics_sampled {
         return candidate;
     }
@@ -101,7 +97,6 @@ pub fn apply_watchdog(mut candidate: EvidenceSummary, now: Instant) -> EvidenceS
     candidate.raw_state = RawAgentState::Unknown;
     candidate.confidence = AgentStatusConfidence::Unknown;
     candidate.winner = EvidenceWinner::Unknown;
-
     candidate.notes.push(EvidenceNote::WatchdogDemoted);
     candidate
 }

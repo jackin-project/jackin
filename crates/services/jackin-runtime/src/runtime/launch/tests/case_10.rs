@@ -9,7 +9,6 @@ async fn load_agent_launches_codex_without_openai_key() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     paths.ensure_base_dirs().unwrap();
-
     let profile_dir = temp.path().join("codex-profile");
     std::fs::create_dir_all(&profile_dir).unwrap();
     std::fs::write(profile_dir.join("auth.json"), "{}\n").unwrap();
@@ -196,7 +195,6 @@ agents = []
     .await
     .expect_err("role manifest with no agents must fail load");
     let rendered = format!("{error:#}");
-
     assert!(
         rendered.contains("agents") && rendered.contains("empty"),
         "error must name the empty-agents condition: {rendered}"
@@ -228,7 +226,6 @@ async fn console_agent_resolution_fast_paths_cached_manifest() {
 async fn console_agent_resolution_falls_through_when_manifest_present_but_git_absent() {
     let mut f = console_resolution_fixture();
     write_role_repo(&f.repo_dir, CODEX_ONLY_MANIFEST);
-
     let materialize_dir = f.repo_dir.clone();
     f.runner.side_effects.push((
         "clone".to_owned(),

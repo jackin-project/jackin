@@ -326,7 +326,6 @@ fn verify_source_checkout(source_checkout: &Path, manifest: &PackageManifest) ->
         repository == SOURCE_REPOSITORY,
         "source checkout origin is not {SOURCE_REPOSITORY}: {remote}"
     );
-
     for name in ["EXPECTED_SOURCE_COMMIT", "VELNOR_SOURCE_COMMIT"] {
         if let Some(expected) = env::var_os(name) {
             let expected = expected

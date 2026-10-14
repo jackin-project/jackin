@@ -72,7 +72,6 @@ RUN set -euxo pipefail && \\
             credential_dir: ".gemini",
             config_dir: None,
             credential_file: Some(".gemini/oauth_creds.json"),
-
             folder_env_var: Some(FolderVar {
                 name: "GEMINI_CLI_HOME",
                 kind: FolderVarKind::Parent,

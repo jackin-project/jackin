@@ -39,7 +39,6 @@ extension EnvironmentValues {
     }
 }
 
-
 public struct PopoverRoot: View {
     public static let liveContentSize = CGSize(width: 380, height: 520)
 

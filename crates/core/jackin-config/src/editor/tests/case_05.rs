@@ -321,7 +321,6 @@ auth_forward = "ignore"
     editor.save().unwrap();
 
     let cleaned = workspace_file_contents(&paths, "github");
-
     assert!(
         cleaned.contains("workdir"),
         "workspace named 'github' must survive:\n{cleaned}"

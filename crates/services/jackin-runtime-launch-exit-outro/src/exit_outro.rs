@@ -47,7 +47,6 @@ pub fn render_exit_observation(
     if !rich_terminal_supported() {
         return;
     }
-
     jackin_diagnostics::reassert_alt_screen();
     let host_owned = jackin_diagnostics::host_screen_owned();
     launch_output().warp_out(host_owned);

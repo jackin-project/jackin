@@ -57,7 +57,6 @@ fn single_account_plan_carries_the_exact_pinned_model() {
         "oc-plain".to_owned(),
         configuration(Agent::Opencode, "or-model"),
     );
-
     set_role_list(&mut config, &["oc-pinned"]);
     let plan =
         resolve_dry_run_identity(&config, Agent::Opencode, Some(&workspace), ROLE, false).unwrap();

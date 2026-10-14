@@ -6,11 +6,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FolderEntry {
     pub name: String,
-
     pub path: PathBuf,
-
     pub is_parent: bool,
-
     pub is_git: bool,
 }
 

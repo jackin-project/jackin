@@ -1,5 +1,4 @@
 #!/bin/sh
-
 set -eu
 
 KEYS='com.apple.universalaccess|increaseContrast

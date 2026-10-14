@@ -36,7 +36,6 @@ async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let mut runner = fake_failing_capture(&[], "status --porcelain");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -56,7 +55,6 @@ async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
     assert_eq!(dec, FinalizeDecision::Preserved);
     let recs = read_records(dir.path()).unwrap();
     assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
-
     assert!(
         !runner
             .run_options
@@ -73,7 +71,6 @@ async fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let mut runner = fake_failing_capture(&[""], "for-each-ref");
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -107,7 +104,6 @@ async fn assess_cleanup_rev_list_failure_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!(
         "{}\n",
         ferow(
@@ -153,9 +149,7 @@ async fn multi_mount_force_delete_on_each_cleans_all_records() {
     let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2]).unwrap();
-
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
-
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -176,7 +170,6 @@ async fn multi_mount_force_delete_on_each_cleans_all_records() {
         read_records(dir.path()).unwrap().is_empty(),
         "both records should be removed after force-delete on both",
     );
-
     let removes = runner
         .run_options
         .iter()
@@ -198,7 +191,6 @@ async fn multi_mount_keep_all_signals_preserved() {
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2]).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
-
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::KeepAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -232,7 +224,6 @@ async fn multi_mount_return_to_agent_signals_return_to_agent() {
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2, r3]).unwrap();
     let mut runner = fake_with_outputs(&[" M f1\n", " M f2\n", " M f3\n"]);
-
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -249,10 +240,8 @@ async fn multi_mount_return_to_agent_signals_return_to_agent() {
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::ReturnToAgent);
-
     let recs = read_records(dir.path()).unwrap();
     assert_eq!(recs.len(), 3, "ReturnToAgent must not delete any records");
-
     let removes = runner
         .run_options
         .iter()
@@ -273,7 +262,6 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
     let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2]).unwrap();
-
     let mut runner = FakeRunner {
         capture_queue: VecDeque::from([
             " M f1\n".to_owned(),
@@ -284,10 +272,8 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
             "sha1".to_owned(),
             String::new(),
         ]),
-
         ..FakeRunner::default()
     };
-
     let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -357,7 +343,6 @@ async fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let mut runner = fake_with_outputs(&["", ""]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();

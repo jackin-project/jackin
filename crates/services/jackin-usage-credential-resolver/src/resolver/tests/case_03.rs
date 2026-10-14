@@ -29,7 +29,6 @@ fn credential_snapshot_arms_cover_newly_wired_surfaces() {
             .as_deref()
             .is_some_and(|error| error.contains("Cursor API-key"))
     );
-
     let view = provider_credential_snapshot("google", "GEMINI_API_KEY", "fixture-key");
     assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
     assert_eq!(view.account.provider_label, "Google");
@@ -37,7 +36,6 @@ fn credential_snapshot_arms_cover_newly_wired_surfaces() {
         view.account.credential_origin.as_deref(),
         Some("API key · env GEMINI_API_KEY")
     );
-
     let view = provider_credential_snapshot("meta", "META_API_KEY", "fixture-key");
     assert_eq!(view.status, UsageSnapshotStatus::Unsupported);
     assert_eq!(view.account.provider_label, "Usage");

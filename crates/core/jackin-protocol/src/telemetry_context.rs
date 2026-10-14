@@ -9,19 +9,14 @@ pub const TELEMETRY_CONTEXT_VERSION: u16 = 1;
 #[serde(deny_unknown_fields)]
 pub struct TelemetryContext {
     pub v: u16,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traceparent: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tracestate: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invocation_id: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
 }

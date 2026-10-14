@@ -167,7 +167,6 @@ pub(super) fn two_codex_mux() -> Multiplexer {
             },
         ),
     ]);
-
     mux.launch_env.env_passthrough = vec![
         (
             jackin_core::CODEX_LANE_MODEL_ENV_NAME.into(),

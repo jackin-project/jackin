@@ -59,7 +59,6 @@ fn pipeline_e2e_orchestration(c: &mut Criterion) {
             rt.block_on(async {
                 let temp = tempdir().expect("tempdir");
                 let paths = JackinPaths::for_tests(temp.path());
-
                 jackin_image::agent_binary::install_test_stub(&paths, jackin_core::Agent::Codex)
                     .expect("stub");
                 jackin_image::capsule_binary::install_test_stub(&paths).expect("capsule stub");

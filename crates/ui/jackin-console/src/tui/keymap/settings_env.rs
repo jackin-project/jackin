@@ -11,15 +11,10 @@ pub(crate) enum SettingsEnvTabAction {
     MoveDown,
     Add,
     Save,
-
     Delete,
-
     ToggleMask,
-
     OpenPicker,
-
     Enter,
-
     Back,
 }
 

@@ -7,7 +7,6 @@ use super::*;
 fn fresh_config_scan_reports_startup_imports_and_rescan_reports_zero() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-
     let claude_dir = paths.home_dir.join(".claude");
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(
@@ -113,7 +112,6 @@ fn scan_reference_variable_prints_only_validated_references() {
             model: None,
         },
     };
-
     assert_eq!(scan_reference_variable(&op_ref), None);
 }
 

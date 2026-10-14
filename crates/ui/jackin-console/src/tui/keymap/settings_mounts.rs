@@ -11,21 +11,16 @@ pub(crate) enum SettingsGlobalMountsTabAction {
     MoveDown,
     ScrollLeft,
     ScrollRight,
-
     Save,
     ToggleReadonly,
-
     Add,
-
     Delete,
     OpenGithub,
     EditRename,
     EditSource,
     EditDest,
     EditScope,
-
     Enter,
-
     Back,
 }
 

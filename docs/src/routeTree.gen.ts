@@ -5,9 +5,6 @@
 
 
 
-
-
-
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as Char123Char125DotmdRouteImport } from './routes/{$}[.]md'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'

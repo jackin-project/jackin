@@ -135,7 +135,6 @@ pub fn settings_global_config_mounts_content_width_with_cache(
 ) -> usize {
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
     let display_rows = format_config_mount_rows_with_cache(&mounts, cache);
-
     let lines = crate::tui::screens::settings::view::global_mount_lines(&display_rows, None, true);
     max_line_width(&lines)
 }

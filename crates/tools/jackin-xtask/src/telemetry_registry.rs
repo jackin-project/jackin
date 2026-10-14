@@ -716,7 +716,6 @@ fn generate_event_emitters(header: &str, groups: &[YamlValue]) -> Result<String>
             "Integer" => "$fields.integer($key)",
             "Double" => "$fields.double($key)",
             "Boolean" => "$fields.boolean($key)",
-
             "StringArray" => "tracing::field::Empty",
             _ => unreachable!("validated registry value type"),
         };

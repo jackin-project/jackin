@@ -7,16 +7,13 @@ use jackin_telemetry::spawn::JoinSetExt as _;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImagePrewarmStatus {
     Reused,
-
     Built,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleImagePrewarmRow {
     pub agent: Agent,
-
     pub image: String,
-
     pub status: ImagePrewarmStatus,
 }
 

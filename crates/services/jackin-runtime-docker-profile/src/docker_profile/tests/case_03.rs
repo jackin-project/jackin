@@ -8,7 +8,6 @@ fn parse_apparmor_present_host() {
     let (available, layer) =
         parse_apparmor_from_docker_info("name=apparmor name=seccomp,profile=default");
     assert!(available, "apparmor string should be detected");
-
     assert!(layer == "host" || layer == "backend-vm");
 }
 
@@ -66,7 +65,6 @@ fn allowlist_union_dedups_and_includes_all_sources() {
     grants.allowed_hosts = vec!["example.com".to_owned(), "api.anthropic.com".to_owned()];
     let github = vec!["github.com".to_owned()];
     let hosts = allowlist_hosts("claude", &grants, &github, Some("host.docker.internal"));
-
     assert_eq!(
         hosts,
         vec![
@@ -98,7 +96,6 @@ fn allowlist_empty_is_fail_closed_when_no_otlp() {
 #[test]
 fn firewall_exec_only_for_allowlist_and_runs_as_root() {
     let mut grants = profile_base_grants(DockerSecurityProfile::Hardened);
-
     let argv = firewall_post_run_argv(&grants, "ctr-1").expect("allowlist emits exec");
     assert_eq!(
         argv,
@@ -111,7 +108,6 @@ fn firewall_exec_only_for_allowlist_and_runs_as_root() {
             "firewall-apply"
         ]
     );
-
     grants.network = NetworkGrant::Open;
     assert!(firewall_post_run_argv(&grants, "ctr-1").is_none());
     grants.network = NetworkGrant::None;
@@ -200,7 +196,6 @@ fn rootless_dind_fails_closed_on_cgroup_v1() {
     validate_dind_grant_for_cgroup(DindGrant::Rootless, "v1")
         .expect_err("rootless DinD must fail closed on cgroup v1, never fall back to privileged");
     validate_dind_grant_for_cgroup(DindGrant::Rootless, "v2").unwrap();
-
     validate_dind_grant_for_cgroup(DindGrant::Privileged, "v1").unwrap();
     validate_dind_grant_for_cgroup(DindGrant::None, "v1").unwrap();
 }

@@ -49,7 +49,6 @@ pub fn provision_github_auth(
             match resolved {
                 HostGhResolution::Resolved(resolved) => {
                     let content = render_hosts_yml(&resolved.token, resolved.user.as_deref());
-
                     let needs_write = !read_bounded_local_file(hosts_yml)
                         .is_ok_and(|existing| existing == content.as_bytes());
                     if needs_write {
@@ -185,7 +184,6 @@ pub(crate) fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResol
         parsed.source = GithubTokenSource::HostsFile;
         return Ok(HostGhResolution::Resolved(parsed));
     }
-
     Ok(HostGhResolution::Missing(
         cli_failure.unwrap_or(HostMissingReason::HostsFileMalformed),
     ))
@@ -214,7 +212,6 @@ pub fn parse_gh_hosts_yml(text: &str) -> Option<HostGhAuth> {
     Some(HostGhAuth {
         token,
         user: entry.user.filter(|s| !s.trim().is_empty()),
-
         source: GithubTokenSource::HostsFile,
     })
 }

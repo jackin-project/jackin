@@ -182,7 +182,6 @@ async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
     .unwrap();
 
     let mounts = agent_mounts(&state).unwrap();
-
     for expected in [
         ":/home/agent/.claude",
         ":/home/agent/.claude-claude-personal",
@@ -220,7 +219,6 @@ async fn agent_mounts_for_two_claude_slots_isolates_homes_and_handoffs() {
             "Apple auth store must be read-only: {mount:?}"
         );
     }
-
     for (store, marker) in [
         ("claude", "work-oauth"),
         ("claude-claude-personal", "personal-oauth"),

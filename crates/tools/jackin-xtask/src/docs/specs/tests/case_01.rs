@@ -121,7 +121,6 @@ fn verify_commented_out_test_is_not_coverage() {
     )
     .unwrap();
     fs::create_dir_all(tests.parent().unwrap()).unwrap();
-
     fs::write(
         &tests,
         "// #[test]\n// fn ghost_test() {}\n#[test]\nfn other() {}\n",

@@ -1,4 +1,3 @@
-
 export function PillCards() {
   return (
     <section className="landing-section">

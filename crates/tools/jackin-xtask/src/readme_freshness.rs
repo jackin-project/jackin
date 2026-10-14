@@ -13,7 +13,6 @@ const RERUN: &str = "cargo xtask lint readme-freshness --base origin/main";
 pub(crate) struct LintReadmeFreshnessArgs {
     #[command(flatten)]
     output: FormatArgs,
-
     #[arg(long, default_value = "origin/main")]
     base: String,
 }
@@ -80,7 +79,6 @@ fn run_inner(args: LintReadmeFreshnessArgs) -> Result<()> {
 struct NameStatusEntry {
     status: String,
     path: String,
-
     new_path: Option<String>,
 }
 
@@ -183,7 +181,6 @@ fn git_name_status(root: &Path, base: &str) -> Result<Vec<NameStatusEntry>> {
         out.trim().to_owned()
     };
     let mut cmd = crate::cmd::command("git");
-
     cmd.args(["diff", "--name-status", "-M", &merge_base, "HEAD"])
         .current_dir(root);
     let raw = crate::cmd::output_string(&mut cmd).context("git diff --name-status")?;

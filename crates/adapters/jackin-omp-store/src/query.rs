@@ -50,7 +50,6 @@ impl std::fmt::Debug for OmpAccount {
 #[derive(Clone, PartialEq, Eq)]
 pub struct OmpSelector {
     pub entry: String,
-
     pub profile: Option<String>,
 }
 
@@ -93,7 +92,6 @@ pub(crate) fn enumerate(
             entry: credential.provider.clone(),
             profile: row_profile(credential.id),
         });
-
         drop(credential);
     }
     check_deadline(deadline)?;

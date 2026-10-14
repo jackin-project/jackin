@@ -80,7 +80,6 @@ fn enforceable_ipv4_accepts_addr_and_valid_cidr() {
 fn enforceable_ipv4_rejects_ipv6_and_malformed() {
     assert!(!enforceable_ipv4("::1"));
     assert!(!enforceable_ipv4("2001:db8::/32"));
-
     assert!(!enforceable_ipv4("1.2.3.0/99"));
     assert!(!enforceable_ipv4("1.2.3.0/abc"));
     assert!(!enforceable_ipv4("1.2.3.0/"));
@@ -114,14 +113,12 @@ fn ipset_restore_stream_empty_is_create_flush_only() {
 #[test]
 fn ipv6_deny_rules_drop_first_loopback_and_established_only() {
     assert_eq!(BASE_DENY_RULES[0], ["-P", "OUTPUT", "DROP"]);
-
     assert!(BASE_DENY_RULES.iter().any(|r| r.contains(&"lo")));
     assert!(
         BASE_DENY_RULES
             .iter()
             .any(|r| r.contains(&"ESTABLISHED,RELATED"))
     );
-
     assert!(
         !BASE_DENY_RULES
             .iter()

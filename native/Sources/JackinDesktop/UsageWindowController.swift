@@ -10,15 +10,6 @@ enum UsageWindowMetrics {
     static let minimumContentSize = NSSize(width: 800, height: 520)
 }
 
-
-
-
-
-
-
-
-
-
 @MainActor
 public final class UsageWindowController: NSObject, NSWindowDelegate {
     private let store: PresentationStore
@@ -44,17 +35,14 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
-
     public func show(size: CGSize? = nil) {
         present(size: size)
     }
-
 
     public func show(focusOn surfaceId: String?, size: CGSize? = nil) {
         store.selectUsageSurface(surfaceId)
         present(size: size)
     }
-
 
     public func show(context: UsageNavigationContext?, size: CGSize? = nil) {
         store.selectUsageContext(
@@ -78,10 +66,6 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
             centerFixtureWindowOnPrimaryScreen(window)
         }
         if elevatesFixtureWindow {
-
-
-
-
             NSApp.unhide(nil)
             NSApp.activate()
             NSApp.activate(ignoringOtherApps: true)
@@ -132,8 +116,6 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         window.hidesOnDeactivate = false
         window.delegate = self
         if store.usesFixture {
-
-
             window.canHide = false
             window.collectionBehavior.formUnion([
                 .canJoinAllSpaces,
@@ -157,7 +139,6 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         if !store.usesFixture {
             window.setFrameAutosaveName("jackin.desktop.usage-window")
         }
-
 
         window.toolbarStyle = .unified
         window.titlebarAppearsTransparent = true
@@ -197,10 +178,6 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         guard let titlebar = window.standardWindowButton(.closeButton)?.superview else { return }
         centeredBrandContainer?.removeFromSuperview()
         centeredBrandContainer = nil
-
-
-
-
         if let frameView = window.contentView?.superview {
             removeCenteredBrandHosts(from: frameView)
         }
@@ -244,7 +221,6 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         if let window = notification.object as? NSWindow {
             retainedFrame = window.frame
         }
-
         DispatchQueue.main.async {
             AppActivation.resignToAccessoryIfNeeded()
         }
@@ -267,7 +243,6 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         toolbarController = nil
         window = nil
     }
-
 
     public var qiWindow: NSWindow? { window }
     public var qiVisibilityDesired: Bool { visibilityDesired }

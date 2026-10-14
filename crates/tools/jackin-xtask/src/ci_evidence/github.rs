@@ -74,12 +74,8 @@ pub(crate) struct ApiRun {
     head_repository: Option<ApiRunRepository>,
     #[serde(default)]
     workflow_id: Option<u64>,
-
-
-
     #[serde(default)]
     name: Option<String>,
-
     #[serde(default)]
     pub(crate) display_title: Option<String>,
     #[serde(default)]
@@ -883,10 +879,6 @@ fn classify_outcome(
     if matches!(conclusion.as_str(), "skipped" | "neutral") {
         return OutcomeClass::Inapplicable;
     }
-
-
-
-
     if jobs.is_empty() {
         return OutcomeClass::Infrastructure;
     }

@@ -1,5 +1,4 @@
 #!/bin/sh
-
 set -eu
 
 APP=${1:?app bundle path required}
@@ -120,7 +119,6 @@ if [ -n "${CAPTURE_STATUS_ITEM_INDEX:-}" ]; then
   fi
   sleep 1
 else
-
   sleep 1
 fi
 
@@ -151,8 +149,6 @@ drive_activation() {
       >/dev/null 2>&1 || true
   else
     if [ -n "$WINDOW_NAME" ]; then
-
-
       "$FOCUS_TOOL" "$pid" 0 >/dev/null
     else
       osascript -e \
@@ -185,9 +181,6 @@ done
   echo "application did not reach requested $requested_activation state" >&2
   exit 1
 }
-
-
-
 
 sleep "${CAPTURE_SETTLE_DELAY_SECONDS:-3}"
 

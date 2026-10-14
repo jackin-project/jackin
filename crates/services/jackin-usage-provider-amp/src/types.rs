@@ -32,7 +32,6 @@ pub enum AmpSubscriptionKind {
         orb_remaining_hours: Option<f64>,
         orb_limit_hours: Option<f64>,
     },
-
     Legacy {
         agent_remaining_percent: u8,
         orb_remaining_percent: u8,

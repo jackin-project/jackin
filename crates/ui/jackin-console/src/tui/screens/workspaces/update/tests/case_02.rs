@@ -65,7 +65,6 @@ fn workspace_list_key_plan_routes_navigation_and_actions() {
         workspace_list_key_plan(KeyCode::Char('p'), false),
         WorkspaceListKeyPlan::ConfirmPurge
     );
-
     assert_eq!(
         workspace_list_key_plan(KeyCode::Char('?'), false),
         WorkspaceListKeyPlan::Continue

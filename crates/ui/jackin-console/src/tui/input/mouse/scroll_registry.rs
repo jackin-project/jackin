@@ -8,25 +8,15 @@ use crate::tui::state::ManagerState;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConsoleScrollBlock {
     ListNames,
-
     ListWorkspaceMounts,
-
     ListGlobalMounts,
-
     ListRoleGlobalMounts,
-
     ListRoles,
-
     EditorTabContent,
-
     EditorWorkspaceMounts,
-
     SettingsMounts,
-
     SettingsEnv,
-
     SettingsTrust,
-
     SettingsAuth,
 }
 
@@ -95,7 +85,6 @@ fn list_blocks(
         id: ConsoleScrollBlock::ListNames,
         rect: names_area,
         content_w: crate::tui::layout::list::list_names_content_width(state, names_viewport),
-
         content_h: 0,
     });
     if let Some(areas) = super::list_scroll_areas(state, term_size, config) {
@@ -147,7 +136,6 @@ fn editor_blocks(
             id: ConsoleScrollBlock::EditorWorkspaceMounts,
             rect: mounts.area,
             content_w: mounts.content_width,
-
             content_h: editor.tab_content_height,
         });
     }

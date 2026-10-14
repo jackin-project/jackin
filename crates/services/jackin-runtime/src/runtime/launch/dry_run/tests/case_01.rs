@@ -232,7 +232,6 @@ fn explicit_pick_with_ambient_list_reports_single_account() {
         resolve_dry_run_identity(&scoped, Agent::Claude, Some(&workspace), ROLE, true).unwrap();
     assert_eq!(plan.account_id.as_deref(), Some("c-home"));
     assert!(plan.instances.is_empty());
-
     let admitted = admission(&scoped, &workspace).unwrap();
     assert!(
         admitted
@@ -352,7 +351,6 @@ fn plan_matches_admission_across_binding_list_combinations() {
                 planned_accounts, admitted_accounts,
                 "drift with binding={binding:?} list={list:?}"
             );
-
             if admitted.len() == 1 && admitted[0].synthesized {
                 assert_eq!(
                     plan.account_id.as_deref(),

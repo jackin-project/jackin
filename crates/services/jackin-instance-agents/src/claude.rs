@@ -26,12 +26,10 @@ pub fn provision_claude_auth(
             wipe_claude_state(account_json, credentials_json)?;
             AuthProvisionOutcome::Skipped
         }
-
         AuthForwardMode::ApiKey => {
             wipe_claude_state(account_json, credentials_json)?;
             AuthProvisionOutcome::Skipped
         }
-
         AuthForwardMode::OAuthToken => {
             if credentials_json.exists() {
                 std::fs::remove_file(credentials_json)?;
@@ -48,7 +46,6 @@ pub fn provision_claude_auth(
                 if !account_json.exists() {
                     write_private_file(account_json, "{}")?;
                 }
-
                 repair_permissions(account_json)?;
                 repair_permissions(credentials_json)?;
                 AuthProvisionOutcome::HostMissing

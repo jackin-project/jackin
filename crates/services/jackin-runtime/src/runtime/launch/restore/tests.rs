@@ -54,7 +54,6 @@ fn is_dirty_for(status: CleanupStatus) -> bool {
     let container = "jk-k7p9m2xq-agentsmith";
     let state_dir = paths.data_dir.join(container);
     std::fs::create_dir_all(&state_dir).unwrap();
-
     let wt = temp.path().join("wt");
     std::fs::create_dir_all(&wt).unwrap();
     crate::isolation::state::write_records(

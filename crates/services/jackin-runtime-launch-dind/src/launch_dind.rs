@@ -19,7 +19,6 @@ pub const PREWARM_STATE_FILE: &str = "prewarm-dind.json";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DindSidecarPrewarm {
     pub dind: String,
-
     pub dind_id: String,
     pub network: String,
     pub certs_volume: String,
@@ -152,7 +151,6 @@ async fn run_dind_sidecar_headless_with_owner(
 ) -> anyhow::Result<()> {
     let (dind_image, dind_privileged) =
         jackin_runtime_docker_profile::docker_profile::dind_image_and_privileged(grant);
-
     create_network_timed(network, owner.labels(None), false, docker).await?;
 
     jackin_diagnostics::active_timing_started(
@@ -318,7 +316,6 @@ async fn prewarm_dind_sidecar_container_inner(
     }
 
     let started = std::time::Instant::now();
-
     let dind_handle_slot = std::sync::Arc::new(std::sync::Mutex::new(None));
     let result = run_dind_sidecar_headless_with_owner(
         DindSidecarOwner::Prewarm,

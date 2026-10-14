@@ -8,7 +8,6 @@ pub fn spend_headline_label(buckets: &[QuotaBucketView]) -> Option<String> {
         bucket.status_slot == Some(StatusSlot::Spend) && status_bar_fresh_or_stale(bucket)
     })?;
     let used = spend.used_money.as_ref()?;
-
     if used.amount_minor == 0 {
         return None;
     }
@@ -107,7 +106,6 @@ pub fn compact_account_identity(account_label: &str) -> &str {
 pub(crate) fn summary_slot_rank(slot: Option<StatusSlot>) -> u8 {
     match slot {
         Some(StatusSlot::Daily | StatusSlot::Weekly) => 0,
-
         Some(StatusSlot::Session) => 2,
         Some(StatusSlot::Spend) | None => 3,
     }

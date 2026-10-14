@@ -296,7 +296,6 @@ fn workspace_edit_fails_on_child_under_existing_parent() {
 fn workspace_edit_non_tty_without_yes_bails() {
     let env = setup_env();
     create_workspace_with_children(&env, "test");
-
     jackin(&env)
         .args([
             "workspace",

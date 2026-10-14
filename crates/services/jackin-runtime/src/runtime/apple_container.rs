@@ -113,7 +113,6 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         .cloned()
         .collect::<Vec<_>>();
     let mut capsule_config = capsule_config.clone();
-
     let names = super::launch::exec_binding_names(&capsule_config.exec_bindings);
     if !names.is_empty() {
         env.push(("JACKIN_EXEC_BINDINGS".to_owned(), names));

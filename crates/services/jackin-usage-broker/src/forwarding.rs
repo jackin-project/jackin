@@ -120,7 +120,6 @@ pub(crate) fn forwarding_requirement(
             material: material.clone(),
         },
         ValidatedCredentialSource::Capability => ForwardingRequirement::Capability,
-
         ValidatedCredentialSource::Unpollable => ForwardingRequirement::Capability,
     }
 }

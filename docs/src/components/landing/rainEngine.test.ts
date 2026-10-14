@@ -1,4 +1,3 @@
-
 import { test, expect } from 'bun:test';
 import { ageToColor } from './rainEngine';
 
@@ -26,7 +25,6 @@ import type { RainState } from './rainEngine';
 
 function makeRng(seed: number) {
   return () => {
-
     seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
     return ((seed >>> 0) % 10000) / 10000;
   };

@@ -1,4 +1,3 @@
-
 import { EarlyDevelopmentNotice } from './EarlyDevelopmentNotice';
 
 export function InstallBlock() {

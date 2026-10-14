@@ -29,7 +29,6 @@ async fn register_agent_repo_rejects_stale_non_git_directory() {
             .contains("cached role path exists but is not a git repository"),
         "expected stale-non-git bail, got: {err}"
     );
-
     assert_eq!(
         std::fs::read_to_string(cached_dir.join("README")).unwrap(),
         "operator's lost work\n"

@@ -125,7 +125,6 @@ fn usage_broker_child() -> Result<()> {
             executor,
         )
         .test_result()?;
-
         let state = client.refresh(capability(), 0, true).test_result()?;
         assert_eq!(state.generation, 1);
         wait_until(Duration::from_secs(10), || {
@@ -143,7 +142,6 @@ fn usage_broker_child() -> Result<()> {
         root: root.clone(),
         release: None,
     });
-
     const ENSURE_DEADLINE: Duration = Duration::from_secs(90);
     let deadline = Instant::now() + ENSURE_DEADLINE;
     let client = loop {

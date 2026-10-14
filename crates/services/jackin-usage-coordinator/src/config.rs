@@ -14,13 +14,9 @@ use super::{coordination_error, policy};
 #[derive(Debug, Clone, Copy)]
 pub struct UsageCoordinatorConfig {
     pub max_concurrency: usize,
-
     pub success_cooldown: Duration,
-
     pub provider_timeout: Duration,
-
     pub queue_capacity: usize,
-
     pub retry_policy: policy::UsagePolicy,
 }
 

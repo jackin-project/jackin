@@ -55,11 +55,9 @@ fn open_detailed_fresh_install_scans_and_stamps_sentinel() {
     assert!(report.fresh_install);
     let config = editor.save().unwrap();
     assert_eq!(config.bootstrap, Some(crate::BootstrapState::initialized()));
-
     for id in &report.added_accounts {
         assert!(config.accounts.contains_key(id), "missing {id}");
     }
-
     let (_, second) = ConfigEditor::open_detailed(&paths).unwrap();
     assert!(!second.fresh_install);
     assert!(second.added_accounts.is_empty());
@@ -125,7 +123,6 @@ fn open_detailed_upgrade_never_resurrects_or_rescans() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-
     std::fs::write(
         &paths.config_file,
         "version = \"v1alpha10\"\n\n[accounts.kept]\nenabled = true\nname = \"Kept\"\nprovider = \"anthropic\"\n\n[accounts.kept.credential]\ntype = \"api_key\"\nvalue = \"${ANTHROPIC_API_KEY}\"\n",
@@ -135,7 +132,6 @@ fn open_detailed_upgrade_never_resurrects_or_rescans() {
     assert!(!report.fresh_install);
     assert!(report.added_accounts.is_empty());
     let config = editor.save().unwrap();
-
     assert_eq!(
         config.accounts.keys().collect::<Vec<_>>(),
         vec![&"kept".to_owned()]

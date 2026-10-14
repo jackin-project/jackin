@@ -46,7 +46,6 @@ pub(crate) fn read_existing_json_object(
 pub(crate) fn upsert_into_json_array(
     map: &mut serde_json::Map<String, serde_json::Value>,
     key: &str,
-
     value: impl FnOnce() -> serde_json::Value,
     eq: impl Fn(&serde_json::Value) -> bool,
     config_path: &Path,
@@ -71,7 +70,6 @@ pub(crate) fn write_json_file(path: &Path, value: &serde_json::Value) -> anyhow:
         fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("json.tmp");
-
     let write_result = (|| {
         let mut file = fs::File::create(&tmp)?;
         serde_json::to_writer_pretty(&mut file, value)?;

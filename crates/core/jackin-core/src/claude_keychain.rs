@@ -10,9 +10,7 @@ pub const CLAUDE_KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeKeychainScope {
     pub normalized_config_dir: PathBuf,
-
     pub service: String,
-
     pub is_default: bool,
 }
 

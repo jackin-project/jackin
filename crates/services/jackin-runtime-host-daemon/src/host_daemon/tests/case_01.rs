@@ -281,7 +281,6 @@ fn daemon_socket_marks_server_failure_when_peer_closes_before_response() {
     let (mut client, mut server) = UnixStream::pair().expect("daemon socket pair");
     serde_json::to_writer(&mut client, &request).expect("write daemon request");
     client.write_all(b"\n").expect("terminate daemon request");
-
     let linger = nix::libc::linger {
         l_onoff: 1,
         l_linger: 0,
@@ -322,7 +321,6 @@ fn daemon_layout_uses_private_run_dir() {
 fn hello_reports_protocol_without_adapters() {
     let (_temp, _paths, layout) = layout();
     let mut attention = AttentionAdapter::new(RecordingNotifier::default());
-
     let (_export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
     let request = DaemonRequest {

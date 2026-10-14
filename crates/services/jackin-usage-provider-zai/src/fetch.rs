@@ -88,7 +88,6 @@ pub fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
                 .map_err(|err| format!("Z.AI quota decode failed: {err}"))
         },
     )?;
-
     if quota.success == Some(false) {
         let detail = quota.msg.unwrap_or_else(|| "quota rejected".to_owned());
         return Err(format!("Z.AI key has no GLM Coding Plan ({detail})"));
@@ -97,7 +96,6 @@ pub fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
         let detail = quota.msg.unwrap_or_else(|| "unknown error".to_owned());
         return Err(format!("Z.AI quota rejected response: {detail}"));
     }
-
     let empty = quota
         .data
         .as_ref()

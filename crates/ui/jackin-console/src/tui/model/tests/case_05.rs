@@ -79,7 +79,6 @@ fn console_modal_role_picker_overlay_size_uses_filtered_rows() {
     };
 
     let size = modal.overlay_size(Rect::new(0, 0, 100, 40));
-
     assert_eq!(size.width, 80);
     assert_eq!(size.height, 11);
 }

@@ -151,7 +151,6 @@ fn omp_sync_materializes_schema_and_credentials_from_wal_only_pages() {
              VALUES (41, 'openai', 'api_key', '{{\"key\":\"fixture-schema-wal-token\"}}');"
         ),
     );
-
     let main = std::fs::read(source.join("agent/agent.db")).unwrap();
     assert!(!contains_bytes(&main, b"auth_credentials"));
     assert!(!contains_bytes(&main, b"fixture-schema-wal-token"));

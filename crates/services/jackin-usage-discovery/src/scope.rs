@@ -9,10 +9,8 @@ use std::path::PathBuf;
 pub enum UsageDiscoveryScope {
     HostDesktop {
         config_root: PathBuf,
-
         operator_home: PathBuf,
     },
-
     Capsule {
         forwarded_accounts: Vec<ForwardedUsageAccount>,
     },
@@ -100,10 +98,7 @@ pub fn host_credential_root_matrix() -> Vec<HostCredentialRootRow> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostCredentialRootRow {
     pub surface: &'static str,
-
     pub host_paths: &'static str,
-
     pub env_vars: &'static str,
-
     pub container_handoff: &'static str,
 }

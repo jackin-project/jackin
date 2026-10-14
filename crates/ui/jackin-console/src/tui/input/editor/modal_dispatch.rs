@@ -91,7 +91,6 @@ pub fn handle_editor_modal(
                 BoolConfirmModalPlan::Confirm => {
                     let target = target.clone();
                     editor.clear_modal_chain();
-
                     if let ConfirmTarget::DeleteIsolatedAndSave {
                         mut plan,
                         exit_on_success,
@@ -147,7 +146,6 @@ pub fn handle_editor_modal(
                 SaveDiscardModalPlan::Continue => {}
             }
         }
-
         Modal::GithubPicker { .. } | Modal::RolePicker { .. } => {
             editor.clear_modal_chain();
         }
@@ -175,7 +173,6 @@ pub fn handle_editor_modal(
                     let plan = crate::tui::state::PendingSaveCommit {
                         effective_removals: modal_state.effective_removals.clone(),
                         final_mounts: modal_state.final_mounts.clone(),
-
                         delete_isolated_acknowledged: false,
                         isolated_cleanup_complete: false,
                     };
@@ -213,7 +210,6 @@ pub fn handle_editor_modal(
                     }
                     editor.clear_modal_chain();
                     editor.save_flow = EditorSaveFlow::Idle;
-
                     if editor.has_modal_parent() {
                         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
                     }
@@ -315,7 +311,6 @@ pub fn handle_editor_modal(
                         editor.dismiss_active_modal();
                         return EditorModalOutcome::ValidateOpRef(op_ref);
                     }
-
                     match secrets_target {
                         Some(SecretsPickerTarget::Existing { scope, key }) => {
                             super::set_pending_env_op_ref(editor, &scope, &key, op_ref);

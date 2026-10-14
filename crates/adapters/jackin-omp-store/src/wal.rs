@@ -17,25 +17,18 @@ const CHECKSUM_DEADLINE_INTERVAL: usize = 4096;
 pub(crate) enum WalError {
     #[error("OMP database image is invalid or exceeds its size limit")]
     InvalidDatabase,
-
     #[error("OMP WAL header is invalid")]
     InvalidHeader,
-
     #[error("OMP WAL exceeds its size limit")]
     WalTooLarge,
-
     #[error("OMP WAL has a truncated frame or trailing bytes")]
     InvalidLength,
-
     #[error("OMP WAL contains a frame from another generation")]
     InvalidSalt,
-
     #[error("OMP WAL checksum validation failed")]
     InvalidChecksum,
-
     #[error("OMP database exceeds its logical page limit")]
     PageLimit,
-
     #[error("OMP database validation timed out")]
     Deadline,
 }
@@ -44,7 +37,6 @@ pub(crate) enum WalError {
 pub(crate) struct DatabaseHeader {
     pub(crate) page_size: usize,
     pub(crate) page_count: usize,
-
     pub(crate) wal_mode: bool,
 }
 

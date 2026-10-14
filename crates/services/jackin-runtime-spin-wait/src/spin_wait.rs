@@ -72,7 +72,6 @@ where
     let mut frame_idx: usize = 0;
 
     let debug = is_debug_mode();
-
     let suppressed = rich_terminal_owned();
     for attempt in 0..max_attempts {
         if debug && !suppressed {

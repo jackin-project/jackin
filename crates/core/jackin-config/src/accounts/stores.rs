@@ -11,29 +11,22 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StoreKind {
     Opencode,
-
     Hermes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CredentialKind {
     ApiKey,
-
     OAuth,
 }
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct StoreCandidate {
     pub(crate) store: StoreKind,
-
     pub(crate) provider: String,
-
     pub(crate) profile: Option<String>,
-
     pub(crate) source: PathBuf,
-
     pub(crate) kind: CredentialKind,
-
     pub(crate) field: String,
     secret: String,
 }
@@ -78,13 +71,10 @@ impl std::fmt::Debug for StoreCandidate {
 pub(crate) enum StoreError {
     #[error("credential store cannot be read")]
     Unreadable,
-
     #[error("credential store exceeds the size limit")]
     TooLarge,
-
     #[error("credential store is malformed")]
     Malformed,
-
     #[error("credential store uses an unsupported layout: {0}")]
     Unsupported(&'static str),
 }

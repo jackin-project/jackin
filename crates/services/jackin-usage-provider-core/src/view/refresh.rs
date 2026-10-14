@@ -44,7 +44,6 @@ pub fn decorate_surface_view(
         .map(str::to_owned)
         .or_else(|| Some(surface.label().to_owned()));
     view.account.provider_label = surface.account_label().to_owned();
-
     view.tabs = provider_tabs(&[]);
 }
 

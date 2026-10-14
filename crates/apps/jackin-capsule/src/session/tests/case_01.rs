@@ -221,14 +221,12 @@ fn feed_pty_does_not_accumulate_scroll_ops() {
     for i in 0..200 {
         burst.extend_from_slice(format!("line {i}\r\n").as_bytes());
     }
-
     let mut probe = termpane::DamageGrid::new(24, 80, 100);
     probe.process(&burst);
     assert!(
         !probe.drain_scroll_ops().is_empty(),
         "burst must record scroll ops for the clear assertion to be meaningful"
     );
-
     let mut session = test_session_with_policy(OscPolicy::default());
     session.feed_pty(&burst);
     assert!(
@@ -299,7 +297,6 @@ fn osc_7_cwd_is_captured_and_percent_decoded() {
         Some("/Users/alice/My Code"),
         "OSC 7 must percent-decode and strip the host"
     );
-
     assert!(
         session.drain_passthrough().is_empty(),
         "OSC 7 must not reach the outer terminal"

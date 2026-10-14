@@ -45,7 +45,6 @@ pub(crate) fn mark_updating(shared: &Arc<Shared>, job: &ProbeJob) -> Option<i64>
     {
         entry.envelope.provider_invoked_at_epoch = previous_invocation;
         entry.envelope.reload_fence_required = previous_reload_fence;
-
         finish_failure_in_state(
             shared,
             &mut state,

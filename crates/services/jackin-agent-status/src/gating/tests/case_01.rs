@@ -48,18 +48,15 @@ fn claude_and_codex_hooks_are_identity_only() {
                 "runtime={runtime} event={name} must be identity-only"
             );
         }
-
         assert!(!state.pending_permission);
         assert_eq!(state.subagents_active, 0);
     }
-
     let mut state = SourceGateState::default();
     assert_eq!(
         map_event(&event("claude", "Notification:auth_success"), &mut state),
         GateEffect::Heartbeat
     );
     assert!(!state.pending_permission);
-
     assert_eq!(
         map_event(
             &event("claude", "SessionEnd"),
@@ -223,7 +220,6 @@ fn enrich_claude_notification_from_payload_subtype() {
             notes: Vec::new(),
         }
     );
-
     assert_eq!(
         enrich_event_name("claude", "Notification", None),
         "Notification"

@@ -288,7 +288,6 @@ fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
         },
     ];
     let prompt = sensitive_mount_prompt(&sensitive);
-
     for hit in &sensitive {
         assert!(prompt.contains(&hit.src), "missing src in: {prompt}");
         assert!(prompt.contains(&hit.reason), "missing reason in: {prompt}");
@@ -308,7 +307,6 @@ fn docker_build_failure_cli_error_contains_no_local_artifact_paths() {
         jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
     )
     .unwrap();
-
     let error: anyhow::Error = jackin_docker::DockerError::DockerBuildFailed {
         stderr: "ERROR: failed to read dockerfile: open <redacted-path>: no such file".to_owned(),
     }

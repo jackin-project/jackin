@@ -22,14 +22,10 @@ pub enum ConsoleAppStage<Manager> {
 #[derive(Debug)]
 pub struct ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache> {
     pub stage: ConsoleAppStage<Manager>,
-
     pub pending_launch: Option<LaunchInput>,
     pub pending_launch_role: Option<RoleSelector>,
-
     pub op_cache: OpCache,
-
     pub op_available: bool,
-
     pub quit_confirm: Option<crate::tui::components::ConfirmState>,
 }
 

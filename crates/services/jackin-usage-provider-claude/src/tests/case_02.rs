@@ -59,9 +59,6 @@ fn claude_oauth_response_maps_windows_to_buckets() {
         "seven_day": { "utilization": 0.78, "resets_at": "2026-06-12T14:26:00Z" },
         "seven_day_sonnet": { "utilization": 0.02, "resets_at": "2026-06-12T14:26:00Z" },
         "seven_day_routines": { "utilization": 0.0 },
-
-
-
         "extra_usage": {
             "is_enabled": true,
             "monthly_limit": 26000.0,
@@ -91,7 +88,6 @@ fn claude_oauth_response_maps_windows_to_buckets() {
     assert_eq!(buckets[1].label, "Weekly");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
     assert_eq!(buckets[1].remaining_percent, Some(22));
-
     assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
     assert!(
         buckets
@@ -99,7 +95,6 @@ fn claude_oauth_response_maps_windows_to_buckets() {
             .find(|bucket| bucket.label == "Sonnet")
             .is_some_and(|bucket| bucket.status_slot.is_none())
     );
-
     assert!(
         buckets
             .iter()
@@ -110,13 +105,11 @@ fn claude_oauth_response_maps_windows_to_buckets() {
         && bucket.remaining_percent == Some(100)
         && bucket.pace_label.is_none()
         && bucket.status_slot.is_none()));
-
     assert!(!buckets.iter().any(|bucket| bucket.label == "Opus"));
     let extra = buckets
         .iter()
         .find(|bucket| bucket.label == "Extra usage")
         .expect("extra usage bucket");
-
     assert_eq!(extra.status_slot, Some(StatusSlot::Spend));
     assert_eq!(extra.remaining_percent, Some(70));
     assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49 spent"));
@@ -139,10 +132,8 @@ fn claude_oauth_response_maps_windows_to_buckets() {
 #[test]
 fn claude_spend_object_preferred_and_scaled() {
     let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
-
         "five_hour": null,
         "seven_day": null,
-
         "extra_usage": {
             "is_enabled": true,
             "monthly_limit": 30000.0,
@@ -181,8 +172,6 @@ fn claude_spend_object_preferred_and_scaled() {
 #[test]
 fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
     let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
-
-
         "five_hour": null,
         "seven_day": null,
         "seven_day_sonnet": null,
@@ -229,7 +218,6 @@ fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
     assert_eq!(fable.used_label.as_deref(), Some("35% used"));
     assert_eq!(fable.status_slot, None);
     assert_eq!(fable.severity, UsageSeverity::Warn);
-
     assert!(fable.resets_at.is_some());
 
     assert!(buckets.iter().all(|b| b.label != "Weekly"));
@@ -323,8 +311,6 @@ fn claude_legacy_and_limits_sources_share_one_builder() {
     let reset_at = "2026-07-03T06:59:59Z";
     let now = 1_781_300_000;
     let legacy: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
-
-
         "seven_day_sonnet": { "utilization": 35.0, "resets_at": reset_at }
     }))
     .expect("legacy response");

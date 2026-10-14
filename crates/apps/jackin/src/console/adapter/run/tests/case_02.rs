@@ -83,6 +83,5 @@ fn console_startup_refresh_stays_inside_the_fake_broker() {
     let snapshot = load_console_usage_projection(&client, false, true)
         .expect("Console startup broker refresh");
     assert!(snapshot.canonical_projection.is_some());
-
     assert_eq!(executor.0.load(Ordering::SeqCst), 0);
 }

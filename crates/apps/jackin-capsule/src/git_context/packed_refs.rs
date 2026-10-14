@@ -23,7 +23,6 @@ pub(crate) fn read_packed_git_ref_oid(path: &Path, ref_name: &str) -> Option<Oid
         log_mtime_unavailable_once(path);
         return parse_packed_refs_for_ref(path, &metadata, ref_name);
     };
-
     if let Some(oid) = with_packed_refs_cache(|cache| {
         cache
             .get(path)

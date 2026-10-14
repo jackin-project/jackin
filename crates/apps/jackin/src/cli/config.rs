@@ -9,13 +9,10 @@ use super::{BANNER, HELP_STYLES};
 pub enum ConfigCommand {
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Mount(MountCommand),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Trust(TrustCommand),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(EnvCommand),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Git(GitCommand),
 }
@@ -24,7 +21,6 @@ pub enum ConfigCommand {
 pub enum GitCommand {
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     CoauthorTrailer(CoauthorTrailerCommand),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Dco(DcoCommand),
 }
@@ -33,7 +29,6 @@ pub enum GitCommand {
 pub enum DcoCommand {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Enable,
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Disable,
 }
@@ -42,7 +37,6 @@ pub enum DcoCommand {
 pub enum CoauthorTrailerCommand {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Enable,
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Disable,
 }
@@ -61,19 +55,14 @@ Examples:
     )]
     Set {
         key: String,
-
         value: String,
-
         #[arg(long)]
         role: Option<String>,
-
         #[arg(long)]
         comment: Option<String>,
-
         #[arg(long = "on-demand")]
         on_demand: bool,
     },
-
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -84,11 +73,9 @@ Examples:
     )]
     Unset {
         key: String,
-
         #[arg(long)]
         role: Option<String>,
     },
-
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -115,20 +102,15 @@ Examples:
     )]
     Add {
         name: String,
-
         #[arg(long)]
         src: String,
-
         #[arg(long)]
         dst: String,
-
         #[arg(long, default_value_t = false)]
         readonly: bool,
-
         #[arg(long)]
         scope: Option<String>,
     },
-
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -139,11 +121,9 @@ Examples:
     )]
     Remove {
         name: String,
-
         #[arg(long)]
         scope: Option<String>,
     },
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     List,
 }

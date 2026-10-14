@@ -9,7 +9,6 @@ use super::titlecase_ascii;
 pub enum PercentStyle {
     #[default]
     Left,
-
     Used,
 }
 
@@ -17,14 +16,12 @@ pub enum PercentStyle {
 pub enum ResetStyle {
     #[default]
     Countdown,
-
     ExactClock,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct UsageFormatPrefs {
     pub percent_style: PercentStyle,
-
     pub reset_style: ResetStyle,
 }
 
@@ -99,7 +96,6 @@ pub fn quota_pace_label(
         return None;
     }
     let time_left_percent = reset_in as f64 / window_seconds as f64 * 100.0;
-
     let delta = remaining_percent - time_left_percent;
     let pace = if delta.abs() <= 2.0 {
         "On pace".to_owned()
@@ -108,7 +104,6 @@ pub fn quota_pace_label(
     } else {
         format!("{}% in deficit", (-delta).round() as i64)
     };
-
     let used = 100_i128 - i128::from(remaining_percent_raw);
     let elapsed = window_seconds - reset_in;
     let behind_clock = i128::from(remaining_percent_raw) * i128::from(window_seconds)

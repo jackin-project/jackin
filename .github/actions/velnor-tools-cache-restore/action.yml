@@ -1,4 +1,3 @@
-
 name: Velnor Mise tools cache restore
 description: Restore the exact renderer-owned V2 Mise tools paths.
 inputs:

@@ -70,7 +70,6 @@ pub(super) fn parity_antigravity_account() -> ParityAccount {
                 amount: usd(1_250),
                 expires_at_epoch: Some(PARITY_NOW + 2_592_000),
             },
-
             quota_state: UsageQuotaStateV1::Available,
             phase: UsageFreshnessPhaseV1::Current,
             is_stale: false,

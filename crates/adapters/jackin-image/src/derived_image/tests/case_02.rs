@@ -273,7 +273,6 @@ fn entrypoint_kimi_branch_forwards_model_args() {
         .unwrap();
     assert!(kimi_section.contains("LAUNCH=(kimi --yolo)"));
     assert!(kimi_section.contains("LAUNCH+=(\"$@\")"));
-
     assert!(!kimi_section.contains("--auto"));
 }
 

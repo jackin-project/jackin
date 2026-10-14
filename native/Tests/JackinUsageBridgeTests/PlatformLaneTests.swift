@@ -3,9 +3,6 @@
 
 import XCTest
 
-
-
-
 final class PlatformLaneTests: XCTestCase {
     private var nativeRoot: URL {
         URL(fileURLWithPath: #filePath)
@@ -61,9 +58,7 @@ final class PlatformLaneTests: XCTestCase {
             let raw = try String(contentsOf: url, encoding: .utf8)
             scanned += 1
             if url.lastPathComponent == "PlatformLaneTests.swift" { continue }
-
             if url.pathExtension == "md" { continue }
-
             let content = raw.components(separatedBy: .newlines)
                 .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
                 .joined(separator: "\n")
@@ -77,7 +72,6 @@ final class PlatformLaneTests: XCTestCase {
 
     func testComponentMapPost26SymbolsAreGuarded() throws {
         let componentMap = try text("Design/UnifiedAgentUsage/NativeComponentMap.md")
-
         let rowPattern = try NSRegularExpression(
             pattern: #"^\| *`([A-Za-z0-9_]+)` *\| *macOS (2[7-9]|[3-9][0-9])"#,
             options: [.anchorsMatchLines]

@@ -42,7 +42,6 @@ impl GrokWebBillingSnapshot {
         let label = self.reset_at_epoch.map_or("Credits", |reset_at| {
             grok_cycle_label_from_reset(reset_at, now)
         });
-
         let mut view = timed_bucket(
             label,
             None,
@@ -83,7 +82,6 @@ impl GrokBillingResponse {
         if let Some(headline) = config.headline_bucket(now) {
             buckets.push(headline);
         }
-
         if let Some(balance) = config
             .prepaid_balance
             .as_ref()
@@ -101,7 +99,6 @@ impl GrokBillingResponse {
             view.limit_money = Some(Money::new(balance, "USD", 2));
             buckets.push(view);
         }
-
         if self.on_demand_enabled != Some(false)
             && let Some(cap) = config
                 .on_demand_cap
@@ -143,7 +140,6 @@ impl GrokBillingConfig {
         {
             let window_seconds = end - start;
             let label = grok_period_label(period.period_type.as_deref(), window_seconds);
-
             let Some(percent) = self
                 .credit_usage_percent
                 .filter(|value| value.is_finite() && *value >= 0.0)

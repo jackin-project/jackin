@@ -17,7 +17,6 @@ pub(crate) struct WorkdirContext {
     pub(crate) is_git_repo: bool,
     pub(crate) git_available: bool,
     pub(crate) gh_available: bool,
-
     pub(crate) default_branch: Option<String>,
 }
 
@@ -25,7 +24,6 @@ impl WorkdirContext {
     pub(crate) fn resolve(workdir: &Path) -> Self {
         let git_available = command_in_path("git");
         let gh_available = command_in_path("gh");
-
         let git_metadata = workdir.join(".git");
         let has_git_metadata = match git_metadata.try_exists() {
             Ok(present) => present,

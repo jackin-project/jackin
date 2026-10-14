@@ -68,7 +68,6 @@ fn new_session_account_picker_opens_for_codex_with_multiple_providers() {
     assert_eq!(picker.context, "jackin-demo-architect");
     assert_eq!(picker.agent, jackin_core::Agent::Codex);
     assert_eq!(picker.providers().len(), 2);
-
     assert_eq!(
         picker.providers()[0].provider,
         jackin_config::AiProvider::Minimax

@@ -137,7 +137,6 @@ fn init_repo_with_scratch_worktree(
 async fn materialize_then_clean_exit_removes_record_and_branch() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
-
     std::fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     let data = TempDir::new().unwrap();
     let cdir = data.path().join("jackin-the-architect");
@@ -256,7 +255,6 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
     assert!(read_records(&cdir).unwrap().is_empty());
-
     assert!(!wt_path.exists(), "isolated worktree removed");
     assert!(
         !repo

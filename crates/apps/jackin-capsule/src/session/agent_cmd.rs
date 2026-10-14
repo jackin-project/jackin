@@ -21,7 +21,6 @@ pub(crate) fn inject_status_env(
     let session_tmp = session_root.join("tmp");
     let session_runtime = session_root.join("runtime");
     let session_cache = session_root.join("cache");
-
     cmd.env("JACKIN_SESSION_ROOT", &session_root);
     cmd.env(jackin_protocol::SESSION_STATE_DIR_ENV, &session_state);
     cmd.env("TMPDIR", &session_tmp);
@@ -70,7 +69,6 @@ pub struct AgentSpawnSpec<'a> {
     pub env_passthrough: &'a [(String, String)],
     pub cwd: &'a Path,
     pub codename: &'a str,
-
     pub identity: jackin_protocol::SessionIdentity,
 }
 
@@ -114,7 +112,6 @@ pub fn build_agent_command(spec: &AgentSpawnSpec<'_>) -> CommandBuilder {
     {
         cmd.env(var.name, spec.home_dir);
     }
-
     cmd.env("HOME", spec.home_dir);
     cmd.env("JACKIN_AGENT", spec.agent);
     cmd.env(jackin_protocol::INSTANCE_ENV, spec.instance);

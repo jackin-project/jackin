@@ -54,7 +54,6 @@ pub fn focused_usage_view(
                 .and_then(|value| u8::try_from(value.clamp(0, 100)).ok()),
             reset_label: row.reset_label.clone(),
             resets_at: row.resets_at,
-
             status_slot: None,
             pace_label: row.pace_label.clone(),
             status: usage_status_from_label(&row.status),
@@ -71,7 +70,6 @@ pub fn focused_usage_view(
         account: FocusedAccountHeader {
             provider_label: provider,
             account_label: first.account_label.clone(),
-
             username: None,
             plan_label: first.plan_label.clone(),
             credential_origin: None,

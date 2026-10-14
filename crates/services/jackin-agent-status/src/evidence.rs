@@ -37,7 +37,6 @@ pub struct OscEvidence {
     pub title: Option<String>,
     pub progress_active: bool,
     pub progress_cleared_at: Option<Instant>,
-
     pub progress_raw: Option<String>,
     pub shell_state: Option<RawAgentState>,
     pub shell_state_marked_at: Option<Instant>,
@@ -80,7 +79,6 @@ pub struct ProcessEvidence {
     pub foreground_pgid: Option<u32>,
     pub child_process_count: u32,
     pub cpu_jiffies_delta: u64,
-
     pub physics_sampled: bool,
 }
 
@@ -163,7 +161,6 @@ impl EvidenceSummary {
 pub enum EvidenceWinner {
     ProcessExit,
     Freeze,
-
     Blocked,
     Authority { source_id: String },
     StrongVisualOrOsc,

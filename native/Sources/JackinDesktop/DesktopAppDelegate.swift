@@ -6,19 +6,12 @@ import Combine
 import JackinUsageBridge
 import SwiftUI
 
-
-
-
-
-
-
 @MainActor
 public final class StatusBarController: NSObject {
     private let store: PresentationStore
     private let compactStatusItems: Bool
     private var providerItems: [String: NSStatusItem] = [:]
     private var fallbackItem: NSStatusItem?
-
     private var canonicalOrder: [String] = []
     private let popover = NSPopover()
     private let popoverPresentationState = PopoverPresentationState()
@@ -26,11 +19,7 @@ public final class StatusBarController: NSObject {
     private var automationAnchorPanel: NSPanel?
     private var rightClickMonitors: [ObjectIdentifier: Any] = [:]
     private var cancellables: Set<AnyCancellable> = []
-
     private let onOpenUsage: (UsageNavigationContext?) -> Void
-
-
-
     private let statusItemMenu: StatusItemMenu
 
     init(
@@ -44,8 +33,6 @@ public final class StatusBarController: NSObject {
         self.onOpenUsage = onOpenUsage
         self.statusItemMenu = StatusItemMenu(router: menuRouter)
         super.init()
-
-
         popover.behavior = compactStatusItems ? .applicationDefined : .transient
         popover.animates = true
         popover.contentSize = PopoverRoot.liveContentSize
@@ -58,7 +45,6 @@ public final class StatusBarController: NSObject {
             self?.onOpenUsage(context)
         }
         popover.contentViewController = NSHostingController(rootView: root)
-
 
         store.$statusBarGlanceRows
             .receive(on: DispatchQueue.main)
@@ -80,8 +66,6 @@ public final class StatusBarController: NSObject {
         }
         removeFallbackItem()
         let newOrder = rows.map(\.surfaceId)
-
-
         if statusBarOrderRequiresRebuild(previous: canonicalOrder, next: newOrder) {
             removeAllProviderItems()
         } else {
@@ -115,7 +99,6 @@ public final class StatusBarController: NSObject {
 
     private func configure(item: NSStatusItem, row: PresentationStore.GlanceProviderRow) {
         guard let button = item.button else { return }
-
         button.image = StatusItemRendering.icon(forIconKey: row.iconKey)
         button.imagePosition = .imageLeading
         button.attributedTitle =
@@ -225,7 +208,6 @@ public final class StatusBarController: NSObject {
         )
     }
 
-
     private func clickTarget(
         for button: NSStatusBarButton
     ) -> (surfaceId: String?, isFallback: Bool) {
@@ -249,7 +231,6 @@ public final class StatusBarController: NSObject {
     }
 
     private func togglePopover(_ sender: NSStatusBarButton) {
-
         if popover.isShown, anchoredButton === sender {
             popover.performClose(sender)
             anchoredButton = nil
@@ -258,7 +239,6 @@ public final class StatusBarController: NSObject {
         if popover.isShown {
             popover.performClose(sender)
         }
-
         let target = clickTarget(for: sender)
         let outcome = StatusPopoverFocus.outcome(
             surfaceId: target.surfaceId,
@@ -266,20 +246,12 @@ public final class StatusBarController: NSObject {
         )
         store.popoverSelection = StatusPopoverFocus.popoverSelection(for: outcome)
 
-
-
-
-
         NSApp.activate(ignoringOtherApps: true)
         anchoredButton = sender
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         resetPopoverScrollAfterPresentation()
     }
-
-
-
-
 
     func showPopover(focusOn surfaceId: String?, attemptsRemaining: Int = 200) {
         let button =
@@ -304,7 +276,6 @@ public final class StatusBarController: NSObject {
         }
         togglePopover(button)
     }
-
 
     func closePopoverForVisualQA() {
         popover.performClose(nil)
@@ -348,9 +319,6 @@ public final class StatusBarController: NSObject {
         return panel
     }
 
-
-
-
     func invalidate() {
         cancellables.removeAll()
         if popover.isShown {
@@ -364,10 +332,6 @@ public final class StatusBarController: NSObject {
         removeFallbackItem()
     }
 }
-
-
-
-
 
 @MainActor
 public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
@@ -398,7 +362,6 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     private var visualQAUsageSelection: String?
     private var statusBar: StatusBarController?
     private var usageWindow: UsageWindowController?
-
     private var mainMenu: AppMainMenu?
 
     override public init() {
@@ -511,16 +474,11 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
         visualQAUsageSelection = selection
         if visualQALaunchOptions.openUsage || visualQALaunchOptions.invalidFixtureID != nil {
             let windowSize = visualQALaunchOptions.windowSize
-
-
-
             DispatchQueue.main.async { [weak usageWindow] in
                 usageWindow?.show(focusOn: selection, size: windowSize)
             }
         }
         if visualQALaunchOptions.openPopover {
-
-
             NSApp.setActivationPolicy(.regular)
             NSApp.activate()
             let popoverSelection = selection ?? fixture?.popoverSelection
@@ -531,7 +489,6 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-
         false
     }
 
@@ -541,8 +498,6 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
 
     private func restoreFixtureUsageVisibility() {
         guard visualQALaunchOptions.usesFixture else { return }
-
-
         NSApp.unhideWithoutActivation()
         if visualQALaunchOptions.openUsage, usageWindow?.qiVisibilityDesired == true,
             let window = usageWindow?.qiWindow
@@ -557,7 +512,6 @@ public final class DesktopAppDelegate: NSObject, NSApplicationDelegate {
     public func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows: Bool
     ) -> Bool {
-
         if !hasVisibleWindows, !visualQALaunchOptions.openPopover {
             usageWindow?.show()
         }

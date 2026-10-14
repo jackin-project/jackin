@@ -22,7 +22,6 @@ pub const ACCOUNT_KINDS: &[AuthKind] = &[
 
 pub fn account_kind(account: &jackin_config::AccountConfig) -> AuthKind {
     use jackin_config::AiProvider;
-
     match &account.credential {
         jackin_config::AccountCredential::Profile { agent, .. }
         | jackin_config::AccountCredential::OAuthToken { agent, .. } => {
@@ -39,11 +38,9 @@ pub fn account_kind(account: &jackin_config::AccountConfig) -> AuthKind {
         AiProvider::Moonshot => AuthKind::Kimi,
         AiProvider::Opencode => AuthKind::Opencode,
         AiProvider::Xai => AuthKind::Grok,
-
         AiProvider::Google => AuthKind::Gemini,
         AiProvider::Cursor => AuthKind::Cursor,
         AiProvider::Meta => AuthKind::Muse,
-
         AiProvider::OpenRouter => AuthKind::Omp,
         AiProvider::Zai => AuthKind::Zai,
         AiProvider::Minimax => AuthKind::Minimax,

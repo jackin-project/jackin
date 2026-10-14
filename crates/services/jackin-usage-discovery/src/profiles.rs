@@ -19,7 +19,6 @@ pub(crate) trait ProfileCredentialReader {
     fn read(&self, path: &Path) -> ProfileReadOutcome;
     fn exists(&self, path: &Path) -> bool;
     fn read_claude_keychain(&self, scope: &jackin_core::ClaudeKeychainScope) -> ProfileReadOutcome;
-
     fn read_antigravity_keychain(&self) -> ProfileReadOutcome;
 }
 

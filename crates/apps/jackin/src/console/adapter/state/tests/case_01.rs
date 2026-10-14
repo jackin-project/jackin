@@ -36,7 +36,6 @@ fn summary_counts_mounts_and_readonly() {
 fn manager_from_config_lists_all_workspaces() {
     let mut config = AppConfig::default();
     config.workspaces.insert("a".into(), empty_ws("/a"));
-
     let tmp = tempfile::tempdir().unwrap();
     let state = ManagerState::from_config(&config, tmp.path());
     assert_eq!(state.workspaces.len(), 1);
@@ -265,13 +264,11 @@ fn manager_preselects_saved_workspace_matching_cwd() {
             ..Default::default()
         },
     );
-
     config
         .workspaces
         .insert("z-unrelated".into(), empty_ws("/some/other/path"));
 
     let state = ManagerState::from_config(&config, &project);
-
     assert_eq!(state.selected, 1);
     assert_eq!(state.workspaces[state.selected - 1].name, "big-monorepo");
 }
@@ -356,7 +353,6 @@ fn isolation_only_change_counts_as_one() {
     });
     let mut e = EditorState::new_edit("jackin".into(), ws);
     assert_eq!(e.change_count(), 0);
-
     e.active_field = FieldFocus::Row(0);
     e.cycle_isolation_for_selected_mount();
     assert_eq!(e.change_count(), 1);

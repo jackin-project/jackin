@@ -8,7 +8,6 @@ use termrock::widgets::HintSpan;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CockpitAction {
     HardExit,
-
     OpenQuitConfirm,
 }
 

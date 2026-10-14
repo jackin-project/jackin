@@ -114,7 +114,6 @@ where
         launch.initialized.cleanup.run(launch.docker).await;
         return Err(error);
     }
-
     prepared
         .instance_manifest
         .set_admitted_instances(trust.instances.iter().map(AdmittedInstance::from));

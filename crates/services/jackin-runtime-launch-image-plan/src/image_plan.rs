@@ -12,17 +12,11 @@ use jackin_runtime_repo_cache::repo_cache::{RepoResolveOptions, resolve_agent_re
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LaunchImagePlan {
     pub decision: &'static str,
-
     pub reason: Option<&'static str>,
-
     pub image: String,
-
     pub base_image: Option<String>,
-
     pub role_git_sha: Option<String>,
-
     pub published_image: Option<String>,
-
     pub role_models: std::collections::BTreeMap<jackin_core::Agent, String>,
 }
 

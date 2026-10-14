@@ -97,14 +97,12 @@ pub(crate) fn setup_claude_plugins() {
     if config.claude_marketplaces.is_empty() && config.claude_plugins.is_empty() {
         return;
     }
-
     let config_dir = claude_config_dir();
     let marker = config_dir.join(".jackin-plugins.done");
     let fingerprint = claude_plugin_fingerprint(&config);
     if fs::read_to_string(&marker).is_ok_and(|s| s == fingerprint) {
         return;
     }
-
     run_optional_command(
         "claude",
         &[

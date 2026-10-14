@@ -29,7 +29,6 @@ impl ShellRunner {
         if let Some(dir) = cwd {
             command.current_dir(dir);
         }
-
         command.kill_on_drop(true);
         command
     }
@@ -166,7 +165,6 @@ where
 {
     let mut captured = Vec::new();
     let mut buf = [0u8; 8192];
-
     let mut log_redactor = sink.map(|_| jackin_diagnostics::redact::StreamRedactor::default());
     loop {
         let n = pipe.read(&mut buf).await?;
@@ -555,7 +553,6 @@ impl ShellRunner {
         };
         let stdout_pipe = child.stdout.take();
         let stderr_pipe = child.stderr.take();
-
         let stream = opts.stream_captured_output
             && !self.debug
             && !jackin_diagnostics::rich_terminal_owned();

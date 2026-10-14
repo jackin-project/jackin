@@ -19,10 +19,8 @@ use crate::cmd;
 pub(crate) struct DocsContractArgs {
     #[arg(value_enum)]
     kind: ContractKind,
-
     #[arg(long, default_value = "HEAD")]
     git_ref: String,
-
     #[arg(long)]
     legacy: bool,
 }

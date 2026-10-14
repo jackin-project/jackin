@@ -16,7 +16,6 @@ use crate::tui::runtime::BlockingSubscription;
 #[derive(Debug, Default)]
 pub struct UsageScreenState {
     pub accounts: Vec<UsageAccount>,
-
     pub canonical_projection: Option<jackin_protocol::usage_broker::UsageProjectionV1>,
     pub selected: usize,
     pub selected_id: Option<String>,
@@ -26,7 +25,6 @@ pub struct UsageScreenState {
     pub scroll: u16,
     pub notice: Option<String>,
     pub generated_at_epoch: Option<i64>,
-
     pub projection_issues: Vec<UsageIssueV1>,
     pub refresh_due: bool,
     pub force_refresh_pending: bool,

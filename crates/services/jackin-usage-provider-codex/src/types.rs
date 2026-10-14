@@ -55,7 +55,6 @@ pub struct CodexWindowSnapshot {
     pub(crate) used_percent: Option<serde_json::Value>,
     #[serde(rename = "reset_at")]
     pub(crate) reset_at: Option<i64>,
-
     #[serde(rename = "reset_after_seconds")]
     pub(crate) reset_after_seconds: Option<i64>,
     #[serde(rename = "limit_window_seconds")]

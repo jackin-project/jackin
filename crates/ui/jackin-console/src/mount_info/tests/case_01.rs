@@ -116,7 +116,6 @@ fn inspect_classifies_repo_without_remote_as_no_origin() {
     let git_dir = temp.path().join(".git");
     std::fs::create_dir(&git_dir).unwrap();
     std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
-
     let result = inspect(temp.path().to_str().unwrap());
     match result {
         MountKind::Git { origin: None, .. } => {}
@@ -214,7 +213,6 @@ fn worktree_commondir_with_absolute_path() {
     let worktree_gitdir = main_gitdir.join("worktrees").join("abs_feat");
     std::fs::create_dir_all(&worktree_gitdir).unwrap();
     std::fs::write(worktree_gitdir.join("HEAD"), "ref: refs/heads/abs-branch\n").unwrap();
-
     std::fs::write(
         worktree_gitdir.join("commondir"),
         format!("{}\n", main_gitdir.display()),
@@ -255,7 +253,6 @@ fn submodule_gitfile_still_resolves_host_end_to_end() {
     let actual_gitdir = temp.path().join("parent_repo_gitdir");
     std::fs::create_dir(&actual_gitdir).unwrap();
     std::fs::write(actual_gitdir.join("HEAD"), "ref: refs/heads/submain\n").unwrap();
-
     std::fs::write(
         actual_gitdir.join("config"),
         r#"[remote "origin"]

@@ -3,26 +3,14 @@
 
 import AppKit
 
-
-
-
-
-
-
 @MainActor
 public enum StatusItemRendering {
-
-
-
-
     public static func icon(forIconKey iconKey: String) -> NSImage {
         if let official = ProviderMarks.templateImage(forIconKey: iconKey) {
             return official
         }
         return fallbackIcon()
     }
-
-
 
     public static func fallbackIcon() -> NSImage {
         if let image = JackinBrandIdentity.templateMonogram() {
@@ -33,9 +21,6 @@ public enum StatusItemRendering {
         image.isTemplate = true
         return image
     }
-
-
-
 
     public static func title(
         barLabel: String,

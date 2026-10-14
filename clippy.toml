@@ -5,19 +5,8 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
-
-
 allow-indexing-slicing-in-tests = true
 allow-dbg-in-tests = true
-
-
-
-
-
-
-
-
-
 too-many-lines-threshold = 150
 cognitive-complexity-threshold = 58
 excessive-nesting-threshold = 5

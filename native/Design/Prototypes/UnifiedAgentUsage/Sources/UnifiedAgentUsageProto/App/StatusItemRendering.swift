@@ -1,6 +1,5 @@
 import AppKit
 
-
 enum StatusItemRendering {
     static func title(
         barLabel: String, compactResetLabel: String?,
@@ -24,10 +23,6 @@ enum StatusItemRendering {
                     .paragraphStyle: paragraph,
                 ])
         }
-
-
-
-
 
         let result = NSMutableAttributedString()
         result.append(

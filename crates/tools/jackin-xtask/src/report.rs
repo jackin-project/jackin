@@ -19,9 +19,7 @@ pub(crate) fn human_output() -> bool {
 pub(crate) enum Format {
     #[default]
     Human,
-
     Json,
-
     Github,
 }
 
@@ -54,24 +52,17 @@ impl Format {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct Violation {
     pub rule: &'static str,
-
     pub file: String,
-
     pub line: Option<u64>,
-
     pub message: String,
-
     pub fix: String,
-
     pub rerun: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Report {
     pub schema: u32,
-
     pub gate: &'static str,
-
     pub ok: bool,
     pub violations: Vec<Violation>,
 }
@@ -194,7 +185,6 @@ fn emit_github(report: &Report) -> Result<()> {
         );
         writeln!(out, "::error {props}::{msg}").context("writing github annotation")?;
     }
-
     {
         let mut err = io::stderr().lock();
         if report.ok {

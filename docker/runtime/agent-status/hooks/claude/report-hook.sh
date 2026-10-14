@@ -4,10 +4,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-
-
-
-
 set -eu
 
 CAPSULE="/jackin/runtime/jackin-capsule"
@@ -17,7 +13,5 @@ if [ -z "${JACKIN_SESSION_ID:-}" ] || [ ! -x "$CAPSULE" ]; then
 fi
 
 "$CAPSULE" report-event "$@" --payload-stdin 2>/dev/null || true
-
-
 
 printf '{"continue":true}'

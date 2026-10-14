@@ -196,7 +196,6 @@ pub fn emit_debug_line(category: &str, message: &str) {
         }
         return;
     }
-
     if crate::run::active_run().is_some() {
         return;
     }

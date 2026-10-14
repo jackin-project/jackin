@@ -5,7 +5,6 @@ import JackinUsageBridge
 import SwiftUI
 import XCTest
 
-
 final class ArchitectureTests: XCTestCase {
     private var sourcesRoot: URL {
         URL(fileURLWithPath: #filePath)
@@ -31,10 +30,7 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testSwiftSourcesHaveNoProviderProbeImports() throws {
-
         let machinery = ["URLSession", "Process(", "SecItem"]
-
-
         let providers = ["Gemini", "Copilot"]
         let cursorAsProvider = try NSRegularExpression(pattern: #"\bCursor\b"#)
         for file in try handwrittenSwiftFiles() {
@@ -106,8 +102,6 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testDesktopSourcesContainNoForbiddenUsagePresentation() throws {
-
-
         let forbidden = [
             "$/token", "$/mtok", "cost of session", "spend over time", "usage trend",
             "token history", "spend history", "aggregate spend", "top model",
@@ -125,9 +119,6 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testNoSwiftPercentArithmeticOnDisplayStrings() throws {
-
-
-
         let regex = try NSRegularExpression(
             pattern: #"Text\s*\(\s*"[^"]*\\\([^)]*\)[^"]*%"#
         )
@@ -151,7 +142,6 @@ final class ArchitectureTests: XCTestCase {
     }
 
 
-
     func testJackinPhosphorTokensMatchBrandGuide() {
         XCTAssertEqual(JackinBrand.phosphorDarkSRGB.r, 0x5C / 255.0, accuracy: 0.0001)
         XCTAssertEqual(JackinBrand.phosphorDarkSRGB.g, 0xF0 / 255.0, accuracy: 0.0001)
@@ -160,7 +150,6 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(JackinBrand.phosphorLightSRGB.g, 0x77 / 255.0, accuracy: 0.0001)
         XCTAssertEqual(JackinBrand.phosphorLightSRGB.b, 0x4E / 255.0, accuracy: 0.0001)
     }
-
 
     func testOverviewHasNoOrphanOverviewLevelProgress() throws {
         let overview =
@@ -297,10 +286,6 @@ final class ArchitectureTests: XCTestCase {
         )
     }
 
-
-
-
-
     func testStatusBarIsTemplateMonoWithoutSeverityTint() throws {
         let label =
             sourcesRoot
@@ -315,7 +300,6 @@ final class ArchitectureTests: XCTestCase {
             "StatusItemLabel must document FB1-6 / no severity tint on bar"
         )
     }
-
 
     func testStatusBarOrderRequiresRebuildOnRankChange() {
         XCTAssertFalse(
@@ -338,7 +322,6 @@ final class ArchitectureTests: XCTestCase {
             )
         )
     }
-
 
     func testSelectStatusBarGlanceRowsHidesZeroAndCapsThree() {
         func row(id: String, pct: UInt8?) -> PresentationStore.GlanceProviderRow {
@@ -416,13 +399,8 @@ final class ArchitectureTests: XCTestCase {
             }
         }
         XCTAssertFalse(files.isEmpty, "expected JackinDesktop sources")
-
-
-
         let usageStringTokens = ["% left", "% used", "resets "]
-
         let alwaysBanned = ["String(format:"]
-
         let preferenceChromeFiles: Set<String> = ["SettingsView.swift", "VisualQAFixtures.swift"]
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
@@ -444,11 +422,6 @@ final class ArchitectureTests: XCTestCase {
             }
         }
     }
-
-
-
-
-
 
     func testUsageWindowRendersSharedDetailModel() throws {
         let usageDir =
@@ -604,7 +577,6 @@ final class ArchitectureTests: XCTestCase {
             ["SystemEvents|darkMode", "NSGlobalDomain|NSGlassDiffusionSetting"]
         )
     }
-
 
     func testApplicationDelegateOpensRuntimeOnLaunch() throws {
         let delegate =

@@ -1,9 +1,6 @@
 import SwiftUI
 
 
-
-
-
 struct SidebarView: View {
     let store: ProtoStore
     @Environment(\.jackinIncreaseContrast) private var processContrast

@@ -13,14 +13,12 @@ use super::{
 };
 
 pub const CLAUDE_SESSION_WINDOW_SECONDS: i64 = 5 * 60 * 60;
-
 pub const CLAUDE_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
 
 #[derive(Debug, Clone)]
 pub struct ClaudeQuotaWindow {
     pub label: String,
     pub slot: Option<StatusSlot>,
-
     pub used: Option<f64>,
     pub reset_at: Option<i64>,
     pub window_seconds: Option<i64>,
@@ -60,7 +58,6 @@ impl ClaudeOAuthUsageWindow {
             used: self.utilization,
             reset_at: self.resets_at.as_deref().and_then(parse_iso_epoch),
             window_seconds,
-
             severity: UsageSeverity::Normal,
         }
     }
@@ -121,7 +118,6 @@ impl ClaudeOAuthUsageResponse {
             spend,
             other_windows,
         } = self;
-
         let mut windows: Vec<ClaudeQuotaWindow> = limits
             .iter()
             .filter_map(ClaudeOAuthLimit::as_quota)

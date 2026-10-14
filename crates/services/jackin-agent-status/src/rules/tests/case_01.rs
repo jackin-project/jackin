@@ -18,13 +18,11 @@ fn line_regex_matches_per_line_not_joined_blob() {
     )
     .unwrap();
     pack.validate().unwrap();
-
     let rows = vec!["Choose one:".to_owned(), "  1. yes".to_owned()];
     assert_eq!(
         pack.evaluate(&rows).unwrap().state,
         Some(RawAgentState::Blocked)
     );
-
     let rows2 = vec!["see item 1. here".to_owned()];
     assert!(pack.evaluate(&rows2).is_none());
 }
@@ -50,7 +48,6 @@ fn forbids_regex_blocks_anchored_pattern() {
         pack.evaluate(&blocked).unwrap().state,
         Some(RawAgentState::Blocked)
     );
-
     let idle = vec!["Do you want to proceed?".to_owned(), ">".to_owned()];
     assert!(pack.evaluate(&idle).is_none());
 }
@@ -59,7 +56,6 @@ fn forbids_regex_blocks_anchored_pattern() {
 fn validated_versions_must_be_bounded() {
     pack_with_versions(">=2.1.0, <2.3.0").unwrap();
     pack_with_versions("=0.14.0").unwrap();
-
     pack_with_versions("*").unwrap_err();
     pack_with_versions(">=2.1.0").unwrap_err();
 }
@@ -153,14 +149,12 @@ fn prompt_caret_regions_isolate_live_prompt() {
     )
     .unwrap();
     pack.validate().unwrap();
-
     let stale = vec![
         "Approve?".to_owned(),
         "› ".to_owned(),
         "ok thanks".to_owned(),
     ];
     assert!(pack.evaluate(&stale).is_none());
-
     let live = vec!["›".to_owned(), "Approve?".to_owned()];
     assert_eq!(
         pack.evaluate(&live).unwrap().state,
@@ -183,14 +177,12 @@ fn whole_recent_without_caret_self_disables() {
     )
     .unwrap();
     pack.validate().unwrap();
-
     assert_eq!(
         pack.evaluate(&[String::from("task running")])
             .unwrap()
             .state,
         Some(RawAgentState::Working)
     );
-
     assert!(
         pack.evaluate(&[String::from("task running"), String::from("› ")])
             .is_none()

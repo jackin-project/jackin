@@ -189,12 +189,10 @@ fn wide_cells_map_columns_correctly() {
 #[test]
 fn quoted_paths_with_spaces_select_whole_without_quotes() {
     let line = r#"cp "/my docs/file one.txt" /dest"#;
-
     assert_eq!(
         word_at_col(line, 9).as_deref(),
         Some("/my docs/file one.txt")
     );
-
     assert_eq!(
         word_at_col("see '/tmp/a b' now", 7).as_deref(),
         Some("/tmp/a b")

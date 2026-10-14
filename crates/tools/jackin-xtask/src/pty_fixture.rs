@@ -7,7 +7,6 @@ use clap::Args;
 #[derive(Args)]
 pub(crate) struct PtyFixtureArgs {
     capture: PathBuf,
-
     out_bin: PathBuf,
 }
 

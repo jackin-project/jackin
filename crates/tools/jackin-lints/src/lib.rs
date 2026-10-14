@@ -1,8 +1,4 @@
 
-
-
-
-
 #![feature(rustc_private)]
 #![warn(unused_extern_crates)]
 
@@ -20,25 +16,6 @@ use rustc_span::Span;
 use std::collections::{HashSet, VecDeque};
 
 dylint_linting::declare_late_lint! {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     pub RENDER_THREAD_PURITY,
     Warn,
     "blocking I/O or std::sync locks reachable from a render-path function"
@@ -59,7 +36,6 @@ impl<'tcx> LateLintPass<'tcx> for RenderThreadPurity {
         _span: Span,
         def_id: LocalDefId,
     ) {
-
         match kind {
             rustc_hir::intravisit::FnKind::ItemFn(ident, _, _)
             | rustc_hir::intravisit::FnKind::Method(ident, _) => {
@@ -93,8 +69,6 @@ fn walk_from_body<'tcx>(
         let Some(body) = body_opt.or_else(|| cx.tcx.hir_maybe_body_owned_by(def_id)) else {
             continue;
         };
-
-
         find_calls(
             cx,
             body.value,
@@ -133,7 +107,6 @@ fn find_calls<'tcx>(
                 find_calls(cx, arg, chain, depth, current_fn, queue, reported);
             }
         }
-
         ExprKind::Closure(_) => {}
         ExprKind::Block(block, _) => {
             for stmt in block.stmts {
@@ -215,7 +188,6 @@ fn typeck_for_fn<'tcx>(
     cx: &LateContext<'tcx>,
     fn_def: LocalDefId,
 ) -> Option<&'tcx rustc_middle::ty::TypeckResults<'tcx>> {
-
     if cx.enclosing_body.is_some() {
         let owner = cx.tcx.hir_body_owner_def_id(cx.enclosing_body?);
         if owner == fn_def {

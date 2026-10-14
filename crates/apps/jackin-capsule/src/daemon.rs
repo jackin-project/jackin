@@ -169,10 +169,8 @@ pub struct Multiplexer {
     pub(crate) render: RenderState,
     pub(crate) launch_env: LaunchEnv,
     pub(crate) resource_metrics: resource_metrics::ResourceMetricsSampler,
-
     pub(crate) pane_home_seq: u64,
     pub(crate) widget_focus: jackin_telemetry::ui::WidgetFocusTracker,
-
     pub(crate) clock: Arc<dyn Clock>,
 }
 
@@ -180,11 +178,8 @@ pub struct Multiplexer {
 pub struct AgentRecord {
     pub session_id: u64,
     pub codename: String,
-
     pub agent: Option<String>,
-
     pub account_id: Option<String>,
-
     pub provider: Option<String>,
     pub started_at: DateTime<Utc>,
     pub exited_at: Option<DateTime<Utc>>,

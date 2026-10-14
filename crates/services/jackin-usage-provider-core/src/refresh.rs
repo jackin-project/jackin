@@ -9,20 +9,15 @@ pub static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderErrorKind {
     Other,
-
     Timeout,
-
     Transport,
-
     HttpStatus,
-
     Decode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderFailureMetadata {
     pub kind: ProviderErrorKind,
-
     pub http_status: Option<u16>,
 }
 

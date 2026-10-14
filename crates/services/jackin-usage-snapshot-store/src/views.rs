@@ -20,7 +20,6 @@ use super::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredAccountUsageView {
     pub account_key_hash: String,
-
     pub view: FocusedUsageView,
 }
 
@@ -149,7 +148,6 @@ pub(crate) fn account_usage_view_from_rows(
             status: usage_status_from_storage(&row.status),
         })
         .collect();
-
     buckets.sort_by(|a, b| a.label.cmp(&b.label));
     buckets.dedup_by(|a, b| a.label == b.label);
     Some(FocusedUsageView {

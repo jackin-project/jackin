@@ -88,7 +88,6 @@ impl Multiplexer {
         let request_id = self.pr_watch.pull_request_lookup.begin_spawn(now);
         let workdir = self.launch_env.workdir.clone();
         let branch_for_event = branch.clone();
-
         let head_for_event = self.pr_watch.pull_request_context_head.clone();
         self.spawn_context_lookup(
             jackin_telemetry::schema::enums::BackgroundCycleName::PrContext,
@@ -142,7 +141,6 @@ impl Multiplexer {
                 )
             }
         };
-
         match tokio::runtime::Handle::try_current() {
             Ok(_handle) => {
                 drop(jackin_telemetry::spawn::autonomous_cycle_blocking(
@@ -179,7 +177,6 @@ impl Multiplexer {
             GitContext::Detached { head } => (None, Some(head)),
             GitContext::Branch { name, head } => (Some(name), head),
         };
-
         if self.pr_watch.pull_request_context_branch == branch
             && self.pr_watch.pull_request_context_head == head
         {
@@ -190,10 +187,8 @@ impl Multiplexer {
         let old_pull_request = self.pr_watch.pull_request_context.clone();
         self.pr_watch.pull_request_context_branch = branch.clone();
         self.pr_watch.pull_request_context_head = head.clone();
-
         if (branch.is_some() || head.is_some()) && !self.launch_env.workdir_context.is_git_repo {
             self.launch_env.workdir_context.is_git_repo = true;
-
             let workdir = self.launch_env.workdir.clone();
             if tokio::runtime::Handle::try_current().is_ok() {
                 drop(jackin_telemetry::spawn::autonomous_cycle_blocking(
@@ -247,12 +242,10 @@ impl Multiplexer {
         let pre_loading = self.pull_request_context_loading();
         self.pr_watch.pull_request_lookup.in_flight = false;
         let post_loading = self.pull_request_context_loading();
-
         let loading_changed = pre_loading != post_loading;
         let Some(branch) = branch else {
             return loading_changed;
         };
-
         let pull_request = match outcome {
             PullRequestLookupOutcome::Resolved(pr) => {
                 if !self.launch_env.workdir_context.gh_available {
@@ -264,7 +257,6 @@ impl Multiplexer {
                 return loading_changed;
             }
         };
-
         if self.pr_watch.pull_request_context_branch.as_ref() != Some(&branch)
             || self.pr_watch.pull_request_context_head != head
         {

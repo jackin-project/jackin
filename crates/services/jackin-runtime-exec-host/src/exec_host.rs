@@ -142,7 +142,6 @@ async fn run_bound_listener(
             let _error =
                 jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
             let _retry = jackin_telemetry::record_retry_scheduled();
-
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
@@ -152,7 +151,6 @@ fn bind_listener(sock_path: &Path) -> Result<UnixListener> {
     drop(std::fs::remove_file(sock_path));
     if let Some(parent) = sock_path.parent() {
         std::fs::create_dir_all(parent)?;
-
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -262,7 +260,6 @@ async fn handle_connection(
             error: "credential resolution failed".to_owned(),
         }
     };
-
     let succeeded = matches!(&reply, CredReply::Ok { .. });
     let write_result = stream.write_all(&frame(&reply)).await;
     if !succeeded || write_result.is_err() {
@@ -396,7 +393,6 @@ fn validate_op_source(source: &str) -> Result<()> {
         source.starts_with("op://"),
         "invalid op:// reference {source:?}: must start with op://"
     );
-
     let path = &source["op://".len()..];
     anyhow::ensure!(
         !path.split('/').any(|s| s.starts_with('-')),

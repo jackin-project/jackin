@@ -86,7 +86,6 @@ fn esc_from_item_goes_to_vault() {
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(s.stage, OpPickerStage::Vault);
     assert!(s.filter_buf.is_empty(), "filter must clear on back-nav");
-
     assert_eq!(s.vault_list_state.active().copied(), Some(1));
     assert_eq!(s.vaults.len(), 2);
 }
@@ -107,7 +106,6 @@ fn esc_from_field_goes_to_item() {
     assert!(matches!(outcome, ModalOutcome::Continue));
     assert_eq!(s.stage, OpPickerStage::Item);
     assert!(s.filter_buf.is_empty());
-
     assert_eq!(s.item_list_state.active().copied(), Some(0));
     assert_eq!(s.items.len(), 1);
 }
@@ -122,7 +120,6 @@ fn field_sort_concealed_first() {
     input.sort_by_key(|f| !f.concealed);
     assert_eq!(input[0].label, "pw");
     assert!(input[0].concealed);
-
     assert_eq!(input[1].label, "user");
     assert_eq!(input[2].label, "url");
 
@@ -183,7 +180,6 @@ fn picker_commit_uses_canonical_ids_and_display_labels() {
         id: "Opaque-Auth-ID".to_owned(),
         label: "auth".to_owned(),
     }];
-
     s.field_list_state.set_active(Some(1));
     s.stage = OpPickerStage::Field;
 
@@ -229,20 +225,17 @@ fn create_mode_new_item_flow_commits_new_item() {
     s.selected_vault = Some(vault("Personal"));
     s.items = vec![item("Existing")];
     s.stage = OpPickerStage::Item;
-
     s.item_list_state.set_active(Some(1));
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::NewItemName);
-
     assert!(matches!(
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Continue
     ));
     assert_eq!(s.stage, OpPickerStage::FieldLabel);
-
     match s.handle_key(key(KeyCode::Enter)) {
         ModalOutcome::Commit(OpPickerSelection::NewItem {
             vault,
@@ -281,7 +274,6 @@ fn create_mode_existing_item_lands_on_section_stage() {
     s.pending_load = None;
     s.selected_vault = Some(vault("Personal"));
     s.selected_item = Some(item("login"));
-
     s.start_field_load("i-login".into(), "v-Personal".into(), None);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while (s.rx.is_some() || s.pending_load.is_some()) && std::time::Instant::now() < deadline {
@@ -309,13 +301,10 @@ fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
         ],
         vec![auth.clone()],
     );
-
     s.stage = OpPickerStage::Field;
     s.selected_section = Some(auth.clone());
-
     s.fields.clear();
     s.field_refresh_in_place = true;
-
     s.rx = Some(jackin_oppicker::ready_load_subscription(
         LoadResult::Fields(Ok(jackin_core::OpItemDetail {
             fields: vec![
@@ -346,7 +335,6 @@ fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
         !s.field_refresh_in_place,
         "the flag is cleared once the refreshed fields arrive"
     );
-
     let rows = s.build_field_display_rows();
     assert_eq!(rows.len(), 2, "one auth field + new-field sentinel");
     assert!(matches!(rows[1], FieldDisplayRow::NewFieldSentinel));

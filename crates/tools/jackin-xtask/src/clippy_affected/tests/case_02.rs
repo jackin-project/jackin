@@ -83,7 +83,6 @@ fn repo_scan_stays_within_resolvable_inputs() {
             .strip_prefix(&root)
             .expect("source under root")
             .to_path_buf();
-
         scan_source_inputs(&source, &relative, Path::new(""), None, None, &mut inputs);
     }
     assert!(

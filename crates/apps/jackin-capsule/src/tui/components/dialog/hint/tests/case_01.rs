@@ -11,7 +11,6 @@ fn main_view_hint_omits_scroll_when_focused_pane_fits() {
         termrock::scroll::ScrollAxes::default(),
         false,
     ));
-
     assert!(hint.contains("Ctrl-\\ menu"), "hint: {hint}");
     assert!(hint.contains("click focus pane"), "hint: {hint}");
     assert!(
@@ -84,14 +83,11 @@ fn prefix_awaiting_shows_cheat_sheet_not_nav_hints() {
         termrock::scroll::ScrollAxes::default(),
         true,
     ));
-
     assert!(
         hint.contains("Ctrl-\\ palette"),
         "must advertise palette: {hint}"
     );
-
     assert!(hint.contains("h/j/k/l nav"), "must show nav group: {hint}");
-
     assert!(hint.contains("Ctrl-Q quit"), "must show quit: {hint}");
     assert!(
         !hint.contains("click"),

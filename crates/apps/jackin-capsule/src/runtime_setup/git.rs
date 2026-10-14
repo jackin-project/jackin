@@ -44,7 +44,6 @@ pub(crate) fn coauthor_trailer_for_agent(agent: &str) -> Option<&'static str> {
         "opencode" => Some(
             "Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>",
         ),
-
         "grok" => None,
         _ => None,
     }

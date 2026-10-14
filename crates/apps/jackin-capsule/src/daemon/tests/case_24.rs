@@ -35,7 +35,6 @@ fn session_send_reports_a_closed_writer_instead_of_claiming_delivery() {
     let mut mux = single_pane_tab_mux();
     let (session, input_rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
     mux.session_supervisor.sessions.insert(1, session);
-
     drop(input_rx);
 
     let reply = control_reply_for_request(
@@ -59,7 +58,6 @@ fn session_send_reports_a_closed_writer_instead_of_claiming_delivery() {
 fn session_send_records_input_recency_but_never_authors_state() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _input_rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
-
     session.state = crate::protocol::AgentState::Blocked;
     let before_input_at = session.last_input_at;
     mux.session_supervisor.sessions.insert(1, session);
@@ -97,7 +95,6 @@ fn events_subscription_opens_with_a_baseline_record_per_live_session() {
     assert_eq!(baseline.session, 1);
     assert_eq!(baseline.seq, 0);
     assert_eq!(baseline.agent.as_deref(), Some("codex"));
-
     assert_eq!(baseline.state, crate::protocol::AgentState::Working);
     assert_eq!(baseline.kind, SessionEventKind::Subscribed);
 }
@@ -155,7 +152,6 @@ fn a_status_tick_publishes_the_working_transition_the_host_waits_on() {
 fn an_unchanged_status_tick_publishes_no_state_record() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
-
     session.last_output_at = Instant::now()
         .checked_sub(Duration::from_mins(1))
         .expect("a minute before now is representable");

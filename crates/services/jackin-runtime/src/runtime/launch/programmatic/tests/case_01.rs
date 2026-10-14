@@ -154,7 +154,6 @@ fn launch_selection_rejects_accounts_outside_workspace_allowlist() {
 #[test]
 fn launch_selection_without_defaults_synthesizes_ephemeral_default() {
     let (config, workspace) = two_account_config();
-
     jackin_config::resolve_launch(&config, Some(&workspace), "codex", None, None).unwrap_err();
 
     let selected =
@@ -166,7 +165,6 @@ fn launch_selection_without_defaults_synthesizes_ephemeral_default() {
     assert_eq!(instances[0].agent, Agent::Codex);
     assert_eq!(instances[0].account_id, "private");
     assert_eq!(instances[0].config_id, "private@codex");
-
     assert_eq!(config.agent_configurations.len(), 2);
     assert!(config.default_launch.is_none());
     assert!(config.workspaces["work"].roles.is_empty());
@@ -255,7 +253,6 @@ fn launch_selection_with_admitting_defaults_narrows_to_selected_account() {
 
     let selected =
         with_account_selection(&config, Agent::Codex, Some(&workspace), "codex", "shared").unwrap();
-
     assert_eq!(
         selected.workspaces["work"].roles["codex"].default_launch,
         Some(vec!["codex-alt".to_owned()])

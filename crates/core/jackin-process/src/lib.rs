@@ -13,16 +13,13 @@ pub const DEFAULT_CAPTURE_LIMIT: usize = 16 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RetryPolicy {
     pub max_retries: u32,
-
     pub delay: Duration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StdioMode {
     Capture,
-
     Inherit,
-
     Null,
 }
 
@@ -39,31 +36,18 @@ impl RetryPolicy {
 #[derive(Debug, Clone)]
 pub struct ExecRequest {
     pub program: PathBuf,
-
     pub args: Vec<std::ffi::OsString>,
-
     pub cwd: Option<PathBuf>,
-
     pub stdin: Option<Vec<u8>>,
-
     pub env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
-
     pub env_remove: Vec<std::ffi::OsString>,
-
     pub env_clear: bool,
-
     pub stdin_mode: StdioMode,
-
     pub stdout_mode: StdioMode,
-
     pub stderr_mode: StdioMode,
-
     pub timeout: Option<Duration>,
-
     pub stdout_limit: Option<usize>,
-
     pub stderr_limit: Option<usize>,
-
     pub retry: RetryPolicy,
 }
 
@@ -172,15 +156,10 @@ impl ExecRequest {
 #[derive(Debug, Clone)]
 pub struct ExecResult {
     pub code: Option<i32>,
-
     pub success: bool,
-
     pub stdout: Vec<u8>,
-
     pub stderr: Vec<u8>,
-
     pub duration: Duration,
-
     pub timed_out: bool,
 }
 
@@ -297,7 +276,6 @@ impl OwnedChild {
     async fn kill_and_reap(&mut self) -> Result<()> {
         let group_result = self.kill_group();
         let kill_result = self.child.start_kill().context("killing child");
-
         tokio::time::timeout(Duration::from_secs(1), self.child.wait())
             .await
             .context("child did not reap within cleanup deadline")?
@@ -393,7 +371,6 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
             }
             Ok::<_, anyhow::Error>(())
         };
-
         let ((), stdout, stderr) = tokio::try_join!(
             write,
             read_captured(

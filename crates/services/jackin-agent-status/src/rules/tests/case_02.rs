@@ -238,7 +238,6 @@ fn finalize_compiles_regexes_used_on_the_production_path() {
          line_regex = ['^\\s*\\d+\\.\\s']\n",
     )
     .unwrap();
-
     let pack = pack.finalize().unwrap();
     assert_eq!(pack.rule[0].compiled_line_regex.len(), 1);
 
@@ -346,7 +345,6 @@ any = [ { regex = "(unclosed" } ]
 "#,
     )
     .unwrap();
-
     pack.validate().unwrap_err();
 }
 
@@ -368,6 +366,5 @@ fn gate_leaf_count_counts_toward_matcher_cap() {
          gate = {{ all = [{leaves}] }}\n"
     ))
     .unwrap();
-
     pack.validate().unwrap_err();
 }

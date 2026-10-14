@@ -84,7 +84,6 @@ fn seed_config_with_env(
     env: Vec<(&str, &str)>,
 ) -> Result<AppConfig> {
     paths.ensure_base_dirs()?;
-
     let host_path = temp_dir.display().to_string();
     let env_map: std::collections::BTreeMap<String, jackin_core::EnvValue> = env
         .into_iter()
@@ -167,7 +166,6 @@ fn delete_workspace_via_manager() -> Result<()> {
     let cwd = temp.path();
     let mut state = ManagerState::from_config(&config, cwd);
     assert_eq!(state.workspaces.len(), 1);
-
     handle_key(
         &mut state,
         &mut config,
@@ -374,7 +372,6 @@ fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
     );
     {
         let ConsoleStage::Manager(ms) = &mut state.stage;
-
         ms.list_modal = None;
     }
     state.pending_launch = None;
@@ -423,7 +420,6 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
         &["chainargos/agent-smith"],
         Some("chainargos/agent-smith"),
     )?;
-
     let host_path = temp.path().display().to_string();
     let second = WorkspaceConfig {
         workdir: host_path.clone(),

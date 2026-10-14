@@ -8,7 +8,6 @@ fn border_at_horizontal_split_returns_path_and_orient() {
     let mut tree = PaneTree::Leaf(1);
     tree.split_h(1, 2, SplitPosition::After);
     let rect = Rect::new(0, 0, 10, 20);
-
     let hit = tree.border_at(rect, 5, 10).expect("boundary hit");
     let (path, orient, _) = hit;
     assert!(path.is_empty(), "boundary at the root split");
@@ -20,7 +19,6 @@ fn border_at_vertical_split_returns_correct_orient() {
     let mut tree = PaneTree::Leaf(1);
     tree.split_v(1, 2, SplitPosition::After);
     let rect = Rect::new(0, 0, 10, 20);
-
     let hit = tree.border_at(rect, 5, 4).expect("boundary hit");
     assert_eq!(hit.1, SplitOrient::Vertical);
 }
@@ -30,7 +28,6 @@ fn border_at_returns_none_for_pane_interior() {
     let mut tree = PaneTree::Leaf(1);
     tree.split_h(1, 2, SplitPosition::After);
     let rect = Rect::new(0, 0, 10, 20);
-
     assert!(tree.border_at(rect, 5, 3).is_none());
 }
 
@@ -50,7 +47,6 @@ fn set_ratio_at_clamps_to_safe_range() {
 fn set_ratio_at_rejects_nan_and_infinity() {
     let mut tree = PaneTree::Leaf(1);
     tree.split_h(1, 2, SplitPosition::After);
-
     for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
         assert!(!tree.set_ratio_at(&[], bad), "{bad} must be rejected");
         if let PaneTree::HSplit { ratio, .. } = tree {
@@ -81,18 +77,15 @@ fn remove_3_deep_collapses_correctly() {
     assert!(tree.split_h(1, 2, SplitPosition::After));
     assert!(tree.split_v(2, 4, SplitPosition::After));
     assert!(tree.split_h(2, 3, SplitPosition::After));
-
     assert!(tree.remove(3));
     assert!(tree.all_ids().contains(&1));
     assert!(tree.all_ids().contains(&2));
     assert!(tree.all_ids().contains(&4));
     assert!(!tree.all_ids().contains(&3));
-
     assert!(tree.remove(4));
     assert!(tree.all_ids().contains(&1));
     assert!(tree.all_ids().contains(&2));
     assert!(!tree.all_ids().contains(&4));
-
     assert!(tree.remove(2));
     assert_eq!(tree.all_ids(), vec![1]);
 }
@@ -108,7 +101,6 @@ fn shrink_inside_normal_rect() {
 fn shrink_clamps_to_zero_when_too_narrow() {
     let r = Rect::new(5, 10, 1, 1);
     let s = r.shrink(1);
-
     assert_eq!((s.rows, s.cols), (0, 0));
     assert_eq!((s.row, s.col), (5, 10));
 }
@@ -137,7 +129,6 @@ fn contains_holds_for_enclosed_and_equal_rects() {
 #[test]
 fn contains_rejects_rects_escaping_any_edge() {
     let outer = Rect::new(2, 0, 20, 80);
-
     assert!(!outer.contains(Rect::new(1, 0, 5, 10)), "top escapes");
     assert!(!outer.contains(Rect::new(2, 0, 21, 80)), "bottom escapes");
     assert!(!outer.contains(Rect::new(2, 0, 20, 81)), "right escapes");

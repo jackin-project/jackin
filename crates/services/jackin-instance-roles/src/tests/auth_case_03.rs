@@ -284,7 +284,6 @@ fn directory_swap_recovers_journal_and_cleans_target_scoped_orphans_on_retry() {
         ".jackin-auth-stage-{unrelated_key}-unrelated/nested"
     ));
     std::fs::create_dir_all(&unrelated_stage).unwrap();
-
     let unscoped_legacy = parent.join(".jackin-auth-stage-legacy-orphan/nested");
     std::fs::create_dir_all(&unscoped_legacy).unwrap();
 

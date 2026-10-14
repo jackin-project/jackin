@@ -20,7 +20,6 @@ pub fn provider_tabs(views: &[&FocusedUsageView]) -> Vec<UsageProviderTab> {
             )
         })
         .collect();
-
     keyed.sort_by(|left, right| {
         left.0
             .cmp(&right.0)

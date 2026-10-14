@@ -117,7 +117,6 @@ fn quit_intercept_ignores_letter_input_and_allows_ctrl_q_everywhere() {
             consumes_letter_input: true,
         },
     ));
-
     assert!(should_open_quit_confirm(
         key(KeyCode::Char('q'), KeyModifiers::CONTROL),
         QuitInterceptState {

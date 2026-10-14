@@ -147,7 +147,6 @@ fn load_args_branch_optional() {
 #[test]
 fn parses_load_command() {
     let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
-
     assert!(matches!(
         cli.command,
         Some(Command::Load(LoadArgs {
@@ -257,7 +256,6 @@ fn parses_console_with_debug() {
         cli.command,
         Some(Command::Console(ConsoleArgs { .. }))
     ));
-
     assert!(cli.debug);
 }
 
@@ -287,7 +285,6 @@ fn parses_bare_jackin_as_no_subcommand() {
 fn parses_bare_jackin_with_top_level_debug() {
     let cli = Cli::try_parse_from(["jackin", "--debug"]).unwrap();
     assert!(cli.command.is_none());
-
     assert!(cli.debug);
 }
 

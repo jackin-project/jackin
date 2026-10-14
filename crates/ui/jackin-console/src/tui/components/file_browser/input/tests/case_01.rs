@@ -11,7 +11,6 @@ fn s_commits_highlighted_entry() {
     std::fs::create_dir_all(&child).unwrap();
 
     let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-
     handle_with_services(&mut state, key(KeyCode::Down));
 
     let outcome = handle_with_services(&mut state, key(KeyCode::Char('s')));
@@ -30,7 +29,6 @@ fn s_falls_back_to_cwd_when_directory_is_empty() {
     std::fs::create_dir(&empty).unwrap();
 
     let mut state = state_rooted_at(tmp.path().to_path_buf(), empty.clone());
-
     let outcome = handle_with_services(&mut state, key(KeyCode::Char('s')));
     match outcome {
         FileBrowserOutcome::Commit(path) => {
@@ -175,7 +173,6 @@ fn h_at_root_is_noop() {
     let tmp = tempdir().unwrap();
     let mut state = make_state_at(tmp.path().to_path_buf());
     handle_with_services(&mut state, key(KeyCode::Char('h')));
-
     assert_eq!(state.cwd, state.root);
 }
 
@@ -185,7 +182,6 @@ fn l_navigates_into_highlighted_dir() {
     let child = tmp.path().join("child");
     std::fs::create_dir(&child).unwrap();
     let mut state = make_state_at(tmp.path().to_path_buf());
-
     handle_with_services(&mut state, key(KeyCode::Char('l')));
     assert_eq!(
         state.cwd.canonicalize().unwrap(),
@@ -253,7 +249,6 @@ fn click_outside_url_row_returns_false_even_with_url() {
 
     let modal = manufactured_modal_area();
     let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
-
     let opened = state.url_to_open_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y + 1);
     assert!(opened.is_none(), "click outside URL row should not open");
 
@@ -281,7 +276,6 @@ fn click_on_url_row_with_url_returns_true() {
         Some("file:///tmp/definitely-not-real"),
         "click on URL row with URL should return URL",
     );
-
     assert!(state.pending_git_prompt.is_some());
 }
 

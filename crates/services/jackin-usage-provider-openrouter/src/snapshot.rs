@@ -108,7 +108,6 @@ where
         },
         |quota| quota.buckets.clone(),
     );
-
     let credits_note =
         (status == UsageSnapshotStatus::Fresh).then(|| {
             match fetch_openrouter_credits(base_url, key) {

@@ -40,15 +40,10 @@ pub struct SessionProvider {
 #[derive(Debug, Clone)]
 pub struct SessionSpawnSpec {
     pub label: String,
-
     pub agent: Option<String>,
-
     pub account_id: Option<String>,
-
     pub identity: jackin_protocol::SessionIdentity,
-
     pub provider: Option<SessionProvider>,
-
     pub cache_dir: Option<String>,
 }
 
@@ -87,7 +82,6 @@ pub enum SessionEvent {
     PullRequestContextLoaded {
         request_id: u64,
         branch: Option<BranchName>,
-
         head: Option<Oid>,
         outcome: PullRequestLookupOutcome,
     },
@@ -102,7 +96,6 @@ pub enum GitContext {
     },
     Branch {
         name: BranchName,
-
         head: Option<Oid>,
     },
 }
@@ -228,7 +221,6 @@ pub struct SessionTerminal {
     pub rows: u16,
     pub cols: u16,
     pub row_arena: termpane::RowArena,
-
     pub default_fg: Option<(u8, u8, u8)>,
     pub default_bg: Option<(u8, u8, u8)>,
 }

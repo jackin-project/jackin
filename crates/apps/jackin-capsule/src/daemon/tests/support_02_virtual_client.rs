@@ -171,7 +171,6 @@ pub(crate) fn attached_single_pane() -> (Multiplexer, VirtualClient, u64) {
     let mut mux = single_pane_tab_mux();
     let pane = mux.visible_panes().into_iter().next().expect("one pane");
     let (session, rx) = test_session(pane.inner.rows, pane.inner.cols);
-
     drop(rx);
     mux.session_supervisor.sessions.insert(1, session);
     let mut client = VirtualClient::new(mux.render.term_rows, mux.render.term_cols);

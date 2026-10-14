@@ -47,9 +47,7 @@ pub struct ConsoleCreatePreludeState<Modal> {
     pub pending_workdir: Option<String>,
     pub pending_name: Option<String>,
     pub modal: Option<Modal>,
-
     pub last_browser_cwd: Option<PathBuf>,
-
     pub used_edit_dst: bool,
 }
 

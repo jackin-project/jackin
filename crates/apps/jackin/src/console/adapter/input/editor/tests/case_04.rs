@@ -218,7 +218,6 @@ fn toggle_refills_custom_to_all_when_last_agent_added_makes_it_complete() {
     let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
     let mut ws = empty_ws();
     ws.allowed_roles = vec!["alpha".into(), "beta".into()];
-
     let mut state = editor_on_agents_tab(ws, 2);
 
     press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
@@ -285,7 +284,6 @@ fn rows_beyond_workspace_mounts_are_noop_in_workspace_editor() {
     );
     let mut ws = ws_with_one_mount(false);
     ws.allowed_roles = vec!["agent-smith".into()];
-
     let mut state = editor_on_mounts_tab(ws, 2);
 
     press(&mut state, &mut config, KeyCode::Char('R')).unwrap();

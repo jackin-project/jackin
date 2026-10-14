@@ -16,9 +16,7 @@ pub enum AuthKind {
     Omp,
     Hermes,
     Github,
-
     Zai,
-
     Minimax,
 }
 
@@ -116,7 +114,6 @@ impl AuthKind {
             }
             (Self::Cursor, AuthMode::ApiKey) => Some(jackin_core::CURSOR_API_KEY_ENV_NAME),
             (Self::Muse, AuthMode::ApiKey) => Some(jackin_core::META_API_KEY_ENV_NAME),
-
             (Self::Github, AuthMode::Token) => Some(jackin_core::GH_TOKEN_ENV_NAME),
             (Self::Zai, AuthMode::ApiKey) => Some(jackin_core::ZAI_API_KEY_ENV_NAME),
             (Self::Minimax, AuthMode::ApiKey) => Some(jackin_core::MINIMAX_API_KEY_ENV_NAME),

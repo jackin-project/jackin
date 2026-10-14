@@ -103,7 +103,6 @@ impl Multiplexer {
                 } else {
                     "active".to_owned()
                 },
-
                 is_self: false,
             })
             .collect()

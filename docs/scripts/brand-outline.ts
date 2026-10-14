@@ -1,7 +1,4 @@
 
-
-
-
 import * as fontkit from 'fontkit'
 import type { Font } from 'fontkit'
 import { readFileSync } from 'node:fs'
@@ -14,7 +11,6 @@ export const jbBoldData = readFileSync(
 )
 export const font = fontkit.create(jbBoldData) as Font
 
-
 export const interData = readFileSync(
   join(root, 'node_modules', '@fontsource', 'inter', 'files', 'inter-latin-500-normal.woff'),
 )
@@ -23,18 +19,13 @@ export const interFont = fontkit.create(interData) as Font
 const round = (n: number) => Math.round(n * 100) / 100
 
 export type OutlinedWord = {
-
   group: string
-
   baseline: number
-
   width: number
-
   inkRight: number
   bottom: number
   capCenter: number
 }
-
 
 export function outlineWord(text: string, fontSize: number, fill: string, face: Font = font): OutlinedWord {
   const scale = fontSize / face.unitsPerEm
@@ -56,8 +47,6 @@ export function outlineWord(text: string, fontSize: number, fill: string, face: 
     x += g.advanceWidth
   }
   const baseline = round(maxY * scale)
-
-
   const s = Math.round(scale * 1e6) / 1e6
   return {
     group: `<g fill="${fill}" transform="translate(0 ${baseline}) scale(${s} ${-s})">${glyphs.join('')}</g>`,
@@ -68,7 +57,6 @@ export function outlineWord(text: string, fontSize: number, fill: string, face: 
     capCenter: round((maxY - face.capHeight / 2) * scale),
   }
 }
-
 
 export function placeWord(word: OutlinedWord, x: number, baseline: number): string {
   return word.group.replace(/translate\(0 [0-9.-]+\)/, `translate(${round(x)} ${round(baseline)})`)

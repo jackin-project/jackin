@@ -57,7 +57,6 @@ pub(crate) fn apply_editor_confirm(
                 source: source.clone(),
             });
         }
-
         ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
     }
     Ok(EditorModalOutcome::Continue)

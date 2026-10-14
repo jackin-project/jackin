@@ -84,14 +84,12 @@ fn s1_register_four_accounts_two_sharing_one_provider() -> anyhow::Result<()> {
             &api_key(AiProvider::Google, "Gemini", "secret-gemini"),
         )
         .unwrap();
-
     let dup = editor.upsert_account(
         "claude-copy",
         &api_key(AiProvider::Anthropic, "Copy", "secret-personal"),
     );
     assert!(dup.is_err(), "duplicate credential source was accepted");
     let saved = editor.save().unwrap();
-
     assert!(
         saved.accounts.len() >= 4,
         "registry lost accounts: {:?}",
@@ -118,7 +116,6 @@ fn s1_register_four_accounts_two_sharing_one_provider() -> anyhow::Result<()> {
 fn s1_import_then_rescan_is_duplicate_free() -> anyhow::Result<()> {
     let (_temp, paths) = fresh_paths()?;
     seed_claude_credentials(&paths.home_dir)?;
-
     let discovered = jackin_config::discover_default_accounts(&paths.home_dir);
     assert!(
         discovered.accounts.iter().any(|found| {
@@ -129,7 +126,6 @@ fn s1_import_then_rescan_is_duplicate_free() -> anyhow::Result<()> {
     let mut editor = ConfigEditor::open(&paths).unwrap();
     let first = editor.scan_for_accounts().unwrap();
     let snapshot = editor.save().unwrap().accounts;
-
     assert!(
         snapshot.contains_key("default-claude"),
         "seeded profile missing after scan {first:?}: {:?}",
@@ -402,7 +398,6 @@ fn s2_w1_admits_exactly_abc_d_is_inaccessible() -> anyhow::Result<()> {
         .insert(Agent::Claude, "acc-d".into());
     let err = resolve_account(&cfg, Agent::Claude, Some(&w1), "").unwrap_err();
     assert!(err.to_string().contains("not assigned"), "{err}");
-
     let _err = resolve_launch(&cfg, Some(&w1), "", None, Some(Agent::Claude)).unwrap_err();
     cfg.workspaces
         .get_mut("w1")
@@ -413,7 +408,6 @@ fn s2_w1_admits_exactly_abc_d_is_inaccessible() -> anyhow::Result<()> {
     let d = resolve_launch(&cfg, Some(&w2), "", Some(&["launch-d".into()]), None).unwrap();
     assert_eq!(d.len(), 1);
     assert_eq!(d[0].account_id, "acc-d");
-
     let err = resolve_launch(&cfg, Some(&w2), "", Some(&["launch-a".into()]), None).unwrap_err();
     assert!(err.to_string().contains("not assigned"), "{err}");
     Ok(())
@@ -439,14 +433,12 @@ fn s2_unknown_workspace_and_stale_ids_fail_closed() -> anyhow::Result<()> {
 
 fn precedence_fixture() -> anyhow::Result<(AppConfig, WorkspaceName)> {
     let (mut cfg, w1, _w2) = scoped_fixture()?;
-
     cfg.agent_configurations
         .insert("cfg-one".into(), configuration(Agent::Claude, "acc-a"));
     cfg.agent_configurations
         .insert("cfg-role".into(), configuration(Agent::Codex, "acc-b"));
     cfg.agent_configurations
         .insert("cfg-ws".into(), configuration(Agent::Gemini, "acc-c"));
-
     cfg.agent_configurations
         .insert("cfg-global".into(), configuration(Agent::Codex, "acc-b"));
     let ws = cfg
@@ -461,7 +453,6 @@ fn precedence_fixture() -> anyhow::Result<(AppConfig, WorkspaceName)> {
     ws.roles.insert("dev".into(), role);
     ws.default_launch = Some(vec!["cfg-ws".into()]);
     ws.account_bindings.insert(Agent::Claude, "acc-d".into());
-
     cfg.default_launch = Some(vec!["cfg-global".into()]);
     cfg.account_bindings.insert(Agent::Claude, "acc-a".into());
     Ok((cfg, w1))
@@ -470,7 +461,6 @@ fn precedence_fixture() -> anyhow::Result<(AppConfig, WorkspaceName)> {
 #[test]
 fn s7_full_precedence_chain_launch_to_sole_eligible() -> anyhow::Result<()> {
     let (mut cfg, w1) = precedence_fixture()?;
-
     cfg.workspaces
         .get_mut("w1")
         .unwrap()
@@ -621,7 +611,6 @@ fn s7_global_candidates_cannot_smuggle_foreign_accounts() -> anyhow::Result<()> 
         .insert("cfg-foreign".into(), configuration(Agent::Claude, "acc-d"));
     cfg.agent_configurations
         .insert("cfg-home".into(), configuration(Agent::Claude, "acc-a"));
-
     cfg.default_launch = Some(vec!["cfg-foreign".into(), "cfg-home".into()]);
     cfg.validate_accounts().unwrap();
     let won = resolve_launch(&cfg, Some(&w1), "", None, Some(Agent::Claude)).unwrap();

@@ -1,7 +1,5 @@
 import AppKit
 
-
-
 @MainActor
 final class UsageWindowToolbar: NSObject, NSToolbarDelegate {
     static let identifier = NSToolbar.Identifier("usage.window-toolbar")

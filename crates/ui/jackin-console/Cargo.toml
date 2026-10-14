@@ -40,8 +40,6 @@ toml = { workspace = true }
 tracing.workspace = true
 
 [features]
-
-
 test-support = ["jackin-config/test-support"]
 
 [lints]

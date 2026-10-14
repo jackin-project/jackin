@@ -27,7 +27,6 @@ pub struct ProjectionPublisher {
     known: Arc<Mutex<BTreeSet<UsageAccountCapability>>>,
     published: Arc<Mutex<BTreeMap<UsageAccountCapability, PublishedAccount>>>,
     catalog: Arc<Mutex<Option<BTreeMap<UsageAccountCapability, String>>>>,
-
     catalog_lifecycle: Arc<Mutex<()>>,
     identity_metadata: BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
 }
@@ -307,7 +306,6 @@ impl ProjectionPublisher {
                 phase: view.phase,
                 has_snapshot: view.snapshot.is_some(),
             };
-
             let stale = published.get(&view.capability).is_some_and(|previous| {
                 *previous == current
                     || previous.generation > current.generation

@@ -324,7 +324,6 @@ pub fn handle_key(
                 return Ok(InputOutcome::Continue);
             }
         }
-
         let (status, completed) = if let ManagerStage::CreatePrelude(p) = &state.stage {
             let completed = p.completed().map(Box::new);
             (

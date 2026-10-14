@@ -88,7 +88,6 @@ where
         supported_agents: supported_agents.to_vec(),
     });
     let container_state = paths.data_dir.join(container_name);
-
     if let Err(error) = crate::isolation::state::migrate_records(&container_state)
         .context("cannot migrate admitted isolation state before manifest replacement")
     {

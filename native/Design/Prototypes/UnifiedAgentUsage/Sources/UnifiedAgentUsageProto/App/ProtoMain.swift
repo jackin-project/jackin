@@ -1,8 +1,4 @@
 
-
-
-
-
 import AppKit
 import SwiftUI
 
@@ -77,7 +73,6 @@ enum ProtoConfigError: Error, Equatable {
 @MainActor
 final class ProtoDelegate: NSObject, NSApplicationDelegate {
     let config: ProtoConfig
-
     var onLaunch: ((NSApplication) -> Void)?
     private var backdrop: NSWindow?
     private var lastFrame: CGRect = .zero
@@ -88,8 +83,6 @@ final class ProtoDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         onLaunch?(NSApp)
-
-
         if let bundleID = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bundleID)
         }
@@ -103,15 +96,9 @@ final class ProtoDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tick() {
-
-
         guard
             let window = NSApp.windows.first(where: { $0.isVisible && $0.level == .normal })
         else { return }
-
-
-
-
         if backdrop == nil, let color = config.backdrop {
             let screen = NSScreen.main!.frame
             let back = NSWindow(
@@ -127,8 +114,6 @@ final class ProtoDelegate: NSObject, NSApplicationDelegate {
             window.isRestorable = false
         }
         NSApp.activate(ignoringOtherApps: true)
-
-
         if window.frame == lastFrame {
             stableTicks += 1
             if stableTicks == 2 {

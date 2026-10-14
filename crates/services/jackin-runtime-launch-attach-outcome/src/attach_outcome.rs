@@ -41,7 +41,6 @@ pub fn record_instance_attach_outcome(
     outcome: AttachOutcome,
 ) -> anyhow::Result<()> {
     let state_dir = paths.data_dir.join(container_name);
-
     let Some(mut manifest) = InstanceManifest::read_optional_lossy(&state_dir) else {
         return Ok(());
     };

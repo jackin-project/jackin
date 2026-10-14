@@ -39,7 +39,6 @@ pub struct EditorState<
 > {
     pub mode: EditorMode,
     pub active_tab: EditorTab,
-
     pub focus_owner: TabFocus<EditorFocusTarget>,
     pub hover_target: Option<EditorHoverTarget>,
     pub active_field: FieldFocus,
@@ -48,12 +47,9 @@ pub struct EditorState<
     pub mount_info_cache: MountInfoCache,
     pub modal: Option<Modal>,
     pub modal_parents: Vec<Modal>,
-
     pub pending_name: Option<String>,
-
     pub exit_after_save: Option<ExitIntent>,
     pub save_flow: SaveFlow,
-
     pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
     pub secrets_expanded: BTreeSet<String>,
     pub _env_value: PhantomData<fn() -> EnvValue>,

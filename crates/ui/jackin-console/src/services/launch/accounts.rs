@@ -10,9 +10,7 @@ pub struct AccountChoice {
     pub name: String,
     pub provider: jackin_config::AiProvider,
     pub agents: Vec<Agent>,
-
     pub configuration_id: Option<String>,
-
     pub instance_id: Option<String>,
 }
 

@@ -15,7 +15,6 @@ use super::Shared;
 pub(crate) struct ProbeJob {
     pub(crate) capability: UsageAccountCapability,
     pub(crate) generation: u64,
-
     pub(crate) admitted_at_epoch: i64,
     pub(crate) admitted_at_monotonic: Duration,
     pub(crate) catalog_revision: Option<String>,
@@ -32,7 +31,6 @@ pub(crate) struct ProbeJob {
 #[derive(Debug, Clone, Copy)]
 pub struct ClockSample {
     pub wall_epoch: Duration,
-
     pub monotonic: Duration,
 }
 

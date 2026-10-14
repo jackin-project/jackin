@@ -785,7 +785,6 @@ impl V1SpendState {
         SpendState {
             baseline: self.baseline.map(V1SpendRecord::into_spend_record),
             period_anchor: self.period_anchor.map(V1SpendRecord::into_spend_record),
-
             closed_period_anchor: None,
             cumulative_goal_spend: self.cumulative_goal_spend.map(V1Money::into_money),
             rollover_unknown: self.rollover_unknown,

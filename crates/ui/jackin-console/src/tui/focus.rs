@@ -7,7 +7,6 @@ use termrock::interaction::{FocusGraph, FocusNode};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsoleFocusTarget<Content> {
     TabBar,
-
     Content(Content),
 }
 
@@ -38,7 +37,6 @@ impl<Content: Clone + Copy + Eq> TabFocus<Content> {
 
     fn register(&mut self) {
         self.graph.begin_frame();
-
         self.graph.register(FocusNode::leaf(
             ConsoleFocusTarget::TabBar,
             Rect::new(0, 0, 0, 0),
@@ -142,7 +140,6 @@ pub fn cursor_scroll_for_panel(
 ) -> u16 {
     let chrome = 7u16.saturating_add(footer_h);
     let viewport_h = (term_height.saturating_sub(chrome) as usize).max(1);
-
     let content_height = usize::from(u16::MAX).saturating_add(viewport_h);
     follow_cursor_y(cursor, content_height, viewport_h, scroll_y)
 }

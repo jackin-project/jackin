@@ -43,7 +43,6 @@ public struct SettingsView: View {
 
                 if store.displayMode == .strip {
                     Picker("Max providers in menu bar", selection: $store.stripMax) {
-
                         ForEach(1...3, id: \.self) { count in
                             Text("\(count)").tag(count)
                         }
@@ -96,7 +95,6 @@ public struct SettingsView: View {
                 }
             }
             Section("Refresh") {
-
                 Slider(
                     value: $floorMinutes,
                     in: 1...30,
@@ -138,7 +136,6 @@ public struct SettingsView: View {
                 store.openDefault()
             }
             floorMinutes = min(30, max(1, Double(store.refreshFloorSecs) / 60.0))
-
             launchAtLogin = SMAppService.mainApp.status == .enabled
             launchAtLoginNote = statusNote(SMAppService.mainApp.status)
             DispatchQueue.main.async { isHydrating = false }

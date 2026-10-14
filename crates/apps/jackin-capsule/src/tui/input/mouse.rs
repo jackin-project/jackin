@@ -37,11 +37,8 @@ pub(crate) fn mouse_event_allowed_for_mode(
     match mode {
         termpane::MouseProtocolMode::None => false,
         termpane::MouseProtocolMode::Press => press && !motion,
-
         termpane::MouseProtocolMode::PressRelease => !motion,
-
         termpane::MouseProtocolMode::ButtonMotion => !passive_motion,
-
         termpane::MouseProtocolMode::AnyEvent | termpane::MouseProtocolMode::AnyMotion => true,
     }
 }

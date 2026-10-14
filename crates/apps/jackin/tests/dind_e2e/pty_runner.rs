@@ -51,13 +51,11 @@ pub(super) fn pty_command(
     extra_env: &[(&str, &str)],
 ) -> Command {
     let mut command = Command::new("script");
-
     let invocation = std::iter::once(jackin)
         .chain(args.iter().copied())
         .map(shell_quote)
         .collect::<Vec<_>>()
         .join(" ");
-
     let full = format!("stty cols 120 rows 40 quit undef >/dev/null 2>&1; exec {invocation}");
     if cfg!(target_os = "macos") {
         drop(std::fs::remove_file(cwd.join(MACOS_TYPESCRIPT_NAME)));
@@ -229,7 +227,6 @@ pub(super) fn run_in_pty_until_quick_exit_after_input(
     let _done_guard = DoneGuard {
         done: Arc::clone(&done),
     };
-
     #[cfg(target_os = "macos")]
     let (stdout_buf, stdout_reader) = spawn_stdout_collector(stdout, cwd, &done);
     #[cfg(not(target_os = "macos"))]
@@ -328,7 +325,6 @@ pub(super) fn assert_restored_terminal(output: &std::process::Output) {
 pub(super) struct PtyScriptStep {
     pub(super) wait_for: &'static str,
     pub(super) input: &'static str,
-
     pub(super) wait_for_file: &'static str,
 }
 

@@ -78,27 +78,21 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
 #[derive(Debug, Clone)]
 pub struct AgentStatePaths {
     pub credential_dir: &'static str,
-
     pub config_dir: Option<&'static str>,
-
     pub credential_file: Option<&'static str>,
-
     pub folder_env_var: Option<FolderVar>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FolderVar {
     pub name: &'static str,
-
     pub kind: FolderVarKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FolderVarKind {
     Dir,
-
     Parent,
-
     XdgRoot,
 }
 

@@ -77,7 +77,6 @@ fn linux_clipboard_backend_accepts_any_available_display_tool_pair() {
         "Linux host clipboard image reader",
     )
     .expect("X11 with xclip should work");
-
     validate_linux_clipboard_backend(true, true, true, false, "Linux host clipboard image reader")
         .expect("both servers with only wl-paste should work");
 }

@@ -18,7 +18,6 @@ const RERUN: &str = "cargo xtask lint suppressions";
 pub(crate) struct LintSuppressionsArgs {
     #[command(flatten)]
     output: FormatArgs,
-
     #[arg(long)]
     print_budget: bool,
 }
@@ -51,7 +50,6 @@ struct ExpectBudget {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Measured {
     pub bare_by_crate: BTreeMap<String, usize>,
-
     pub expect_by_lint_crate: BTreeMap<(String, String), usize>,
 }
 

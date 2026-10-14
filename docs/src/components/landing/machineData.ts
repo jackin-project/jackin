@@ -1,5 +1,4 @@
 
-
 export interface Mount {
   src: string;
   dst: string;
@@ -66,10 +65,6 @@ export const orgs: Record<string, Org> = {
       'your-org/frontend-engineer': { repo: 'your-org/jackin-frontend-engineer', tools: 'Node 22, Playwright, pnpm',  plugins: 'UI · a11y' },
       'your-org/backend-engineer':  { repo: 'your-org/jackin-backend-engineer',  tools: 'Go 1.23, Postgres, grpcurl', plugins: 'API · SQL' },
     },
-
-
-
-
     workspaces: {
       'web-app': {
         workdir: '~/Projects/your-org/web-app',

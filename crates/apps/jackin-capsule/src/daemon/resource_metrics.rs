@@ -142,7 +142,6 @@ const fn clock_ticks_per_second() -> u64 {
 
 fn parse_stat_cpu_jiffies(stat: &str) -> Option<CpuJiffies> {
     let end_comm = stat.rfind(')')?;
-
     let mut fields = stat[end_comm + 1..].split_whitespace();
     let utime = fields.nth(11)?.parse::<u64>().ok()?;
     let stime = fields.next()?.parse::<u64>().ok()?;

@@ -111,7 +111,6 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
         t0,
     );
     let original = session.authority.as_ref().unwrap().last_event;
-
     session.apply_runtime_event(
         "hook-claude-9",
         "claude",
@@ -134,7 +133,6 @@ fn amp_event_sets_partial_authority() {
         std::time::Instant::now(),
     );
     let a = session.authority.as_ref().expect("amp authority set");
-
     assert_eq!(a.grade, AuthorityGrade::Partial);
 }
 

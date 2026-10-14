@@ -171,7 +171,6 @@ pub fn provision_single_file_credential_with_content(
         AuthForwardMode::Sync => match content {
             Some(content) if treat_empty_as_missing && content.trim().is_empty() => {
                 eprintln!("[jackin] host {label} is empty/whitespace — treating as host-missing");
-
                 retain_existing_on_missing = false;
                 wipe_agent_file_state(target, label)?;
                 AuthProvisionOutcome::HostMissing

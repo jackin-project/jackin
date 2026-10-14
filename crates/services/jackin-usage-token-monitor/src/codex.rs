@@ -38,7 +38,6 @@ fn parse_raw_usage(obj: &serde_json::Value) -> (u64, u64, u64) {
 #[derive(Default)]
 struct Acc {
     cumulative: Option<(u64, u64, u64)>,
-
     headless: (u64, u64, u64),
     cost: f64,
     has_cost: bool,
@@ -85,7 +84,6 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> super::PollStatus {
     let Ok(files) = find_jsonl_files() else {
         return super::PollStatus::Degraded;
     };
-
     match super::recompute_spend(&files, |text, total| {
         let mut acc = Acc::default();
         for line in text.lines() {
@@ -97,7 +95,6 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> super::PollStatus {
             return;
         }
         total.seen = true;
-
         let (i, o, c) = acc.cumulative.unwrap_or(acc.headless);
         total.input += i;
         total.output += o;

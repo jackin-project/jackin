@@ -148,10 +148,8 @@ fn preview_shows_compact_running_badge_for_active_instances() {
     .unwrap();
 
     let joined = buffer_text(term.backend().buffer());
-
     assert!(joined.contains("Running"), "{joined}");
     assert!(joined.contains("1 instance running"), "{joined}");
-
     assert!(
         !joined.contains("done0001"),
         "cleanly exited instances must not appear: {joined}"
@@ -246,7 +244,6 @@ fn preview_block_order_is_general_mounts_environments_agents() {
 
     let buf = term.backend().buffer();
     let area = buf.area;
-
     let mut general_y: Option<u16> = None;
     let mut mounts_y: Option<u16> = None;
     let mut envs_y: Option<u16> = None;

@@ -58,7 +58,6 @@ impl Multiplexer {
         provider_label: Option<&str>,
     ) -> Result<u64> {
         self.ensure_capacity_for_new_session(true)?;
-
         let agent = agent
             .map(|raw| {
                 self.launch_env
@@ -69,7 +68,6 @@ impl Multiplexer {
             })
             .transpose()?;
         let codename = self.pick_next_codename();
-
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
@@ -133,7 +131,6 @@ impl Multiplexer {
             .codename_live
             .insert(codename.clone());
         self.record_agent_history(id, codename, agent.clone(), provider_label);
-
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, Some(id));
         Ok(id)

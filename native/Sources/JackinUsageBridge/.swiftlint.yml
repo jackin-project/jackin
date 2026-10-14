@@ -1,8 +1,4 @@
 parent_config: ../../.swiftlint.yml
-
-
-
-
 disabled_rules:
   - file_length
   - function_body_length

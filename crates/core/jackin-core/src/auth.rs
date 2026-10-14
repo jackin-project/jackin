@@ -8,13 +8,10 @@ pub enum AuthForwardMode {
     #[default]
     #[serde(rename = "sync")]
     Sync,
-
     #[serde(rename = "api_key")]
     ApiKey,
-
     #[serde(rename = "oauth_token")]
     OAuthToken,
-
     #[serde(rename = "ignore")]
     Ignore,
 }

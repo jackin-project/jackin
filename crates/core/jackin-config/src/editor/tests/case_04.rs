@@ -364,7 +364,6 @@ fn set_env_var_writes_inline_table_for_op_ref() {
     editor.save().unwrap();
 
     let serialized = std::fs::read_to_string(&paths.config_file).unwrap();
-
     assert!(
             serialized.contains(r#"SERVICE_TOKEN = { op = "op://abc/def/fld", breadcrumb = { version = 1, value = "Private/Claude/security/auth token" } }"#),
             "expected inline-table emit, got:\n{serialized}"

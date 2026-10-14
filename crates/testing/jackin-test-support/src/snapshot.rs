@@ -14,7 +14,6 @@ pub fn redact_digit_runs(input: &str) -> String {
                     run.push(d);
                 }
             }
-
             if run.len() >= 4 {
                 out.push_str("<digits>");
             } else {

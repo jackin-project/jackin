@@ -68,7 +68,6 @@ fn amp_changed_flag_includes_cache_tokens() {
 #[test]
 fn amp_token_reader_skips_zero_usage() {
     let session = TokenSession::new(Agent::Amp);
-
     let zero = serde_json::json!({"usage":{"input_tokens":0,"output_tokens":0}});
     let usage = zero.get("usage").unwrap();
     let input = usage

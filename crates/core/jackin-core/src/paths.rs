@@ -8,11 +8,9 @@ use std::path::{Path, PathBuf};
 pub enum PathsError {
     #[error("Cannot resolve home directory")]
     HomeDirUnresolved,
-
     #[error("failed to create {path}")]
     CreateDir {
         path: PathBuf,
-
         #[source]
         source: std::io::Error,
     },
@@ -21,21 +19,13 @@ pub enum PathsError {
 #[derive(Debug, Clone)]
 pub struct JackinPaths {
     pub test_layout: bool,
-
     pub home_dir: PathBuf,
-
     pub jackin_home: PathBuf,
-
     pub config_dir: PathBuf,
-
     pub config_file: PathBuf,
-
     pub workspaces_dir: PathBuf,
-
     pub roles_dir: PathBuf,
-
     pub data_dir: PathBuf,
-
     pub cache_dir: PathBuf,
 }
 

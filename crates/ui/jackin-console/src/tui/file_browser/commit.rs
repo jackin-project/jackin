@@ -169,7 +169,6 @@ pub(crate) fn apply_file_browser_commit(
             prelude.modal = None;
             prelude.last_browser_cwd = browser_cwd;
             prelude.accept_mount_src(path);
-
             prelude.wizard.next();
             let src = prelude
                 .pending_mount_src

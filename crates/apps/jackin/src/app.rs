@@ -108,7 +108,6 @@ pub async fn run(cli: Cli, lifecycle: crate::lifecycle::ProductLifecycle) -> Res
     apply_telemetry_config(&config);
     let interactive = app_mode == jackin_telemetry::schema::enums::AppMode::Interactive;
     let command_span = invocation.span();
-
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
     jackin_launch::install_standalone_dialog_sink();
     if debug && !suppress_cli_notices {
@@ -212,7 +211,6 @@ fn finish_invocation(
     suppress_cli_notices: bool,
 ) {
     record_run_error(result);
-
     diagnostics.emit_run_summary();
     if !suppress_cli_notices {
         announce_run_teardown(diagnostics);
@@ -380,7 +378,6 @@ pub(super) fn resolve_new_session_agent(
         .as_deref()
         .and_then(|name| config.workspaces.get(name))
         .and_then(|ws| ws.default_agent);
-
     prompt_agent_choice_if_needed(paths, &class, workspace_default_agent)?.map_or_else(
         || {
             workspace_default_agent

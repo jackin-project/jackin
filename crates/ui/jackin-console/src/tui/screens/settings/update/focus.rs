@@ -6,7 +6,6 @@ use super::super::model::{SettingsHoverTarget, SettingsTab};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsFocusRegion {
     TabBar,
-
     Content,
 }
 

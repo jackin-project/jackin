@@ -288,7 +288,6 @@ fn usage_bucket_presentation_orders_spend_cap() {
         presentation.display_segments,
         vec!["30% used", "Monthly cap: SGD 78.49 / SGD 260.00"]
     );
-
     assert_eq!(presentation.meter_percent, Some(70));
 }
 

@@ -258,7 +258,6 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("refresh usage action must keep usage dialog open");
     };
-
     assert!(
         !view.updated_label.contains("refreshing"),
         "{:?}",
@@ -288,7 +287,6 @@ fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("refresh usage action must keep usage dialog open");
     };
-
     assert!(
         !view.updated_label.contains("refreshing"),
         "{:?}",
@@ -330,7 +328,6 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
 
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
         provider_label: "Claude".to_owned(),
-
         account_id: String::new(),
     });
 

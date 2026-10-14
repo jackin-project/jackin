@@ -141,7 +141,6 @@ fn parse_payload(payload: &[u8]) -> Option<OscStatusEvent> {
         }
         b"9" if fields.next()? == b"4" => {
             let state = fields.next()?;
-
             match state {
                 [digit] if digit.is_ascii_digit() => Some(OscStatusEvent::Progress(digit - b'0')),
                 _ => None,

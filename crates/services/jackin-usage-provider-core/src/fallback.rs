@@ -12,7 +12,6 @@ pub fn unpollable_snapshot(agent: &str, provider: Option<&str>, now: i64) -> Foc
         agent,
         provider,
         surface: UsageSurface::Unsupported,
-
         account_label: String::new(),
         username: None,
         plan_label: None,

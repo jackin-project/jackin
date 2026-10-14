@@ -135,7 +135,6 @@ impl Multiplexer {
             return;
         }
         let moved = session.scroll_by(delta);
-
         if moved {
             self.invalidate(wheel_scrollback_redraw_reason());
         }

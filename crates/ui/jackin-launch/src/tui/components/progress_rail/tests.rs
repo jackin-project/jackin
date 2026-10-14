@@ -10,7 +10,6 @@ use crate::{StageStatus, initial_view};
 fn rail_text_spans_keep_pre_bump_white() {
     let mut running = initial_view();
     running.stages[0].status = StageStatus::Running;
-
     let running_line = blocks_line(&running, false);
     assert_eq!(running_line.spans[0].content.as_ref(), "━━━");
     assert_eq!(
@@ -51,7 +50,6 @@ fn rail_queued_span_keeps_pre_bump_dark_phosphor() {
     let mut view = initial_view();
     view.stages[0].status = StageStatus::Running;
     let line = blocks_line(&view, false);
-
     assert_eq!(line.spans[2].content.as_ref(), "───");
     assert_eq!(line.spans[2].style.fg, Some(Color::Rgb(0, 80, 18)));
 }

@@ -42,7 +42,6 @@ pub enum CodexRpcAccountDetails {
 pub struct CodexRpcRateLimitsResponse {
     #[serde(rename = "rateLimits", default)]
     pub(crate) rate_limits: CodexRpcRateLimits,
-
     #[serde(rename = "rateLimitsByLimitId", default)]
     pub(crate) rate_limits_by_limit_id: BTreeMap<String, CodexRpcLimitEntry>,
     #[serde(rename = "rateLimitResetCredits")]
@@ -119,7 +118,6 @@ impl CodexRpcUsage {
             rate_limits_by_limit_id,
             reset_credits: rpc_reset_credits,
         } = limits;
-
         let additional_rate_limits: Vec<CodexAdditionalRateLimit> = rate_limits_by_limit_id
             .into_values()
             .filter(|entry| entry.limit_id.as_deref() != Some("codex"))

@@ -114,7 +114,6 @@ fn presence_stale_and_new() {
 #[test]
 fn curated_pub_mods_rejects_extra_root_mod() {
     let dir = tempfile::tempdir().expect("tempdir");
-
     for (crate_name, body) in [
         ("jackin-config", "mod private;\npub mod fixtures;\n"),
         (
@@ -166,7 +165,6 @@ fn suite_time_parses_fixture_junit_ms() {
     let dir = tempfile::tempdir().expect("tempdir");
     let junit_dir = dir.path().join("target/nextest/ci");
     fs::create_dir_all(&junit_dir).expect("mkdir");
-
     fs::write(
         junit_dir.join("junit.xml"),
         r#"<?xml version="1.0"?><testsuites time="1.5"><testsuite time="2.0"></testsuite></testsuites>"#,

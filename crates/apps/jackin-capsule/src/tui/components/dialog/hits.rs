@@ -111,7 +111,6 @@ impl Dialog {
                     PickerRow::Agent(_) | PickerRow::Shell
                 )
             }
-
             Self::ExitDirty { .. } | Self::ExitInspect { .. } => false,
         }
     }
@@ -165,12 +164,10 @@ impl Dialog {
                     .sum::<usize>();
                 u16::try_from(rows.saturating_add(2)).unwrap_or(u16::MAX)
             }
-
             Self::ConfirmAction { kind, .. } => match kind {
                 ConfirmKind::Exit => 10,
                 ConfirmKind::ClosePane | ConfirmKind::CloseTab => 9,
             },
-
             Self::ExecPicker(state) => u16::try_from(state.items.len())
                 .unwrap_or(u16::MAX)
                 .saturating_add(5),
@@ -213,7 +210,6 @@ impl Dialog {
                 side_margin: 4,
                 height,
             },
-
             Self::ConfirmAction {
                 kind: ConfirmKind::Exit,
                 ..

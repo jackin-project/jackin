@@ -49,9 +49,7 @@ impl Default for ConsoleFramePacer {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubscriptionPoll<T> {
     Ready(T),
-
     Pending,
-
     Closed,
 }
 
@@ -76,7 +74,6 @@ impl<T> BlockingSubscription<T> {
                 termrock::runtime::ReadySubscriptionPoll::Ready(value) => {
                     SubscriptionPoll::Ready(value)
                 }
-
                 _ => SubscriptionPoll::Closed,
             },
         }

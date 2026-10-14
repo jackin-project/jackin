@@ -268,7 +268,6 @@ pub(super) fn assert_detail_group_rows(detail: &str) {
             "provider: provider maintenance (prov_maint)",
         ],
     );
-
     assert!(
         !detail.contains("remaining"),
         "unreported remaining must not render:\n{detail}"

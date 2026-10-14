@@ -186,18 +186,15 @@ impl Dialog {
                             agent: None,
                             intent: *intent,
                         },
-
                         Some(PickerRow::Section(_)) | None => DialogAction::Redraw,
                     }
                 }
-
                 Self::ExitDirty { selected, .. } => match EXIT_DIRTY_ROWS.get(*selected) {
                     Some((row, _)) => DialogAction::ExitDirty(*row),
                     None => DialogAction::Redraw,
                 },
                 _ => DialogAction::Redraw,
             },
-
             None => {
                 if let Some(c) = printable_filter_char(key) {
                     match self {

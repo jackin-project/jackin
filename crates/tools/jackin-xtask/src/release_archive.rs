@@ -27,16 +27,12 @@ pub(crate) enum ArchivePackage {
 pub(crate) struct ReleaseArchivesArgs {
     #[arg(long, value_enum)]
     package: ArchivePackage,
-
     #[arg(long)]
     version: String,
-
     #[arg(long)]
     archive_version: Option<String>,
-
     #[arg(long, default_value = "dist")]
     output_dir: PathBuf,
-
     #[arg(long)]
     checksum_only: bool,
 }
@@ -94,7 +90,6 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
         .transpose()?;
 
     let targets = targets(args.package);
-
     let jobs_per_target = jobs_per_target(1);
     for target in targets {
         prepare_target(target.rust)?;

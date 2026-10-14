@@ -14,7 +14,6 @@ pub(crate) use account_identity::{
 mod launch_dind;
 pub use launch_dind::DIND_IMAGE;
 pub(super) use launch_dind::create_role_network;
-
 pub use launch_dind::{
     DindSidecarPrewarm, prewarm_dind_sidecar_container_with_paths, write_prewarmed_dind_state,
 };
@@ -105,12 +104,9 @@ pub(super) fn validate_agent_supported(
 }
 
 mod capsule_setup;
-
 pub(crate) use jackin_runtime_launch_exit_diagnosis::exit_diagnosis;
-
 pub(crate) use jackin_runtime_launch_git_pull::git_pull;
 mod mounts;
-
 pub(crate) use jackin_runtime_launch_progress_helpers::progress_helpers;
 use progress_helpers::{
     LaunchEnvPrompter, StepCounter, launch_mount_lines, launch_target_kind, launch_target_label,
@@ -184,18 +180,17 @@ pub(crate) use launch_runtime::{
 
 mod restore;
 #[cfg(test)]
-use restore::{
-    RelatedRestoreCandidate, recover_related_restore_candidate, restore_candidate_label,
-    supersede_restore_candidates,
-};
-
-#[cfg(test)]
 use jackin_runtime_launch_attach_outcome::attach_outcome::format_attach_outcome;
 use jackin_runtime_launch_attach_outcome::attach_outcome::write_instance_attach_outcome;
 pub(in crate::runtime) use jackin_runtime_launch_attach_outcome::attach_outcome::{
     record_instance_attach_outcome, write_instance_status,
 };
 pub(in crate::runtime) use restore::preserved_instance_status;
+#[cfg(test)]
+use restore::{
+    RelatedRestoreCandidate, recover_related_restore_candidate, restore_candidate_label,
+    supersede_restore_candidates,
+};
 use restore::{
     manifest_host_workdir_fingerprint, related_restore_load_options,
     write_preserved_status_if_applicable,

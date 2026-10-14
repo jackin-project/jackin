@@ -360,7 +360,6 @@ fn ensure_protected_host_roots_not_exposed(
             raw_source.display(),
             root.display()
         );
-
         let mut ancestor = raw_source.parent();
         while let Some(parent) = ancestor {
             let lexical_parent = jackin_core::container_paths::normalize_path(parent);

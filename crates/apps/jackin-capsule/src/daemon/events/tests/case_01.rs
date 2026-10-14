@@ -72,7 +72,6 @@ fn a_session_filter_hides_other_sessions_without_leaving_seq_gaps() {
     let second = record(rx.try_recv().expect("second session 2 event"));
     assert_eq!(first.session, 2);
     assert_eq!(second.session, 2);
-
     assert_eq!((first.seq, second.seq), (0, 1));
     assert!(
         matches!(rx.try_recv(), Err(mpsc::error::TryRecvError::Empty)),
@@ -88,11 +87,8 @@ fn activity_records_are_throttled_per_session() {
 
     let start = Instant::now();
     subscribers.publish_activity(start, &observation(1, AgentState::Working));
-
     subscribers.publish_activity(start, &observation(1, AgentState::Working));
-
     subscribers.publish_activity(start, &observation(2, AgentState::Working));
-
     subscribers.publish_activity(
         start + ACTIVITY_REPORT_INTERVAL,
         &observation(1, AgentState::Working),
@@ -175,7 +171,6 @@ fn exit_is_the_last_record_and_clears_the_activity_budget() {
             reason: Some("exit status 1".to_owned())
         }
     );
-
     subscribers.publish_activity(now, &observation(1, AgentState::Working));
     assert_eq!(
         record(rx.try_recv().expect("fresh session reports immediately")).kind,

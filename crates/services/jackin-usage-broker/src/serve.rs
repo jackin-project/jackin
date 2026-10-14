@@ -27,7 +27,6 @@ const MONITOR_TICK_RETRY_DELAY: Duration = Duration::from_secs(1);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ClockSample {
     wall_epoch: i64,
-
     monotonic_elapsed: Duration,
 }
 
@@ -178,7 +177,6 @@ pub(crate) fn serve(config: ServeConfig) {
         if shutdown.load(Ordering::Acquire) {
             break;
         }
-
         let now = system_clock_sample(started);
         if interval_elapsed(now, last_renewal, policy.lease_renewal) {
             if !cleanup.renew() {
@@ -221,9 +219,7 @@ pub(crate) fn serve(config: ServeConfig) {
             Err(_) => break,
         }
     }
-
     release_foreground_collector(has_authenticated_foreground_guard, &monitor_store);
-
     fenced.store(true, Ordering::Release);
     drop(connections);
     for worker in workers {
@@ -234,7 +230,6 @@ pub(crate) fn serve(config: ServeConfig) {
         drop(ticker.join());
     }
     drop(listener);
-
     drop(context);
     drop(cleanup);
 }

@@ -41,7 +41,6 @@ sparse = ["plugins"]
 
     run("git", &["init"], Some(path));
     run("git", &["add", "."], Some(path));
-
     run(
         "git",
         &[

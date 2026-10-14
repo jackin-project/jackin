@@ -211,7 +211,6 @@ fn empty_rows_uses_floor_for_header() {
     let path_w = mount_path_width(&[]);
     assert_eq!(path_w, "Destination".len());
     let header = render_mount_header(path_w);
-
     let expected = format!(
         "  {path:<path_w$}  {mode:<mw$}  {iso:<iw$}  Type",
         path = "Destination",
@@ -233,7 +232,6 @@ fn header_has_two_space_gap_between_columns() {
     let data = render_mount_lines(&rows, path_w);
     let header_text = line_text(&header);
     let data_text = line_text(&data[0]);
-
     assert!(
         header_text.contains("Isolation"),
         "expected header to contain 'Isolation'; got {header_text:?}"

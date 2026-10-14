@@ -67,7 +67,6 @@ fn inline_account_followup_plan_opens_picker_only_when_supported() {
             vec!["anthropic", "zai"]
         ))
     );
-
     assert_eq!(
         inline_account_followup_plan("container", "codex", vec!["openai", "minimax"]),
         InlineAccountFollowupPlan::OpenAccountPicker(AccountPickerState::new(
@@ -76,7 +75,6 @@ fn inline_account_followup_plan_opens_picker_only_when_supported() {
             vec!["openai", "minimax"]
         ))
     );
-
     assert_eq!(
         inline_account_followup_plan("container", "codex", vec!["openai"]),
         InlineAccountFollowupPlan::StartSession {
@@ -131,7 +129,6 @@ fn inline_picker_shell_plan_routes_scroll_and_delegate() {
         inline_picker_shell_plan(key(KeyCode::Char('l')), false),
         InlinePickerShellPlan::ScrollHorizontal(8)
     );
-
     assert_eq!(
         inline_picker_shell_plan(key(KeyCode::Char('q')), false),
         InlinePickerShellPlan::Delegate

@@ -5,14 +5,12 @@ import CoreGraphics
 import Foundation
 import JackinUsageBindings
 
-
 public enum StatusItemDisplayMode: String, CaseIterable, Sendable {
     case iconOnly
     case focusPercent
     case pinnedSurface
     case strip
 }
-
 
 @MainActor
 public final class PresentationStore: ObservableObject {
@@ -46,10 +44,6 @@ public final class PresentationStore: ObservableObject {
         public var updatedLabel: String
         public var lastError: String?
         public var identity: IdentityRow?
-
-
-
-
         public var detailPresentation: UsageDetailPresentation
 
         public init(
@@ -98,17 +92,13 @@ public final class PresentationStore: ObservableObject {
         public let statusSlot: String?
         public let severity: String
         public let status: String
-
         public let usedMoney: MoneyDto?
         public let limitMoney: MoneyDto?
-
         public let remainingLabel: String?
         public let displaySegments: [String]
         public let displayLabel: String
         public let meterPercent: UInt8?
     }
-
-
 
     public struct GlanceProviderRow: Identifiable, Sendable, Equatable {
         public var id: String { surfaceId }
@@ -187,15 +177,10 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-
     public enum SelectedAccountRoute: Sendable, Equatable {
-
         case unselected
-
         case resolving(accountKey: String)
-
         case available(accountKey: String)
-
         case unavailable(accountKey: String, notice: String)
 
         public init?(dto: SelectedAccountRouteDto) {
@@ -240,8 +225,6 @@ public final class PresentationStore: ObservableObject {
         public let accounts: [AccountRow]
         public let accessibilityLabel: String
         public let lastError: String?
-
-
         public let selectedAccountRoute: SelectedAccountRoute?
 
         public init(
@@ -275,9 +258,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-
-
-
     public struct DiscoveryDiagnostic: Identifiable, Sendable, Equatable {
         public var id: String { "\(surfaceId ?? "global")#\(scopeLabel)#\(issue)" }
         public let surfaceId: String?
@@ -286,7 +266,6 @@ public final class PresentationStore: ObservableObject {
         public let message: String
         public let displayLabel: String
     }
-
 
     public struct AccountRow: Identifiable, Sendable, Equatable {
         public var id: String { "\(surfaceId)#\(accountKey)" }
@@ -359,7 +338,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-
     public struct QIFixtureProjection: Sendable, Equatable {
         public let glanceRows: [GlanceProviderRow]
         public let statusBarGlanceRows: [GlanceProviderRow]
@@ -382,47 +360,23 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-
     @Published public private(set) var nextRefreshLabel: String = ""
     @Published public private(set) var surfaces: [SurfaceRow] = []
-
-
-
     @Published public private(set) var providerGlanceRows: [GlanceProviderRow] = []
-
-
-
-
     @Published public private(set) var statusBarGlanceRows: [GlanceProviderRow] = []
-
-
     @Published public private(set) var statusBarShowsValues = true
-
     @Published public private(set) var providerGroups: [ProviderGroupRow] = []
     @Published public var overviewExpandedProviderIDs: Set<String> = []
     @Published public var overviewSelectionID: String?
-
     @Published public private(set) var accounts: [AccountRow] = []
     @Published public private(set) var discoveryDiagnostics: [DiscoveryDiagnostic] = []
-
     @Published public private(set) var usageSelection: String?
-
     @Published public private(set) var usageAccountSelection: String?
-
     @Published public var popoverSelection: String?
-
-
-
-
     @Published public private(set) var refreshInProgress = false
     @Published public private(set) var lastError: String?
     @Published public private(set) var isOpen: Bool = false
-
-
-
-
     @Published public private(set) var isOpening: Bool = false
-
     @Published public private(set) var refreshFloorSecs: UInt64 = 300
 
     @Published public var displayMode: StatusItemDisplayMode {
@@ -441,7 +395,6 @@ public final class PresentationStore: ObservableObject {
 
     @Published public var stripMax: Int {
         didSet {
-
             let clamped = max(1, min(statusBarMaxChips, stripMax))
             if clamped != stripMax {
                 stripMax = clamped
@@ -454,7 +407,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-
     @Published public var percentStyle: String {
         didSet {
             UserDefaults.standard.set(percentStyle, forKey: Self.percentStyleKey)
@@ -465,7 +417,6 @@ public final class PresentationStore: ObservableObject {
             }
         }
     }
-
 
     @Published public var resetStyle: String {
         didSet {
@@ -491,9 +442,6 @@ public final class PresentationStore: ObservableObject {
     private static let resetStyleKey = "jackin.desktop.resetStyle"
     private static let hideScreenShareKey = "jackin.desktop.hideWhileScreenSharing"
 
-
-
-
     private let scheduler: RefreshScheduler
     private var projectedStatusBarRows: [GlanceProviderRow] = []
     private var nextApplyRequest: UInt64 = 0
@@ -516,9 +464,6 @@ public final class PresentationStore: ObservableObject {
         self.init(scheduler: RefreshScheduler())
     }
 
-
-
-
     public init(scheduler: RefreshScheduler) {
         self.scheduler = scheduler
         let defaults = UserDefaults.standard
@@ -527,18 +472,15 @@ public final class PresentationStore: ObservableObject {
         {
             self.displayMode = mode
         } else if defaults.object(forKey: "jackin.desktop.showPercent") != nil {
-
             self.displayMode =
                 defaults.bool(forKey: "jackin.desktop.showPercent")
                 ? .focusPercent
                 : .iconOnly
             defaults.removeObject(forKey: "jackin.desktop.showPercent")
         } else {
-
             self.displayMode = .strip
         }
         self.pinnedSurfaceId = defaults.string(forKey: Self.pinnedSurfaceKey) ?? ""
-
         let strip = defaults.object(forKey: Self.stripMaxKey) as? Int ?? statusBarMaxChips
         self.stripMax = max(1, min(statusBarMaxChips, strip))
         let percent = defaults.string(forKey: Self.percentStyleKey) ?? "left"
@@ -548,15 +490,9 @@ public final class PresentationStore: ObservableObject {
         self.hideWhileScreenSharing = defaults.bool(forKey: Self.hideScreenShareKey)
     }
 
-
-
-
-
     public enum LaunchConfiguration: Sendable, Equatable {
         case production
         case ephemeralSmoke(dataDir: String)
-
-
 
         public static func resolve(
             environment: [String: String],
@@ -592,7 +528,6 @@ public final class PresentationStore: ObservableObject {
         )
     }
 
-
     public func retryLastOperation() {
         guard !fixtureMode else { return }
         if isOpen {
@@ -601,8 +536,6 @@ public final class PresentationStore: ObservableObject {
             openForLaunch(launchConfiguration)
         }
     }
-
-
 
     private func openSmoke(dataDir: String) {
         guard !isOpen, !isOpening else { return }
@@ -649,9 +582,6 @@ public final class PresentationStore: ObservableObject {
         enabled: [String],
         allowLiveProbes: Bool
     ) {
-
-
-
         guard !isOpen, !isOpening else { return }
         isOpening = true
         let config = OpenConfig(
@@ -670,7 +600,6 @@ public final class PresentationStore: ObservableObject {
                 self.lastError = nil
                 self.refreshFloorSecs = floor
                 await self.pushFormatPrefs()
-
                 await self.refreshAll(force: true)
                 self.startPolling()
             } catch {
@@ -686,8 +615,6 @@ public final class PresentationStore: ObservableObject {
         pollTask = nil
         fixtureRefreshTask?.cancel()
         fixtureRefreshTask = nil
-
-
         scheduler.invalidateAndShutdown()
         isOpen = false
         isOpening = false
@@ -705,7 +632,6 @@ public final class PresentationStore: ObservableObject {
             }
         }
     }
-
 
     public func setSelectedAccount(surfaceId: String, accountKey: String) {
         if fixtureMode {
@@ -736,15 +662,9 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-
     public func accountsForSurface(_ surfaceId: String) -> [AccountRow] {
         accounts.filter { $0.surfaceId == surfaceId }
     }
-
-
-
-
-
 
     public func applyQIFixture(
         glanceRows: [GlanceProviderRow],
@@ -806,7 +726,6 @@ public final class PresentationStore: ObservableObject {
         }
     }
 
-
     public func refreshAll() {
         if fixtureMode {
             runFixtureRefresh()
@@ -814,9 +733,6 @@ public final class PresentationStore: ObservableObject {
         }
         Task { [weak self] in await self?.refreshAll(force: true) }
     }
-
-
-
 
     private func refreshAll(force: Bool) async {
         await performRefresh(surfaceId: nil, force: force)
@@ -874,10 +790,6 @@ public final class PresentationStore: ObservableObject {
             screenShareActive = false
         }
         statusBarShowsValues = !(hideWhileScreenSharing && screenShareActive)
-
-
-
-
         let cursor = eventCursor
         do {
             let nextCursor = try await scheduler.pollOnce(cursor: cursor)
@@ -887,9 +799,6 @@ public final class PresentationStore: ObservableObject {
             report(error, userMessage: "Usage could not be updated. Try again.")
         }
     }
-
-
-
 
     public static func isScreenCurrentlyShared() -> Bool {
         guard let dict = CGSessionCopyCurrentDictionary() as? [String: Any] else {
@@ -988,7 +897,6 @@ public final class PresentationStore: ObservableObject {
         guard request >= lastAppliedRequest else { return }
         report(error, userMessage: "Usage could not be updated. Try again.")
     }
-
 
     func applyProjectionFailureForTesting(_ error: Error, request: UInt64 = .max) {
         retainLastGoodAfterProjectionFailure(error, request: request)
@@ -1142,11 +1050,9 @@ public final class PresentationStore: ObservableObject {
         )
     }
 
-
     public func selectUsageSurface(_ surfaceId: String?) {
         selectUsageContext(surfaceId: surfaceId, accountKey: nil)
     }
-
 
     public func selectUsageContext(surfaceId: String?, accountKey: String?) {
         guard let surfaceId else {
@@ -1162,9 +1068,6 @@ public final class PresentationStore: ObservableObject {
         usageSelection = surfaceId
         usageAccountSelection = accountKey
     }
-
-
-
 
     private func recordUsageAccountSelection(surfaceId: String, accountKey: String) {
         guard usageSelection == surfaceId else { return }
@@ -1184,8 +1087,6 @@ public final class PresentationStore: ObservableObject {
             let route = providerGroups.first(where: { $0.surfaceId == usageSelection })?.selectedAccountRoute
                 ?? nil
             if let route, case .unavailable = route {
-
-
                 self.usageAccountSelection = nil
             } else {
                 self.usageSelection = nil

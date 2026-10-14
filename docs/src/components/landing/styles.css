@@ -65,7 +65,6 @@
 
   --landing-page-bg: var(--landing-bg);
 
-
   --landing-grid-dot: rgba(244, 247, 245, 0.035);
 
 
@@ -79,7 +78,6 @@
   --landing-hero-codepanel-shadow: var(--landing-terminal-shadow);
   --landing-term-shadow: var(--landing-terminal-shadow);
 
-
   --landing-chip-bg: rgba(255, 255, 255, 0.04);
   --landing-toolset-chip-bg: rgba(255, 255, 255, 0.03);
   --landing-toolset-chip-border: rgba(255, 255, 255, 0.1);
@@ -89,10 +87,8 @@
   --landing-surface-hover-4: rgba(255, 255, 255, 0.04);
   --landing-machine-opt-bg: rgba(255, 255, 255, 0.015);
 
-
   --landing-pill-blue-text: #7ab0ff;
   --landing-pill-red-text: #ff8a9e;
-
 
   --landing-builder-string: #fbc05b;
 
@@ -118,7 +114,6 @@
   --landing-ui-strong: rgba(17, 24, 39, 0.2);
   --landing-ui-subtle: rgba(17, 24, 39, 0.05);
 
-
   --landing-accent-rgb: 11 119 78;
 
   --landing-page-bg: var(--landing-bg);
@@ -128,7 +123,6 @@
 
 
   --landing-grid-dot: transparent;
-
 
   --landing-card-shadow-soft: 0 14px 32px rgba(17, 24, 39, 0.1);
   --landing-card-shadow-strong: 0 20px 48px rgba(17, 24, 39, 0.16);
@@ -235,10 +229,8 @@
   --landing-surface-chrome-bar: rgba(255, 255, 255, 0.018);
   --landing-surface-hover-4: rgba(255, 255, 255, 0.04);
 
-
   --landing-hero-vignette-mid: rgba(8, 10, 9, 0.55);
   --landing-hero-vignette-edge: rgba(8, 10, 9, 0.88);
-
 
   --landing-topnav-shade: rgba(5, 6, 5, 0.35);
 }
@@ -426,7 +418,6 @@ html.theme-init *::after {
   transition: none !important;
 }
 
-
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: 320ms;
@@ -436,7 +427,6 @@ html.theme-init *::after {
 ::view-transition-new(root) { animation-name: landing-theme-fade-in; }
 @keyframes landing-theme-fade-out { to   { opacity: 0; } }
 @keyframes landing-theme-fade-in  { from { opacity: 0; } }
-
 
 .landing-sec-label {
   font-family: 'JetBrains Mono', monospace;
@@ -475,7 +465,6 @@ html.theme-init *::after {
   margin: 0 0 48px;
 }
 
-
 .landing-install {
   background: var(--landing-panel);
   border: 0;
@@ -505,7 +494,6 @@ html.theme-init *::after {
   justify-content: center;
   flex-wrap: wrap;
 }
-
 
 .landing-btn-primary, .landing-btn-ghost {
   padding: 13px 22px;
@@ -551,7 +539,6 @@ html.theme-init *::after {
 :root[data-theme='light'] .landing-invite-cta {
   color: #ffffff;
 }
-
 
 .landing-footer {
   margin-top: 60px;
@@ -605,7 +592,6 @@ html.theme-init *::after {
 @media (max-width: 880px) {
   .landing-footer-wordmark { font-size: clamp(80px, 22vw, 180px); }
 }
-
 
 .landing-pills { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .landing-pill-card {
@@ -747,7 +733,6 @@ html.theme-init *::after {
 .landing-builder-body .b-k { color: var(--landing-accent); font-weight: 500; }
 .landing-builder-body .b-s { color: var(--landing-builder-string); }
 
-
 .landing-builder-tabs { display: flex; gap: 4px; margin-left: 4px; flex: 1; }
 .landing-builder-tab {
   padding: 5px 10px; border-radius: 4px;
@@ -760,7 +745,6 @@ html.theme-init *::after {
 .landing-builder-tab.active { color: var(--landing-text); background: var(--landing-surface-hover-4); }
 .landing-builder-tab:hover:not(.active) { color: var(--landing-text-dim); }
 .landing-builder-tabbed .landing-builder-body { min-height: 240px; }
-
 
 .landing-approach-grid { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .landing-approach-card {
@@ -804,7 +788,6 @@ html.theme-init *::after {
 .landing-approach-transition { margin-top: 44px; text-align: center; font-family: 'Fraunces', serif; font-style: italic; font-size: clamp(18px, 2.2vw, 24px); color: var(--landing-text); letter-spacing: -0.01em; }
 .landing-approach-transition .accent { color: var(--landing-accent); font-style: normal; font-weight: 500; }
 
-
 .landing-toolset { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0 16px; }
 .landing-toolset-chip {
   font-family: 'JetBrains Mono', monospace;
@@ -841,7 +824,6 @@ html.theme-init *::after {
 
   .landing-toolset-chip { font-size: 11px; padding: 4px 8px; }
 }
-
 
 .landing-roster {
   display: grid;
@@ -949,7 +931,6 @@ html.theme-init *::after {
   line-height: 1.55;
   max-width: 580px;
 }
-
 .landing-invite-cta {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--jk-accent);
@@ -971,7 +952,6 @@ html.theme-init *::after {
 @media (max-width: 880px) {
   .landing-cast-invite { grid-template-columns: 1fr; text-align: center; justify-items: center; gap: 14px; padding: 22px 20px; }
 }
-
 
 .landing-machine-wrapper { margin-top: 12px; }
 .landing-org-tabs { display: flex; gap: 2px; margin-bottom: 18px; border-bottom: 1px solid var(--landing-ui); padding: 0 4px; flex-wrap: wrap; }
@@ -1019,7 +999,6 @@ html.theme-init *::after {
 .landing-mount-item .perm { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--landing-ui-strong); border-radius: 3px; color: var(--landing-text-ghost); flex-shrink: 0; }
 .landing-mount-item .perm.rw { color: var(--landing-accent); border-color: rgb(var(--landing-accent-rgb) / 0.4); }
 
-
 .landing-focus-callout { margin-top: 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .landing-focus-card { padding: 22px 24px; border: 1px solid var(--landing-ui); border-radius: 10px; background: var(--landing-panel); }
 .landing-focus-card.focus-role {
@@ -1042,7 +1021,6 @@ html.theme-init *::after {
   .landing-machine-op { font-size: 18px; padding: 4px 0; }
   .landing-focus-callout { grid-template-columns: 1fr; }
 }
-
 
 section.landing-section.landing-voc-scroll-section {
   position: relative;
@@ -1260,7 +1238,6 @@ section.landing-section.landing-voc-scroll-section {
   .landing-loop-desc { max-width: none; }
 }
 
-
 .landing-rain-canvas {
   position: absolute;
   inset: 0;
@@ -1269,7 +1246,6 @@ section.landing-section.landing-voc-scroll-section {
   z-index: 1;
   pointer-events: none;
 }
-
 
 .landing-code-panel {
   border: 0;
@@ -1533,7 +1509,6 @@ h1.landing-hero-headline {
   max-width: 780px;
 }
 h1.landing-hero-headline .accent { color: var(--jk-accent); }
-
 :root[data-theme='light'] .landing-hero-stage h1.landing-hero-headline .accent { color: #ffffff; }
 h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 300; }
 
@@ -1555,7 +1530,6 @@ h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 30
   .landing-hero-right { padding-top: 0; }
 }
 
-
 .landing-org-tab:focus-visible,
 .landing-machine-opt:focus-visible,
 .landing-code-tab:focus-visible {
@@ -1567,11 +1541,9 @@ h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 30
   outline-offset: -2px;
 }
 
-
 @media (prefers-reduced-motion: reduce) {
   .landing-voc-detail.landing-fade { animation: none; }
   .landing-code-body .cursor { animation: none; }
-
 }
 
 

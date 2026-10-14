@@ -7,13 +7,9 @@ use jackin_usage_provider_core::{PercentStyle, ResetStyle, UsageFormatPrefs};
 #[boltffi::data]
 pub struct OpenConfig {
     pub data_dir_override: Option<String>,
-
     pub config_root_override: Option<String>,
-
     pub refresh_floor_secs: u64,
-
     pub enabled_surface_ids: Vec<String>,
-
     pub allow_live_probes: bool,
 }
 
@@ -60,13 +56,9 @@ pub struct QuotaBucketDto {
     pub used_money: Option<MoneyDto>,
     pub limit_money: Option<MoneyDto>,
     pub severity: String,
-
     pub remaining_label: Option<String>,
-
     pub display_segments: Vec<String>,
-
     pub display_label: String,
-
     pub meter_percent: Option<u8>,
 }
 
@@ -81,13 +73,11 @@ pub struct UsagePresentationLineDto {
 #[boltffi::data]
 pub struct UsageDetailRowDto {
     pub row_id: String,
-
     pub kind: String,
     pub label: String,
     pub layout_lines: Vec<UsagePresentationLineDto>,
     pub display_label: String,
     pub meter_percent: Option<u8>,
-
     pub severity: String,
 }
 
@@ -103,7 +93,6 @@ pub struct UsageIdentityPresentationDto {
     pub provider_title: String,
     pub account_label: String,
     pub activity_label: String,
-
     pub activity_kind: String,
     pub accessibility_label: String,
 }
@@ -146,21 +135,16 @@ pub struct UsageViewDto {
     pub account_label: String,
     pub username: Option<String>,
     pub plan_label: Option<String>,
-
     pub credential_origin: Option<String>,
     pub buckets: Vec<QuotaBucketDto>,
     pub status: String,
-
     pub source: String,
-
     pub confidence: String,
     pub fetched_at_epoch: i64,
     pub updated_label: String,
     pub status_bar_label: String,
     pub last_error: Option<String>,
-
     pub estimate_caption: Option<String>,
-
     pub detail_presentation: UsageDetailPresentationDto,
 }
 
@@ -168,7 +152,6 @@ pub struct UsageViewDto {
 #[boltffi::data]
 pub struct UsageFormatPrefsDto {
     pub percent_style: String,
-
     pub reset_style: String,
 }
 
@@ -259,7 +242,6 @@ pub struct DesktopProviderProjectionDto {
 pub struct SelectedAccountRouteDto {
     pub status: String,
     pub account_key: Option<String>,
-
     pub notice: Option<String>,
 }
 

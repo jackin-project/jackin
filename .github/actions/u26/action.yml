@@ -1,4 +1,3 @@
-
 name: Velnor Mise cache identity
 description: Qualify the hosted image and cache roots before V2 restore.
 inputs:

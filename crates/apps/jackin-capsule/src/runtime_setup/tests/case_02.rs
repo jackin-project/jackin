@@ -25,7 +25,6 @@ fn seed_home_dir_nonempty_dst_skips_and_signals_already_seeded() {
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("default.json"), b"{}").unwrap();
     fs::create_dir_all(&dst).unwrap();
-
     fs::write(dst.join("user.json"), b"{}").unwrap();
 
     let outcome = seed_home_dir(&src, &dst).expect("skip should succeed");

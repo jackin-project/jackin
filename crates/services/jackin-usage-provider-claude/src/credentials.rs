@@ -14,7 +14,6 @@ use zeroize::Zeroizing;
 pub struct ClaudeOAuthCredentials {
     pub access_token: Zeroizing<String>,
     pub subscription_type: Option<String>,
-
     pub refresh_token: Option<Zeroizing<String>>,
 }
 
@@ -155,7 +154,6 @@ pub fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthC
     let subscription_type = subscription_type
         .or(rate_limit_tier)
         .map(humanize_plan_label);
-
     let refresh_token = oauth
         .get("refreshToken")
         .or_else(|| oauth.get("refresh_token"))

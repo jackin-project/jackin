@@ -547,7 +547,6 @@ impl MonitorStore {
                 None,
             ));
         }
-
         let configured_source = config
             .experimental_collector
             .then(|| self.experimental_collector_source())

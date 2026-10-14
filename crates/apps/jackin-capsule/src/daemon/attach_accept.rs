@@ -102,7 +102,6 @@ pub(crate) async fn accept_attach_handshake(
     if let Some(target) = focus_session {
         let _focused = mux.focus_session_globally(target);
     }
-
     let mut pending_spawn_failure = None;
     if let Some(request) = spawn {
         let label = spawn_request_label(&request);
@@ -115,30 +114,25 @@ pub(crate) async fn accept_attach_handshake(
             pending_spawn_failure = Some(spawn_request_failure_message(&label, &err));
         }
     }
-
     use super::ports::{AttachPort, AttachTransition, PORTS};
     if PORTS.begin_attach(&mux.client_registry) == AttachTransition::Displace {
         detach_attached_task(&mut *mux, "takeover").await;
         PORTS.record_detached();
     }
     PORTS.record_attached();
-
     while cmd_rx.try_recv().is_ok() {}
     let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (completion_tx, completion_rx) = mpsc::unbounded_channel();
     mux.client_registry
         .client
         .attach_with_completions(new_out_tx.clone(), completion_tx);
-
     let mut initial_frames = Vec::with_capacity(5);
     initial_frames.push(encode_server(ServerFrame::Welcome {
         session_count: u32::try_from(mux.session_supervisor.sessions.len()).unwrap_or(u32::MAX),
     }));
-
     initial_frames.push(encode_server(ServerFrame::Output(
         crate::tui::terminal::client_owned_mode_state().to_vec(),
     )));
-
     mux.render.last_asserted_client_state = None;
     if let Some(message) = pending_spawn_failure {
         mux.open_spawn_failure_dialog(message);
@@ -166,7 +160,6 @@ pub(crate) async fn accept_attach_handshake(
                 attach_operation,
             )
             .await;
-
             drop(client_permit);
         },
     ));

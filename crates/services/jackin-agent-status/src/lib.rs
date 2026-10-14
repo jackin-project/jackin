@@ -15,15 +15,10 @@ pub use osc::{OscShellMark, OscStatusDecoder, OscStatusEvent};
 #[derive(Debug, Clone)]
 pub struct SessionStatus {
     pub effective: AgentState,
-
     pub raw: RawAgentState,
-
     pub confidence: AgentStatusConfidence,
-
     pub last_snapshot_summary: EvidenceSummary,
-
     pub seen: bool,
-
     pub revision: u64,
 }
 
@@ -59,7 +54,6 @@ impl SessionStatus {
             self.seen = false;
         }
         let next = self.effective_from_raw(raw);
-
         self.raw = raw;
         self.confidence = confidence;
         self.last_snapshot_summary = summary;
@@ -87,7 +81,6 @@ impl SessionStatus {
         let summary = &self.last_snapshot_summary;
         AgentStatusReport {
             raw_state: self.raw,
-
             source: match &summary.winner {
                 evidence::EvidenceWinner::Authority { source_id } => AgentStatusSource::Reported {
                     source_id: source_id.clone(),

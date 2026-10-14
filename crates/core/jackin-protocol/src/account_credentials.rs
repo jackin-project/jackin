@@ -10,9 +10,7 @@ mod tests;
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceCredentialEnv {
     pub agent: String,
-
     pub account_id: String,
-
     pub env: BTreeMap<String, String>,
 }
 
@@ -35,23 +33,18 @@ impl AgentCredentialEnv {
             instances,
         }
     }
-
     pub fn schema_version(&self) -> u16 {
         self.schema_version
     }
-
     pub fn for_instance(&self, instance: &str) -> Option<&BTreeMap<String, String>> {
         self.instances.get(instance).map(|entry| &entry.env)
     }
-
     pub fn instance(&self, instance: &str) -> Option<&InstanceCredentialEnv> {
         self.instances.get(instance)
     }
-
     pub fn is_empty(&self) -> bool {
         self.instances.is_empty()
     }
-
     pub fn iter(&self) -> impl Iterator<Item = (&String, &InstanceCredentialEnv)> {
         self.instances.iter()
     }
@@ -75,9 +68,7 @@ impl std::fmt::Debug for AgentCredentialEnv {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StagedInstanceCredential {
     pub schema_version: u16,
-
     pub instance: String,
-
     pub credential: InstanceCredentialEnv,
 }
 

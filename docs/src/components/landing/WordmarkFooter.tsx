@@ -1,4 +1,3 @@
-
 import { BrandMark } from '../brand/BrandMark';
 
 export function WordmarkFooter() {

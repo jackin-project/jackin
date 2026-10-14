@@ -28,13 +28,9 @@ const CLIPPY_FLAGS: &[&str] = &[
 
 struct NestedPackage {
     dir: PathBuf,
-
     name: String,
-
     member_dependencies: BTreeSet<String>,
-
     depends_on_unknown: bool,
-
     excluded: bool,
 }
 
@@ -48,7 +44,6 @@ struct InputOwners {
     members: BTreeMap<PathBuf, BTreeSet<String>>,
     nested: BTreeMap<PathBuf, BTreeSet<usize>>,
     unknown: bool,
-
     unknown_sources: Vec<PathBuf>,
 }
 
@@ -133,7 +128,6 @@ fn select(
         }
         match classify(graph, nested, path) {
             None => {}
-
             Some(Owner::Member(root)) => member_paths.push(root),
             Some(Owner::Nested(index)) => {
                 selected_nested.insert(index);
@@ -695,7 +689,6 @@ fn push_escape(source: &str, literal: &mut String, index: usize) -> Option<usize
         Some(b'x') => {
             let digits = source.get(index + 1..index + 3)?;
             let value = u8::from_str_radix(digits, 16).ok()?;
-
             if value > 0x7F {
                 return None;
             }
@@ -744,7 +737,6 @@ fn record_literal(
     if resolved.starts_with(scope) {
         return;
     }
-
     if resolved.components().next().is_none()
         || matches!(resolved.components().next(), Some(Component::ParentDir))
     {

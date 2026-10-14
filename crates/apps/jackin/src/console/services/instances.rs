@@ -117,7 +117,6 @@ pub(crate) fn running_role_containers() -> anyhow::Result<Vec<String>> {
             "{{.Names}}",
         ],
     );
-
     let output = crate::process_telemetry::exec_sync(&request)
         .context("starting live instance reconciliation")?;
     anyhow::ensure!(output.success, "live instance reconciliation failed");

@@ -20,7 +20,6 @@ mod tests;
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiToolchainCommand {
     Activate(PrepareArgs),
-
     Prepare(PrepareArgs),
 }
 
@@ -87,7 +86,6 @@ fn activate(version: &str, repair: bool) -> Result<()> {
     if !repair {
         bail!("prepared Rust toolchain {version} is unavailable; the warmup job must repair it");
     }
-
     for attempt in 1..=2 {
         remove_incomplete_rustup_toolchains(version, &config)?;
         hard_remove_rustup_toolchains(version)?;
@@ -181,7 +179,6 @@ fn remove_incomplete_rustup_toolchains(version: &str, config: &ToolchainConfig) 
         }
         let mut uninstall = Command::new("rustup");
         uninstall.args(["toolchain", "uninstall", &name]);
-
         if let Err(err) = cmd::run_streaming(&mut uninstall) {
             writeln!(
                 io::stdout().lock(),
@@ -204,7 +201,6 @@ fn hard_remove_rustup_toolchains(version: &str) -> Result<()> {
                 .with_context(|| format!("hard-removing incomplete Rust toolchain {name}"))?;
         }
     }
-
     if let Some(hashes) = rustup_home().map(|home| home.join("update-hashes"))
         && hashes.is_dir()
     {

@@ -58,129 +58,85 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     AffectedCrates(affected_crates::AffectedCratesArgs),
-
     Ci(ci::CiArgs),
-
     #[command(name = "ci-audit")]
     CiAudit(ci_audit::CiAuditArgs),
-
     #[command(name = "ci-build-times")]
     CiBuildTimes(ci_build_times::CiBuildTimesArgs),
-
     #[command(name = "ci-cargo-audit")]
     CiCargoAudit(ci_cargo_audit::CiCargoAuditArgs),
-
     #[command(name = "ci-doc-examples")]
     CiDocExamples(ci_doc_examples::CiDocExamplesArgs),
-
     #[command(name = "ci-evidence", subcommand)]
     CiEvidence(ci_evidence::CiEvidenceCommand),
-
     #[command(name = "ci-fuzz")]
     CiFuzz(ci_fuzz::CiFuzzArgs),
-
     #[command(name = "ci-junit")]
     CiJunit(ci_junit::CiJunitArgs),
-
     #[command(name = "ci-result", subcommand)]
     CiResult(ci_result::CiResultCommand),
-
     #[command(name = "ci-route")]
     CiRoute(ci_route::CiRouteArgs),
-
     #[command(name = "clippy-affected")]
     ClippyAffected(clippy_affected::ClippyAffectedArgs),
-
     #[command(name = "ci-stage")]
     CiStage(ci_stage::CiStageArgs),
-
     #[command(name = "ci-target", subcommand)]
     CiTarget(ci_target::CiTargetCommand),
-
     #[command(name = "ci-toolchain", subcommand)]
     CiToolchain(ci_toolchain::CiToolchainCommand),
-
     #[command(name = "github", subcommand)]
     Github(github::GithubCommand),
-
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
-
     #[command(subcommand)]
     Desktop(desktop::DesktopCommand),
-
     #[command(subcommand)]
     Pr(pr::PrCommand),
-
     PtyFixture(pty_fixture::PtyFixtureArgs),
-
     FrameTiming(frame_timing::FrameTimingArgs),
-
     #[command(subcommand)]
     Change(docs::ChangeCommand),
-
     #[command(subcommand)]
     Docs(docs::DocsCommand),
-
     #[command(subcommand)]
     Research(docs::ResearchCommand),
-
     #[command(subcommand)]
     Roadmap(docs::RoadmapCommand),
-
     SchemaCheck(schema::SchemaCheckArgs),
-
     #[command(name = "telemetry-registry")]
     TelemetryRegistry(telemetry_registry::TelemetryRegistryArgs),
-
     #[command(name = "telemetry-bench")]
     TelemetryBench(telemetry_bench::TelemetryBenchArgs),
-
     Lint {
         #[command(subcommand)]
         command: Option<LintCommand>,
-
         #[arg(long)]
         strict: bool,
     },
-
     #[command(name = "profile-matrix")]
     ProfileMatrix(profile_matrix::ProfileMatrixArgs),
-
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
-
     #[command(subcommand)]
     Preview(preview::PreviewCommand),
-
     #[command(name = "release-archives")]
     ReleaseArchives(release_archive::ReleaseArchivesArgs),
-
     Health(health::HealthArgs),
 }
 
 #[derive(Subcommand)]
 enum LintCommand {
     Files(lint::LintFilesArgs),
-
     Tests(layout_lint::LintTestsArgs),
-
     Agents(agent_files::LintAgentFilesArgs),
-
     AgentLinks(agent_links::LintAgentLinksArgs),
-
     AgentStatusTruth(agent_status_truth::LintAgentStatusTruthArgs),
-
     Arch(arch::LintArchArgs),
-
     ContainerPaths(container_paths_gate::LintContainerPathsArgs),
-
     Headers(headers::LintHeadersArgs),
-
     ReadmeFreshness(readme_freshness::LintReadmeFreshnessArgs),
-
     Suppressions(suppressions::LintSuppressionsArgs),
-
     Ratchet(ratchet::LintRatchetArgs),
 }
 

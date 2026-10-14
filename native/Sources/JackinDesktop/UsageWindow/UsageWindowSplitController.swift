@@ -5,7 +5,6 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-
 @MainActor
 final class UsageWindowSplitController: NSSplitViewController {
     private let sidebarHost: NSHostingController<UsageWindowSidebar>
@@ -70,7 +69,6 @@ final class UsageWindowSplitController: NSSplitViewController {
         return accessory
     }
 }
-
 
 @MainActor
 final class UsageWindowToolbar: NSObject, NSToolbarDelegate {

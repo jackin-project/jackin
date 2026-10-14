@@ -6,11 +6,8 @@ use jackin_core::{OpAccount, OpField, OpItem, OpItemDetail, OpVault};
 
 pub trait OpStructRunner {
     fn account_list(&self) -> anyhow::Result<Vec<OpAccount>>;
-
     fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>>;
-
     fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>>;
-
     fn item_get(
         &self,
         item_id: &str,
@@ -49,18 +46,11 @@ pub trait OpWriteRunner {
 #[derive(Debug, Clone, Copy)]
 pub struct OpItemCreateParams<'a> {
     pub vault_id: &'a str,
-
     pub title: &'a str,
-
     pub category: &'a str,
-
     pub field_label: &'a str,
-
     pub value: &'a str,
-
     pub notes_plain: Option<&'a str>,
-
     pub tags: &'a [&'a str],
-
     pub section: Option<&'a str>,
 }

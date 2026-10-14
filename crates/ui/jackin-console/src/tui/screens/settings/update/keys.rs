@@ -47,7 +47,6 @@ pub const fn settings_shell_key_plan(
     match key {
         KeyCode::Tab => SettingsShellKeyPlan::MoveTab {
             delta: 1,
-
             focus_tab_bar: settings_focus_region_eq(
                 settings_focus_next(SettingsFocusRegion::Content),
                 settings_focus_head(),

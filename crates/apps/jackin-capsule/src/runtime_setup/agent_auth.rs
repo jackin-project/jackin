@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 pub(crate) fn run_agent_setup() -> Result<()> {
     let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
     let mode = AuthMode::from_env()?;
-
     let materialization = match agent.as_str() {
         "claude" => setup_claude(mode),
         "codex" => setup_codex(mode),
@@ -142,13 +141,11 @@ pub(crate) fn install_agent_status_reporter(agent: &str) -> Result<()> {
     let installer: Option<Box<dyn HookInstaller>> = match agent {
         "claude" => Some(Box::new(ClaudeHookInstaller::default())),
         "codex" => Some(Box::new(CodexHookInstaller::default())),
-
         "opencode" => Some(Box::new(PluginInstaller::opencode())),
         _ => None,
     };
     if let Some(installer) = installer {
         let home = Path::new("/home/agent");
-
         let parsed = jackin_core::Agent::from_slug(agent);
         let config_dir = parsed
             .and_then(|agent| agent.runtime().state_paths().folder_env_var)

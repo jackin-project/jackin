@@ -162,7 +162,6 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
         ModalFooterMode::ConfirmSave { scroll_axes } => confirm_save_footer_items(scroll_axes),
         ModalFooterMode::SaveDiscardCancel => save_discard_cancel_footer_items(),
         ModalFooterMode::ErrorPopup => error_popup_footer_items(),
-
         ModalFooterMode::ContainerInfo => container_info_footer_items(ScrollAxes::none()),
         ModalFooterMode::StatusPopup => status_popup_footer_items(),
         ModalFooterMode::OpSection => super::settings::op_section_footer_items(),

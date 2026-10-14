@@ -4,7 +4,6 @@
 import Foundation
 import JackinUsageBindings
 
-
 public struct UsageNavigationContext: Equatable, Sendable {
     public let surfaceId: String
     public let accountKey: String?
@@ -14,9 +13,6 @@ public struct UsageNavigationContext: Equatable, Sendable {
         self.accountKey = accountKey
     }
 }
-
-
-
 
 public struct UsagePresentationLine: Equatable, Sendable {
     public let leading: String?
@@ -28,23 +24,16 @@ public struct UsagePresentationLine: Equatable, Sendable {
     }
 }
 
-
 public enum UsageDetailRowKind: String, Equatable, Sendable {
     case metadata
     case bucket
     case detail
-
     case unknown
 
     public init(rawKind: String) {
         self = UsageDetailRowKind(rawValue: rawKind) ?? .unknown
     }
 }
-
-
-
-
-
 
 public struct UsageDetailRow: Identifiable, Equatable, Sendable {
     public var id: String { rowId }
@@ -75,9 +64,6 @@ public struct UsageDetailRow: Identifiable, Equatable, Sendable {
     }
 }
 
-
-
-
 public struct UsageDetailPresentation: Equatable, Sendable {
     public let rows: [UsageDetailRow]
 
@@ -85,10 +71,7 @@ public struct UsageDetailPresentation: Equatable, Sendable {
         self.rows = rows
     }
 
-
     public static let empty = UsageDetailPresentation(rows: [])
-
-
 
     public init(dto: UsageDetailPresentationDto) {
         rows = dto.rows.map { row in
@@ -107,14 +90,7 @@ public struct UsageDetailPresentation: Equatable, Sendable {
     }
 }
 
-
-
-
-
-
-
 public struct UsageWindowModel: Equatable, Sendable {
-
     public enum Selection: Equatable, Sendable {
         case overview
         case provider(String)
@@ -125,12 +101,9 @@ public struct UsageWindowModel: Equatable, Sendable {
         public let message: String
     }
 
-
     public struct Content: Equatable, Sendable {
         public let surfaceId: String
-
         public let displayLabel: String
-
         public let iconKey: String?
         public let fallbackGlyph: String?
         public let usageURL: String?
@@ -161,14 +134,12 @@ public struct UsageWindowModel: Equatable, Sendable {
             self.selectedAccountRoute = selectedAccountRoute
         }
 
-
         public var selectedAccountKey: String? {
             if case .available(let accountKey) = selectedAccountRoute {
                 return accountKey
             }
             return nil
         }
-
 
         public var headAccount: PresentationStore.AccountRow? {
             selectedAccountKey.flatMap { key in
@@ -177,14 +148,11 @@ public struct UsageWindowModel: Equatable, Sendable {
         }
     }
 
-
     public let sidebar: [PresentationStore.GlanceProviderRow]
     public let selection: Selection
     public let content: Content?
     public let routeNotice: AccountRouteNotice?
-
     public let isEmpty: Bool
-
 
     public static let emptyHint = "no agent credentials found"
 
@@ -197,8 +165,6 @@ public struct UsageWindowModel: Equatable, Sendable {
     ) {
         sidebar = glanceRows
         isEmpty = glanceRows.isEmpty
-
-
         if let surfaceId,
             let surface = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
         {

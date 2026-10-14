@@ -296,11 +296,9 @@ fn validate_single_file_agents() {
     ] {
         let dir = temp.path().join(format!("{agent:?}-good"));
         std::fs::create_dir_all(&dir).unwrap();
-
         std::fs::write(dir.join(name), "").unwrap();
         validate_sync_source_dir(agent, &dir, temp.path())
             .expect_err("empty credential file must be rejected");
-
         let valid = if agent == Agent::Opencode {
             r#"{"opencode-go":{"type":"api","key":"x"}}"#
         } else {
@@ -310,7 +308,6 @@ fn validate_single_file_agents() {
         validate_sync_source_dir(agent, &dir, temp.path()).unwrap_or_else(|_| {
             panic!("valid {name} must be accepted");
         });
-
         let bad = temp.path().join(format!("{agent:?}-bad"));
         std::fs::create_dir_all(&bad).unwrap();
         validate_sync_source_dir(agent, &bad, temp.path()).unwrap_err();

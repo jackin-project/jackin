@@ -85,7 +85,6 @@ impl Multiplexer {
         if filled == 0 {
             return false;
         }
-
         let content_len = filled.saturating_add(interior_rows);
         let top_offset = termrock::scroll::scrollbar_offset_for_track_position(
             content_len,
@@ -93,7 +92,6 @@ impl Multiplexer {
             interior_rows,
             usize::from(row - track_start),
         );
-
         let tail_offset = filled.saturating_sub(usize::from(top_offset));
         let moved = session.set_scrollback_offset(tail_offset);
         if moved {
@@ -164,7 +162,6 @@ impl Multiplexer {
             return;
         };
         move_selection_end(sel, row, col, scrollback_filled, scrollback_offset);
-
         self.clipboard.selection_copied = false;
         self.invalidate(selection_change_redraw_reason());
     }
@@ -187,11 +184,9 @@ impl Multiplexer {
         let Some(sel) = self.clipboard.selection else {
             return;
         };
-
         if self.clipboard.selection_copied {
             return;
         }
-
         if selection_was_dragged(&sel) {
             self.copy_selection_to_clipboard(&sel);
         } else {
@@ -239,7 +234,6 @@ impl Multiplexer {
             self.clipboard.last_pane_press = Some(press);
             return false;
         }
-
         self.clipboard.last_pane_press = None;
         self.select_word_at(candidate)
     }

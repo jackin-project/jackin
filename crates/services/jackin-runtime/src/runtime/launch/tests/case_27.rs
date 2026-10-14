@@ -58,7 +58,6 @@ fn early_scan_skips_current_inspect_only_for_matching_empty_scan() {
         },
         Agent::Claude
     ));
-
     assert!(early_scan_skips_current_inspect(
         &EarlyCurrentRestoreScan::ScannedUnselectedEmpty,
         Agent::Claude
@@ -67,7 +66,6 @@ fn early_scan_skips_current_inspect_only_for_matching_empty_scan() {
         &EarlyCurrentRestoreScan::ScannedUnselectedEmpty,
         Agent::Codex
     ));
-
     assert_eq!(
         early_scan_reused_current(
             &EarlyCurrentRestoreScan::Scanned {
@@ -200,7 +198,6 @@ async fn early_nonempty_scan_reuses_typed_current_without_reinspect() {
         inspects.is_empty(),
         "typed non-empty early hit must not re-inspect; recorded: {inspects:?}"
     );
-
     assert_eq!(docker.inspect_queue.borrow().len(), 1);
 }
 
@@ -273,7 +270,6 @@ async fn common_path_single_current_inspect_with_early_then_reuse() {
     let container_name = "jk-common-single-inspect";
     let mut manifest =
         workspace_manifest(container_name, "agent-smith", "Agent Smith", Agent::Claude);
-
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
 

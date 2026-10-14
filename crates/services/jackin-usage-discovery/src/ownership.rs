@@ -96,7 +96,6 @@ pub(crate) fn account_diagnostic(
         jackin_core::account_key_hash("usage-discovery-unresolved-source-v1", &material);
     UsageDiscoveryDiagnostic {
         surface_id: Some(surface.id().to_owned()),
-
         scope_label: "account".to_owned(),
         unresolved_source: Some(crate::UsageDiscoveryUnresolvedSource {
             capability_id: capability_id

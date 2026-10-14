@@ -9,7 +9,6 @@ async fn renamed_branch_pushed_clean_is_safe_to_delete() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = [
         ferow("jackin/scratch/x", "abc", "", ""),
         ferow("feature/x", "newhead", "origin/feature/x", ""),
@@ -152,7 +151,6 @@ async fn multiple_branches_all_safe_deletes_record() {
     ]
     .join("\n")
         + "\n";
-
     let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/b"]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -197,7 +195,6 @@ async fn multiple_branches_one_unsafe_preserves() {
     ]
     .join("\n")
         + "\n";
-
     let mut runner = fake_with_outputs(&["", &branches, ""]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -226,7 +223,6 @@ async fn unpushed_branch_prompts_with_unpushed_reason() {
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
-
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = RecordingPrompt::new(ExitDialogChoice::KeepAll);
     let docker = jackin_test_support::FakeDockerClient::default();
@@ -279,7 +275,6 @@ async fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!("{}\n", ferow("", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
@@ -308,7 +303,6 @@ async fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!("{}\n", ferow("feature/x", "", "origin/feature/x", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;
@@ -337,7 +331,6 @@ async fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;

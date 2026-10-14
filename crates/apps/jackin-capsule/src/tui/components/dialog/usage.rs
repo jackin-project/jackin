@@ -40,7 +40,6 @@ impl Dialog {
         if *selected == UsageDialogTab::Overview {
             return Some(Self::usage_overview_state(view, scroll.clone()));
         }
-
         let provider_title =
             jackin_usage_provider_core::provider_display_label(&view.account.provider_label);
         let identity =

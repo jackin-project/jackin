@@ -8,7 +8,6 @@ export { markdownPathToSlugs, slugsToMarkdownPath, splatToSlugs } from './source
 export const source = loader({
   source: docs.toFumadocsSource(),
   baseUrl: '/',
-
   icon(name) {
     if (name && name in icons) {
       return createElement(icons[name as keyof typeof icons])

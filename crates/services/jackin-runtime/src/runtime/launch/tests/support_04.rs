@@ -48,7 +48,6 @@ pub(super) fn read_child_reports(
 ) {
     for line in std::io::BufReader::new(stdout).lines() {
         let Ok(line) = line else { break };
-
         if let Some((_, report)) = line.split_once(REPORT)
             && sender.send(report.to_owned()).is_err()
         {

@@ -12,8 +12,6 @@ root_standard_reexports = ["APP_JANK_FRAME_COUNT", "APP_JANK_PERIOD", "APP_JANK_
 standard_event_groups = []
 skip_attribute_enums = []
 
-
-
 [facade_name_overrides]
 "ui.screen.dwell" = "UI_DWELL"
 "terminal.io.bytes" = "TERMINAL_BYTES"
@@ -67,9 +65,6 @@ SERVICE_VERSION = "service.version"
 SESSION_ID = "session.id"
 SESSION_PREVIOUS_ID = "session.previous_id"
 URL_TEMPLATE = "url.template"
-
-
-
 
 [standard_local]
 GEN_AI_AGENT_NAME = "gen_ai.agent.name"
@@ -135,9 +130,6 @@ values = ["v1alpha1", "v1alpha2", "v1alpha3", "v1alpha4", "v1alpha5", "v1alpha6"
 "outcome" = "OutcomeValue"
 "ui.transition.reason" = "TransitionReason"
 "ui.transition.from_screen.id" = "ScreenId"
-
-
-
 
 [metric_boundaries]
 "cli.duration" = [0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]

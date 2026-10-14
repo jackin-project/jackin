@@ -37,9 +37,7 @@ pub fn store_version(paths: &JackinPaths, agent: Agent, image: &str, version: &s
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentVersionCheck {
     Stale,
-
     UpToDate,
-
     Unknown,
 }
 

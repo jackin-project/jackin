@@ -153,7 +153,6 @@ fn amp_daily_percentage_clamps_to_protocol_range() {
     let low =
         parse_amp_usage_output("Amp Free: -5% remaining today (resets daily)").expect("low daily");
     assert_eq!(low.daily_remaining_percent, Some(0));
-
     assert!(parse_amp_usage_output("Amp Free: abc% remaining today (resets daily)").is_none());
 }
 
@@ -185,7 +184,6 @@ fn amp_daily_parser_preserves_workspace_balances_in_order() {
             "Workspace beta"
         ]
     );
-
     assert!(
         buckets[1..]
             .iter()

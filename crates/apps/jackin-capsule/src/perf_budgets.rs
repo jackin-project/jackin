@@ -1,7 +1,5 @@
 pub const FOCUSED_FULL_SNAPSHOT_MAX_BLOCKS: usize = 3;
 
 pub const FOCUSED_FULL_SNAPSHOT_MAX_BYTES: usize = 1024;
-
 pub const FOCUSED_BORROWED_VIEW_MAX_BLOCKS: usize = 3;
-
 pub const FOCUSED_BORROWED_VIEW_MAX_BYTES: usize = 1024;

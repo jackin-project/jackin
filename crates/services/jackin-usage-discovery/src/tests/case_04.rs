@@ -7,7 +7,6 @@ use super::*;
 fn disc_blocked_providers_mint_no_refresh_material() {
     let temp = tempfile::tempdir().unwrap();
     let reader = RecordingProfileReader::default();
-
     let omp = temp.path().join("omp");
     std::fs::create_dir_all(omp.join("agent")).unwrap();
     std::fs::write(omp.join("agent/agent.db"), b"sqlite fixture").unwrap();
@@ -22,7 +21,6 @@ fn disc_blocked_providers_mint_no_refresh_material() {
         profile_identity(&reader, Agent::Hermes, &hermes, temp.path()),
         ProfileValidation::Anonymous(None)
     ));
-
     let muse = temp.path().join("muse");
     std::fs::create_dir_all(&muse).unwrap();
     std::fs::write(
@@ -40,7 +38,6 @@ fn disc_blocked_providers_mint_no_refresh_material() {
 #[test]
 fn disc_antigravity_grant_mints_cli_refresh_material() {
     let temp = tempfile::tempdir().unwrap();
-
     for grant in [
         ProfileReadOutcome::Bytes(zeroize::Zeroizing::new(Vec::new())),
         ProfileReadOutcome::Bytes(zeroize::Zeroizing::new(vec![1, 2, 3])),
@@ -53,7 +50,6 @@ fn disc_antigravity_grant_mints_cli_refresh_material() {
         };
         assert!(matches!(*material, ProfileCredentialMaterial::Antigravity));
     }
-
     for (grant, expected) in [
         (ProfileReadOutcome::Missing, "missing"),
         (ProfileReadOutcome::Denied, "denied"),
@@ -74,7 +70,6 @@ fn disc_antigravity_grant_mints_cli_refresh_material() {
 fn disc_material_less_profile_binding_is_unpollable() {
     let temp = tempfile::tempdir().unwrap();
     let reader = RecordingProfileReader::default();
-
     let muse = temp.path().join("muse");
     std::fs::create_dir_all(&muse).unwrap();
     std::fs::write(
@@ -97,7 +92,6 @@ fn disc_material_less_profile_binding_is_unpollable() {
         &reader,
     );
     assert!(matches!(parts.5, ValidatedCredentialSource::Unpollable));
-
     let omp = temp.path().join("omp");
     std::fs::create_dir_all(omp.join("agent")).unwrap();
     std::fs::write(omp.join("agent/agent.db"), b"sqlite fixture").unwrap();
@@ -242,7 +236,6 @@ fn disc_env_key_account_resolves_through_isolated_alias() {
     assert_eq!(validated.accounts.len(), 1);
     assert_eq!(validated.bindings.len(), 1);
     assert!(validated.bindings[0].identity.is_some());
-
     assert!(matches!(
         validated.bindings[0].source,
         ValidatedCredentialSource::Env {

@@ -58,7 +58,6 @@ impl Session {
             cache_dir,
         } = spec;
         let conversation_id = agent.as_ref().map(|_| uuid::Uuid::new_v4().to_string());
-
         let rows = terminal.rows;
         let cols = terminal.cols;
         let pty_system = native_pty_system();

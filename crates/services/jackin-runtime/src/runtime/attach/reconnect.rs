@@ -162,7 +162,6 @@ pub(crate) async fn reconnect_or_create_session_with_container_handle_with_lease
             "operator detached from capsule session",
         );
     }
-
     jackin_diagnostics::reassert_alt_screen();
     admission_lease
         .ensure_current(paths)

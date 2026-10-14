@@ -114,13 +114,11 @@ fn prop_manifest_migration_idempotent() {
         let first = std::fs::read_to_string(&path).unwrap();
         let second_result = migrate_manifest_file(&path);
         prop_assert!(second_result.is_ok(), "second migrate must succeed");
-
         if version == CURRENT_MANIFEST_VERSION {
             prop_assert!(second_result.as_ref().unwrap().is_none());
         }
         let second = std::fs::read_to_string(&path).unwrap();
         prop_assert_eq!(&first, &second, "migration must be idempotent");
-
         let parsed: Result<crate::RoleManifest, _> = toml::from_str(&second);
         prop_assert!(parsed.is_ok(), "migrated manifest must parse: {:?}", parsed.err());
     });

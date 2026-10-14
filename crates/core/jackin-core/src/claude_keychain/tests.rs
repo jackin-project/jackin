@@ -36,7 +36,6 @@ fn claude_keychain_service_names_match_live_scheme() {
 #[test]
 fn claude_keychain_scope_rejects_non_default_home_dot_paths() {
     let home = Path::new("/Users/donbeave");
-
     let scope = claude_keychain_scope(
         Path::new("/Users/donbeave/x/../.claude"),
         home,

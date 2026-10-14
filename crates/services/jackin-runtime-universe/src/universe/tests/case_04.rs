@@ -28,7 +28,6 @@ async fn claim_entry_resumes_when_container_running() {
         claim.pending_file().unwrap().exists(),
         "joining launch owns pending coverage even when peers currently run"
     );
-
     let (_, exit) = observe_exit(&paths, &FakeDockerClient::default())
         .await
         .unwrap();
@@ -311,7 +310,6 @@ async fn pending_write_failure_keeps_no_token_release_semantics() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     paths.ensure_base_dirs().unwrap();
-
     seed_marker(&paths, StartKind::FreshConstruct);
     std::fs::write(pending_dir(&authority(&paths)), "blocked directory").unwrap();
     let docker = FakeDockerClient::default();

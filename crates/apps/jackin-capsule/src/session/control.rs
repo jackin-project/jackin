@@ -18,7 +18,6 @@ impl Session {
 
     pub fn mark_operator_input(&mut self) -> bool {
         let was_blocked = self.state == AgentState::Blocked;
-
         self.last_input_at = std::time::Instant::now();
         was_blocked
     }
@@ -60,7 +59,6 @@ impl Session {
             );
         }
         self.shadow_grid.set_size(rows, cols);
-
         self.shadow_grid.set_scrollback(self.scrollback_offset());
     }
 }

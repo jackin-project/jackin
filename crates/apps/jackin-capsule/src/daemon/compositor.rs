@@ -17,7 +17,6 @@ pub(crate) struct AssertedClientState {
     pub(super) application_cursor: bool,
     pub(super) kitty_flags: u32,
     pub(super) cursor_visible: bool,
-
     pub(super) cursor_style: u16,
 }
 

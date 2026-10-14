@@ -43,12 +43,10 @@ fn resolves_workspace_default_role_with_narrowed_agent() {
 #[test]
 fn workspace_without_default_role_or_known_git_is_skipped() {
     let mut config = AppConfig::default();
-
     config.workspaces.insert(
         "nogit".to_owned(),
         workspace(Some("ghost"), Some(Agent::Claude)),
     );
-
     config
         .workspaces
         .insert("norole".to_owned(), workspace(None, None));
@@ -73,7 +71,6 @@ fn shared_role_widens_to_all_when_one_workspace_leaves_agent_unset() {
     let targets = background_prewarm_targets(&config);
 
     assert_eq!(targets.len(), 1);
-
     assert!(
         targets[0].agents.is_empty(),
         "unset default agent must widen the target to the role's full supported set"
@@ -107,7 +104,6 @@ fn shared_role_unions_distinct_narrowed_agents() {
 fn empty_targets_spawn_is_a_noop() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-
     spawn_background_image_prewarm(&paths, Vec::new(), false);
 }
 

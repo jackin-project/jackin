@@ -149,7 +149,6 @@ pub fn cursor_team_spend_buckets(spend: &CursorTeamSpend, now: i64) -> Vec<Quota
             Some(StatusSlot::Spend),
         ));
     }
-
     if let Some(estimated) = spend.estimated {
         buckets.push(bucket(
             "Estimated model cost",

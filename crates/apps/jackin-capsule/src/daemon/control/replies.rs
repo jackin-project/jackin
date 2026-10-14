@@ -69,7 +69,6 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
         ClientMsg::Agents => ServerMsg::AgentRegistry {
             records: mux.agent_registry_snapshot(),
         },
-
         ClientMsg::ReportRuntimeEvent {
             session_id,
             source_id,
@@ -90,7 +89,6 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
                 },
             )
         }
-
         ClientMsg::StatusCapture { session_id } => {
             if let Some(session) = mux.session_supervisor.sessions.get(session_id) {
                 drop(
@@ -125,7 +123,6 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
                 .totals(session_id)
                 .map(TokenTotals::to_summary),
         },
-
         ClientMsg::SessionSend { session, text } => {
             let bytes = text.len() as u64;
             let mut unblocked = false;
@@ -143,7 +140,6 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
                     Ok(bytes)
                 }
             };
-
             if let Some(reason) = crate::tui::update::pane_data_redraw_reason(false, unblocked) {
                 mux.invalidate(reason);
             }

@@ -35,7 +35,6 @@ pub(crate) struct RawOpVault {
 pub(crate) struct RawOpItem {
     pub(crate) id: String,
     pub(crate) title: String,
-
     #[serde(default)]
     pub(crate) additional_information: String,
 }
@@ -368,16 +367,12 @@ pub(crate) fn apply_field_edit(
             field["value"] = serde_json::Value::String(value.to_owned());
             field["type"] = serde_json::Value::String("CONCEALED".to_owned());
         }
-
         (None, FieldTarget::Existing { id, .. }) => anyhow::bail!(
             "field id {id:?} not found in the item — it may have been renamed or deleted in \
              1Password since it was picked; re-open the picker to refresh and retry"
         ),
         (None, FieldTarget::New { .. }) => {
             let mut field = serde_json::json!({
-
-
-
                 "id": "",
                 "label": label,
                 "type": "CONCEALED",

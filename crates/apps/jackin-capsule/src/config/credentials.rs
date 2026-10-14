@@ -107,7 +107,6 @@ pub(crate) fn allowed_account_env_names(
                 return Ok(allowed);
             }
             allowed.insert(jackin_core::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME);
-
             allowed.insert(ANTHROPIC_BASE_URL_ENV_NAME);
             return Ok(allowed);
         }

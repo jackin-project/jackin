@@ -32,7 +32,6 @@ pub struct LoadCleanup {
     dind_required: std::sync::atomic::AtomicBool,
     certs_volume: String,
     network: String,
-
     socket_dir: PathBuf,
     clean_socket_dir: bool,
     armed: bool,
@@ -180,7 +179,6 @@ impl LoadCleanup {
             record_cleanup_teardown_failure("cleanup failed (dind)");
             launch_output().step_fail(&format!("cleanup failed (dind): {e}"));
         }
-
         let resource_cleanup_authorized =
             role_handle.is_some() || dind_handle.is_some() || dind_required;
         if resource_cleanup_authorized {

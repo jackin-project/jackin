@@ -80,7 +80,6 @@ fn all_provider_snapshots_round_trip_from_turso_to_usage_overlay_rows() {
         assert_eq!(view.buckets[0].remaining_percent, Some(remaining));
         assert_eq!(view.updated_label, "Updated 2m ago");
         assert_eq!(view.tabs.len(), 7);
-
         let mut ids: Vec<&str> = view.tabs.iter().map(|tab| tab.id.as_str()).collect();
         ids.sort_unstable();
         ids.dedup();

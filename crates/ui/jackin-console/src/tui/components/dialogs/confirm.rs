@@ -94,7 +94,6 @@ impl ConfirmState {
         if let Some(value) = direct {
             return ModalOutcome::Commit(value);
         }
-
         match key.code {
             KeyCode::Tab => {
                 self.choice.select_next(&confirm_actions());

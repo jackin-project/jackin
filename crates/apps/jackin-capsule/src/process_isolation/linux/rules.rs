@@ -39,12 +39,10 @@ pub(crate) fn rules_for_impl(
     let cwd = validate_cwd_boundary(config, cwd)?;
     let session_root = normalize_existing_path(session_root)?;
     let mut rules = Vec::new();
-
     required_exact_rule(&mut rules, &cwd, FULL_WITH_UNIX);
     required_exact_rule(&mut rules, &session_root, FULL_WITH_UNIX);
     for mount in &config.workspace_mounts {
         let mount = validate_workspace_mount_boundary(config, mount)?;
-
         required_exact_rule(&mut rules, &mount, FULL_WITH_UNIX);
     }
     for target in &config.worktree_git_targets {
@@ -76,9 +74,7 @@ pub(crate) fn rules_for_impl(
     ] {
         optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
     }
-
     optional_exact_rule(&mut rules, Path::new("/dev/null"), NULL_DEVICE);
-
     for path in ["/proc/self", "/proc/thread-self"] {
         optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
     }
@@ -115,7 +111,6 @@ pub(crate) fn rules_for_impl(
     ] {
         optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
     }
-
     for path in [
         jackin_core::container_paths::CAPSULE_SOCKET,
         jackin_core::container_paths::HOST_SOCK,
@@ -123,7 +118,6 @@ pub(crate) fn rules_for_impl(
     ] {
         optional_exact_rule(&mut rules, Path::new(path), READ_ONLY_WITH_UNIX);
     }
-
     optional_exact_rule(
         &mut rules,
         Path::new(jackin_core::container_paths::DIND_CERTS_CLIENT_DIR),
@@ -150,10 +144,8 @@ pub(crate) fn rules_for_impl(
             };
             required_exact_rule(&mut rules, &path, access);
         }
-
         let panes = pane_homes_parent(config, instance)?;
         required_exact_rule(&mut rules, &panes, FULL_WITH_UNIX);
-
         if let Some(slug) = config.agents.get(instance)
             && let Some(agent) = jackin_core::Agent::from_slug(slug)
         {

@@ -56,7 +56,6 @@ impl StateDirectory {
         } else {
             std::env::current_dir()?.join(path)
         };
-
         #[cfg(target_os = "macos")]
         let absolute = if let Ok(rest) = absolute.strip_prefix("/var") {
             Path::new("/private/var").join(rest)
@@ -117,7 +116,6 @@ impl StateDirectory {
             });
             directory = child;
         }
-
         let lock: File = directory.try_clone()?.into();
         let lock = match Flock::lock(lock, FlockArg::LockExclusiveNonblock) {
             Ok(lock) => lock,
@@ -442,7 +440,6 @@ impl StateDirectory {
                 "state transaction refused; retained recovery artifacts in {transaction_name}"
             ));
         }
-
         nix::unistd::fsync(&transaction)
             .and_then(|()| nix::unistd::fsync(&self.directory))
             .with_context(|| format!("state install durability unconfirmed; retained recovery artifacts in {transaction_name}"))?;

@@ -17,7 +17,6 @@ pub fn apply_raw_dialog_scroll_key(
         b"\x1b[C" | b"l" | b"L" if axes.horizontal => KeyCode::Right,
         _ => return false,
     };
-
     scroll.handle_key_for_axes(
         KeyEvent::new(code, KeyModifiers::NONE),
         usize::MAX / 4,

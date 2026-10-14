@@ -124,7 +124,6 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
 
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", ROLE_KEY, &target, "--agent", "claude"];
-
     let construct_image = e2e_construct_image();
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
     let report_path = workspace_dir.join("jackin-e2e-report.txt");
@@ -163,7 +162,6 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         "agent did not emit {REPORT_BEGIN} marker\nreport:\n{report}\n{}",
         e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
-
     assert!(
         report.contains(REPORT_END),
         "agent did not emit {REPORT_END} marker — report is truncated\nreport:\n{report}\n{}",
@@ -181,7 +179,6 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     assert!(report.contains("DOCKER_CERT_PATH=/jackin/run/dind-certs/client"));
     assert!(report.contains(&format!("JACKIN_DIND_HOSTNAME={dind_hostname}")));
     assert!(report.contains(&format!("TESTCONTAINERS_HOST_OVERRIDE={dind_hostname}")));
-
     let merged = format!("NO_PROXY=localhost,127.0.0.1,{dind_hostname}");
     let merged_lower = format!("no_proxy=localhost,127.0.0.1,{dind_hostname}");
     assert!(report.contains(&merged), "missing {merged}\n{report}");

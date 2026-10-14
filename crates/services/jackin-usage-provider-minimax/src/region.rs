@@ -71,7 +71,6 @@ pub fn resolve_minimax_region_from(
         {
             return MiniMaxRegion::China;
         }
-
         return MiniMaxRegion::Global;
     }
     host_override.map_or(MiniMaxRegion::Global, minimax_region_from_value)

@@ -3,12 +3,6 @@
 
 import XCTest
 
-
-
-
-
-
-
 final class VendorProvenanceTests: XCTestCase {
     private var nativeRoot: URL {
         URL(fileURLWithPath: #filePath)

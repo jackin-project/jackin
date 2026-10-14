@@ -101,7 +101,6 @@ fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
     let decoded: UsageProviderTab =
         serde_json::from_str(&serde_json::to_string(&tab).unwrap()).unwrap();
     assert_eq!(decoded, tab);
-
     let legacy: UsageProviderTab = serde_json::from_str(
         r#"{"label":"Anthropic","status_label":"fresh","account_label":"a@example.com","plan_label":null,"source_label":null,"active":true}"#,
     )
@@ -183,7 +182,6 @@ fn money_scales_minor_units_by_exponent() {
 fn money_formats_currency_and_credit_labels() {
     assert_eq!(Money::new(7849, "SGD", 2).to_string(), "SGD 78.49");
     assert_eq!(Money::new(7849, "SGD", 2).format_compact(), "SGD 78");
-
     assert_eq!(
         Money::new(30000, "credits", 2).to_string(),
         "300.00 credits"
@@ -208,7 +206,6 @@ fn money_raw_percent_keeps_overage_and_rejects_bad_denominations() {
         Money::new(0, "USD", 2).raw_percent_of(&Money::new(10_000, "USD", 2)),
         Some(0)
     );
-
     assert_eq!(
         Money::new(50_00, "USD", 2).raw_percent_of(&Money::new(10_000, "SGD", 2)),
         None
@@ -239,7 +236,6 @@ fn status_slot_daily_serializes_as_daily() {
 fn refreshing_placeholder_accepts_constructor_and_surface_decoration() {
     let mut view = FocusedUsageView::refreshing(Some("Codex"), 0);
     assert!(view.is_refreshing_placeholder());
-
     view.focused_agent = Some("codex".to_owned());
     view.focused_provider = Some("OpenAI / Codex".to_owned());
     view.account.provider_label = "OpenAI / Codex".to_owned();
@@ -260,7 +256,6 @@ fn refreshing_placeholder_rejects_state_and_string_lookalikes() {
     with_bucket.buckets.push(placeholder_sample_bucket());
     let mut with_account = base.clone();
     with_account.account.account_label = "user@example.com".to_owned();
-
     let mut only_bar = FocusedUsageView::unavailable("other", 0);
     only_bar.status_bar_label = "refreshing".to_owned();
     let mut only_updated = FocusedUsageView::unavailable("other", 0);

@@ -13,7 +13,6 @@ fn tab_click_region_width_matches_layout() {
     bar.set_click_regions_from_plan(&status_bar_plan(80, &tabs, 0, &states, PrefixMode::Idle));
     let (start, end) = bar.tab_regions[0];
     assert_eq!(end - start, 10);
-
     bar.set_click_regions_from_plan(&status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle));
     let (s2, e2) = bar.tab_regions[0];
     assert_eq!(e2 - s2, 10);

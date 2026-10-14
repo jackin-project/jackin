@@ -14,13 +14,9 @@ use jackin_core::{
 pub struct FakeDockerClient {
     pub recorded: std::cell::RefCell<Vec<String>>,
     pub inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
-
     pub inspect_by_id_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
-
     pub inspect_state_by_name: std::cell::RefCell<HashMap<String, ContainerState>>,
-
     pub container_id_by_name: std::cell::RefCell<HashMap<String, String>>,
-
     pub bound_operations: std::cell::RefCell<Vec<String>>,
     pub list_containers_queue: std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
     pub list_networks_queue: std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
@@ -32,13 +28,11 @@ pub struct FakeDockerClient {
     pub inspect_network_queue: std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
     pub fail_with: Vec<(String, String)>,
     pub created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
-
     #[expect(
         clippy::type_complexity,
         reason = "test record tuple mirrors the API signature; factoring adds indirection without clarity"
     )]
     pub created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>, bool)>>,
-
     pub operation_hook: Option<fn(&str)>,
 }
 

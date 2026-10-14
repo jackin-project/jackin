@@ -11,7 +11,6 @@ pub(crate) const RPC_ERROR: jackin_telemetry::schema::enums::ErrorType =
 
 pub(crate) struct AttachHandshake {
     pub(crate) stream: UnixStream,
-
     pub(crate) peer_uid: u32,
     pub(crate) rows: u16,
     pub(crate) cols: u16,
@@ -19,24 +18,20 @@ pub(crate) struct AttachHandshake {
     pub(crate) env: Vec<(String, String)>,
     pub(crate) terminal: ClientTerminal,
     pub(crate) context: Option<Box<jackin_protocol::TelemetryContext>>,
-
     pub(crate) focus_session: Option<u64>,
     pub(crate) client_permit: tokio::sync::OwnedSemaphorePermit,
 }
 
 pub(crate) struct ControlRequest {
     pub(crate) ctx: jackin_protocol::TelemetryContext,
-
     pub(crate) session_capability: Option<String>,
     pub(crate) msg: jackin_protocol::control::ClientMsg,
-
     pub(crate) peer_uid: u32,
     pub(crate) reply: ControlReply,
 }
 
 pub(crate) enum ControlReply {
     Once(oneshot::Sender<ControlResponse>),
-
     Stream(mpsc::UnboundedSender<jackin_protocol::control::ServerMsg>),
 }
 

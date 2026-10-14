@@ -42,7 +42,6 @@ pub fn classify_executable(program: &Path) -> ProcessExecutableName {
         "muse" => ProcessExecutableName::Muse,
         "omp" => ProcessExecutableName::Omp,
         "hermes" => ProcessExecutableName::Hermes,
-
         _ => ProcessExecutableName::Other,
     }
 }

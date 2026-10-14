@@ -160,7 +160,6 @@ pub(crate) fn validate_locked_store_source_dir(
             SyncSourceValidationError::new(format!("OMP source snapshot failed: {error:#}"))
         });
     }
-
     validate_store_source_dir(agent, provider, selector, source_dir, host_home)
 }
 

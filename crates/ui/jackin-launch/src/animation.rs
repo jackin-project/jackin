@@ -46,9 +46,7 @@ fn skippable_sleep(duration: std::time::Duration, host_screen_owned: bool) -> bo
 
 enum WaitOutcome {
     Elapsed,
-
     Skipped,
-
     Resized,
 }
 
@@ -158,7 +156,6 @@ fn draw_brand_pill_bottom() {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let row = rows.saturating_sub(2).max(1);
     let col = center_col(cols, BRAND_PILL.chars().count());
-
     stderr_fragment(format_args!(
         "\x1b[{row};{col}H{}{}{}",
         " jackin"
@@ -293,7 +290,6 @@ pub fn warp_end_caption(elapsed: Option<std::time::Duration>, host_screen_owned:
             "You were in the Construct for {}",
             format_universe_duration(d)
         );
-
         let _ = glitch_centered(&line, WHITE, 2400, host_screen_owned);
     }
     clear_screen();

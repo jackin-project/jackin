@@ -82,7 +82,6 @@ fn summary_absent_fraction_is_unknown_not_depleted() {
     .expect("parses");
     assert_eq!(usage.pools.len(), 1);
     assert_eq!(usage.pools[0].remaining_percent, None);
-
     let buckets = antigravity_buckets(&usage, 1_781_728_000);
     assert_eq!(buckets.len(), 1);
     assert_eq!(buckets[0].label, "Gemini · 5h");
@@ -125,7 +124,6 @@ fn legacy_collapses_to_worst_fraction_per_family() {
     let usage = parse_antigravity_usage_output(LEGACY_FIXTURE).expect("legacy parses");
     assert!(usage.legacy_fallback);
     assert!(usage.identity.is_none());
-
     assert_eq!(usage.pools.len(), 2);
     let buckets = antigravity_buckets(&usage, 1_781_728_000);
     assert_eq!(buckets.len(), 4);
@@ -133,7 +131,6 @@ fn legacy_collapses_to_worst_fraction_per_family() {
     assert_eq!(buckets[0].remaining_percent, Some(20));
     assert_eq!(buckets[1].label, "Other models · 5h");
     assert_eq!(buckets[1].remaining_percent, Some(55));
-
     assert_eq!(buckets[2].label, "Gemini · Weekly");
     assert_eq!(buckets[2].pace_label.as_deref(), Some("No data"));
     assert_eq!(buckets[2].remaining_percent, None);

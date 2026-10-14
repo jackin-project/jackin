@@ -1,10 +1,6 @@
 
-
-
 [tasks.format]
 description = "Format handwritten jackin❯ desktop Swift sources"
-
-
 run = "find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format format --configuration .swift-format --in-place --parallel"
 
 [tasks.format-check]
@@ -66,10 +62,6 @@ arg "[build]" help="Expected CFBundleVersion numeric build"
 dir = ".."
 run = '''
 set -eu
-
-
-
-
 if [ -n "${DEVELOPER_ID_APPLICATION_P12_BASE64:-}" ]; then
   : "${DEVELOPER_ID_APPLICATION_P12_PASSWORD:?missing DEVELOPER_ID_APPLICATION_P12_PASSWORD}"
   : "${APP_STORE_CONNECT_API_KEY_P8:?missing APP_STORE_CONNECT_API_KEY_P8}"
@@ -93,8 +85,6 @@ if [ -n "${DEVELOPER_ID_APPLICATION_P12_BASE64:-}" ]; then
     -k "$keychain_path" -T /usr/bin/codesign
   old_ifs=$IFS; IFS='
 '
-
-
   security list-keychain -d user -s "$keychain_path" $(security list-keychain -d user | tr -d '"')
   IFS=$old_ifs
   security set-key-partition-list -S apple-tool:,apple:,codesign: -s \

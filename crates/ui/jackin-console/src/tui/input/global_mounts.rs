@@ -5,7 +5,6 @@
     clippy::too_many_lines,
     reason = "documented residual allow; prefer expect when site is lint-true"
 )]
-
 mod auth;
 mod builders;
 mod commits;

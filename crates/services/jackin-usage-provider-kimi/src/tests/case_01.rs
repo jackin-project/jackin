@@ -39,7 +39,6 @@ fn kimi_code_api_pools_map_rolling_weekly_monthly() {
     .expect("valid Kimi Code API usage");
 
     let buckets = usage.buckets(1_781_185_560);
-
     assert_eq!(buckets.len(), 3);
     assert_eq!(buckets[0].label, "5-hour");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
@@ -70,12 +69,10 @@ fn kimi_membership_plan_mapping_is_version_gated() {
         kimi_membership_plan("LEVEL_ADVANCED", Some("GOODS_VERSION_V1")),
         "Allegro".to_owned()
     );
-
     assert_eq!(
         kimi_membership_plan("LEVEL_BASIC", Some("GOODS_VERSION_V2")),
         "Level Basic".to_owned()
     );
-
     assert_eq!(
         kimi_membership_plan("LEVEL_FOUNDER", None),
         "Founder".to_owned()
@@ -235,7 +232,6 @@ fn kimi_over_cap_keeps_raw_percent_with_clamped_bar() {
         "raw overage stays visible"
     );
     assert_eq!(buckets[0].used_label.as_deref(), Some("140"));
-
     assert_eq!(buckets[1].remaining_percent, Some(0));
     assert_eq!(buckets[1].pace_label.as_deref(), Some("150% used"));
 

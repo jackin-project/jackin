@@ -147,7 +147,6 @@ async fn inconclusive_or_present_verification_retains_registration_and_record() 
         let container = TempDir::new().unwrap();
         let rec = rec_for(repo.path(), container.path());
         save(&rec, container.path());
-
         let mut runner = FakeRunner::with_capture_queue([
             tip_row(&rec),
             "files".into(),

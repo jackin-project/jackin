@@ -28,7 +28,6 @@ pub trait EnvPrompter {
         default: Option<&str>,
         skippable: bool,
     ) -> anyhow::Result<PromptResult>;
-
     fn prompt_select(
         &self,
         title: &str,

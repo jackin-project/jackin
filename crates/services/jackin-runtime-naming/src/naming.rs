@@ -14,13 +14,9 @@ pub use jackin_image::naming::{
 pub const LABEL_MANAGED: &str = "jackin.managed=true";
 
 pub const LABEL_KIND_ROLE: &str = "jackin.kind=role";
-
 pub const LABEL_KIND_DIND: &str = "jackin.kind=dind";
-
 pub const LABEL_KIND_PREWARM_DIND: &str = "jackin.kind=prewarm-dind";
-
 pub const LABEL_PREWARM: &str = "jackin.prewarm=true";
-
 pub const LABEL_KEEP_AWAKE: &str = "jackin.keep.awake=true";
 
 pub const LABEL_ROLE_KEY: &str = "jackin.role";

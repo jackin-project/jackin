@@ -18,11 +18,8 @@ pub struct TokenTotals {
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
     pub cache_write_tokens: u64,
-
     pub cost_usd: Option<f64>,
-
     pub model: Option<String>,
-
     pub window_start: Option<SystemTime>,
 }
 

@@ -161,7 +161,6 @@ model = "gpt-5"
             .join("home/.codex")
             .exists()
     );
-
     assert!(state.claude_account_json().is_none());
     assert!(state.claude_credentials_json().is_none());
     assert!(!state.claude_forwards_auth());

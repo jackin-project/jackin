@@ -31,7 +31,6 @@ pub async fn run_client(
 
     let mut tokio_stdin = tokio::io::stdin();
     let mut terminal = ClientTerminal::from_env();
-
     let host_colors = jackin_protocol::host_terminal::query_host_terminal_colors(
         terminal.term.as_deref(),
         &mut tokio_stdin,

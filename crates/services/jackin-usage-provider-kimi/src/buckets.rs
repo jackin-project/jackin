@@ -28,7 +28,6 @@ impl KimiUsageResponse {
         } else {
             return Vec::new();
         };
-
         let mut buckets = Vec::new();
         if let Some(rate_limit) = limits.first() {
             buckets.push(with_status_slot(

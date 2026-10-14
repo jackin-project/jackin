@@ -189,25 +189,20 @@ impl Multiplexer {
                     self.clipboard.selection = None;
                     self.clipboard.selection_copied = false;
                     self.clipboard.selection_copy_feedback_deadline = None;
-
                     if let Some(candidate) = self.detect_selection_start(row, col) {
                         self.register_pane_press(&candidate);
                     }
                     self.invalidate(selection_change_redraw_reason());
                     return;
                 }
-
                 if self.detect_drag_start(row, col).is_some() {
                     self.apply_action(Action::StartDragResize { row, col });
                     return;
                 }
-
                 if self.scrollbar_jump_at(row, col) {
                     return;
                 }
-
                 self.apply_action(Action::FocusPaneAt { row, col });
-
                 if let Some(selection) = self.detect_selection_start(row, col) {
                     if self.register_pane_press(&selection) {
                         return;
@@ -257,7 +252,6 @@ impl Multiplexer {
                 };
                 if matches!(action, Action::SwitchTab(_)) {
                     self.render.last_tab_click = tab.map(|idx| (idx, now));
-
                     self.set_tab_bar_focused(true);
                 }
                 self.apply_action(action);

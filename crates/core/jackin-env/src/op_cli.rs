@@ -21,7 +21,6 @@ const TEXT_FILE_BUSY_OS_ERROR: i32 = 26;
 pub struct OpCli {
     pub(super) binary: String,
     pub(super) timeout: std::time::Duration,
-
     pub(super) account: Option<String>,
 }
 
@@ -354,7 +353,6 @@ impl OpRunner for OpCli {
 
         if status.success() {
             operation.complete_status(status);
-
             let mut stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
             if stdout.ends_with('\n') {
                 stdout.pop();
@@ -541,7 +539,6 @@ fn run_op_with_timeout_inner(
         "1Password CLI exited with status {} running `{cmd_label}`: {stderr_msg}",
         format_exit_status(status),
     );
-
     if message.contains("not currently signed") || message.contains("no accounts") {
         return Err(anyhow::Error::new(jackin_core::OpProbeError::NotSignedIn {
             detail: message.clone(),
@@ -823,7 +820,6 @@ impl OpWriteRunner for OpCli {
             template_section_id.is_none_or(jackin_core::is_valid_op_reference_path_component),
             "generated section ID cannot be represented as one `op://` path component"
         );
-
         anyhow::ensure!(
             jackin_core::build_op_reference(
                 &vault_id,
@@ -835,8 +831,6 @@ impl OpWriteRunner for OpCli {
             "cannot build a valid `op://` reference from the item template"
         );
         let mut field = serde_json::json!({
-
-
             "id": "",
             "label": params.field_label,
             "type": "CONCEALED",

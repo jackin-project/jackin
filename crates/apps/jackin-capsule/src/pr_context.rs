@@ -132,14 +132,12 @@ pub(crate) fn gh_pull_request_info(
     {
         return Err(LookupError::InvalidResponse);
     }
-
     let checks = if let Ok(checks) = gh_pull_request_checks(workdir, &pr.url) {
         checks
     } else {
         record_pr_context_recovery();
         None
     };
-
     Ok(Some(Arc::new(PullRequestInfo {
         number: pr.number,
         title: sanitize_terminal_title(&pr.title),

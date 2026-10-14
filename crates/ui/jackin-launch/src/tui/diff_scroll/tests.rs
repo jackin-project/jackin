@@ -10,7 +10,6 @@ fn draw(lines: &[String], scroll: &mut DiffScroll, width: u16, height: u16) -> V
 
     let mut state = DiffState::new();
     state.show_line_numbers = false;
-
     state.show_cursor = false;
     state
         .scroll_mut()
@@ -33,7 +32,6 @@ fn draw(lines: &[String], scroll: &mut DiffScroll, width: u16, height: u16) -> V
         f.render_stateful_widget(&DiffView::new(&diff_lines, &theme), f.area(), &mut state);
     })
     .expect("draw");
-
     scroll.record_rendered(usize::from(state.offset()));
     let buf = term.backend().buffer();
     (0..height)
@@ -103,7 +101,6 @@ fn trparity_diff_scroll_bottom_window_shows_last_viewport_lines() {
         scroll.page_down(lines.len());
     }
     let rows = draw(&lines, &mut scroll, 20, 10);
-
     assert_eq!(rows[0], "L40");
     assert_eq!(rows[9], "L49");
 }

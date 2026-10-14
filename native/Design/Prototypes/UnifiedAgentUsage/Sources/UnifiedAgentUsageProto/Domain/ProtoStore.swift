@@ -10,13 +10,9 @@ enum SidebarSelection: Hashable, Sendable {
     case account(provider: String, account: String)
 }
 
-
-
 @MainActor
 @Observable
 final class ProtoStore {
-
-
     private(set) var projection: ProtoProjection
     private(set) var percentStyle: PercentStyle = .left
     private(set) var refreshFloorMinutes = 5
@@ -27,7 +23,6 @@ final class ProtoStore {
     private(set) var refreshInProgress = false
     private var acceptedFloorRevision = 0
     private var issuedFloorRevision = 40
-
 
     var displayMode: DisplayMode = .strip
     var pinnedSurfaceKey = ""
@@ -57,8 +52,6 @@ final class ProtoStore {
     }
 
     var chrome: ProtoChrome { projection.chrome }
-
-
 
     func loadScenario(_ name: String) {
         let previousSidebar = resolvedSidebar
@@ -94,7 +87,6 @@ final class ProtoStore {
         else { return .provider(providerKey) }
         return .account(provider: providerKey, account: accountKey)
     }
-
 
     var resolvedSidebar: SidebarSelection {
         switch sidebar {
@@ -135,8 +127,6 @@ final class ProtoStore {
         accountSelection[provider.key] = key
     }
 
-
-
     func navigate(to selection: SidebarSelection) {
         sidebar = selection
         sidebar = resolvedSidebar
@@ -174,16 +164,11 @@ final class ProtoStore {
 
     func statusPercent(_ provider: ProtoProvider) -> String? {
         guard let percent = provider.summaryPercent else { return nil }
-
-
-
         switch percentStyle {
         case .left: return "\(percent)%"
         case .used: return "\(100 - percent)%"
         }
     }
-
-
 
     func statusTint(_ provider: ProtoProvider) -> NSColor {
         switch provider.summaryWindow?.state ?? provider.state {
@@ -194,19 +179,15 @@ final class ProtoStore {
     }
 
     func setPercentStyle(_ style: PercentStyle) {
-
         percentStyle = style
     }
 
     func requestRefreshFloor(_ minutes: Int) {
         switch projection.mutationScript {
         case .rejectLowFloor where minutes < 5:
-
             floorError =
                 "Refresh floor of \(minutes) minute(s) rejected: minimum is 5 minutes"
         case .reorderedFloor:
-
-
             issuedFloorRevision += 1
             let revision = issuedFloorRevision
             floorError = nil
@@ -225,15 +206,10 @@ final class ProtoStore {
         }
     }
 
-
     func retryRefreshFloor() {
         floorError = nil
         requestRefreshFloor(1)
     }
-
-
-
-
 
     func refresh() {
         refreshGeneration += 1

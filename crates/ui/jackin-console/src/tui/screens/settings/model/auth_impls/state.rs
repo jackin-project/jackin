@@ -97,7 +97,6 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.modals.clear();
         self.error = None;
-
         let generation = self.scan.generation.wrapping_add(1);
         self.scan = AccountScanState {
             generation,

@@ -47,7 +47,6 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Selection> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsoleInstanceAction<Agent> {
     Reconnect,
-
     ReconnectFocus(u64),
     NewSession,
     NewSessionWithAgent(Agent),
@@ -86,13 +85,11 @@ pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Selection> {
         container: String,
         action: ConsoleInstanceAction<Agent>,
     },
-
     NewSessionWithAccount {
         container: String,
         agent: Agent,
         instance_id: String,
     },
-
     LaunchWithAccount {
         selector: RoleSelector,
         workspace: Workspace,

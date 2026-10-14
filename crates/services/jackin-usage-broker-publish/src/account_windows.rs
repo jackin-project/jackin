@@ -71,7 +71,6 @@ pub fn project_window(
         reset_at_epoch: bucket.resets_at,
         quota_state: quota_state(bucket),
         pace_label: bucket.pace_label.clone(),
-
         runs_out_label: None,
     })
 }

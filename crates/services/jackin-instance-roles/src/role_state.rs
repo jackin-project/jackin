@@ -14,15 +14,12 @@ use std::path::{Path, PathBuf};
 pub struct RoleState {
     pub root: PathBuf,
     pub gh_config_dir: PathBuf,
-
     pub gh_provision_outcome: GithubProvisionOutcome,
     pub agent_runtime: AgentRuntimeState,
     pub auth: ProvisionedAuth,
     pub auth_outcomes: BTreeMap<jackin_core::Agent, AuthProvisionOutcome>,
-
     pub auth_mount_paths: BTreeSet<PathBuf>,
     pub auth_mount_leases: Vec<AuthMountLease>,
-
     pub provider_config_mounts: Vec<(PathBuf, String)>,
 }
 

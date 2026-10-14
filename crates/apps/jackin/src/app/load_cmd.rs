@@ -122,7 +122,6 @@ pub(super) async fn handle_load(
         } else {
             &*config
         };
-
         let identity = runtime::resolve_dry_run_identity(
             plan_config,
             selected_agent,
@@ -130,9 +129,7 @@ pub(super) async fn handle_load(
             &class.to_string(),
             account.is_some(),
         )?;
-
         let projection_config = (*plan_config).clone();
-
         let image_plan = runtime::resolve_launch_image_plan(
             paths,
             config,
@@ -175,7 +172,6 @@ pub(super) async fn handle_load(
     opts.role_branch = role_branch;
     opts.docker_profile = docker_profile;
     apply_load_model_effort(&mut opts, model, effort);
-
     opts.entry_claim = Some(std::sync::Arc::new(
         play_construct_intro_if_needed(paths, &docker).await,
     ));
@@ -240,7 +236,6 @@ pub(super) async fn handle_console(
     let (mut console_entry, startup_error) = match connect_docker() {
         Ok(docker) => {
             let claim = play_construct_intro_if_needed(&paths, &docker).await;
-
             runtime::spawn_background_image_prewarm(
                 &paths,
                 runtime::background_prewarm_targets(&config),
@@ -271,7 +266,6 @@ pub(super) async fn handle_console(
     )
     .await?;
     lifecycle.exit_requested();
-
     let mut config = take_post_console_config(console_config);
     let Some(outcome) = outcome else {
         if let Some((docker, claim)) = &console_entry {
@@ -402,7 +396,6 @@ async fn console_outcome_new_session(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-
     let result = runtime::spawn_agent_session(
         ctx.paths,
         &container,
@@ -511,7 +504,6 @@ async fn console_outcome_launch(
         any_keep_awake_enabled(ctx.config),
     )
     .await;
-
     result
 }
 
@@ -581,7 +573,6 @@ pub(super) async fn handle_hardline(
     let mut runner = ShellRunner { debug };
     crate::preflight::preflight(crate::preflight::CheckName::preflight_required(), &paths).await?;
     let docker = connect_docker()?;
-
     let explicit_selector = selector.is_some();
     let container = if let Some(sel) = selector {
         if let Some(container) = resolve_instance_reference(&paths, &sel)? {
@@ -694,7 +685,6 @@ pub(super) async fn handle_eject(
             }
         }
     };
-
     let result: Result<()> = async {
         if containers.is_empty() {
             println!("No matching roles found.");

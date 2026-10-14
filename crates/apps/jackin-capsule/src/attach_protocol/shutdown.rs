@@ -41,7 +41,6 @@ pub(crate) async fn detach_attached_task_with_reason(
     reason: Option<&str>,
 ) {
     let had_sender = send_attached_shutdown(mux, reason);
-
     if had_sender {
         tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_FLUSH_GRACE_MS)).await;
     }

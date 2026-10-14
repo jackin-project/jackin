@@ -5,16 +5,9 @@
 
 set -euo pipefail
 
-
-
-
-
 run_hook() {
     local label="$1" path="$2" tail="${3:-}" hook_cwd="${4:-}"
     echo "[entrypoint] running $label hook..."
-
-
-
     local rc=0
     if [ -n "$hook_cwd" ]; then
         ( cd "$hook_cwd" && "$path" ) || rc=$?
@@ -27,16 +20,7 @@ run_hook() {
     fi
 }
 
-
-
-
-
-
 /jackin/runtime/jackin-capsule runtime-setup
-
-
-
-
 
 export JACKIN_HOOK_STATE_DIR="${JACKIN_SESSION_STATE_DIR:-/jackin/state}/hook-state"
 if ! mkdir -p "$JACKIN_HOOK_STATE_DIR"; then
@@ -44,21 +28,9 @@ if ! mkdir -p "$JACKIN_HOOK_STATE_DIR"; then
     exit 1
 fi
 
-
-
-
 export JACKIN_STATUS_SOCKET="${JACKIN_STATUS_SOCKET:-/jackin/run/jackin.sock}"
 export JACKIN_STATUS_SOURCE="${JACKIN_STATUS_SOURCE:-wrapper-${JACKIN_SESSION_ID:-0}}"
 export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"
-
-
-
-
-
-
-
-
-
 
 
 

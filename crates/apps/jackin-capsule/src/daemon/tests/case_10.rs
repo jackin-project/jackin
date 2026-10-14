@@ -7,10 +7,8 @@ use super::*;
 fn read_packed_git_ref_oid_does_not_cache_truncated_read() {
     let temp = tempfile::tempdir().unwrap();
     let packed_refs = temp.path().join("packed-refs-truncated");
-
     let real_line = "1111111111111111111111111111111111111111 refs/heads/feat/x\n";
     let padding_per_line = "# padding to fill packed-refs to the cap byte limit aaaaaaaaaa\n";
-
     let target_size = usize::try_from(PACKED_REFS_MAX_BYTES)
         .unwrap_or(usize::MAX)
         .saturating_add(1);
@@ -64,12 +62,10 @@ fn packed_refs_cache_eviction_bounds_entries_at_cap() {
             .filter(|p| cache.contains_key(p.as_path()))
             .count()
     });
-
     assert!(
         with_packed_refs_cache(|cache| cache.contains_key(paths.last().unwrap().as_path())),
         "newly-inserted entry must survive eviction"
     );
-
     assert_eq!(
         count, PACKED_REFS_CACHE_MAX_ENTRIES,
         "eviction must drop exactly one entry; saw {count} surviving of CAP={PACKED_REFS_CACHE_MAX_ENTRIES}"
@@ -301,14 +297,12 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
 #[test]
 fn wheel_back_to_live_repaints_body_and_footer() {
     let mut mux = single_pane_tab_mux();
-
     let pane = mux.visible_panes().into_iter().next().expect("one pane");
     let (mut session, _input_rx) = test_session(pane.inner.rows, pane.inner.cols);
     for i in 0..40 {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }
     mux.session_supervisor.sessions.insert(1, session);
-
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
 
     let scrolled = handle_input_frame(
@@ -328,7 +322,6 @@ fn wheel_back_to_live_repaints_body_and_footer() {
             .scrollback_offset(),
         3
     );
-
     assert!(
         contains(&scrolled, b"exit scrollb"),
         "scrolled frame must show the scrollback footer: {:?}",

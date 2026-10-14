@@ -197,7 +197,6 @@ fn rekor_keys_decode_and_contain_expected_id() {
         keys.contains_key("c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d"),
         "expected hex Rekor key ID not found in decoded map"
     );
-
     let key = keys.get(SIGSTORE_REKOR_KEY_ID).unwrap();
     assert!(
         matches!(
@@ -212,10 +211,8 @@ fn rekor_keys_decode_and_contain_expected_id() {
 fn is_preview_version_matches_dev_and_preview_suffixes() {
     assert!(is_preview_version("0.6.0-dev+bf7df07"));
     assert!(is_preview_version("0.6.0-preview.411+bf7df07"));
-
     assert!(is_preview_version("0.6.0-developer"));
     assert!(!is_preview_version("0.6.0"));
-
     assert!(!is_preview_version("0.6.0-preview1"));
 }
 
@@ -224,23 +221,18 @@ fn is_allowed_signer_san_accepts_release_and_preview_workflows() {
     assert!(is_allowed_signer_san(
         "https://github.com/jackin-project/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
     ));
-
     assert!(is_allowed_signer_san(
         "https://github.com/jackin-project/jackin/.github/workflows/preview.yml@refs/heads/main"
     ));
-
     assert!(!is_allowed_signer_san(
         "https://github.com/jackin-project/jackin/.github/workflows/evil.yml@refs/heads/main"
     ));
-
     assert!(!is_allowed_signer_san(
         "https://github.com/attacker/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
     ));
-
     assert!(!is_allowed_signer_san(
         "https://github.com/jackin-project/jackin/.github/workflows/release.yml"
     ));
-
     assert!(!is_allowed_signer_san(""));
 }
 

@@ -29,7 +29,6 @@ fn create_mode_save_uses_updated_pending_name() {
     state.stage = ManagerStage::Editor(editor);
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
-
     for _ in 0..8 {
         handle_key(
             &mut state,
@@ -43,7 +42,6 @@ fn create_mode_save_uses_updated_pending_name() {
     for ch in "renamed".chars() {
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch))).unwrap();
     }
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
     handle_key(
@@ -54,7 +52,6 @@ fn create_mode_save_uses_updated_pending_name() {
         key(KeyCode::Char('s')),
     )
     .unwrap();
-
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab)).unwrap();
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
     crate::console::effects::execute_pending_workspace_save_commit(

@@ -200,7 +200,6 @@ model = "gpt-5"
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = codex_workspace(&repo_dir);
-
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let docker = FakeDockerClient::default();
 
@@ -217,7 +216,6 @@ model = "gpt-5"
     .unwrap();
 
     let build_cmd = recorded_docker_build(&runner);
-
     assert!(!build_cmd.contains("--pull"), "{build_cmd}");
 
     let (container_name, spec) = launched_role_container(&docker);
@@ -246,7 +244,6 @@ model = "gpt-5"
             0o600
         );
     }
-
     if !jackin_runtime::runtime::host_attach::host_attach_enabled(&paths) {
         assert!(
             docker
@@ -265,7 +262,6 @@ model = "gpt-5"
     assert_eq!(capsule_config.agents.get("codex-main").unwrap(), "codex");
     assert_eq!(capsule_config.models.get("codex-main").unwrap(), "gpt-5");
     assert_eq!(capsule_config.models.len(), 1);
-
     let codex_config = std::fs::read_to_string(
         paths
             .data_dir
@@ -344,7 +340,6 @@ plugins = []
         git_pull_on_entry: false,
         mount_heal: jackin_config::MountHealReport::default(),
     };
-
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let docker = FakeDockerClient::default();
     let opts = LoadOptions {

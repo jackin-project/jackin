@@ -313,7 +313,6 @@ async fn activated_entry_allows_exit_before_the_owned_launch_lease_drops() {
     assert!(marker_path(&authority(&paths)).exists());
     let (_, exit) = observe_exit(&paths, &docker).await.unwrap();
     assert!(matches!(exit, ExitClaim::Claimed { .. }));
-
     assert_eq!(claim.start_kind(), StartKind::FreshConstruct);
     drop(claim);
     assert!(!marker_path(&authority(&paths)).exists());
@@ -362,7 +361,6 @@ async fn cancelled_worker_result_drops_its_owned_pending_entry() {
             })?
         };
         created_tx.send(()).unwrap();
-
         release_rx.recv().unwrap();
         Ok(claim)
     }));

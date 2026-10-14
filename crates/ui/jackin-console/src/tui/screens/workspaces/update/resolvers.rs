@@ -93,7 +93,6 @@ pub fn workspace_list_key_plan(key: KeyCode, list_scroll_focused: bool) -> Works
         A::ConfirmPurge => WorkspaceListKeyPlan::ConfirmPurge,
         A::Settings => WorkspaceListKeyPlan::Settings,
         A::Prewarm => WorkspaceListKeyPlan::Prewarm,
-
         A::EnterPreview | A::Quit => WorkspaceListKeyPlan::Continue,
     }
 }

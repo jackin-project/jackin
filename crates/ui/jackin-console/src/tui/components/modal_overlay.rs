@@ -112,7 +112,6 @@ impl ModalContainerInfoState
 pub const fn console_modal_policy(escape: DismissAction) -> OverlayPolicy {
     OverlayPolicy {
         esc: escape.to_layer(),
-
         outside: LayerDismissPolicy::Trap,
         owns_input: true,
         focus_trap: true,
@@ -121,7 +120,6 @@ pub const fn console_modal_policy(escape: DismissAction) -> OverlayPolicy {
         prefer: PlacementPrefer::Center,
         cover_anchor: false,
         narrow_fallback: NarrowFallback::Clamp,
-
         narrow_cols: 0,
     }
 }

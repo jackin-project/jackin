@@ -11,10 +11,8 @@ const DEFAULT_TAP: &str = "jackin-project/homebrew-tap";
 #[derive(Args)]
 pub(crate) struct ReleaseStateArgs {
     version: String,
-
     #[arg(long, default_value = DEFAULT_REPO)]
     repo: String,
-
     #[arg(long, default_value = DEFAULT_TAP)]
     tap: String,
 }
@@ -119,7 +117,6 @@ pub(crate) fn run(args: ReleaseStateArgs) -> Result<()> {
         bail!("version is required");
     }
     let state = live_state(&args.version, &args.repo, &args.tap)?;
-
     #[expect(
         clippy::print_stdout,
         reason = "release-state KEY=value lines are the command product"
@@ -155,7 +152,6 @@ fn live_state(version: &str, repo: &str, tap: &str) -> Result<ReleaseState> {
 fn gh_release_exists(repo: &str, tag: &str) -> bool {
     let mut gh = cmd::command("gh");
     gh.args(["release", "view", tag, "--repo", repo]);
-
     cmd::run(&mut gh).is_ok()
 }
 

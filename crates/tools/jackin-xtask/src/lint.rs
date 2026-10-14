@@ -18,7 +18,6 @@ const RERUN: &str = "cargo xtask lint files";
 pub(crate) struct LintFilesArgs {
     #[arg(long)]
     print_budget: bool,
-
     #[arg(long, value_enum)]
     format: Option<Format>,
 }
@@ -129,7 +128,6 @@ fn walk(dir: &Path, out: &mut BTreeMap<PathBuf, usize>) -> Result<()> {
         if path.extension().is_some_and(|ext| ext == "rs") {
             let text =
                 fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-
             let lines = text.lines().count();
             out.insert(path, lines);
         }

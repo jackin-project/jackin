@@ -1,4 +1,3 @@
-
 name: Restore Velnor tool seed
 description: Copy a matching host tool seed into this job.
 inputs:

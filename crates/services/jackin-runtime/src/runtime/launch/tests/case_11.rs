@@ -159,7 +159,6 @@ plugins = []
     assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
     assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
     assert!(!build_call.contains("--build-arg ROLE_GIT_SHA="));
-
     assert!(build_call.contains("--label jackin.image.recipe.hash="));
     let recorded = runner.recorded.join("\n");
     assert!(
@@ -297,7 +296,6 @@ plugins = []
             .any(|c| c.contains("docker build ") && c.contains("BaseDockerfile")),
         "fresh published images must not be restamped through a Docker build"
     );
-
     assert!(
         runner
             .recorded

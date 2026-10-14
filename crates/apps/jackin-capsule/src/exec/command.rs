@@ -112,7 +112,6 @@ pub async fn execute_command(
         if secret.is_empty() {
             continue;
         }
-
         let out_hits = stdout.matches(secret).count();
         let err_hits = stderr.matches(secret).count();
         if out_hits > 0 {
@@ -124,7 +123,6 @@ pub async fn execute_command(
         redacted_count = redacted_count
             .saturating_add(u32::try_from(out_hits.saturating_add(err_hits)).unwrap_or(u32::MAX));
     }
-
     if secrets_for_redaction
         .iter()
         .any(|s| s.contains("BEGIN") && s.contains("PRIVATE KEY"))

@@ -36,7 +36,6 @@ fn bootstrap_paths() -> (tempfile::TempDir, JackinPaths) {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-
     std::fs::write(&paths.config_file, "").unwrap();
     (temp, paths)
 }

@@ -1,13 +1,6 @@
 import AppKit
 import SwiftUI
 
-
-
-
-
-
-
-
 @MainActor
 final class ProtoShell: NSObject, NSMenuDelegate {
     let store: ProtoStore
@@ -35,16 +28,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
     }
 
     func wrap<V: View>(_ view: V) -> some View {
-
-
-
-
-
-
-
-
-
-
         view
             .tint(.jackinPhosphor)
             .accentColor(.jackinPhosphor)
@@ -57,9 +40,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
                 if self.config.reduceMotion { transaction.animation = nil }
             }
     }
-
-
-
 
 
 
@@ -77,8 +57,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         NSApp.windowsMenu = window
         return main
     }
-
-
 
     private func scenarioMenu() -> NSMenu {
         let menu = NSMenu(title: "Scenario")
@@ -147,7 +125,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
     }
 
     private func editMenu() -> NSMenu {
-
         let menu = NSMenu(title: "Edit")
         menu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
         let redo = menu.addItem(
@@ -220,15 +197,11 @@ final class ProtoShell: NSObject, NSMenuDelegate {
     }
 
 
-
     private func makeUsageWindow() -> NSWindow {
         let split = NSSplitViewController()
         split.splitView.isVertical = true
 
         let sidebarHost = NSHostingController(rootView: wrap(SidebarView(store: store)))
-
-
-
         sidebarHost.sizingOptions = []
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarHost)
         sidebarItem.allowsFullHeightLayout = true
@@ -259,9 +232,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         window.setContentSize(config.window ?? ProtoUsageWindowMetrics.defaultContentSize)
         window.contentViewController = split
 
-
-
-
         window.toolbarStyle = .unified
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -289,12 +259,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         toolbarController.installStandardItems(in: toolbar)
         installCenteredBrand(in: window)
 
-
-
-
-
-
-
         window.contentMinSize = ProtoUsageWindowMetrics.minimumContentSize
         window.minSize =
             NSWindow.frameRect(
@@ -302,8 +266,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
                     origin: .zero, size: ProtoUsageWindowMetrics.minimumContentSize),
                 styleMask: window.styleMask
             ).size
-
-
         window.center()
         observeWindowTitles(window)
         return window
@@ -326,8 +288,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
             host.heightAnchor.constraint(equalToConstant: 18),
         ])
     }
-
-
 
     private func observeWindowTitles(_ window: NSWindow) {
         withObservationTracking {
@@ -364,8 +324,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
             && event.modifierFlags.intersection(commandModifiers) == [.command, .control]
     }
 
-
-
     func menuWillOpen(_ menu: NSMenu) {
         if menu.title == "Scenario" {
             for item in menu.items {
@@ -384,7 +342,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         toggle.title = collapsed ? "Show Sidebar" : "Hide Sidebar"
     }
 
-
     private func installStatusItems() {
         reconcileStatusItems()
     }
@@ -398,8 +355,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
                 ProviderMarks.templateImage(forIconKey: provider.iconKey)
                 ?? JackinBrandIdentity.templateMonogram()
             button.imagePosition = .imageLeading
-
-
             button.imageHugsTitle = true
             button.toolTip = provider.name
             button.setAccessibilityLabel(provider.name)
@@ -409,8 +364,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         }
         statusItems[key] = item
     }
-
-
 
     private func reconcileStatusItems() {
         withObservationTracking {
@@ -450,8 +403,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
         }
     }
 
-
-
     private func showStatusMenu(for button: NSStatusBarButton) {
         let menu = NSMenu()
         menu.addItem(
@@ -476,10 +427,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
             self.popover = nil
             return
         }
-
-
-
-
         NSApp.activate(ignoringOtherApps: true)
         let popover = NSPopover()
         popover.behavior = .transient
@@ -490,7 +437,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
                     store: store, provider: provider,
                     onOpenUsage: { [weak self] in
                         guard let self else { return }
-
                         if let account = store.account(for: provider),
                             provider.accounts.count > 1
                         {
@@ -509,7 +455,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
     }
 
 
-
     @objc func showUsage() {
         guard let window = usageWindow else { return }
         window.makeKeyAndOrderFront(nil)
@@ -522,8 +467,6 @@ final class ProtoShell: NSObject, NSMenuDelegate {
 
     @objc func showSettings() {
         if settingsWindow == nil {
-
-
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],

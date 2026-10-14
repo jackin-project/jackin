@@ -110,7 +110,6 @@ pub(crate) fn acquire_config_write_lock(
     config_file: &Path,
 ) -> crate::ConfigResult<ConfigWriteGuard> {
     let mut file = acquire_lock(config_file, LockMode::Exclusive, LOCK_TIMEOUT, LOCK_POLL)?;
-
     recover_pending_publication(config_file)?;
     file.set_len(0)?;
     file.rewind()?;
@@ -258,7 +257,6 @@ pub(crate) fn stage_atomic_write_bytes(
             .with_context(|| format!("creating parent directory {}", parent.display()))?;
     }
     let original = target_state(path);
-
     let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut staged_name = path
         .file_name()
@@ -538,9 +536,7 @@ where
     D: FnMut(&Path) -> crate::ConfigResult<()>,
 {
     let (mut publish, mut commit, mut stage_restore) = operations;
-
     sync_staged_parents(writes, &mut sync_staged_parent)?;
-
     for write in writes.iter_mut() {
         write.recovery_owned = true;
     }
@@ -658,7 +654,6 @@ where
             "{error}; config rollback failed: {journal_error}"
         )));
     }
-
     for write in writes.iter_mut() {
         write.recovery_owned = false;
     }

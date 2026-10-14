@@ -322,7 +322,6 @@ fn interpolates_multiple_refs_in_one_field() {
 
     let titles = prompter.captured_titles.borrow();
     let defaults = prompter.captured_defaults.borrow();
-
     assert_eq!(titles[1], "Label for backend/api:");
     assert_eq!(defaults[1], Some("backend/api".to_owned()));
 }

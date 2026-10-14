@@ -176,7 +176,6 @@ fn seed_launch_fixture(paths: &JackinPaths, role: &std::path::Path) -> anyhow::R
         "e2e requires a locally built Linux JACKIN_CAPSULE_BIN"
     );
     std::fs::create_dir_all(role)?;
-
     std::fs::write(
         role.join("Dockerfile"),
         jackin_manifest::BASE_DOCKERFILE_FROM,

@@ -19,9 +19,7 @@ use super::state::FileBrowserState;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitPromptFocus {
     MountHere,
-
     EnterIn,
-
     Cancel,
 }
 
@@ -75,12 +73,10 @@ impl FileBrowserState {
                 self.dismiss_git_prompt();
                 Self::commit_or_reject(path)
             }
-
             KeyCode::Char('p' | 'P') => {
                 self.dismiss_git_prompt();
                 FileBrowserOutcome::NavigateTo(path)
             }
-
             KeyCode::Char('o' | 'O') => self
                 .pending_git_url
                 .clone()

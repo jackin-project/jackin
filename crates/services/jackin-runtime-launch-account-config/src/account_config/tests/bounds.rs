@@ -167,7 +167,6 @@ fn near_limit_config_expansion_is_rejected_before_publishing_new_catalog() {
     let catalog_reference = previous["model_catalog_json"].as_str().unwrap();
     let catalog = Path::new(catalog_reference).file_name().unwrap();
     let catalog_before = std::fs::read(directory.join(catalog)).unwrap();
-
     let template = format!("preserved = \"\"\nmodel_catalog_json = \"{catalog_reference}\"\n");
     let padding = "x".repeat(1024 * 1024 - 64 - template.len());
     let config_before =
@@ -254,7 +253,6 @@ fn lock_holder(root: &Path) -> anyhow::Result<LockHolder> {
     std::thread::spawn(move || {
         for line in std::io::BufReader::new(output).lines() {
             let Ok(line) = line else { return };
-
             if line.trim().ends_with("PRIVATE_CONFIG_LOCK_HELD") {
                 ready.send(()).unwrap_or(());
                 return;

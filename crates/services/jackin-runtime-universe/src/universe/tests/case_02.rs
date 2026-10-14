@@ -54,7 +54,6 @@ async fn stale_idle_observation_cannot_remove_a_newer_live_marker() {
         std::fs::remove_file(first.pending_file().unwrap()).unwrap();
         generation
     };
-
     let second = claim_entry(&paths, &docker).await;
     drop(second);
     assert_eq!(count_pending_claims(&authority(&paths)), Some(0));

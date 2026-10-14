@@ -50,7 +50,6 @@ pub struct GeminiEntitlement {
     pub tier_name: Option<String>,
     pub plan_name: Option<String>,
     pub project: Option<String>,
-
     pub consumer_unsupported: bool,
 }
 

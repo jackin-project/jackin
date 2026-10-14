@@ -1,4 +1,3 @@
-
 export interface DefSegment {
   t: string;
   b?: boolean;

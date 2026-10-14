@@ -24,7 +24,6 @@ type JobLogs = Arc<Mutex<BTreeMap<u64, Vec<u8>>>>;
 pub(crate) struct CiAuditArgs {
     #[arg(long)]
     expect_clean: bool,
-
     #[arg(long, default_value = "CI")]
     workflow_label: String,
     #[arg(long)]

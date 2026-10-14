@@ -4,23 +4,6 @@
 import Foundation
 import JackinUsageBindings
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 public final class RefreshScheduler: @unchecked Sendable {
     private let bridge: UsageMenuBarBridge
     private let queue = DispatchQueue(label: "com.jackin-project.desktop.bridge")
@@ -39,7 +22,6 @@ public final class RefreshScheduler: @unchecked Sendable {
         case invalidated
     }
 
-
     public func openRuntime(config: OpenConfig) async throws -> UInt64 {
         try await run { handle in
             try handle.openRuntime(config: config)
@@ -51,11 +33,9 @@ public final class RefreshScheduler: @unchecked Sendable {
         try await run { try $0.setEnabled(surfaceId: surfaceId, enabled: enabled) }
     }
 
-
     public func setSelectedAccount(surfaceId: String, accountKey: String) async throws {
         try await run { try $0.setSelectedAccount(surfaceId: surfaceId, accountKey: accountKey) }
     }
-
 
     public func setRefreshFloorSecs(_ secs: UInt64) async throws -> UInt64 {
         try await run { handle in
@@ -64,7 +44,6 @@ public final class RefreshScheduler: @unchecked Sendable {
         }
     }
 
-
     public func refresh(surfaceId: String?, force: Bool) async throws {
         try await run { try $0.refresh(surfaceId: surfaceId, force: force) }
     }
@@ -72,8 +51,6 @@ public final class RefreshScheduler: @unchecked Sendable {
     public func setFormatPrefs(_ prefs: UsageFormatPrefsDto) async throws {
         try await run { try $0.setFormatPrefs(prefs: prefs) }
     }
-
-
 
     public func pollOnce(cursor: UInt64) async throws -> UInt64 {
         try await run { handle in
@@ -88,11 +65,6 @@ public final class RefreshScheduler: @unchecked Sendable {
         try await run { try $0.desktopProjection(statusBarMax: statusBarMax) }
     }
 
-
-
-
-
-
     public func invalidateAndShutdown() {
         stateLock.lock()
         invalidated = true
@@ -101,10 +73,6 @@ public final class RefreshScheduler: @unchecked Sendable {
             try? self.bridge.shutdown()
         }
     }
-
-
-
-
 
     private func run<T: Sendable>(
         _ operation: @escaping @Sendable (UsageMenuBarBridge) throws -> T

@@ -14,7 +14,6 @@ fn backend_renders_text_to_output_buffer() {
         })
         .unwrap();
     let output = terminal.backend_mut().take_output();
-
     let text = String::from_utf8_lossy(&output);
     assert!(
         text.contains('h') && text.contains('i'),
@@ -48,7 +47,6 @@ fn suppressed_clear_resets_style_without_screen_erase() {
 
     backend.begin_clear_suppression();
     backend.clear_region(ClearType::All).unwrap();
-
     backend.clear_region(ClearType::All).unwrap();
     assert!(
         backend.take_output().is_empty(),
@@ -175,7 +173,6 @@ fn take_output_drains_buffer() {
     let terminal = Terminal::new(backend).unwrap();
     drop(terminal);
     let mut backend = SocketBackend::new(10, 1);
-
     backend.output.extend_from_slice(b"hello");
     let first = backend.take_output();
     let second = backend.take_output();
@@ -211,7 +208,6 @@ fn cursor_movement_uses_1_based_coords() {
         .unwrap();
     let output = terminal.backend_mut().take_output();
     let text = String::from_utf8_lossy(&output);
-
     assert!(
         text.contains("\x1b[4;3H") || text.contains("\x1b[4;1H"),
         "expected cursor at row 4: {text:?}"

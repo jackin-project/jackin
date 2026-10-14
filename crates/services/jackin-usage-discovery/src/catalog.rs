@@ -16,9 +16,7 @@ use jackin_usage_host_presentation::HostSurfaceId;
 #[derive(Clone, PartialEq, Eq)]
 pub struct UsageDiscoveryCatalog {
     pub config_generation: Option<String>,
-
     pub candidates: Vec<UsageSourceCandidateDescriptor>,
-
     pub diagnostics: Vec<UsageDiscoveryDiagnostic>,
     pub(crate) sources: Vec<DiscoveredCredentialSource>,
 }
@@ -26,13 +24,9 @@ pub struct UsageDiscoveryCatalog {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredAccountDescriptor {
     pub surface_id: String,
-
     pub account_key: String,
-
     pub account_label: String,
-
     pub provenance: Vec<String>,
-
     pub source_ids: Vec<String>,
     pub identity: CanonicalAccountIdentity,
 }
@@ -62,11 +56,8 @@ impl AccountMembershipDescriptor for DiscoveredAccountDescriptor {
 #[derive(Clone)]
 pub struct ValidatedUsageDiscovery {
     pub config_generation: Option<String>,
-
     pub accounts: Vec<DiscoveredAccountDescriptor>,
-
     pub diagnostics: Vec<UsageDiscoveryDiagnostic>,
-
     pub candidates: Vec<UsageSourceCandidateDescriptor>,
     pub bindings: Vec<ValidatedCredentialBinding>,
 }
@@ -119,15 +110,12 @@ pub enum ValidatedCredentialSource {
     Profile(ProfileCredentialMaterial),
     Env {
         handle: OpaqueCredentialHandle,
-
         key: String,
-
         dispatch_key: String,
         launch_keys: BTreeSet<String>,
         material: Option<ProviderCredentialSourceMaterial>,
     },
     Capability,
-
     Unpollable,
 }
 
@@ -157,7 +145,6 @@ pub enum ProfileCredentialMaterial {
     Gemini {
         creds_path: PathBuf,
     },
-
     Antigravity,
 }
 
@@ -214,9 +201,7 @@ pub(crate) enum CredentialSourceKey {
     Env {
         surface: HostSurfaceId,
         handle: OpaqueCredentialHandle,
-
         key: String,
-
         dispatch_key: String,
     },
     Capability {

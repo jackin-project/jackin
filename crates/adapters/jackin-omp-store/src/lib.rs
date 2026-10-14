@@ -14,13 +14,10 @@ pub const MAX_STANDALONE_DATABASE_BYTES: usize = 8 * 1024 * 1024;
 pub enum OmpError {
     #[error("OMP credential source is unavailable")]
     Unavailable,
-
     #[error("OMP credential source exceeds a resource limit")]
     LimitExceeded,
-
     #[error("OMP credential operation timed out")]
     Deadline,
-
     #[error("OMP account selection is missing or ambiguous")]
     SelectionUnavailable,
 }

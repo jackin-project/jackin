@@ -293,7 +293,6 @@ fn oid_parse_accepts_sha1_and_sha256_lengths_only() {
     assert!(Oid::parse(&"a".repeat(41)).is_none());
     assert!(Oid::parse(&"a".repeat(63)).is_none());
     assert!(Oid::parse(&"a".repeat(65)).is_none());
-
     let mut s = "a".repeat(39);
     s.push('g');
     assert!(Oid::parse(&s).is_none());
@@ -324,7 +323,6 @@ fn read_context_from_git_metadata_handles_malformed_head_content() {
     let temp = tempfile::tempdir().unwrap();
     let git_dir = temp.path().join(".git");
     std::fs::create_dir_all(&git_dir).unwrap();
-
     std::fs::write(git_dir.join("HEAD"), "abc123\n").unwrap();
 
     let context = read_context_from_git_metadata(temp.path()).unwrap();
@@ -341,7 +339,6 @@ fn read_context_from_git_metadata_handles_malformed_head_content() {
 fn read_context_from_git_metadata_handles_malformed_gitfile_content() {
     let temp = tempfile::tempdir().unwrap();
     let workdir = temp.path();
-
     std::fs::write(workdir.join(".git"), "not a gitdir pointer\n").unwrap();
 
     assert!(read_context_from_git_metadata(workdir).is_none());
@@ -367,7 +364,6 @@ fn read_context_from_git_metadata_resolves_worktree_head_via_commondir() {
     let (workdir, common_git) = make_worktree_layout(temp.path(), "wt");
     let wt_git = common_git.join("worktrees/wt");
     std::fs::create_dir_all(common_git.join("refs/heads/feat")).unwrap();
-
     std::fs::write(
         common_git.join("refs/heads/feat/wt"),
         "1111111111111111111111111111111111111111\n",

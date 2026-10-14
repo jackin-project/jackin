@@ -13,16 +13,12 @@ use crate::cmd;
 pub(crate) struct AffectedCratesArgs {
     #[arg(long, value_name = "PATH")]
     metadata: Option<PathBuf>,
-
     #[arg(long, required_unless_present = "all")]
     base: Option<String>,
-
     #[arg(long, default_value = "HEAD")]
     head: String,
-
     #[arg(long)]
     all: bool,
-
     #[arg(long)]
     cache_keys: bool,
 }

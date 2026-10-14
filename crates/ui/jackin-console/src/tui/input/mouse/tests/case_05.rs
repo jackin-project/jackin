@@ -132,7 +132,6 @@ fn clicking_editor_content_area_clears_tab_bar_focus() {
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("editor stage expected");
     };
-
     assert!(
         !editor.tab_bar_focused(),
         "clicking content must clear tab_bar_focused (Defect 17)"
@@ -160,7 +159,6 @@ fn wheel_shift_fallback_retries_vertical_at_horizontal_edge() {
     }
     let mut state = selected_demo_state(&config);
     let areas = list_scroll_areas(&state, term(100), Some(&config)).expect("list areas");
-
     let global_mounts: Vec<MountConfig> = config
         .list_mount_rows()
         .into_iter()
@@ -250,7 +248,6 @@ fn click_non_row_trust_block_area_deselects_via_sentinel() {
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings stage");
     };
-
     assert_eq!(settings.trust.selected, 0);
     assert_eq!(
         settings.focus_owner(),
@@ -281,7 +278,6 @@ fn hover_regions_topmost_first_matches_hit_test() {
         Some(&top.id)
     );
     assert_eq!(hover.hovered(), Some(&top.id));
-
     assert_eq!(
         hover.update(ratatui::layout::Position::new(50, 50), &regions),
         None

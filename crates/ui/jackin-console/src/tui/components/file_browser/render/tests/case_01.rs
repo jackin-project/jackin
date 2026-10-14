@@ -13,7 +13,6 @@ fn git_entries_render_with_git_suffix() {
     std::fs::create_dir(tmp.path().join("plain")).unwrap();
 
     let mut state = make_state_at(tmp.path().to_path_buf());
-
     state.list_state.select(Some(0));
 
     let backend = TestBackend::new(40, 10);
@@ -58,7 +57,6 @@ fn non_git_entry_renders_its_product_name() {
         .unwrap();
 
     let buffer = terminal.backend().buffer();
-
     let cell = &buffer[(3, 1)];
     assert_eq!(
         cell.symbol(),
@@ -191,7 +189,6 @@ fn git_entry_renders_product_name_and_marker() {
     std::fs::create_dir_all(repo.join(".git")).unwrap();
 
     let mut state = make_state_at(tmp.path().to_path_buf());
-
     state.list_state.select(None);
 
     let backend = TestBackend::new(40, 10);
@@ -203,7 +200,6 @@ fn git_entry_renders_product_name_and_marker() {
         .unwrap();
 
     let buffer = terminal.backend().buffer();
-
     let name_cell = &buffer[(3, 1)];
     assert_eq!(
         name_cell.symbol(),
@@ -211,7 +207,6 @@ fn git_entry_renders_product_name_and_marker() {
         "expected 'r' at name's first char, got {:?}",
         name_cell.symbol()
     );
-
     let paren_cell = &buffer[(9, 1)];
     assert_eq!(
         paren_cell.symbol(),

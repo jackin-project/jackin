@@ -5,7 +5,6 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-
 public struct UsageWindowSidebar: View {
     private enum Destination: Hashable {
         case overview
@@ -100,7 +99,6 @@ public struct UsageWindowSidebar: View {
     }
 }
 
-
 public struct UsageWindowDetail: View {
     @ObservedObject public var store: PresentationStore
 
@@ -181,7 +179,6 @@ public struct UsageWindowDetail: View {
         }
     }
 }
-
 
 struct UsageWindowDetailAccessory: View {
     @ObservedObject var store: PresentationStore

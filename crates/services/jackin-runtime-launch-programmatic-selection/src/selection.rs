@@ -98,7 +98,6 @@ fn replace_agent_default_launch(
     chosen_ids: &[String],
 ) -> anyhow::Result<()> {
     anyhow::ensure!(!chosen_ids.is_empty(), "launch selection cannot be empty");
-
     let inherited = jackin_config::resolve_launch(selected, workspace, role, None, None)?;
     let mut replaced = false;
     let mut launch = Vec::with_capacity(inherited.len() + chosen_ids.len());

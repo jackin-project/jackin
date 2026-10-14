@@ -77,9 +77,7 @@ pub fn render_footer(
     debug_mode: bool,
 ) {
     let instance = footer_instance(view);
-
     let debug_chip = debug_mode.then_some(run_id);
-
     #[expect(
         clippy::cast_precision_loss,
         reason = "documented residual allow; prefer expect when site is lint-true"

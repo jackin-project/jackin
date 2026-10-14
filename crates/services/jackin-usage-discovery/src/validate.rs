@@ -36,7 +36,6 @@ pub(crate) fn validate_usage_sources_with_reader(
         .into_iter()
         .map(|source| validate_source(source, env_resolver, &profile_reader))
         .collect();
-
     let mut strong = BTreeMap::<HostSurfaceId, BTreeSet<CanonicalAccountIdentity>>::new();
     for (surface, _, _, _, _, _, outcome) in &validated {
         if let ProfileValidation::Authenticated {
@@ -57,7 +56,6 @@ pub(crate) fn validate_usage_sources_with_reader(
     let (primary, attachable): (Vec<ValidatedSourceParts>, Vec<ValidatedSourceParts>) = validated
         .into_iter()
         .partition(|parts| !is_attachable_env_source(&parts.5, &parts.6));
-
     for parts in primary {
         accumulate_validated_source(parts, None, &mut diagnostics, &mut bindings, &mut accounts);
     }

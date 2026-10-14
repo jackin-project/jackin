@@ -134,7 +134,6 @@ where
         &instances,
         &credentials,
     )?;
-
     if let Err(error) = prewarm_sibling_auth_before_admission(
         paths,
         container_name,

@@ -101,7 +101,6 @@ fn print_root_help_banner() {
     if is_subcommand_help {
         return;
     }
-
     let interactive = std::io::stdout().is_terminal();
     match crossterm::terminal::size() {
         Ok((cols, rows))

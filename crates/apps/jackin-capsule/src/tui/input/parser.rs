@@ -8,7 +8,6 @@ use super::{
 #[derive(Debug)]
 pub struct InputParser {
     prefix: Option<u8>,
-
     palette_key: Option<u8>,
     state: State,
     seq: Vec<u8>,
@@ -26,7 +25,6 @@ pub(crate) enum State {
     X10Mouse,
     Osc,
     OtherEsc,
-
     Ss3,
 }
 
@@ -158,7 +156,6 @@ impl InputParser {
                             self.state = State::X10Mouse;
                             continue;
                         }
-
                         let seq = std::mem::take(&mut self.seq);
                         if seq == PASTE_START {
                             events.push(InputEvent::Data(seq));
@@ -219,7 +216,6 @@ impl InputParser {
             }
         }
         flush(&mut data, &mut events);
-
         events
     }
 

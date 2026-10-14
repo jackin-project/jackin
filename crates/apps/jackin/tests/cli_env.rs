@@ -143,7 +143,6 @@ fn config_env_set_with_comment() {
         .assert()
         .success();
     let contents = read_config(&env);
-
     let comment_pos = contents
         .find("# rotate quarterly")
         .unwrap_or_else(|| panic!("missing comment line:\n{contents}"));

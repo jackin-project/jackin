@@ -244,7 +244,6 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
 
     assert!(usage_height >= 7);
     assert_eq!(d.box_rect(50, 120).2, usage_height);
-
     assert!(d.body_scroll_axes(18, 120, None).vertical);
     assert!(!d.body_scroll_axes(50, 120, None).vertical);
 }

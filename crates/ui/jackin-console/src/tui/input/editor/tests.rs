@@ -71,12 +71,10 @@ fn dispatch_editor_top_level_preserves_precedence() {
         dispatch_editor_top_level(key(KeyCode::Enter), false),
         EditorTopLevelKeyPlan::CheckImmediateAction
     );
-
     assert_eq!(
         dispatch_editor_top_level(key(KeyCode::Char('z')), false),
         EditorTopLevelKeyPlan::CheckImmediateAction
     );
-
     assert_eq!(
         dispatch_editor_top_level(key(KeyCode::PageDown), false),
         EditorTopLevelKeyPlan::ContinueToTabActions

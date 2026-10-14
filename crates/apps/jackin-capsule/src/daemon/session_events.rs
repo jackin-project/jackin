@@ -17,12 +17,10 @@ pub(crate) async fn handle_session_event(mux: &mut Multiplexer, event: SessionEv
         SessionEvent::Output { session_id, data } => {
             let focused_id = mux.active_focused_id();
             let is_focused = Some(session_id) == focused_id;
-
             let mut to_emit: Vec<Vec<u8>> = Vec::new();
             let mut reassert_outer_terminal_title = false;
             if let Some(session) = mux.session_supervisor.sessions.get_mut(session_id) {
                 session.feed_pty(&data);
-
                 let drained = session.drain_passthrough();
                 if is_focused {
                     reassert_outer_terminal_title = !drained.is_empty();
@@ -35,7 +33,6 @@ pub(crate) async fn handle_session_event(mux: &mut Multiplexer, event: SessionEv
             if reassert_outer_terminal_title {
                 mux.client_registry.last_outer_terminal_title = None;
             }
-
             mux.invalidate(FullRedrawReason::PtyOutput);
         }
         SessionEvent::Exited {
@@ -53,7 +50,6 @@ pub(crate) async fn handle_session_event(mux: &mut Multiplexer, event: SessionEv
                     None => base,
                 });
             }
-
             if !mux.control.event_subscribers.is_empty()
                 && let Some(session) = mux.session_supervisor.sessions.get(session_id)
             {
@@ -66,10 +62,8 @@ pub(crate) async fn handle_session_event(mux: &mut Multiplexer, event: SessionEv
                     },
                 );
             }
-
             mux.remove_exited_session(session_id);
             mux.invalidate(session_exit_redraw_reason());
-
             if mux.no_live_sessions() && handle_last_session_exit(&mut *mux, reason).await {
                 return true;
             }

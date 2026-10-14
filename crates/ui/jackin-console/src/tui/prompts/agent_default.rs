@@ -6,9 +6,7 @@ use jackin_config::AppConfig;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentDefaultResolution {
     Launch(String),
-
     NoDefault,
-
     Invalid(String),
 }
 

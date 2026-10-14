@@ -13,7 +13,6 @@ const IPSET: &str = "jackin-allowed";
 #[derive(Debug, PartialEq, Eq)]
 enum Entry {
     Net(String),
-
     Domain(String),
 }
 

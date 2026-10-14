@@ -220,7 +220,6 @@ pub fn parse_opencode_usage(value: serde_json::Value, now: i64) -> Result<OpenCo
         }
         let reset_at = opencode_window_reset(window, now)
             .ok_or_else(|| format!("OpenCode {label} reset timestamp is invalid"))?;
-
         #[expect(
             clippy::cast_sign_loss,
             reason = "floored at 0.0 and clamped to 100.0 before cast"

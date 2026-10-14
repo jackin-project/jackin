@@ -13,19 +13,15 @@ const CONFIG_PATH: &str = "ratchet.toml";
 const RERUN: &str = "cargo xtask lint ratchet";
 
 pub(crate) const FILE_SIZE_FAMILIES: &[&str] = &["file-size-production", "file-size-test"];
-
 pub(crate) const TEST_LAYOUT_FAMILIES: &[&str] = &["test-layout"];
-
 pub(crate) const SUPPRESSION_FAMILIES: &[&str] = &["bare-allow-per-crate", "expect-per-lint-crate"];
 
 #[derive(Debug, Args)]
 pub(crate) struct LintRatchetArgs {
     #[command(flatten)]
     output: FormatArgs,
-
     #[arg(long)]
     print: Option<String>,
-
     #[arg(long = "only")]
     only: Vec<String>,
 }
@@ -274,7 +270,6 @@ fn check_families(
                         None => None,
                     };
                     let v = check_numeric_entry(measured_opt, *bound, cap);
-
                     let ceiling_only = is_ceiling_only(family, artifact_ceiling);
                     let msg = match v {
                         NumericVerdict::Ok => None,
@@ -719,7 +714,6 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
     let value: serde_json::Value = serde_json::from_str(&text)
         .with_context(|| format!("parsing measured volume at {}", artifact.display()))?;
     let mut out = BTreeMap::new();
-
     for key in [
         "default_mode_logs",
         "default_mode_spans",
@@ -738,7 +732,6 @@ fn measure_export_volume_measured(root: &Path) -> Result<BTreeMap<String, usize>
 
 fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
-
     let candidates = ["AGENTS.md", "crates/AGENTS.md", "CLAUDE.md"];
     for rel in candidates {
         let path = root.join(rel);
@@ -747,7 +740,6 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
             out.insert(rel.to_owned(), n);
         }
     }
-
     let crates_dir = root.join("crates");
     if crates_dir.is_dir() {
         for group in crate::fs_util::read_dir_sorted(&crates_dir)? {
@@ -808,7 +800,6 @@ fn junit_seconds_to_ms(raw: &str) -> u64 {
     };
     let mut ms_part = 0u64;
     let mut digits = frac.chars().filter(char::is_ascii_digit).take(3);
-
     if let Some(a) = digits.next() {
         ms_part += u64::from(a.to_digit(10).unwrap_or(0)) * 100;
     }
@@ -830,7 +821,6 @@ pub(crate) fn measure_suite_time(root: &Path) -> Result<BTreeMap<String, usize>>
     let total_ms = if let Some(path) = candidates.into_iter().find(|p| p.is_file()) {
         let text = fs::read_to_string(&path)
             .with_context(|| format!("reading suite junit at {}", path.display()))?;
-
         let mut total_ms: u64 = 0;
         for part in text.split("time=\"").skip(1) {
             let Some(end) = part.find('"') else {

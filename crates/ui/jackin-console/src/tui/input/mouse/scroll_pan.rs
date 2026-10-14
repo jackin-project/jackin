@@ -93,7 +93,6 @@ pub fn update_scroll_focus(
                 )
             };
             editor.apply_scroll_focus_plan(plan);
-
             let clicked_content =
                 plan.workspace_mounts_scroll_focused || plan.tab_content_scroll_focused;
             if clicked_content && editor.tab_bar_focused() {
@@ -109,7 +108,6 @@ pub fn update_scroll_focus(
             };
             let plan = settings_scroll_focus_plan(settings.active_tab, modal_open, in_content);
             settings.apply_scroll_focus_plan(plan);
-
             if in_content && settings.tab_bar_focused() {
                 settings.apply_tab_bar_focus_plan(settings_tab_bar_focus_plan(false));
             }

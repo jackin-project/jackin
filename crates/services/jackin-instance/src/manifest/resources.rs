@@ -7,11 +7,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DockerResources {
     pub role_container: String,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dind_container: Option<String>,
     pub network: String,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub certs_volume: Option<String>,
 }
@@ -26,9 +24,7 @@ pub struct DockerIdentity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppleContainerResources {
     pub container_name: String,
-
     pub role_image_ref: String,
-
     pub inner_docker_enabled: bool,
 }
 

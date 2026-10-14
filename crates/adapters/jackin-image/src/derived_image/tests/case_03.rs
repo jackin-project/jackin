@@ -36,7 +36,6 @@ fn claude_plugins_render_one_readable_run_layer() {
     );
     assert!(dockerfile.contains("    claude plugin install 'caveman'"));
     assert!(dockerfile.contains("    claude plugin install 'rtk'"));
-
     assert!(
         dockerfile
             .contains("(claude plugin marketplace add anthropics/claude-plugins-official || true)")

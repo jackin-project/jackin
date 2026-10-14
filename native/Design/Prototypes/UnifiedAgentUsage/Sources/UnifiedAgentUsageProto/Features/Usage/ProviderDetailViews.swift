@@ -20,10 +20,6 @@ struct ProviderDetailView: View {
     }
 }
 
-
-
-
-
 struct ProviderDetailSections: View {
     let store: ProtoStore
     let provider: ProtoProvider
@@ -290,8 +286,6 @@ struct ProviderDetailSections: View {
     }
 }
 
-
-
 private struct TechnicalPanel<Content: View>: View {
     let title: String
     let detail: String
@@ -393,11 +387,8 @@ private struct CompactLimitRow: View {
     }
 }
 
-
-
 struct LimitRowView: View {
     let window: ProtoQuotaWindow
-
     var identifierPrefix = "usage.limit"
 
     var body: some View {
@@ -453,8 +444,6 @@ struct LimitRowView: View {
         }
     }
 }
-
-
 
 private struct DetailFactItem: View {
     let icon: String

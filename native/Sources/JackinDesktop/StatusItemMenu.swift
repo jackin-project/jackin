@@ -4,17 +4,9 @@
 import AppKit
 import JackinUsageBridge
 
-
-
-
-
-
-
-
 @MainActor
 public final class StatusItemMenu: NSObject {
     private let router: StatusItemMenuRouter
-
     private let menu: NSMenu
 
     public init(router: StatusItemMenuRouter) {

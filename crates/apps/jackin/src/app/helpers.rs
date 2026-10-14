@@ -136,7 +136,6 @@ pub(super) fn render_workspace_show(
             },
         ),
     ];
-
     if workspace.keep_awake.enabled {
         info.push(("Keep Awake", "enabled (macOS only)"));
     }

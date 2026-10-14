@@ -808,7 +808,6 @@ fn quoted_value_end(bytes: &[u8], start: usize, state: &mut QuotedState) -> Opti
         }
         index += 1;
     }
-
     None
 }
 

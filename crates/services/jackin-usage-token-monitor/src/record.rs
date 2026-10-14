@@ -31,7 +31,6 @@ pub(crate) fn token_usage_delta(
                     .saturating_sub(previous.cache_write_tokens),
             ),
         Agent::Codex | Agent::Opencode | Agent::Grok => 0,
-
         Agent::Antigravity
         | Agent::Gemini
         | Agent::Cursor
@@ -82,7 +81,6 @@ pub(crate) const fn provider_name(agent: Agent) -> Option<schema::enums::GenAiPr
         Agent::Antigravity | Agent::Gemini => Some(GenAiProviderName::Google),
         Agent::Cursor => Some(GenAiProviderName::Cursor),
         Agent::Muse => Some(GenAiProviderName::Meta),
-
         Agent::Omp | Agent::Hermes => None,
     }
 }

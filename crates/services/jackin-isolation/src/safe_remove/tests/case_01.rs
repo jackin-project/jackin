@@ -126,7 +126,6 @@ fn contained_rejects_symlinked_suffix() {
     assert!(target.is_dir());
 
     let error = safe_remove_dir_contained(&root, &target).unwrap_err();
-
     assert!(
         error.to_string().starts_with("refusing to remove"),
         "{error}"

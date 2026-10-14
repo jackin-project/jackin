@@ -1,8 +1,3 @@
-
-
-
-
-
 import { useEffect, useState } from 'react';
 
 type Theme = 'dark' | 'light';
@@ -20,8 +15,6 @@ function readStoredTheme(): Theme | null {
 }
 
 function readRenderedTheme(): Theme {
-
-
   if (typeof document === 'undefined') return 'dark';
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }
@@ -30,7 +23,6 @@ function storeTheme(theme: Theme): void {
   try {
     if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, theme);
   } catch {
-
   }
 }
 
@@ -61,23 +53,12 @@ function onThemePick(theme: Theme): void {
 }
 
 export function ThemeToggle() {
-
-
-
-
   const [theme, setTheme] = useState<Theme>('dark');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-
-
-
     setTheme(readStoredTheme() ?? readRenderedTheme());
     setMounted(true);
-
-
-
-
 
     function onStorage(e: StorageEvent) {
       if (e.key === STORAGE_KEY && (e.newValue === 'light' || e.newValue === 'dark')) {

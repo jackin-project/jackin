@@ -25,7 +25,6 @@ pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_displa
         ),
         Span::raw(workdir_display.to_owned()),
     ])];
-
     let mut scroll = termrock::scroll::DialogScroll::default();
     frame.render_stateful_widget(
         termrock::widgets::Viewport::new(&lines, &theme)

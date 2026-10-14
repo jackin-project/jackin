@@ -33,7 +33,6 @@ pub(crate) const LANDLOCK_ABI_RESOLVE_UNIX: libc::c_long = 9;
 pub(crate) const TRAVERSE: u64 = ACCESS_EXECUTE;
 pub(crate) const READ_FILE_ONLY: u64 = ACCESS_EXECUTE | ACCESS_READ_FILE;
 pub(crate) const READ_ONLY: u64 = READ_FILE_ONLY | ACCESS_READ_DIR;
-
 pub(crate) const NULL_DEVICE: u64 = READ_FILE_ONLY | ACCESS_WRITE_FILE;
 pub(crate) const WRITABLE: u64 = ACCESS_WRITE_FILE
     | ACCESS_REMOVE_DIR

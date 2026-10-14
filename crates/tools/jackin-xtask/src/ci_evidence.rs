@@ -35,7 +35,6 @@ const TARGET_REPOSITORY_ID: u64 = 1_197_700_841;
 const WORKFLOW_CONTRACT_PATH: &str = ".github-gen/velnor-workflow.toml";
 const WORKFLOW_STATE_PATH: &str = ".github/ci/.github-actions-generator-state";
 const GENERATED_STATE_SCHEMA: u32 = 2;
-
 const GENERATED_STATE_GENERATOR: &str = "69";
 static WRITE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -272,7 +271,6 @@ pub(crate) struct AttemptEvidence {
     pub(crate) raw_observations: Vec<RawAttemptObservation>,
     pub(crate) runtime: RuntimeIdentity,
     pub(crate) evidence_urls: Vec<String>,
-
     pub(crate) first_observed_at: String,
 }
 
@@ -355,11 +353,8 @@ pub(crate) struct RollupFile {
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiEvidenceCommand {
     Run,
-
     RecordPush,
-
     Collect(CollectArgs),
-
     Rollup(RollupArgs),
 }
 
@@ -375,7 +370,6 @@ pub(crate) struct CollectArgs {
     branch: String,
     #[arg(long, default_value = "target/ci-evidence/attempts.json")]
     output: PathBuf,
-
     #[arg(long)]
     expected: Option<PathBuf>,
     #[arg(long, value_name = "PATH", action = clap::ArgAction::Append)]

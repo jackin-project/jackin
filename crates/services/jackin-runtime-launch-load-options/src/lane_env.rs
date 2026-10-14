@@ -4,11 +4,8 @@
 use jackin_core::{Agent, ReasoningEffort};
 
 pub const CODEX_LANE_MODEL_ENV: &str = jackin_core::CODEX_LANE_MODEL_ENV_NAME;
-
 pub const CODEX_LANE_EFFORT_ENV: &str = jackin_core::CODEX_LANE_EFFORT_ENV_NAME;
-
 pub const CLAUDE_MODEL_ENV: &str = jackin_core::CLAUDE_MODEL_ENV_NAME;
-
 pub const CLAUDE_EFFORT_ENV: &str = jackin_core::CLAUDE_EFFORT_ENV_NAME;
 
 #[must_use]
@@ -21,7 +18,6 @@ pub fn lane_agent_env(
     let (model_key, effort_key) = match agent {
         Agent::Codex => (CODEX_LANE_MODEL_ENV, CODEX_LANE_EFFORT_ENV),
         Agent::Claude => (CLAUDE_MODEL_ENV, CLAUDE_EFFORT_ENV),
-
         _ => return out,
     };
     if let Some(model) = model.map(str::trim).filter(|m| !m.is_empty()) {

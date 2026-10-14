@@ -108,7 +108,6 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
     }
 
     let mut copy_section = String::new();
-
     let mut final_commands = String::from(
         "install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g 0 /jackin/state /jackin/state/hooks",
     );
@@ -166,7 +165,6 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
         commands.push(' ');
         commands.push_str(&shell_quote(dir));
     }
-
     commands.push_str(
         "; do \\\n        if [ -d \"/home/agent/$dir\" ]; then \\\n            mkdir -p \"$(dirname \"/jackin/default-home/$dir\")\" \\\n            && mv \"/home/agent/$dir\" \"/jackin/default-home/$dir\" \\\n            && install -d -o agent -g 0 -m 0775 \"/home/agent/$dir\"; \\\n        fi; \\\n    done",
     );
@@ -215,7 +213,6 @@ fn render_runtime_home_writable_commands(source_hook_declared: bool) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentInstall<P> {
     Prefetched(P),
-
     ScriptFallback,
 }
 
@@ -234,7 +231,6 @@ fn render_claude_plugin_section(claude: Option<&ClaudeConfig>) -> String {
          USER agent\n",
     );
     out.push_str("RUN set -eu; \\\n");
-
     out.push_str("    (claude plugin marketplace add anthropics/claude-plugins-official || true)");
     for marketplace in &config.marketplaces {
         out.push_str("; \\\n    claude plugin marketplace add ");
@@ -251,7 +247,6 @@ fn render_claude_plugin_section(claude: Option<&ClaudeConfig>) -> String {
         out.push_str("; \\\n    claude plugin install ");
         out.push_str(&shell_quote(plugin));
     }
-
     out.push_str("; \\\n    rm -rf /home/agent/.claude/backups");
     out.push('\n');
     out.push_str("USER root\n");
@@ -421,9 +416,7 @@ fn apply_construct_image_override(contents: &str, override_image: &str) -> Strin
 pub fn create_derived_build_context(
     repo_dir: &Path,
     validated: &ValidatedRoleRepo,
-
     base_image_override: Option<&str>,
-
     jackin_capsule_host_path: Option<&str>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let supported = validated.manifest.supported_agents();
@@ -440,12 +433,9 @@ pub fn create_derived_build_context(
 pub fn create_derived_build_context_for_agents(
     repo_dir: &Path,
     validated: &ValidatedRoleRepo,
-
     base_image_override: Option<&str>,
-
     jackin_capsule_host_path: Option<&str>,
     agents_to_install: &[Agent],
-
     agent_installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
@@ -632,7 +622,6 @@ fn copy_declared_hook_files(
                 entry.path
             ))
         })?;
-
         let effective_src = if metadata.file_type().is_symlink() {
             let canonical_root = std::fs::canonicalize(repo_dir).map_err(|e| {
                 ImageError::msg(format!(

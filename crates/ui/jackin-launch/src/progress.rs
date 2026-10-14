@@ -30,7 +30,6 @@ pub struct LaunchProgress {
 
 enum Renderer {
     Rich(RichDriver),
-
     Done,
     Test,
 }
@@ -109,7 +108,6 @@ impl LaunchProgress {
         detail: impl Into<String>,
     ) {
         let detail = detail.into();
-
         let set_activity = matches!(status, StageStatus::Running);
         self.update_view(LaunchMessage::StageStatus {
             stage,
@@ -149,7 +147,6 @@ impl LaunchProgress {
             detail.as_deref().or(next_step.as_deref()),
         );
         self.diagnostics.error("launch_failed", &summary, None);
-
         if matches!(self.renderer, Renderer::Rich(_)) {
             loop {
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -173,7 +170,6 @@ impl LaunchProgress {
     pub fn finish(&mut self) {
         if let Renderer::Rich(driver) = &mut self.renderer {
             driver.stop_detached();
-
             self.host.set_rich_surface_active(false);
             self.renderer = Renderer::Done;
         }

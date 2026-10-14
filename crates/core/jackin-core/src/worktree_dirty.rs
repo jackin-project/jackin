@@ -9,9 +9,7 @@ use crate::runner::CommandRunner;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorktreeState {
     Clean,
-
     Dirty,
-
     Unpushed,
 }
 
@@ -25,7 +23,6 @@ impl WorktreeState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangedFile {
     pub status: char,
-
     pub path: String,
 }
 
@@ -132,7 +129,6 @@ pub async fn assess_worktree(
         if line.is_empty() {
             continue;
         }
-
         let mut parts = line.split('\t');
         let name = parts.next().unwrap_or("");
         let tip = parts.next().unwrap_or("").trim();

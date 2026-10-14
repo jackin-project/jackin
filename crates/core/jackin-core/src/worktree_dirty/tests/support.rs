@@ -53,7 +53,6 @@ impl CommandRunner for MockGit {
             "status" => Ok(self.porcelain.clone()),
             "for-each-ref" => Ok(self.for_each_ref.clone()),
             "rev-list" => Ok(self.rev_list.clone()),
-
             "symbolic-ref" => {
                 if self.symbolic_ref_ok {
                     Ok(String::new())

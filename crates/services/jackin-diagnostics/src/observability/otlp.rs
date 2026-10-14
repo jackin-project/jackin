@@ -283,7 +283,6 @@ static ACTIVATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 static PROVIDERS: std::sync::Mutex<Option<OtlpProviders>> = std::sync::Mutex::new(None);
 static PENDING_FLUSH_WORKERS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
     std::sync::Mutex::new(Vec::new());
-
 static TERMINAL_METER_LEASES: std::sync::Mutex<Vec<MeterInstallationLease>> =
     std::sync::Mutex::new(Vec::new());
 #[cfg(test)]
@@ -441,7 +440,6 @@ pub(super) fn base_endpoint() -> Option<String> {
 
 pub(super) fn endpoint_summary() -> Option<String> {
     let endpoints = endpoints()?;
-
     if let Some(base) = base_endpoint()
         && endpoints == OtlpEndpoints::from_base(&base)
     {
@@ -515,9 +513,7 @@ fn build_otlp_providers(
     ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
     validate_standard_env()?;
     let runtime = otel_runtime()?;
-
     let app_handle = tokio::runtime::Handle::try_current().ok();
-
     let runtime = runtime
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("telemetry runtime was not initialized"))?;
@@ -1180,7 +1176,6 @@ struct ProcessSnapshot {
 
 fn start_process_sampler(pid: sysinfo::Pid, cpu_count: f64) -> std::sync::Arc<ProcessSnapshot> {
     let snapshot = std::sync::Arc::new(ProcessSnapshot::default());
-
     #[cfg(not(miri))]
     {
         let weak = std::sync::Arc::downgrade(&snapshot);

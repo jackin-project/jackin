@@ -108,7 +108,6 @@ fn tree_entry_classification_routes_symlinks_away_from_mode_checks() {
     use nix::sys::stat::{SFlag, mode_t};
 
     let mode = |kind: SFlag, perm: mode_t| kind.bits() | perm;
-
     assert_eq!(
         classify_tree_entry_for_removal(mode(SFlag::S_IFLNK, 0o777)),
         TreeEntryKind::Symlink

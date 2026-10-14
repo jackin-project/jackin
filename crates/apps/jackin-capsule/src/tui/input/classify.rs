@@ -16,7 +16,6 @@ pub(crate) fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> CsiClassifica
     if seq == b"\x1b[O" {
         return CsiClassification::Event(InputEvent::FocusOut);
     }
-
     if let Some(rest) = seq
         .strip_prefix(b"\x1b[")
         .and_then(|body| body.strip_suffix(b"u"))
@@ -39,15 +38,12 @@ pub(crate) fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> CsiClassifica
                 });
         }
     }
-
     if matches!(seq.last(), Some(b't')) {
         return CsiClassification::Suppress;
     }
-
     if let Some((13, 2)) = parse_xterm_modify_other_keys(seq) {
         return CsiClassification::Event(InputEvent::Data(b"\x1b[13;2u".to_vec()));
     }
-
     if let Some((codepoint, modifier)) = parse_xterm_modify_other_keys(seq)
         && let Some(control) = csi_u_control_byte(codepoint, Some(modifier))
     {
@@ -56,7 +52,6 @@ pub(crate) fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> CsiClassifica
                 CsiClassification::Event(event)
             });
     }
-
     if let Some(rest) = seq.strip_prefix(b"\x1b[1;")
         && let Some(&final_byte) = rest.last()
         && matches!(final_byte, b'A' | b'B' | b'C' | b'D')
@@ -98,7 +93,6 @@ pub(crate) fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> CsiClassifica
             return CsiClassification::Event(InputEvent::Data(plain));
         }
     }
-
     if let Some(rest) = seq.strip_prefix(b"\x1b[<")
         && let Some(final_byte) = rest.last()
         && matches!(final_byte, b'M' | b'm')

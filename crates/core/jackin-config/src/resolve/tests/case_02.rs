@@ -137,7 +137,6 @@ fn resolve_heals_wiped_cache_mounts_end_to_end() {
             "jackin-config-heal-test-{}-{unique}",
             std::process::id()
         ));
-
     let _unused = std::fs::remove_dir_all(&cache_sandbox);
     let cargo_git = cache_sandbox.join("global/cargo/git");
     let gradle_properties = cache_sandbox.join("global/gradle/gradle.properties");
@@ -269,7 +268,6 @@ fn effective_default_launch_follows_scope_precedence() {
         effective_ids(&config, Some(&ws), "smith"),
         Some(vec!["claude-z".to_owned()])
     );
-
     assert_eq!(
         effective_ids(&config, None, "smith"),
         Some(vec!["claude-a".to_owned()])
@@ -287,7 +285,6 @@ fn effective_default_launch_follows_scope_precedence() {
         effective_ids(&config, Some(&ws), "smith"),
         Some(vec!["claude-a".to_owned()])
     );
-
     assert_eq!(
         effective_ids(&config, Some(&ws), "other"),
         Some(vec!["claude-z".to_owned()])

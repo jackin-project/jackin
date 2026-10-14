@@ -166,7 +166,6 @@ pub fn handle_prelude_modal(
             match create_prelude_text_input_dst_plan(outcome) {
                 CreatePreludeTextInputDstPlan::Commit(dst) => {
                     prelude.modal = None;
-
                     prelude.accept_mount_dst(dst, false);
                     prelude.wizard.next();
                     open_workdir_pick_from_pending_mount(prelude);
@@ -184,7 +183,6 @@ pub fn handle_prelude_modal(
             } else {
                 return PreludeModalOutcome::Continue;
             };
-
             match create_prelude_workdir_pick_plan(outcome, prelude.used_edit_dst) {
                 CreatePreludeWorkdirPickPlan::Commit(workdir) => {
                     prelude.modal = None;
@@ -223,7 +221,6 @@ pub fn handle_prelude_modal(
                 CreatePreludeTextInputNamePlan::Commit(name) => {
                     prelude.modal = None;
                     prelude.accept_name(name);
-
                     prelude.wizard.next();
                 }
                 CreatePreludeTextInputNamePlan::ReopenWorkdirPick => {

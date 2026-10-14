@@ -166,7 +166,6 @@ fn documented_delta_error_buckets_carry_no_percent() {
             }
         }
     }
-
     let auth_view = parity_view(&parity_auth_account());
     assert!(auth_view.buckets.is_empty());
     let error_view = parity_view(&parity_error_account());
@@ -281,7 +280,6 @@ fn parity_console_render_smoke_detail_scopes() {
             "work detail must contain {expected:?}:\n{text}"
         );
     }
-
     assert!(
         !text.contains("work-user"),
         "console detail must not invent a username row:\n{text}"

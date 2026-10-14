@@ -16,11 +16,7 @@ publish = false
 
 [features]
 default = []
-
-
 dhat-heap = ["dep:dhat"]
-
-
 codex-app-server-authority = ["jackin-agent-status/codex-app-server-authority"]
 
 [lib]
@@ -37,8 +33,6 @@ anyhow = { workspace = true }
 jackin-agent-status = { workspace = true }
 jackin-core = { workspace = true }
 jackin-tui = { workspace = true }
-
-
 jackin-diagnostics = { workspace = true }
 jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
@@ -53,8 +47,6 @@ crossterm = { workspace = true }
 portable-pty = { workspace = true }
 nix = { workspace = true, features = ["term", "signal", "process", "inotify"] }
 libc = "0.2"
-
-
 termpane = { workspace = true }
 url = { workspace = true }
 unicode-width = { workspace = true }
@@ -64,9 +56,6 @@ ratatui = { workspace = true }
 termrock = { workspace = true }
 hex = { workspace = true }
 dhat = { workspace = true, optional = true }
-
-
-
 tempfile = { workspace = true }
 uuid = { workspace = true }
 [build-dependencies]

@@ -72,9 +72,6 @@ const serverLoader = createServerFn({
       ? sectionSegment.charAt(0).toUpperCase() + sectionSegment.slice(1).replace(/-/g, ' ')
       : undefined
 
-
-
-
     return {
       path: page.path,
       markdownUrl: slugsToMarkdownPath(page.slugs).url,
@@ -137,20 +134,9 @@ function Page() {
       tree={pageTree}
       sidebar={{
         defaultOpenLevel: 2,
-
-
-
         tabMode: 'auto',
-
-
-
-
         tabs: [
           {
-
-
-
-
             title: 'jackin❯',
             description: 'Install, run, and operate jackin❯.',
             url: '/getting-started/why',

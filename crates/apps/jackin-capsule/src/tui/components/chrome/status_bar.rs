@@ -16,7 +16,6 @@ pub struct StatusBarWidget<'a> {
     pub prefix_mode: PrefixMode,
     pub hovered_tab: Option<usize>,
     pub menu_hovered: bool,
-
     pub focused: bool,
 }
 
@@ -26,7 +25,6 @@ impl StatusBarWidget<'_> {
         let style = tab_cell_style(cell.active, hovered);
         let bg = style.bg.unwrap_or(Color::Reset);
         let glyph_char = tab_glyph_char(cell.glyph);
-
         let content = format!(" {} {} ", cell.name, glyph_char);
         let x = area.x.saturating_add(cell.start_col0);
         buf.set_string(x, area.y, &content, style);

@@ -26,7 +26,6 @@ pub struct ZaiQuotaData {
         alias = "packageName"
     )]
     pub plan_name: Option<String>,
-
     pub level: Option<String>,
 }
 

@@ -209,7 +209,6 @@ impl Dialog {
                 summary, selected, ..
             } => {
                 use crate::tui::components::dialog::EXIT_DIRTY_ROWS;
-
                 let mut items: Vec<PickerItem> = summary
                     .iter()
                     .map(|line| PickerItem::Section(line.clone()))

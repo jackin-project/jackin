@@ -16,7 +16,6 @@ pub async fn resolve_supported_agents_for_console(
         .get(&selector.key())
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("unknown role selector {}", selector.key()))?;
-
     let cached = jackin_manifest::repo::CachedRepo::new(paths, selector);
     if cached.repo_dir.join(".git").is_dir() {
         match jackin_manifest::load_role_manifest(&cached.repo_dir) {

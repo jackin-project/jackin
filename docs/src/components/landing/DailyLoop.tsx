@@ -1,4 +1,3 @@
-
 import { loopFrames } from './loopData';
 
 export function DailyLoop() {

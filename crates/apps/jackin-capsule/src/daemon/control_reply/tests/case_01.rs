@@ -33,7 +33,6 @@ async fn exec_requester_closing_drops_inflight_command_before_next_stage() {
     });
     started_rx.await.expect("reach credential barrier");
     drop(reply_rx);
-
     continue_tx.send(()).expect("release credential barrier");
     tokio::time::timeout(std::time::Duration::from_secs(1), dropped_rx)
         .await
@@ -52,7 +51,6 @@ async fn exec_requester_departure_kills_running_command_and_descendant() {
     let dropped = CompletionDrop(Some(dropped_tx));
     PendingExecReply::new(reply_tx, None).spawn(async move {
         let _dropped = dropped;
-
         let request = jackin_process::ExecRequest::new(
             "sh",
             [

@@ -20,15 +20,12 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RestoreResolution {
     StartFresh,
-
     StartCurrentRoleWithHandle(ContainerHandle),
     RecreateCurrentRole(String),
-
     RecreateCurrentRoleWithHandle(ContainerHandle),
     RestoreCurrentRole(String),
     RecoverRelatedRole(String),
     RebuildRelatedRole(Box<InstanceManifest>),
-
     PurgeAndRestartFresh(String),
 }
 
@@ -60,13 +57,10 @@ pub fn admit_restore(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EarlyCurrentRestoreScan {
     NotRun,
-
     Scanned {
         agent: jackin_core::Agent,
-
         current: Option<RestoreResolution>,
     },
-
     ScannedUnselectedEmpty,
 }
 
@@ -405,7 +399,6 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<UnselectedCurrentRestoreResolution>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
-
     let candidates =
         matching_current_role_manifests(paths, workspace_name, workspace_label, workdir, role_key)?
             .into_iter()

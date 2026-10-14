@@ -67,14 +67,12 @@ pub const ACCOUNT_ROUTING_ENV_NAMES: &[&str] = &[
     "AMP_URL",
     "XAI_BASE_URL",
 ];
-
 pub fn account_env_names() -> impl Iterator<Item = &'static str> {
     crate::USAGE_CREDENTIAL_ENV_REGISTRY
         .iter()
         .map(|entry| entry.name)
         .chain(ACCOUNT_ROUTING_ENV_NAMES.iter().copied())
 }
-
 pub fn is_account_env(name: &str) -> bool {
     account_env_names().any(|owned| owned == name)
 }

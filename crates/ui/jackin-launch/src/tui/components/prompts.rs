@@ -198,7 +198,6 @@ impl PromptConfirm {
         match key.code {
             KeyCode::Char('y' | 'Y') => Outcome::Activated(true),
             KeyCode::Char('n' | 'N') => Outcome::Activated(false),
-
             KeyCode::Tab => self.state.select_next(&confirm_actions()),
             KeyCode::BackTab => self.state.select_previous(&confirm_actions()),
             _ => self.state.handle_key(&confirm_actions(), key.into()),
@@ -382,7 +381,6 @@ pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &mut PromptText, skippable
         .emphasis(PanelChrome::Focused);
     let inner = panel.inner(area);
     frame.render_widget(&panel, area);
-
     frame.render_stateful_widget(
         &TextInput::new(&input.label, &theme)
             .placeholder("")

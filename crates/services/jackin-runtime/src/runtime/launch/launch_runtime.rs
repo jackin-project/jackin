@@ -51,18 +51,14 @@ pub(crate) struct LaunchContext<'a, 'manifest> {
     pub(crate) profile: crate::runtime::docker_profile::DockerSecurityProfile,
     pub(crate) profile_source: crate::runtime::docker_profile::ProfileSource,
     pub(crate) grants: &'a crate::runtime::docker_profile::EffectiveGrants,
-
     pub(crate) github_env: &'a std::collections::BTreeMap<String, String>,
-
     pub(crate) paths: &'a JackinPaths,
     pub(crate) selected_image_refresh: Option<SelectedImageRefresh<'a>>,
     pub(crate) reuse_staleness_sentinel: Option<ReuseStalenessSentinel<'a>>,
     pub(crate) sidecar_prewarm_replenish: SidecarPrewarmReplenish,
     pub(crate) sibling_prewarm: SiblingPrewarm<'a>,
     pub(crate) sibling_auth_prewarm: SiblingAuthPrewarm<'a>,
-
     pub(crate) non_interactive: bool,
-
     pub(crate) account_revision: &'a super::account_identity::AccountConfigRevision,
     pub(crate) entry_claim: Option<&'a crate::runtime::universe::EntryClaim>,
 }
@@ -131,12 +127,11 @@ pub(crate) struct SiblingPrewarm<'a> {
     pub(crate) selected_image_reused: bool,
 }
 
+#[cfg(test)]
+pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::spawn_auth_prewarm_worker;
 pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::{
     SiblingAuthPrewarm, await_sibling_auth_prewarm, spawn_sibling_auth_prewarm,
 };
-
-#[cfg(test)]
-pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::spawn_auth_prewarm_worker;
 
 fn emit_isolation_decision(
     workspace: &crate::isolation::materialize::MaterializedWorkspace,
@@ -268,10 +263,8 @@ pub(crate) async fn launch_role_runtime(
     {
         jackin_diagnostics::emit_compact_line("warning", warning);
     }
-
     crate::runtime::docker_profile::validate_dind_grant_for_cgroup(grants.dind, cgroup_version)
         .map_err(|msg| anyhow::anyhow!(msg))?;
-
     if crate::runtime::docker_profile::dind_privileged(grants)
         && crate::runtime::docker_profile::drops_all_caps(*profile)
     {
@@ -282,7 +275,6 @@ pub(crate) async fn launch_role_runtime(
             ),
         );
     }
-
     let (apparmor_available, apparmor_layer) = if *debug {
         match runner
             .capture(
@@ -392,7 +384,6 @@ pub(crate) async fn launch_role_runtime(
     }
     let resource_flags = crate::runtime::docker_profile::resource_flags(grants);
     run_args.extend(resource_flags.iter().map(String::as_str));
-
     if *debug {
         let yes_no = |enabled: bool| if enabled { "yes" } else { "no" };
         jackin_diagnostics::emit_debug_line(
@@ -458,7 +449,6 @@ pub(crate) async fn launch_role_runtime(
             "launch",
             &format!("dind enabled={dind_enabled} mode={}", grants.dind),
         );
-
         jackin_diagnostics::emit_debug_line("launch", "host_socket_check passed=yes");
         jackin_diagnostics::emit_debug_line(
             "launch",
@@ -508,7 +498,6 @@ pub(crate) async fn launch_role_runtime(
     for env in &telemetry_envs {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
-
     let host_version_env = format!("JACKIN_HOST_VERSION={}", env!("JACKIN_VERSION"));
     run_args.extend_from_slice(&["-e", host_version_env.as_str()]);
 
@@ -533,7 +522,6 @@ pub(crate) async fn launch_role_runtime(
         jackin_core::JACKIN_ENV_NAME,
         jackin_core::JACKIN_ENV_VALUE
     ));
-
     let proxy_seen = resolved_env.vars.iter().any(|(k, _)| is_proxy_env_name(k));
     let upper_existing = resolved_env
         .vars
@@ -562,7 +550,6 @@ pub(crate) async fn launch_role_runtime(
     {
         env_strings.push(format!("GROK_DEPLOYMENT_KEY={value}"));
     }
-
     if dind_enabled && (proxy_seen || upper_existing.is_some() || lower_existing.is_some()) {
         let upper_value = upper_existing
             .or(lower_existing)
@@ -582,13 +569,10 @@ pub(crate) async fn launch_role_runtime(
         jackin_core::JACKIN_NETWORK_MODE_ENV_NAME,
         crate::runtime::docker_profile::network_grant_label(grants.network)
     ));
-
     if grants.sudo {
         env_strings.push(format!("{}=1", jackin_core::JACKIN_SUDO_ENV_NAME));
     }
-
     env_strings.extend(crate::runtime::docker_profile::readonly_home_env(grants));
-
     let capsule_otlp_safe = std::env::var("JACKIN_CAPSULE_OTLP_SAFE").as_deref() == Ok("1");
     let capsule_otlp_headers = std::env::var("JACKIN_CAPSULE_OTLP_HEADERS")
         .ok()
@@ -612,7 +596,6 @@ pub(crate) async fn launch_role_runtime(
     let container_otlp = (capsule_export == jackin_diagnostics::CapsuleExportCoverage::Enabled)
         .then(jackin_diagnostics::container_otlp)
         .flatten();
-
     if grants.network == crate::runtime::docker_profile::NetworkGrant::Allowlist {
         let github_hosts = if gh_token.is_some() {
             crate::runtime::docker_profile::github_allowlist_hosts(
@@ -641,7 +624,6 @@ pub(crate) async fn launch_role_runtime(
             crate::runtime::docker_profile::network_enforcement_label(grants)
         ));
     }
-
     if *debug {
         let agent_auth_mode = state.auth.for_agent(*agent).is_some();
         let session_contract = crate::runtime::docker_profile::format_session_contract(
@@ -722,7 +704,6 @@ pub(crate) async fn launch_role_runtime(
     }
     let image_label = format!("jackin.image={image}");
     run_args.extend_from_slice(&["--label", &image_label]);
-
     let mut capsule_config = (*capsule_config).clone();
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let prepared_usage_relay =
@@ -744,7 +725,6 @@ pub(crate) async fn launch_role_runtime(
     prepared_usage_relay.apply_to_launch_config(&mut capsule_config)?;
     let capsule_config_contents = super::capsule_config_contents(&capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-
     let extrausers_passwd = paths.jackin_home.join("extrausers").join("passwd");
     let extrausers_group = paths.jackin_home.join("extrausers").join("group");
     let extrausers_entries = if capsule_config.instance_identities.is_empty()
@@ -776,7 +756,6 @@ pub(crate) async fn launch_role_runtime(
     let extrausers_tmp = extrausers_passwd.with_file_name(format!("passwd.{container_name}.tmp"));
     let extrausers_group_tmp =
         extrausers_group.with_file_name(format!("group.{container_name}.tmp"));
-
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
     let extrausers_passwd_for_write = extrausers_passwd.clone();
@@ -827,7 +806,6 @@ pub(crate) async fn launch_role_runtime(
         },
     );
     prepare_socket_dir_result?;
-
     if !ctx.capsule_config.exec_bindings.is_empty() {
         drop(crate::exec_host::start_for_container(
             &ctx.paths.jackin_home,
@@ -837,7 +815,6 @@ pub(crate) async fn launch_role_runtime(
     }
     let socket_mount = crate::usage_relay::docker_runtime_mount(&socket_dir)?;
     run_args.extend_from_slice(&["-v", &socket_mount]);
-
     let extrausers_mounts = if extrausers_entries.is_some() {
         let passwd_mount = extrausers_passwd
             .to_str()
@@ -866,7 +843,6 @@ pub(crate) async fn launch_role_runtime(
         );
     }
     run_args.push(image);
-
     run_args.push(initial_daemon_argv(*agent, &capsule_config));
 
     let mut container_env = host_env_transport.environment().to_vec();
@@ -1128,7 +1104,6 @@ pub(crate) async fn launch_role_runtime(
     if let Some(progress) = steps.progress_mut() {
         progress.settle_stage_visual().await;
     }
-
     steps.finish_progress();
     if let Some(refresh) = selected_image_refresh {
         crate::runtime::image::spawn_selected_image_refresh(
@@ -1199,7 +1174,6 @@ pub(crate) async fn launch_role_runtime(
             None,
         )
         .await;
-
     eprintln!();
     if let Err(err) = session_result {
         if err.is::<super::super::attach::ReconnectAdmissionFailure>()
@@ -1207,7 +1181,6 @@ pub(crate) async fn launch_role_runtime(
         {
             return Err(err);
         }
-
         let inspect = docker.inspect_container_by_id(&role_container).await;
         if let Some(diag) = super::diagnose_with_state_by_id(
             runner,
@@ -1222,7 +1195,6 @@ pub(crate) async fn launch_role_runtime(
         if !super::is_known_socket_close(&err, &inspect) {
             return Err(err);
         }
-
         let attach_detail = attach_failure_error(container_name, &err);
         if *debug {
             jackin_diagnostics::emit_debug_line(

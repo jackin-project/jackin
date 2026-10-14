@@ -115,7 +115,6 @@ fn popup_height(area: Rect, rows: &[FailurePopupRow]) -> u16 {
                 .max(1)
         })
         .sum::<usize>();
-
     u16::try_from(message_rows.saturating_add(detail_rows).saturating_add(5))
         .unwrap_or(u16::MAX)
         .clamp(7.min(area.height), area.height.saturating_sub(2).max(1))

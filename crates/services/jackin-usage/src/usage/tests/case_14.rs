@@ -20,7 +20,6 @@ fn codex_wham_relative_reset_resolves_against_now() {
         .expect("session bucket");
     assert_eq!(session.remaining_percent, Some(75));
     assert_eq!(session.resets_at, Some(1_781_185_560 + 3_600));
-
     let weekly = buckets
         .iter()
         .find(|bucket| bucket.status_slot == Some(StatusSlot::Weekly))

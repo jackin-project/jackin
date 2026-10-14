@@ -145,7 +145,6 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
         );
         return;
     }
-
     let displays: Vec<String> = state
         .choices
         .iter()

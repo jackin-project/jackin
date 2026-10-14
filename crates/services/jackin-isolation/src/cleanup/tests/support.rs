@@ -81,7 +81,6 @@ impl CommandRunner for VerifyFailureRunner {
         opts: &jackin_core::RunOptions,
     ) -> anyhow::Result<String> {
         self.captures += 1;
-
         if self.captures == 4 {
             anyhow::bail!("verification capture failed");
         }

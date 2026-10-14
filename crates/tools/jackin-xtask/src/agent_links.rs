@@ -9,7 +9,6 @@ use crate::report::{self, FormatArgs};
 
 const TARGET_BASENAME: &str = "AGENTS.md";
 const SKIP_DIRS: &[&str] = &[".git", "target", "node_modules"];
-
 const CONVENTION_DOC: &str = "AGENTS.md";
 
 #[derive(Args, Debug)]
@@ -92,7 +91,6 @@ fn check_file(root: &Path, path: &Path, problems: &mut Vec<String>) -> Result<()
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let is_agents = name == "AGENTS.md";
     let is_convention_doc = path == root.join(CONVENTION_DOC);
-
     let check_mentions = is_agents && !is_convention_doc;
     let mut in_fence = false;
     for (idx, raw) in text.lines().enumerate() {
@@ -180,7 +178,6 @@ fn link_targets(line: &str) -> Vec<String> {
         }
         i += 1;
     }
-
     let trimmed = line.trim_start();
     if let Some(rest) = trimmed.strip_prefix('[')
         && let Some(close) = rest.find("]:")

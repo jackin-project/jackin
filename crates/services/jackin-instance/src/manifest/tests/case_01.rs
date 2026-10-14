@@ -50,7 +50,6 @@ fn manifest_v3_backend_roundtrips_and_omitted_backend_deserializes() {
             inner_docker_enabled: false,
         }),
     );
-
     let json = serde_json::to_string(&manifest).unwrap();
     assert_eq!(
         serde_json::from_str::<InstanceManifest>(&json).unwrap(),
@@ -320,7 +319,6 @@ fn index_update_replaces_existing_entry() {
 fn mark_many_purged_empty_slice_is_noop() {
     let data_dir = tempdir().unwrap();
     InstanceIndex::mark_many_purged(data_dir.path(), &[]).unwrap();
-
     assert!(!data_dir.path().join(INSTANCE_INDEX_FILE).exists());
 }
 
@@ -365,7 +363,6 @@ fn mark_many_purged_is_idempotent() {
     InstanceIndex::update_manifest(data_dir.path(), &manifest).unwrap();
 
     InstanceIndex::mark_many_purged(data_dir.path(), &[manifest.container_base.as_str()]).unwrap();
-
     InstanceIndex::mark_many_purged(data_dir.path(), &[manifest.container_base.as_str()]).unwrap();
 
     let index = InstanceIndex::read(data_dir.path()).unwrap();

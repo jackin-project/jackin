@@ -12,9 +12,7 @@ use jackin_usage_host_presentation::HostSurfaceId;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForwardedUsageAccount {
     pub surface_id: String,
-
     pub capability_id: String,
-
     pub account_label: Option<String>,
 }
 
@@ -37,27 +35,21 @@ impl std::fmt::Debug for OpaqueCredentialHandle {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderCredentialEnvOutcome {
     Resolved(OpaqueCredentialHandle),
-
     Missing,
-
     Denied,
-
     Malformed,
-
     InteractionRequired,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderCredentialEnvResolution {
     pub key: String,
-
     pub outcome: ProviderCredentialEnvOutcome,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderCredentialSourceMaterial {
     pub source: UsageCredentialSourceIdentity,
-
     pub material_fingerprint: String,
 }
 
@@ -103,16 +95,11 @@ pub trait ProviderCredentialEnvResolver: Send + Sync {
 pub enum ProviderCredentialIdentityOutcome {
     Authenticated {
         provider_id: Option<String>,
-
         account_label: Option<String>,
     },
-
     Anonymous,
-
     Missing,
-
     Denied,
-
     Malformed,
 }
 
@@ -120,29 +107,20 @@ pub enum ProviderCredentialIdentityOutcome {
 pub enum ProviderCredentialRefreshOutcome {
     Snapshot {
         view: Box<FocusedUsageView>,
-
         rate_limit: Option<jackin_usage_provider_core::ProviderRateLimit>,
-
         provider_error: Option<ProviderFailureMetadata>,
     },
-
     Missing,
-
     Denied,
-
     Malformed,
-
     InteractionRequired,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UsageCredentialKind {
     Profile,
-
     ApiKey,
-
     OAuthToken,
-
     ForwardedCapability,
 }
 

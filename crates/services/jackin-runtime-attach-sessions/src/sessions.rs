@@ -59,7 +59,6 @@ pub fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> 
             if trimmed.is_empty() || !trimmed.starts_with('[') {
                 return None;
             }
-
             let after_id = trimmed.split(']').nth(1)?.trim_start();
             let head = after_id
                 .rfind(" state=")

@@ -102,7 +102,6 @@ fn locked_tmpfs_is_minimal_subset() {
         tmpfs_values.contains(&"/run"),
         "locked must have /run tmpfs"
     );
-
     for path in TMPFS_PATHS_HARDENED_EXTRA {
         assert!(
             !tmpfs_values.contains(path),
@@ -215,7 +214,6 @@ fn grant_layering_workspace_wins_over_config() {
         Some(&config_grants),
         Some(&workspace_grants),
     );
-
     assert_eq!(grants.memory_bytes, Some(16 * GB));
 
     assert_eq!(grants.cpus, Some(4.0_f64.max(2.0)));

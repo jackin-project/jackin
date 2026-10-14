@@ -22,7 +22,6 @@ fn claude_hook_installer_repairs_stale_async_flag() {
     let home = dir.path().to_path_buf();
     let claude_dir = home.join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
-
     let bad_settings = serde_json::json!({
         "hooks": {
             "PermissionRequest": [{"matcher":"","hooks":[{"type":"command","command":"/jackin/runtime/agent-status/hooks/claude/report-hook.sh","async":true}]}]
@@ -33,9 +32,7 @@ fn claude_hook_installer_repairs_stale_async_flag() {
         serde_json::to_string_pretty(&bad_settings).unwrap(),
     )
     .unwrap();
-
     assert!(!installer().verify(&home, &home.join(".claude")));
-
     installer().install(&home, &home.join(".claude")).unwrap();
     assert!(installer().verify(&home, &home.join(".claude")));
 }
@@ -225,7 +222,6 @@ fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
     let home = dir.path().to_path_buf();
     let codex_dir = home.join(".codex");
     fs::create_dir_all(&codex_dir).unwrap();
-
     let existing = serde_json::json!({
         "hooks": {
             "UserPromptSubmit": [{ "command": "/role/own-hook.sh" }],
@@ -245,7 +241,6 @@ fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
     assert!(ups.iter().any(|e| e["command"]
         == "/jackin/runtime/agent-status/hooks/codex/report-hook.sh --event UserPromptSubmit"));
     assert_eq!(val["hooks"]["CustomEvent"][0]["command"], "/role/custom.sh");
-
     CodexHookInstaller::default()
         .install(&home, &home.join(".codex"))
         .unwrap();
@@ -286,7 +281,6 @@ fn opencode_install_preserves_existing_plugins() {
             .iter()
             .any(|p| p.as_str().unwrap().contains("opencode"))
     );
-
     PluginInstaller::opencode().install(&home, &home).unwrap();
     let val2: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -360,14 +354,11 @@ fn claude_install_bails_on_malformed_settings_and_preserves_it() {
     let claude_dir = home.join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
     let settings = claude_dir.join("settings.json");
-
     fs::write(&settings, "{ not valid json").unwrap();
 
     installer()
         .install(&home, &home.join(".claude"))
         .unwrap_err();
-
     assert_eq!(fs::read_to_string(&settings).unwrap(), "{ not valid json");
-
     assert!(!installer().verify(&home, &home.join(".claude")));
 }

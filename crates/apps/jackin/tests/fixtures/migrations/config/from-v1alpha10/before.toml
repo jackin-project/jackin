@@ -1,5 +1,4 @@
 version = "v1alpha10"
-
 [accounts.personal]
 name = "Personal"
 provider = "anthropic"

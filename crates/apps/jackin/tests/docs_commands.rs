@@ -113,7 +113,6 @@ fn extract_invocations(mdx: &str) -> Vec<(usize, String)> {
                 i += 1;
                 break;
             }
-
             let start_line = i + 1;
             let mut joined = fence_line.to_owned();
             while joined.trim_end().ends_with('\\') {
@@ -142,12 +141,10 @@ fn match_jackin_line(line: &str) -> Option<String> {
     if let Some(rest) = s.strip_prefix("$ ") {
         s = rest.trim_start();
     }
-
     loop {
         if s.is_empty() {
             return None;
         }
-
         if let Some(eq) = s.find('=') {
             let name = &s[..eq];
             if !name.is_empty()
@@ -175,18 +172,15 @@ fn match_jackin_line(line: &str) -> Option<String> {
         }
         break;
     }
-
     if !s.starts_with("jackin ") {
         if s == "jackin" {
             return Some("jackin".to_owned());
         }
         return None;
     }
-
     if s.starts_with("jackin-") || s.starts_with("jackin❯") {
         return None;
     }
-
     let after = s["jackin ".len()..].trim_start();
     if after.is_empty() {
     } else {
@@ -202,13 +196,11 @@ fn match_jackin_line(line: &str) -> Option<String> {
     if is_compound_shell(s) {
         return None;
     }
-
     let s = if let Some(idx) = s.find(" #") {
         s[..idx].trim_end()
     } else {
         s.trim_end()
     };
-
     let s = strip_trailing_help_prose(s);
     Some(s.to_owned())
 }
@@ -217,11 +209,9 @@ fn strip_trailing_help_prose(s: &str) -> &str {
     if let Some(idx) = s.find("  ") {
         let head = s[..idx].trim_end();
         let tail = s[idx..].trim_start();
-
         if tail.starts_with('-') || tail.starts_with('<') || tail.starts_with('[') {
             return s;
         }
-
         if !tail.is_empty() && tail.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
             return head;
         }
@@ -231,12 +221,9 @@ fn strip_trailing_help_prose(s: &str) -> &str {
 
 fn expand_synopsis_notation(cmd: &str) -> String {
     let mut s = cmd.to_owned();
-
     loop {
         let before = s.clone();
-
         s = s.replace("[OPTIONS]", "").replace("[options]", "");
-
         if let Some(open) = s.rfind('[')
             && let Some(rel_close) = s[open..].find(']')
         {
@@ -276,12 +263,10 @@ fn normalize_to_tokens(cmd: &str) -> Vec<String> {
         if tok.is_empty() {
             continue;
         }
-
         if tok.starts_with('<') && tok.ends_with('>') && tok.len() >= 2 {
             normalized.push("x".to_owned());
             continue;
         }
-
         if tok.starts_with('~') || tok.starts_with('$') || tok.contains('$') {
             normalized.push("x".to_owned());
             continue;
@@ -455,7 +440,6 @@ fn docs_command_invocations_parse_against_clap() {
         let text = fs::read_to_string(path).unwrap_or_default();
         for line in text.lines() {
             let t = line.trim_start().trim_start_matches("$ ").trim_start();
-
             let _ = t;
         }
         let rel = rel_docs_path(path);
@@ -488,7 +472,6 @@ fn docs_command_invocations_parse_against_clap() {
                 }
             }
         }
-
         skipped_compound += count_compound_skips(&text);
     }
 
@@ -565,7 +548,6 @@ fn count_compound_skips(mdx: &str) -> usize {
             if let Some(rest) = s.strip_prefix("$ ") {
                 s = rest.trim_start();
             }
-
             while let Some(eq) = s.find('=') {
                 let name = &s[..eq];
                 if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')

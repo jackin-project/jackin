@@ -332,7 +332,6 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
     let state_dir = paths.data_dir.join(&manifest.container_base);
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-
     let docker = jackin_test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             jackin_docker::docker_client::ContainerState::Running,

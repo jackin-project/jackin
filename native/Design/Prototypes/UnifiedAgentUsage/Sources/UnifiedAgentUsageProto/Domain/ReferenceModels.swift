@@ -1,9 +1,6 @@
 import SwiftUI
 
 
-
-
-
 enum ProtoState: String, Sendable {
     case current, warning, danger, depleted, stale, refreshing, unavailable
     case needsLogin, needsSecret, unsupported, rateLimited
@@ -61,16 +58,9 @@ struct ProtoQuotaWindow: Identifiable, Sendable {
     var supplementalValue: String? = nil
     let meter: Int?
     let state: ProtoState
-
-
     var pace: String? = nil
-
-
     var notStarted = false
     var id: String { stableID }
-
-
-
 
     var isLongRange: Bool { category == .longRange }
 
@@ -85,8 +75,6 @@ struct ProtoQuotaWindow: Identifiable, Sendable {
         return parts.joined(separator: ", ")
     }
 }
-
-
 
 enum ProtoQuotaCategory: Int, Sendable {
     case longRange
@@ -136,11 +124,9 @@ struct ProtoProvider: Identifiable, Sendable {
     var summaryRemainingLeft: String? { summaryPercent.map { "\($0)% left" } }
     var summaryRemainingUsed: String? { summaryPercent.map { "\(100 - $0)% used" } }
 
-
     var iconKey: String { key }
     var fallbackGlyph: String { String(name.prefix(1)) }
     var isRefreshing: Bool { state == .refreshing }
-
 
     var activityLabel: String {
         if let activityText { return activityText }
@@ -157,15 +143,11 @@ struct ProtoProvider: Identifiable, Sendable {
         }
     }
 
-
     var compactResetLabel: String? {
         guard let summaryReset else { return nil }
         guard summaryReset.hasPrefix("Resets in ") else { return nil }
         return String(summaryReset.dropFirst("Resets in ".count))
     }
-
-
-
 
     var summaryWindow: ProtoQuotaWindow? {
         let longRange = accounts.flatMap(\.windows).filter(\.isLongRange)

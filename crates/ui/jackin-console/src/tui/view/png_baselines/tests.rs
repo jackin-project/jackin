@@ -64,11 +64,9 @@ fn png_baselines_compare_mode_never_writes() {
     let cases = inventory();
     let case = &cases[0];
     let rendered = render_case(case);
-
     let err =
         check_case(case, dir.path(), false, &rendered).expect_err("missing baseline must fail");
     assert!(err.contains(case.id), "error names the screen: {err}");
-
     assert!(
         fs::read_dir(dir.path()).unwrap().next().is_none(),
         "compare mode must never write"

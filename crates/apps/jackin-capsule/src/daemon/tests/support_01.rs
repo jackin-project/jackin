@@ -235,7 +235,6 @@ pub(super) fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer
     mux.session_supervisor
         .tabs
         .push(Tab::new_single("Shell", 1, "test"));
-
     drop(mux.compose_pending_frame());
     mux
 }

@@ -8,11 +8,8 @@ use zeroize::Zeroizing;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaudeKeychainPolicyError {
     StateUnavailable,
-
     DisableFailed,
-
     ScopeConflict,
-
     InvalidService,
 }
 
@@ -124,7 +121,6 @@ impl Drop for ClaudeUnattendedKeychainGuard {
         let mut state = unattended_keychain_guard_state()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-
         release_unattended_keychain_scope(&mut state);
     }
 }
@@ -137,7 +133,6 @@ pub enum ClaudeKeychainRead {
     Payload { json: Zeroizing<String> },
     Denied,
     Missing,
-
     ConsentRequired,
 }
 

@@ -304,7 +304,6 @@ fn plan_collapse_handles_transitive_chain() {
     let plan = plan_collapse(&mounts, &[0, 1, 2]).unwrap();
     assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
     assert_eq!(plan.removed.len(), 2);
-
     for rem in &plan.removed {
         assert_eq!(rem.covered_by, mk("/a", "/a", false));
     }

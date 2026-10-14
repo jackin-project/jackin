@@ -91,7 +91,6 @@ pub fn account_for_view(
             }]
         })
         .unwrap_or_default();
-
     let fallback_identity_kind = UsageIdentityKindV1::UnverifiedHandle;
     UsageAccountV1 {
         canonical_account_id: view.capability.account_id.clone(),

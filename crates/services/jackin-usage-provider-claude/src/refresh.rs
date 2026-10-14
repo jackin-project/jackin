@@ -14,7 +14,6 @@ pub struct ClaudeResolved {
     pub account_email: Option<String>,
     pub organization_type: Option<String>,
     pub credential_origin: String,
-
     pub is_anonymous: bool,
 }
 

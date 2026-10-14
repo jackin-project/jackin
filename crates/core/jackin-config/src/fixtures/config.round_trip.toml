@@ -5,7 +5,6 @@ version = "v1alpha3"
 
 
 
-
 [accounts.work]
 name = "Work Claude"
 provider = "anthropic"
@@ -13,7 +12,6 @@ provider = "anthropic"
 type = "profile"
 agent = "claude"
 directory = "/home/operator/.claude-work"
-
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
@@ -23,11 +21,9 @@ trusted = true
 git = "https://github.com/jackin-project/jackin-the-architect.git"
 trusted = true
 
-
 [roles."chainargos/agent-brown"]
 git = "git@github.com:chainargos/jackin-agent-brown.git"
 trusted = true
-
 
 [workspaces.prod]
 workdir = "/workspace/prod"
@@ -39,22 +35,16 @@ accounts = ["work"]
 claude = "work"
 
 [workspaces.prod.env]
-
 API_TOKEN = "op://Personal/api/token"
 
-
 GITHUB_TOKEN = "$GITHUB_TOKEN"
-
 
 [workspaces.prod.roles.agent-smith.account_bindings]
 claude = "work"
 
 [workspaces.prod.roles.agent-smith.env]
-
 ANTHROPIC_API_KEY = { op = "op://Work/Anthropic/api-key", path = "Work/Anthropic/api-key" }
-
 OPENAI_API_KEY = "$OPENAI_API_KEY"
-
 
 [workspaces.playground]
 workdir = "/tmp/playground"

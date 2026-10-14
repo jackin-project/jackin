@@ -29,16 +29,13 @@ fn covers(parent: &MountConfig, child: &MountConfig) -> bool {
 #[derive(Debug)]
 pub struct WorkspaceCreatePlan {
     pub final_mounts: Vec<MountConfig>,
-
     pub collapsed: Vec<Removal>,
 }
 
 #[derive(Debug)]
 pub struct WorkspaceEditPlan {
     pub effective_removals: Vec<String>,
-
     pub edit_driven_collapses: Vec<Removal>,
-
     pub pre_existing_collapses: Vec<Removal>,
 }
 
@@ -136,14 +133,12 @@ pub fn apply_isolation_overrides(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollapsePlan {
     pub kept: Vec<MountConfig>,
-
     pub removed: Vec<Removal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removal {
     pub child: MountConfig,
-
     pub covered_by: MountConfig,
 }
 
@@ -160,10 +155,8 @@ pub enum CollapseError {
     )]
     ReadonlyMismatch {
         parent: MountConfig,
-
         child: MountConfig,
     },
-
     #[error(
         "mount {child_src} is already covered by existing mount {parent_src}. \
          Nothing to add.",
@@ -172,10 +165,8 @@ pub enum CollapseError {
     )]
     ChildUnderExistingParent {
         parent: MountConfig,
-
         child: MountConfig,
     },
-
     #[error("workspace mount planner invariant failed: {message}")]
     PlannerInvariant { message: &'static str },
 }

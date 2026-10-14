@@ -13,7 +13,6 @@ pub struct CodexOAuthCredentials {
     pub access_token: String,
     pub account_id: Option<String>,
     pub account_label: Option<String>,
-
     pub refresh_token: Option<String>,
 }
 
@@ -38,7 +37,6 @@ pub fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexOAuthCre
             access_token: api_key.trim().to_owned(),
             account_id: None,
             account_label: Some("OPENAI_API_KEY".to_owned()),
-
             refresh_token: None,
         });
     }

@@ -52,7 +52,6 @@ pub(crate) fn project_account(
         provenance_count: u32::try_from(entry.discovery_provenance.len()).unwrap_or(u32::MAX),
         windows,
         metric_groups,
-
         credential_expires_at_epoch: None,
         issues: view_issues(&entry.view),
     })

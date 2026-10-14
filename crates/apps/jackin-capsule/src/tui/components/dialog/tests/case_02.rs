@@ -154,7 +154,6 @@ fn container_info_enter_copies_container_name() {
 fn container_info_click_on_id_row_copies_container_name() {
     let mut d = container_info_fixture();
     let (row, col, _, _) = d.box_rect(40, 100);
-
     match d.handle_click(row + 2, col + 22, 40, 100, None) {
         DialogAction::CopyToClipboard(payload) => {
             assert_eq!(payload, "jk-abc123-thearchitect");

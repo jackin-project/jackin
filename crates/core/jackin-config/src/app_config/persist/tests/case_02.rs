@@ -8,7 +8,6 @@ fn load_preserves_legacy_workspace_op_account_onto_refs() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-
     std::fs::write(
         &paths.config_file,
         r#"[workspaces.prod]
@@ -28,7 +27,6 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
     AppConfig::load_or_init(&paths).unwrap();
 
     let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
-
     assert!(
         workspace.contains(r#"account = "WORKACCT""#),
         "legacy op_account must be stamped onto the ref:\n{workspace}"

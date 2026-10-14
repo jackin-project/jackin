@@ -40,7 +40,6 @@ pub(crate) enum PaneScreen<'a> {
 #[derive(Clone)]
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
-
     pub(crate) status_plan: &'a crate::tui::components::status_bar::StatusBarPlan,
     pub(crate) term_cols: u16,
     pub(crate) term_rows: u16,
@@ -56,7 +55,6 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) menu_hovered: bool,
     pub(crate) selection: Option<crate::tui::selection::SelectionState>,
     pub(crate) selection_copied: bool,
-
     pub(crate) scrollbars: &'a [(u64, usize, usize)],
     pub(crate) branch: Option<&'a str>,
     pub(crate) usage_status_label: Option<&'a str>,
@@ -68,11 +66,8 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) main_scroll_axes: termrock::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
     pub(crate) dialog_hint_spans: Option<&'a [termrock::widgets::HintSpan<'a>]>,
-
     pub(crate) palette_key: u8,
-
     pub(crate) clipboard_image_notice: Option<&'a str>,
-
     pub(crate) link_hover_notice: Option<&'a str>,
 }
 
@@ -93,7 +88,6 @@ fn render_link_hover_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_
 
 fn render_notice_toast(frame: &mut Frame<'_>, area: RatatuiRect, message: &str) {
     let theme = termrock::style::DesignSystem::default();
-
     frame.render_widget(
         termrock::widgets::Toast::new(&theme, message, termrock::widgets::Severity::Success)
             .anchor(termrock::widgets::Anchor::BottomLeft)
@@ -112,7 +106,6 @@ fn apply_tab_codename_tooltip(
     let Some(cell) = plan.cells.get(hovered_idx) else {
         return;
     };
-
     let tooltip_row = crate::tui::components::status_bar::STATUS_BAR_ROWS;
     let pill = format!(" {codename} ");
     buf.set_string(

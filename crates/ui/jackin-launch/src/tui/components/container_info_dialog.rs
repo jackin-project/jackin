@@ -51,7 +51,6 @@ pub fn launch_container_info_state(
     jackin_version: &'static str,
 ) -> ContainerInfoState {
     let identity = view.identity.as_ref();
-
     let info = DebugInfo {
         jackin_version: Some(jackin_version.to_owned()),
         container_id: Some(

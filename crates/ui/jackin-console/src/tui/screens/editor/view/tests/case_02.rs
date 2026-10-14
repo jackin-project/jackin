@@ -37,7 +37,6 @@ fn auth_lines_render_kind_mode_source_and_sentinel() {
         "unset  (CLAUDE_API_KEY for api-key)"
     );
     assert_eq!(lines[3].spans[1].content.as_ref(), " Role: alpha");
-
     assert_eq!(lines[4].spans[1].content.as_ref(), "+ Override for a role");
     assert_eq!(editor_auth_line_width(&rows[0]), padded_width("  Claude"));
     assert_eq!(

@@ -44,12 +44,10 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         config.roles.get("agent-smith").unwrap().git,
         "https://github.com/jackin-project/jackin-agent-smith.git"
     );
-
     assert_eq!(
         config.roles.get("the-architect").unwrap().git,
         "https://github.com/jackin-project/jackin-the-architect.git"
     );
-
     assert_eq!(
         config.roles.get("chainargos/agent-brown").unwrap().git,
         "git@github.com:chainargos/jackin-agent-brown.git"
@@ -178,7 +176,6 @@ fn trusted_flag_round_trips_through_toml() {
 
     config.resolve_role_source(&selector).unwrap();
     config.trust_agent("chainargos/the-architect");
-
     let contents = toml::to_string_pretty(&config).unwrap();
     std::fs::write(&paths.config_file, &contents).unwrap();
 
@@ -325,7 +322,6 @@ fn build_github_env_layers_preserves_distinct_keys_across_layers() {
         ..AppConfig::default()
     };
     let merged = build_github_env_layers(&cfg, Some(&wn("proj")), "smith");
-
     assert_eq!(merged.len(), 3);
     assert!(merged.contains_key("GH_TOKEN"));
     assert!(merged.contains_key("GH_HOST"));

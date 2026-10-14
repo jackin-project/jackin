@@ -86,7 +86,6 @@ pub(super) async fn handle_prune(
                     anyhow::bail!("aborted by operator");
                 }
             }
-
             let prune_instances_result = if args.all {
                 runtime::prune_all_instances(paths, &docker, runner)
                     .await

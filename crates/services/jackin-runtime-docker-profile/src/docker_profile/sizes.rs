@@ -8,7 +8,6 @@ pub fn parse_memory_bytes(s: &str) -> Option<u64> {
     if s.is_empty() {
         return None;
     }
-
     let split = s.find(|c: char| c.is_alphabetic()).unwrap_or(s.len());
     let number: u64 = s[..split].trim().parse().ok()?;
     let suffix = s[split..].trim().to_ascii_uppercase();

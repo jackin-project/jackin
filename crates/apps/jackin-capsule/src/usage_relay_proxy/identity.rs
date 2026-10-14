@@ -48,7 +48,6 @@ pub(crate) fn process_start_time(pid: u32) -> Option<u64> {
 pub(crate) fn parse_proc_stat_start_time(stat: &str) -> Option<u64> {
     let after_comm = stat.rsplit_once(')')?.1;
     let mut fields = after_comm.split_ascii_whitespace();
-
     fields.nth(19)?.parse::<u64>().ok()
 }
 
@@ -65,7 +64,6 @@ impl From<SessionIdentity> for PeerIdentity {
 
 pub(crate) fn load_supervisor_identity() -> Result<SupervisorIdentity> {
     let pid = parse_supervisor_pid(std::env::var(jackin_protocol::CAPSULE_SUPERVISOR_PID_ENV))?;
-
     Ok(SupervisorIdentity {
         pid,
         start_time: process_start_time(pid),

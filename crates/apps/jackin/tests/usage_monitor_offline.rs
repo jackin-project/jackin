@@ -716,7 +716,6 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
 
     for _ in 0..2 {
         let doctor = fixture.run(&["doctor", "--provider", "claude", "--unattended"], None)?;
-
         expect_exit(&doctor, 0)?;
         let doctor_json = json_output(&doctor)?;
         ensure!(doctor_json["result"] == "doctor");

@@ -10,7 +10,6 @@ pub fn shorten_home(path: &str) -> String {
     if home.is_empty() {
         return path.to_owned();
     }
-
     match path.strip_prefix(&home) {
         Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("~{rest}"),
         _ => path.to_owned(),

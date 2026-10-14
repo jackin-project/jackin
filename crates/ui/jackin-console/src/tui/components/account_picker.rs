@@ -7,7 +7,6 @@ use crossterm::event::{KeyCode, KeyEvent};
 pub struct AccountPickerState<C, A, P> {
     pub context: C,
     pub agent: A,
-
     providers: Vec<P>,
     selected: usize,
 }

@@ -96,42 +96,31 @@ impl ConfigGeneration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigSourceScope {
     Global,
-
     Workspaces,
-
     Workspace(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigSourceIssue {
     Unreadable,
-
     Malformed,
-
     UnsupportedVersion,
-
     Invalid,
-
     InvalidWorkspaceName,
-
     ConflictingWorkspaceDefinitions,
-
     TransientConflict,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigSourceDiagnostic {
     pub scope: ConfigSourceScope,
-
     pub issue: ConfigSourceIssue,
 }
 
 #[derive(Debug, Clone)]
 pub struct ReadOnlyConfigSnapshot {
     pub config: AppConfig,
-
     pub diagnostics: Vec<ConfigSourceDiagnostic>,
-
     pub generation: ConfigGeneration,
 }
 
@@ -515,7 +504,6 @@ pub fn load_split_config(
     contents_opt: Option<String>,
 ) -> crate::ConfigResult<AppConfig> {
     let _lock = acquire_config_write_lock(&paths.config_file)?;
-
     let loaded = load_split_config_locked(paths, contents_opt)?;
     loaded.validate()?;
     loaded.commit(&publication_journal_path(&paths.config_file))
@@ -550,7 +538,6 @@ pub(crate) fn load_split_config_locked(
             );
             let migrated = migrated_from?.is_some();
             migrate_embedded_op_accounts(&mut doc)?;
-
             migrate_embedded_workspaces(&mut doc).map_err(|issue| {
                 ConfigError::msg(format_args!(
                     "migrating embedded workspace configuration: {issue:?}"
@@ -881,7 +868,6 @@ fn validate_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
 
 fn validate_editor_config_semantics(config: &AppConfig) -> crate::ConfigResult<()> {
     validate_reserved_env_names(config)?;
-
     config.validate_registry_and_bindings()
 }
 
@@ -914,7 +900,6 @@ impl AppConfig {
     ) -> crate::ConfigResult<(Self, crate::BootstrapReport)> {
         paths.ensure_base_dirs()?;
         let lock = acquire_config_write_lock(&paths.config_file)?;
-
         let loaded = (|| {
             let contents_opt = load_config_contents(paths)?;
             let loaded = load_split_config_locked(paths, contents_opt)?;
@@ -947,7 +932,6 @@ impl AppConfig {
             for &(name, git) in super::roles::BUILTIN_ROLES {
                 editor.upsert_builtin_agent(name, git);
             }
-
             config = editor.save()?;
             report
         } else {

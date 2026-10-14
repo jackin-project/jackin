@@ -11,7 +11,6 @@ pub struct ContainerId(String);
 pub enum ContainerIdError {
     #[error("container id cannot be empty")]
     Empty,
-
     #[error("container id {0:?} contains forbidden characters")]
     ForbiddenChars(String),
 }

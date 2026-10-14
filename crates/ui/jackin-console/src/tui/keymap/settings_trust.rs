@@ -13,7 +13,6 @@ pub(crate) enum SettingsTrustTabAction {
     ScrollRight,
     Toggle,
     Save,
-
     Back,
 }
 

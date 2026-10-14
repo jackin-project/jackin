@@ -195,7 +195,6 @@ fn corpus_covers_every_client_and_server_frame_variant() {
     for (_, f) in server_samples() {
         assert_server_sample_covers(&f);
     }
-
     assert!(client_samples().len() >= 13, "client samples incomplete");
     assert!(server_samples().len() >= 13, "server samples incomplete");
 }
@@ -209,9 +208,7 @@ fn golden_client_frames_round_trip_decode() {
         let payload = bytes[5..].to_vec();
         let decoded = attach::decode_client(tag, payload)
             .unwrap_or_else(|e| panic!("{name}: decode failed: {e:#}"));
-
         assert_eq!(decoded, frame, "{name}");
-
         for cut in [1usize, 3, bytes.len().saturating_sub(1).max(1)] {
             if cut >= bytes.len() {
                 continue;
@@ -226,7 +223,6 @@ fn golden_client_frames_round_trip_decode() {
             } else {
                 vec![]
             };
-
             drop(attach::decode_client(tag, payload));
         }
     }

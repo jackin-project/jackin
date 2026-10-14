@@ -12,9 +12,7 @@ pub struct ExecPickerState {
 #[derive(Debug, Clone)]
 pub struct ExecPickerItem {
     pub binding: jackin_protocol::ExecBinding,
-
     pub display: String,
-
     pub selected: bool,
 }
 

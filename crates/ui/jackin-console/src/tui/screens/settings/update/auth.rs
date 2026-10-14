@@ -14,11 +14,8 @@ pub fn settings_auth_selected_index(selected: usize, row_count: usize) -> usize 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsAuthRowKind {
     Account(usize),
-
     AddKind(crate::tui::auth::AuthKind),
-
     Github,
-
     Scan,
 }
 

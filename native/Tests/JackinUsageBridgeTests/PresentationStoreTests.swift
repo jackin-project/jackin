@@ -157,9 +157,6 @@ final class PresentationStoreTests: XCTestCase {
         else {
             return XCTFail("catalog fixture is missing expected Codex or Claude accounts")
         }
-
-
-
         let projectedAccounts = fixture.accounts.filter { $0.id != claudeAccount.id }
         let store = PresentationStore()
 
@@ -212,8 +209,6 @@ final class PresentationStoreTests: XCTestCase {
             usageSelection: "claude",
             usageAccountSelection: claudeAccount.accountKey
         )
-
-
 
         store.setSelectedAccount(surfaceId: "codex", accountKey: codexAccount.accountKey)
 

@@ -56,19 +56,15 @@ fn pending_status_change_uses_no_clear_diff_frame() {
 #[test]
 fn resize_shrink_then_grow_does_not_panic() {
     let mut mux = single_pane_tab_mux_with_size(24, 80);
-
     mux.resize(6, 4);
     assert_eq!((mux.render.term_rows, mux.render.term_cols), (6, 4));
-
     mux.resize(0, 0);
     assert_eq!(
         (mux.render.term_rows, mux.render.term_cols),
         (DEFAULT_ROWS, DEFAULT_COLS)
     );
-
     mux.resize(50, 200);
     assert_eq!((mux.render.term_rows, mux.render.term_cols), (50, 200));
-
     let frame = mux.compose_pending_frame();
     assert!(!frame.is_empty(), "grow must produce repaint");
 }
@@ -193,7 +189,6 @@ fn palette_close_split_tab_opens_target_picker() {
 fn branch_context_visibility_keeps_content_area_reserved() {
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
-
     assert_eq!(mux.render.content_rows, 18);
 
     mux.pr_watch.pull_request_context_cache.insert(
@@ -238,7 +233,6 @@ fn git_branch_context_updates_status_before_github_lookup() {
     mux.pr_watch.pull_request_context_branch = Some(branch("old/pr"));
     mux.pr_watch.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
     mux.reconcile_content_rows();
-
     assert_eq!(mux.render.content_rows, 18);
 
     mux.pr_watch.pull_request_context_cache.insert(

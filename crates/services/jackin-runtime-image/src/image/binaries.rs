@@ -62,7 +62,6 @@ pub async fn prepare_runtime_binaries_for_agents(
         ),
         capsule_future
     )?;
-
     let mut prefetched_agent_versions = BTreeMap::new();
     let agent_installs: BTreeMap<_, _> = agent_install_pairs
         .into_iter()

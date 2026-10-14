@@ -13,7 +13,6 @@ fn double_click_selects_word_and_copies_once() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(tx);
     let inner = mux.visible_panes()[0].inner;
-
     let row = inner.row;
     let col = inner.col + 6;
 

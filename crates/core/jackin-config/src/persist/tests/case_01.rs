@@ -48,7 +48,6 @@ fn publication_journal_with_zero_completed_renames_recovers_on_open() {
     assert_eq!(std::fs::read_to_string(&beta_path).unwrap(), beta_contents);
     assert!(!journal_path.exists());
     assert_no_staged_files(&paths);
-
     AppConfig::load_or_init(&paths).unwrap();
 }
 
@@ -156,7 +155,6 @@ fn recover_pending_publication_rejects_corrupt_journal() {
 
     let err = AppConfig::load_or_init(&paths).unwrap_err();
     assert!(err.to_string().contains("corrupt"), "{err:#}");
-
     assert_eq!(
         std::fs::read(&journal_path).unwrap(),
         b"not = [valid toml".to_vec()
@@ -346,7 +344,6 @@ fn failed_commit_restores_originals_and_clears_journal() {
         stage_atomic_write(&workspace, "ws-new").unwrap(),
     ];
     let mut deletes = Vec::new();
-
     std::fs::remove_file(&writes[1].tmp).unwrap();
 
     let _error = commit_staged_config(&journal, &mut writes, &mut deletes).unwrap_err();

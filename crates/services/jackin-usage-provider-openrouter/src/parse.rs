@@ -103,7 +103,6 @@ pub fn parse_openrouter_key_usage(
     let key: OpenRouterKeyData = serde_json::from_value(data.clone())
         .map_err(|_| "OpenRouter key response is malformed".to_owned())?;
     let mut buckets = Vec::new();
-
     if let Some(cap) = key.limit.and_then(openrouter_cents).filter(|cap| *cap > 0) {
         let remaining = key
             .limit_remaining
@@ -133,7 +132,6 @@ pub fn parse_openrouter_key_usage(
         view.status_slot = Some(StatusSlot::Spend);
         buckets.push(view);
     }
-
     for (label, spend) in [
         ("Spent today", key.usage_daily),
         ("Spent this week", key.usage_weekly),
@@ -166,7 +164,6 @@ pub fn parse_openrouter_key_usage(
         view.used_money = Some(Money::new(byok, "USD", 2));
         buckets.push(view);
     }
-
     if buckets.iter().all(|bucket| bucket.status_slot.is_none())
         && let Some(monthly) = buckets
             .iter_mut()
@@ -176,7 +173,6 @@ pub fn parse_openrouter_key_usage(
     }
     Ok(OpenRouterKeyQuota {
         buckets,
-
         plan_label: match key.is_free_tier {
             Some(true) => Some("Free tier".to_owned()),
             Some(false) => Some("Pay as you go".to_owned()),

@@ -4,116 +4,65 @@
 pub const JACKIN_ENV_NAME: &str = "JACKIN";
 
 pub const JACKIN_ENV_VALUE: &str = "1";
-
 pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
-
 pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVERRIDE";
-
 pub const JACKIN_CONTAINER_NAME_ENV_NAME: &str = "JACKIN_CONTAINER_NAME";
-
 pub const JACKIN_INSTANCE_ID_ENV_NAME: &str = "JACKIN_INSTANCE_ID";
-
 pub const JACKIN_CAPSULE_SUPERVISOR_PID_ENV_NAME: &str = "JACKIN_CAPSULE_SUPERVISOR_PID";
-
 pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
-
 pub const JACKIN_AGENT_CODENAME_ENV_NAME: &str = "JACKIN_AGENT_CODENAME";
-
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
-
 pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
-
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
-
 pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
-
 pub const JACKIN_OPEN_LINKS_ENV_NAME: &str = "JACKIN_OPEN_LINKS";
-
 pub const CODEX_LANE_MODEL_ENV_NAME: &str = "JACKIN_LANE_CODEX_MODEL";
-
 pub const CODEX_LANE_EFFORT_ENV_NAME: &str = "JACKIN_LANE_CODEX_EFFORT";
-
 pub const CLAUDE_MODEL_ENV_NAME: &str = "ANTHROPIC_MODEL";
-
 pub const CLAUDE_EFFORT_ENV_NAME: &str = "CLAUDE_CODE_EFFORT_LEVEL";
-
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
-
 pub const ZHIPU_API_KEY_ENV_NAME: &str = "ZHIPU_API_KEY";
-
 pub const ANTHROPIC_API_KEY_ENV_NAME: &str = "ANTHROPIC_API_KEY";
-
 pub const ANTHROPIC_AUTH_TOKEN_ENV_NAME: &str = "ANTHROPIC_AUTH_TOKEN";
-
 pub const OPENAI_API_KEY_ENV_NAME: &str = "OPENAI_API_KEY";
-
 pub const AMP_API_KEY_ENV_NAME: &str = "AMP_API_KEY";
-
 pub const CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME: &str = "CLAUDE_CODE_OAUTH_TOKEN";
-
 pub const MINIMAX_API_KEY_ENV_NAME: &str = "MINIMAX_API_KEY";
-
 pub const KIMI_CODE_API_KEY_ENV_NAME: &str = "KIMI_CODE_API_KEY";
-
 pub const KIMI_API_KEY_ENV_NAME: &str = "KIMI_API_KEY";
-
 pub const MOONSHOT_API_KEY_ENV_NAME: &str = "MOONSHOT_API_KEY";
-
 pub const OPENCODE_API_KEY_ENV_NAME: &str = "OPENCODE_API_KEY";
-
 pub const XAI_API_KEY_ENV_NAME: &str = "XAI_API_KEY";
-
 pub const GEMINI_API_KEY_ENV_NAME: &str = "GEMINI_API_KEY";
-
 pub const GOOGLE_API_KEY_ENV_NAME: &str = "GOOGLE_API_KEY";
-
 pub const CURSOR_API_KEY_ENV_NAME: &str = "CURSOR_API_KEY";
-
 pub const META_API_KEY_ENV_NAME: &str = "META_API_KEY";
-
 pub const OPENROUTER_API_KEY_ENV_NAME: &str = "OPENROUTER_API_KEY";
-
 pub const GROK_DEPLOYMENT_KEY_ENV_NAME: &str = "GROK_DEPLOYMENT_KEY";
-
 pub const GH_TOKEN_ENV_NAME: &str = "GH_TOKEN";
-
 pub const GITHUB_TOKEN_ENV_NAME: &str = "GITHUB_TOKEN";
-
 pub const GH_HOST_ENV_NAME: &str = "GH_HOST";
-
 pub const GH_ENTERPRISE_TOKEN_ENV_NAME: &str = "GH_ENTERPRISE_TOKEN";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UsageCredentialOwner {
     Claude,
-
     Codex,
-
     Amp,
-
     Kimi,
-
     Grok,
-
     Zai,
-
     Minimax,
-
     OpenCode,
-
     Google,
-
     Cursor,
-
     Meta,
-
     OpenRouter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsageCredentialEnvName {
     pub name: &'static str,
-
     pub owner: UsageCredentialOwner,
 }
 
@@ -197,13 +146,9 @@ pub const USAGE_CREDENTIAL_ENV_REGISTRY: &[UsageCredentialEnvName] = &[
 ];
 
 pub const JACKIN_NETWORK_MODE_ENV_NAME: &str = "JACKIN_NETWORK_MODE";
-
 pub const JACKIN_ALLOWED_HOSTS_ENV_NAME: &str = "JACKIN_ALLOWED_HOSTS";
-
 pub const JACKIN_FIREWALL_INSTALLED_ENV_NAME: &str = "JACKIN_FIREWALL_INSTALLED";
-
 pub const JACKIN_NETWORK_ENFORCEMENT_ENV_NAME: &str = "JACKIN_NETWORK_ENFORCEMENT";
-
 pub const JACKIN_SUDO_ENV_NAME: &str = "JACKIN_SUDO";
 
 pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[

@@ -1327,7 +1327,6 @@ fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> 
             ),
         "clone path does not match mount and container identity; record retained"
     );
-
     crate::safe_remove::safe_remove_dir_contained(container_state_dir, clone_path).map_err(
         |e| crate::IsolationError::CloneRemove {
             path: record.worktree_path.clone(),

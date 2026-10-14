@@ -114,7 +114,6 @@ pub(crate) fn reap_zombies() {
 #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
 fn reap_zombies_linux() {
     let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
-
     let mut skipped: Option<HashSet<i32>> = None;
     loop {
         match waitid(Id::All, flags) {
@@ -140,7 +139,6 @@ fn reap_zombies_linux() {
                     }
                 }
             }
-
             Err(_error) => {
                 record_io_error();
                 break;

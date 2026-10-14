@@ -13,7 +13,6 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> PollStatus {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(content) else {
             return;
         };
-
         let Some(messages) = val
             .as_array()
             .or_else(|| val.get("messages").and_then(|m| m.as_array()))

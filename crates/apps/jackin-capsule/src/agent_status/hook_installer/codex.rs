@@ -35,7 +35,6 @@ pub(crate) const CODEX_HOOK_EVENTS: &[&str] = &[
 impl HookInstaller for CodexHookInstaller {
     fn install(&self, _agent_home: &Path, config_dir: &Path) -> anyhow::Result<()> {
         let hooks_path = config_dir.join("hooks.json");
-
         let mut root = read_existing_json_object(&hooks_path)?;
         let hooks = root
             .entry("hooks".to_owned())

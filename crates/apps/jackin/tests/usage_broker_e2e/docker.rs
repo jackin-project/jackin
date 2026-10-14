@@ -354,7 +354,6 @@ fn usage_broker_failure_and_rate_deadline_are_identical_for_all_waiters() -> Res
     let root = temp.path().to_path_buf();
     let data_dir = root.join("data");
     let now = now_epoch();
-
     let retry_at = now + 600;
     let store = FileAccountStateStore::under_data_dir(&data_dir);
     let mut seeded = AccountStateEnvelope::idle(capability());
@@ -443,7 +442,6 @@ async fn assert_desktop_capsule_singleflight(capsules: usize) -> Result<()> {
     let root = temp.path().to_path_buf();
     let calls = Arc::new(AtomicUsize::new(0));
     let broker = broker_with_gate(&root, Arc::clone(&calls), 4)?;
-
     let mut containers = Vec::new();
     let mut relay_dirs = Vec::new();
     for index in 0..capsules {
@@ -458,7 +456,6 @@ async fn assert_desktop_capsule_singleflight(capsules: usize) -> Result<()> {
             run_capsule(&container_name, "gated-refresh")
         }));
     }
-
     wait_for_async(Duration::from_secs(45), || {
         relay_dirs
             .iter()
@@ -601,7 +598,6 @@ impl Drop for DockerCapsule {
 fn run_capsule(container_name: &str, mode: &str) -> Result<UsageBrokerResponse> {
     let mode_env = format!("JACKIN_USAGE_E2E_MODE={mode}");
     let build_env = format!("JACKIN_USAGE_E2E_BUILD={}", env!("CARGO_PKG_VERSION"));
-
     let protocol_env = format!("JACKIN_USAGE_E2E_PROTOCOL={USAGE_BROKER_PROTOCOL_VERSION}");
     let output = jackin_process::exec_sync(&jackin_process::ExecRequest::new(
         "docker",

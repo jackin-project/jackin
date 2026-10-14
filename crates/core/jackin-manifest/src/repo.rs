@@ -11,7 +11,6 @@ use std::path::{Component, Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct CachedRepo {
     pub key: String,
-
     pub repo_dir: PathBuf,
 }
 
@@ -33,7 +32,6 @@ impl CachedRepo {
     pub fn for_branch(paths: &JackinPaths, selector: &RoleSelector, branch: &str) -> Self {
         Self {
             key: format!("{}@{branch}", selector.key()),
-
             repo_dir: Self::role_cache_root(paths, selector)
                 .join("branches")
                 .join(branch),
@@ -44,7 +42,6 @@ impl CachedRepo {
 #[derive(Debug, Clone)]
 pub struct ValidatedRoleRepo {
     pub manifest: RoleManifest,
-
     pub dockerfile: ValidatedDockerfile,
 }
 
@@ -52,7 +49,6 @@ pub struct ValidatedRoleRepo {
 pub enum RoleRepoValidationError {
     #[error("missing {}", _0.display())]
     Missing(PathBuf),
-
     #[error("{label} path must be relative")]
     PathMustBeRelative { label: &'static str },
 
@@ -67,10 +63,8 @@ pub enum RoleRepoValidationError {
 
     #[error("unable to parse Dockerfile: {0}")]
     DockerfileParse(String),
-
     #[error("Dockerfile must contain at least one FROM instruction")]
     DockerfileMissingFrom,
-
     #[error("final Dockerfile stage must use literal FROM {expected}")]
     DockerfileNonConstruct { expected: String },
 
@@ -82,7 +76,6 @@ pub enum RoleRepoValidationError {
         t = crate::repo_contract::CONSTRUCT_STABLE_TAG,
     )]
     DockerfileMissingVersionPin,
-
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -107,7 +100,6 @@ pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepo
     if let Some(ref hooks) = manifest.hooks {
         for entry in hooks.entries() {
             let hook_path = validate_relative_path(repo_dir, entry.path, entry.label)?;
-
             if std::fs::metadata(&hook_path)?.len() == 0 {
                 return Err(RoleRepoValidationError::EmptyHook {
                     label: entry.label,

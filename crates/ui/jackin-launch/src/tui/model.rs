@@ -25,48 +25,29 @@ pub struct LaunchView {
     pub stages: Vec<StageView>,
     pub status: String,
     pub failure: Option<LaunchFailure>,
-
     pub failure_ack: bool,
     pub frame: usize,
-
     pub build_log_open: bool,
-
     pub build_log_scroll: termrock::scroll::TailScroll,
-
     pub build_log_scroll_dragging: bool,
-
     pub build_log_lines: Vec<String>,
-
     pub build_log_wrapped_lines: Vec<Line<'static>>,
     pub build_log_wrapped_width: usize,
     pub build_log_viewport_height: usize,
     pub build_log_filled: usize,
-
     pub build_log_active: bool,
-
     pub footer_hover: StatusFooterHover,
     pub label_transition: Option<StageLabelTransition>,
-
     pub failure_copy_hover: Option<FailureCopyTarget>,
-
     pub failure_copied: Option<FailureCopyTarget>,
-
     pub failure_revealed: Option<FailureCopyTarget>,
-
     pub failure_opened: Option<FailureCopyTarget>,
-
     pub failure_scroll: termrock::scroll::DialogScroll,
-
     pub container_info_open: bool,
-
     pub container_info_copied: Option<usize>,
-
     pub container_info_hover: Option<usize>,
-
     pub container_info_scroll: termrock::scroll::DialogScroll,
-
     pub last_dialog_mouse_cell: Option<(u16, u16)>,
-
     pub quit_confirm: Option<crate::tui::components::prompts::PromptConfirm>,
 }
 

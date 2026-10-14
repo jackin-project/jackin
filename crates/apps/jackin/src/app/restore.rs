@@ -30,7 +30,6 @@ impl console::InstanceActionHandler<jackin_core::Agent> for ConsoleInPlaceHandle
     ) -> Result<()> {
         let docker = BollardDockerClient::connect()?;
         let mut runner = ShellRunner { debug: self.debug };
-
         let result: Result<()> = async {
             match action {
                 console::ConsoleInstanceAction::Stop => {
@@ -168,7 +167,6 @@ pub(super) async fn handle_console_instance_action(
             );
             Ok(())
         }
-
         console::ConsoleInstanceAction::Stop | console::ConsoleInstanceAction::Purge => {
             anyhow::bail!(
                 "{action:?} must run via ConsoleInPlaceHandler::run_in_place; reached handle_console_instance_action by mistake"
@@ -423,9 +421,7 @@ fn moved_path_browser_child_dirs(cwd: &std::path::Path) -> Vec<std::path::PathBu
 
 pub(crate) enum MovedPathEntryStep {
     Cancel,
-
     Accepted(std::path::PathBuf),
-
     Retry(String),
 }
 

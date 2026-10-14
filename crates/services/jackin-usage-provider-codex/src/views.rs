@@ -23,7 +23,6 @@ pub fn codex_snapshot(
     rpc_gate: &mut ManagedCliLaunchGate,
 ) -> FocusedUsageView {
     let codex_home = env_dir_or_home("CODEX_HOME", ".codex");
-
     let codex_candidates = codex_auth_candidates(&codex_home);
     let (resolved, account_from_file) = resolve_identity(
         &codex_candidates,
@@ -31,7 +30,6 @@ pub fn codex_snapshot(
         codex_account_from_value,
     );
     let (oauth_path, credentials) = resolved.unzip();
-
     let auth_email = credentials
         .as_ref()
         .and_then(|credentials| credentials.account_label.clone())

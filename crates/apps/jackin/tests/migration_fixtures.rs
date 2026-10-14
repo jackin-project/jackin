@@ -88,7 +88,6 @@ fn assert_unknown_field_policy(file_kind: &str, policy: UnknownFieldPolicy, migr
     let before = fs::read_to_string(dir.join("before.toml")).unwrap();
     let temp = tempfile::tempdir().unwrap();
     let target = temp.path().join(filename_for(file_kind));
-
     let mutated = if let Some(table_start) = before.find("\n[") {
         format!(
             "{}\nx_unknown_probe = \"1\"\n{}",

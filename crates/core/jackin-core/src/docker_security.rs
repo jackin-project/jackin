@@ -7,12 +7,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum DockerSecurityProfile {
     Locked,
-
     Hardened,
-
     #[default]
     Standard,
-
     Compat,
 }
 
@@ -60,9 +57,7 @@ impl std::error::Error for ParseProfileError {}
 #[serde(rename_all = "lowercase")]
 pub enum NetworkGrant {
     None,
-
     Allowlist,
-
     Open,
 }
 
@@ -86,9 +81,7 @@ impl std::fmt::Display for NetworkGrant {
 #[serde(rename_all = "lowercase")]
 pub enum DindGrant {
     None,
-
     Rootless,
-
     Privileged,
 }
 
@@ -107,37 +100,26 @@ impl std::fmt::Display for DindGrant {
 pub struct DockerGrants {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network: Option<NetworkGrant>,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_hosts: Vec<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dind: Option<DindGrant>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sudo: Option<bool>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_writes: Option<bool>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_reservation: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpus: Option<f64>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pids: Option<i64>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nofile: Option<u64>,
-
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities_add: Vec<String>,
 }

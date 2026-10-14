@@ -37,7 +37,6 @@ pub struct GlobalMountsState<Row, Modal> {
     pub add_draft: Option<GlobalMountDraft>,
     pub error: Option<String>,
     pub scroll: termrock::widgets::ScrollAreaState,
-
     pub exit_requested: bool,
 }
 

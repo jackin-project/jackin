@@ -31,7 +31,6 @@ fn image_name_for_branch_substitutes_slashes_and_keeps_prefix() {
         image_name_for_branch(&flat, "main", None),
         "jk_the-architect_main"
     );
-
     assert_eq!(
         image_name_for_branch(&flat, "feat/scope/detail", None),
         "jk_the-architect_feat-scope-detail"
@@ -41,7 +40,6 @@ fn image_name_for_branch_substitutes_slashes_and_keeps_prefix() {
 #[test]
 fn image_name_tags_with_short_role_commit_sha() {
     let flat = RoleSelector::new(None, "the-architect");
-
     assert_eq!(
         image_name(&flat, Some("4f38b4f02b6a82e26c751d8adea3acc776c6d3b8")),
         "jk_the-architect:4f38b4f"
@@ -50,7 +48,6 @@ fn image_name_tags_with_short_role_commit_sha() {
         image_name_for_branch(&flat, "feat/x", Some("4f38b4f02b6a")),
         "jk_the-architect_feat-x:4f38b4f"
     );
-
     assert_eq!(image_name(&flat, Some("")), "jk_the-architect");
     assert_eq!(image_name(&flat, None), "jk_the-architect");
 }

@@ -32,7 +32,6 @@ pub fn begin() {
     if let Ok(mut state) = state().lock() {
         state.lines.clear();
         state.redactor.reset();
-
         ACTIVE.store(true, Ordering::Release);
     }
 }

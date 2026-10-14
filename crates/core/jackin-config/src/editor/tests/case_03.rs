@@ -14,7 +14,6 @@ fn save_rejects_reserved_name_candidate_and_preserves_on_disk_config() {
     let baseline = std::fs::read_to_string(&paths.config_file).unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-
     editor
         .set_env_var(&EnvScope::Global, "DOCKER_HOST", "tcp://bad".into())
         .unwrap();
@@ -291,7 +290,6 @@ fn add_mount_scoped_creates_nested_entry() {
     std::fs::write(&paths.config_file, "").unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-
     editor.add_mount(
         "creds",
         MountConfig {
@@ -305,7 +303,6 @@ fn add_mount_scoped_creates_nested_entry() {
     editor.save().unwrap();
 
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
-
     assert!(out.contains("[docker.mounts.agent-smith]"), "{out}");
     assert!(out.contains(r#"src = "/run/secrets/x""#), "{out}");
     assert!(out.contains("readonly = true"), "{out}");

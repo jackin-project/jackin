@@ -57,9 +57,7 @@ pub(crate) static SETTINGS_TAB_BAR_KEYMAP: Keymap<SettingsTabBarAction> =
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsContentShellAction {
     NextTab,
-
     FocusTabBar,
-
     FocusTabBarOrClearAuth,
 }
 

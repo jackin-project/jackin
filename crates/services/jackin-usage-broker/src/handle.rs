@@ -8,13 +8,9 @@ use jackin_protocol::usage_broker::{UsageCredentialScope, UsageRelayForwardedSou
 #[derive(Debug, Clone, Default)]
 pub struct ForwardedUsageSources {
     pub selected_account_ids: BTreeSet<String>,
-
     pub selected_account_surfaces: BTreeMap<String, String>,
-
     pub profile_surface_ids: BTreeSet<String>,
-
     pub env_keys: BTreeSet<String>,
-
     pub credential_scope: UsageCredentialScope,
 }
 

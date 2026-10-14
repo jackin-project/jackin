@@ -166,7 +166,6 @@ pub(crate) fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEve
         Some(SettingsGlobalMountsTabAction::EditScope) => {
             open_edit_text(state, GlobalMountTextTarget::Scope);
         }
-
         Some(_) | None => {}
     }
 }

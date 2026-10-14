@@ -21,7 +21,6 @@ fn waitpid_wnohang_returns_exit_status_after_synchronous_wait() {
     let status = child.wait().expect("wait /bin/true");
     assert!(status.success());
     let probe = waitpid(pid, Some(WaitPidFlag::WNOHANG));
-
     probe.expect_err("expected ECHILD");
 }
 

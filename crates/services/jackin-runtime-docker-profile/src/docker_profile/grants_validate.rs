@@ -6,7 +6,6 @@ use super::{VALID_CAPABILITIES, format_bytes};
 #[derive(Debug)]
 pub enum GrantValidationError {
     RootAndSudo,
-
     UnknownCapability(String),
 
     MemoryReservationExceedsMemory {

@@ -123,7 +123,6 @@ async fn detect_drift_does_not_currently_flag_isolation_mode_flips() {
     .unwrap();
 
     let paths = paths_for(data.path());
-
     let edited = vec![mount(
         "/same/src",
         "/workspace/jackin",
@@ -133,7 +132,6 @@ async fn detect_drift_does_not_currently_flag_isolation_mode_flips() {
     let det = detect_workspace_edit_drift(&paths, &wn("jackin"), &edited, &docker)
         .await
         .unwrap();
-
     assert!(
         det.stopped_records.is_empty(),
         "current V1 behavior: isolation-mode flips don't fire drift; \
@@ -158,7 +156,6 @@ async fn detect_drift_flags_record_when_dst_removed_from_edit() {
     .unwrap();
 
     let paths = paths_for(data.path());
-
     let edited = vec![mount(
         "/some/other/src",
         "/workspace/other",

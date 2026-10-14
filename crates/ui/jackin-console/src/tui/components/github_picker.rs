@@ -17,7 +17,6 @@ pub struct GithubPickerState {
 pub enum GithubOpenPlan {
     Continue,
     OpenUrl(String),
-
     Pick(Box<GithubPickerState>),
 }
 
@@ -102,7 +101,6 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         );
         return;
     }
-
     let displays: Vec<String> = state.choices.iter().map(|c| shorten_home(&c.src)).collect();
     let path_w = displays
         .iter()

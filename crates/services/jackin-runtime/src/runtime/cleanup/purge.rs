@@ -76,10 +76,7 @@ pub(crate) async fn purge_container_filesystem(
     )
     .await?;
     let state_dir = paths.data_dir.join(container_name);
-
     crate::isolation::safe_remove::safe_remove_dir_contained(&paths.data_dir, &state_dir)?;
-
     remove_socket_dir(paths, container_name).await;
-
     Ok(())
 }

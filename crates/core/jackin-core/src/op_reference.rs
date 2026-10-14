@@ -4,26 +4,18 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpReferenceParts {
     pub vault: String,
-
     pub item: String,
-
     pub section: Option<String>,
-
     pub field: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpBreadcrumbParts {
     pub vault: String,
-
     pub item: String,
-
     pub item_subtitle: Option<String>,
-
     pub section: Option<String>,
-
     pub field: String,
-
     pub attribute_query: Option<String>,
 }
 
@@ -224,7 +216,6 @@ pub fn encode_legacy_op_breadcrumb(path: &str, reference: &str) -> Option<String
     let (path_no_query, had_query_suffix) = match query {
         Some(query) => match path.strip_suffix(&format!("?{query}")) {
             Some(path) => (path, true),
-
             None if !path.contains('?') => (path, false),
             None => return None,
         },

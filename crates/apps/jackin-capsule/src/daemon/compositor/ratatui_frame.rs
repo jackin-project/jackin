@@ -21,12 +21,10 @@ impl Multiplexer {
         let term_rows = self.render.term_rows;
         let term_cols = self.render.term_cols;
         let active_tab = self.session_supervisor.active_tab;
-
         let usage_status_label = self.focused_usage_snapshot().status_bar_label;
         let tabs = &self.session_supervisor.tabs;
         let panes = self.visible_panes();
         let focused_id = self.active_focused_id();
-
         let focus_owner = if self.render.tab_bar_focused {
             jackin_tui::runtime::SurfaceFocus::tab_bar(focused_id.unwrap_or_default())
         } else {
@@ -37,10 +35,8 @@ impl Multiplexer {
         };
         let zoomed = self.active_zoomed_id().is_some();
         let dialog_open = self.dialog_open();
-
         let session_states = self.snapshot_session_states();
         let prefix_mode = self.status.status_bar.prefix_mode;
-
         let status_plan = crate::tui::components::status_bar::status_bar_plan(
             term_cols,
             tabs,
@@ -51,7 +47,6 @@ impl Multiplexer {
         let hover_target = self.render.hover_target;
         let hovered_tab = crate::tui::view::hovered_tab(hover_target);
         let menu_hovered = crate::tui::view::hovered_menu(hover_target);
-
         let selection = if zoomed {
             None
         } else {
@@ -68,7 +63,6 @@ impl Multiplexer {
                     .map(|s| (pane.id, session_display_title(s)))
             })
             .collect();
-
         let pane_scrollbars: Vec<(u64, usize, usize)> = panes
             .iter()
             .filter_map(|pane| {
@@ -82,7 +76,6 @@ impl Multiplexer {
                 })
             })
             .collect();
-
         let dialog_snapshot: Option<(DialogRatatuiSnapshot, (u16, u16, u16, u16))> = if dialog_open
         {
             let pr_branch = self.pr_watch.pull_request_context_branch.as_deref();
@@ -143,7 +136,6 @@ impl Multiplexer {
                 damaged_panes.insert(pane.id);
             }
         }
-
         let pane_screens: Vec<(u64, PaneScreen<'_>)> = panes
             .iter()
             .filter_map(|pane| {
@@ -244,7 +236,6 @@ impl Multiplexer {
             width: term_cols,
             height: term_rows,
         };
-
         let render_started = Instant::now();
         let result = jackin_tui::runtime::drive_frame(
             &mut self.render.ratatui_terminal,

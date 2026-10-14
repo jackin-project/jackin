@@ -9,10 +9,8 @@ use crate::agent_status::AgentStatusReport;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControlRequest {
     pub ctx: TelemetryContext,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_capability: Option<String>,
-
     pub msg: ClientMsg,
 }
 
@@ -20,57 +18,38 @@ pub struct ControlRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
     TelemetryHealth,
-
     Status,
-
     Snapshot,
-
     Agents,
-
     ReportRuntimeEvent {
         session_id: u64,
-
         source_id: String,
-
         runtime: String,
-
         event: String,
-
         #[serde(default, skip_serializing_if = "Option::is_none")]
         payload: Option<String>,
     },
-
     StatusCapture {
         session_id: u64,
     },
-
     UsageFocused,
-
     UsageRefreshFocused,
-
     UsageAccountList,
-
     ExecCommand {
         command: String,
-
         args: Vec<String>,
     },
-
     TokenUsage {
         session_id: u64,
     },
-
     SessionSend {
         session: u64,
-
         text: String,
     },
-
     Events {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session: Option<u64>,
     },
-
     #[serde(other)]
     Unknown,
 }
@@ -129,65 +108,46 @@ pub enum ServerMsg {
     TelemetryHealth {
         report: Box<TelemetryHealthReport>,
     },
-
     SessionList {
         sessions: Vec<SessionInfo>,
     },
-
     Snapshot {
         tabs: Vec<TabSnapshot>,
-
         active_tab: u32,
     },
-
     AgentRegistry {
         records: Vec<AgentRegistryEntry>,
     },
-
     Ack,
-
     UsageFocused {
         usage: Box<FocusedUsageView>,
     },
-
     UsageAccounts {
         accounts: Vec<AccountUsageSnapshotView>,
     },
-
     ExecResult {
         exit_code: i32,
-
         stdout: String,
-
         stderr: String,
-
         redacted_count: u32,
     },
-
     ExecDenied {
         reason: String,
     },
-
     TokenUsage {
         summary: Option<TokenUsageSummary>,
     },
-
     SessionSent {
         session: u64,
-
         bytes: u64,
     },
-
     SessionSendDenied {
         session: u64,
-
         reason: SessionSendRejection,
     },
-
     SessionEvent {
         event: Box<SessionEventRecord>,
     },
-
     #[serde(other)]
     Unknown,
 }
@@ -196,7 +156,6 @@ pub enum ServerMsg {
 #[serde(rename_all = "snake_case")]
 pub enum SessionSendRejection {
     UnknownSession,
-
     WriterClosed,
 }
 
@@ -213,23 +172,16 @@ impl SessionSendRejection {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionEventRecord {
     pub seq: u64,
-
     pub session: u64,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
-
     pub state: AgentState,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_output_ms: Option<u64>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_input_ms: Option<u64>,
-
     pub kind: SessionEventKind,
 }
 
@@ -237,13 +189,10 @@ pub struct SessionEventRecord {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionEventKind {
     Subscribed,
-
     StateChanged {
         previous: AgentState,
     },
-
     Activity,
-
     Exited {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
@@ -265,36 +214,26 @@ impl SessionEventKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TelemetryHealthReport {
     pub fingerprint: SanitizedConfigFingerprint,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_failure: Option<TelemetryConfigFailure>,
-
     pub health: TelemetryHealthSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SanitizedConfigFingerprint {
     pub traces: Option<TelemetrySignalConfigFingerprint>,
-
     pub logs: Option<TelemetrySignalConfigFingerprint>,
-
     pub metrics: Option<TelemetrySignalConfigFingerprint>,
-
     pub compression: String,
-
     pub sampler: String,
-
     pub active_signals: u8,
-
     pub service_name: String,
-
     pub app_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TelemetrySignalConfigFingerprint {
     pub authority: String,
-
     pub tls: bool,
 }
 
@@ -302,46 +241,28 @@ pub struct TelemetrySignalConfigFingerprint {
 #[serde(rename_all = "snake_case")]
 pub enum TelemetryConfigFailure {
     MissingSignalEndpoint,
-
     UnsupportedProtocol,
-
     ConflictingSampler,
-
     UnsupportedCompression,
-
     InvalidTimeout,
-
     InvalidHeaders,
-
     InvalidResourceAttributes,
-
     InvalidEndpoint,
-
     EmptyValue,
-
     IncompleteClientIdentity,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TelemetryHealthSnapshot {
     pub active_signals: u8,
-
     pub traces: TelemetrySignalHealth,
-
     pub logs: TelemetrySignalHealth,
-
     pub metrics: TelemetrySignalHealth,
-
     pub facade_rejections: u64,
-
     pub capsule_export: CapsuleExportCoverage,
-
     pub flush: TelemetryFlushStatus,
-
     pub shutdown_completed: bool,
-
     pub shutdown_succeeded: bool,
-
     pub shutdown_timed_out: bool,
 }
 
@@ -349,15 +270,10 @@ pub struct TelemetryHealthSnapshot {
 #[serde(rename_all = "snake_case")]
 pub enum CapsuleExportCoverage {
     Enabled,
-
     DisabledNoEndpoint,
-
     DisabledNetworkNone,
-
     DisabledUnclassifiedEndpoint,
-
     DisabledUnclassifiedAuth,
-
     NotApplicable,
 }
 
@@ -365,93 +281,58 @@ pub enum CapsuleExportCoverage {
 #[serde(rename_all = "snake_case")]
 pub enum TelemetryFlushStatus {
     Pending,
-
     Succeeded,
-
     Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TelemetrySignalHealth {
     pub attempts: u64,
-
     pub successes: u64,
-
     pub failures: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TokenUsageSummary {
     pub input_tokens: u64,
-
     pub output_tokens: u64,
-
     pub cache_read_tokens: u64,
-
     pub cache_write_tokens: u64,
-
     pub cost_usd: Option<f64>,
-
     pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-
 pub struct AccountUsageSnapshotView {
     pub provider: String,
-
     pub account_label: String,
-
     pub source: String,
-
     pub confidence: String,
-
     pub window_kind: String,
-
     pub used_amount: Option<i64>,
-
     pub used_unit: Option<String>,
-
     pub limit_amount: Option<i64>,
-
     pub limit_unit: Option<String>,
-
     pub resets_at: Option<i64>,
-
     pub fetched_at: i64,
-
     pub expires_at: Option<i64>,
-
     pub status: String,
-
     pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-
 pub struct FocusedUsageView {
     pub focused_agent: Option<String>,
-
     pub focused_provider: Option<String>,
-
     pub account: FocusedAccountHeader,
-
     pub buckets: Vec<QuotaBucketView>,
-
     pub status: UsageSnapshotStatus,
-
     pub source: UsageSource,
-
     pub confidence: UsageConfidence,
-
     pub fetched_at_epoch: i64,
-
     pub updated_label: String,
-
     pub status_bar_label: String,
-
     pub tabs: Vec<UsageProviderTab>,
-
     pub last_error: Option<String>,
 }
 
@@ -459,22 +340,16 @@ pub struct FocusedUsageView {
 #[serde(rename_all = "snake_case")]
 pub enum UsageActivityKind {
     Idle,
-
     Updating,
-
     Exceptional,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UsageIdentityPresentation {
     pub provider_title: String,
-
     pub account_label: String,
-
     pub activity_label: String,
-
     pub activity_kind: UsageActivityKind,
-
     pub accessibility_label: String,
 }
 
@@ -537,17 +412,12 @@ impl FocusedUsageView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-
 pub struct FocusedAccountHeader {
     pub provider_label: String,
-
     pub account_label: String,
-
     #[serde(default)]
     pub username: Option<String>,
-
     pub plan_label: Option<String>,
-
     #[serde(default)]
     pub credential_origin: Option<String>,
 }
@@ -556,20 +426,15 @@ pub struct FocusedAccountHeader {
 #[serde(rename_all = "snake_case")]
 pub enum StatusSlot {
     Session,
-
     Daily,
-
     Weekly,
-
     Spend,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Money {
     pub amount_minor: i64,
-
     pub currency: String,
-
     pub exponent: u8,
 }
 
@@ -631,41 +496,27 @@ impl std::fmt::Display for Money {
 pub enum UsageSeverity {
     #[default]
     Normal,
-
     Warn,
-
     Danger,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-
 pub struct QuotaBucketView {
     pub label: String,
-
     pub used_label: Option<String>,
-
     pub limit_label: Option<String>,
-
     pub remaining_percent: Option<u8>,
-
     pub reset_label: Option<String>,
-
     #[serde(default)]
     pub resets_at: Option<i64>,
-
     #[serde(default)]
     pub status_slot: Option<StatusSlot>,
-
     pub pace_label: Option<String>,
-
     pub status: UsageSnapshotStatus,
-
     #[serde(default)]
     pub used_money: Option<Money>,
-
     #[serde(default)]
     pub limit_money: Option<Money>,
-
     #[serde(default)]
     pub severity: UsageSeverity,
 }
@@ -673,7 +524,6 @@ pub struct QuotaBucketView {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UsagePresentationLine {
     pub leading: Option<String>,
-
     pub trailing: Option<String>,
 }
 
@@ -681,26 +531,18 @@ pub struct UsagePresentationLine {
 #[serde(rename_all = "snake_case")]
 pub enum UsageDetailRowKind {
     Metadata,
-
     Bucket,
-
     Detail,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UsageDetailRow {
     pub row_id: String,
-
     pub kind: UsageDetailRowKind,
-
     pub label: String,
-
     pub layout_lines: Vec<UsagePresentationLine>,
-
     pub display_label: String,
-
     pub meter_percent: Option<u8>,
-
     pub severity: UsageSeverity,
 }
 
@@ -710,21 +552,14 @@ pub struct UsageDetailPresentation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-
 pub struct UsageProviderTab {
     #[serde(default)]
     pub id: String,
-
     pub label: String,
-
     pub status_label: String,
-
     pub account_label: String,
-
     pub plan_label: Option<String>,
-
     pub source_label: Option<String>,
-
     pub active: bool,
 }
 
@@ -732,17 +567,11 @@ pub struct UsageProviderTab {
 #[serde(rename_all = "snake_case")]
 pub enum UsageSnapshotStatus {
     Fresh,
-
     Stale,
-
     NeedsLogin,
-
     NeedsSecret,
-
     Unsupported,
-
     Unavailable,
-
     Error,
 }
 
@@ -750,13 +579,9 @@ pub enum UsageSnapshotStatus {
 #[serde(rename_all = "snake_case")]
 pub enum UsageSource {
     ProviderApi,
-
     Cli,
-
     LocalLogs,
-
     Cache,
-
     None,
 }
 
@@ -764,82 +589,55 @@ pub enum UsageSource {
 #[serde(rename_all = "snake_case")]
 pub enum UsageConfidence {
     Authoritative,
-
     Estimated,
-
     PresenceOnly,
-
     None,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRegistryEntry {
     pub codename: String,
-
     pub agent: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
-
     pub provider: Option<String>,
-
     pub started_at: String,
-
     pub exited_at: Option<String>,
-
     pub status: String,
-
     #[serde(default)]
     pub is_self: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-
 pub struct SessionInfo {
     pub id: u64,
-
     pub label: String,
-
     pub agent: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
-
     pub state: AgentState,
-
     pub active: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-
 pub struct TabSnapshot {
     pub label: String,
-
     pub focused_pane: u64,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
-
     pub panes: Vec<PaneSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-
 pub struct PaneSnapshot {
     pub session_id: u64,
-
     pub label: String,
-
     pub agent: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
-
     pub state: AgentState,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_status_report: Option<AgentStatusReport>,
 }
@@ -848,13 +646,9 @@ pub struct PaneSnapshot {
 #[serde(rename_all = "snake_case")]
 pub enum AgentState {
     Working,
-
     Blocked,
-
     Done,
-
     Idle,
-
     Unknown,
 }
 

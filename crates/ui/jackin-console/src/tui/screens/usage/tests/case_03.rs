@@ -110,7 +110,6 @@ fn render_full_route_narrow_and_wide() {
             text.contains("OpenAI · work"),
             "missing account header at {width}x{height}"
         );
-
         if width < 80 {
             assert!(
                 text.contains("unresolved"),
@@ -147,7 +146,6 @@ fn render_detail_account_shows_freshness_and_refreshing_indicator() {
         state.refresh_generation,
         Ok(snapshot(Vec::new(), None)),
     )));
-
     manager.usage.screen = Some(state);
 
     let backend = TestBackend::new(80, 25);

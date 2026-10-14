@@ -121,7 +121,6 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
         panic!("usage dialog expected");
     };
-
     assert!(
         !view.updated_label.contains("refreshing"),
         "{:?}",

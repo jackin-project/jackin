@@ -159,7 +159,6 @@ pub(crate) async fn read_control_body(
     len_buf: [u8; 4],
 ) -> Result<ServerMsg> {
     let len = u32::from_be_bytes(len_buf) as usize;
-
     pub(crate) const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
     if len > MAX_CONTROL_REPLY {
         anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");

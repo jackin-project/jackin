@@ -23,13 +23,9 @@ pub trait AccountCatalogStores {
 
 pub trait AccountMembershipDescriptor {
     fn surface_id(&self) -> &str;
-
     fn account_key(&self) -> &str;
-
     fn account_label(&self) -> &str;
-
     fn provenance(&self) -> &[String];
-
     fn identity(&self) -> CanonicalAccountIdentity;
 }
 
@@ -123,7 +119,6 @@ pub(crate) fn membership_identity<M: AccountMembershipDescriptor>(
     view: &FocusedUsageView,
 ) -> Option<CanonicalAccountIdentity> {
     let membership = membership?;
-
     let routing_key = CanonicalAccountIdentity::from_view(surface, view)?.account_key();
     membership
         .iter()

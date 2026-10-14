@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MatchKind {
     Exact(Vec<String>),
-
     Prefix(Vec<String>),
 }
 
@@ -95,7 +94,6 @@ impl ProcessScript {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invocation {
     pub argv: Vec<String>,
-
     pub env: Vec<(String, String)>,
 }
 
@@ -161,7 +159,6 @@ impl FakeProcessHarness {
         );
         let path = self.dir.join(format!("{name}.sh"));
         let log = self.dir.join(format!("{name}.log"));
-
         drop(std::fs::remove_file(&log));
         let source = render_script(&log, script);
         std::fs::write(&path, source)?;

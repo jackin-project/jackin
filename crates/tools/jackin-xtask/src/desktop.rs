@@ -22,16 +22,13 @@ const BROKER_EXECUTABLE: &str = "jackin-usage-broker";
 const BUNDLE_ID: &str = "com.jackin-project.desktop";
 const BUNDLE_NAME: &str = "jackin❯ desktop";
 const MIN_OS: &str = "27.0";
-
 const FRAMEWORK_NAME: &str = "JackinUsage";
 const MODULE_NAME: &str = "JackinUsageFFI";
 const STATIC_LIB: &str = "libjackin_usage_ffi.a";
 const HOST_TARGET: &str = "aarch64-apple-darwin";
 const ARCH: &str = "arm64";
-
 const FFI_CRATE_DIR: &str = "crates/adapters/jackin-usage-ffi";
 const FFI_CRATE: &str = "jackin-usage-ffi";
-
 const DESKTOP_PROFILE: &str = "desktop-release";
 const DEFAULT_SWIFT_JOBS: usize = 2;
 const MAX_SWIFT_JOBS: usize = 8;
@@ -49,25 +46,15 @@ pub(super) fn progress(msg: impl AsRef<str>) {
 #[derive(Subcommand)]
 pub(crate) enum DesktopCommand {
     Bindings(BindingsArgs),
-
     BindingsCheck(BindingsArgs),
-
     Xcframework,
-
     Build(BuildArgs),
-
     Verify(VerifyArgs),
-
     Run(RunArgs),
-
     Test,
-
     TestSwift(SwiftTestArgs),
-
     SignNotarize(sign_notarize::SignNotarizeArgs),
-
     ReleaseState(release_state::ReleaseStateArgs),
-
     BootstrapSecrets(Box<bootstrap::BootstrapSecretsArgs>),
 }
 
@@ -81,7 +68,6 @@ pub(crate) struct BindingsArgs {
 pub(crate) struct BuildArgs {
     #[arg(long)]
     version: Option<String>,
-
     #[arg(long)]
     build: Option<String>,
 }
@@ -90,15 +76,11 @@ pub(crate) struct BuildArgs {
 pub(crate) struct VerifyArgs {
     #[arg(default_value = "native/dist/JackinDesktop.app")]
     app: PathBuf,
-
     zip: Option<PathBuf>,
-
     #[arg(long)]
     release: bool,
-
     #[arg(long)]
     version: Option<String>,
-
     #[arg(long)]
     build: Option<String>,
 }
@@ -107,7 +89,6 @@ pub(crate) struct VerifyArgs {
 pub(crate) struct RunArgs {
     #[arg(default_value = "native/dist/JackinDesktop.app")]
     app: PathBuf,
-
     #[arg(long)]
     verify: bool,
 }
@@ -745,7 +726,6 @@ fn print_app_ready_banner(app: &Path, version: &str, build: &str) {
     progress("│   (menu bar only — no Dock icon; LSUIElement)");
     progress("└─────────────────────────────────────────────────────────────");
     progress("");
-
     progress(format!("DESKTOP_APP={}", abs.display()));
 }
 
@@ -836,7 +816,6 @@ fn bindings_check(root: &Path, profile: &str) -> Result<()> {
         fs::remove_dir_all(&staging).with_context(|| format!("clearing {}", staging.display()))?;
     }
     let staging_sources = staging.join("Sources/JackinUsageBindings");
-
     let overlay = staging.join("boltffi.overlay.toml");
     fs::create_dir_all(&staging)?;
     fs::write(
@@ -996,7 +975,6 @@ fn build_xcframework(root: &Path) -> Result<()> {
     ));
     let mut rustup = cmd::command("rustup");
     rustup.args(["target", "add", HOST_TARGET]);
-
     drop(cmd::run(&mut rustup));
 
     progress("==> building staticlib (streaming cargo progress)");
@@ -1017,7 +995,6 @@ fn build_xcframework(root: &Path) -> Result<()> {
 
     let out_dir = root.join("target/xcframework");
     let xcframework = out_dir.join(format!("{FRAMEWORK_NAME}.xcframework"));
-
     if xcframework.exists() {
         fs::remove_dir_all(&xcframework)?;
     }

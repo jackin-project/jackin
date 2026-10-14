@@ -56,7 +56,6 @@ fn hello_first_byte_never_collides_with_control_channel() {
 #[test]
 fn welcome_carries_session_count_be() {
     let bytes = encode_server(ServerFrame::Welcome { session_count: 3 });
-
     assert_eq!(bytes[0], TAG_WELCOME);
     assert_eq!(bytes[1..5], [0, 0, 0, 4]);
     assert_eq!(bytes[5..], [0, 0, 0, 3]);

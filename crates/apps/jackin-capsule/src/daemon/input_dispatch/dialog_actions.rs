@@ -62,7 +62,6 @@ impl Multiplexer {
                         self.apply_action(Action::OpenAgentPicker(PickerIntent::NewTab));
                         return;
                     }
-
                     ExitDirtyRow::Inspect => {
                         let rows = match self.dialog_top() {
                             Some(Dialog::ExitDirty { inspect_rows, .. }) => {
@@ -74,7 +73,6 @@ impl Multiplexer {
                         self.invalidate(FullRedrawReason::DialogChange);
                         return;
                     }
-
                     ExitDirtyRow::Keep => {
                         self.control.exit_request = Some(jackin_protocol::ExitAction::Keep);
                     }
@@ -183,7 +181,6 @@ impl Multiplexer {
         let Some(target) = self.usage_refresh_target_for_account_id(account_id) else {
             return;
         };
-
         self.request_usage_refresh_for_provider(None);
         self.usage.pending_usage_refresh = Some(target);
     }
@@ -231,7 +228,6 @@ async fn run_exec_selected(
                 };
             }
         };
-
     let secrets: Vec<&str> = resolved.values().map(String::as_str).collect();
     match crate::exec::execute_command(&command, &args, &resolved, &secrets).await {
         Ok((exit_code, stdout, stderr, redacted_count)) => ServerMsg::ExecResult {

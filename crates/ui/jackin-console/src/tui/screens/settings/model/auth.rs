@@ -49,46 +49,34 @@ pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     pub editing_account: Option<String>,
     pub editing_text: Option<AccountTextField>,
     pub value_type: std::marker::PhantomData<fn() -> EnvValue>,
-
     pub modals: crate::tui::modal_chain::ModalChain<Modal>,
     pub error: Option<String>,
-
     pub pending_op_commit: Option<PendingOpCommit>,
     pub scroll: termrock::widgets::ScrollAreaState,
-
     pub scan: AccountScanState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AccountScanOutcome {
     pub fresh_install: bool,
-
     pub committed: Vec<(String, jackin_config::AccountConfig)>,
-
     pub candidates: Vec<(String, jackin_config::AccountConfig)>,
-
     pub issues: Vec<jackin_config::DiscoveryIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AccountScanSummary {
     pub joined: Vec<String>,
-
     pub skipped: Vec<String>,
-
     pub fresh_install: bool,
 }
 
 #[derive(Debug, Default)]
 pub struct AccountScanState {
     pub in_flight: bool,
-
     pub generation: u64,
-
     pub scanned_ids: BTreeSet<String>,
-
     pub issues: Vec<jackin_config::DiscoveryIssue>,
-
     pub last_summary: Option<AccountScanSummary>,
 }
 

@@ -13,7 +13,6 @@ fn parity_stale_partial_windows_issues_and_retry() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
-
     assert_eq!(account.status, "stale");
     assert!(account.is_stale);
     assert_eq!(account.freshness_phase, UsageFreshnessPhaseV1::Stale);
@@ -21,24 +20,19 @@ fn parity_stale_partial_windows_issues_and_retry() {
         freshness_age_label(PARITY_NOW, account),
         "stale · updated 25m ago"
     );
-
     assert_eq!(account.windows.len(), 3);
     assert_eq!(account.windows[0].meter_percent(), Some(54));
     assert_eq!(account.windows[0].reset_at_epoch, Some(PARITY_NOW + 70_000));
-
     assert_eq!(account.windows[1].quota_state, UsageQuotaStateV1::Available);
     assert_eq!(account.windows[1].meter_percent(), None);
-
     assert_eq!(account.windows[2].quota_state, UsageQuotaStateV1::Unknown);
     assert_eq!(account.windows[2].meter_percent(), None);
-
     for group in &account.metric_groups {
         assert_eq!(
             group_freshness_label(PARITY_NOW, group),
             "stale · updated 25m ago"
         );
     }
-
     assert_eq!(account.issues.len(), 1);
     assert_eq!(account.issues[0].code, "rate_limited");
     assert_eq!(account.issues[0].retry_at_epoch, Some(PARITY_NOW + 330));
@@ -104,7 +98,6 @@ fn parity_unsupported_lifecycle_words() {
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
     assert_eq!(account.lifecycle, UsageLifecycleV1::Unsupported);
-
     assert_eq!(account.status, "Unsupported");
     assert_eq!(account.freshness_phase, UsageFreshnessPhaseV1::Failed);
     assert_eq!(freshness_age_label(PARITY_NOW, account), "never updated");
@@ -161,7 +154,6 @@ fn parity_auth_expired_login_state() {
     );
     assert_eq!(account.issues.len(), 1);
     assert_eq!(account.issues[0].code, "auth_required");
-
     assert_eq!(
         account.identity_kind,
         Some(UsageIdentityKindV1::LocalSourceHandle)
@@ -174,7 +166,6 @@ fn parity_auth_expired_login_state() {
         view.tabs[0].source_label.as_deref(),
         Some("needs login · no source")
     );
-
     let detail = usage_detail_presentation(view);
     assert_eq!(detail.rows.len(), 1);
     assert_eq!(detail.rows[0].label, "Detail");
@@ -236,13 +227,11 @@ fn parity_legit_zero_spend_and_missing_fields() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let account = &screen.accounts[0];
-
     assert_eq!(account.account, "");
     assert_eq!(account.plan_label, None);
     assert_eq!(account.windows.len(), 1);
     assert_eq!(account.windows[0].meter_percent(), Some(100));
     assert_eq!(account.windows[0].value, "100% left");
-
     assert_eq!(account.metric_groups.len(), 2);
     match &account.metric_groups[1].value {
         UsageMetricValueV1::SpendCap {
@@ -259,7 +248,6 @@ fn parity_legit_zero_spend_and_missing_fields() {
 
     let enriched = parity_tabs(&views);
     let view = &enriched[0];
-
     assert_eq!(view.tabs[0].label, "OpenCode");
     assert_eq!(view.tabs[0].account_label, "account unavailable");
     assert!(view.tabs[0].active);
@@ -279,7 +267,6 @@ fn parity_legit_zero_spend_and_missing_fields() {
         "{}",
         spend.display_label
     );
-
     let detail = usage_detail_presentation(view);
     assert_eq!(detail.rows.len(), 1);
     assert_eq!(detail.rows[0].kind, UsageDetailRowKind::Bucket);
@@ -327,7 +314,6 @@ fn parity_s5_stale_and_partial_failure() {
     );
     let screen = UsageScreenState::from_projection(&projection);
     assert_eq!(screen.accounts.len(), 2);
-
     let fresh = &screen.accounts[0];
     assert_eq!(fresh.status, "Available");
     assert!(!fresh.is_stale);

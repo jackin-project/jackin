@@ -151,7 +151,6 @@ async fn load_agent_falls_back_to_workspace_when_role_sha_label_missing() {
     write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-
     let mut runner = FakeRunner::for_load_agent(["abc123".to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -195,7 +194,6 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker build "))
         .unwrap();
-
     assert!(
         !build_cmd.contains("--pull"),
         "published-stale fallback should preserve layer cache; got: {build_cmd}"
@@ -263,7 +261,6 @@ plugins = []
             .any(|call| call.contains("docker tag docker.io/myorg/my-role:latest")),
         "prebuilt mode must tag the verified image as the local base"
     );
-
     assert!(
         docker
             .recorded

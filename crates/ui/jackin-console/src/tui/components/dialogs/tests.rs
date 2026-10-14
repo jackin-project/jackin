@@ -62,7 +62,6 @@ fn confirm_tab_moves_focus_without_committing() {
     let mut state = ConfirmState::new("Delete \"demo\"?");
     let outcome = state.handle_key(key(CrosstermKeyCode::Tab));
     assert_eq!(outcome, ModalOutcome::Continue);
-
     let outcome = state.handle_key(key(CrosstermKeyCode::Enter));
     assert_eq!(outcome, ModalOutcome::Commit(true));
 }

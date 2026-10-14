@@ -62,7 +62,6 @@ pub(super) fn line_text(line: &ratatui::text::Line<'_>) -> String {
 
 pub(super) fn mode_col_start(line: &ratatui::text::Line<'_>) -> usize {
     let s = line_text(line);
-
     for (i, c) in s.chars().enumerate() {
         if i < 4 {
             continue;

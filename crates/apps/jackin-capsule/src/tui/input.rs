@@ -30,11 +30,8 @@ pub enum InputEvent {
 
     MouseRelease { col: u16, row: u16, button: u8 },
     PrefixCommand(PrefixCommand),
-
     OpenPalette,
-
     RequestExit,
-
     ResizePane(ArrowDir),
     FocusIn,
     FocusOut,

@@ -44,18 +44,13 @@ const GH_PR_CMD: &str = "gh pr view --json number,title,url,statusCheckRollup 2>
 )]
 pub struct StatusArgs {
     pub workspace: Option<String>,
-
     pub instance_id: Option<String>,
-
     #[arg(long)]
     pub detail: bool,
-
     #[arg(long, value_name = "STATE")]
     pub state: Option<String>,
-
     #[arg(long, value_name = "KEY=VALUE")]
     pub filter: Option<String>,
-
     #[arg(long, value_name = "FORMAT", default_value = "human")]
     pub format: String,
 }

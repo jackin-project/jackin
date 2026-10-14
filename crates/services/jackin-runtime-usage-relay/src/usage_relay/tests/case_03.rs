@@ -194,7 +194,6 @@ async fn s2_relay_dispatch_admits_exactly_abc() {
         };
         assert_eq!(error.kind, UsageCoordinationErrorKind::Unauthorized);
     }
-
     let denied = dispatch(
         UsageBrokerOperation::RefreshForCapability {
             capability: capability("acc-a-evil"),

@@ -15,7 +15,6 @@ pub(crate) enum ForwardingRequirement {
     Profile(String),
     Env {
         surface: String,
-
         launch_keys: BTreeSet<String>,
         account_ids: BTreeSet<String>,
         material: Option<ProviderCredentialSourceMaterial>,
@@ -188,7 +187,6 @@ pub(crate) fn authorize_credential_binding_group(
     if env_bindings.is_empty() {
         return None;
     }
-
     let mut key_bindings = Vec::<(String, String, UsageCredentialSourceIdentity, String)>::new();
     for binding in &env_bindings {
         let ValidatedCredentialSource::Env {

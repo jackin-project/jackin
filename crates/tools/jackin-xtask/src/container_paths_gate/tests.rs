@@ -17,7 +17,6 @@ fn forbidden_root_predicate_matches_roots_and_tmp_jackin() {
 fn turso_import_detects_use_and_path_not_log_string() {
     assert!(turso_import_column("use turso::Builder;").is_some());
     assert!(turso_import_column("let db = turso::Builder::new_local(p);").is_some());
-
     assert!(
         turso_import_column(r#"jackin_diagnostics::emit_operator_notice("turso store ready");"#)
             .is_none()

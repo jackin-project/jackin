@@ -42,19 +42,12 @@ pub trait AccountStateStore: Send + Sync {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectionStateEnvelope {
     pub schema_version: u32,
-
     pub projection: UsageProjectionV1,
-
     pub aliases: Vec<ProjectionAlias>,
-
     pub catalog_revision: String,
-
     pub catalog: Vec<UsageCatalogEntry>,
-
     pub retry_deadline_epoch: Option<i64>,
-
     pub success_deadline_epoch: Option<i64>,
-
     pub broker_instance_id: String,
 }
 
@@ -67,7 +60,6 @@ impl ProjectionStateEnvelope {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectionAlias {
     pub capability_id: String,
-
     pub canonical_account_id: String,
 }
 

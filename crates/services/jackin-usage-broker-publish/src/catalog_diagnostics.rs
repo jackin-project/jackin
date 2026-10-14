@@ -12,21 +12,13 @@ use jackin_protocol::usage_broker::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CatalogDiagnosticCode {
     ConfigUnreadable,
-
     ConfigInvalid,
-
     ConfigVersionUnsupported,
-
     ConfigTransientConflict,
-
     CredentialMissing,
-
     CredentialDenied,
-
     KeychainConsentRequired,
-
     CredentialMalformed,
-
     InteractionRequired,
 }
 

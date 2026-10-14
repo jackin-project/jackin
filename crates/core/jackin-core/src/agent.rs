@@ -13,27 +13,16 @@ use crate::env_model;
 #[serde(rename_all = "lowercase")]
 pub enum Agent {
     Claude,
-
     Codex,
-
     Amp,
-
     Kimi,
-
     Opencode,
-
     Grok,
-
     Antigravity,
-
     Gemini,
-
     Cursor,
-
     Muse,
-
     Omp,
-
     Hermes,
 }
 
@@ -113,7 +102,6 @@ impl Agent {
                 Some(env_model::GEMINI_API_KEY_ENV_NAME)
             }
             (Self::Cursor, M::ApiKey) => Some(env_model::CURSOR_API_KEY_ENV_NAME),
-
             (Self::Muse, M::ApiKey) => Some(env_model::META_API_KEY_ENV_NAME),
             (Self::Claude, M::Sync | M::Ignore)
             | (
@@ -134,7 +122,6 @@ impl Agent {
 
     pub const fn supported_modes(self) -> &'static [AuthForwardMode] {
         use AuthForwardMode as M;
-
         match self {
             Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
             Self::Codex

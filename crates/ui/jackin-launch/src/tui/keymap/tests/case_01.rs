@@ -17,7 +17,6 @@ fn cockpit_global_keys_dispatch() {
         COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(KeyCode::Char('q'))),
         Some(CockpitAction::OpenQuitConfirm)
     );
-
     assert_eq!(
         COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(KeyCode::Char('c'))),
         Some(CockpitAction::HardExit)

@@ -30,7 +30,6 @@ fn manual_clock_shared_refs_observe_the_same_advance() {
     clock.advance(Duration::from_millis(500));
     assert_eq!(a.now().duration_since(t0), Duration::from_millis(500));
     assert_eq!(b.now().duration_since(t0), Duration::from_millis(500));
-
     let as_dyn: Arc<dyn Clock> = clock;
     assert_eq!(as_dyn.now().duration_since(t0), Duration::from_millis(500));
 }

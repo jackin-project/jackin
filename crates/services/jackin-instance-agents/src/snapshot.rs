@@ -182,21 +182,18 @@ pub fn validate_sync_source_dir_for_selection(
             Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex"),
             Agent::Grok => require_credential_file(source_dir, "auth.json", "Grok"),
             Agent::Opencode => validate_opencode_source_dir(source_dir, provider),
-
             Agent::Antigravity => {
                 require_credential_file(source_dir, "settings.json", "Antigravity")
             }
             Agent::Gemini => require_credential_file(source_dir, "oauth_creds.json", "Gemini"),
             Agent::Cursor => require_credential_file(source_dir, "auth.json", "Cursor"),
             Agent::Muse => require_credential_file(source_dir, "auth.json", "Muse"),
-
             Agent::Omp | Agent::Hermes => {
                 validate_store_source_dir(agent, provider, selector, source_dir, host_home)
             }
             Agent::Amp => {
                 require_credential_file(&amp_credentials_dir(source_dir), "secrets.json", "Amp")
             }
-
             Agent::Kimi => {
                 let config = std::fs::symlink_metadata(source_dir.join("config.toml"));
                 let credentials = std::fs::symlink_metadata(source_dir.join("credentials"));

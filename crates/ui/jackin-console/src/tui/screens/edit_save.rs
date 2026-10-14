@@ -3,9 +3,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditSaveDisposition {
     SaveNow,
-
     ConfirmDiscard,
-
     Noop,
 }
 

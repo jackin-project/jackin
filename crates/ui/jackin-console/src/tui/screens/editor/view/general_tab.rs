@@ -114,7 +114,6 @@ pub(crate) fn general_lines(
         keep_awake_enabled,
         git_pull_on_entry,
     );
-
     section
         .rows
         .iter()

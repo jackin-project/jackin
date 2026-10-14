@@ -47,7 +47,6 @@ pub fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsage
                 ),
             ]
         });
-
     let (account_label, username, plan_label) = provider_usage
         .as_ref()
         .map(kimi_account_identity)

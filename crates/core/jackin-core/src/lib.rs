@@ -20,7 +20,6 @@ mod claude_keychain;
 mod clock;
 mod constants;
 mod container_id;
-
 pub mod container_paths;
 mod docker;
 mod docker_security;

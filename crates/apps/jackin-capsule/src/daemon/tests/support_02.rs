@@ -104,7 +104,6 @@ pub(super) fn osc52_payloads(rx: &mut mpsc::UnboundedReceiver<Vec<u8>>) -> Vec<V
 
 pub(super) fn expected_osc52_payload(text: &str) -> Vec<u8> {
     let encoded = crate::tui::view::encode_osc52_clipboard_write(text);
-
     encoded[7..encoded.len() - 1].to_vec()
 }
 

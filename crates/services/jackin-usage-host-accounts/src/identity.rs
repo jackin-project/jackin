@@ -12,16 +12,13 @@ use jackin_usage_host_presentation::HostSurfaceId;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CanonicalAccountSubject {
     ProviderId(String),
-
     ProviderStableHandle(String),
-
     SourceCapability(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CanonicalAccountIdentity {
     pub surface: HostSurfaceId,
-
     pub subject: CanonicalAccountSubject,
 }
 

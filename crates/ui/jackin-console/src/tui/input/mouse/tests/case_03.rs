@@ -48,7 +48,6 @@ fn click_outside_list_rows_does_not_change_selected() {
 fn click_on_seam_still_starts_drag_not_selection() {
     let mut state = list_state_with_saved(3);
     state.selected = 0;
-
     handle_mouse(&mut state, mouse_at(DEFAULT_SPLIT_PCT, 4), term(100));
     assert!(state.drag_state.is_some(), "click on seam must start drag");
     assert_eq!(

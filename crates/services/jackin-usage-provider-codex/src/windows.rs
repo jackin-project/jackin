@@ -226,7 +226,6 @@ pub fn push_codex_window(
     };
     let used = window.used_percent_clamped();
     let remaining = used.map(|value| 100u8.saturating_sub(value));
-
     let used_label = window
         .used_percent_raw()
         .map(|raw| codex_used_label(raw.max(0.0)));

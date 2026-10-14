@@ -12,7 +12,6 @@ use tempfile::Builder as TempfileBuilder;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SeedOutcome {
     FirstSeed,
-
     AlreadySeeded,
 }
 
@@ -108,7 +107,6 @@ pub(crate) fn seed_agent_home_from_enum(
             &data_dst,
             Some((&config_default, &config_dst)),
         ),
-
         None => seed_agent_home(&data_default, &home, None),
     }
 }

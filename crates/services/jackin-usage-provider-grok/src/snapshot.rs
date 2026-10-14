@@ -23,12 +23,10 @@ pub fn grok_snapshot(
     let handoff_auth = PathBuf::from(GROK_HANDOFF_AUTH_PATH);
     let home_exists = home_auth.exists();
     let auth = if home_exists { home_auth } else { handoff_auth };
-
     let has_auth = home_exists || auth.exists();
     let has_xai_api_key = env_value("XAI_API_KEY").is_some();
     let has_deployment_key = env_value("GROK_DEPLOYMENT_KEY").is_some();
     let billing_result = fetch_grok_billing(&auth, now, rpc_gate);
-
     let billing_result = match &billing_result {
         Err(_)
             if resolve_grok_billing_auth(has_auth, has_xai_api_key, has_deployment_key)
@@ -95,7 +93,6 @@ where
             (None, Some(error.to_string()), rate_limit)
         }
     };
-
     let credential_origin = if has_auth {
         Some(if auth == Path::new(GROK_HANDOFF_AUTH_PATH) {
             format!("OAuth · {GROK_HANDOFF_AUTH_PATH}")

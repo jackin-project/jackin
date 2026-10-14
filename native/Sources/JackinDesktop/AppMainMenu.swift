@@ -5,13 +5,6 @@ import AppKit
 import JackinUsageBridge
 import SwiftUI
 
-
-
-
-
-
-
-
 @MainActor
 public final class AppMainMenu: NSObject, NSMenuDelegate {
     static let settingsKeyEquivalent = ","
@@ -28,7 +21,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     private lazy var sidebarCommandItem = Self.sidebarMenuItem()
     private weak var sidebarSplitController: NSSplitViewController?
     private var settingsWindow: NSWindow?
-
     private var settingsCloseProxy: SettingsWindowCloseProxy?
 
     init(
@@ -39,7 +31,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         self.openUsage = openUsage
         super.init()
     }
-
 
     func install() {
         let main = NSMenu()
@@ -55,7 +46,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
 
         NSApp.mainMenu = main
     }
-
 
 
     private var appMenuTitle: String {
@@ -128,7 +118,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     }
 
     private func editMenu() -> NSMenu {
-
         let menu = NSMenu(title: "Edit")
         menu.addItem(firstResponder("Undo", Selector(("undo:")), key: "z"))
         menu.addItem(
@@ -197,7 +186,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     }
 
 
-
     @objc private func orderFrontAbout(_: Any?) {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: appMenuTitle,
@@ -232,7 +220,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         }
         settingsCloseProxy = proxy
         window.delegate = proxy
-
         window.contentViewController = NSHostingController(
             rootView: SettingsView(store: store)
                 .frame(minWidth: 440, minHeight: 400)
@@ -250,7 +237,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     @objc private func showUsageWindow(_: Any?) {
         openUsage()
     }
-
 
 
     static func sidebarMenuItem() -> NSMenuItem {
@@ -289,7 +275,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         return item
     }
 
-
     private func owned(
         _ title: String,
         _ action: Selector,
@@ -298,7 +283,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     ) -> NSMenuItem {
         makeItem(title, action: action, key: key, modifiers: modifiers, target: self)
     }
-
 
     private func routed(
         _ title: String,
@@ -309,7 +293,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     ) -> NSMenuItem {
         makeItem(title, action: action, key: key, modifiers: modifiers, target: target)
     }
-
 
     private func firstResponder(
         _ title: String,
@@ -336,7 +319,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     }
 }
 
-
 @MainActor
 private final class SettingsWindowCloseProxy: NSObject, NSWindowDelegate {
     private let onClose: () -> Void
@@ -353,11 +335,8 @@ private final class SettingsWindowCloseProxy: NSObject, NSWindowDelegate {
     }
 }
 
-
 @MainActor
 public enum AppActivation {
-
-
     static func present(_ window: NSWindow) {
         if NSApp.activationPolicy() == .regular {
             NSApp.unhide(nil)
@@ -372,7 +351,6 @@ public enum AppActivation {
             window.makeKeyAndOrderFront(nil)
         }
     }
-
 
     static func resignToAccessoryIfNeeded() {
         let visible = NSApp.windows.contains { window in

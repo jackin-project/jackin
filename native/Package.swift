@@ -1,7 +1,4 @@
-
 import PackageDescription
-
-
 
 let package = Package(
     name: "JackinDesktop",
@@ -22,8 +19,6 @@ let package = Package(
             name: "JackinUsageFFI",
             path: "../target/xcframework/JackinUsage.xcframework"
         ),
-
-
         .target(
             name: "JackinUsageBindings",
             dependencies: ["JackinUsageFFI"],
@@ -34,14 +29,12 @@ let package = Package(
             dependencies: ["JackinUsageBindings"],
             path: "Sources/JackinUsageBridge"
         ),
-
         .target(
             name: "JackinDesktopUI",
             dependencies: ["JackinUsageBindings", "JackinUsageBridge"],
             path: "Sources/JackinDesktop",
             resources: [
                 .copy("Resources/Brand"),
-
                 .copy("Resources/ProviderMarks"),
             ]
         ),

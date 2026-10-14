@@ -324,7 +324,6 @@ impl AccountStateStore for UpdatingFailureStore {
 
 pub(super) fn assert_updating_store_failure_terminates(persistent: bool) {
     let (completed, completion) = mpsc::channel();
-
     let fixture = std::thread::spawn(move || {
         let temp = tempfile::tempdir().unwrap();
         let accounts = temp.path().join("accounts");

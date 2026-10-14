@@ -34,11 +34,8 @@ pub struct StatusBar {
     pub hint_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
     pub prefix_enabled: bool,
-
     pub identity_label: String,
-
     pub instance_id_label: String,
-
     pub role: String,
 }
 
@@ -141,9 +138,7 @@ pub struct StatusBarPlan {
     pub(crate) cells: Vec<StatusTabCell>,
     pub(crate) hint_text: String,
     pub(crate) hint_cols: u16,
-
     pub(crate) hint_start: Option<u16>,
-
     pub(crate) overflow_col: Option<u16>,
 }
 

@@ -35,7 +35,6 @@ fn parse_capitalized_keys_and_missing_status() {
 fn parse_empty_and_malformed() {
     assert!(parse_all_containers_json("").is_empty());
     assert!(parse_all_containers_json("   ").is_empty());
-
     let json = "{\"name\":\"jk-a\",\"status\":\"running\"}\nnot json";
     assert_eq!(parse_all_containers_json(json).len(), 1);
 }

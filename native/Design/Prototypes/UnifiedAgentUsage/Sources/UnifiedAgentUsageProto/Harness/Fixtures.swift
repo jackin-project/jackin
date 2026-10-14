@@ -89,8 +89,6 @@ enum ProtoFixtures {
         }
     }
 
-
-
     static let scenarioMenu: [(title: String, names: [String])] = [
         ("Everyday", ["F02", "F01", "F03", "F25"]),
         ("Quota pressure", ["F04", "F05", "F22"]),
@@ -105,9 +103,6 @@ enum ProtoFixtures {
             ["F18-f02", "F18-f11", "F20", "F21", "F23", "F24-f02", "F24-f11", "F24-f12"]
         ),
     ]
-
-
-
 
     static let scenarioDescriptions: [String: String] = [
         "F00": "No providers detected — empty state with add-provider prompt",
@@ -147,7 +142,6 @@ enum ProtoFixtures {
         "F28": "Unsupported credential state",
         "F29": "Rate limited with backoff, last-good rows",
     ]
-
 
 
     static let codexPersonal = ProtoAccount(
@@ -194,8 +188,6 @@ enum ProtoFixtures {
                 display: "88% left · Resets in 3d", primaryValue: "88% left",
                 resetLabel: "Resets in 3d", meter: 88, state: .current,
                 pace: "On pace"),
-
-
             ProtoQuotaWindow(
                 stableID: "bucket:monthly-credit-pool", label: "Monthly credit pool",
                 category: .longRange, periodTag: "mo",
@@ -379,8 +371,6 @@ enum ProtoFixtures {
             accounts: usable ? [claudePersonal] : [], state: state, error: error)
     }
 
-
-
     static func catalog(
         codexState: ProtoState = .current, codexActivity: String? = nil,
         kimiUnavailable: Bool = false
@@ -411,7 +401,6 @@ enum ProtoFixtures {
                 accounts: [minimaxDefault], state: .warning),
         ]
     }
-
 
 
     static func projection(
@@ -707,8 +696,6 @@ enum ProtoFixtures {
             selectedAccount: "minimax-default")
     }
 
-
-
     static func f25() -> ProtoProjection {
         projection(
             "F25",
@@ -745,7 +732,6 @@ enum ProtoFixtures {
             selectedAccount: "codex-personal")
     }
 
-
     static func f26() -> ProtoProjection {
         projection(
             "F26",
@@ -759,7 +745,6 @@ enum ProtoFixtures {
             statusRows: ["claude"], selectedProvider: "claude")
     }
 
-
     static func f27() -> ProtoProjection {
         projection(
             "F27",
@@ -772,8 +757,6 @@ enum ProtoFixtures {
             statusRows: ["zai"], selectedProvider: "zai")
     }
 
-
-
     static func f28() -> ProtoProjection {
         projection(
             "F28",
@@ -785,8 +768,6 @@ enum ProtoFixtures {
             ],
             statusRows: ["codex"], selectedProvider: "codex")
     }
-
-
 
     static func f29() -> ProtoProjection {
         projection(

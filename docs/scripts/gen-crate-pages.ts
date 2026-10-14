@@ -1,8 +1,3 @@
-
-
-
-
-
 import { existsSync, statSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, normalize, relative, sep } from 'node:path'
@@ -14,7 +9,6 @@ const outDir = join(docsRoot, 'content', 'reference', 'crates')
 const metaPath = join(outDir, 'meta.json')
 
 export type CrateReadme = { name: string; dir: string; body: string }
-
 
 export async function listCrateReadmes(): Promise<CrateReadme[]> {
   const groups = await readdir(cratesRoot, { withFileTypes: true })
@@ -32,14 +26,12 @@ export async function listCrateReadmes(): Promise<CrateReadme[]> {
         const body = await readFile(readmePath, 'utf8')
         crates.push({ name: entry.name, dir: dir.split(sep).join('/'), body })
       } catch {
-
       }
     }
   }
   crates.sort((a, b) => a.name.localeCompare(b.name))
   return crates
 }
-
 
 export function stripH1(markdown: string): string {
   const lines = markdown.split('\n')
@@ -50,10 +42,6 @@ export function stripH1(markdown: string): string {
   return lines.join('\n')
 }
 
-
-
-
-
 export function normalizeRepoPath(
   crateDir: string,
   href: string,
@@ -61,10 +49,8 @@ export function normalizeRepoPath(
   if (!href || href.startsWith('#') || href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:')) {
     return null
   }
-
   const sibling = href.match(/^(?:\.\.\/)+(?:[^/]+\/)?([^/]+)\/README\.md(?:#.*)?$/)
   if (sibling) return null
-
 
   if (
     href.includes('docs/content/') ||
@@ -74,7 +60,6 @@ export function normalizeRepoPath(
     return null
   }
 
-
   const bare = href.split('#')[0] ?? href
   if (!bare) return null
 
@@ -82,23 +67,16 @@ export function normalizeRepoPath(
   if (bare.startsWith('src/') || bare.startsWith('./src/')) {
     joined = join(crateDir, bare.replace(/^\.\//, ''))
   } else if (bare.startsWith('../')) {
-
     joined = normalize(join(crateDir, bare))
   } else if (bare.startsWith('/')) {
     return null
   } else {
     joined = join(crateDir, bare)
   }
-
-
   const norm = joined.split(sep).join('/')
   if (norm.includes('..')) return null
   return norm
 }
-
-
-
-
 
 export function resolveExistingFile(
   repoPath: string,
@@ -116,13 +94,11 @@ export function resolveExistingFile(
   return null
 }
 
-
 export function siblingCrateRoute(href: string): string | null {
   const m = href.match(/^(?:\.\.\/)+(?:[^/]+\/)?([^/]+)\/README\.md(?:#.*)?$/)
   if (!m) return null
   return `/reference/crates/${m[1]}/`
 }
-
 
 export function docsContentRoute(href: string): string | null {
   const m = href.match(/(?:^|\/)docs\/content\/(.+?)(?:\.mdx)?(?:#.*)?$/)
@@ -134,10 +110,6 @@ export function docsContentRoute(href: string): string | null {
   if (slug.endsWith('/index')) slug = slug.slice(0, -'/index'.length)
   return `/${slug}/`.replace(/\/+/g, '/')
 }
-
-
-
-
 
 export function escapeMdxOutsideFences(markdown: string): string {
   const lines = markdown.split('\n')
@@ -159,7 +131,6 @@ export function escapeMdxOutsideFences(markdown: string): string {
 }
 
 function escapeMdxProseLine(line: string): string {
-
   let result = ''
   let i = 0
   while (i < line.length) {
@@ -170,7 +141,6 @@ function escapeMdxProseLine(line: string): string {
       continue
     }
     if (ch === '<') {
-
       const rest = line.slice(i)
       if (
         rest.startsWith('<RepoFile') ||
@@ -198,11 +168,8 @@ function escapeMdxProseLine(line: string): string {
 }
 
 const MD_LINK = /\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
-
-
 const BARE_REPO_PATH =
   /`((?:crates|docs|src|docker|scripts|plans)\/[^`\s]+|[A-Z][A-Z0-9_.-]*\.md)`/g
-
 
 export function rewriteLinks(crateDir: string, markdown: string): string {
   return markdown.replace(MD_LINK, (full, text: string, href: string) => {
@@ -222,14 +189,12 @@ export function rewriteLinks(crateDir: string, markdown: string): string {
         const label = text.trim() || filePath
         return `<RepoFile path="${filePath}">${label}</RepoFile>`
       }
-
       const label = text.trim() || repoPath
       return `\`${label.replace(/`/g, '')}\``
     }
     return full
   })
 }
-
 
 export function rewriteBareRepoPaths(markdown: string): string {
   return markdown.replace(BARE_REPO_PATH, (full, path: string) => {
@@ -239,7 +204,6 @@ export function rewriteBareRepoPaths(markdown: string): string {
     return `<RepoFile path="${filePath}">${path}</RepoFile>`
   })
 }
-
 
 export function transformReadmeBody(crate: CrateReadme, body: string): string {
   const stripped = stripH1(body)
@@ -271,10 +235,6 @@ export function expectedMeta(crateNames: string[]): MetaFile {
     pages: [...crateNames].sort((a, b) => a.localeCompare(b)),
   }
 }
-
-
-
-
 
 export function metaCompletenessError(
   crateNames: string[],
@@ -326,7 +286,6 @@ async function main(): Promise<void> {
     const outPath = join(outDir, `${crate.name}.mdx`)
     await writeFile(outPath, mdx, 'utf8')
   }
-
 
   console.log(
     JSON.stringify(

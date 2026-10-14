@@ -72,7 +72,6 @@ fn verify_usage_provider(
                 .any(|alias| usage_provider_matches(alias, &account.provider))
         })
         .collect::<Vec<_>>();
-
     let Some(latest) = rows.iter().max_by_key(|row| row.fetched_at) else {
         return UsageVerifyCheck {
             label,

@@ -6,6 +6,5 @@ use crate::control::TabSnapshot;
 #[derive(Debug, Clone)]
 pub struct InstanceSnapshot {
     pub tabs: Vec<TabSnapshot>,
-
     pub active_tab: u32,
 }

@@ -42,7 +42,6 @@ fn complete_release_formula_cask() {
     assert!(state.formula_complete);
     assert!(state.cask_complete);
     assert!(state.complete);
-
     let again = compute_state(
         version,
         DEFAULT_REPO,

@@ -85,7 +85,6 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
     manifest
         .write(&paths.data_dir.join(container_name))
         .unwrap();
-
     let docker = FakeDockerClient {
             container_id_by_name: std::cell::RefCell::new(HashMap::from([
                 (container_name.to_owned(), "role-container-id".to_owned()),

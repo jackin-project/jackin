@@ -7,12 +7,9 @@ use crate::tui::pane_snapshot::RowSnapshot;
 #[derive(Clone, Copy)]
 pub(crate) struct SelectionState {
     pub(crate) session_id: u64,
-
     pub(crate) inner: Rect,
-
     pub(crate) anchor_row: usize,
     pub(crate) anchor_col: u16,
-
     pub(crate) end_row: usize,
     pub(crate) end_col: u16,
 }
@@ -49,7 +46,6 @@ pub(crate) fn selection_start_for_inner_rect(
 
 pub(crate) fn selection_text(rows: &[RowSnapshot], sel: &SelectionState) -> String {
     let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
-
     let cols_for_full_row = sel.inner.cols.saturating_sub(1);
     let Some(max_snapshot_row) = rows.len().checked_sub(1) else {
         return String::new();

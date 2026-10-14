@@ -78,7 +78,6 @@ pub(crate) struct UsageLineContext<'a> {
     account: Option<&'a str>,
     activity: Option<&'a str>,
     list_layout: bool,
-
     width: usize,
 }
 
@@ -152,7 +151,6 @@ pub(crate) fn usage_lines_for_row(
                 usage_quota_bucket_lines(bucket, value, accent, context.width, lines);
             }
         }
-
         _ if context.provider.is_none() && is_overview_provider_label(label) => {
             usage_overview_provider_lines(label, value, context.width, lines);
         }

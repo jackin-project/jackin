@@ -126,7 +126,6 @@ impl Session {
             match event {
                 PassthroughEvent::TitleChanged(ref title) => {
                     self.title = Some(title.clone());
-
                     let capped: String = title.chars().take(OSC_EVIDENCE_MAX_CHARS).collect();
                     self.osc.title = Some(capped);
                     if self.osc_policy.allow_title()
@@ -174,17 +173,13 @@ impl Session {
                     self.handle_unhandled_csi(raw);
                 }
                 PassthroughEvent::DroppedCsi(_) => {}
-
                 PassthroughEvent::Bell => {}
-
                 PassthroughEvent::Reply(bytes) => {
                     drop(self.input_tx.send(bytes));
                 }
-
                 PassthroughEvent::ScrollbackClear => {
                     self.reset_scrollback_view();
                 }
-
                 PassthroughEvent::FocusEvents(_)
                 | PassthroughEvent::ApplicationCursorKeys(_)
                 | PassthroughEvent::BracketedPaste(_) => {

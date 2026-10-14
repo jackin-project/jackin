@@ -79,7 +79,6 @@ impl ControlPort for DefaultDaemonPorts {
                 event.observed_at,
             );
         }
-
         ServerMsg::Ack
     }
 }

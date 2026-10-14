@@ -197,7 +197,6 @@ async fn clean_worktree_with_pushed_commits_deletes_record() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!(
         "{}\n",
         ferow("jackin/scratch/x", "newhead", "origin/jackin/scratch/x", "",)
@@ -228,7 +227,6 @@ async fn clean_worktree_with_unpushed_commits_preserves() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!(
         "{}\n",
         ferow(
@@ -266,7 +264,6 @@ async fn clean_worktree_no_upstream_preserves_when_head_diverged() {
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-
     let branches = format!("{}\n", ferow("jackin/scratch/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
     let mut p = NoPrompt;

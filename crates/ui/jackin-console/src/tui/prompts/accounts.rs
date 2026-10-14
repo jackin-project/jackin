@@ -7,7 +7,6 @@ use jackin_config::AppConfig;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchAccountSelection {
     Launch(jackin_core::LaunchSelection),
-
     Pick(Vec<crate::services::launch::AccountChoice>),
 }
 

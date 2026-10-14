@@ -38,7 +38,6 @@ impl ConfigEditor {
         self.workspace_docs = workspaces;
         Ok(())
     }
-
     pub fn prune_account_bindings(&mut self, id: &str) -> ConfigResult<()> {
         let mut candidate = self.doc.clone();
         remove_bindings(candidate.as_table_mut(), id);
@@ -52,7 +51,6 @@ impl ConfigEditor {
         self.workspace_docs = workspaces;
         Ok(())
     }
-
     pub fn remove_account(&mut self, id: &str) -> ConfigResult<()> {
         let existing: crate::AppConfig = toml::from_str(&self.doc.to_string())?;
         let account = existing
@@ -84,7 +82,6 @@ impl ConfigEditor {
         self.workspace_docs = workspaces;
         Ok(())
     }
-
     pub fn set_workspace_accounts(
         &mut self,
         workspace: &WorkspaceName,
@@ -105,7 +102,6 @@ impl ConfigEditor {
         self.workspace_docs = docs;
         Ok(())
     }
-
     pub fn set_account_binding(
         &mut self,
         workspace: Option<&WorkspaceName>,

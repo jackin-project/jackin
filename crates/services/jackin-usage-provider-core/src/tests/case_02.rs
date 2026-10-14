@@ -28,7 +28,6 @@ fn broker_account_id_for_tab_id_recovers_broker_key() {
         cache.broker_account_id_for_tab_id(&usage_account_tab_id("Anthropic", "a@example.com")),
         Some("broker-claude-a".to_owned())
     );
-
     assert_eq!(
         cache.broker_account_id_for_tab_id(&usage_account_tab_id("OpenAI", "codex@example.com")),
         None

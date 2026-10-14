@@ -21,19 +21,14 @@ pub(crate) const PARTITIONS: &[&str] = &[
 pub(crate) struct CiArgs {
     #[arg(long)]
     fast: bool,
-
     #[arg(long)]
     e2e: bool,
-
     #[arg(long, value_name = "PATH")]
     e2e_capsule: Option<PathBuf>,
-
     #[arg(long, value_name = "EXPRESSION")]
     e2e_filter: Option<String>,
-
     #[arg(long, default_value = "origin/main")]
     base: String,
-
     #[arg(long = "only", value_name = "PARTITION")]
     only: Vec<String>,
 }

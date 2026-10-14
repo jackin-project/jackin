@@ -26,7 +26,6 @@ use crate::tui::op_picker::OpPickerState;
 #[derive(Debug, Default)]
 pub struct UsageRouteState {
     pub screen: Option<UsageScreenState>,
-
     pub visible: bool,
 }
 

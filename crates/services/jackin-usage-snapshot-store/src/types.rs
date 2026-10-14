@@ -15,15 +15,10 @@ pub(crate) static CONNECTION_BUILDS: OnceLock<Mutex<HashMap<String, usize>>> = O
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountIdentitySummary {
     pub provider: String,
-
     pub account_key_hash: String,
-
     pub account_label: String,
-
     pub plan_label: Option<String>,
-
     pub remaining_percent: Option<u8>,
-
     pub fetched_at: i64,
 }
 

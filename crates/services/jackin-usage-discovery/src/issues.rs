@@ -6,21 +6,13 @@ use jackin_usage_host_credentials::UsageCredentialKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageDiscoveryIssue {
     ConfigUnreadable,
-
     ConfigInvalid,
-
     ConfigVersionUnsupported,
-
     ConfigTransientConflict,
-
     CredentialMissing,
-
     CredentialDenied,
-
     KeychainConsentRequired,
-
     CredentialMalformed,
-
     InteractionRequired,
 }
 
@@ -61,18 +53,14 @@ impl UsageDiscoveryIssue {
 #[derive(Clone, PartialEq, Eq)]
 pub struct UsageDiscoveryDiagnostic {
     pub surface_id: Option<String>,
-
     pub scope_label: String,
-
     pub unresolved_source: Option<UsageDiscoveryUnresolvedSource>,
-
     pub issue: UsageDiscoveryIssue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageDiscoveryUnresolvedSource {
     pub capability_id: String,
-
     pub configuration_count: u32,
 }
 
@@ -113,12 +101,8 @@ mod tests {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageSourceCandidateDescriptor {
     pub surface_id: String,
-
     pub credential_kind: UsageCredentialKind,
-
     pub source_id: String,
-
     pub capability_id: String,
-
     pub provenance: Vec<String>,
 }

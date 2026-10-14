@@ -64,7 +64,6 @@ pub fn refresh_credential_binding(
         ValidatedCredentialSource::Capability => {
             return ProviderCredentialRefreshOutcome::Malformed;
         }
-
         ValidatedCredentialSource::Unpollable => (
             jackin_usage_provider_core::unpollable_snapshot(
                 binding.surface.agent_slug(),
@@ -160,7 +159,6 @@ pub fn refresh_credential_binding(
                 None,
             )
         }
-
         ValidatedCredentialSource::Profile(ProfileCredentialMaterial::Antigravity) => (
             jackin_usage_provider_antigravity::antigravity_snapshot(
                 binding.surface.agent_slug(),

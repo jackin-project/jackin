@@ -1,4 +1,3 @@
-
 """Generate canary-only SQLite WAL fixtures with the system sqlite3 module."""
 
 from pathlib import Path
@@ -84,9 +83,6 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="jackin-omp-fixtures-") as temp:
         root = Path(temp)
 
-
-
-
         database = root / "omp-current.db"
         connection = connect(database)
         connection.execute(SCHEMA)
@@ -115,8 +111,6 @@ def main() -> None:
             raise RuntimeError("checkpoint fixture does not contain the committed database image")
         connection.close()
 
-
-
         schema_database = root / "omp-schema-wal-only.db"
         schema_connection = connect(schema_database)
         schema_connection.execute(SCHEMA)
@@ -132,9 +126,6 @@ def main() -> None:
         if b"fixture-schema-wal-token" not in schema_wal:
             raise RuntimeError("schema-only WAL fixture is missing its credential")
         schema_connection.close()
-
-
-
 
         reused_database = root / "omp-reused.db"
         reused_connection = connect(reused_database)
@@ -170,11 +161,6 @@ def main() -> None:
             current_generation_wal + stale_suffix
         )
         reused_connection.close()
-
-
-
-
-
 
         spill_database = root / "omp-reused-uncommitted.db"
         spill_connection = connect(spill_database)
@@ -241,9 +227,6 @@ def main() -> None:
             raise RuntimeError("uncommitted spill fixture did not spill payload pages to WAL")
         spill_connection.rollback()
         spill_connection.close()
-
-
-
 
     if struct.unpack_from(">I", pre_checkpoint_wal, 0)[0] != 0x377F0682:
         raise RuntimeError("expected system SQLite to emit little-endian WAL checksums")

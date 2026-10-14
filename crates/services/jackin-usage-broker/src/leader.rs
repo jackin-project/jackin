@@ -38,7 +38,6 @@ pub(crate) fn claim_leader(
             Ok(fd) => {
                 let mut file = File::from(fd);
                 validate_owned_file(&file, 0o600)?;
-
                 if file.try_lock().is_err() {
                     return Ok(None);
                 }
@@ -208,7 +207,6 @@ pub(crate) fn cleanup_owned_files(
         if !lease_matches_owner(&current, &owner.lease) {
             return Err(());
         }
-
         if !path_matches_file(lease_path, &owner.file)? {
             return Err(());
         }

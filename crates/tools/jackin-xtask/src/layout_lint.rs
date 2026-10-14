@@ -17,7 +17,6 @@ use crate::report::{self, FormatArgs};
 pub(crate) struct LintTestsArgs {
     #[command(flatten)]
     output: FormatArgs,
-
     #[arg(long)]
     print_allowlist: bool,
 }
@@ -38,7 +37,6 @@ fn run_inner(args: LintTestsArgs) -> Result<()> {
     if args.print_allowlist {
         return ratchet::print_families(TEST_LAYOUT_FAMILIES);
     }
-
     let outcome = ratchet::check_families_at_root(TEST_LAYOUT_FAMILIES)?;
     if outcome.problems.is_empty() {
         let root = crate::docs::repo_root()?;

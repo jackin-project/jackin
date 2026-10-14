@@ -206,7 +206,6 @@ fn run_boot_split_newtab(
             completed.store(true, Ordering::Release);
         })
     };
-
     let boot_gate: &'static str = Box::leak(
         workspace_dir
             .join("s3-seq-2")
@@ -283,7 +282,6 @@ type RestoreOutcome = Arc<Mutex<Option<Result<Vec<(String, String)>, String>>>>;
 
 struct PhaseAB {
     container: String,
-
     bindings: Vec<(String, String)>,
 }
 
@@ -334,12 +332,10 @@ fn observe_boot_split_newtab(home: &Path, workspace: &Path) -> Result<PhaseAB, S
     let container = wait_for_value(Duration::from_mins(6), "the instance container", || {
         running_container_name()
     })?;
-
     wait_for_value(Duration::from_mins(4), "three bound boot sessions", || {
         let bindings = snapshot_bindings(&paths, &container)?;
         (bindings.len() == 3).then_some(bindings)
     })?;
-
     wait_for(Duration::from_mins(4), "five agent env dumps", || {
         env_dumps(workspace).len() == 5
     })?;
@@ -419,7 +415,6 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
             }
         }
         seen_canaries.insert(key);
-
         for (name, value) in env {
             assert!(
                 !value.contains(CANARY_C),
@@ -432,7 +427,6 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
         BTreeSet::from([CANARY_A.to_owned(), CANARY_B.to_owned()]),
         "both codex accounts must be live in the container"
     );
-
     assert_eq!(codex_homes.len(), 3, "independent codex state roots");
 
     for &env in &opencode {
@@ -441,7 +435,6 @@ fn assert_phase_ab(phase: &PhaseAB, workspace: &Path) -> Result<(), String> {
             !root.is_empty(),
             "opencode panes need an isolated XDG_DATA_HOME state root"
         );
-
         let auth = docker_read(&phase.container, &format!("{root}/auth.json"))
             .or_else(|| docker_find_auth(&phase.container, &root));
         assert!(
@@ -469,7 +462,6 @@ fn phase_c_reconnect(
     phase_ab: &PhaseAB,
 ) {
     let reconnect_done = completed_reconnect(home, container, phase_ab);
-
     let script = [PtyScriptStep {
         wait_for: "Choose [1/4]",
         input: "1\r",
@@ -572,7 +564,6 @@ fn read_dumps(workspace: &Path) -> BTreeMap<String, BTreeMap<String, String>> {
                 env.insert(key.to_owned(), value.to_owned());
             }
         }
-
         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
             let agent = stem
                 .strip_prefix("s3-env-")

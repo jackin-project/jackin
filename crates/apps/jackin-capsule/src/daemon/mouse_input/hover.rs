@@ -41,7 +41,6 @@ impl Multiplexer {
     pub(crate) fn update_hover_for_mouse(&mut self, row: u16, col: u16, button: u8) {
         let next = self.hover_target_at(row, col);
         let next_link = self.link_hover_url_at(row, col, button);
-
         let (term_rows, term_cols) = self.render.terminal_size();
         let row_hover_changed = self.dialog_top_mut().is_some_and(|dialog| {
             let row = row + 1;

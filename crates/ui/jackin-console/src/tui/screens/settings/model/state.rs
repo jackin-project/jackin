@@ -8,7 +8,6 @@ use crate::tui::focus::TabFocus;
 #[derive(Debug)]
 pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup> {
     pub active_tab: SettingsTab,
-
     pub focus_owner: TabFocus<SettingsTab>,
     pub hover_target: Option<SettingsHoverTarget>,
     pub general: SettingsGeneralState,
@@ -16,7 +15,6 @@ pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup> {
     pub env: Env,
     pub auth: Auth,
     pub trust: Trust,
-
     pub error_popup: Option<ErrorPopup>,
 
     pub cached_footer_h: u16,

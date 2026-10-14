@@ -274,7 +274,6 @@ mod private_config_fs {
     )]
     pub(super) fn quarantine(directory: &File, name: &str, reason: &str) -> anyhow::Result<()> {
         let name = LeafName::parse(name)?;
-
         drop(
             open_existing_regular(directory, name)?.with_context(|| {
                 format!("private provider config {} disappeared", name.as_str())
@@ -499,7 +498,6 @@ mod private_config_fs {
     {
         let name = LeafName::parse(name)?;
         validate_config_contents(contents, name.as_str())?;
-
         drop(open_existing_regular(directory, name)?);
         let (temp_name, mut temp_file) = create_temp_file(directory)?;
         let result = (|| {
@@ -756,7 +754,6 @@ where
     let key = account
         .resolved_credential_descriptor(Agent::Codex)?
         .env_name;
-
     let target_home = format!("/home/agent/{}", slot.container_home_rel);
     anyhow::ensure!(
         slot.folder_target == target_home,
@@ -793,7 +790,6 @@ where
     provider.insert("env_key".into(), key.into());
     provider.insert("wire_api".into(), "responses".into());
     provider.insert("requires_openai_auth".into(), false.into());
-
     if document
         .get("model_providers")
         .is_some_and(|value| !value.is_table())
@@ -840,7 +836,6 @@ where
         document.remove("model_reasoning_effort");
     }
     let config_contents = toml::to_string_pretty(&document)?.into_bytes();
-
     private_config_fs::validate_config_contents(&config_contents, "config.toml")?;
     if let Some((catalog_name, catalog_contents)) = catalog_to_publish {
         private_config_fs::publish_catalog(&directory, &catalog_name, &catalog_contents, &mut hook)
@@ -850,7 +845,6 @@ where
             format!("{target_home}/{catalog_name}"),
         ));
     }
-
     let generation_name = provider_config_filename(&config_contents, "toml");
     private_config_fs::publish_immutable(
         &directory,
@@ -922,7 +916,6 @@ fn opencode_provider(
             "@ai-sdk/openai-compatible",
             "https://opencode.ai/zen/v1",
         ),
-
         AiProvider::Google => (
             "google",
             "@ai-sdk/google",
@@ -933,7 +926,6 @@ fn opencode_provider(
             "@ai-sdk/openai-compatible",
             "https://openrouter.ai/api/v1",
         ),
-
         AiProvider::Cursor | AiProvider::Meta => anyhow::bail!(
             "{provider} accounts cannot authenticate OpenCode yet: no catalog provider entry"
         ),
@@ -979,7 +971,6 @@ fn configure_opencode(
         "name": account.name, "npm": npm,
         "options": { "baseURL": base_url.unwrap_or(default_url), "apiKey": format!("{{env:{key}}}") }
     });
-
     if account.provider == AiProvider::Opencode && base_url.is_none() {
         provider
             .as_object_mut()

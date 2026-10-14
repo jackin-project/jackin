@@ -189,17 +189,14 @@ fn renderer_op_ref_with_subtitle_renders_text() {
     editor.active_field = FieldFocus::Row(0);
 
     let dump = render_to_dump_wide(&editor);
-
     assert!(
         dump.contains("[op]"),
         "OpRef row with subtitle must render `[op]` marker; dump:\n{dump}"
     );
-
     assert!(
         dump.contains("alexey@zhokhov.com"),
         "subtitle text must appear in the breadcrumb; dump:\n{dump}"
     );
-
     assert!(dump.contains("Private"), "vault must render; dump:\n{dump}");
     assert!(
         dump.contains("Claude"),
@@ -236,17 +233,14 @@ fn renderer_op_ref_with_attribute_query_renders_text() {
     editor.active_field = FieldFocus::Row(0);
 
     let dump = render_to_dump_wide(&editor);
-
     assert!(
         dump.contains("[op]"),
         "OpRef row with attribute query must render `[op]` marker; dump:\n{dump}"
     );
-
     assert!(
         dump.contains("?attribute=otp"),
         "attribute query must appear in breadcrumb; dump:\n{dump}"
     );
-
     assert!(
         dump.contains("one-time password"),
         "field must render; dump:\n{dump}"
@@ -301,17 +295,14 @@ fn renderer_plain_with_bare_op_uri_renders_as_literal_no_breadcrumb() {
     editor.active_field = FieldFocus::Row(0);
 
     let dump = render_to_dump(&editor);
-
     assert!(
         !dump.contains("[op]"),
         "Plain rows must NOT carry [op] marker; dump:\n{dump}"
     );
-
     assert!(
         !dump.contains(" / Vault / "),
         "Plain op:// strings must not render vault breadcrumb; dump:\n{dump}"
     );
-
     assert!(
         dump.contains("●●●"),
         "Plain row must render masked by default; dump:\n{dump}"
@@ -368,20 +359,16 @@ fn renderer_op_ref_with_malformed_path_renders_repick_placeholder_no_panic() {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
     editor.active_field = FieldFocus::Row(0);
-
     editor
         .unmasked_rows
         .insert((SecretsScopeTag::Workspace, "TOKEN".into()));
 
     let dump = render_to_dump_wide(&editor);
-
     assert!(!dump.contains("[op]"), "no [op] marker; dump:\n{dump}");
-
     assert!(
         dump.contains("<unparseable path \u{2014} re-pick>"),
         "expected re-pick placeholder; dump:\n{dump}"
     );
-
     assert!(
         !dump.contains("op://abc/def/fld"),
         "UUID URI must NOT leak; dump:\n{dump}"

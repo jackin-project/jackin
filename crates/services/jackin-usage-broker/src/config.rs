@@ -20,21 +20,14 @@ use crate::{
     BROKER_SOCKET, BROKER_SOCKET_ALIAS_DIR_PREFIX, UNIX_SOCKET_PATH_LIMIT, UsageBrokerClient,
     unavailable,
 };
-
 #[derive(Debug, Clone)]
 pub struct UsageBrokerConfig {
     pub data_dir: PathBuf,
-
     pub build_id: String,
-
     pub coordinator: UsageCoordinatorConfig,
-
     pub idle_exit: Duration,
-
     pub lease_duration: Duration,
-
     pub lease_renewal: Duration,
-
     pub service_executable: Option<PathBuf>,
 }
 

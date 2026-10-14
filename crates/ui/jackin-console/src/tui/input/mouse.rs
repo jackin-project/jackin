@@ -167,7 +167,6 @@ pub fn handle_mouse_with_config(
                     vertical_fallback,
                 } => {
                     let outcome = dispatch_wheel(state, mouse, term_size, config, 0, delta);
-
                     if matches!(outcome, termrock::widgets::ScrollOutcome::Ignored)
                         && let Some(fallback) = vertical_fallback
                     {

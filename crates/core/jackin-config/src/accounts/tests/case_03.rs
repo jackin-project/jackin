@@ -46,7 +46,6 @@ fn validate_accounts_rejects_disabled_bindings_at_all_scopes() {
 #[test]
 fn prune_account_bindings_clears_all_scopes_and_enables_fallback() {
     let (mut cfg, ws) = config();
-
     cfg.workspaces.get_mut(ws.as_str()).unwrap().accounts = vec!["personal".into(), "work".into()];
 
     cfg.account_bindings.insert(Agent::Claude, "work".into());
@@ -109,7 +108,6 @@ fn resolve_launch_one_launch_wins_and_validates_atomically() {
         None,
     )
     .unwrap_err();
-
     resolve_launch(
         &cfg,
         Some(&ws),
@@ -118,7 +116,6 @@ fn resolve_launch_one_launch_wins_and_validates_atomically() {
         None,
     )
     .unwrap_err();
-
     let empty = resolve_launch(&cfg, Some(&ws), "smith", Some(&[]), None).unwrap();
     assert!(empty.is_empty());
 }
@@ -126,7 +123,6 @@ fn resolve_launch_one_launch_wins_and_validates_atomically() {
 #[test]
 fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
     let (mut cfg, ws) = launch_fixture();
-
     let instances = resolve_launch(
         &cfg,
         Some(&ws),
@@ -173,7 +169,6 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
                 .push(account);
         }
     };
-
     add_pair(&mut cfg, Agent::Kimi, "kimi");
     let error = resolve_launch(
         &cfg,
@@ -187,7 +182,6 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
         error.to_string().contains("no config-folder env var"),
         "unexpected kimi rejection: {error}"
     );
-
     add_pair(&mut cfg, Agent::Amp, "amp");
     let error = resolve_launch(
         &cfg,
@@ -201,7 +195,6 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
         error.to_string().contains("XDG_DATA_HOME"),
         "unexpected amp rejection: {error}"
     );
-
     add_pair(&mut cfg, Agent::Opencode, "opencode");
     let error = resolve_launch(
         &cfg,
@@ -215,7 +208,6 @@ fn resolve_launch_multi_instance_admission_follows_folder_var_kind() {
         error.to_string().contains("XDG_DATA_HOME"),
         "unexpected OpenCode rejection: {error}"
     );
-
     let instances =
         resolve_launch(&cfg, Some(&ws), "smith", Some(&["kimi-a".to_owned()]), None).unwrap();
     assert_eq!(instances.len(), 1);
@@ -234,11 +226,9 @@ fn resolve_launch_scope_precedence_replaces_without_union() {
             ..Default::default()
         },
     );
-
     let instances = resolve_launch(&cfg, Some(&ws), "smith", None, None).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].config_id, "claude-b");
-
     let instances = resolve_launch(&cfg, Some(&ws), "other", None, None).unwrap();
     assert_eq!(instances.len(), 2);
     assert_eq!(instances[0].config_id, "claude-a");
@@ -259,11 +249,9 @@ fn resolve_launch_global_candidates_filter_by_authorization() {
         },
     );
     cfg.default_launch = Some(vec!["zai-codex".into(), "codex-c".into()]);
-
     let instances = resolve_launch(&cfg, Some(&ws), "smith", None, None).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].config_id, "codex-c");
-
     cfg.workspaces.get_mut(ws.as_str()).unwrap().default_launch = Some(vec!["zai-codex".into()]);
     resolve_launch(&cfg, Some(&ws), "smith", None, None).unwrap_err();
 }
@@ -271,10 +259,8 @@ fn resolve_launch_global_candidates_filter_by_authorization() {
 #[test]
 fn resolve_launch_fallback_needs_a_single_eligible_instance() {
     let (cfg, ws) = launch_fixture();
-
     let err = resolve_launch(&cfg, Some(&ws), "smith", None, None).unwrap_err();
     assert!(err.to_string().contains("multiple accounts"), "{err}");
-
     let mut solo = AppConfig::default();
     solo.accounts.insert("only".into(), profile("Only"));
     let instances = resolve_launch(&solo, None, "smith", None, None).unwrap();
@@ -282,7 +268,6 @@ fn resolve_launch_fallback_needs_a_single_eligible_instance() {
     assert_eq!(instances[0].config_id, "only@claude");
     assert!(instances[0].synthesized);
     assert_eq!(instances[0].label, "Claude · Only");
-
     let empty = AppConfig::default();
     resolve_launch(&empty, None, "smith", None, None).unwrap_err();
 }
@@ -349,7 +334,6 @@ fn resolve_launch_invalid_binding_fails_without_silent_fallback() {
     cfg.account_bindings.insert(Agent::Claude, "nope".into());
     let err = resolve_launch(&cfg, None, "smith", None, Some(Agent::Claude)).unwrap_err();
     assert!(err.to_string().contains("unknown account"), "{err}");
-
     cfg.account_bindings
         .insert(Agent::Claude, "codex-work".into());
     let err = resolve_launch(&cfg, None, "smith", None, Some(Agent::Claude)).unwrap_err();

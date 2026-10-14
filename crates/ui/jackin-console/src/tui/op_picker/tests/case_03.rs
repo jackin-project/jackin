@@ -51,7 +51,6 @@ fn enter_on_account_advances_to_vault_with_account_scope() {
         s.filter_buf.is_empty(),
         "filter must clear when advancing from Account to Vault"
     );
-
     let runner = Arc::new(StubRunner::default());
     runner.account_list().unwrap();
     drop(runner.vault_list(s.selected_account_id().as_deref()));
@@ -233,7 +232,6 @@ fn picker_construction_does_not_block_on_account_list() {
         elapsed < std::time::Duration::from_millis(500),
         "constructor must not synchronously wait on account_list; elapsed={elapsed:?}"
     );
-
     runner_for_release.release();
 }
 

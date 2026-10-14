@@ -20,7 +20,6 @@ fn preview_environments_block_lists_envs_alphabetically_with_agent_on_right() {
     ws.roles.insert("beta".into(), beta_overrides);
 
     let joined = render_env_to_string(&ws, 60, 14);
-
     assert!(
         !joined.contains("All roles:"),
         "flat layout must not render `All roles:`; got {joined}"
@@ -82,7 +81,6 @@ fn preview_environments_block_lists_envs_alphabetically_with_agent_on_right() {
 fn preview_environments_block_omits_agents_without_overrides() {
     let mut ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
     ws.env.insert("API_KEY".into(), "literal".into());
-
     let mut alpha_overrides = jackin_config::WorkspaceRoleOverride::default();
     alpha_overrides
         .env
@@ -106,7 +104,6 @@ fn preview_environments_flat_row_workspace_level_has_no_agent_label() {
     ws.env.insert("API_KEY".into(), "literal".into());
 
     let joined = render_env_to_string(&ws, 60, 4);
-
     let api_row = joined
         .lines()
         .find(|r| r.contains("API_KEY"))
@@ -135,7 +132,6 @@ fn preview_environments_flat_row_per_agent_has_agent_label_on_right() {
         log_row.contains("alpha"),
         "per-role row must show the role name; got `{log_row}`"
     );
-
     let key_pos = log_row.find("LOG_LEVEL").unwrap();
     let agent_pos = log_row.find("alpha").unwrap();
     assert!(
@@ -208,7 +204,6 @@ fn preview_environments_same_key_in_workspace_and_agent_renders_two_rows() {
         2,
         "API_KEY must appear in TWO rows (workspace + alpha); got rows={api_rows:?}"
     );
-
     assert!(
         !api_rows[0].contains("alpha"),
         "first API_KEY row must be workspace-level (no role label); got `{}`",
@@ -236,7 +231,6 @@ fn preview_environments_sorts_alphabetically_across_scopes() {
     ws.roles.insert("agent-brown".into(), brown);
 
     let joined = render_env_to_string(&ws, 60, 8);
-
     let mut order: Vec<(&str, usize)> = Vec::new();
     for (y, row) in joined.lines().enumerate() {
         for key in ["API_KEY", "DB_URL", "DEBUG", "LOG_LEVEL"] {

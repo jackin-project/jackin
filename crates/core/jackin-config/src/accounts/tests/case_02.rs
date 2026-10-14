@@ -204,7 +204,6 @@ fn claude_and_codex_routing_is_unchanged_by_new_providers() {
         for provider in [AiProvider::Moonshot, AiProvider::Zai, AiProvider::Minimax] {
             assert!(api_key(provider, Some("model")).supports_agent(agent));
         }
-
         for provider in [
             AiProvider::Google,
             AiProvider::Cursor,
@@ -229,17 +228,12 @@ fn profile_compatibility_requires_owner_and_native_or_multi_provider_store() {
             source_selector: None,
         },
     };
-
     assert!(profile(Agent::Gemini, AiProvider::Google).supports_agent(Agent::Gemini));
-
     assert!(!profile(Agent::Gemini, AiProvider::Google).supports_agent(Agent::Antigravity));
-
     assert!(profile(Agent::Omp, AiProvider::Anthropic).supports_agent(Agent::Omp));
     assert!(profile(Agent::Hermes, AiProvider::OpenRouter).supports_agent(Agent::Hermes));
     assert!(profile(Agent::Opencode, AiProvider::Meta).supports_agent(Agent::Opencode));
-
     assert!(!profile(Agent::Omp, AiProvider::Anthropic).supports_agent(Agent::Hermes));
-
     assert!(!profile(Agent::Cursor, AiProvider::Google).supports_agent(Agent::Cursor));
 }
 
@@ -276,7 +270,6 @@ fn omp_routing_requires_model_and_selects_provider_variable() {
         env.get("OPENROUTER_API_KEY").unwrap().as_persisted_str(),
         "fixture-key"
     );
-
     assert_eq!(env.len(), 1);
     api_key(AiProvider::OpenRouter, None)
         .credential_env(Agent::Omp)

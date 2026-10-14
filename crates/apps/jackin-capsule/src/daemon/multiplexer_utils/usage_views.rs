@@ -151,7 +151,6 @@ impl Multiplexer {
             return false;
         };
         let mut view = self.focused_usage_snapshot_for_provider(provider_label.as_deref());
-
         if self.usage.usage_refresh_task.is_some() {
             decorate_usage_view_refreshing(&mut view);
         }

@@ -68,7 +68,6 @@ pub(crate) fn discover_forwarded_sources(
         let Some(surface) = HostSurfaceId::from_id(&account.surface_id) else {
             continue;
         };
-
         if !HostSurfaceId::ALL.contains(&surface) {
             continue;
         }
@@ -219,7 +218,6 @@ pub(crate) fn enumerate_registered_accounts(
                 ));
                 continue;
             };
-
             let mut isolated = AppConfig {
                 env: config.env.clone(),
                 ..AppConfig::default()

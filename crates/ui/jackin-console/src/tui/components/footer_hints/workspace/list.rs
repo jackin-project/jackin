@@ -183,7 +183,6 @@ pub(crate) fn instance_row_footer_items(
     is_live: bool,
 ) -> Vec<HintSpan<'static>> {
     let g = |a| WORKSPACE_LIST_KEYMAP.glyph_for(a);
-
     let mut items = if is_live {
         vec![
             super::super::key_span(g(WorkspaceListAction::NavigateUp)),

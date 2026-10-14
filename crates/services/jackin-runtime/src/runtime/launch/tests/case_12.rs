@@ -149,7 +149,6 @@ plugins = []
         build_cmd.contains("--label jackin.image.recipe.hash="),
         "workspace build must stamp recipe hash label; got: {build_cmd}"
     );
-
     assert!(
         build_cmd.contains("--label jackin.manifest.version="),
         "workspace build must stamp the manifest version label; got: {build_cmd}"

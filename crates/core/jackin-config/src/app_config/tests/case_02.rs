@@ -305,12 +305,10 @@ bogus = true
 fn resolve_github_mode_layered_precedence() {
     use crate::{WorkspaceConfig, WorkspaceRoleOverride};
     let mut cfg = AppConfig::default();
-
     assert_eq!(
         resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Sync
     );
-
     cfg.github = Some(GithubAuthConfig {
         auth_forward: GithubAuthMode::Ignore,
         env: BTreeMap::new(),
@@ -319,7 +317,6 @@ fn resolve_github_mode_layered_precedence() {
         resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Ignore
     );
-
     let ws = WorkspaceConfig {
         workdir: "/x".into(),
         github: Some(GithubAuthConfig {
@@ -333,7 +330,6 @@ fn resolve_github_mode_layered_precedence() {
         resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Token
     );
-
     let ov = WorkspaceRoleOverride {
         github: Some(GithubAuthConfig {
             auth_forward: GithubAuthMode::Sync,

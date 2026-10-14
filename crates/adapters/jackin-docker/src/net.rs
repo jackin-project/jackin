@@ -17,11 +17,8 @@ use fast_down::{
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT as USER_AGENT_HEADER};
 
 const TEXT_GET_TIMEOUT: Duration = Duration::from_secs(30);
-
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(5);
-
 const DOWNLOAD_CONCURRENCY: usize = 8;
 
 pub const USER_AGENT: &str = concat!("jackin/", env!("JACKIN_VERSION"));
@@ -73,7 +70,6 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
     let accept_invalid_hostnames = false;
 
     let parsed = reqwest::Url::parse(url).with_context(|| format!("invalid URL {url}"))?;
-
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT_HEADER, HeaderValue::from_static(USER_AGENT));
     let client = build_client(
@@ -119,7 +115,6 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
         accept_invalid_hostnames,
         cookie_store: false,
         file_id: info.file_id,
-
         resp: None,
         available_ips: Arc::from([]),
         max_redirects: 10,
@@ -141,7 +136,6 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
             max_speculative: 3,
         },
     );
-
     let drive = async {
         let mut flush_error = None;
         while let Ok(event) = result.event_chain().recv().await {

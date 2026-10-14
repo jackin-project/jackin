@@ -107,7 +107,6 @@ fn account_projects_window_spend_and_plan_groups() {
     );
 
     let account = project_account(&entry, 0, 7).unwrap();
-
     assert_eq!(account.windows.len(), 2);
     assert_eq!(
         account.windows[0].remaining_percent.map(UsagePercent::get),
@@ -136,14 +135,12 @@ fn account_projects_window_spend_and_plan_groups() {
         assert_eq!(group.last_success_at_epoch, Some(1_800_000_000));
         assert!(!group.is_stale);
     }
-
     assert_eq!(
         account.metric_groups[0].quota_state,
         account.windows[0].quota_state
     );
     assert_eq!(account.metric_groups[0].reset_at_epoch, Some(1_800_100_000));
     assert_eq!(account.metric_groups[0].renews_at_epoch, None);
-
     match &account.metric_groups[2].value {
         UsageMetricValueV1::SpendCap {
             cap,
@@ -157,7 +154,6 @@ fn account_projects_window_spend_and_plan_groups() {
         other => panic!("expected spend-cap value, got {other:?}"),
     }
     assert_eq!(account.metric_groups[2].reset_at_epoch, Some(1_800_200_000));
-
     assert_eq!(
         account.metric_groups[3].quota_state,
         UsageQuotaStateV1::NotApplicable

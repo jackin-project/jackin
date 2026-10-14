@@ -97,7 +97,6 @@ impl Multiplexer {
         if let Some(action) = prefix_command_action(&cmd) {
             self.apply_action(action);
         }
-
         self.invalidate(prefix_full_redraw_reason(&cmd));
     }
 

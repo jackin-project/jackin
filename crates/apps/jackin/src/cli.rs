@@ -61,10 +61,8 @@ pub use workspace::{
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
-
     #[command(flatten)]
     pub console_args: ConsoleArgs,
-
     #[arg(
         long,
         global = true,
@@ -80,48 +78,34 @@ pub enum Command {
     Load(LoadArgs),
     Hardline(HardlineArgs),
     Eject(EjectArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     Purge(PurgeArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Prewarm(PrewarmArgs),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Prune(PruneCommand),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Console(ConsoleArgs),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Role(RoleCommand),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Workspace(WorkspaceCommand),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Account(account::AccountCommand),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
-
     #[cfg(unix)]
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Daemon(DaemonCommand),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Doctor(doctor::DoctorArgs),
-
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Diagnostics(DiagnosticsCommand),
-
     #[command(before_help = BANNER, styles = HELP_STYLES, visible_alias = "ps")]
     Status(status::StatusArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Usage(usage::UsageArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Help {
         #[arg(trailing_var_arg = true, num_args = 0..)]

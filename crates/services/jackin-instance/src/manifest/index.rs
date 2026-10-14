@@ -105,7 +105,6 @@ impl InstanceIndex {
             index.sort();
             index.write(data_dir)
         })();
-
         drop(lock);
         result
     }
@@ -142,7 +141,6 @@ impl InstanceIndex {
                 manifest.mark_status(InstanceStatus::Purged);
                 index.instances.push(manifest.to_index_entry());
             }
-
             Ok(None) => {}
             Err(_) => {
                 index.instances.push(InstanceIndexEntry {
@@ -206,7 +204,6 @@ impl InstanceIndex {
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-
             let Some(manifest) = InstanceManifest::read_optional(&entry.path())? else {
                 continue;
             };

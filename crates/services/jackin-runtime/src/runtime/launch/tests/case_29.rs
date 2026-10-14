@@ -46,7 +46,6 @@ fn name_lock_child() {
         );
         std::io::stdout().flush().unwrap();
     }
-
     drop(held);
 }
 

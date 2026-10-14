@@ -14,9 +14,7 @@ mod tests;
 #[derive(Debug, PartialEq, Eq)]
 enum SudoAction {
     Write,
-
     Remove,
-
     Noop,
 }
 
@@ -24,7 +22,6 @@ fn sudo_action(granted: bool, present: bool) -> SudoAction {
     match (granted, present) {
         (true, false) => SudoAction::Write,
         (false, true) => SudoAction::Remove,
-
         (true, true) | (false, false) => SudoAction::Noop,
     }
 }

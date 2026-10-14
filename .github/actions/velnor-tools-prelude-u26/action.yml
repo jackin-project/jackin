@@ -1,4 +1,3 @@
-
 name: Velnor hosted tools prelude
 description: Qualify the hosted image and copy a matching tool seed.
 inputs:

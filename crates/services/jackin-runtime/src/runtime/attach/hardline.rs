@@ -146,7 +146,6 @@ pub(crate) async fn hardline_docker_agent_with_focus_with_lease(
 ) -> anyhow::Result<()> {
     validate_current_account_admission(paths, container_name, admission_lease)
         .map_err(mark_reconnect_admission_failure)?;
-
     jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     let attach_outcome = reconnect_or_create_session_with_container_handle_with_lease(
         paths,
@@ -159,7 +158,6 @@ pub(crate) async fn hardline_docker_agent_with_focus_with_lease(
         entry_claim,
     )
     .await;
-
     if let Err(error) = attach_outcome {
         if error.is::<crate::runtime::launch::GenerationLeaseViolation>()
             || error.is::<ReconnectAdmissionFailure>()

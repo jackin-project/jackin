@@ -63,7 +63,6 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
             _ => None,
         })
         .collect();
-
     assert!(
         keys.contains(&"h/j/k/l"),
         "must show grouped nav glyph: {keys:?}"
@@ -84,7 +83,6 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
         !keys.contains(&"l"),
         "l is HiddenAlias and must not appear in hints: {keys:?}"
     );
-
     assert!(keys.contains(&"C"), "must show C (new tab): {keys:?}");
     assert!(
         keys.contains(&"X"),
@@ -148,7 +146,6 @@ fn filter_list_keymap_dispatches_every_advertised_chord() {
             "wrong action for {raw:?}"
         );
     }
-
     for raw in [&b"q"[..], b"a", b" ", b":"] {
         let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
         assert_eq!(
@@ -198,7 +195,6 @@ fn read_only_dismiss_keymap_accepts_historical_dismiss_set() {
             "{raw:?} must dismiss read-only dialog"
         );
     }
-
     for raw in [&b"a"[..], b"\r", b"\x1b[A"] {
         let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
         assert_eq!(

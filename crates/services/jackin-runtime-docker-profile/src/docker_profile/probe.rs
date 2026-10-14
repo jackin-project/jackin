@@ -17,13 +17,11 @@ pub fn probe_cgroup_version() -> &'static str {
     if std::path::Path::new("/sys/fs/cgroup").exists() {
         return "v1";
     }
-
     "v2"
 }
 
 pub fn parse_apparmor_from_docker_info(security_options: &str) -> (bool, &'static str) {
     let available = security_options.contains("apparmor");
-
     let layer = if std::path::Path::new("/usr/bin/sw_vers").exists() {
         "backend-vm"
     } else {

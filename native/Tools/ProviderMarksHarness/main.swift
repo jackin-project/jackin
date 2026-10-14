@@ -2,13 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 
-
-
-
-
-
-
-
 import AppKit
 import Foundation
 import JackinDesktopUI
@@ -19,7 +12,6 @@ struct ProviderMarksHarness {
     static func main() {
         _ = NSApplication.shared
         var failed = 0
-
         let keys = ["codex", "claude", "amp", "grok", "zai", "kimi", "minimax"]
         fputs("ProviderMarksHarness: \(keys.count) Desktop keys\n", stderr)
         for key in keys {
@@ -33,12 +25,9 @@ struct ProviderMarksHarness {
             )
             if !ok { failed += 1 }
         }
-
         let unknown = ProviderMarks.hasMark(forIconKey: "not-a-provider")
         fputs("\(unknown ? "FAIL" : "PASS")  unknown key hasMark=false\n", stderr)
         if unknown { failed += 1 }
-
-
 
         for key in keys {
             guard let mark = ProviderMarks.templateImage(forIconKey: key),
@@ -63,7 +52,6 @@ struct ProviderMarksHarness {
         fputs(
             "ProviderMarksHarness: ALL PASS (\(keys.count)/\(keys.count) official marks)\n", stderr)
     }
-
 
     private static func maxAlpha(of image: NSImage) -> Int? {
         guard let tiff = image.tiffRepresentation,

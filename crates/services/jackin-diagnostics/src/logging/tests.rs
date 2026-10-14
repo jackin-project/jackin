@@ -5,7 +5,6 @@ fn sink_level_falls_back_to_global() {
     let _lock = crate::DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-
     let global = telemetry_level(true);
     assert_eq!(sink_level(TelemetrySink::OtlpSpans, true), global);
     assert_eq!(sink_level(TelemetrySink::OtlpLogs, true), global);

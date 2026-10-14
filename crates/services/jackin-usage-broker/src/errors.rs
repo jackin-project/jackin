@@ -29,7 +29,6 @@ pub(crate) fn publication_identity_metadata(
         let entry = evidence
             .entry(capability)
             .or_insert_with(|| (identity_kind, BTreeSet::new()));
-
         if identity_kind == UsageIdentityKindV1::ProviderAccountId {
             entry.0 = UsageIdentityKindV1::ProviderAccountId;
         }

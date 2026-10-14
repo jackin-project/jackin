@@ -48,11 +48,9 @@ pub fn resolve_profile(
 
 pub fn validate_effective_grants(grants: &EffectiveGrants) -> Vec<GrantValidationError> {
     let mut errors = Vec::new();
-
     if grants.user == "root" && grants.sudo {
         errors.push(GrantValidationError::RootAndSudo);
     }
-
     if let (Some(res), Some(mem)) = (grants.memory_reservation_bytes, grants.memory_bytes)
         && res > mem
     {
@@ -78,7 +76,6 @@ pub fn resolve_effective_grants(
         Some(g) => apply_grants(after_config, g),
         None => after_config,
     };
-
     apply_implicit_grants(merged)
 }
 
@@ -90,7 +87,6 @@ pub(crate) fn apply_implicit_grants(mut grants: EffectiveGrants) -> EffectiveGra
             }
         }
     }
-
     grants.no_new_privileges = !grants.sudo;
     grants
 }

@@ -122,7 +122,6 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-
     config.github = Some(jackin_config::GithubAuthConfig {
         auth_forward: jackin_config::GithubAuthMode::Token,
         env: std::collections::BTreeMap::new(),
@@ -166,7 +165,6 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
     .unwrap();
 
     let docker = jackin_test_support::FakeDockerClient::default();
-
     docker
         .list_image_tags_queue
         .borrow_mut()
@@ -179,7 +177,6 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
         .container_id_by_name
         .borrow_mut()
         .insert(prewarm_dind.to_owned(), "prewarm-b4-dind-id".to_owned());
-
     docker
         .inspect_state_by_name
         .borrow_mut()
@@ -246,7 +243,6 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::stubs::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-
     config.github = Some(jackin_config::GithubAuthConfig {
         auth_forward: jackin_config::GithubAuthMode::Token,
         env: std::collections::BTreeMap::new(),
@@ -290,7 +286,6 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
     .unwrap();
 
     let docker = jackin_test_support::FakeDockerClient::default();
-
     docker
         .list_image_tags_queue
         .borrow_mut()
@@ -303,7 +298,6 @@ async fn load_agent_dind_free_launch_preserves_available_prewarm() {
         .container_id_by_name
         .borrow_mut()
         .insert(prewarm_dind.to_owned(), "prewarm-b4-dind-id".to_owned());
-
     docker
         .inspect_state_by_name
         .borrow_mut()

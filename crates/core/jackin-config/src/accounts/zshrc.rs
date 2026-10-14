@@ -10,29 +10,22 @@ use jackin_core::{Agent, OpRef, parse_op_reference};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UnresolvedKind {
     CommandSubstitution,
-
     FunctionCall,
-
     OpRead,
-
     UnresolvableExpansion,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnresolvedEntry {
     pub line: usize,
-
     pub name: String,
-
     pub kind: UnresolvedKind,
-
     pub detail: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ZshrcImport {
     pub values: BTreeMap<String, String>,
-
     pub unresolved: Vec<UnresolvedEntry>,
 }
 
@@ -745,49 +738,37 @@ fn truncate_detail(detail: String) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectoryCandidate {
     pub agent: Agent,
-
     pub directory: PathBuf,
-
     pub source_var: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpReadCandidate {
     pub var: String,
-
     pub line: usize,
-
     pub reference: OpRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrapperCallSite {
     pub var: String,
-
     pub line: usize,
-
     pub spec: WrapperSpec,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelProfile {
     pub name: String,
-
     pub model: Option<String>,
-
     pub base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ZshrcImportPlan {
     pub directories: Vec<DirectoryCandidate>,
-
     pub xdg_roots: Option<XdgRoots>,
-
     pub op_refs: Vec<OpReadCandidate>,
-
     pub wrappers: Vec<WrapperCallSite>,
-
     pub models: Vec<ModelProfile>,
 }
 

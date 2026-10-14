@@ -25,40 +25,28 @@ Examples:
 )]
 pub struct LoadArgs {
     pub selector: Option<String>,
-
     #[arg(value_name = "TARGET")]
     pub target: Option<String>,
-
     #[arg(long = "mount")]
     pub mounts: Vec<String>,
-
     #[arg(long, default_value_t = false)]
     pub rebuild: bool,
-
     #[arg(long)]
     pub force: bool,
-
     #[arg(long, value_parser = parse_agent)]
     pub agent: Option<jackin_core::Agent>,
-
     #[arg(long)]
     pub account: Option<String>,
-
     #[arg(long, value_name = "MODEL", value_parser = parse_model)]
     pub model: Option<String>,
-
     #[arg(long, value_name = "EFFORT", value_parser = parse_reasoning_effort)]
     pub effort: Option<jackin_core::ReasoningEffort>,
-
     #[arg(long)]
     pub role_branch: Option<String>,
-
     #[arg(long, value_name = "PROFILE", value_parser = parse_docker_profile)]
     pub docker_profile: Option<jackin_runtime::runtime::DockerSecurityProfile>,
-
     #[arg(long)]
     pub dry_run: bool,
-
     #[arg(
         long,
         value_name = "FORMAT",
@@ -110,16 +98,12 @@ Examples:
 )]
 pub struct HardlineArgs {
     pub selector: Option<String>,
-
     #[arg(long)]
     pub inspect: bool,
-
     #[arg(long, conflicts_with = "inspect")]
     pub new: bool,
-
     #[arg(long, value_parser = parse_agent, requires = "new")]
     pub agent: Option<jackin_core::Agent>,
-
     #[arg(long, conflicts_with_all = ["inspect", "new"])]
     pub shell: bool,
 }
@@ -132,22 +116,16 @@ pub struct ConsoleArgs {}
 pub enum RoleCommand {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Validate(RoleRepoPathArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Migrate(RoleRepoPathArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Create(RoleCreateArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     ConstructVersion(RoleRepoPathArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     PublishedImage(RoleRepoPathArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     PublishedImageRepository(RoleRepoPathArgs),
-
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     PublishLabels(RolePublishLabelsArgs),
 }
@@ -162,7 +140,6 @@ pub struct RoleRepoPathArgs {
 pub struct RolePublishLabelsArgs {
     #[arg(long)]
     pub role_git_sha: String,
-
     #[arg(value_name = "ROLE_REPO_PATH")]
     pub path: Option<PathBuf>,
 }
@@ -170,7 +147,6 @@ pub struct RolePublishLabelsArgs {
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RoleCreateArgs {
     pub role: String,
-
     #[arg(value_name = "PROJECTS_DIR")]
     pub projects_dir: Option<PathBuf>,
 }

@@ -34,7 +34,6 @@ pub fn provision_claude_slot(
     let claude_home_dir = home_dir.join(&layout.home_rel);
     std::fs::create_dir_all(&claude_dir)?;
     std::fs::create_dir_all(&claude_home_dir)?;
-
     let claude_account_home = claude_home_dir.join(".claude.json");
     jackin_instance_credentials::create_private_file_if_absent(&claude_account_home, b"{}")?;
     let account_json = claude_dir.join("account.json");

@@ -11,7 +11,6 @@ pub(crate) enum SettingsGeneralTabAction {
     MoveDown,
     Toggle,
     Save,
-
     Back,
 }
 

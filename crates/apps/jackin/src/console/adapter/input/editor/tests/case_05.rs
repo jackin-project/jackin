@@ -137,7 +137,6 @@ fn enter_on_op_agent_key_row_is_noop() {
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
     editor.secrets_expanded.insert("smith".into());
-
     editor.active_field = FieldFocus::Row(3);
     state.stage = ManagerStage::Editor(editor);
 
@@ -210,7 +209,6 @@ fn m_on_focused_workspace_key_unmasks_only_that_row() {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
-
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
 
@@ -345,7 +343,6 @@ fn tab_leave_resets_unmasked_rows() {
         key(KeyCode::Char('m')),
     )
     .unwrap();
-
     handle_key(
         &mut state,
         &mut config,
@@ -354,7 +351,6 @@ fn tab_leave_resets_unmasked_rows() {
         key(KeyCode::Tab),
     )
     .unwrap();
-
     for _ in 0..4 {
         handle_key(
             &mut state,

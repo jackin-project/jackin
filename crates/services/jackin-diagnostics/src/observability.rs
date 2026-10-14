@@ -350,7 +350,6 @@ fn endpoint_authority(endpoint: &str) -> Option<String> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerOtlp {
     pub endpoint: String,
-
     pub needs_host_gateway: bool,
 }
 
@@ -396,7 +395,6 @@ mod otlp;
 
 #[cfg(any(test, feature = "test-support"))]
 pub use otlp::{TestExport, test_capsule_layers};
-
 #[cfg(test)]
 pub(crate) use otlp::{emit_session_start_for_test, test_layers};
 

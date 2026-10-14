@@ -18,11 +18,8 @@ const SGD_EXPONENT: u8 = 2;
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct SpendAccountState {
     pub latest_record: Option<SpendRecord>,
-
     pub current_period_record: Option<SpendRecord>,
-
     pub previous_period_record: Option<SpendRecord>,
-
     #[serde(default)]
     pub historical_correction_horizon_epoch: Option<i64>,
 }
@@ -30,16 +27,11 @@ pub(crate) struct SpendAccountState {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct SpendState {
     pub baseline: Option<SpendRecord>,
-
     pub period_anchor: Option<SpendRecord>,
-
     #[serde(default)]
     pub closed_period_anchor: Option<SpendRecord>,
-
     pub cumulative_goal_spend: Option<Money>,
-
     pub rollover_unknown: bool,
-
     pub cumulative_complete: bool,
 }
 
@@ -144,17 +136,11 @@ fn verified_evidence_is_coherent(record: &SpendRecord) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpendDecision {
     pub verification: SpendVerification,
-
     pub budget_unverifiable: bool,
-
     pub budget_cap_reached: bool,
-
     pub rollover_unknown: bool,
-
     pub issues: Vec<MonitorIssueCode>,
-
     pub actions: Vec<MonitorAction>,
-
     pub action_fingerprints: Vec<String>,
 }
 

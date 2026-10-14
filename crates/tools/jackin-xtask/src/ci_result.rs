@@ -21,7 +21,6 @@ mod tests;
 #[derive(Subcommand, Debug)]
 pub(crate) enum CiResultCommand {
     Find(FindArgs),
-
     Stage(StageArgs),
 }
 
@@ -61,7 +60,6 @@ pub(crate) struct FindArgs {
     source_sha: String,
     #[arg(long)]
     repository: String,
-
     #[arg(long, default_value_t = 0)]
     run_id: u64,
     #[arg(long, default_value = "")]

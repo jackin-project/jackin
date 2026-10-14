@@ -37,31 +37,21 @@ pub struct OpPickerState {
     pub sections: Vec<OpSection>,
     pub field_list_state: CollectionState<usize>,
     pub section_list_state: CollectionState<usize>,
-
     pub selected_section: Option<OpSection>,
-
     pub collapsed_sections: HashSet<String>,
 
     pub load_state: OpLoadState,
 
     pub mode: OpPickerMode,
-
     pub item_name_input: TextInputState<'static>,
-
     pub field_label_input: TextInputState<'static>,
-
     pub section_name_input: TextInputState<'static>,
-
     pub pending_section: Option<jackin_core::OpSectionTarget>,
-
     pub field_label_origin: FieldLabelOrigin,
-
     pub field_refresh_in_place: bool,
 
     pub rx: Option<LoadSubscription<LoadResult>>,
-
     pub pending_load: Option<OpPickerPendingLoad<LoadResult, OpPickerLoadRequest, ()>>,
-
     pub op_cache: Rc<RefCell<OpPickerCache>>,
 }
 

@@ -28,7 +28,6 @@ fn brand_header_line(label: &str) -> Line<'static> {
     let block = Style::default()
         .bg(jackin_tui::tokens::BRAND_BLOCK)
         .add_modifier(Modifier::BOLD);
-
     Line::from(vec![
         Span::styled(" jackin", block.fg(jackin_tui::tokens::INK)),
         Span::styled("❯", block.fg(jackin_tui::tokens::BRAND_CHEVRON)),

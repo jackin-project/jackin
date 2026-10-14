@@ -44,7 +44,6 @@ fn csi_u_lowercase_ctrl_converts_to_control_byte() {
 #[test]
 fn csi_u_no_ctrl_modifier_returns_none() {
     assert_eq!(csi_u_control_byte(u32::from(b'a'), Some(2)), None);
-
     assert_eq!(csi_u_control_byte(u32::from(b'a'), None), None);
 }
 
@@ -337,12 +336,9 @@ fn sgr_mouse_press_is_decoded() {
 #[test]
 fn unterminated_csi_does_not_grow_unbounded() {
     let mut parser = InputParser::default();
-
     parser.parse(b"\x1b[");
-
     let junk = vec![b';'; MAX_ESC_SEQ_LEN + 256];
     parser.parse(&junk);
-
     let events = parser.parse(b"\x1b[A");
     assert_eq!(events, vec![InputEvent::Data(b"\x1b[A".to_vec())]);
 }

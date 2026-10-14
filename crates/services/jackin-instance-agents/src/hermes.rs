@@ -76,7 +76,6 @@ pub fn provision_hermes_auth_from_source_dir(
                 hermes_dir, source_dir, mode, None,
             );
         };
-
         let snapshot = create_hermes_source_snapshot(hermes_dir, source_dir)?;
         let snapshot_root = auth_directory::open_directory_path(snapshot.path())?;
         auth_directory::snapshot_source(&source.root, &snapshot_root)?;
@@ -88,7 +87,6 @@ pub fn provision_hermes_auth_from_source_dir(
             snapshot.path(),
         )?;
         auth_directory::run_hermes_snapshot_hook();
-
         return provision_hermes_dir_credential_with_locked_source(
             hermes_dir,
             snapshot.path(),

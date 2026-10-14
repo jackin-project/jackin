@@ -94,7 +94,6 @@ pub fn spawn_sibling_auth_prewarm(
                     return;
                 }
             };
-
         let mut bindings =
             match jackin_runtime_launch_capsule_setup::capsule_setup::instance_auth_bindings(
                 &config, &instances,

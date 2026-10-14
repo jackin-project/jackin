@@ -45,21 +45,14 @@ pub(crate) enum ChangeCommand {
 #[derive(Subcommand)]
 pub(crate) enum DocsCommand {
     RepoLinks(DocsGateArgs),
-
     Brand(DocsGateArgs),
-
     Specs(DocsGateArgs),
-
     MapCheck(DocsGateArgs),
-
     Contract(contract::DocsContractArgs),
-
     #[command(hide = true)]
     CiLinkResult,
-
     #[command(hide = true)]
     CiLycheeCache,
-
     SiteLinks,
 }
 
@@ -72,10 +65,8 @@ pub(crate) struct DocsGateArgs {
 #[derive(Args)]
 pub(crate) struct ChangeNewArgs {
     slug: String,
-
     #[arg(long)]
     group: String,
-
     #[arg(long)]
     title: Option<String>,
 }
@@ -83,17 +74,14 @@ pub(crate) struct ChangeNewArgs {
 #[derive(Subcommand)]
 pub(crate) enum ResearchCommand {
     Scaffold(ResearchScaffoldArgs),
-
     Check(DocsGateArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct ResearchScaffoldArgs {
     slug: String,
-
     #[arg(long)]
     group: String,
-
     #[arg(long)]
     title: Option<String>,
 }
@@ -101,20 +89,16 @@ pub(crate) struct ResearchScaffoldArgs {
 #[derive(Subcommand)]
 pub(crate) enum RoadmapCommand {
     Audit(DocsGateArgs),
-
     Retire(RoadmapRetireArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct RoadmapRetireArgs {
     slug: String,
-
     #[arg(long, conflicts_with_all = ["apply", "partial"])]
     plan: bool,
-
     #[arg(long, conflicts_with_all = ["plan", "partial"])]
     apply: bool,
-
     #[arg(long, conflicts_with_all = ["plan", "apply"])]
     partial: bool,
 }
@@ -218,7 +202,6 @@ fn check_codebase_map_text(
         if tok == "jackin" || tok == "jackin❯" {
             continue;
         }
-
         if !(tok.contains('-') || tok.contains('_')) {
             continue;
         }
@@ -327,7 +310,6 @@ fn workspace_packages(root: &Path) -> Result<Vec<(String, String)>> {
             .get("manifest_path")
             .and_then(|x| x.as_str())
             .unwrap_or("");
-
         if !manifest.starts_with(workspace_root) {
             continue;
         }

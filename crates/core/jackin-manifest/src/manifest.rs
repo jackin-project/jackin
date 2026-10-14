@@ -3,38 +3,23 @@
 
 use crate::repo_contract::MANIFEST_FILENAME;
 use anyhow::Context;
-
 pub use jackin_core::JACKIN_DIND_HOSTNAME_ENV_NAME;
-
 pub use jackin_core::JACKIN_ENV_NAME;
-
 pub use jackin_core::JACKIN_ENV_VALUE;
 use std::path::Path;
 
 pub use jackin_core::AmpConfig;
-
 pub use jackin_core::ClaudeConfig;
-
 pub use jackin_core::ClaudeMarketplaceConfig;
-
 pub use jackin_core::CodexConfig;
-
 pub use jackin_core::EnvVarDecl;
-
 pub use jackin_core::HookEntry;
-
 pub use jackin_core::HooksConfig;
-
 pub use jackin_core::IdentityConfig;
-
 pub use jackin_core::KimiConfig;
-
 pub use jackin_core::ManifestDockerConfig;
-
 pub use jackin_core::ManifestWarning;
-
 pub use jackin_core::OpencodeConfig;
-
 pub use jackin_core::RoleManifest;
 
 pub fn load_role_manifest(repo_dir: &Path) -> anyhow::Result<RoleManifest> {

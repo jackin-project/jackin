@@ -70,7 +70,6 @@ impl KimiPool {
             #[expect(clippy::cast_precision_loss, reason = "count magnitudes fit f64")]
             return Some(used.max(0) as f64 / limit as f64 * 100.0);
         }
-
         self.used_ratio.and_then(|ratio| {
             if !ratio.is_finite() || ratio < 0.0 {
                 return None;

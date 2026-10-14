@@ -23,7 +23,6 @@ pub const IMAGE_RECIPE_VERSION: &str = "v9";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageRecipe {
     pub(crate) version: &'static str,
-
     pub(crate) manifest_version: String,
     pub(crate) role_git_sha: String,
     pub(crate) role_source_ref: Option<String>,
@@ -34,10 +33,8 @@ pub struct ImageRecipe {
     pub(crate) cache_bust: String,
     pub(crate) capsule_version: String,
     pub(crate) hooks_hash: String,
-
     pub(crate) plugin_recipe_hash: String,
     pub(crate) host_identity_strategy: &'static str,
-
     pub host_uid: Option<u32>,
 }
 
@@ -98,7 +95,6 @@ pub fn build_image_recipe_with_construct_image(
     Ok(ImageRecipe {
         version: IMAGE_RECIPE_VERSION,
         manifest_version: validated_repo.manifest.version.clone(),
-
         role_git_sha: head_sha
             .map_or("unknown", crate::naming::short_git_sha)
             .to_owned(),
@@ -108,7 +104,6 @@ pub fn build_image_recipe_with_construct_image(
         generated_runtime_hash: hash_str(&runtime_dockerfile),
         supported_agents,
         cache_bust: cache_bust.to_owned(),
-
         capsule_version: capsule_binary::REQUIRED_VERSION.to_owned(),
         hooks_hash: hooks_hash(&cached_repo.repo_dir, validated_repo)?,
         plugin_recipe_hash: plugin_recipe_hash(validated_repo),
@@ -309,7 +304,6 @@ pub fn image_recipe_label_map_for_install_test(
     branch_override: Option<&str>,
     base_image_override: Option<&str>,
     cache_bust: &str,
-
     _selected_install: AgentInstall<String>,
 ) -> std::collections::HashMap<String, String> {
     let recipe = build_image_recipe(

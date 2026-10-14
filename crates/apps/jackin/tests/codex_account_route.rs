@@ -98,7 +98,6 @@ fn explicit_codex_home_keeps_discovery_and_role_selection_on_one_source() -> any
         home.join(".claude/.credentials.json"),
         r#"{"claudeAiOauth":{"accessToken":"synthetic-claude-token"}}"#,
     )?;
-
     fs::write(
         home.join(".zshrc"),
         format!("CODEX_HOME={}\n", explicit_home.display()),
@@ -176,7 +175,6 @@ fn explicit_codex_home_keeps_discovery_and_role_selection_on_one_source() -> any
         ])
         .assert()
         .success();
-
     {
         let config_path = home.join(".config/jackin/config.toml");
         let mut config_text = fs::read_to_string(&config_path)?;

@@ -12,21 +12,13 @@ const BAKE_FILE: &str = "docker-bake.hcl";
 #[derive(Subcommand)]
 pub(crate) enum ConstructCommand {
     InitBuildx,
-
     DoctorBuildx,
-
     ResetBuildx,
-
     BuildLocal,
-
     BuildPlatform { platform: Platform },
-
     PushPlatform { platform: Platform },
-
     AssertVersionUnpublished,
-
     PublishManifest,
-
     Inspect,
 }
 
@@ -408,7 +400,6 @@ enum VersionStatus {
 #[derive(Debug, PartialEq, Eq)]
 enum ManifestAction {
     Publish,
-
     SkipAlreadyPublished,
 }
 

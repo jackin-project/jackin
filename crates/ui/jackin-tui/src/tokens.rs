@@ -18,35 +18,20 @@ pub const fn color(rgb: Rgb) -> Color {
 }
 
 pub const BRAND_BLOCK: Color = color(BRAND_BLOCK_RGB);
-
 pub const DEBUG_AMBER: Color = color(DEBUG_AMBER_RGB);
-
 pub const STATUS_BLOCKED_RED: Color = color(STATUS_BLOCKED_RED_RGB);
-
 pub const MENU_IDLE_BG: Color = color(MENU_IDLE_BG_RGB);
-
 pub const MENU_IDLE_HOVER_BG: Color = color(MENU_IDLE_HOVER_BG_RGB);
-
 pub const MENU_AWAITING_BG: Color = color(MENU_AWAITING_BG_RGB);
-
 pub const MENU_AWAITING_HOVER_BG: Color = color(MENU_AWAITING_HOVER_BG_RGB);
-
 pub const LINK_BLUE: Color = color(LINK_BLUE_RGB);
-
 pub const ACTION_ACCENT: Color = color(ACTION_ACCENT_RGB);
-
 pub const DISCLOSURE_ACCENT: Color = color(DISCLOSURE_ACCENT_RGB);
-
 pub const CYAN: Color = color(CYAN_RGB);
-
 pub const CYAN_DIM: Color = color(CYAN_DIM_RGB);
-
 pub const INK: Color = Color::Black;
-
 pub const BRAND_CHEVRON: Color = color(WHITE_RGB);
-
 pub const BRAND_SEPARATOR: Color = color(PHOSPHOR_DARK_RGB);
-
 pub const BRAND_LABEL: Color = color(PHOSPHOR_DIM_RGB);
 
 #[cfg(test)]

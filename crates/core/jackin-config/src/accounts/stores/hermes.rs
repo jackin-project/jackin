@@ -8,7 +8,6 @@ use std::path::Path;
 use super::{StoreCandidate, StoreError, StoreKind, read_store_file, select_entry_secret};
 
 const YAML_LIMIT: u64 = 1024 * 1024;
-
 const AUTH_JSON_LIMIT: u64 = 1024 * 1024;
 
 pub(crate) fn enumerate_hermes_store(dir: &Path) -> Result<Vec<StoreCandidate>, StoreError> {
@@ -155,7 +154,6 @@ fn collect_file_profiles(
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum YamlNode {
     Scalar(String),
-
     Map(BTreeMap<String, YamlNode>),
 }
 

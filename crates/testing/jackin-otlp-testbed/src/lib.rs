@@ -37,16 +37,11 @@ use tonic::{Request, Response, Status};
 pub enum Behavior {
     #[default]
     Ok,
-
     Reject(tonic::Code),
-
     PartialSuccess,
-
     Delay(std::time::Duration),
-
     RequireHeader {
         name: &'static str,
-
         value: &'static str,
     },
 }
@@ -457,9 +452,7 @@ pub struct Testbed {
 #[derive(Debug)]
 pub enum ShutdownError {
     Server(tonic::transport::Error),
-
     Join(tokio::task::JoinError),
-
     Timeout,
 }
 

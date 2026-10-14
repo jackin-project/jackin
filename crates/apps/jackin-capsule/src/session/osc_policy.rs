@@ -8,7 +8,6 @@ pub fn osc8_uri_is_safe(uri: &str) -> bool {
     if uri.is_empty() {
         return true;
     }
-
     let bytes = uri.trim().as_bytes();
     [b"http://".as_slice(), b"https://", b"mailto:"]
         .iter()

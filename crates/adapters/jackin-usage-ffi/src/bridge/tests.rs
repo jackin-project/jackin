@@ -501,7 +501,6 @@ fn live_ffi_explicit_refresh_does_not_probe_in_the_client_process() {
     bridge
         .refresh(Some("codex".to_owned()), true)
         .expect("explicit operator refresh");
-
     assert_eq!(executor.0.load(Ordering::SeqCst), 0);
     bridge.shutdown().expect("shutdown");
 }

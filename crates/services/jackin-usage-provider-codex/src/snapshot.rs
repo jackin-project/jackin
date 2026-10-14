@@ -40,7 +40,6 @@ pub fn codex_plan_display_name(raw: &str) -> Option<String> {
     if let Some(exact) = codex_plan_exact_display(trimmed) {
         return Some(exact);
     }
-
     let cleaned = trimmed
         .split_whitespace()
         .filter(|word| {
@@ -78,7 +77,6 @@ pub fn codex_plan_word_display(raw: &str) -> String {
     if matches!(lower.as_str(), "cbp" | "k12") {
         return lower.to_ascii_uppercase();
     }
-
     if raw == raw.to_ascii_uppercase() && raw.chars().any(char::is_alphabetic) {
         return raw.to_owned();
     }

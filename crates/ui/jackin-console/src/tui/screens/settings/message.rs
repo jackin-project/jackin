@@ -7,13 +7,10 @@ use super::model::AccountScanOutcome;
 pub enum SettingsMessage {
     FocusTabBar,
     FocusContent,
-
     RequestAccountScan,
-
     AccountScanCompleted {
         generation: u64,
         result: Result<AccountScanOutcome, String>,
     },
-
     CancelAccountScan,
 }

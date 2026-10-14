@@ -54,13 +54,9 @@ pub fn apple_runtime_mount(
 #[derive(Debug)]
 pub struct UsageRelayLaunch<'a> {
     pub paths: &'a JackinPaths,
-
     pub workspace_name: Option<&'a str>,
-
     pub role_key: &'a str,
-
     pub launch_config: &'a CapsuleConfig,
-
     pub forwarded_sources: ForwardedUsageSources,
 }
 
@@ -282,7 +278,6 @@ pub fn populate_launch_usage_capabilities(config: &AppConfig, launch_config: &mu
         let Some(account) = config.accounts.get(account_id) else {
             continue;
         };
-
         let Some(surface) = HostSurfaceId::from_provider_alias(account.provider.slug()) else {
             continue;
         };

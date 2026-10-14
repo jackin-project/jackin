@@ -203,7 +203,6 @@ pub async fn spawn_agent_session(
     let run_as_user = Some(crate::runtime::identity::CAPSULE_SUPERVISOR_USER);
     let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
     insert_run_as_user(&mut exec_args, run_as_user);
-
     let env_flags: Vec<String> = git_policy_env_pairs(git_coauthor_trailer, git_dco)
         .into_iter()
         .map(|(name, value)| format!("-e={name}={value}"))

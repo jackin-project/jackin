@@ -37,7 +37,6 @@ fn spend_acc_commit_never_clobbers_model_with_none() {
         model: Some("kimi".to_owned()),
         ..TokenTotals::default()
     };
-
     SpendAcc {
         input: 20,
         seen: true,
@@ -52,7 +51,6 @@ fn spend_acc_commit_never_clobbers_model_with_none() {
 fn find_provider_files_walks_nested_dirs_and_filters_extension() {
     let dir = TempDir::new().unwrap();
     let base = dir.path();
-
     let nested = base.join("2026").join("06").join("26");
     std::fs::create_dir_all(&nested).unwrap();
     std::fs::write(nested.join("rollout-1.jsonl"), "{}").unwrap();

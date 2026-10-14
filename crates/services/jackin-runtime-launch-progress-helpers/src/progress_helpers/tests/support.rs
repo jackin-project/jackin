@@ -56,7 +56,6 @@ pub(super) fn resolve_private_role_source() -> anyhow::Result<()> {
             env: BTreeMap::new(),
         },
     );
-
     let (source, is_new) = config.resolve_role_source(&selector)?;
     let restore_override = false;
     assert_eq!(source.git, PRIVATE_ROLE_URL);

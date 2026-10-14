@@ -38,7 +38,6 @@ impl Multiplexer {
             return false;
         }
         let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
-
         let content_row = session
             .shadow_grid
             .scrollback_len()
@@ -69,7 +68,6 @@ impl Multiplexer {
     fn resolve_host_open_target_at_mouse_cell(&self, row: u16, col: u16) -> Option<HostOpenTarget> {
         let candidate = self.detect_selection_start(row, col)?;
         let session = self.session_supervisor.sessions.get(candidate.session_id)?;
-
         let content_row = candidate.anchor_row;
         let range_start = content_row;
         let rows = session.render_content_snapshot_range(

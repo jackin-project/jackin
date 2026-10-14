@@ -1,7 +1,4 @@
 
-
-
-
 [[file]]
 path = "crates/core/jackin-core/src/container_paths.rs"
 literals = 51
@@ -11,9 +8,6 @@ note = "the chokepoint module itself defines the canonical constants"
 path = "crates/adapters/jackin-image/src/derived_image.rs"
 literals = 4
 note = "Dockerfile template bodies embed shell path strings; values must stay byte-identical to the image contract"
-
-
-
 
 
 [[forbidden-roots]]

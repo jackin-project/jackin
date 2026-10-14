@@ -5,19 +5,6 @@ SPDX-PackageSupplier = "Alexey Zhokhov <alexey@zhokhov.com>"
 SPDX-PackageDownloadLocation = "https://github.com/jackin-project/jackin"
 SPDX-PackageOriginator = "Person: Alexey Zhokhov"
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 [[annotations]]
 path = "**"
 precedence = "aggregate"

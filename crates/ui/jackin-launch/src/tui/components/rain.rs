@@ -11,7 +11,6 @@ use jackin_brand::{RAIN_BODY, RAIN_DARK, RAIN_DIM, RAIN_FRESH, RAIN_HEAD, RAIN_M
 pub struct RainCell {
     pub ch: char,
     pub age: u16,
-
     pub fade: u16,
 }
 
@@ -19,7 +18,6 @@ pub struct RainCell {
 pub struct RainColumn {
     pub head: i32,
     pub speed: u32,
-
     pub fade: u16,
     pub active: bool,
     pub cooldown: u32,
@@ -177,11 +175,8 @@ pub fn render_rain(frame: &mut Frame<'_>, area: Rect, rain: Option<&RainState>) 
     if area.width == 0 || area.height == 0 {
         return;
     }
-
     let fade_in = (rain.frame as f32 / 30.0).min(1.0);
-
     let fade_rows = (area.height / 3).clamp(3, 7);
-
     let buf = frame.buffer_mut();
     for y in 0..area.height {
         let grid_y = usize::from(area.y + y);

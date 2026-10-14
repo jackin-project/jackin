@@ -207,7 +207,6 @@ impl OmpSnapshot {
             .prefix("jackin-omp-private-")
             .tempdir()
             .map_err(|_| OmpError::Unavailable)?;
-
         #[cfg(unix)]
         std::fs::set_permissions(
             scratch.path(),

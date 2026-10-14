@@ -108,7 +108,6 @@ pub(crate) struct ControlRouting {
     pub(crate) input_parser: InputParser,
     pub(crate) event_tx: mpsc::UnboundedSender<SessionEvent>,
     pub(crate) event_rx: mpsc::UnboundedReceiver<SessionEvent>,
-
     pub(crate) event_subscribers: super::events::EventSubscribers,
 }
 

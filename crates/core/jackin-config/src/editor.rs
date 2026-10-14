@@ -25,11 +25,8 @@ use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvScope {
     Global,
-
     GlobalGithub,
-
     Role(String),
-
     Workspace(String),
 
     WorkspaceRole { workspace: String, role: String },
@@ -42,19 +39,12 @@ pub enum EnvScope {
 #[derive(Debug, Default)]
 pub struct BootstrapReport {
     pub fresh_install: bool,
-
     pub changed: bool,
-
     pub added_accounts: Vec<String>,
-
     pub added: Vec<(String, crate::AccountConfig)>,
-
     pub issues: Vec<crate::DiscoveryIssue>,
-
     pub unapplied_zshrc_models: Vec<crate::ModelProfile>,
-
     pub unapplied_zshrc_wrappers: Vec<crate::WrapperCallSite>,
-
     pub unapplied_zshrc_xdg_roots: Vec<crate::XdgRoots>,
 }
 
@@ -304,7 +294,6 @@ impl ConfigEditor {
         lock: ConfigWriteGuard,
     ) -> crate::ConfigResult<(Self, BootstrapReport)> {
         paths.ensure_base_dirs()?;
-
         let mut report = BootstrapReport::default();
         let initial_contents = if paths.config_file.exists() {
             None
@@ -455,7 +444,6 @@ impl ConfigEditor {
             &mut report,
         )?;
         self.apply_zshrc_models(&plan.models, &mut known, &mut report)?;
-
         report.unapplied_zshrc_wrappers = plan.wrappers.clone();
         Ok(report)
     }
@@ -587,7 +575,6 @@ impl ConfigEditor {
                 continue;
             }
             let value = EnvValue::OpRef(op_ref.reference.clone());
-
             let probe = BTreeMap::from([(op_ref.var.clone(), String::from("1"))]);
             let seeded = if crate::discover_environment_oauth_accounts(&probe).is_empty() {
                 crate::discover_environment_accounts(&probe)
@@ -603,7 +590,6 @@ impl ConfigEditor {
             } else {
                 oauth_scan_candidate_with_value(jackin_core::Agent::Claude, value)
             };
-
             let Some((id, account)) = seeded else {
                 continue;
             };
@@ -731,11 +717,9 @@ impl ConfigEditor {
                 breadcrumb.insert("version", Value::from(1));
                 breadcrumb.insert("value", Value::from(r.path));
                 tbl.insert("breadcrumb", Value::InlineTable(breadcrumb));
-
                 if let Some(account) = r.account {
                     tbl.insert("account", Value::from(account));
                 }
-
                 if r.on_demand {
                     tbl.insert("on_demand", Value::from(true));
                 }
@@ -758,7 +742,6 @@ impl ConfigEditor {
 
     pub fn set_env_comment(&mut self, scope: &EnvScope, key: &str, comment: Option<&str>) {
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
-
         let mut current: &mut Item = doc.as_item_mut();
         for segment in &path {
             match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
@@ -800,7 +783,6 @@ impl ConfigEditor {
                         scope_key.to_owned(),
                     ],
                 );
-
                 let mut entry_table = Table::new();
                 entry_table.insert("src", toml_edit::value(mount.src));
                 entry_table.insert("dst", toml_edit::value(mount.dst));
@@ -935,7 +917,6 @@ impl ConfigEditor {
 
     pub fn remove_env_var(&mut self, scope: &EnvScope, key: &str) -> bool {
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
-
         let mut current: &mut Item = doc.as_item_mut();
         for segment in &path {
             match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
@@ -1188,7 +1169,6 @@ fn clear_auth_forward_field(doc: &mut DocumentMut, kind_path: &[String]) {
     if let Some(table) = current.as_table_mut() {
         table.remove("auth_forward");
     }
-
     prune_empty_trailing_tables(doc, kind_path, 1);
 }
 

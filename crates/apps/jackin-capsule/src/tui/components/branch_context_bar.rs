@@ -72,7 +72,6 @@ pub(crate) fn branch_context_bar_layout(
     if term_rows == 0 || term_cols == 0 {
         return None;
     }
-
     let (context_left, left_clickable) = match (pull_request, branch) {
         (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         (None, Some(b)) if pull_request_loading => (format!(" Resolving PR · {b} "), true),
@@ -313,7 +312,6 @@ pub(crate) fn render_branch_context_bar(
         termrock::style::Role::StatusBar,
         white_bg.fg(jackin_tui::tokens::INK),
     );
-
     let mut state = StatusBarState::new();
     state.hovered = hovered;
     (&StatusBar::new(&left, &right, &theme)).render(area, buffer, &mut state);
@@ -333,7 +331,6 @@ pub(crate) enum BranchContextBarHit {
     Context,
     UsageStatus,
     Container,
-
     DebugChip,
 }
 

@@ -47,7 +47,6 @@ pub fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
         "kimi" => UsageSurface::Kimi,
         "opencode" => UsageSurface::OpenCode,
         "cursor" => UsageSurface::Cursor,
-
         "antigravity" | "gemini" => UsageSurface::Google,
         _ => UsageSurface::Unsupported,
     }

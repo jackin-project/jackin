@@ -1,12 +1,6 @@
 import { visit, SKIP } from 'unist-util-visit'
 import type { Element, Root, Text } from 'hast'
 
-
-
-
-
-
-
 const NAME_PATTERN = /jackin❯/g
 const SKIPPED_TAGS = new Set(['code', 'pre', 'style', 'script'])
 

@@ -143,7 +143,6 @@ fn sync_source_dir_does_not_fall_back_to_default_host_credentials() {
         r#"{"oauthAccount":{"emailAddress":"workspace@example.com"}}"#,
     )
     .unwrap();
-
     std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
     std::fs::write(
         temp.path().join(".claude/.credentials.json"),
@@ -192,7 +191,6 @@ fn sync_source_dir_uses_source_folder_own_credentials() {
     let source_creds =
         r#"{"claudeAiOauth":{"accessToken":"enterprise","refreshToken":"enterprise"}}"#;
     std::fs::write(source_dir.join(".credentials.json"), source_creds).unwrap();
-
     std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
     std::fs::write(
         temp.path().join(".claude/.credentials.json"),
@@ -234,9 +232,7 @@ fn sync_source_dir_empty_credentials_file_is_not_treated_as_valid() {
     let paths = JackinPaths::for_tests(temp.path());
     let source_dir = temp.path().join("claude-empty");
     std::fs::create_dir_all(&source_dir).unwrap();
-
     std::fs::write(source_dir.join(".credentials.json"), "   \n").unwrap();
-
     std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
     std::fs::write(
         temp.path().join(".claude/.credentials.json"),
@@ -275,7 +271,6 @@ fn sync_source_dir_empty_credentials_file_is_not_treated_as_valid() {
 fn sync_mode_falls_back_to_empty_json_when_host_has_none() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-
     let manifest = simple_manifest(&temp);
 
     let (state, outcome) = RoleState::prepare(

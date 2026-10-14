@@ -17,7 +17,6 @@ pub async fn inspect_hardline_instance(
     docker: &impl DockerApi,
 ) -> anyhow::Result<String> {
     let state_dir = paths.data_dir.join(container_name);
-
     let manifest_result: Result<Option<InstanceManifest>, String> =
         InstanceManifest::read_optional(&state_dir).map_err(|e| e.to_string());
     let manifest = manifest_result.as_ref().ok().and_then(Option::as_ref);

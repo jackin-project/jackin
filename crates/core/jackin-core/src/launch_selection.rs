@@ -4,6 +4,5 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchSelection {
     Account(String),
-
     Configuration(String),
 }

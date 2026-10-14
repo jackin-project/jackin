@@ -424,7 +424,6 @@ fn drain_background_messages(
         *needs_redraw |=
             crate::console::effects::apply_background_event(ms, config, paths, cwd, message);
     }
-
     *needs_redraw |= crate::console::effects::execute_manager_effect(
         ms,
         config,
@@ -542,7 +541,6 @@ where
                                 .add_modifier(ratatui::style::Modifier::BOLD),
                         ),
                 ];
-
             let mut status_state = termrock::widgets::StatusBarState::new();
             status_state.hovered = (context.mouse_state.chrome_hover
                 == Some(ConsoleChromeHover::DebugChip))
@@ -1142,7 +1140,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         options.op_available,
         options.startup_error,
     )?;
-
     let paths_for_usage_startup = paths.clone();
     let mut startup_usage_rx = Some(jackin_console::tui::runtime::spawn_blocking_subscription(
         move || {
@@ -1150,7 +1147,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 .map_err(|error| error.to_string())
         },
     ));
-
     let owned_screen = if options
         .parent_session
         .is_some_and(TerminalSession::is_active)
@@ -1163,7 +1159,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let mut terminal = ratatui::Terminal::new(backend)?;
     let mut mouse_state = ConsoleMouseState::new();
     let mut event_stream = crossterm::event::EventStream::new();
-
     let mut animation_tick = tokio::time::interval(Duration::from_millis(TICK_MS));
     animation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut pacer = jackin_console::tui::runtime::ConsoleFramePacer::new();
@@ -1269,9 +1264,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let _screen_result =
         screen_tracker.exit(jackin_telemetry::schema::enums::TransitionReason::Shutdown);
     let _focus_result = widget_tracker.unfocus();
-
     drop(owned_screen);
-
     Ok((result?, config))
 }
 

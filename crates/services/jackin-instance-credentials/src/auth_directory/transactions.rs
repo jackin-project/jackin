@@ -180,7 +180,6 @@ pub(crate) fn cleanup_orphans(target: &TargetLock) -> anyhow::Result<()> {
     let clone = target.parent.try_clone()?;
     let mut entries = Dir::from_fd(clone.into())
         .map_err(|error| nix_error(error, "opening auth parent for orphan cleanup"))?;
-
     let new_stage_prefix = format!(".jackin-auth-stage-{}-", target.key);
     let new_previous_prefix = format!(".jackin-auth-previous-{}-", target.key);
     let new_journal_temporary_prefix = format!(".jackin-auth-journal-{}-tmp-", target.key);

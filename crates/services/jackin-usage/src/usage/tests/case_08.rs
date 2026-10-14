@@ -78,7 +78,6 @@ fn grok_plan_label_from_server_tier_only() {
     }))
     .expect("blank tier");
     assert_eq!(free.plan_label(), None);
-
     let web = GrokBillingSnapshot::Web(GrokWebBillingSnapshot {
         used_percent: 40.0,
         reset_at_epoch: Some(1_780_315_200),
@@ -94,7 +93,6 @@ fn grok_on_demand_requires_positive_cap() {
     }))
     .expect("no cap config");
     let buckets = usage.buckets(1_780_315_200);
-
     assert!(
         buckets
             .iter()

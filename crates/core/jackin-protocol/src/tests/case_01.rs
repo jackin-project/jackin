@@ -52,15 +52,12 @@ fn resolve_instance_gate_rejects_unknown_and_ambiguous_targets() {
         ]),
         ..CapsuleConfig::default()
     };
-
     assert_eq!(config.resolve_instance("claude-work"), Ok("claude-work"));
     assert_eq!(
         config.resolve_instance("claude-personal"),
         Ok("claude-personal")
     );
-
     config.resolve_instance("claude").unwrap_err();
-
     config.resolve_instance("codex-work").unwrap_err();
     config.resolve_instance("codex").unwrap_err();
 
@@ -69,14 +66,12 @@ fn resolve_instance_gate_rejects_unknown_and_ambiguous_targets() {
         agents: BTreeMap::from([("codex-work".to_owned(), "codex".to_owned())]),
         ..CapsuleConfig::default()
     };
-
     assert_eq!(solo.resolve_instance("codex"), Ok("codex-work"));
 
     let unmapped = CapsuleConfig {
         instances: vec!["ghost".to_owned()],
         ..CapsuleConfig::default()
     };
-
     unmapped.resolve_instance("ghost").unwrap_err();
 }
 

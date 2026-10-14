@@ -6,7 +6,6 @@ pub(super) fn settings_github_row(state: &ManagerState<'_>) -> usize {
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("expected settings stage");
     };
-
     settings.auth.row_count() - 2
 }
 

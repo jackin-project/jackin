@@ -36,10 +36,8 @@ const SOURCES: &[(&str, &str)] = &[
 pub(crate) struct TelemetryBenchArgs {
     #[arg(long)]
     capture: bool,
-
     #[arg(long, default_value = BASELINE)]
     baseline: PathBuf,
-
     #[arg(long, default_value = CURRENT)]
     current: PathBuf,
 }

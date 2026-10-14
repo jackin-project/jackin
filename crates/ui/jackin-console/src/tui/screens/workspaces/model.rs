@@ -4,10 +4,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManagerListRow {
     CurrentDirectory,
-
     CurrentDirectoryInstance(usize),
     SavedWorkspace(usize),
-
     WorkspaceInstance(usize, usize),
     NewWorkspace,
 }

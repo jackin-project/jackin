@@ -18,7 +18,6 @@ fn debug_redacts_secret_value() {
     assert!(rendered.contains("[REDACTED]"));
     assert!(!rendered.contains("fixture-credential-001"));
     assert!(rendered.contains("anthropic"));
-
     let other = StoreCandidate::new(
         StoreKind::Opencode,
         "anthropic".to_owned(),

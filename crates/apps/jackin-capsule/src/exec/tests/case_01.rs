@@ -121,7 +121,6 @@ async fn execute_command_redacts_secret_straddling_1mib_cap() {
     .unwrap();
     assert_eq!(code, 0);
     assert!(!stdout.contains(secret));
-
     assert!(!stdout.contains("S3CR3T"));
     assert_eq!(redacted, 1);
 }

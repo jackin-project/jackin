@@ -27,7 +27,6 @@ fn no_op_console_skips_disk_reload_for_post_console_config() {
         "JACKIN_TEST_NOOP".to_owned(),
         jackin_core::EnvValue::Plain("from-console".to_owned()),
     );
-
     std::fs::write(
         &paths.config_file,
         toml::to_string(&on_disk).expect("serialize console snapshot"),

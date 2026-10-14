@@ -1,4 +1,3 @@
-
 import { useEffect, useRef } from 'react';
 import { createRainState, tickRain, ageToColor } from './rainEngine';
 
@@ -20,10 +19,6 @@ export function DigitalRain({ fontSize = 14, cellW = 12, cellH = 18, frameMs = 3
     if (!ctx) return;
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-
-
-
-
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       canvas.width = rect.width * dpr;
@@ -32,9 +27,6 @@ export function DigitalRain({ fontSize = 14, cellW = 12, cellH = 18, frameMs = 3
       const cols = Math.max(1, Math.floor(rect.width / cellW));
       const rows = Math.max(1, Math.floor(rect.height / cellH));
       const stillState = createRainState(cols, rows);
-
-
-
       for (let i = 0; i < 90; i++) tickRain(stillState);
       ctx.clearRect(0, 0, rect.width, rect.height);
       ctx.font = fontSize + 'px "JetBrains Mono", "SF Mono", monospace';

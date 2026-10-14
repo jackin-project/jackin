@@ -116,7 +116,6 @@ pub fn file_browser_url_row_at(
     let modal_area = modal.rect(term_size);
     fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
 }
-
 pub fn update_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
     let regions = hover_regions(state, term_size);
     let hovered = state

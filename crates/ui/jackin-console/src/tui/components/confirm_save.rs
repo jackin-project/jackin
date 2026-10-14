@@ -147,14 +147,10 @@ impl ConfirmSaveFocus {
 pub struct ConfirmSaveState<M: Clone = ()> {
     pub lines: Vec<Line<'static>>,
     pub focus: ConfirmSaveFocus,
-
     pub scroll_offset: u16,
     preview_rows: u16,
-
     pub effective_removals: Vec<String>,
-
     pub final_mounts: Option<Vec<M>>,
-
     pub has_collapses: bool,
 }
 
@@ -245,7 +241,6 @@ pub fn required_height<M: Clone>(state: &ConfirmSaveState<M>) -> u16 {
 
 pub fn prepare_for_render<M: Clone>(area: Rect, state: &mut ConfirmSaveState<M>) {
     let inner = Block::default().borders(Borders::ALL).inner(area);
-
     let content_rows = inner.height.saturating_sub(4);
     state.preview_rows = content_rows;
     clamp_scroll_offset(

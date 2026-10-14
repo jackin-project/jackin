@@ -149,7 +149,6 @@ pub fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<ServerM
 fn snapshot_from_msg(msg: ServerMsg) -> Result<InstanceSnapshot> {
     match msg {
         ServerMsg::Snapshot { tabs, active_tab } => Ok(InstanceSnapshot { tabs, active_tab }),
-
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
         other => bail!("daemon replied with {}; expected Snapshot", other.kind()),
     }
@@ -264,7 +263,6 @@ fn run_docker_exec_capsule_raw(
         }
         if Instant::now() >= deadline {
             drop(child.kill());
-
             let drain_deadline = Instant::now() + Duration::from_millis(500);
             while Instant::now() < drain_deadline {
                 if child.try_wait().ok().flatten().is_some() {

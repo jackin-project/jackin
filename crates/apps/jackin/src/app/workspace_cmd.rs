@@ -187,7 +187,6 @@ fn handle_workspace_create(paths: &JackinPaths, params: WorkspaceCreateParams) -
             .iter()
             .map(|r| jackin_core::shorten_home(&r.child.src))
             .collect();
-
         let parent = jackin_core::shorten_home(&plan.collapsed[0].covered_by.src);
         eprintln!(
             "collapsed {} redundant mount(s) under {parent}: {}",
@@ -343,7 +342,6 @@ fn prepare_workspace_edit(
     params: &WorkspaceEditParams,
 ) -> Result<PreparedWorkspaceEdit> {
     let name = params.name.as_str();
-
     let git_pull_change = if params.git_pull {
         Some(true)
     } else if params.no_git_pull {
@@ -561,7 +559,6 @@ async fn apply_workspace_edit(
             prospective_mounts.push(upsert.clone());
         }
     }
-
     let wn = WorkspaceName::parse(name).map_err(anyhow::Error::from)?;
     let has_records =
         jackin_runtime::isolation::state::list_records_for_workspace(&paths.data_dir, &wn)

@@ -105,7 +105,6 @@ connecting as a client.",
                             None
                         }
                     };
-
                     if let (Some(token), Some(config)) = (token, &launch_config)
                         && let Err(reason) = config.resolve_instance(token)
                     {

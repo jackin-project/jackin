@@ -9,23 +9,14 @@ use crate::agent::Agent;
 #[serde(rename_all = "snake_case")]
 pub enum InstanceStatus {
     Active,
-
     Running,
-
     CleanExited,
-
     Crashed,
-
     PreservedDirty,
-
     PreservedUnpushed,
-
     RestoreAvailable,
-
     Superseded,
-
     Purged,
-
     FailedSetup,
 }
 
@@ -67,34 +58,23 @@ impl InstanceStatus {
 #[serde(rename_all = "snake_case")]
 pub enum SessionStatus {
     Running,
-
     Exited,
-
     ContainerMissing,
-
     Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionRecord {
     pub session_id: String,
-
     pub name: String,
-
     pub agent_runtime: String,
-
     pub tmux_name: String,
-
     pub created_at: String,
-
     pub status: SessionStatus,
-
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_attached_at: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
 }
@@ -102,21 +82,13 @@ pub struct SessionRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceIndexEntry {
     pub instance_id: String,
-
     pub container_base: String,
-
     pub workspace_name: Option<String>,
-
     pub workspace_label: String,
-
     pub workdir: String,
-
     pub role_key: String,
-
     pub agent_runtime: String,
-
     pub status: InstanceStatus,
-
     pub updated_at: String,
 }
 
@@ -137,12 +109,8 @@ impl InstanceIndexEntry {
 #[derive(Debug, Clone, Copy)]
 pub struct InstanceQuery<'a> {
     pub workspace_name: Option<&'a str>,
-
     pub workspace_label: &'a str,
-
     pub workdir: &'a str,
-
     pub role_key: Option<&'a str>,
-
     pub agent_runtime: Option<Agent>,
 }

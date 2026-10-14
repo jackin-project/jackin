@@ -17,7 +17,6 @@ pub(crate) const ACTIVITY_REPORT_INTERVAL: std::time::Duration = std::time::Dura
 
 struct Subscriber {
     filter: Option<u64>,
-
     seq: u64,
     tx: mpsc::UnboundedSender<ServerMsg>,
 }
@@ -55,7 +54,6 @@ impl SessionObservation {
 #[derive(Default)]
 pub(crate) struct EventSubscribers {
     subscribers: Vec<Subscriber>,
-
     last_activity_report: std::collections::HashMap<u64, Instant>,
 }
 
@@ -174,7 +172,6 @@ pub(super) fn handle_control_subscription(
     mux.control
         .event_subscribers
         .subscribe(session, tx, now, baseline);
-
     if let Some(operation) = operation {
         operation.complete(jackin_telemetry::schema::enums::OutcomeValue::Success, None);
     }
@@ -210,7 +207,6 @@ pub(super) fn publish_status_events(
             continue;
         };
         let observation = session_observation(*id, session);
-
         if let Some(previous) = previous_state(*id).filter(|previous| previous != state) {
             mux.control.event_subscribers.publish(
                 now,
@@ -218,7 +214,6 @@ pub(super) fn publish_status_events(
                 &SessionEventKind::StateChanged { previous },
             );
         }
-
         if now.saturating_duration_since(session.last_output_at) <= ACTIVITY_REPORT_INTERVAL {
             mux.control
                 .event_subscribers

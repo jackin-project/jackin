@@ -19,7 +19,6 @@ use std::path::{Path, PathBuf};
 pub struct MaterializedWorkspace {
     pub workdir: String,
     pub mounts: Vec<MaterializedMount>,
-
     pub keep_awake_enabled: bool,
 }
 
@@ -29,7 +28,6 @@ pub struct MaterializedMount {
     pub dst: String,
     pub readonly: bool,
     pub isolation: MountIsolation,
-
     pub worktree_aux: Option<WorktreeAuxMounts>,
 }
 
@@ -37,10 +35,8 @@ pub struct MaterializedMount {
 pub struct WorktreeAuxMounts {
     pub host_git_dir: String,
     pub host_git_target: String,
-
     pub git_file_override: String,
     pub git_file_target: String,
-
     pub gitdir_back_override: String,
     pub gitdir_back_target: String,
 }
@@ -215,7 +211,6 @@ fn find_local_branch_tip(repo: &str, branch: &str) -> Option<String> {
     match std::fs::read_to_string(&loose) {
         Ok(contents) => {
             let sha = contents.trim();
-
             if !sha.is_empty() && !sha.starts_with("ref:") {
                 return Some(sha.to_owned());
             }
@@ -489,7 +484,6 @@ async fn materialize_one(
         mount.dst
     );
     let worktree_path = worktree_path_for(container_state_dir, &mount.dst, container_name);
-
     if let Some(record) = read_record(container_state_dir, &mount.dst)? {
         anyhow::ensure!(
             record.workspace_name.as_ref() == workspace_name,
@@ -517,7 +511,6 @@ async fn materialize_one(
             }
             .into());
         }
-
         if worktree_path.join(".git").exists() {
             let aux =
                 write_git_overrides(container_state_dir, &mount.dst, container_name, &mount.src)?;
@@ -540,7 +533,6 @@ async fn materialize_one(
         .await?
         .trim()
         .to_owned();
-
     let scratch_branch = branch_name(container_name, None);
     if let Some(parent) = worktree_path.parent() {
         std::fs::create_dir_all(parent)

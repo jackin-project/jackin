@@ -283,11 +283,9 @@ fn take_exit_claim_has_exactly_one_winner_under_contention() {
     paths.ensure_base_dirs().unwrap();
 
     let threads = 8;
-
     for round in 0..64 {
         seed_marker(&paths, StartKind::FreshConstruct);
         let barrier = Arc::new(Barrier::new(threads));
-
         let mut handles = Vec::with_capacity(threads);
         for _ in 0..threads {
             let paths = Arc::clone(&paths);

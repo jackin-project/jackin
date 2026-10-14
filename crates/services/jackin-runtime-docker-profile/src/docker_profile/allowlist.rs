@@ -11,12 +11,9 @@ pub fn default_allowed_hosts_for_agent(agent: &str) -> &'static [&'static str] {
         "kimi" => &["api.kimi.com", "kimi.moonshot.cn"],
         "opencode" => &["api.z.ai", "api.anthropic.com", "api.openai.com"],
         "grok" => &["api.x.ai"],
-
         "antigravity" | "gemini" => &["generativelanguage.googleapis.com"],
         "cursor" => &["api2.cursor.sh"],
-
         "muse" => &[],
-
         "omp" | "hermes" => &["openrouter.ai"],
         _ => &[],
     }

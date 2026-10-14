@@ -23,7 +23,6 @@ const SENSITIVE_SUFFIXES: &[(&str, &str)] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SensitiveMount {
     pub src: String,
-
     pub reason: String,
 }
 

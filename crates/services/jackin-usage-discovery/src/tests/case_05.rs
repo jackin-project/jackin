@@ -94,7 +94,6 @@ fn disc_env_key_does_not_attach_to_label_only_profile() {
         &[("codex-profile", Agent::Codex, &profile)],
         &[("codex-key", AiProvider::OpenAi, "fixture-openai-key")],
     );
-
     std::fs::create_dir_all(&profile).unwrap();
     std::fs::write(
         profile.join("auth.json"),
@@ -134,7 +133,6 @@ fn refresh_gemini_binding_dispatches_to_collector() {
         }
         other => panic!("gemini refresh must dispatch to the collector: {other:?}"),
     }
-
     std::fs::remove_file(&creds).unwrap();
     match refresh_credential_binding(&binding, &NoEnvResolver) {
         ProviderCredentialRefreshOutcome::Snapshot { view, .. } => {

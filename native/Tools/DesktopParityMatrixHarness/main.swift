@@ -5,7 +5,6 @@ import Foundation
 import JackinUsageBindings
 import JackinUsageBridge
 
-
 @main
 struct DesktopParityMatrixHarness {
     static func main() {

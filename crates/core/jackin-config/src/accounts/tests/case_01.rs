@@ -281,7 +281,6 @@ fn cross_provider_opencode_account_requires_model_and_native_does_not() {
         env.get("ANTHROPIC_API_KEY"),
         Some(&EnvValue::from("fixture-anthropic-key"))
     );
-
     assert_eq!(env.len(), 1);
 
     if let AccountCredential::ApiKey { model, .. } = &mut account.credential {

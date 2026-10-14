@@ -28,11 +28,9 @@ pub fn push_claude_dollar_windows(
         let Some(limit) = window.limit_dollars.filter(|limit| *limit > 0.0) else {
             continue;
         };
-
         let used = window.used_dollars.unwrap_or(0.0).max(0.0);
         let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
         let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
-
         #[expect(
             clippy::cast_sign_loss,
             reason = "fraction clamped to 0.0..=1.0; percent is rounded f64→u8"
@@ -62,7 +60,6 @@ pub fn push_claude_dollar_windows(
 pub struct ClaudeSpend {
     pub used: Money,
     pub limit: Option<Money>,
-
     pub used_percent: Option<u8>,
     pub enabled: bool,
     pub disabled_reason: Option<String>,

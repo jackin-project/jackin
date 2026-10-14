@@ -218,7 +218,6 @@ fn xdg_parent_home_gets_pane_homes_and_config_fragments() {
         assert_eq!(rule.access, READ_ONLY);
         assert!(!rule.required);
     }
-
     assert!(!rules.iter().any(|rule| {
         rule.path == Path::new("/home/agent/.local/share") && rule.access & support::WRITABLE != 0
     }));

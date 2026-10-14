@@ -13,25 +13,15 @@ use crate::build_log_sink::BuildLogSink;
 #[derive(Clone, Debug)]
 pub struct RunOptions {
     pub capture_stderr: bool,
-
     pub capture_stdout: bool,
-
     pub quiet: bool,
-
     pub extra_env: Vec<(String, String)>,
-
     pub null_stdin: bool,
-
     pub stream_captured_output: bool,
-
     pub interactive: bool,
-
     pub tee_to_build_log: bool,
-
     pub build_log_sink: Option<Arc<dyn BuildLogSink>>,
-
     pub timeout: Option<std::time::Duration>,
-
     #[cfg(unix)]
     pub pinned_cwd: Option<Arc<std::fs::File>>,
 }
@@ -65,7 +55,6 @@ pub trait CommandRunner {
     ) -> anyhow::Result<()> {
         Ok(())
     }
-
     async fn run(
         &mut self,
         program: &str,
@@ -73,14 +62,12 @@ pub trait CommandRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()>;
-
     async fn capture(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
-
     async fn capture_with_options(
         &mut self,
         program: &str,
@@ -95,7 +82,6 @@ pub trait CommandRunner {
         let _ = opts;
         self.capture(program, args, cwd).await
     }
-
     async fn capture_combined(
         &mut self,
         program: &str,
@@ -104,7 +90,6 @@ pub trait CommandRunner {
     ) -> anyhow::Result<String> {
         self.capture(program, args, cwd).await
     }
-
     async fn capture_secret(
         &mut self,
         program: &str,

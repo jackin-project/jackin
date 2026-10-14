@@ -231,7 +231,6 @@ pub(crate) async fn serve_control_subscription(
         tokio::select! {
             event = event_rx.recv() => {
                 let Some(event) = event else {
-
                     return jackin_telemetry::spawn::DetachedCompletion::success();
                 };
                 if socket::write_control_frame(&mut stream, &event).await.is_err() {
@@ -240,10 +239,6 @@ pub(crate) async fn serve_control_subscription(
                     );
                 }
             }
-
-
-
-
             read = stream.read(&mut discard) => {
                 return match read {
                     Ok(0) => jackin_telemetry::spawn::DetachedCompletion::success(),

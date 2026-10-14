@@ -98,9 +98,7 @@ fn inferred_idle_releases_at_hold_cap_without_three_confirmations() {
     let mut pending = PendingTransition::default();
     let c = candidate(RawAgentState::Idle, AgentStatusConfidence::Weak);
     let start = Instant::now();
-
     assert_eq!(debounce(AgentState::Working, &c, &mut pending, start), None);
-
     let capped = start + IDLE_HOLD_CAP + Duration::from_millis(1);
     assert_eq!(
         debounce(AgentState::Working, &c, &mut pending, capped),

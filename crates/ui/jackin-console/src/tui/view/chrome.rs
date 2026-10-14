@@ -36,7 +36,6 @@ pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[termrock::widge
     if area.height == 0 {
         return;
     }
-
     let hint_rows = area.height.saturating_sub(1).max(1);
     let hint_area = Rect {
         x: area.x,

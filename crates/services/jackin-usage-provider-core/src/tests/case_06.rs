@@ -80,12 +80,10 @@ fn usage_detail_presentation_flattens_lines_once_in_semantic_order() {
         .iter()
         .find(|r| r.row_id == "bucket:0")
         .expect("bucket row");
-
     assert_eq!(
         row.display_label,
         "40% left · 5% in deficit · Runs out in 3d 1h · Resets in 6d 22h"
     );
-
     let flattened: Vec<String> = row
         .layout_lines
         .iter()
@@ -167,7 +165,6 @@ fn usage_detail_presentation_stale_keeps_buckets_and_one_detail() {
         .collect();
     assert_eq!(detail_rows.len(), 1, "exactly one Detail row");
     assert_eq!(detail_rows[0].display_label, "upstream 503");
-
     assert_eq!(
         presentation.rows.last().map(|r| r.row_id.as_str()),
         Some("detail")
@@ -200,9 +197,7 @@ fn usage_detail_presentation_amp_daily_and_bounds() {
     };
     let daily_row = by_id("bucket:0");
     assert_eq!(daily_row.display_label, "61% left · Resets daily");
-
     assert!(!daily_row.display_label.contains('('));
-
     assert_eq!(by_id("bucket:1").display_label, "$4.76");
 }
 
@@ -251,7 +246,6 @@ fn quota_pace_label_appends_runout_when_behind_pace() {
         quota_pace_label(Some(48), Some(10_530), Some(1_000), 10_000).expect("pace"),
         "5% in deficit · Runs out in 7m"
     );
-
     assert_eq!(
         quota_pace_label(Some(48), Some(320_399), Some(604_800), 0).expect("pace"),
         "5% in deficit · Runs out in 3d"
@@ -288,22 +282,18 @@ fn quota_pace_label_runout_iff_behind_clock_boundary() {
         quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace"),
         "On pace"
     );
-
     assert_eq!(
         quota_pace_label(Some(51), Some(500), Some(1_000), 0).expect("pace"),
         "On pace"
     );
-
     assert_eq!(
         quota_pace_label(Some(49), Some(500), Some(1_000), 0).expect("pace"),
         "On pace · Runs out in 8m"
     );
-
     assert_eq!(
         quota_pace_label(Some(48), Some(500), Some(1_000), 0).expect("pace"),
         "On pace · Runs out in 7m"
     );
-
     assert_eq!(
         quota_pace_label(Some(47), Some(500), Some(1_000), 0).expect("pace"),
         "3% in deficit · Runs out in 7m"

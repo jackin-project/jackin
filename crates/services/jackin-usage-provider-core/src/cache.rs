@@ -19,7 +19,6 @@ use super::{
 #[derive(Debug, Clone)]
 pub struct UsageCache {
     pub snapshots: HashMap<String, CachedUsage>,
-
     pub accounts_materialize_path: PathBuf,
 }
 
@@ -32,7 +31,6 @@ pub struct CachedUsage {
 pub struct UsageRefreshTarget {
     pub agent: String,
     pub provider: Option<String>,
-
     pub capability: jackin_protocol::usage_broker::UsageAccountCapability,
 }
 
@@ -97,11 +95,9 @@ impl UsageCache {
         focused_provider: Option<&str>,
     ) -> Option<String> {
         let agent = focused_agent?;
-
         if let Some(cached) = cached_usage_for_target(&self.snapshots, agent, focused_provider) {
             return Some(cached.view.status_bar_label.clone());
         }
-
         Some("refreshing".to_owned())
     }
 
@@ -146,7 +142,6 @@ impl UsageCache {
         if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
             return view;
         }
-
         cached_refreshing_view(agent, focused_provider, now)
     }
 

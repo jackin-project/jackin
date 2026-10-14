@@ -36,7 +36,6 @@ pub struct LoadOptions {
     pub restore_container_base: Option<String>,
 
     pub restore_role_source_git: Option<String>,
-
     pub non_interactive: bool,
 
     pub selection: Option<jackin_core::LaunchSelection>,
@@ -78,7 +77,6 @@ impl LoadOptions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LaunchedInstance {
     pub instance_id: String,
-
     pub container_base: String,
 }
 

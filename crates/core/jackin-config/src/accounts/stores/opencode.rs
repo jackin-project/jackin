@@ -13,22 +13,17 @@ use super::sqlite::{
 use super::{StoreCandidate, StoreError, StoreKind, read_store_file, select_entry_secret};
 
 const AUTH_JSON_LIMIT: u64 = 1024 * 1024;
-
 #[cfg(test)]
 const DB_LIMIT: u64 = 8 * 1024 * 1024;
-
 #[cfg(test)]
 const WAL_LIMIT: u64 = 8 * 1024 * 1024;
 
 #[cfg(test)]
 const VALUE_COLUMNS: [&str; 1] = ["value"];
-
 #[cfg(test)]
 const PROVIDER_COLUMNS: [&str; 3] = ["integration_id", "connector_id", "label"];
-
 #[cfg(test)]
 const METHOD_COLUMNS: [&str; 2] = ["method_id", "method"];
-
 #[cfg(test)]
 const ACTIVE_COLUMNS: [&str; 1] = ["active"];
 

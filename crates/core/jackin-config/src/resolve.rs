@@ -158,7 +158,6 @@ pub fn resolve_load_workspace(
         &WorkspaceName::parse("runtime").map_err(anyhow::Error::from)?,
         &workspace,
     )?;
-
     let cache_roots = launch_cache_roots();
     let owned_mounts = std::mem::take(&mut workspace.mounts);
     let (healed_mounts, mut heal_report) = ensure_mount_sources(

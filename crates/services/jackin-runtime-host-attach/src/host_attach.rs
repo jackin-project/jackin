@@ -391,8 +391,6 @@ where
                         )
                         .await;
                     }
-
-
                     ServerFrame::HostPasteImageFromClipboard
                     | ServerFrame::HostStageImageFromClipboard => {
                         write_clipboard_image_request_result(
@@ -512,13 +510,6 @@ where
                     .await?;
                     continue;
                 }
-
-
-
-
-
-
-
                 let staged: Option<(ClipboardImage, &[u8], &[u8])> =
                     if is_image_paste_trigger(input) {
                         log_clipboard_image_paste_trigger();
@@ -537,10 +528,6 @@ where
                             }
                         }
                     } else {
-
-
-
-
                         match read_image_from_pasted_path(input).await {
                             Ok(Some((image, prefix, suffix))) => {
                                 log_clipboard_image_pasted_path_staged();
@@ -554,8 +541,6 @@ where
                         }
                     };
                 if let Some((image, prefix, suffix)) = staged {
-
-
                     if !prefix.is_empty() {
                         write_input_frame(&mut server_writer, prefix, "paste prefix").await?;
                     }
@@ -572,9 +557,6 @@ where
                             }
                         }
                         Err(_error) => {
-
-
-
                             write_input_frame(&mut server_writer, &input[prefix.len()..], "input fallback")
                                 .await?;
                         }

@@ -75,7 +75,6 @@ fn keep_block(name: &str, cats: &Categories) -> bool {
         "Schema migration smoke" => cats.schema,
         "Docs checks" | "Documentation" => cats.docs,
         "jackin-capsule smoke" => cats.capsule,
-
         _ => true,
     }
 }

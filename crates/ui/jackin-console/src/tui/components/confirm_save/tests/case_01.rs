@@ -25,7 +25,6 @@ fn confirm_save_tab_cycles_cancel_save() {
 #[test]
 fn confirm_save_left_cycles_reverse() {
     let mut s = sample_state();
-
     s.handle_key(key(KeyCode::Left));
     assert_eq!(s.focus, ConfirmSaveFocus::Save);
     s.handle_key(key(KeyCode::Left));
@@ -169,7 +168,6 @@ fn required_height_accounts_for_chrome() {
         Line::from("two"),
         Line::from("three"),
     ]);
-
     assert_eq!(required_height(&s), 9);
 }
 

@@ -41,16 +41,13 @@ pub type SharedView = Arc<Mutex<LaunchView>>;
 #[derive(Debug, PartialEq, Eq)]
 pub enum CockpitOutcome {
     Continue,
-
     HardExit,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum QuitConfirmOutcome {
     Confirmed,
-
     Dismissed,
-
     Pending,
 }
 
@@ -275,7 +272,6 @@ fn hit_activity(view: &LaunchView, col: u16, row: u16) -> bool {
         return false;
     }
     let width = u16::try_from(format_activity(&view.status).chars().count()).unwrap_or(u16::MAX);
-
     col <= width
 }
 
@@ -436,7 +432,6 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         row,
         ctx.terminal.is_debug_mode(),
     );
-
     let debug_chip_hovering = ctx.terminal.is_debug_mode()
         && !v.build_log_open
         && v.failure.is_none()
@@ -489,7 +484,6 @@ fn emit_dialog_mouse_debug_telemetry(
             *last_dialog_mouse_cell = Some(cell);
         }
         jackin_diagnostics::incr_mouse_events();
-
         let emit_debug = if matches!(m.kind, MouseEventKind::Moved) {
             jackin_diagnostics::telemetry_level(jackin_diagnostics::is_debug_mode())
                 == jackin_diagnostics::TelemetryLevel::Trace
@@ -535,7 +529,6 @@ pub fn handle_cockpit_input(
         let Ok(mut v) = view.lock() else {
             return CockpitOutcome::Continue;
         };
-
         if is_ctrl_c(&ev) {
             jackin_telemetry::ui::record_action(
                 cockpit_action_name(crate::tui::keymap::CockpitAction::HardExit),
@@ -544,7 +537,6 @@ pub fn handle_cockpit_input(
             );
             return CockpitOutcome::HardExit;
         }
-
         if v.quit_confirm.is_some() {
             if let Event::Key(k) = ev
                 && k.kind == KeyEventKind::Press
@@ -561,7 +553,6 @@ pub fn handle_cockpit_input(
                     ),
                     CockpitOutcome::Continue => {}
                 }
-
                 if outcome == CockpitOutcome::HardExit {
                     return outcome;
                 }
@@ -617,7 +608,6 @@ pub fn handle_cockpit_input(
                     MouseEventKind::Moved => {
                         handle_cockpit_mouse_move(&mut v, ctx, m.column, m.row);
                     }
-
                     kind if v.failure.is_some() => {
                         apply_failure_body_wheel_scroll(&mut v, ctx, kind, m.modifiers);
                     }
@@ -625,7 +615,6 @@ pub fn handle_cockpit_input(
                         let _consumed =
                             update_build_log_mouse_scroll(&mut v, area, kind, m.modifiers);
                     }
-
                     kind if v.container_info_open => {
                         let state = launch_container_info_state(
                             &v,
@@ -651,7 +640,6 @@ pub fn handle_cockpit_input(
                     _ => {}
                 }
             }
-
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && v.container_info_open
@@ -714,7 +702,6 @@ pub fn handle_cockpit_input(
                     None => {}
                 }
             }
-
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && v.failure.is_some()

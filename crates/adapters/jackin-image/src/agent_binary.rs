@@ -368,7 +368,6 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
         Agent::Grok => resolve_grok().await,
         Agent::Antigravity => resolve_antigravity().await,
         Agent::Gemini => resolve_npm_only(Agent::Gemini, "@google/gemini-cli"),
-
         Agent::Cursor => resolve_no_binary(
             Agent::Cursor,
             "the official installer lays down a versioned directory plus wrapper, not a relocatable binary",
@@ -490,7 +489,6 @@ async fn resolve_kimi() -> Result<AgentRelease> {
         .trim()
         .to_owned();
     let platform = platform_x64_arm64();
-
     let manifest: KimiManifest = serde_json::from_str(
         &fetch_text_with_retry(&format!("{KIMI_BINARY_BASE_URL}/{version}/manifest.json")).await?,
     )?;
@@ -645,7 +643,6 @@ async fn github_auth_token_uncached() -> Option<String> {
 
 async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubReleaseAssetMatch> {
     let api_url = format!("https://api.github.com/repos/{repo}/releases/latest");
-
     let token = github_auth_token().await;
     let mut headers = HeaderMap::new();
     if let Some(ref t) = token {
@@ -796,7 +793,6 @@ async fn download_and_cache_inner(
     })
     .await
     .with_context(|| format!("downloading {}", release.url))?;
-
     if let Some(expected) = release.checksum.as_deref() {
         let use_sha512 = match expected.len() {
             64 => false,

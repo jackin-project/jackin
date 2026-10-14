@@ -1,17 +1,4 @@
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 [[family]]
 id = "file-size-production"
 kind = "numeric"
@@ -35,10 +22,6 @@ mode = "enforce"
 id = "bare-allow-per-crate"
 kind = "numeric"
 provider = "bare_allow_per_crate"
-
-
-
-
 cap = 0
 mode = "enforce"
 [[family]]
@@ -559,11 +542,9 @@ key = "dead_code@jackin-runtime"
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-runtime-repo-cache"
-
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-runtime-shared-runner"
-
 bound = 1
 [[family.entry]]
 key = "dead_code@jackin-usage-provider-core"
@@ -648,7 +629,6 @@ id = "agent-doc-bytes"
 kind = "numeric"
 provider = "agent_doc_bytes"
 mode = "enforce"
-
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
@@ -1109,11 +1089,6 @@ id = "export-volume"
 kind = "numeric"
 provider = "export_volume_measured"
 mode = "artifact-ceiling"
-
-
-
-
-
 cap = 0
 [[family.entry]]
 key = "default_mode_logs"
@@ -1124,9 +1099,6 @@ bound = 6
 [[family.entry]]
 key = "default_mode_spans"
 bound = 7
-
-
-
 
 [[family]]
 id = "perf"
@@ -1146,9 +1118,6 @@ bound = 3
 [[family.entry]]
 key = "focused_borrowed_view_max_bytes"
 bound = 1024
-
-
-
 
 [[family]]
 id = "public-surface"
@@ -1479,21 +1448,14 @@ key = "jackin-usage-host-runtime"
 bound = 1
 
 
-
-
-
 [[family]]
 id = "suite-time"
 kind = "numeric"
 provider = "suite_time"
 mode = "enforce"
-
-
 [[family.entry]]
 key = "junit_total_ms"
 bound = 3600000
-
-
 
 [[family]]
 id = "build-time"
@@ -1501,18 +1463,6 @@ kind = "numeric"
 provider = "build_times"
 mode = "artifact-ceiling"
 cap = 0
-
-
-
-
-
-
-
-
-
-
-
-
 [[family.entry]]
 key = "jackin-runtime.clean_s"
 bound = 220
@@ -1537,10 +1487,6 @@ bound = 14
 [[family.entry]]
 key = "jackin-config.incremental_s"
 bound = 3
-
-
-
-
 
 [[family]]
 id = "rust-function-complexity"

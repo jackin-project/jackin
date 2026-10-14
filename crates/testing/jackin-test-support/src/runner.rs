@@ -13,10 +13,8 @@ pub struct FakeRunner {
     pub fail_on: Vec<String>,
     pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
-
     pub combined_queue: VecDeque<String>,
     pub side_effects: Vec<(String, Box<dyn FnOnce()>)>,
-
     pub command_hook: Option<fn(&str)>,
 }
 
@@ -119,7 +117,6 @@ impl CommandRunner for FakeRunner {
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
         self.check_command(&command)?;
-
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 

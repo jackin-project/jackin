@@ -3,13 +3,11 @@
 
 import Foundation
 
-
 public enum StatusItemMenuAction: Equatable, Sendable {
     case openUsageWindow
     case refresh
     case quit
 }
-
 
 public struct StatusItemMenuRow: Equatable, Sendable {
     public let title: String
@@ -23,7 +21,6 @@ public struct StatusItemMenuRow: Equatable, Sendable {
     }
 }
 
-
 public enum StatusItemMenuModel {
     public static let rows: [StatusItemMenuRow] = [
         StatusItemMenuRow(title: "Open Usage Window", action: .openUsageWindow, keyEquivalent: ""),
@@ -32,18 +29,10 @@ public enum StatusItemMenuModel {
     ]
 }
 
-
-
-
 public struct StatusItemMenuRouter {
     private let openUsageWindow: (String?) -> Void
     private let refresh: () -> Void
     private let quit: () -> Void
-
-
-
-
-
 
     public init(
         openUsageWindow: @escaping (String?) -> Void,
@@ -65,7 +54,6 @@ public struct StatusItemMenuRouter {
             quit()
         }
     }
-
 
     public func openUsage(focusOn surfaceId: String?) {
         openUsageWindow(surfaceId)
