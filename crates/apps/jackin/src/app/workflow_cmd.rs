@@ -175,7 +175,8 @@ fn plan_inner(
     paths: &jackin_core::JackinPaths,
 ) -> Result<PlanSummary, WorkflowError> {
     use jackin_workflow_spec::resolve::{
-        FileResolution, resolve_live_selections, resolve_repository, resolve_workflow_files,
+        FileResolution, resolve_live_selections, resolve_workflow_files,
+        resolve_workspace_repository,
     };
     use jackin_workflow_spec::rules::{HostGrant, compile_plan};
     use jackin_workflow_spec::store::InputStore;
@@ -243,7 +244,12 @@ fn plan_inner(
         reviewer,
     };
     let selections = resolve_live_selections(file_label, &env)?;
-    let repository = resolve_repository(dir, file_label, WORKSPACE_REPOSITORY_ID)?;
+    let repository = resolve_workspace_repository(
+        &workspace_repository_candidates(workspace),
+        file_label,
+        WORKSPACE_REPOSITORY_ID,
+        &workspace_name,
+    )?;
     let resolution = FileResolution {
         workflow_file: file.to_path_buf(),
         file_label: file_label.to_owned(),
@@ -335,6 +341,26 @@ fn resolve_workspace<'config>(
                 "run plan from inside the fixture workspace directory",
             )
         })
+}
+
+/// Ordered absolute host-path candidates for the workspace repository:
+/// the workspace workdir when it is an absolute host path, then each
+/// mount source in order. The workflow file's own directory is never a
+/// candidate: Pkl source `workspace` means the workspace repository,
+/// not the checkout the definition file happens to live in.
+fn workspace_repository_candidates(workspace: &jackin_config::WorkspaceConfig) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let workdir = jackin_config::expand_tilde(&workspace.workdir);
+    if Path::new(&workdir).is_absolute() {
+        candidates.push(PathBuf::from(workdir));
+    }
+    for mount in &workspace.mounts {
+        let src = jackin_config::expand_tilde(&mount.src);
+        if Path::new(&src).is_absolute() {
+            candidates.push(PathBuf::from(src));
+        }
+    }
+    candidates
 }
 
 /// Read the cached role manifest and hash it into the exact role

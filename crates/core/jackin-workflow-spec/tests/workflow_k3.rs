@@ -27,7 +27,7 @@ use jackin_workflow_spec::eval::{EvalLimits, FrozenBundle, evaluate_bounded};
 use jackin_workflow_spec::model::RepositoryInput;
 use jackin_workflow_spec::resolve::{
     FrozenInput, LiveAgentFacts, LiveSelectionEnv, ResolvedInputs, resolve_live_selections,
-    resolve_repository, resolve_workflow_files,
+    resolve_repository, resolve_workflow_files, resolve_workspace_repository,
 };
 use jackin_workflow_spec::rules::{
     CheckedDefinition, HostGrant, Selections, compile_plan, repair_nodes, validate_definition,
@@ -990,4 +990,65 @@ fn workflow_live_resolution_plan_hash_stable() {
     let canonical = String::from_utf8(canonical_plan_bytes(&first).unwrap()).unwrap();
     assert!(canonical.contains("temp-claude"));
     assert!(!canonical.contains("fake-claude-binary"));
+}
+
+/// Regression: the Pkl definition file may live in a different checkout
+/// than the workspace repository (the definition ships with the jackin
+/// checkout while the workspace mounts its own repository). The frozen
+/// base commit must be the workspace repository HEAD, never the Pkl
+/// directory's HEAD. The first candidate without a HEAD is skipped.
+#[test]
+fn workflow_workspace_repository_uses_workspace_repo_not_pkl_dir() {
+    let pkl_checkout = scratch_repo();
+    let workspace_checkout = scratch_repo();
+    // Diverge the two HEADs so a mix-up is observable.
+    std::fs::write(
+        workspace_checkout.path().join("task.md"),
+        "workspace task\n",
+    )
+    .unwrap();
+    git(workspace_checkout.path(), &["add", "."]);
+    git(
+        workspace_checkout.path(),
+        &["commit", "-q", "-m", "workspace change"],
+    );
+    let workspace_head = git_head(workspace_checkout.path());
+    assert_ne!(workspace_head, git_head(pkl_checkout.path()));
+
+    let not_a_repo = tempfile::tempdir().unwrap();
+    let candidates = vec![
+        not_a_repo.path().to_path_buf(),
+        workspace_checkout.path().to_path_buf(),
+    ];
+    let resolved = resolve_workspace_repository(
+        &candidates,
+        "repair.pkl",
+        "workspace:current",
+        "workflows-mvp",
+    )
+    .unwrap();
+    assert_eq!(resolved.repository_id, "workspace:current");
+    assert_eq!(resolved.base_commit, workspace_head);
+    assert_eq!(resolved.base_commit.len(), 40);
+}
+
+/// Regression: with no qualifying candidate (empty list, or paths
+/// without a git checkout HEAD) the error is a typed `missing_input`
+/// on `repository.revision` naming the workspace.
+#[test]
+fn workflow_workspace_repository_none_qualifies() {
+    let plain = tempfile::tempdir().unwrap();
+    for candidates in [Vec::new(), vec![plain.path().to_path_buf()]] {
+        expect_error(
+            resolve_workspace_repository(
+                &candidates,
+                "repair.pkl",
+                "workspace:current",
+                "workflows-mvp",
+            ),
+            ErrorCode::MissingInput,
+            "repository.revision",
+            "workflows-mvp",
+        );
+    }
 }

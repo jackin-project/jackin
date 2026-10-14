@@ -232,6 +232,53 @@ pub fn resolve_repository(
     })
 }
 
+/// Resolve the workspace repository from ordered absolute host-path
+/// candidates: the workspace workdir first, then each mount source in
+/// order. The first candidate that is a git checkout with a HEAD commit
+/// wins; its HEAD is frozen exactly once with its manifest digest via
+/// [`resolve_repository`]. The workflow file's own directory is never
+/// a candidate: Pkl source `workspace` means the workspace repository,
+/// not the checkout the definition file happens to live in. When no
+/// candidate qualifies, the error is a typed [`ErrorCode::MissingInput`]
+/// on `repository.revision` naming the workspace.
+pub fn resolve_workspace_repository(
+    candidates: &[PathBuf],
+    file_label: &str,
+    repository_id: &str,
+    workspace_name: &str,
+) -> WorkflowResult<RepositoryInput> {
+    for candidate in candidates {
+        if head_commit(candidate).is_some() {
+            return resolve_repository(candidate, file_label, repository_id);
+        }
+    }
+    Err(WorkflowError::single(Diagnostic::new(
+        file_label,
+        "repository.revision",
+        ErrorCode::MissingInput,
+        format!("workspace `{workspace_name}` has no git checkout with a HEAD commit"),
+        "point the workspace workdir or a mount source at a git checkout and retry",
+    )))
+}
+
+/// Best-effort HEAD probe: `Some(commit)` when `dir` is a git checkout
+/// with at least one commit, `None` otherwise.
+fn head_commit(dir: &Path) -> Option<String> {
+    let request = jackin_process::ExecRequest::new("git", ["rev-parse", "HEAD"])
+        .cwd(dir)
+        .timeout(Duration::from_secs(10));
+    let outcome = jackin_process::exec_sync(&request).ok()?;
+    if !outcome.success {
+        return None;
+    }
+    let commit = String::from_utf8_lossy(&outcome.stdout).trim().to_owned();
+    if commit.is_empty() {
+        None
+    } else {
+        Some(commit)
+    }
+}
+
 /// Live facts for one agent gathered by the workflow CLI from the
 /// existing workspace configuration. Every field is an identifier, a
 /// digest, or a reference: token, password, and key material must
