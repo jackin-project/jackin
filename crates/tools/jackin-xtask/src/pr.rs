@@ -145,7 +145,7 @@ fn body(args: BodyArgs) -> Result<()> {
 }
 
 fn read_template(root: &Path) -> Result<String> {
-    let template_path = root.join("docs/PULL_REQUEST_TEMPLATE.md");
+    let template_path = root.join(".github/PULL_REQUEST_TEMPLATE.md");
     fs::read_to_string(&template_path)
         .with_context(|| format!("reading {}", template_path.display()))
 }
