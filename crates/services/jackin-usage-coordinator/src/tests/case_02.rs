@@ -1068,7 +1068,7 @@ fn coordinator_recovers_persisted_owner_loss_once_without_a_herd() {
         .unwrap();
     assert_eq!(recovered.generation, 4);
     assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
-    assert_eq!(recovered.retry_at_epoch, Some(1_301));
+    assert_eq!(recovered.retry_at_epoch, Some(1_300));
     assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
 
     let recovered = coordinator

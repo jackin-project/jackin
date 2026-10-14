@@ -27,18 +27,19 @@ Product scope is limits only: remaining/used percentages, resets, plan/status, m
 ## Shipping baseline
 
 - Deployment target and release floor: **macOS 27.0**.
-- Shipping lane: **Xcode 26.6, macOS 26.5 SDK, Swift 6.3** on GitHub's `macos-26` image, Swift 6 language mode with complete strict concurrency and warnings as errors.
-- Forward-validation lane: **Xcode 27 beta / macOS 27 SDK**, nonblocking and scheduled; never the shipping lane.
+- Shipping lane: **Xcode 27.0 (`27A266a`), macOS 27 SDK, Swift 6.4**, Swift 6 language mode with complete strict concurrency and warnings as errors. The `Package.swift` tools version tracks the shipping Swift.
+- Forward-validation lane: **next major Xcode / next macOS SDK**, nonblocking and scheduled; never the shipping lane.
 - Architecture: Apple Silicon (`arm64`) static XCFramework assembly.
 - No compatibility branch, custom material, explicit `glassEffect`, or `GlassEffectContainer` exists in production UI.
 
-**Forward-lane exception (dated):** the scheduled nonblocking Xcode 27/macOS 27
-build lane does not exist yet. Owner: Release Engineering. Recorded 2026-08-20.
-Shipping remains Xcode 26.6 and forward failures do not gate release. The
-exception exits when an Xcode 27 runner image is available and the lane is added
-at the owning `velnor-workflow` Swift-unit source (`ci-unit-swift.yml`,
-dispatched via `group-swift` in generated `ci-pr.yml` — never hand-edited),
-then regenerated here.
+**Forward-lane exception (dated, exited 2026-10-14):** the Xcode 27 lane is now
+the shipping lane, so the 2026-08-20 exception has exited. Owner: Release
+Engineering. The GitHub runner image carrying Xcode 27 is re-probed under the
+checklist below; until it is confirmed, shipping-lane Swift validation runs on
+the pinned local Xcode and the checked-in GitHub workflow does not invoke the
+native cadences. A future lane change is added at the owning `velnor-workflow`
+Swift-unit source (`ci-unit-swift.yml`, dispatched via `group-swift` in
+generated `ci-pr.yml` — never hand-edited), then regenerated here.
 
 **Post-26.0 API discipline:** every post-26.0 symbol is guarded with
 `if #available(macOS 27, *)`, ships a decided native fallback, and names the
@@ -148,7 +149,7 @@ The checked-in GitHub Actions workflow does not currently build or publish the m
 
 | Surface | Contract |
 |---|---|
-| Local validation | macOS 27.0, Xcode 26.6, arm64 static app, tests and bundle verification |
+| Local validation | macOS 27.0, Xcode 27.0, arm64 static app, tests and bundle verification |
 | Manual release validation | fixture version, ad-hoc rejection by release verifier, read-only reconciliation |
 | Publication | Not automated by a checked-in workflow |
 | Artifact | `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus SHA-256, Sigstore bundle, SBOM, attestation |
@@ -186,7 +187,7 @@ See the [public macOS guide](<../docs/content/(public)/guides/macos-usage-menu-b
 
 Manual host-only integration; never part of CI. Setup on the shipping Xcode:
 
-1. In Xcode 26.6, open Settings → Intelligence and enable external agent access.
+1. In Xcode 27.0, open Settings → Intelligence and enable external agent access.
 2. Run `xcodegen generate --spec native/project.yml`, then open `native/JackinDesktop.xcodeproj`
    in the running Xcode instance.
 3. From the external agent, enumerate the bridge's actually exposed tools
@@ -204,7 +205,7 @@ changes):
 
 - expected project: `native/JackinDesktop.xcodeproj` (generated, never committed)
 - expected scheme: `JackinDesktop`
-- expected Xcode build: 26.6 (`17F113`)
+- expected Xcode build: 27.0 (`27A266a`)
 - observed tool list: enumerate and record in the session log before use
 
 ## Agent responsibility ownership
@@ -223,12 +224,12 @@ overlapping aesthetic skills.
 
 ### Apple agent skills export — recorded blocker
 
-`native/Vendor/AppleAgentSkills` is intentionally absent. Probed Xcode 26.6
-(build `17F113`, the shipping lane) on 2026-08-20: the bundle ships agent
+`native/Vendor/AppleAgentSkills` is intentionally absent. Re-probed Xcode 27.0
+(build `27A266a`, the shipping lane) on 2026-10-14: the bundle ships agent
 intelligence only as compiled frameworks
 (`Contents/PlugIns/IDEIntelligence*.framework`,
-`Contents/SharedFrameworks/*Intelligence*.framework`) — there are no
-exportable skill documents (`SKILL.md` or equivalent) anywhere in
+`Contents/SharedFrameworks/*Intelligence*.framework`) — a full-bundle scan
+finds no exportable skill documents (`SKILL.md` or equivalent) anywhere in
 `Xcode.app`, so there is nothing reviewable to vendor, hash, or pin. The
 unsupported-export caveat is therefore the standing state: project-local
 agent knowledge comes exclusively from the pinned `tailrocks-*` skills above
