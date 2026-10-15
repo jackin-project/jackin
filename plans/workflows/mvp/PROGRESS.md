@@ -2,11 +2,11 @@
 
 ## Current result
 
-**Product status:** NOT IMPLEMENTED BY THIS DOCUMENT UPDATE.  
-**Live-agent checks:** NOT RUN.  
-**Pkl fixture evaluation:** NOT RUN.  
-**Sandbox and recovery checks:** NOT RUN.  
-**MVP release decision:** NOT READY.
+**Product status:** STEPS 0-6 IMPLEMENTED AND VERIFIED; STEP 7 PREPPED.  
+**Live-agent checks:** PARTIAL (K1 Claude leg proven; Codex leg and repair turns BLOCKED).  
+**Pkl fixture evaluation:** PASS (K3 17/17; live `validate` + `plan` proven).  
+**Sandbox and recovery checks:** PASS (K2, K4, daemon interruption proven).  
+**MVP release decision:** NOT READY (K7 live path BLOCKED on user prerequisites; no MVP PASS declared).
 
 The coordinator updates this file during implementation.
 Do not change a result to PASS without a command result and evidence reference.
@@ -35,7 +35,7 @@ Do not change a result to PASS without a command result and evidence reference.
 | 3 | K3 | PASS | `2e8d512d` | pklr `=5.1.1` (eval-core only) + `cap =0.1.2`. Crate `jackin-workflow-spec`: frozen-module killable eval, cross-field rules, canonical SHA-256 hash, input store, typed errors. K3 suite 17/17 pass (coordinator re-ran), fmt+clippy clean. Base `8f90e5a7` independently verified. Live CLI proven by coordinator: `validate` prints `valid:`; `plan --json` from the fixture dir prints plan_hash `ebc1278f…` with workspace `workflows-mvp`, role `agent-smith`, implementer `default-claude`, reviewer `default-codex`, base_commit `74c969f` (fixture HEAD, verified against `git rev-parse`), stable across re-plans. Two coordinator-found defects fixed in follow-ups: selection stub (6c9cf822) and wrong-repo HEAD (2e8d512d). Workspace default role set to `agent-smith` via CLI. Final fix independently verified at exact `2e8d512d` (17/17, fmt, clippy; Pkl dir never a candidate and plan_inner wiring confirmed by code reading; live plan output proven separately by coordinator. No contradictions; worktree removed). Step 3 closed. |
 | 4 | K4 | PASS | `2d048e13` | New T2 crate `jackin-workflow`: 8 tables (service_meta + 7) in separate turso DB via `connect_local` (`<run_dir>/workflow-runs.db`), one-txn writes, single-run lock (same key returns run, other key `Busy`) + owner epoch on `serve()` startup (`StaleEpoch` rejection), `delivery_unknown` with no resubmit path, effect dispatcher, C5 recovery table, `resolve_input`, pause/cancel semantics. Daemon injection; run-control RPCs; command-ID correlation; CLI run/status/pause/resume/cancel. Coordinator: K4 rows PASS, daemon live answers status/pause with typed errors. Independently verified at exact `2d048e13` (all five checks, no contradictions; worktree removed). Gaps for Step 6: bare `status` should list runs; no `--json` on status. Live `run` launch deferred to Step 5/7. Step 4 closed. |
 | 5 | K5 | PARTIAL (`646d406e`; 2 live-agent BLOCKEDs) | `646d406e` | C6 code green: verify.rs (policy freeze, exact-argv runner, schema+validator+adapter+correction budget, evidence binding, feedback scrub, decide predicate, delivery gate), K5 suite 10 pass + 1 skipped (coordinator re-ran). Live fixture: fresh private clone, pinned `python3 check_add.py` exit 1 on bug / exit 0 on scratch fix (`/tmp/k5-step5/`). BLOCKED live-Claude repair turn: host Claude OAuth expired — coordinator verified `claude -p` fails `OAuth session expired and could not be refreshed`; needs human `claude login` (Step 1 worked while the token lived). BLOCKED live-Codex review: role prerequisite unchanged; coordinator verified Codex host credentials VALID (`codex login status` → `Logged in using ChatGPT`). Note: calculator fixture freezes to the workspace tree by design; Step 7 creates the fixture repo and re-plans. Removed unauthorized k5 scratch workspace (npmjs grant residue; evidence kept in /tmp). Independently verified at exact `646d406e` (10+1, fmt, clippy; no-creds runner, evidence-before-repair, feedback scrub, worker-can't-accept all confirmed; worktree removed). |
-| 6 | K6 | PASS | `7f1b6c64` | Base `51745bd8` verified. Follow-up: Console `Workflows` route live (`f` opens, confirm-gated takeover/resume/cancel, release, export; host executors). Live takeover proven on fresh session (take→owned:true→auto-send rejected→observe subscribed→release→send accepted, shell round-trip `TAKEOVER-PROOF-OK`; coordinator corroborated from `/tmp/workflows-followup/`, daemon 2303 untouched). Console screen tests 14/14 pass (coordinator re-ran). Daemon still running; proof run still paused (evidence). Live Claude/Codex turns remain BLOCKED (prerequisites unchanged). Step 6 closed. |
+| 6 | K6 | PASS | `7f1b6c64` | Base `51745bd8` verified. Follow-up: Console `Workflows` route live (`f` opens, confirm-gated takeover/resume/cancel, release, export; host executors). Live takeover proven on fresh session (take→owned:true→auto-send rejected→observe subscribed→release→send accepted, shell round-trip `TAKEOVER-PROOF-OK`; coordinator corroborated from `/tmp/workflows-followup/`, daemon 2303 untouched). Console screen tests 14/14 pass (coordinator re-ran). Daemon still running; proof run still paused (evidence). Live Claude/Codex turns remain BLOCKED (prerequisites unchanged). Follow-up independently verified at exact `7f1b6c64` (14/14, fmt, clippy, route arms + takeover all-links corroborated from evidence files, no contradictions; worktree removed). Step 6 closed. |
 | 7 | K7 | PREPPED (live path BLOCKED on 2 user prerequisites) | None | Fixture repo `/tmp/workflows-mvp-k7/repo` ready: base `a6e327ab`, tree `b154ac6f`, files byte-identical to `examples/workflows/` (which already carries the `a - b` bug). Coordinator verified `check_add.py` fails `add(2,3) returned -1` exit 1. NOTES.md records the workspace/mount change Step 7 needs (not made). BLOCKED live path: (1) human `claude login` renewal (host OAuth expired, verified); (2) codex-capable role with working preflight (host Codex creds valid, verified). Daemon 2303 running; proof run still paused (evidence). |
 
 ## Blocker record
@@ -44,13 +44,23 @@ Record a blocker only after inspection or an attempted operation establishes it.
 Use this short form:
 
 ```text
-Step:
-Observed failure:
-Command or source:
-Evidence:
-Missing prerequisite:
-Safe work that can continue:
-Exact next action:
+Step: 1/5/7 (Claude legs)
+Observed failure: host `claude -p` fails `OAuth session expired and could not be refreshed`
+Command or source: `echo ... | claude -p` (coordinator, no secrets printed)
+Evidence: Step 1 K1 turns worked while the token lived (K1TURN1/2-OK); later fresh launches park at browser OAuth
+Missing prerequisite: human `claude login` renewal (browser OAuth; cannot complete headless)
+Safe work that can continue: none remaining (all code work is done and verified)
+Exact next action: user runs `claude login`, then coordinator re-runs K5 repair turn + K7
+```
+
+```text
+Step: 1/5/7 (Codex legs)
+Observed failure: no codex-capable role with a working preflight
+Command or source: the-architect preflight `codex caveman skill missing` exit 1; agent-smith manifest `agents = ["claude"]`
+Evidence: /tmp/workflows-mvp-evidence/load-codex9.typescript; jackin.role.toml:7 (verified)
+Missing prerequisite: codex-capable role with working preflight (install caveman skill into the-architect image via its own repo, or select another codex role)
+Safe work that can continue: none remaining
+Exact next action: provide the role, then coordinator re-runs K1-Codex + K5-review + K7
 ```
 
 ## Final release record
