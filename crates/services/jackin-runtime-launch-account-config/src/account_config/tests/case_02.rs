@@ -232,6 +232,77 @@ fn codex_slots_keep_routed_models_catalogs_and_requested_effort_separate() {
 }
 
 #[test]
+fn profile_codex_account_writes_override_model_and_effort() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "personal".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Personal".into(),
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::Profile {
+                agent: Agent::Codex,
+                directory: temp.path().join("profile"),
+                xdg_roots: None,
+                source_selector: None,
+            },
+        },
+    );
+    let instances = [instance(
+        "codex-personal",
+        Agent::Codex,
+        "personal",
+        None,
+        None,
+    )];
+    let models = BTreeMap::from([("codex-personal".to_owned(), "gpt-6-luna".to_owned())]);
+    let efforts = BTreeMap::from([("codex-personal".to_owned(), "low".to_owned())]);
+    let slots = slots_for(&instances);
+    let mounts =
+        configure_accounts(temp.path(), &config, &instances, &slots, &models, &efforts).unwrap();
+    assert_eq!(mounts.len(), 1);
+    assert!(
+        mounts[0].1.ends_with("/config.toml"),
+        "profile override must mount a codex config.toml, got {:?}",
+        mounts[0].1
+    );
+
+    let directory = temp.path().join("provider-config/home/.codex");
+    let contents = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    assert_eq!(parsed["model"].as_str(), Some("gpt-6-luna"));
+    assert_eq!(parsed["model_reasoning_effort"].as_str(), Some("low"));
+    assert!(
+        parsed.get("model_provider").is_none(),
+        "profile config must not point at the api-key provider entry"
+    );
+    assert!(
+        parsed.get("model_providers").is_none(),
+        "profile config must not carry api-key provider wiring"
+    );
+    assert!(
+        parsed.get("model_catalog_json").is_none(),
+        "uncatalogued override model must not reference a catalog"
+    );
+
+    let bare = tempfile::tempdir().unwrap();
+    let bare_mounts = configure_accounts(
+        bare.path(),
+        &config,
+        &instances,
+        &slots,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    assert!(
+        bare_mounts.is_empty(),
+        "profile account without overrides must still skip the config writer"
+    );
+}
+
+#[test]
 fn corrupt_codex_config_is_quarantined_and_regenerated() -> anyhow::Result<()> {
     let temp = tempfile::tempdir().unwrap();
     let (config, instances) = codex_moonshot_fixture();

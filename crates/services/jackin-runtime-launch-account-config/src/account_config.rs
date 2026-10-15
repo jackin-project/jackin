@@ -735,25 +735,11 @@ where
         .accounts
         .get(&instance.account_id)
         .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
-    let AccountCredential::ApiKey { .. } = &account.credential else {
+    let api_key = matches!(&account.credential, AccountCredential::ApiKey { .. });
+    if !api_key && model.is_none() && effort.is_none() {
         return Ok(Vec::new());
-    };
-    let base_url = instance.base_url.as_deref();
-    let cross_provider = account.provider != AiProvider::OpenAi;
-    anyhow::ensure!(
-        !cross_provider || model.is_some(),
-        "a model is required for a Codex provider account"
-    );
-    let default_url = match account.provider {
-        AiProvider::Moonshot => "https://api.kimi.com/coding/v1",
-        AiProvider::Zai => "https://api.z.ai/api/v1",
-        AiProvider::Minimax => "https://api.minimax.io/v1",
-        AiProvider::OpenAi => "https://api.openai.com/v1",
-        _ => anyhow::bail!("selected provider cannot authenticate Codex"),
-    };
-    let key = account
-        .resolved_credential_descriptor(Agent::Codex)?
-        .env_name;
+    }
+    let provider_wiring = codex_provider_wiring(account, instance, model, api_key)?;
     let target_home = format!("/home/agent/{}", slot.container_home_rel);
     anyhow::ensure!(
         slot.folder_target == target_home,
@@ -784,27 +770,35 @@ where
             }
             None => toml::Table::new(),
         };
-    let mut provider = toml::Table::new();
-    provider.insert("name".into(), account.provider.slug().into());
-    provider.insert("base_url".into(), base_url.unwrap_or(default_url).into());
-    provider.insert("env_key".into(), key.into());
-    provider.insert("wire_api".into(), "responses".into());
-    provider.insert("requires_openai_auth".into(), false.into());
-    if document
-        .get("model_providers")
-        .is_some_and(|value| !value.is_table())
-    {
-        private_config_fs::quarantine(&directory, "config.toml", "model_providers is not a table")?;
-        document = toml::Table::new();
+    if let Some((provider_endpoint, provider_env_key)) = provider_wiring {
+        let mut provider = toml::Table::new();
+        provider.insert("name".into(), account.provider.slug().into());
+        provider.insert("base_url".into(), provider_endpoint.into());
+        provider.insert("env_key".into(), provider_env_key.into());
+        provider.insert("wire_api".into(), "responses".into());
+        provider.insert("requires_openai_auth".into(), false.into());
+        if document
+            .get("model_providers")
+            .is_some_and(|value| !value.is_table())
+        {
+            private_config_fs::quarantine(
+                &directory,
+                "config.toml",
+                "model_providers is not a table",
+            )?;
+            document = toml::Table::new();
+        }
+        let providers = document
+            .entry("model_providers")
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        let providers = providers
+            .as_table_mut()
+            .context("Codex model_providers must be a table")?;
+        providers.insert("jackin_account".into(), provider.into());
+        document.insert("model_provider".into(), "jackin_account".into());
+    } else {
+        document.remove("model_provider");
     }
-    let providers = document
-        .entry("model_providers")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let providers = providers
-        .as_table_mut()
-        .context("Codex model_providers must be a table")?;
-    providers.insert("jackin_account".into(), provider.into());
-    document.insert("model_provider".into(), "jackin_account".into());
     let mut catalog_to_publish = None;
     if let Some(model) = model {
         document.insert("model".into(), model.into());
@@ -866,6 +860,40 @@ where
     )
     .context("publish private Codex account configuration")?;
     Ok(mounts)
+}
+
+fn codex_provider_wiring(
+    account: &jackin_config::AccountConfig,
+    instance: &jackin_config::ResolvedInstance,
+    model: Option<&str>,
+    api_key: bool,
+) -> anyhow::Result<Option<(String, String)>> {
+    if !api_key {
+        return Ok(None);
+    }
+    let cross_provider = account.provider != AiProvider::OpenAi;
+    anyhow::ensure!(
+        !cross_provider || model.is_some(),
+        "a model is required for a Codex provider account"
+    );
+    let default_url = match account.provider {
+        AiProvider::Moonshot => "https://api.kimi.com/coding/v1",
+        AiProvider::Zai => "https://api.z.ai/api/v1",
+        AiProvider::Minimax => "https://api.minimax.io/v1",
+        AiProvider::OpenAi => "https://api.openai.com/v1",
+        _ => anyhow::bail!("selected provider cannot authenticate Codex"),
+    };
+    Ok(Some((
+        instance
+            .base_url
+            .as_deref()
+            .unwrap_or(default_url)
+            .to_owned(),
+        account
+            .resolved_credential_descriptor(Agent::Codex)?
+            .env_name
+            .to_owned(),
+    )))
 }
 
 fn provider_config_filename(contents: &[u8], extension: &str) -> String {
