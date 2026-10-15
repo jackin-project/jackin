@@ -287,7 +287,13 @@ pub fn render_derived_dockerfile(
         s
     };
 
-    let claude_plugin_section = render_claude_plugin_section(claude_config);
+    // Claude plugin steps need the claude CLI baked earlier in this same
+    // image. Variants that do not install Claude must not emit them.
+    let claude_plugin_section = if supported.contains(&Agent::Claude) {
+        render_claude_plugin_section(claude_config)
+    } else {
+        String::new()
+    };
 
     let mut agent_bin_dirs: Vec<&str> = Vec::new();
     for agent in Agent::ALL {
