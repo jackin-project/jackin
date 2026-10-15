@@ -64,6 +64,7 @@ fn writable_agent_home_cannot_exchange_publication_staging_names() {
         &slot,
         Some("k3-256k"),
         None,
+        &[],
         |point| {
             if matches!(point, private_config_fs::PublishPoint::BeforeInstall(_)) {
                 for entry in std::fs::read_dir(&home)? {
@@ -140,6 +141,7 @@ fn generated_authority_does_not_import_writable_home_configuration() {
         &BTreeMap::from([(instance.config_id.clone(), slot)]),
         &BTreeMap::new(),
         &BTreeMap::new(),
+        &[],
     )
     .unwrap();
     assert_eq!(
@@ -182,6 +184,7 @@ fn provider_authority_rejects_symlink_into_writable_agent_home() {
         &slot,
         Some("k3-256k"),
         None,
+        &[],
     )
     .unwrap_err();
     assert!(format!("{error:#}").contains("private account config directory"));
@@ -200,6 +203,7 @@ fn later_host_publication_cannot_replace_an_admitted_config_catalog_generation()
         &slots,
         &BTreeMap::new(),
         &BTreeMap::new(),
+        &[],
     )
     .unwrap();
     let first_config = &first
@@ -216,6 +220,7 @@ fn later_host_publication_cannot_replace_an_admitted_config_catalog_generation()
         &slots,
         &BTreeMap::new(),
         &BTreeMap::new(),
+        &[],
     )
     .unwrap();
     let second_config = &second

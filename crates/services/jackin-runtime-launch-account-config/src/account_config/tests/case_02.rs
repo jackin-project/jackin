@@ -174,7 +174,16 @@ fn codex_slots_keep_routed_models_catalogs_and_requested_effort_separate() {
         ("codex-personal".to_owned(), "low".to_owned()),
     ]);
     let slots = slots_for(&instances);
-    configure_accounts(temp.path(), &config, &instances, &slots, &models, &efforts).unwrap();
+    configure_accounts(
+        temp.path(),
+        &config,
+        &instances,
+        &slots,
+        &models,
+        &efforts,
+        &[],
+    )
+    .unwrap();
 
     for (id, home_rel, endpoint, model, effort) in [
         (
@@ -259,8 +268,16 @@ fn profile_codex_account_writes_override_model_and_effort() {
     let models = BTreeMap::from([("codex-personal".to_owned(), "gpt-6-luna".to_owned())]);
     let efforts = BTreeMap::from([("codex-personal".to_owned(), "low".to_owned())]);
     let slots = slots_for(&instances);
-    let mounts =
-        configure_accounts(temp.path(), &config, &instances, &slots, &models, &efforts).unwrap();
+    let mounts = configure_accounts(
+        temp.path(),
+        &config,
+        &instances,
+        &slots,
+        &models,
+        &efforts,
+        &[],
+    )
+    .unwrap();
     assert_eq!(mounts.len(), 1);
     assert!(
         mounts[0].1.ends_with("/config.toml"),
@@ -294,12 +311,85 @@ fn profile_codex_account_writes_override_model_and_effort() {
         &slots,
         &BTreeMap::new(),
         &BTreeMap::new(),
+        &[],
     )
     .unwrap();
     assert!(
         bare_mounts.is_empty(),
         "profile account without overrides must still skip the config writer"
     );
+}
+
+/// Published Codex generations carry workspace trust: the mounted
+/// `config.toml` shadows the session home file, so entries seeded only
+/// into the session home never reach Codex once overrides (model,
+/// effort) trigger publication. Without this merge every override
+/// launch — including the C6 isolated review worker — parks at the
+/// interactive trust gate.
+#[test]
+fn published_codex_config_carries_workspace_trust() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "personal".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Personal".into(),
+            provider: AiProvider::OpenAi,
+            credential: AccountCredential::Profile {
+                agent: Agent::Codex,
+                directory: temp.path().join("profile"),
+                xdg_roots: None,
+                source_selector: None,
+            },
+        },
+    );
+    let instances = [instance(
+        "codex-personal",
+        Agent::Codex,
+        "personal",
+        None,
+        None,
+    )];
+    let models = BTreeMap::from([("codex-personal".to_owned(), "gpt-6-luna".to_owned())]);
+    let efforts = BTreeMap::from([("codex-personal".to_owned(), "low".to_owned())]);
+    let slots = slots_for(&instances);
+    let trusted = ["/work/repo".to_owned(), "/work/review-result".to_owned()];
+    let mounts = configure_accounts(
+        temp.path(),
+        &config,
+        &instances,
+        &slots,
+        &models,
+        &efforts,
+        &trusted,
+    )
+    .unwrap();
+    assert_eq!(mounts.len(), 1);
+    let (source, target) = &mounts[0];
+    assert!(
+        target.ends_with("/config.toml"),
+        "override must mount a codex config.toml, got {target:?}"
+    );
+    // The mounted generation itself — the file Codex reads — carries
+    // the trust entries, not just the staging latest.
+    for path in [
+        temp.path().join("provider-config/home/.codex/config.toml"),
+        source.clone(),
+    ] {
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let parsed: toml::Value = toml::from_str(&contents).unwrap();
+        assert_eq!(parsed["model"].as_str(), Some("gpt-6-luna"));
+        assert_eq!(parsed["model_reasoning_effort"].as_str(), Some("low"));
+        for dir in ["/work/repo", "/work/review-result"] {
+            assert_eq!(
+                parsed["projects"][dir]["trust_level"].as_str(),
+                Some("trusted"),
+                "published config {} must trust {dir}",
+                path.display()
+            );
+        }
+    }
 }
 
 #[test]

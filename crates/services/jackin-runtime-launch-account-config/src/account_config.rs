@@ -644,6 +644,7 @@ pub fn configure_accounts(
     slots: &BTreeMap<String, jackin_instance::ProvisionedInstanceAuth>,
     models: &BTreeMap<String, String>,
     efforts: &BTreeMap<String, String>,
+    trusted_paths: &[String],
 ) -> anyhow::Result<Vec<(PathBuf, String)>> {
     let mut mounts = Vec::new();
     for instance in instances {
@@ -682,6 +683,7 @@ pub fn configure_accounts(
                 slot,
                 model,
                 efforts.get(&instance.config_id).map(String::as_str),
+                trusted_paths,
             )?),
             Agent::Opencode => {
                 mounts.extend(configure_opencode(root, config, instance, slot, model)?);
@@ -700,8 +702,18 @@ fn configure_codex(
     slot: &jackin_instance::ProvisionedInstanceAuth,
     model: Option<&str>,
     effort: Option<&str>,
+    trusted_paths: &[String],
 ) -> anyhow::Result<Vec<(PathBuf, String)>> {
-    configure_codex_with_publish_hook(root, config, instance, slot, model, effort, |_| Ok(()))
+    configure_codex_with_publish_hook(
+        root,
+        config,
+        instance,
+        slot,
+        model,
+        effort,
+        trusted_paths,
+        |_| Ok(()),
+    )
 }
 
 #[cfg(not(unix))]
@@ -712,13 +724,56 @@ fn configure_codex(
     _slot: &jackin_instance::ProvisionedInstanceAuth,
     _model: Option<&str>,
     _effort: Option<&str>,
+    _trusted_paths: &[String],
 ) -> anyhow::Result<Vec<(PathBuf, String)>> {
     anyhow::bail!(
         "private Codex config publication requires Unix descriptor-relative file operations"
     )
 }
 
+/// Workspace trust merged into the published Codex generation. The
+/// mounted `config.toml` shadows the session home file, so entries
+/// seeded only into the session home never reach Codex when this
+/// publication happens (model/effort overrides, API-key accounts).
+/// Merging here keeps the interactive trust gate from blocking
+/// isolated workers such as the C6 review session. Non-table
+/// `projects` values are replaced, mirroring the session home seed.
 #[cfg(unix)]
+fn merge_codex_workspace_trust(document: &mut toml::Table, trusted_paths: &[String]) {
+    if trusted_paths.is_empty() {
+        return;
+    }
+    let mut table = match document.remove("projects") {
+        Some(toml::Value::Table(table)) => table,
+        _ => toml::Table::new(),
+    };
+    for path in trusted_paths {
+        let entry = table
+            .entry(path.clone())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        match entry {
+            toml::Value::Table(entry_table) => {
+                entry_table.insert(
+                    "trust_level".to_owned(),
+                    toml::Value::String("trusted".to_owned()),
+                );
+            }
+            not_table => {
+                *not_table = toml::Value::Table(toml::Table::from_iter([(
+                    "trust_level".to_owned(),
+                    toml::Value::String("trusted".to_owned()),
+                )]));
+            }
+        }
+    }
+    document.insert("projects".to_owned(), toml::Value::Table(table));
+}
+
+#[cfg(unix)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "publication needs root, config, instance, slot, model, effort, trust, and the test hook together"
+)]
 fn configure_codex_with_publish_hook<F>(
     root: &Path,
     config: &AppConfig,
@@ -726,6 +781,7 @@ fn configure_codex_with_publish_hook<F>(
     slot: &jackin_instance::ProvisionedInstanceAuth,
     model: Option<&str>,
     effort: Option<&str>,
+    trusted_paths: &[String],
     mut hook: F,
 ) -> anyhow::Result<Vec<(PathBuf, String)>>
 where
@@ -829,6 +885,7 @@ where
     } else {
         document.remove("model_reasoning_effort");
     }
+    merge_codex_workspace_trust(&mut document, trusted_paths);
     let config_contents = toml::to_string_pretty(&document)?.into_bytes();
     private_config_fs::validate_config_contents(&config_contents, "config.toml")?;
     if let Some((catalog_name, catalog_contents)) = catalog_to_publish {

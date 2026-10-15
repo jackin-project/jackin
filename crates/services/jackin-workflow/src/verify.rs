@@ -343,16 +343,24 @@ pub fn prepare_test_worker(
 /// Environment allowlist for the test process. Default-deny: agent
 /// credentials live in files and host variables that candidate code
 /// must never observe, so only locale, temp, and path entries pass.
+///
+/// Python bytecode writing is always disabled: trusted checks import
+/// candidate modules, and an emitted `__pycache__` would dirty the
+/// pinned worker source (and any host-mounted fixture tree) outside
+/// the candidate diff. The frozen policy argv stays untouched; the
+/// flag travels in the environment instead.
 fn test_command_env() -> Vec<(String, String)> {
     const ALLOWED: &[&str] = &["PATH", "TMPDIR", "TZ", "LANG", "LC_ALL", "LC_CTYPE"];
-    ALLOWED
+    let mut env: Vec<(String, String)> = ALLOWED
         .iter()
         .filter_map(|key| {
             std::env::var(key)
                 .ok()
                 .map(|value| (key.to_string(), value))
         })
-        .collect()
+        .collect();
+    env.push(("PYTHONDONTWRITEBYTECODE".to_owned(), "1".to_owned()));
+    env
 }
 
 /// Bounded test output: at most [`MAX_TEST_OUTPUT_BYTES`] kept, with

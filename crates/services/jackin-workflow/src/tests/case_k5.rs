@@ -1273,3 +1273,83 @@ fn row_stale_candidate() {
         );
     }
 }
+
+/// Runner hygiene: the pinned test command never emits `__pycache__`
+/// into the worker source, even when the trusted check imports a
+/// candidate module. The K7 review FAIL came from exactly this: our
+/// own trusted-check run left an untracked `__pycache__/` outside the
+/// candidate diff. Without `PYTHONDONTWRITEBYTECODE` the import below
+/// byte-compiles the helper and this test fails on the residue walk.
+#[test]
+fn k5_runner_never_emits_bytecode() {
+    let temp = tempfile::tempdir().expect("k5 tempdir");
+    let repo = temp.path().join("bytecode-src");
+    std::fs::create_dir_all(&repo).expect("bytecode src dir");
+    std::fs::write(repo.join("helpermod.py"), "VALUE = 41\n").expect("write helper module");
+    std::fs::write(
+        repo.join("check_import.py"),
+        "import sys\nsys.path.insert(0, sys.argv[1])\nimport helpermod\nassert helpermod.VALUE == 41, helpermod.VALUE\nprint('PASS: import without bytecode')\n",
+    )
+    .expect("write import check");
+    run_git(&repo, &["init", "-q"]);
+    run_git(&repo, &["config", "user.name", "k5-fixture"]);
+    run_git(&repo, &["config", "user.email", "k5@local"]);
+    run_git(&repo, &["add", "."]);
+    run_git(&repo, &["commit", "-qm", "import check fixture"]);
+    let point = Checkpoint::read(&repo);
+    let scratch = temp.path().join("scratch");
+    let worker_id = "test-run-k5bytecode-r0-candidate-001";
+    let work_dir = scratch.join(worker_id);
+    let policy = TestPolicy::freeze(
+        vec![
+            "python3".to_owned(),
+            work_dir
+                .join("check_import.py")
+                .to_string_lossy()
+                .into_owned(),
+            work_dir.to_string_lossy().into_owned(),
+        ],
+        120,
+    )
+    .expect("freeze bytecode policy");
+    let spec = TestWorkerSpec::new(
+        "run-k5bytecode",
+        0,
+        "candidate-001",
+        &point.commit,
+        &point.tree,
+        &policy,
+    )
+    .expect("bytecode worker spec");
+    assert_eq!(spec.worker_id(), worker_id);
+    let worker = prepare_test_worker(&repo, &spec, &scratch).expect("prepare bytecode worker");
+    let execution = run_test_command(&policy, &worker).expect("run bytecode pinned command");
+    assert_eq!(execution.exit_code(), 0, "import check must exit zero");
+    assert!(
+        execution.stdout().text().contains("PASS"),
+        "import check names the pass, got: {}",
+        execution.stdout().text()
+    );
+    let mut residue = Vec::new();
+    let mut dirs = vec![worker.work_dir().to_owned()];
+    while let Some(dir) = dirs.pop() {
+        let entries = std::fs::read_dir(&dir).expect("read worker dir");
+        for entry in entries {
+            let entry = entry.expect("worker dir entry");
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|name| name == "__pycache__") {
+                    residue.push(path);
+                } else {
+                    dirs.push(path);
+                }
+            } else if path.extension().is_some_and(|ext| ext == "pyc") {
+                residue.push(path);
+            }
+        }
+    }
+    assert!(
+        residue.is_empty(),
+        "pinned test command emitted bytecode residue: {residue:?}"
+    );
+}
