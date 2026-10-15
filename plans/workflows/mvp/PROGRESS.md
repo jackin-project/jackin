@@ -53,6 +53,8 @@ Safe work that can continue: none remaining (all code work is done and verified)
 Exact next action: user runs `claude login`, then coordinator re-runs K5 repair turn + K7
 ```
 
+User direction 2026-10-15: fix `the-architect` with subagents until it works with the current jackin branch; Codex verification runs under `the-architect` with ONLY gpt-6-luna at low effort (never any other Codex model). Claude constraint unchanged (Haiku 5.5 low only).
+
 ```text
 Step: 1/5/7 (Codex legs)
 Observed failure: no codex-capable role with a working preflight
