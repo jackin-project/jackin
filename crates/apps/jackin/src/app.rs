@@ -11,6 +11,7 @@ mod load_cmd;
 mod prune_cmd;
 mod restore;
 mod workflow_cmd;
+pub(crate) mod workflow_export;
 mod workspace_cmd;
 
 #[cfg(test)]

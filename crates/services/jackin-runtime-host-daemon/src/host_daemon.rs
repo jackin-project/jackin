@@ -10,7 +10,7 @@ use jackin_core::{ContainerId, JackinPaths};
 use jackin_protocol::control::AgentState;
 use jackin_protocol::{InstanceSnapshot, TelemetryContext};
 use jackin_workflow::{
-    InstanceInventory, OperatorDecision, RecoveryReport, RunSummary, WorkflowBackend,
+    InstanceInventory, OperatorDecision, RecoveryReport, RunDetail, RunSummary, WorkflowBackend,
 };
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +50,14 @@ pub enum DaemonRequestKind {
     WorkflowStatus {
         run_id: Option<String>,
     },
+    WorkflowList {
+        limit: u32,
+    },
+    WorkflowDetail {
+        run_id: String,
+        after_seq: i64,
+        event_limit: u32,
+    },
     WorkflowPause {
         run_id: String,
         reason: String,
@@ -83,6 +91,8 @@ impl DaemonRequestKind {
             Self::Shutdown => "jackin.host.Daemon/Shutdown",
             Self::WorkflowStart { .. } => "jackin.host.Daemon/WorkflowStart",
             Self::WorkflowStatus { .. } => "jackin.host.Daemon/WorkflowStatus",
+            Self::WorkflowList { .. } => "jackin.host.Daemon/WorkflowList",
+            Self::WorkflowDetail { .. } => "jackin.host.Daemon/WorkflowDetail",
             Self::WorkflowPause { .. } => "jackin.host.Daemon/WorkflowPause",
             Self::WorkflowResume { .. } => "jackin.host.Daemon/WorkflowResume",
             Self::WorkflowCancel { .. } => "jackin.host.Daemon/WorkflowCancel",
@@ -119,11 +129,23 @@ pub enum DaemonResponseKind {
     WorkflowRun {
         summary: RunSummary,
     },
+    WorkflowRuns {
+        summaries: Vec<RunSummary>,
+    },
+    WorkflowRunDetail {
+        detail: RunDetail,
+    },
     WorkflowRecovery {
         report: RecoveryReport,
     },
     Error {
         message: String,
+        /// C7 typed error code (`invalid_request`, `not_found`,
+        /// `busy`, `denied`, `state_conflict`, `needs_operator`,
+        /// `execution_error`). Defaults for readers of older daemon
+        /// responses that carry no code.
+        #[serde(default)]
+        code: String,
     },
 }
 
@@ -613,6 +635,14 @@ fn daemon_response_matches_method(method: &str, response: &DaemonResponseKind) -
                 DaemonResponseKind::WorkflowRun { .. }
             )
             | (
+                "jackin.host.Daemon/WorkflowList",
+                DaemonResponseKind::WorkflowRuns { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowDetail",
+                DaemonResponseKind::WorkflowRunDetail { .. }
+            )
+            | (
                 "jackin.host.Daemon/WorkflowPause",
                 DaemonResponseKind::WorkflowRun { .. }
             )
@@ -938,6 +968,8 @@ fn handle_request(
             },
             kind @ (DaemonRequestKind::WorkflowStart { .. }
             | DaemonRequestKind::WorkflowStatus { .. }
+            | DaemonRequestKind::WorkflowList { .. }
+            | DaemonRequestKind::WorkflowDetail { .. }
             | DaemonRequestKind::WorkflowPause { .. }
             | DaemonRequestKind::WorkflowResume { .. }
             | DaemonRequestKind::WorkflowCancel { .. }
@@ -1098,11 +1130,33 @@ fn read_response(stream: UnixStream) -> Result<DaemonResponse> {
 }
 
 fn error_response(id: impl Into<String>, message: impl Into<String>) -> DaemonResponse {
+    coded_error_response(id, "execution_error", message)
+}
+
+fn coded_error_response(
+    id: impl Into<String>,
+    code: &str,
+    message: impl Into<String>,
+) -> DaemonResponse {
     DaemonResponse {
         id: id.into(),
         kind: DaemonResponseKind::Error {
             message: message.into(),
+            code: code.to_owned(),
         },
+    }
+}
+
+/// C7 typed error code for a workflow failure kind.
+fn workflow_error_code(error: &jackin_workflow::WorkflowError) -> &'static str {
+    use jackin_workflow::ErrorKind;
+    match error.kind() {
+        ErrorKind::Invalid => "invalid_request",
+        ErrorKind::NotFound => "not_found",
+        ErrorKind::Busy => "busy",
+        ErrorKind::StaleVersion | ErrorKind::StaleEpoch => "state_conflict",
+        ErrorKind::Blocked => "needs_operator",
+        ErrorKind::Storage => "execution_error",
     }
 }
 
@@ -1125,6 +1179,30 @@ fn handle_workflow_request(
         DaemonRequestKind::WorkflowStatus { run_id } => {
             workflow_response(id, workflow.run_status(run_id.as_deref()))
         }
+        DaemonRequestKind::WorkflowList { limit } => match workflow.list_runs(limit) {
+            Ok(summaries) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowRuns { summaries },
+            },
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
+        },
+        DaemonRequestKind::WorkflowDetail {
+            run_id,
+            after_seq,
+            event_limit,
+        } => match workflow.run_detail(&run_id, after_seq, event_limit) {
+            Ok(detail) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowRunDetail { detail },
+            },
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
+        },
         DaemonRequestKind::WorkflowPause {
             run_id,
             reason,
@@ -1155,16 +1233,23 @@ fn handle_workflow_request(
                     &observed_session_state,
                 ),
             ),
-            None => error_response(id, format!("unknown operator decision `{decision}`")),
+            None => coded_error_response(
+                id,
+                "invalid_request",
+                format!("unknown operator decision `{decision}`"),
+            ),
         },
         DaemonRequestKind::WorkflowRecover { inventory } => match workflow.recover(&inventory) {
             Ok(report) => DaemonResponse {
                 id,
                 kind: DaemonResponseKind::WorkflowRecovery { report },
             },
-            Err(error) => error_response(id, error.to_string()),
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
         },
-        _ => error_response(id, "not a workflow request"),
+        _ => coded_error_response(id, "invalid_request", "not a workflow request"),
     }
 }
 
@@ -1177,7 +1262,10 @@ fn workflow_response(
             id,
             kind: DaemonResponseKind::WorkflowRun { summary },
         },
-        Err(error) => error_response(id, error.to_string()),
+        Err(error) => {
+            let code = workflow_error_code(&error);
+            coded_error_response(id, code, error.to_string())
+        }
     }
 }
 

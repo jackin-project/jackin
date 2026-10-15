@@ -16,7 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use super::model::{Actor, NextState, Observation, RunStatus, RunView, Stage, advance};
 use super::store::{
-    CheckpointRecord, NewEffect, RunStore, RunTransition, StoredEffect, StoredRun, StoredSession,
+    CheckpointRecord, NewEffect, RunStore, RunTransition, StoredCheckpoint, StoredEffect,
+    StoredEvent, StoredEvidence, StoredRun, StoredSession,
 };
 use super::{CommandState, EffectKind, EffectStatus, WorkflowError};
 
@@ -34,6 +35,45 @@ pub struct RunSummary {
     pub owner_epoch: u64,
     pub pause_kind: Option<String>,
     pub max_repair_turns: u32,
+}
+
+/// Machine-readable run detail for the C7 Console view, `graph`,
+/// `events`, and Markdown export: the summary plus the sessions that
+/// pin the exact Capsule attachment, the effects that carry backup
+/// state, and the bounded durable event/evidence/checkpoint history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunDetail {
+    pub summary: RunSummary,
+    pub sessions: Vec<StoredSession>,
+    pub effects: Vec<StoredEffect>,
+    pub events: Vec<StoredEvent>,
+    pub evidence: Vec<StoredEvidence>,
+    pub checkpoints: Vec<StoredCheckpoint>,
+}
+
+/// Fixed pipeline stage list for the C7 graph view: every run
+/// moves through these stages in order; the detail response marks
+/// each with its node state.
+pub const GRAPH_STAGES: [&str; 6] = [
+    "prepare",
+    "implement",
+    "capture",
+    "test",
+    "review",
+    "decide",
+];
+
+/// Node state for one graph stage relative to the run's current
+/// stage: done (passed), current, or pending.
+#[must_use]
+pub fn graph_node_state(stage: &str, current: &str) -> &'static str {
+    let order = |name: &str| GRAPH_STAGES.iter().position(|s| *s == name);
+    match (order(stage), order(current)) {
+        (Some(a), Some(b)) if a < b => "done",
+        (Some(a), Some(b)) if a == b => "current",
+        (Some(_), Some(_)) => "pending",
+        _ => "unknown",
+    }
 }
 
 /// Operator decision for uncertain command delivery.
@@ -103,6 +143,13 @@ pub trait WorkflowBackend {
         idempotency_key: &str,
     ) -> Result<RunSummary, WorkflowError>;
     fn run_status(&mut self, run_id: Option<&str>) -> Result<RunSummary, WorkflowError>;
+    fn list_runs(&mut self, limit: u32) -> Result<Vec<RunSummary>, WorkflowError>;
+    fn run_detail(
+        &mut self,
+        run_id: &str,
+        after_seq: i64,
+        event_limit: u32,
+    ) -> Result<RunDetail, WorkflowError>;
     fn pause_run(
         &mut self,
         run_id: &str,
@@ -163,6 +210,19 @@ impl WorkflowBackend for UnavailableBackend {
     }
 
     fn run_status(&mut self, _run_id: Option<&str>) -> Result<RunSummary, WorkflowError> {
+        Err(self.error())
+    }
+
+    fn list_runs(&mut self, _limit: u32) -> Result<Vec<RunSummary>, WorkflowError> {
+        Err(self.error())
+    }
+
+    fn run_detail(
+        &mut self,
+        _run_id: &str,
+        _after_seq: i64,
+        _event_limit: u32,
+    ) -> Result<RunDetail, WorkflowError> {
         Err(self.error())
     }
 
@@ -283,6 +343,33 @@ impl WorkflowService {
             Some(run) => summarize(&run),
             None => Err(WorkflowError::not_found(format!("run {run_id} not found"))),
         }
+    }
+
+    /// Bounded run list, newest first (C7 `workflow.list`).
+    pub fn list_runs(&self, limit: u32) -> Result<Vec<RunSummary>, WorkflowError> {
+        self.store
+            .list_runs(limit)
+            .and_then(|runs| runs.iter().map(summarize).collect())
+    }
+
+    /// Full run detail for the C7 Console view, `graph`, `events`,
+    /// and Markdown export. The event window is bounded by
+    /// `event_limit` starting after `after_seq` (resume cursor).
+    pub fn run_detail(
+        &self,
+        run_id: &str,
+        after_seq: i64,
+        event_limit: u32,
+    ) -> Result<RunDetail, WorkflowError> {
+        let summary = self.summary_of(run_id)?;
+        Ok(RunDetail {
+            summary,
+            sessions: self.store.load_sessions(run_id)?,
+            effects: self.store.load_effects(run_id)?,
+            events: self.store.load_events(run_id, after_seq, event_limit)?,
+            evidence: self.store.load_evidence(run_id)?,
+            checkpoints: self.store.load_checkpoints(run_id)?,
+        })
     }
 
     /// Stamp a pending transition onto the stored row version.
@@ -981,6 +1068,19 @@ impl WorkflowBackend for WorkflowService {
 
     fn run_status(&mut self, run_id: Option<&str>) -> Result<RunSummary, WorkflowError> {
         WorkflowService::run_summary(self, run_id)
+    }
+
+    fn list_runs(&mut self, limit: u32) -> Result<Vec<RunSummary>, WorkflowError> {
+        WorkflowService::list_runs(self, limit)
+    }
+
+    fn run_detail(
+        &mut self,
+        run_id: &str,
+        after_seq: i64,
+        event_limit: u32,
+    ) -> Result<RunDetail, WorkflowError> {
+        WorkflowService::run_detail(self, run_id, after_seq, event_limit)
     }
 
     fn pause_run(

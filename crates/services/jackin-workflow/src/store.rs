@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use jackin_usage_store_backend::{Connection, Row, connect_local, params};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use super::{CommandState, EffectKind, EffectStatus, RunStatus, Stage, WorkflowError};
@@ -23,7 +24,7 @@ use super::{CommandState, EffectKind, EffectStatus, RunStatus, Stage, WorkflowEr
 const SCHEMA_VERSION: &str = "1";
 
 /// One stored run row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredRun {
     pub run_id: String,
     pub plan_hash: String,
@@ -40,7 +41,7 @@ pub struct StoredRun {
 }
 
 /// One stored command row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredCommand {
     pub command_id: String,
     pub run_id: String,
@@ -54,7 +55,7 @@ pub struct StoredCommand {
 }
 
 /// One stored session row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredSession {
     pub run_id: String,
     pub worker_id: String,
@@ -67,7 +68,7 @@ pub struct StoredSession {
 }
 
 /// One stored effect row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredEffect {
     pub operation_id: String,
     pub run_id: String,
@@ -84,6 +85,42 @@ pub struct StoredEffect {
 pub struct ArtifactRef {
     pub digest: String,
     pub path: PathBuf,
+}
+
+/// One stored event row: the durable per-run history (C7 replay).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredEvent {
+    pub seq: i64,
+    pub at: i64,
+    pub actor: String,
+    pub kind: String,
+    pub evidence_ref: Option<String>,
+}
+
+/// One stored evidence row: a test/review finding with its source,
+/// quality, result, policy hash, and artifact digest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredEvidence {
+    pub candidate: String,
+    pub kind: String,
+    pub source: String,
+    pub quality: String,
+    pub result: String,
+    pub policy_hash: Option<String>,
+    pub artifact_digest: Option<String>,
+}
+
+/// One stored checkpoint row: candidate identity, exact commit/tree,
+/// source manifest, backup state, preservation hold.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredCheckpoint {
+    pub candidate: String,
+    pub commit_hash: String,
+    pub tree_hash: String,
+    pub source_manifest: String,
+    pub local_path: String,
+    pub backup_state: String,
+    pub preservation_hold: Option<String>,
 }
 
 /// Durable store handle. Single service owner; synchronous API over a
@@ -269,6 +306,147 @@ impl RunStore {
                 Some(row) => Ok(Some(decode_run(&row).map_err(storage)?)),
                 None => Ok(None),
             }
+        })
+    }
+
+    /// Bounded run list, newest first (C7 `workflow.list`). The cap
+    /// keeps the CLI/Console list response bounded; pass a positive
+    /// limit.
+    pub fn list_runs(&self, limit: u32) -> Result<Vec<StoredRun>, WorkflowError> {
+        let limit = i64::from(limit.max(1));
+        block_on_store(async {
+            let mut rows = jackin_usage_store_backend::operation(
+                jackin_usage_store_backend::DbOperation::Select,
+                self.conn.query(
+                    "SELECT run_id, plan_hash, max_repair_turns, idempotency_key,
+                        status, stage, round, candidate, candidate_generation,
+                        version, owner_epoch, pause_kind
+                     FROM runs ORDER BY rowid DESC LIMIT ?1",
+                    params![limit],
+                ),
+            )
+            .await
+            .map_err(|err| format!("list workflow runs failed: {err}"))?;
+            let mut out = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .await
+                .map_err(|err| format!("read workflow runs failed: {err}"))?
+            {
+                out.push(decode_run(&row).map_err(storage)?);
+            }
+            Ok(out)
+        })
+    }
+
+    /// Bounded durable event history for one run at/after `after_seq`
+    /// (C7 `workflow.events` resume cursor). Gaps are the caller's
+    /// signal: a missing leading sequence means output fell outside
+    /// the retained window.
+    pub fn load_events(
+        &self,
+        run_id: &str,
+        after_seq: i64,
+        limit: u32,
+    ) -> Result<Vec<StoredEvent>, WorkflowError> {
+        let limit = i64::from(limit.max(1));
+        block_on_store(async {
+            let mut rows = jackin_usage_store_backend::operation(
+                jackin_usage_store_backend::DbOperation::Select,
+                self.conn.query(
+                    "SELECT seq, at, actor, kind, evidence_ref
+                     FROM events WHERE run_id = ?1 AND seq > ?2
+                     ORDER BY seq LIMIT ?3",
+                    params![run_id.to_owned(), after_seq, limit],
+                ),
+            )
+            .await
+            .map_err(|err| format!("load workflow events failed: {err}"))?;
+            let mut out = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .await
+                .map_err(|err| format!("read workflow events failed: {err}"))?
+            {
+                out.push(StoredEvent {
+                    seq: row_int(&row, 0, "event seq")?,
+                    at: row_int(&row, 1, "event time")?,
+                    actor: row_string(&row, 2, "event actor")?,
+                    kind: row_string(&row, 3, "event kind")?,
+                    evidence_ref: row_opt_string(&row, 4, "event evidence")?,
+                });
+            }
+            Ok(out)
+        })
+    }
+
+    /// All evidence rows for one run (test/review findings for the
+    /// C7 detail view and Markdown export).
+    pub fn load_evidence(&self, run_id: &str) -> Result<Vec<StoredEvidence>, WorkflowError> {
+        block_on_store(async {
+            let mut rows = jackin_usage_store_backend::operation(
+                jackin_usage_store_backend::DbOperation::Select,
+                self.conn.query(
+                    "SELECT candidate, kind, source, quality, result,
+                        policy_hash, artifact_digest
+                     FROM evidence WHERE run_id = ?1 ORDER BY evidence_id",
+                    params![run_id.to_owned()],
+                ),
+            )
+            .await
+            .map_err(|err| format!("load workflow evidence failed: {err}"))?;
+            let mut out = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .await
+                .map_err(|err| format!("read workflow evidence failed: {err}"))?
+            {
+                out.push(StoredEvidence {
+                    candidate: row_string(&row, 0, "evidence candidate")?,
+                    kind: row_string(&row, 1, "evidence kind")?,
+                    source: row_string(&row, 2, "evidence source")?,
+                    quality: row_string(&row, 3, "evidence quality")?,
+                    result: row_string(&row, 4, "evidence result")?,
+                    policy_hash: row_opt_string(&row, 5, "evidence policy")?,
+                    artifact_digest: row_opt_string(&row, 6, "evidence artifact")?,
+                });
+            }
+            Ok(out)
+        })
+    }
+
+    /// All checkpoint rows for one run (preserved work, backup
+    /// state, and safe-path display for the C7 detail view).
+    pub fn load_checkpoints(&self, run_id: &str) -> Result<Vec<StoredCheckpoint>, WorkflowError> {
+        block_on_store(async {
+            let mut rows = jackin_usage_store_backend::operation(
+                jackin_usage_store_backend::DbOperation::Select,
+                self.conn.query(
+                    "SELECT candidate, commit_hash, tree_hash, source_manifest,
+                        local_path, backup_state, preservation_hold
+                     FROM checkpoints WHERE run_id = ?1 ORDER BY rowid",
+                    params![run_id.to_owned()],
+                ),
+            )
+            .await
+            .map_err(|err| format!("load workflow checkpoints failed: {err}"))?;
+            let mut out = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .await
+                .map_err(|err| format!("read workflow checkpoints failed: {err}"))?
+            {
+                out.push(StoredCheckpoint {
+                    candidate: row_string(&row, 0, "checkpoint candidate")?,
+                    commit_hash: row_string(&row, 1, "checkpoint commit")?,
+                    tree_hash: row_string(&row, 2, "checkpoint tree")?,
+                    source_manifest: row_string(&row, 3, "checkpoint manifest")?,
+                    local_path: row_string(&row, 4, "checkpoint path")?,
+                    backup_state: row_string(&row, 5, "checkpoint backup")?,
+                    preservation_hold: row_opt_string(&row, 6, "preservation hold")?,
+                });
+            }
+            Ok(out)
         })
     }
 

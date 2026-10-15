@@ -3296,6 +3296,7 @@ dependencies = [
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-tui",
+ "jackin-workflow",
  "nix 0.31.3",
  "open",
  "opentelemetry-proto",

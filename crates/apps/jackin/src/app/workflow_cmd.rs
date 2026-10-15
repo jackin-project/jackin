@@ -39,9 +39,11 @@ pub(super) fn handle(
     }
 }
 
-/// Durable run control (`run`, `status`, `pause`, `resume`,
-/// `cancel`): the CLI verifies the stored plan for `run`, then drives
-/// the host daemon's workflow service over the daemon socket.
+/// Durable run control: the CLI verifies the stored plan for
+/// `run`, then drives the host daemon's workflow service over the
+/// daemon socket. Every command supports stable `--json` output
+/// (`OutputEnvelope::v1`) and typed exit codes (0/2/3/4/1); bare
+/// `status` lists runs (C7).
 #[cfg(unix)]
 fn run_control_command(
     command: WorkflowCommand,
@@ -49,49 +51,211 @@ fn run_control_command(
     paths: &jackin_core::JackinPaths,
 ) -> Result<()> {
     use crate::cli::workflow::{
-        WorkflowCancelArgs, WorkflowPauseArgs, WorkflowResumeArgs, WorkflowRunArgs,
-        WorkflowStatusArgs,
+        WorkflowCancelArgs, WorkflowGraphArgs, WorkflowPauseArgs, WorkflowResolveInputArgs,
+        WorkflowResumeArgs,
     };
     use jackin_runtime::host_daemon::{DaemonLayout, DaemonRequestKind};
 
     let layout = DaemonLayout::new(paths);
-    let kind = match command {
+    match command {
         WorkflowCommand::Validate(_) | WorkflowCommand::Plan(_) => {
             anyhow::bail!("not a run-control command")
         }
-        WorkflowCommand::Run(args) => {
-            let WorkflowRunArgs {
-                plan_hash,
-                idempotency_key,
+        WorkflowCommand::Run(args) => run_stored_plan(&layout, paths, args),
+        WorkflowCommand::Status(args) => run_status(&layout, args),
+        WorkflowCommand::Graph(args) => {
+            let WorkflowGraphArgs { run_id, json } = args;
+            let detail = daemon_run_detail(&layout, &run_id, -1, 0, json)?;
+            emit_graph(&detail, json);
+            Ok(())
+        }
+        WorkflowCommand::Events(args) => run_events(&layout, args),
+        WorkflowCommand::Pause(args) => {
+            let WorkflowPauseArgs {
+                run_id,
+                reason,
+                checkpoint,
+                json,
             } = args;
-            let plan = read_stored_plan(paths, &plan_hash)?;
-            DaemonRequestKind::WorkflowStart {
-                plan_hash,
-                max_repair_turns: plan.max_repair_turns,
-                idempotency_key: idempotency_key.unwrap_or_else(|| plan.plan_hash.clone()),
-            }
+            let summary = daemon_run_summary(
+                &layout,
+                DaemonRequestKind::WorkflowPause {
+                    run_id,
+                    reason,
+                    checkpoint,
+                },
+                json,
+            )?;
+            emit_summary(&summary, json);
+            Ok(())
         }
-        WorkflowCommand::Status(WorkflowStatusArgs { run_id }) => {
-            DaemonRequestKind::WorkflowStatus { run_id }
+        WorkflowCommand::Resume(args) => {
+            let WorkflowResumeArgs { run_id, json } = args;
+            let summary =
+                daemon_run_summary(&layout, DaemonRequestKind::WorkflowResume { run_id }, json)?;
+            emit_summary(&summary, json);
+            Ok(())
         }
-        WorkflowCommand::Pause(WorkflowPauseArgs {
-            run_id,
-            reason,
-            checkpoint,
-        }) => DaemonRequestKind::WorkflowPause {
-            run_id,
-            reason,
-            checkpoint,
+        WorkflowCommand::Cancel(args) => {
+            let WorkflowCancelArgs {
+                run_id,
+                reason,
+                json,
+            } = args;
+            let summary = daemon_run_summary(
+                &layout,
+                DaemonRequestKind::WorkflowCancel { run_id, reason },
+                json,
+            )?;
+            emit_summary(&summary, json);
+            Ok(())
+        }
+        WorkflowCommand::Attach(args) => run_attach(&layout, args),
+        WorkflowCommand::ResolveInput(args) => {
+            let WorkflowResolveInputArgs {
+                run_id,
+                command,
+                action,
+                reason: _,
+                observed_session_state,
+                json,
+            } = args;
+            let summary = daemon_run_summary(
+                &layout,
+                DaemonRequestKind::WorkflowResolve {
+                    run_id,
+                    command_id: command,
+                    decision: action,
+                    observed_session_state,
+                },
+                json,
+            )?;
+            emit_summary(&summary, json);
+            Ok(())
+        }
+        WorkflowCommand::Export(args) => run_export(&layout, args),
+    }
+}
+
+/// Start a run for a verified stored plan.
+#[cfg(unix)]
+fn run_stored_plan(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    paths: &jackin_core::JackinPaths,
+    args: crate::cli::workflow::WorkflowRunArgs,
+) -> Result<()> {
+    use jackin_runtime::host_daemon::DaemonRequestKind;
+
+    let crate::cli::workflow::WorkflowRunArgs {
+        plan_hash,
+        idempotency_key,
+        json,
+    } = args;
+    let plan = read_stored_plan(paths, &plan_hash)?;
+    let summary = daemon_run_summary(
+        layout,
+        DaemonRequestKind::WorkflowStart {
+            plan_hash,
+            max_repair_turns: plan.max_repair_turns,
+            idempotency_key: idempotency_key.unwrap_or_else(|| plan.plan_hash.clone()),
         },
-        WorkflowCommand::Resume(WorkflowResumeArgs { run_id }) => {
-            DaemonRequestKind::WorkflowResume { run_id }
-        }
-        WorkflowCommand::Cancel(WorkflowCancelArgs { run_id, reason }) => {
-            DaemonRequestKind::WorkflowCancel { run_id, reason }
-        }
-    };
-    let summary = daemon_run_summary(&layout, kind)?;
-    print_summary(&summary);
+        json,
+    )?;
+    emit_summary(&summary, json);
+    Ok(())
+}
+
+/// Single-run status, or the bounded run list without a run ID.
+#[cfg(unix)]
+fn run_status(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    args: crate::cli::workflow::WorkflowStatusArgs,
+) -> Result<()> {
+    use jackin_runtime::host_daemon::DaemonRequestKind;
+
+    let crate::cli::workflow::WorkflowStatusArgs {
+        run_id,
+        json,
+        limit,
+    } = args;
+    if let Some(run_id) = run_id {
+        let summary = daemon_run_summary(
+            layout,
+            DaemonRequestKind::WorkflowStatus {
+                run_id: Some(run_id),
+            },
+            json,
+        )?;
+        emit_summary(&summary, json);
+    } else {
+        let summaries = daemon_run_list(layout, limit, json)?;
+        emit_list(&summaries, json);
+    }
+    Ok(())
+}
+
+/// Bounded event history after a resume cursor.
+#[cfg(unix)]
+fn run_events(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    args: crate::cli::workflow::WorkflowEventsArgs,
+) -> Result<()> {
+    let crate::cli::workflow::WorkflowEventsArgs {
+        run_id,
+        after,
+        limit,
+        json,
+    } = args;
+    let detail = daemon_run_detail(layout, &run_id, after, limit, json)?;
+    emit_events(&detail, after, json);
+    Ok(())
+}
+
+/// Resolve the exact recorded session for a run worker.
+#[cfg(unix)]
+fn run_attach(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    args: crate::cli::workflow::WorkflowAttachArgs,
+) -> Result<()> {
+    let crate::cli::workflow::WorkflowAttachArgs {
+        run_id,
+        worker,
+        observe,
+        control,
+        json,
+    } = args;
+    let detail = daemon_run_detail(layout, &run_id, -1, 0, json)?;
+    emit_attach(&detail, &worker, observe, control, json)
+}
+
+/// Markdown export of the run detail (default content class: no
+/// terminal artifacts).
+#[cfg(unix)]
+fn run_export(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    args: crate::cli::workflow::WorkflowExportArgs,
+) -> Result<()> {
+    let crate::cli::workflow::WorkflowExportArgs {
+        run_id,
+        out,
+        include_terminal,
+        json,
+    } = args;
+    let detail = daemon_run_detail(layout, &run_id, -1, 500, json)?;
+    if include_terminal {
+        // The CLI has no retained spool to read: terminal artifacts
+        // need explicit content selection from a retained source,
+        // and inventing transcript content would be fabrication.
+        return Err(fail_err(
+            "invalid_request",
+            format!(
+                "no retained terminal text is available for run `{run_id}` from the CLI; export without --include-terminal"
+            ),
+            json,
+        ));
+    }
+    let manifest = crate::app::workflow_export::write_report(&detail, None, &out)?;
+    emit_export(&manifest, json);
     Ok(())
 }
 
@@ -122,21 +286,127 @@ fn read_stored_plan(
 }
 
 #[cfg(unix)]
+fn daemon_request(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    kind: jackin_runtime::host_daemon::DaemonRequestKind,
+    json: bool,
+) -> Result<jackin_runtime::host_daemon::DaemonResponseKind> {
+    use jackin_runtime::host_daemon::request;
+
+    let response = request(&layout.socket_path, env!("JACKIN_VERSION"), kind).map_err(|error| {
+        fail_err(
+            "execution_error",
+            format!("workflow daemon transport failed: {error:#}"),
+            json,
+        )
+    })?;
+    Ok(response.kind)
+}
+
+#[cfg(unix)]
 fn daemon_run_summary(
     layout: &jackin_runtime::host_daemon::DaemonLayout,
     kind: jackin_runtime::host_daemon::DaemonRequestKind,
+    json: bool,
 ) -> Result<jackin_workflow::RunSummary> {
-    use jackin_runtime::host_daemon::{DaemonResponseKind, request};
+    use jackin_runtime::host_daemon::DaemonResponseKind;
 
-    let response = request(&layout.socket_path, env!("JACKIN_VERSION"), kind)?;
-    match response.kind {
+    match daemon_request(layout, kind, json)? {
         DaemonResponseKind::WorkflowRun { summary } => Ok(summary),
-        DaemonResponseKind::Error { message } => anyhow::bail!("{message}"),
-        other => anyhow::bail!("unexpected daemon response: {other:?}"),
+        DaemonResponseKind::Error { message, code } => Err(fail_err(&code, message, json)),
+        other => Err(fail_err(
+            "execution_error",
+            format!("unexpected daemon response: {other:?}"),
+            json,
+        )),
     }
 }
 
-fn print_summary(summary: &jackin_workflow::RunSummary) {
+#[cfg(unix)]
+fn daemon_run_list(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    limit: u32,
+    json: bool,
+) -> Result<Vec<jackin_workflow::RunSummary>> {
+    use jackin_runtime::host_daemon::{DaemonRequestKind, DaemonResponseKind};
+
+    match daemon_request(layout, DaemonRequestKind::WorkflowList { limit }, json)? {
+        DaemonResponseKind::WorkflowRuns { summaries } => Ok(summaries),
+        DaemonResponseKind::Error { message, code } => Err(fail_err(&code, message, json)),
+        other => Err(fail_err(
+            "execution_error",
+            format!("unexpected daemon response: {other:?}"),
+            json,
+        )),
+    }
+}
+
+#[cfg(unix)]
+fn daemon_run_detail(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    run_id: &str,
+    after_seq: i64,
+    event_limit: u32,
+    json: bool,
+) -> Result<jackin_workflow::RunDetail> {
+    use jackin_runtime::host_daemon::{DaemonRequestKind, DaemonResponseKind};
+
+    match daemon_request(
+        layout,
+        DaemonRequestKind::WorkflowDetail {
+            run_id: run_id.to_owned(),
+            after_seq,
+            event_limit,
+        },
+        json,
+    )? {
+        DaemonResponseKind::WorkflowRunDetail { detail } => Ok(detail),
+        DaemonResponseKind::Error { message, code } => Err(fail_err(&code, message, json)),
+        other => Err(fail_err(
+            "execution_error",
+            format!("unexpected daemon response: {other:?}"),
+            json,
+        )),
+    }
+}
+
+/// Build the typed CLI failure for a daemon error code: the C7 exit
+/// code plus a stable JSON error envelope (`--json`) or a human
+/// stderr line. Callers return it so `main` exits 0/2/3/4/1 through
+/// [`crate::cli::workflow::WorkflowCommandExit`] instead of the
+/// generic 1.
+#[cfg(unix)]
+fn fail_err(code: &str, message: String, json: bool) -> anyhow::Error {
+    use crate::cli::workflow::{WorkflowCommandExit, exit_code_for_daemon_code};
+
+    let exit_code = exit_code_for_daemon_code(code);
+    if json {
+        let payload = crate::cli::format::OutputEnvelope::v1(serde_json::json!({
+            "error": { "code": code, "message": message },
+        }));
+        let text = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned());
+        WorkflowCommandExit::new(exit_code, text).into()
+    } else {
+        eprintln!("error [{code}]: {message}");
+        WorkflowCommandExit::new(exit_code, String::new()).into()
+    }
+}
+
+#[cfg(unix)]
+fn emit_envelope<T: serde::Serialize>(data: T) {
+    let envelope = crate::cli::format::OutputEnvelope::v1(data);
+    match serde_json::to_string(&envelope) {
+        Ok(text) => println!("{text}"),
+        Err(error) => eprintln!("error [execution_error]: cannot render workflow JSON: {error}"),
+    }
+}
+
+#[cfg(unix)]
+fn emit_summary(summary: &jackin_workflow::RunSummary, json: bool) {
+    if json {
+        emit_envelope(serde_json::json!({ "run": summary }));
+        return;
+    }
     println!("run: {}", summary.run_id);
     println!("plan: {}", summary.plan_hash);
     if summary.status == "paused" {
@@ -155,6 +425,146 @@ fn print_summary(summary: &jackin_workflow::RunSummary) {
     );
     println!("version: {}", summary.version);
     println!("owner_epoch: {}", summary.owner_epoch);
+}
+
+#[cfg(unix)]
+fn emit_list(summaries: &[jackin_workflow::RunSummary], json: bool) {
+    if json {
+        emit_envelope(serde_json::json!({ "count": summaries.len(), "runs": summaries }));
+        return;
+    }
+    if summaries.is_empty() {
+        println!("no workflow runs");
+        return;
+    }
+    for summary in summaries {
+        println!(
+            "{} {} {} {}",
+            summary.run_id, summary.status, summary.stage, summary.plan_hash
+        );
+    }
+}
+
+#[cfg(unix)]
+fn emit_graph(detail: &jackin_workflow::RunDetail, json: bool) {
+    let stages: Vec<serde_json::Value> = jackin_workflow::GRAPH_STAGES
+        .iter()
+        .map(|stage| {
+            serde_json::json!({
+                "stage": stage,
+                "state": jackin_workflow::graph_node_state(stage, &detail.summary.stage),
+            })
+        })
+        .collect();
+    if json {
+        emit_envelope(serde_json::json!({
+            "run_id": detail.summary.run_id,
+            "stage": detail.summary.stage,
+            "status": detail.summary.status,
+            "stages": stages,
+        }));
+        return;
+    }
+    println!("run: {}", detail.summary.run_id);
+    for stage in &stages {
+        println!(
+            "{}: {}",
+            stage["stage"].as_str().unwrap_or("?"),
+            stage["state"].as_str().unwrap_or("?")
+        );
+    }
+}
+
+#[cfg(unix)]
+fn emit_events(detail: &jackin_workflow::RunDetail, after: i64, json: bool) {
+    if json {
+        emit_envelope(serde_json::json!({
+            "run_id": detail.summary.run_id,
+            "after": after,
+            "events": detail.events,
+        }));
+        return;
+    }
+    if detail.events.is_empty() {
+        println!("no events after {after} for {}", detail.summary.run_id);
+        return;
+    }
+    for event in &detail.events {
+        println!("{} {} by {}", event.seq, event.kind, event.actor);
+    }
+}
+
+#[cfg(unix)]
+fn emit_attach(
+    detail: &jackin_workflow::RunDetail,
+    worker: &str,
+    observe: bool,
+    control: bool,
+    json: bool,
+) -> Result<()> {
+    // Observe is the default: it grants no input ownership.
+    // `--control` only resolves the same exact session in control
+    // mode; ownership itself is taken through the Console action.
+    let _ = observe;
+    let mode = if control { "control" } else { "observe" };
+    let Some(session) = detail.sessions.iter().find(|s| s.worker_id == worker) else {
+        return Err(fail_err(
+            "not_found",
+            format!(
+                "run `{}` has no recorded session for worker `{worker}`",
+                detail.summary.run_id
+            ),
+            json,
+        ));
+    };
+    if json {
+        emit_envelope(serde_json::json!({
+            "run_id": detail.summary.run_id,
+            "worker": worker,
+            "mode": mode,
+            "session": session,
+        }));
+        return Ok(());
+    }
+    println!("run: {}", detail.summary.run_id);
+    println!("worker: {worker}");
+    println!("mode: {mode}");
+    println!(
+        "instance: {}",
+        session.instance_id.as_deref().unwrap_or("none")
+    );
+    println!(
+        "session: {}",
+        session
+            .session_id
+            .map_or_else(|| "none".to_owned(), |id| id.to_string())
+    );
+    println!(
+        "capsule_epoch: {}",
+        session
+            .capsule_epoch
+            .map_or_else(|| "none".to_owned(), |epoch| epoch.to_string())
+    );
+    println!(
+        "process_identity: {}",
+        session.process_identity.as_deref().unwrap_or("none")
+    );
+    if control {
+        println!(
+            "note: take exclusive input ownership through the Console takeover action, then release it before resuming"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn emit_export(manifest: &crate::app::workflow_export::WorkflowExportManifest, json: bool) {
+    if json {
+        emit_envelope(manifest);
+        return;
+    }
+    println!("run: {}", manifest.run_id);
+    println!("report: {}", manifest.report_path.display());
 }
 
 struct LoadedDefinition {

@@ -7,6 +7,7 @@
 
 mod model;
 mod service;
+pub mod spool;
 mod store;
 mod verify;
 
@@ -18,12 +19,13 @@ pub use model::{
     RunStatus, RunView, Stage, advance,
 };
 pub use service::{
-    InstanceInventory, LiveInstance, OperatorDecision, RecoveryReport, RunSummary,
-    UnavailableBackend, WorkflowBackend, WorkflowService,
+    GRAPH_STAGES, InstanceInventory, LiveInstance, OperatorDecision, RecoveryReport, RunDetail,
+    RunSummary, UnavailableBackend, WorkflowBackend, WorkflowService, graph_node_state,
 };
 pub use store::{
     ArtifactRef, CheckpointRecord, EvidenceRecord, NewCommand, NewEffect, RunStore, RunTransition,
-    SessionAttachment, StoredCommand, StoredEffect, StoredRun, StoredSession,
+    SessionAttachment, StoredCheckpoint, StoredCommand, StoredEffect, StoredEvent, StoredEvidence,
+    StoredRun, StoredSession,
 };
 pub use verify::{
     BoundedOutput, CandidateEvidence, CandidateRef, Decision, DeliveryGate, FailingCheck,

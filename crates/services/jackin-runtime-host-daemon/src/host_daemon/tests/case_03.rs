@@ -121,3 +121,101 @@ fn workflow_run_control_round_trip() {
     };
     assert_eq!(summary.status, "cancelled");
 }
+
+#[test]
+fn workflow_list_detail_and_typed_errors() {
+    let (temp, _paths, layout) = layout();
+    let mut attention = AttentionAdapter::new(RecordingNotifier::default());
+    let mut workflow = WorkflowService::open(
+        &temp.path().join("workflow-runs.db"),
+        &temp.path().join("workflow-artifacts"),
+    )
+    .unwrap();
+
+    // Empty store: the list is empty, not an error.
+    let DaemonResponseKind::WorkflowRuns { summaries } = round_trip(
+        &layout,
+        &mut attention,
+        &mut workflow,
+        DaemonRequestKind::WorkflowList { limit: 50 },
+    ) else {
+        panic!("expected a workflow run list");
+    };
+    assert!(summaries.is_empty());
+
+    let DaemonResponseKind::WorkflowRun { summary } = round_trip(
+        &layout,
+        &mut attention,
+        &mut workflow,
+        DaemonRequestKind::WorkflowStart {
+            plan_hash: "ebc1278f".to_owned(),
+            max_repair_turns: 2,
+            idempotency_key: "key-list".to_owned(),
+        },
+    ) else {
+        panic!("expected a workflow run summary");
+    };
+    let run_id = summary.run_id.clone();
+
+    let DaemonResponseKind::WorkflowRuns { summaries } = round_trip(
+        &layout,
+        &mut attention,
+        &mut workflow,
+        DaemonRequestKind::WorkflowList { limit: 50 },
+    ) else {
+        panic!("expected a workflow run list");
+    };
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].run_id, run_id);
+
+    let DaemonResponseKind::WorkflowRunDetail { detail } = round_trip(
+        &layout,
+        &mut attention,
+        &mut workflow,
+        DaemonRequestKind::WorkflowDetail {
+            run_id: run_id.clone(),
+            after_seq: -1,
+            event_limit: 200,
+        },
+    ) else {
+        panic!("expected a workflow run detail");
+    };
+    assert_eq!(detail.summary.run_id, run_id);
+    assert!(
+        detail
+            .events
+            .iter()
+            .any(|event| event.kind == "run_started"),
+        "detail carries the durable event history"
+    );
+
+    // Unknown run: typed not_found (the CLI maps it to exit 2).
+    let DaemonResponseKind::Error { message, code } = round_trip(
+        &layout,
+        &mut attention,
+        &mut workflow,
+        DaemonRequestKind::WorkflowDetail {
+            run_id: "run-missing".to_owned(),
+            after_seq: -1,
+            event_limit: 200,
+        },
+    ) else {
+        panic!("expected a typed workflow error");
+    };
+    assert_eq!(code, "not_found", "unexpected message: {message}");
+
+    // Second start while active: typed busy (CLI exit 4).
+    let DaemonResponseKind::Error { code, .. } = round_trip(
+        &layout,
+        &mut attention,
+        &mut workflow,
+        DaemonRequestKind::WorkflowStart {
+            plan_hash: "ebc1278f".to_owned(),
+            max_repair_turns: 2,
+            idempotency_key: "key-other".to_owned(),
+        },
+    ) else {
+        panic!("expected a busy error");
+    };
+    assert_eq!(code, "busy");
+}

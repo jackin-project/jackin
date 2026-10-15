@@ -82,7 +82,7 @@ fn protocol_and_build_mismatch_fail_closed() {
     );
     assert!(matches!(
         response.kind,
-        DaemonResponseKind::Error { ref message }
+        DaemonResponseKind::Error { ref message, .. }
             if message.contains("unsupported daemon protocol")
     ));
 
@@ -95,7 +95,7 @@ fn protocol_and_build_mismatch_fail_closed() {
     );
     assert!(matches!(
         response.kind,
-        DaemonResponseKind::Error { ref message }
+        DaemonResponseKind::Error { ref message, .. }
             if message.contains("daemon build mismatch")
     ));
 }

@@ -131,8 +131,11 @@ fn exit_for_run_error(error: &anyhow::Error, debug: bool) -> ! {
 }
 
 fn usage_cli_error(error: &anyhow::Error) -> Option<(i32, &str)> {
+    if let Some(error) = error.downcast_ref::<jackin::cli::usage::UsageCommandExit>() {
+        return Some((error.exit_code(), error.json()));
+    }
     error
-        .downcast_ref::<jackin::cli::usage::UsageCommandExit>()
+        .downcast_ref::<jackin::cli::workflow::WorkflowCommandExit>()
         .map(|error| (error.exit_code(), error.json()))
 }
 

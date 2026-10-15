@@ -135,7 +135,7 @@ fn stop(layout: &DaemonLayout) -> Result<()> {
             println!("daemon stopped");
             Ok(())
         }
-        DaemonResponseKind::Error { message } => anyhow::bail!("{message}"),
+        DaemonResponseKind::Error { message, .. } => anyhow::bail!("{message}"),
         other => anyhow::bail!("unexpected daemon response: {other:?}"),
     }
 }
@@ -181,12 +181,12 @@ fn status(layout: &DaemonLayout) -> Result<()> {
                     report.health.metrics.successes,
                     report.health.metrics.attempts,
                 ),
-                DaemonResponseKind::Error { message } => anyhow::bail!("{message}"),
+                DaemonResponseKind::Error { message, .. } => anyhow::bail!("{message}"),
                 other => anyhow::bail!("unexpected daemon health response: {other:?}"),
             }
             Ok(())
         }
-        DaemonResponseKind::Error { message } => anyhow::bail!("{message}"),
+        DaemonResponseKind::Error { message, .. } => anyhow::bail!("{message}"),
         other => anyhow::bail!("unexpected daemon response: {other:?}"),
     }
 }

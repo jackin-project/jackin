@@ -125,6 +125,11 @@ pub const fn workflow_command_name(command: &WorkflowCommand) -> CliCommandName 
         WorkflowCommand::Pause(_) => CliCommandName::WorkflowPause,
         WorkflowCommand::Resume(_) => CliCommandName::WorkflowResume,
         WorkflowCommand::Cancel(_) => CliCommandName::WorkflowCancel,
+        WorkflowCommand::Graph(_) => CliCommandName::WorkflowGraph,
+        WorkflowCommand::Events(_) => CliCommandName::WorkflowEvents,
+        WorkflowCommand::Attach(_) => CliCommandName::WorkflowAttach,
+        WorkflowCommand::ResolveInput(_) => CliCommandName::WorkflowResolveInput,
+        WorkflowCommand::Export(_) => CliCommandName::WorkflowExport,
     }
 }
 
