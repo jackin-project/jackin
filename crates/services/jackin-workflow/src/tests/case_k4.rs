@@ -52,10 +52,20 @@ fn normal_recovery() {
     service
         .command_turn_ended(&command_id, "observed")
         .expect("record turn end");
-    let advanced = service
+    let implementing = service
         .submit_observation(
             &started.run_id,
             started.version,
+            epoch,
+            Actor::Host,
+            &Observation::TurnStarted,
+        )
+        .expect("advance on turn start");
+    assert_eq!(implementing.stage, "implement");
+    let advanced = service
+        .submit_observation(
+            &started.run_id,
+            implementing.version,
             epoch,
             Actor::Host,
             &Observation::TurnEnded,
@@ -186,15 +196,24 @@ fn restart_epoch() {
     let started = service
         .start_run("ebc1278f", 3, "key-epoch")
         .expect("start epoch run");
-    service
+    let implementing = service
         .submit_observation(
             &started.run_id,
             started.version,
             old_epoch,
             Actor::Worker,
-            &Observation::TurnEnded,
+            &Observation::TurnStarted,
         )
         .expect("current-epoch input applies");
+    service
+        .submit_observation(
+            &started.run_id,
+            implementing.version,
+            old_epoch,
+            Actor::Worker,
+            &Observation::TurnEnded,
+        )
+        .expect("current-epoch turn end applies");
     drop(service);
 
     let live = fixture.reopen();

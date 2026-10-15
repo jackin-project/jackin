@@ -20,6 +20,13 @@ Do not make the daemon import a runtime umbrella that already imports the daemon
 |---|---|---|
 | `start_run` | Stored plan hash and idempotency key | Existing or new run ID. |
 | `advance_run` | Run ID, expected row version, observed result | Saved next state and required effect. |
+| `record_candidate` | Run ID, candidate ID, expected row version | Saved candidate and bumped generation. |
+| `record_session` | Run ID, expected row version, worker and session identity | Saved session attachment. |
+| `record_checkpoint` | Run ID, expected row version, candidate, verified commit/tree, source manifest, local path | Saved checkpoint after source verification. |
+| `record_test` | Run ID, expected row version, frozen check script and bundle digest | Host-observed verdict in a pinned worker. |
+| `record_review` | Run ID, expected row version, isolated review file, recorded policy hash | Host-validated verdict bound to the policy. |
+| `record_backup` | Run ID, expected row version, remote and ref | Backup effect done after ref comparison. |
+| `accept_run` | Run ID, expected row version, expected policy hash | Accepted only on passing tests, acceptable review, current source, completed backup. |
 | `pause_run` | Run ID, actor, reason | Paused state. |
 | `resume_run` | Run ID, actor, current input state | Active state or blocking reason. |
 | `cancel_run` | Run ID, actor, reason | Cancelled state and preserved work references. |
@@ -28,6 +35,12 @@ Do not make the daemon import a runtime umbrella that already imports the daemon
 
 Only the host service can apply state transitions.
 Workers can submit observations. They cannot mark a run accepted.
+
+Serve the daemon socket from a per-user local run directory with owner-only permissions.
+Treat the socket as local host transport, not a trust boundary.
+Treat actor strings as self-attested labels on every daemon RPC.
+Check run positions and recorded evidence, never the actor label.
+Expose the daemon socket to no worker mount.
 
 ## Storage
 

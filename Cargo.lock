@@ -4208,6 +4208,7 @@ name = "jackin-runtime-host-daemon"
 version = "0.6.4"
 dependencies = [
  "anyhow",
+ "hex",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-otlp-testbed",
@@ -4216,9 +4217,11 @@ dependencies = [
  "jackin-runtime-process-telemetry",
  "jackin-telemetry",
  "jackin-workflow",
+ "jackin-workflow-spec",
  "nix 0.31.3",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "tempfile",
  "tokio",
  "tracing",

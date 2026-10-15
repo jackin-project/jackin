@@ -130,6 +130,7 @@ pub const fn workflow_command_name(command: &WorkflowCommand) -> CliCommandName 
         WorkflowCommand::Attach(_) => CliCommandName::WorkflowAttach,
         WorkflowCommand::ResolveInput(_) => CliCommandName::WorkflowResolveInput,
         WorkflowCommand::Export(_) => CliCommandName::WorkflowExport,
+        WorkflowCommand::Record(_) => CliCommandName::WorkflowRecord,
     }
 }
 

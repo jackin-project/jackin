@@ -27,12 +27,15 @@ jackin-runtime-process-telemetry = { workspace = true }
 jackin-telemetry = { workspace = true }
 anyhow = { workspace = true }
 jackin-workflow = { workspace = true }
+jackin-workflow-spec = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
 [dev-dependencies]
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-otlp-testbed = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
 tempfile = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time"] }

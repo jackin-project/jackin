@@ -111,6 +111,7 @@ fn run_control_command(
             Ok(())
         }
         WorkflowCommand::Attach(args) => run_attach(&layout, args),
+        WorkflowCommand::Record(args) => run_record(&layout, paths, args),
         WorkflowCommand::ResolveInput(args) => {
             let WorkflowResolveInputArgs {
                 run_id,
@@ -209,6 +210,354 @@ fn run_events(
     let detail = daemon_run_detail(layout, &run_id, after, limit, json)?;
     emit_events(&detail, after, json);
     Ok(())
+}
+
+/// Phase observations for a durable run: sessions, candidates,
+/// checkpoints, trusted test verdicts, isolated review verdicts,
+/// backup confirmations, and reducer advances. Test and review
+/// verdicts are produced by the host daemon itself (pinned worker,
+/// validated review file); the CLI only resolves the frozen plan
+/// inputs and the recorded policy hash that binds them.
+#[cfg(unix)]
+fn run_record(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    paths: &jackin_core::JackinPaths,
+    args: crate::cli::workflow::WorkflowRecordArgs,
+) -> Result<()> {
+    use crate::cli::workflow::WorkflowRecordAction;
+    use jackin_runtime::host_daemon::DaemonRequestKind;
+
+    match args.action {
+        WorkflowRecordAction::Session(action) => {
+            let summary = daemon_record(
+                layout,
+                DaemonRequestKind::WorkflowRecordSession {
+                    run_id: action.run_id,
+                    expected_version: action.expected_version,
+                    worker: action.worker,
+                    instance_id: action.instance,
+                    capsule_epoch: action.capsule_epoch,
+                    session_id: action.session_id,
+                    process_identity: action.process_identity,
+                    agent_profile: action.agent_profile,
+                    auth_profile: action.auth_profile,
+                },
+                action.json,
+            )?;
+            emit_summary(&summary, action.json);
+            Ok(())
+        }
+        WorkflowRecordAction::Candidate(action) => {
+            let version =
+                resolve_version(layout, &action.run_id, action.expected_version, action.json)?;
+            let summary = daemon_record(
+                layout,
+                DaemonRequestKind::WorkflowRecordCandidate {
+                    run_id: action.run_id,
+                    candidate: action.candidate,
+                    expected_version: version,
+                },
+                action.json,
+            )?;
+            emit_summary(&summary, action.json);
+            Ok(())
+        }
+        WorkflowRecordAction::Checkpoint(action) => {
+            let summary = daemon_record(
+                layout,
+                DaemonRequestKind::WorkflowRecordCheckpoint {
+                    run_id: action.run_id,
+                    expected_version: action.expected_version,
+                    candidate: action.candidate,
+                    commit: action.commit,
+                    tree: action.tree,
+                    source_manifest: action.manifest,
+                    local_path: action.local_path,
+                    backup_state: action.backup_state,
+                },
+                action.json,
+            )?;
+            emit_summary(&summary, action.json);
+            Ok(())
+        }
+        WorkflowRecordAction::Test(action) => run_record_test(layout, paths, action),
+        WorkflowRecordAction::Review(action) => run_record_review(layout, paths, action),
+        WorkflowRecordAction::Backup(action) => {
+            let summary = daemon_record(
+                layout,
+                DaemonRequestKind::WorkflowRecordBackup {
+                    run_id: action.run_id,
+                    expected_version: action.expected_version,
+                    remote: action.remote,
+                    git_ref: action.git_ref,
+                },
+                action.json,
+            )?;
+            emit_summary(&summary, action.json);
+            Ok(())
+        }
+        WorkflowRecordAction::Advance(action) => {
+            let version =
+                resolve_version(layout, &action.run_id, action.expected_version, action.json)?;
+            let expected_policy_hash = if action.observation == "verified_current" {
+                Some(recorded_test_policy(layout, &action.run_id, action.json)?)
+            } else {
+                None
+            };
+            let summary = daemon_record(
+                layout,
+                DaemonRequestKind::WorkflowAdvance {
+                    run_id: action.run_id,
+                    expected_version: version,
+                    actor: action.actor,
+                    observation: action.observation,
+                    expected_policy_hash,
+                },
+                action.json,
+            )?;
+            emit_summary(&summary, action.json);
+            Ok(())
+        }
+    }
+}
+
+/// Read the current row version, or keep an explicit expectation for
+/// the optimistic-concurrency check.
+#[cfg(unix)]
+fn resolve_version(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    run_id: &str,
+    expected: i64,
+    json: bool,
+) -> Result<i64> {
+    if expected >= 0 {
+        return Ok(expected);
+    }
+    let summary = daemon_run_summary(
+        layout,
+        jackin_runtime::host_daemon::DaemonRequestKind::WorkflowStatus {
+            run_id: Some(run_id.to_owned()),
+        },
+        json,
+    )?;
+    Ok(summary.version)
+}
+
+/// Policy hash of the recorded test verdict for a run's current
+/// candidate. Review and acceptance bind to this hash, so a verdict
+/// recorded under one policy can never accept under another.
+#[cfg(unix)]
+fn recorded_test_policy(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    run_id: &str,
+    json: bool,
+) -> Result<String> {
+    let detail = daemon_run_detail(layout, run_id, -1, 0, json)?;
+    let candidate = detail.summary.candidate.clone().ok_or_else(|| {
+        fail_err(
+            "invalid_request",
+            format!("run `{run_id}` has no recorded candidate"),
+            json,
+        )
+    })?;
+    detail
+        .evidence
+        .iter()
+        .find(|row| row.candidate == candidate && row.kind == "test")
+        .and_then(|row| row.policy_hash.clone())
+        .filter(|hash| !hash.trim().is_empty())
+        .ok_or_else(|| {
+            fail_err(
+                "invalid_request",
+                format!("run `{run_id}` has no recorded test verdict for `{candidate}`"),
+                json,
+            )
+        })
+}
+
+/// Run the frozen plan check in a pinned worker through the daemon
+/// and record the host-observed verdict. The program must match the
+/// frozen plan argv; the timeout comes from the plan; the script
+/// bytes are digest-verified by the daemon.
+#[cfg(unix)]
+fn run_record_test(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    paths: &jackin_core::JackinPaths,
+    args: crate::cli::workflow::WorkflowRecordTestArgs,
+) -> Result<()> {
+    use jackin_runtime::host_daemon::{DaemonRequestKind, DaemonResponseKind};
+
+    let crate::cli::workflow::WorkflowRecordTestArgs {
+        run_id,
+        check_script,
+        bundle_digest,
+        program,
+        repo,
+        scratch,
+        expected_version,
+        json,
+    } = args;
+    let status = daemon_run_summary(
+        layout,
+        DaemonRequestKind::WorkflowStatus {
+            run_id: Some(run_id.clone()),
+        },
+        json,
+    )?;
+    let plan = read_stored_plan(paths, &status.plan_hash).map_err(|error| {
+        fail_err(
+            "invalid_request",
+            format!("cannot read the stored plan for run `{run_id}`: {error:#}"),
+            json,
+        )
+    })?;
+    let argv = &plan.verification.check_argv;
+    if argv.first().is_none_or(|first| first != &program) {
+        return Err(fail_err(
+            "invalid_request",
+            format!(
+                "check program `{program}` does not match the frozen plan argv `{}`",
+                argv.first().map_or_else(String::new, Clone::clone)
+            ),
+            json,
+        ));
+    }
+    let scratch =
+        scratch.unwrap_or_else(|| paths.jackin_home.join("run").join("workflow-test-workers"));
+    let response = daemon_request(
+        layout,
+        DaemonRequestKind::WorkflowRecordTest {
+            run_id: run_id.clone(),
+            expected_version,
+            check_program: program,
+            check_script: check_script.display().to_string(),
+            bundle_digest,
+            repo: repo.map(|path| path.display().to_string()),
+            scratch: scratch.display().to_string(),
+            timeout_secs: plan.verification.timeout_seconds,
+        },
+        json,
+    )?;
+    match response {
+        DaemonResponseKind::WorkflowTestRecord { summary, test } => {
+            emit_test_record(&run_id, &summary, &test, json);
+            Ok(())
+        }
+        DaemonResponseKind::Error { message, code } => Err(fail_err(&code, message, json)),
+        other => Err(fail_err(
+            "execution_error",
+            format!("unexpected daemon response: {other:?}"),
+            json,
+        )),
+    }
+}
+
+/// Validate one isolated review file through the daemon and record
+/// the verdict bound to the recorded test policy hash.
+#[cfg(unix)]
+fn run_record_review(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    paths: &jackin_core::JackinPaths,
+    args: crate::cli::workflow::WorkflowRecordReviewArgs,
+) -> Result<()> {
+    use jackin_runtime::host_daemon::{DaemonRequestKind, DaemonResponseKind};
+
+    let crate::cli::workflow::WorkflowRecordReviewArgs {
+        run_id,
+        review_file,
+        expected_version,
+        json,
+    } = args;
+    let _ = paths;
+    let policy_hash = recorded_test_policy(layout, &run_id, json)?;
+    let response = daemon_request(
+        layout,
+        DaemonRequestKind::WorkflowRecordReview {
+            run_id: run_id.clone(),
+            expected_version,
+            review_file: review_file.display().to_string(),
+            policy_hash,
+        },
+        json,
+    )?;
+    match response {
+        DaemonResponseKind::WorkflowReviewRecord { summary, review } => {
+            emit_review_record(&run_id, &summary, &review, json);
+            Ok(())
+        }
+        DaemonResponseKind::Error { message, code } => Err(fail_err(&code, message, json)),
+        other => Err(fail_err(
+            "execution_error",
+            format!("unexpected daemon response: {other:?}"),
+            json,
+        )),
+    }
+}
+
+#[cfg(unix)]
+fn emit_test_record(
+    run_id: &str,
+    summary: &jackin_workflow::RunSummary,
+    test: &jackin_workflow::RecordedTest,
+    json: bool,
+) {
+    if json {
+        emit_envelope(serde_json::json!({
+            "run": summary,
+            "test": test,
+        }));
+        return;
+    }
+    println!("run: {run_id}");
+    println!("worker: {}", test.worker_id);
+    println!("passed: {}", test.passed);
+    println!("exit: {}", test.exit_code);
+    println!("policy: {}", test.policy_hash);
+    println!("artifact: {}", test.artifact_digest);
+    println!("stage: {}", summary.stage);
+    println!("version: {}", summary.version);
+}
+
+#[cfg(unix)]
+fn emit_review_record(
+    run_id: &str,
+    summary: &jackin_workflow::RunSummary,
+    review: &jackin_workflow::RecordedReview,
+    json: bool,
+) {
+    if json {
+        emit_envelope(serde_json::json!({
+            "run": summary,
+            "review": review,
+        }));
+        return;
+    }
+    println!("run: {run_id}");
+    println!("acceptable: {}", review.acceptable);
+    println!("artifact: {}", review.artifact_digest);
+    println!("stage: {}", summary.stage);
+    println!("version: {}", summary.version);
+}
+
+/// One recorded summary through the new record RPCs.
+#[cfg(unix)]
+fn daemon_record(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    kind: jackin_runtime::host_daemon::DaemonRequestKind,
+    json: bool,
+) -> Result<jackin_workflow::RunSummary> {
+    use jackin_runtime::host_daemon::DaemonResponseKind;
+
+    match daemon_request(layout, kind, json)? {
+        DaemonResponseKind::WorkflowRecord { summary } => Ok(summary),
+        DaemonResponseKind::WorkflowRun { summary } => Ok(summary),
+        DaemonResponseKind::Error { message, code } => Err(fail_err(&code, message, json)),
+        other => Err(fail_err(
+            "execution_error",
+            format!("unexpected daemon response: {other:?}"),
+            json,
+        )),
+    }
 }
 
 /// Resolve the exact recorded session for a run worker.

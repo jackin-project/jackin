@@ -13,11 +13,18 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 
 use super::model::{Actor, NextState, Observation, RunStatus, RunView, Stage, advance};
 use super::store::{
-    CheckpointRecord, NewEffect, RunStore, RunTransition, StoredCheckpoint, StoredEffect,
-    StoredEvent, StoredEvidence, StoredRun, StoredSession,
+    CheckpointRecord, NewEffect, RunStore, RunTransition, SessionAttachment, StoredCheckpoint,
+    StoredEffect, StoredEvent, StoredEvidence, StoredRun, StoredSession,
+};
+use super::verify::{
+    CandidateEvidence, CandidateRef, Decision, HostReadiness, InputOwnership, ReviewExpectation,
+    TestPolicy, TestResult, TestWorkerSpec, VerificationOutcome, decide_candidate,
+    persist_test_output, prepare_test_worker, read_review_bytes, record_review_evidence,
+    record_test_evidence, review_acceptable, run_git, run_test_command, validate_review,
 };
 use super::{CommandState, EffectKind, EffectStatus, WorkflowError};
 
@@ -172,6 +179,71 @@ pub trait WorkflowBackend {
         actor: &str,
         observed_session_state: &str,
     ) -> Result<RunSummary, WorkflowError>;
+    #[expect(clippy::too_many_arguments, reason = "one field per session column")]
+    fn record_session(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        worker_id: &str,
+        instance_id: Option<&str>,
+        capsule_epoch: Option<u64>,
+        session_id: Option<u64>,
+        process_identity: Option<&str>,
+        agent_profile: Option<&str>,
+        auth_profile: Option<&str>,
+    ) -> Result<RunSummary, WorkflowError>;
+    fn record_candidate(
+        &mut self,
+        run_id: &str,
+        candidate_id: &str,
+        expected_version: i64,
+    ) -> Result<RunSummary, WorkflowError>;
+    #[expect(clippy::too_many_arguments, reason = "one field per checkpoint column")]
+    fn record_checkpoint(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        candidate: &str,
+        commit: &str,
+        tree: &str,
+        source_manifest: &str,
+        local_path: &str,
+        backup_state: &str,
+    ) -> Result<RunSummary, WorkflowError>;
+    #[expect(clippy::too_many_arguments, reason = "one field per frozen test input")]
+    fn record_test(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        check_program: &str,
+        check_script: &str,
+        bundle_digest: &str,
+        repo: Option<&str>,
+        scratch: &str,
+        timeout_secs: u64,
+    ) -> Result<(RunSummary, RecordedTest), WorkflowError>;
+    fn record_review(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        review_file: &str,
+        policy_hash: &str,
+    ) -> Result<(RunSummary, RecordedReview), WorkflowError>;
+    fn record_backup(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        remote: &str,
+        git_ref: &str,
+    ) -> Result<RunSummary, WorkflowError>;
+    fn advance_run(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        actor: &str,
+        observation: &str,
+        expected_policy_hash: Option<&str>,
+    ) -> Result<RunSummary, WorkflowError>;
     fn recover(&mut self, inventory: &InstanceInventory) -> Result<RecoveryReport, WorkflowError>;
 }
 
@@ -256,6 +328,89 @@ impl WorkflowBackend for UnavailableBackend {
         _decision: OperatorDecision,
         _actor: &str,
         _observed_session_state: &str,
+    ) -> Result<RunSummary, WorkflowError> {
+        Err(self.error())
+    }
+
+    fn record_session(
+        &mut self,
+        _run_id: &str,
+        _expected_version: i64,
+        _worker_id: &str,
+        _instance_id: Option<&str>,
+        _capsule_epoch: Option<u64>,
+        _session_id: Option<u64>,
+        _process_identity: Option<&str>,
+        _agent_profile: Option<&str>,
+        _auth_profile: Option<&str>,
+    ) -> Result<RunSummary, WorkflowError> {
+        Err(self.error())
+    }
+
+    fn record_candidate(
+        &mut self,
+        _run_id: &str,
+        _candidate_id: &str,
+        _expected_version: i64,
+    ) -> Result<RunSummary, WorkflowError> {
+        Err(self.error())
+    }
+
+    fn record_checkpoint(
+        &mut self,
+        _run_id: &str,
+        _expected_version: i64,
+        _candidate: &str,
+        _commit: &str,
+        _tree: &str,
+        _source_manifest: &str,
+        _local_path: &str,
+        _backup_state: &str,
+    ) -> Result<RunSummary, WorkflowError> {
+        Err(self.error())
+    }
+
+    fn record_test(
+        &mut self,
+        _run_id: &str,
+        _expected_version: i64,
+        _check_program: &str,
+        _check_script: &str,
+        _bundle_digest: &str,
+        _repo: Option<&str>,
+        _scratch: &str,
+        _timeout_secs: u64,
+    ) -> Result<(RunSummary, RecordedTest), WorkflowError> {
+        Err(self.error())
+    }
+
+    fn record_review(
+        &mut self,
+        _run_id: &str,
+        _expected_version: i64,
+        _review_file: &str,
+        _policy_hash: &str,
+    ) -> Result<(RunSummary, RecordedReview), WorkflowError> {
+        Err(self.error())
+    }
+
+    fn record_backup(
+        &mut self,
+        _run_id: &str,
+        _expected_version: i64,
+        _remote: &str,
+        _git_ref: &str,
+    ) -> Result<RunSummary, WorkflowError> {
+        Err(self.error())
+    }
+
+    fn advance_run(
+        &mut self,
+        _run_id: &str,
+        _expected_version: i64,
+        _actor: &str,
+        _observation: &str,
+        _expected_policy_hash: Option<&str>,
     ) -> Result<RunSummary, WorkflowError> {
         Err(self.error())
     }
@@ -438,6 +593,790 @@ impl WorkflowService {
             effect,
         })?;
         self.summary_of(run_id)
+    }
+}
+
+/// Verified local source: the tree HEAD pins, for checkpoint rows.
+struct VerifiedSource {
+    tree: String,
+}
+
+/// Outcome of `record_test`: the host-observed verdict plus the
+/// digests that bind it to the run, candidate, and frozen policy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordedTest {
+    pub passed: bool,
+    pub policy_hash: String,
+    pub artifact_digest: String,
+    pub worker_id: String,
+    pub exit_code: i32,
+    pub excerpt: String,
+}
+
+/// Outcome of `record_review`: host validation of the isolated
+/// review file plus its content digest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordedReview {
+    pub acceptable: bool,
+    pub artifact_digest: String,
+}
+
+/// Host paths for one trusted test recording. The check script must
+/// carry the frozen bundle bytes; the repository defaults to the
+/// recorded checkpoint's local path.
+#[derive(Debug, Clone)]
+pub struct RecordTestParams<'a> {
+    pub check_program: &'a str,
+    pub check_script: &'a Path,
+    pub bundle_digest: &'a str,
+    pub repo: Option<&'a Path>,
+    pub scratch: &'a Path,
+    pub timeout_secs: u64,
+}
+
+/// Optimistic-concurrency guard for record paths. The caller names
+/// the run row version it acted on; a moved row refuses instead of
+/// collecting side rows against a stale run. Paths that also move
+/// the run row re-check the version in their store compare-and-swap.
+fn check_expected_version(
+    stored: &StoredRun,
+    run_id: &str,
+    expected_version: i64,
+) -> Result<(), WorkflowError> {
+    if stored.version != expected_version {
+        return Err(WorkflowError::stale_version(format!(
+            "run {run_id} moved: expected version {expected_version}, found {}",
+            stored.version
+        )));
+    }
+    Ok(())
+}
+
+/// A candidate identity is a single non-empty path-safe token, so it
+/// can name workers, artifacts, and evidence rows without escaping.
+fn check_candidate_id(candidate: &str) -> Result<(), WorkflowError> {
+    if candidate.trim().is_empty()
+        || candidate
+            .chars()
+            .any(|ch| ch.is_whitespace() || ch == '/' || ch == '\0')
+    {
+        return Err(WorkflowError::invalid(
+            "candidate must be a single non-empty path-safe token".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+impl WorkflowService {
+    /// Record the candidate under verification. The row version must
+    /// match: a moved run refuses the record. The generation counts
+    /// every recorded identity, so evidence for a superseded identity
+    /// never decides. An identity that already carries verification
+    /// evidence is never re-recorded: changed source needs a new
+    /// candidate, and identical source keeps its existing rows.
+    /// Terminal runs refuse new candidates.
+    pub fn record_candidate(
+        &self,
+        run_id: &str,
+        candidate_id: &str,
+        expected_version: i64,
+        actor: &str,
+    ) -> Result<RunSummary, WorkflowError> {
+        check_candidate_id(candidate_id)?;
+        let stored = self
+            .store
+            .load_run(run_id)?
+            .ok_or_else(|| WorkflowError::not_found(format!("run {run_id} not found")))?;
+        check_expected_version(&stored, run_id, expected_version)?;
+        let status = RunStatus::parse(&stored.status)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown status")))?;
+        if status.is_terminal() {
+            return Err(WorkflowError::invalid("run is terminal".to_owned()));
+        }
+        let stage = Stage::parse(&stored.stage)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown stage")))?;
+        if self.store.load_evidence(run_id)?.iter().any(|row| {
+            row.candidate == candidate_id && (row.kind == "test" || row.kind == "review")
+        }) {
+            return Err(WorkflowError::invalid(format!(
+                "candidate `{candidate_id}` already carries verification evidence; \
+                 record a new candidate"
+            )));
+        }
+        let generation = u64::try_from(stored.candidate_generation.max(0)).unwrap_or(0) + 1;
+        self.store.apply_transition(&RunTransition {
+            run_id,
+            expected_version,
+            status,
+            stage,
+            round: u32::try_from(stored.round.max(0)).unwrap_or(0),
+            candidate: Some(candidate_id),
+            candidate_generation: generation,
+            pause_kind: stored.pause_kind.as_deref(),
+            event_actor: actor,
+            event_kind: "candidate_recorded",
+            effect: None,
+        })?;
+        self.summary_of(run_id)
+    }
+
+    /// Record a worker session attachment for recovery comparison.
+    /// The run must exist and stay non-terminal; the row is an upsert
+    /// on the worker, so re-recording the same healthy session is
+    /// idempotent.
+    #[expect(clippy::too_many_arguments, reason = "one field per session column")]
+    pub fn record_session(
+        &self,
+        run_id: &str,
+        expected_version: i64,
+        worker_id: &str,
+        instance_id: Option<&str>,
+        capsule_epoch: Option<u64>,
+        session_id: Option<u64>,
+        process_identity: Option<&str>,
+        agent_profile: Option<&str>,
+        auth_profile: Option<&str>,
+        actor: &str,
+    ) -> Result<RunSummary, WorkflowError> {
+        let stored = self
+            .store
+            .load_run(run_id)?
+            .ok_or_else(|| WorkflowError::not_found(format!("run {run_id} not found")))?;
+        check_expected_version(&stored, run_id, expected_version)?;
+        let status = RunStatus::parse(&stored.status)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown status")))?;
+        if status.is_terminal() {
+            return Err(WorkflowError::invalid("run is terminal".to_owned()));
+        }
+        if worker_id.trim().is_empty() {
+            return Err(WorkflowError::invalid("worker id is required".to_owned()));
+        }
+        self.store.record_session(&SessionAttachment {
+            run_id,
+            worker_id,
+            instance_id,
+            capsule_epoch,
+            session_id,
+            process_identity,
+            agent_profile,
+            auth_profile,
+        })?;
+        self.store
+            .append_event(run_id, actor, "worker_started", Some(worker_id))?;
+        self.summary_of(run_id)
+    }
+
+    /// Record a checkpoint for the run's current candidate. The local
+    /// source is verified before the row is written: HEAD and the tree
+    /// must equal the recorded identity and the worktree must be
+    /// clean. A checkpoint that moves the commit after verification
+    /// evidence exists is refused: changed source needs a new
+    /// candidate. A backup-state flip for the same commit is allowed.
+    pub fn record_checkpoint(
+        &self,
+        checkpoint: &CheckpointRecord<'_>,
+        expected_version: i64,
+    ) -> Result<RunSummary, WorkflowError> {
+        let stored = self.store.load_run(checkpoint.run_id)?.ok_or_else(|| {
+            WorkflowError::not_found(format!("run {} not found", checkpoint.run_id))
+        })?;
+        check_expected_version(&stored, checkpoint.run_id, expected_version)?;
+        let status = RunStatus::parse(&stored.status).ok_or_else(|| {
+            WorkflowError::storage(format!("run {} has unknown status", checkpoint.run_id))
+        })?;
+        if status.is_terminal() {
+            return Err(WorkflowError::invalid("run is terminal".to_owned()));
+        }
+        if stored.candidate.as_deref() != Some(checkpoint.candidate) {
+            return Err(WorkflowError::invalid(format!(
+                "checkpoint candidate `{}` does not match the recorded run candidate `{}`",
+                checkpoint.candidate,
+                stored.candidate.as_deref().unwrap_or("none")
+            )));
+        }
+        let verified = Self::verify_source(
+            checkpoint.local_path,
+            checkpoint.commit,
+            checkpoint.candidate,
+        )?;
+        if !checkpoint.tree.trim().is_empty() && checkpoint.tree != verified.tree {
+            return Err(WorkflowError::invalid(format!(
+                "recorded tree {} does not match the local source tree {}",
+                checkpoint.tree, verified.tree
+            )));
+        }
+        let evidenced = self
+            .store
+            .load_evidence(checkpoint.run_id)?
+            .iter()
+            .any(|row| {
+                row.candidate == checkpoint.candidate
+                    && (row.kind == "test" || row.kind == "review")
+            });
+        if evidenced {
+            let Some(previous) = self
+                .store
+                .load_checkpoints(checkpoint.run_id)?
+                .into_iter()
+                .find(|row| row.candidate == checkpoint.candidate)
+            else {
+                return Err(WorkflowError::storage(format!(
+                    "candidate `{}` has evidence but no checkpoint",
+                    checkpoint.candidate
+                )));
+            };
+            if previous.commit_hash != checkpoint.commit || previous.tree_hash != verified.tree {
+                return Err(WorkflowError::invalid(format!(
+                    "candidate `{}` already has verification evidence; \
+                     changed source needs a new candidate",
+                    checkpoint.candidate
+                )));
+            }
+        }
+        self.store.record_checkpoint(&CheckpointRecord {
+            backup_state: checkpoint.backup_state,
+            commit: checkpoint.commit,
+            tree: &verified.tree,
+            ..*checkpoint
+        })?;
+        self.store.append_event(
+            checkpoint.run_id,
+            "host",
+            "checkpoint_created",
+            Some(checkpoint.candidate),
+        )?;
+        self.summary_of(checkpoint.run_id)
+    }
+
+    /// Verify that a local path holds the candidate identity: HEAD
+    /// equals the commit, the tree matches, and the worktree is clean.
+    fn verify_source(
+        local_path: &str,
+        commit: &str,
+        candidate: &str,
+    ) -> Result<VerifiedSource, WorkflowError> {
+        if commit.trim().is_empty() {
+            return Err(WorkflowError::invalid(
+                "checkpoint commit is required".to_owned(),
+            ));
+        }
+        let dir = Path::new(local_path);
+        let head = run_git(dir, &["rev-parse", "HEAD"])?;
+        if head != commit {
+            return Err(WorkflowError::blocked(format!(
+                "local source HEAD {head} does not match candidate `{candidate}` commit {commit}"
+            )));
+        }
+        let tree = run_git(dir, &["rev-parse", "HEAD^{tree}"])?;
+        let dirty = run_git(dir, &["status", "--porcelain"])?;
+        if !dirty.is_empty() {
+            return Err(WorkflowError::blocked(format!(
+                "local source for candidate `{candidate}` has uncommitted changes; \
+                 commit the candidate first"
+            )));
+        }
+        Ok(VerifiedSource { tree })
+    }
+
+    /// Run the frozen check in a fresh pinned test worker and bind the
+    /// host-observed verdict to the run. Only the test stage records
+    /// tests, and only one verdict per candidate: re-verification
+    /// needs a new candidate. The script bytes must hash to the frozen
+    /// bundle digest; the recorded policy hash covers the exact host
+    /// argv that ran.
+    pub fn record_test(
+        &self,
+        run_id: &str,
+        expected_version: i64,
+        params: &RecordTestParams<'_>,
+    ) -> Result<(RunSummary, RecordedTest), WorkflowError> {
+        let stored = self
+            .store
+            .load_run(run_id)?
+            .ok_or_else(|| WorkflowError::not_found(format!("run {run_id} not found")))?;
+        check_expected_version(&stored, run_id, expected_version)?;
+        let status = RunStatus::parse(&stored.status)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown status")))?;
+        if status.is_terminal() {
+            return Err(WorkflowError::invalid("run is terminal".to_owned()));
+        }
+        let stage = Stage::parse(&stored.stage)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown stage")))?;
+        if stage != Stage::Test {
+            return Err(WorkflowError::invalid(
+                "recorded tests belong to the test stage".to_owned(),
+            ));
+        }
+        let candidate = stored.candidate.clone().ok_or_else(|| {
+            WorkflowError::blocked("no candidate is recorded for this run".to_owned())
+        })?;
+        let checkpoint = self
+            .store
+            .load_checkpoints(run_id)?
+            .into_iter()
+            .find(|row| row.candidate == candidate)
+            .ok_or_else(|| {
+                WorkflowError::blocked(format!(
+                    "candidate `{candidate}` has no checkpoint; capture it first"
+                ))
+            })?;
+        if self
+            .store
+            .load_evidence(run_id)?
+            .iter()
+            .any(|row| row.candidate == candidate && row.kind == "test")
+        {
+            return Err(WorkflowError::invalid(format!(
+                "test evidence already recorded for `{candidate}`; \
+                 record a new candidate to re-verify"
+            )));
+        }
+        let script_bytes = std::fs::read(params.check_script).map_err(|err| {
+            WorkflowError::invalid(format!(
+                "cannot read check script {}: {err}",
+                params.check_script.display()
+            ))
+        })?;
+        let mut hasher = Sha256::new();
+        hasher.update(&script_bytes);
+        let script_digest = hex::encode(hasher.finalize());
+        if script_digest != params.bundle_digest {
+            return Err(WorkflowError::invalid(
+                "check script does not match the frozen bundle digest".to_owned(),
+            ));
+        }
+        let round = u32::try_from(stored.round.max(0)).unwrap_or(0);
+        let worker_id = format!("test-{run_id}-r{round}-{candidate}");
+        let work_dir = params.scratch.join(&worker_id);
+        let policy = TestPolicy::freeze(
+            vec![
+                params.check_program.to_owned(),
+                params.check_script.to_string_lossy().into_owned(),
+                work_dir.to_string_lossy().into_owned(),
+            ],
+            params.timeout_secs,
+        )?;
+        let spec = TestWorkerSpec::new(
+            run_id,
+            round,
+            &candidate,
+            &checkpoint.commit_hash,
+            &checkpoint.tree_hash,
+            &policy,
+        )?;
+        debug_assert_eq!(spec.worker_id(), worker_id);
+        let repo = params.repo.map_or_else(
+            || Path::new(&checkpoint.local_path).to_path_buf(),
+            std::path::PathBuf::from,
+        );
+        let worker = match prepare_test_worker(&repo, &spec, params.scratch) {
+            Ok(worker) => worker,
+            Err(error) => {
+                drop(std::fs::remove_dir_all(&work_dir));
+                return Err(error);
+            }
+        };
+        let execution = match run_test_command(&policy, &worker) {
+            Ok(execution) => execution,
+            Err(error) => {
+                drop(std::fs::remove_dir_all(&work_dir));
+                return Err(error);
+            }
+        };
+        let result = TestResult::from_execution(&spec, &policy, &execution);
+        let artifact = persist_test_output(&self.store, &candidate, &execution)?;
+        record_test_evidence(&self.store, run_id, &result, &artifact)?;
+        self.store.append_event(
+            run_id,
+            "host",
+            "test_completed",
+            Some(result.candidate_id()),
+        )?;
+        let recorded = RecordedTest {
+            passed: result.passed(),
+            policy_hash: policy.policy_hash().to_owned(),
+            artifact_digest: artifact,
+            worker_id,
+            exit_code: result.exit_code(),
+            excerpt: result.excerpt().to_owned(),
+        };
+        Ok((self.summary_of(run_id)?, recorded))
+    }
+
+    /// Validate one isolated review file against the checkpoint
+    /// identity and bind the verdict to the run. Only the review stage
+    /// records reviews, and only one verdict per candidate.
+    pub fn record_review(
+        &self,
+        run_id: &str,
+        expected_version: i64,
+        review_file: &Path,
+        policy_hash: &str,
+    ) -> Result<(RunSummary, RecordedReview), WorkflowError> {
+        let stored = self
+            .store
+            .load_run(run_id)?
+            .ok_or_else(|| WorkflowError::not_found(format!("run {run_id} not found")))?;
+        check_expected_version(&stored, run_id, expected_version)?;
+        let status = RunStatus::parse(&stored.status)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown status")))?;
+        if status.is_terminal() {
+            return Err(WorkflowError::invalid("run is terminal".to_owned()));
+        }
+        let stage = Stage::parse(&stored.stage)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown stage")))?;
+        if stage != Stage::Review {
+            return Err(WorkflowError::invalid(
+                "recorded reviews belong to the review stage".to_owned(),
+            ));
+        }
+        if policy_hash.trim().is_empty() {
+            return Err(WorkflowError::invalid(
+                "review evidence needs the recorded test policy hash".to_owned(),
+            ));
+        }
+        let candidate = stored.candidate.clone().ok_or_else(|| {
+            WorkflowError::blocked("no candidate is recorded for this run".to_owned())
+        })?;
+        let checkpoint = self
+            .store
+            .load_checkpoints(run_id)?
+            .into_iter()
+            .find(|row| row.candidate == candidate)
+            .ok_or_else(|| {
+                WorkflowError::blocked(format!(
+                    "candidate `{candidate}` has no checkpoint; capture it first"
+                ))
+            })?;
+        let evidence = self.store.load_evidence(run_id)?;
+        // The review binds to the recorded test policy: a review for a
+        // candidate with no recorded test verdict, or with a policy
+        // hash that disagrees with it, refuses here instead of
+        // storing a verdict the acceptance gate must later reject.
+        let recorded_policy = evidence
+            .iter()
+            .find(|row| row.candidate == candidate && row.kind == "test")
+            .and_then(|row| row.policy_hash.clone())
+            .ok_or_else(|| {
+                WorkflowError::blocked(format!(
+                    "candidate `{candidate}` has no recorded test verdict; \
+                     record the test verdict first"
+                ))
+            })?;
+        if recorded_policy != policy_hash {
+            return Err(WorkflowError::invalid(format!(
+                "review policy `{policy_hash}` does not match the recorded test policy \
+                 `{recorded_policy}` for `{candidate}`"
+            )));
+        }
+        if evidence
+            .iter()
+            .any(|row| row.candidate == candidate && row.kind == "review")
+        {
+            return Err(WorkflowError::invalid(format!(
+                "review evidence already recorded for `{candidate}`; \
+                 record a new candidate to re-verify"
+            )));
+        }
+        let bytes = read_review_bytes(review_file)?;
+        let result = validate_review(
+            &bytes,
+            ReviewExpectation {
+                candidate_id: &candidate,
+                commit: &checkpoint.commit_hash,
+                tree: &checkpoint.tree_hash,
+            },
+        )?;
+        let artifact = self
+            .store
+            .write_artifact(&format!("review-{candidate}"), &bytes)?;
+        record_review_evidence(
+            &self.store,
+            run_id,
+            &candidate,
+            policy_hash,
+            &result,
+            &artifact.digest,
+        )?;
+        self.store
+            .append_event(run_id, "host", "review_completed", Some(&candidate))?;
+        let recorded = RecordedReview {
+            acceptable: review_acceptable(&result),
+            artifact_digest: artifact.digest,
+        };
+        Ok((self.summary_of(run_id)?, recorded))
+    }
+
+    /// Confirm the candidate at its backup ref, then mark the backup
+    /// effect done. The ref must resolve to the checkpoint commit:
+    /// nothing is pushed or marked without comparison.
+    pub fn record_backup(
+        &self,
+        run_id: &str,
+        expected_version: i64,
+        remote: &str,
+        git_ref: &str,
+        actor: &str,
+    ) -> Result<RunSummary, WorkflowError> {
+        if remote.trim().is_empty() || git_ref.trim().is_empty() {
+            return Err(WorkflowError::invalid(
+                "backup remote and ref are required".to_owned(),
+            ));
+        }
+        let stored = self
+            .store
+            .load_run(run_id)?
+            .ok_or_else(|| WorkflowError::not_found(format!("run {run_id} not found")))?;
+        check_expected_version(&stored, run_id, expected_version)?;
+        let status = RunStatus::parse(&stored.status)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown status")))?;
+        if status.is_terminal() {
+            return Err(WorkflowError::invalid("run is terminal".to_owned()));
+        }
+        let candidate = stored.candidate.clone().ok_or_else(|| {
+            WorkflowError::blocked("no candidate is recorded for this run".to_owned())
+        })?;
+        let checkpoint = self
+            .store
+            .load_checkpoints(run_id)?
+            .into_iter()
+            .find(|row| row.candidate == candidate)
+            .ok_or_else(|| {
+                WorkflowError::blocked(format!(
+                    "candidate `{candidate}` has no checkpoint; capture it first"
+                ))
+            })?;
+        let listing = run_git(
+            Path::new(&checkpoint.local_path),
+            &["ls-remote", remote, git_ref],
+        )?;
+        let resolved = listing.split_whitespace().next().unwrap_or_default();
+        if resolved != checkpoint.commit_hash {
+            return Err(WorkflowError::blocked(format!(
+                "backup ref `{git_ref}` resolves to `{resolved}`, not the candidate commit {}; \
+                 push the candidate first",
+                checkpoint.commit_hash
+            )));
+        }
+        let effect =
+            self.store
+                .ensure_effect(run_id, EffectKind::Backup, &format!("{run_id}:backup"))?;
+        self.store.set_effect(
+            run_id,
+            &effect.operation_id,
+            EffectStatus::Done,
+            Some(&format!("{remote} {git_ref}")),
+            None,
+        )?;
+        self.store.record_checkpoint(&CheckpointRecord {
+            run_id,
+            candidate: &candidate,
+            commit: &checkpoint.commit_hash,
+            tree: &checkpoint.tree_hash,
+            source_manifest: &checkpoint.source_manifest,
+            local_path: &checkpoint.local_path,
+            backup_state: &format!("done:{git_ref}"),
+            preservation_hold: checkpoint.preservation_hold.as_deref(),
+        })?;
+        self.store.append_event(
+            run_id,
+            actor,
+            "checkpoint_backup_changed",
+            Some(&effect.operation_id),
+        )?;
+        self.summary_of(run_id)
+    }
+
+    /// Submit one named observation with optimistic-concurrency and
+    /// epoch checks. Every call executes in the live service at its
+    /// current owner epoch: RPC callers are operator-originated, so
+    /// the epoch is read here rather than trusted from the wire, and
+    /// the reducer still rejects pre-restart automatic input through
+    /// [`WorkflowService::submit_observation`]. `verified_current`
+    /// does not go through the plain reducer path: it runs the
+    /// acceptance gate, which consults the recorded evidence before
+    /// anything can mark a run accepted.
+    pub fn advance_run(
+        &self,
+        run_id: &str,
+        expected_version: i64,
+        actor: &str,
+        observation: &str,
+        expected_policy_hash: Option<&str>,
+    ) -> Result<RunSummary, WorkflowError> {
+        let actor = match actor {
+            "host" => Actor::Host,
+            "worker" => Actor::Worker,
+            _ => {
+                return Err(WorkflowError::invalid(format!(
+                    "unknown advance actor `{actor}`; use host or worker"
+                )));
+            }
+        };
+        let observation = match observation {
+            "turn_started" => Observation::TurnStarted,
+            "turn_ended" => Observation::TurnEnded,
+            "test_started" => Observation::TestStarted,
+            "test_passed" => Observation::TestPassed,
+            "test_failed" => Observation::TestFailed,
+            "review_passed" => Observation::ReviewPassed,
+            "review_failed" => Observation::ReviewFailed,
+            "verified_current" => Observation::VerifiedCurrent,
+            "infra_failed" => Observation::InfraFailed,
+            "session_lost" => Observation::SessionLost,
+            "uncertain_delivery" => Observation::UncertainDelivery,
+            "capture_stalled" => Observation::CaptureStalled,
+            _ => {
+                return Err(WorkflowError::invalid(format!(
+                    "unknown advance observation `{observation}`"
+                )));
+            }
+        };
+        if observation == Observation::VerifiedCurrent {
+            if actor != Actor::Host {
+                return Err(WorkflowError::invalid(
+                    "only the host can accept a run".to_owned(),
+                ));
+            }
+            let expected = expected_policy_hash.unwrap_or_default();
+            if expected.trim().is_empty() {
+                return Err(WorkflowError::invalid(
+                    "acceptance needs the expected test policy hash".to_owned(),
+                ));
+            }
+            return self.accept_run(run_id, expected_version, expected);
+        }
+        self.submit_observation(run_id, expected_version, self.epoch(), actor, &observation)
+    }
+
+    /// Accept a run only when the recorded evidence decides
+    /// acceptance: passing tests and an acceptable review on the same
+    /// policy, a current source, host-owned input on the current
+    /// epoch, no unresolved uncertainty, and a completed backup.
+    /// Anything else refuses with the decision reason; repair and
+    /// failure verdicts never mark a run accepted. Host-only: RPC
+    /// callers must route through [`WorkflowService::advance_run`],
+    /// which admits `verified_current` from the host actor alone.
+    pub fn accept_run(
+        &self,
+        run_id: &str,
+        expected_version: i64,
+        expected_policy_hash: &str,
+    ) -> Result<RunSummary, WorkflowError> {
+        let stored = self
+            .store
+            .load_run(run_id)?
+            .ok_or_else(|| WorkflowError::not_found(format!("run {run_id} not found")))?;
+        check_expected_version(&stored, run_id, expected_version)?;
+        let status = RunStatus::parse(&stored.status)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown status")))?;
+        if status.is_terminal() {
+            return Err(WorkflowError::invalid("run is terminal".to_owned()));
+        }
+        let stage = Stage::parse(&stored.stage)
+            .ok_or_else(|| WorkflowError::storage(format!("run {run_id} has unknown stage")))?;
+        if stage != Stage::Decide {
+            return Err(WorkflowError::blocked(
+                "acceptance requires the decide stage".to_owned(),
+            ));
+        }
+        let candidate = stored
+            .candidate
+            .clone()
+            .ok_or_else(|| WorkflowError::blocked("incomplete candidate evidence".to_owned()))?;
+        let checkpoint = self
+            .store
+            .load_checkpoints(run_id)?
+            .into_iter()
+            .find(|row| row.candidate == candidate)
+            .ok_or_else(|| WorkflowError::blocked("incomplete candidate evidence".to_owned()))?;
+        let rows: Vec<StoredEvidence> = self
+            .store
+            .load_evidence(run_id)?
+            .into_iter()
+            .filter(|row| row.candidate == candidate)
+            .collect();
+        let test_rows: Vec<&StoredEvidence> =
+            rows.iter().filter(|row| row.kind == "test").collect();
+        let review_rows: Vec<&StoredEvidence> =
+            rows.iter().filter(|row| row.kind == "review").collect();
+        if test_rows.is_empty() || review_rows.is_empty() {
+            return Err(WorkflowError::blocked(
+                "incomplete candidate evidence: recorded test and review verdicts are required"
+                    .to_owned(),
+            ));
+        }
+        if test_rows.len() > 1 || review_rows.len() > 1 {
+            return Err(WorkflowError::blocked(
+                "ambiguous candidate evidence: exactly one recorded verdict per kind is required"
+                    .to_owned(),
+            ));
+        }
+        let test = test_rows[0];
+        let review = review_rows[0];
+        let policy = test.policy_hash.as_deref().unwrap_or_default();
+        if policy.is_empty() || review.policy_hash.as_deref() != Some(policy) {
+            return Err(WorkflowError::blocked(
+                "stale evidence: test and review verdicts disagree on the policy".to_owned(),
+            ));
+        }
+        let round = u32::try_from(stored.round.max(0)).unwrap_or(0);
+        let max = u32::try_from(stored.max_repair_turns.max(0)).unwrap_or(u32::MAX);
+        let generation = u64::try_from(stored.candidate_generation.max(0)).unwrap_or(0);
+        let verified =
+            Self::verify_source(&checkpoint.local_path, &checkpoint.commit_hash, &candidate);
+        let backup_satisfied = self.store.load_effects(run_id)?.iter().any(|effect| {
+            effect.kind == EffectKind::Backup.as_str()
+                && effect.status == EffectStatus::Done.as_str()
+        });
+        let uncertainty_pending = !self
+            .store
+            .commands_in_state(run_id, CommandState::DeliveryUnknown)?
+            .is_empty();
+        let identity = CandidateRef {
+            candidate_id: &candidate,
+            commit: &checkpoint.commit_hash,
+            tree: &checkpoint.tree_hash,
+            generation,
+        };
+        let evidence = CandidateEvidence {
+            candidate: identity,
+            current: identity,
+            verification: VerificationOutcome {
+                test_passed: test.result == "pass",
+                review_acceptable: review.result == "pass",
+                test_policy_hash: policy,
+                expected_policy_hash,
+            },
+            readiness: HostReadiness {
+                source_current: verified.is_ok(),
+                backup_satisfied,
+            },
+            ownership: InputOwnership {
+                host_owned: true,
+                epoch_current: true,
+                uncertainty_pending,
+            },
+            round,
+            max_repair_turns: max,
+        };
+        match decide_candidate(&evidence) {
+            Decision::Accept => self.submit_observation(
+                run_id,
+                expected_version,
+                self.epoch(),
+                Actor::Host,
+                &Observation::VerifiedCurrent,
+            ),
+            Decision::Repair => Err(WorkflowError::blocked(
+                "verification did not pass and the repair budget remains; \
+                 repair the candidate instead of accepting"
+                    .to_owned(),
+            )),
+            Decision::Fail(reason) | Decision::NeedsOperator(reason) => {
+                Err(WorkflowError::blocked(reason))
+            }
+        }
     }
 
     /// Pause a run. `checkpoint` marks a C4 source-capture freeze,
@@ -1121,6 +2060,139 @@ impl WorkflowBackend for WorkflowService {
             decision,
             actor,
             observed_session_state,
+        )
+    }
+
+    fn record_session(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        worker_id: &str,
+        instance_id: Option<&str>,
+        capsule_epoch: Option<u64>,
+        session_id: Option<u64>,
+        process_identity: Option<&str>,
+        agent_profile: Option<&str>,
+        auth_profile: Option<&str>,
+    ) -> Result<RunSummary, WorkflowError> {
+        WorkflowService::record_session(
+            self,
+            run_id,
+            expected_version,
+            worker_id,
+            instance_id,
+            capsule_epoch,
+            session_id,
+            process_identity,
+            agent_profile,
+            auth_profile,
+            "operator",
+        )
+    }
+
+    fn record_candidate(
+        &mut self,
+        run_id: &str,
+        candidate_id: &str,
+        expected_version: i64,
+    ) -> Result<RunSummary, WorkflowError> {
+        WorkflowService::record_candidate(self, run_id, candidate_id, expected_version, "operator")
+    }
+
+    fn record_checkpoint(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        candidate: &str,
+        commit: &str,
+        tree: &str,
+        source_manifest: &str,
+        local_path: &str,
+        backup_state: &str,
+    ) -> Result<RunSummary, WorkflowError> {
+        WorkflowService::record_checkpoint(
+            self,
+            &CheckpointRecord {
+                run_id,
+                candidate,
+                commit,
+                tree,
+                source_manifest,
+                local_path,
+                backup_state,
+                preservation_hold: None,
+            },
+            expected_version,
+        )
+    }
+
+    fn record_test(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        check_program: &str,
+        check_script: &str,
+        bundle_digest: &str,
+        repo: Option<&str>,
+        scratch: &str,
+        timeout_secs: u64,
+    ) -> Result<(RunSummary, RecordedTest), WorkflowError> {
+        WorkflowService::record_test(
+            self,
+            run_id,
+            expected_version,
+            &RecordTestParams {
+                check_program,
+                check_script: Path::new(check_script),
+                bundle_digest,
+                repo: repo.map(Path::new),
+                scratch: Path::new(scratch),
+                timeout_secs,
+            },
+        )
+    }
+
+    fn record_review(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        review_file: &str,
+        policy_hash: &str,
+    ) -> Result<(RunSummary, RecordedReview), WorkflowError> {
+        WorkflowService::record_review(
+            self,
+            run_id,
+            expected_version,
+            Path::new(review_file),
+            policy_hash,
+        )
+    }
+
+    fn record_backup(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        remote: &str,
+        git_ref: &str,
+    ) -> Result<RunSummary, WorkflowError> {
+        WorkflowService::record_backup(self, run_id, expected_version, remote, git_ref, "operator")
+    }
+
+    fn advance_run(
+        &mut self,
+        run_id: &str,
+        expected_version: i64,
+        actor: &str,
+        observation: &str,
+        expected_policy_hash: Option<&str>,
+    ) -> Result<RunSummary, WorkflowError> {
+        WorkflowService::advance_run(
+            self,
+            run_id,
+            expected_version,
+            actor,
+            observation,
+            expected_policy_hash,
         )
     }
 

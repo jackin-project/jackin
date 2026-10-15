@@ -1307,6 +1307,13 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
             artifact_digest TEXT
         );
 
+        -- Singular evidence: one test verdict and one review verdict
+        -- per candidate. The service refuses duplicates first; the
+        -- index closes the check-then-insert race. `IF NOT EXISTS`
+        -- migrates existing stores on open.
+        CREATE UNIQUE INDEX IF NOT EXISTS evidence_candidate_kind
+            ON evidence (run_id, candidate, kind);
+
         CREATE TABLE IF NOT EXISTS events (
             event_id INTEGER PRIMARY KEY,
             run_id TEXT NOT NULL,

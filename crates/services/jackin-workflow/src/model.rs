@@ -206,8 +206,14 @@ pub enum Actor {
 /// Worker/host observation fed into the reducer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Observation {
+    /// An implementer turn started; the pipeline moves prepare into
+    /// implement. Recorded sessions must already pin the worker.
+    TurnStarted,
     /// An agent turn finished; the pipeline moves to capture.
     TurnEnded,
+    /// The checkpoint is captured and the pinned test worker starts;
+    /// the pipeline moves capture into test.
+    TestStarted,
     TestPassed,
     TestFailed,
     ReviewPassed,
@@ -271,12 +277,45 @@ pub fn advance(
         });
     }
     match observation {
-        Observation::TurnEnded => Ok(NextState {
-            status: view.status,
-            stage: Stage::Capture,
-            round: view.round,
-            event_kind: "turn_ended",
-        }),
+        Observation::TurnStarted => {
+            if view.stage != Stage::Prepare {
+                return Err(ReducerRefusal {
+                    reason: "turn start outside the prepare stage",
+                });
+            }
+            Ok(NextState {
+                status: view.status,
+                stage: Stage::Implement,
+                round: view.round,
+                event_kind: "turn_started",
+            })
+        }
+        Observation::TestStarted => {
+            if view.stage != Stage::Capture {
+                return Err(ReducerRefusal {
+                    reason: "test start outside the capture stage",
+                });
+            }
+            Ok(NextState {
+                status: view.status,
+                stage: Stage::Test,
+                round: view.round,
+                event_kind: "test_started",
+            })
+        }
+        Observation::TurnEnded => {
+            if view.stage != Stage::Implement {
+                return Err(ReducerRefusal {
+                    reason: "turn end outside the implement stage",
+                });
+            }
+            Ok(NextState {
+                status: view.status,
+                stage: Stage::Capture,
+                round: view.round,
+                event_kind: "turn_ended",
+            })
+        }
         Observation::TestPassed => {
             if view.stage != Stage::Test {
                 return Err(ReducerRefusal {

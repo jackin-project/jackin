@@ -10,7 +10,8 @@ use jackin_core::{ContainerId, JackinPaths};
 use jackin_protocol::control::AgentState;
 use jackin_protocol::{InstanceSnapshot, TelemetryContext};
 use jackin_workflow::{
-    InstanceInventory, OperatorDecision, RecoveryReport, RunDetail, RunSummary, WorkflowBackend,
+    InstanceInventory, OperatorDecision, RecordedReview, RecordedTest, RecoveryReport, RunDetail,
+    RunSummary, WorkflowBackend,
 };
 use serde::{Deserialize, Serialize};
 
@@ -76,6 +77,61 @@ pub enum DaemonRequestKind {
         decision: String,
         observed_session_state: String,
     },
+    WorkflowRecordSession {
+        run_id: String,
+        expected_version: i64,
+        worker: String,
+        instance_id: Option<String>,
+        capsule_epoch: Option<u64>,
+        session_id: Option<u64>,
+        process_identity: Option<String>,
+        agent_profile: Option<String>,
+        auth_profile: Option<String>,
+    },
+    WorkflowRecordCandidate {
+        run_id: String,
+        candidate: String,
+        expected_version: i64,
+    },
+    WorkflowRecordCheckpoint {
+        run_id: String,
+        expected_version: i64,
+        candidate: String,
+        commit: String,
+        tree: String,
+        source_manifest: String,
+        local_path: String,
+        backup_state: String,
+    },
+    WorkflowRecordTest {
+        run_id: String,
+        expected_version: i64,
+        check_program: String,
+        check_script: String,
+        bundle_digest: String,
+        repo: Option<String>,
+        scratch: String,
+        timeout_secs: u64,
+    },
+    WorkflowRecordReview {
+        run_id: String,
+        expected_version: i64,
+        review_file: String,
+        policy_hash: String,
+    },
+    WorkflowRecordBackup {
+        run_id: String,
+        expected_version: i64,
+        remote: String,
+        git_ref: String,
+    },
+    WorkflowAdvance {
+        run_id: String,
+        expected_version: i64,
+        actor: String,
+        observation: String,
+        expected_policy_hash: Option<String>,
+    },
     WorkflowRecover {
         inventory: InstanceInventory,
     },
@@ -97,6 +153,13 @@ impl DaemonRequestKind {
             Self::WorkflowResume { .. } => "jackin.host.Daemon/WorkflowResume",
             Self::WorkflowCancel { .. } => "jackin.host.Daemon/WorkflowCancel",
             Self::WorkflowResolve { .. } => "jackin.host.Daemon/WorkflowResolve",
+            Self::WorkflowRecordSession { .. } => "jackin.host.Daemon/WorkflowRecordSession",
+            Self::WorkflowRecordCandidate { .. } => "jackin.host.Daemon/WorkflowRecordCandidate",
+            Self::WorkflowRecordCheckpoint { .. } => "jackin.host.Daemon/WorkflowRecordCheckpoint",
+            Self::WorkflowRecordTest { .. } => "jackin.host.Daemon/WorkflowRecordTest",
+            Self::WorkflowRecordReview { .. } => "jackin.host.Daemon/WorkflowRecordReview",
+            Self::WorkflowRecordBackup { .. } => "jackin.host.Daemon/WorkflowRecordBackup",
+            Self::WorkflowAdvance { .. } => "jackin.host.Daemon/WorkflowAdvance",
             Self::WorkflowRecover { .. } => "jackin.host.Daemon/WorkflowRecover",
         }
     }
@@ -134,6 +197,17 @@ pub enum DaemonResponseKind {
     },
     WorkflowRunDetail {
         detail: RunDetail,
+    },
+    WorkflowRecord {
+        summary: RunSummary,
+    },
+    WorkflowTestRecord {
+        summary: RunSummary,
+        test: RecordedTest,
+    },
+    WorkflowReviewRecord {
+        summary: RunSummary,
+        review: RecordedReview,
     },
     WorkflowRecovery {
         report: RecoveryReport,
@@ -420,6 +494,9 @@ pub struct DaemonLayout {
     pub run_dir: PathBuf,
     pub socket_path: PathBuf,
     pub pid_path: PathBuf,
+    /// Digest-verified plan store the daemon cross-checks frozen
+    /// test bindings against before recording a verdict.
+    pub plan_store_dir: PathBuf,
 }
 
 impl DaemonLayout {
@@ -430,6 +507,7 @@ impl DaemonLayout {
             socket_path: run_dir.join(SOCKET_FILE_NAME),
             pid_path: run_dir.join(PID_FILE_NAME),
             run_dir,
+            plan_store_dir: paths.data_dir.join("workflow-plans"),
         }
     }
 }
@@ -656,6 +734,34 @@ fn daemon_response_matches_method(method: &str, response: &DaemonResponseKind) -
             )
             | (
                 "jackin.host.Daemon/WorkflowResolve",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordSession",
+                DaemonResponseKind::WorkflowRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordCandidate",
+                DaemonResponseKind::WorkflowRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordCheckpoint",
+                DaemonResponseKind::WorkflowRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordTest",
+                DaemonResponseKind::WorkflowTestRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordReview",
+                DaemonResponseKind::WorkflowReviewRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordBackup",
+                DaemonResponseKind::WorkflowRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowAdvance",
                 DaemonResponseKind::WorkflowRun { .. }
             )
             | (
@@ -974,8 +1080,15 @@ fn handle_request(
             | DaemonRequestKind::WorkflowResume { .. }
             | DaemonRequestKind::WorkflowCancel { .. }
             | DaemonRequestKind::WorkflowResolve { .. }
+            | DaemonRequestKind::WorkflowRecordSession { .. }
+            | DaemonRequestKind::WorkflowRecordCandidate { .. }
+            | DaemonRequestKind::WorkflowRecordCheckpoint { .. }
+            | DaemonRequestKind::WorkflowRecordTest { .. }
+            | DaemonRequestKind::WorkflowRecordReview { .. }
+            | DaemonRequestKind::WorkflowRecordBackup { .. }
+            | DaemonRequestKind::WorkflowAdvance { .. }
             | DaemonRequestKind::WorkflowRecover { .. }) => {
-                handle_workflow_request(id, kind, workflow)
+                handle_workflow_request(id, kind, &layout.plan_store_dir, workflow)
             }
         }
     };
@@ -1160,11 +1273,76 @@ fn workflow_error_code(error: &jackin_workflow::WorkflowError) -> &'static str {
     }
 }
 
+/// Verify `record_test` inputs against the run's stored plan
+/// before the daemon freezes anything: the check program must match
+/// the frozen plan argv, the bundle digest must match the frozen
+/// bundle, and the timeout must match the plan timeout. The CLI
+/// checks the program early for a fast failure; this daemon-side
+/// check is authoritative for every RPC caller, including direct
+/// socket clients that bypass the CLI.
+fn check_test_binding(
+    workflow: &mut dyn WorkflowBackend,
+    plan_store_dir: &Path,
+    run_id: &str,
+    check_program: &str,
+    bundle_digest: &str,
+    timeout_secs: u64,
+) -> Result<(), jackin_workflow::WorkflowError> {
+    let summary = workflow.run_status(Some(run_id))?;
+    let plan = jackin_workflow_spec::store::InputStore::open(plan_store_dir)
+        .and_then(|store| store.read_plan(&summary.plan_hash))
+        .map_err(|error| {
+            jackin_workflow::WorkflowError::invalid(format!(
+                "cannot verify the test binding for run `{run_id}`: {error}"
+            ))
+        })?;
+    verify_test_binding(
+        &plan.verification,
+        check_program,
+        bundle_digest,
+        timeout_secs,
+    )
+}
+
+/// Pure binding comparison, unit-tested without a store.
+fn verify_test_binding(
+    verification: &jackin_workflow_spec::model::VerificationPolicy,
+    check_program: &str,
+    bundle_digest: &str,
+    timeout_secs: u64,
+) -> Result<(), jackin_workflow::WorkflowError> {
+    let frozen = verification
+        .check_argv
+        .first()
+        .map(String::as_str)
+        .unwrap_or_default();
+    if frozen != check_program {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "check program `{check_program}` does not match the frozen plan argv `{frozen}`"
+        )));
+    }
+    if verification.test_bundle_digest != bundle_digest {
+        return Err(jackin_workflow::WorkflowError::invalid(
+            "check bundle digest does not match the frozen plan bundle".to_owned(),
+        ));
+    }
+    if verification.timeout_seconds != timeout_secs {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "check timeout {timeout_secs}s does not match the frozen plan timeout {}s",
+            verification.timeout_seconds
+        )));
+    }
+    Ok(())
+}
+
 /// Run-control dispatch: every variant drives the injected
-/// workflow backend as the `operator` actor.
+/// workflow backend as the `operator` actor. `plan_store_dir` is the
+/// digest-verified plan store `record_test` bindings are checked
+/// against before any verdict is frozen.
 fn handle_workflow_request(
     id: String,
     kind: DaemonRequestKind,
+    plan_store_dir: &Path,
     workflow: &mut dyn WorkflowBackend,
 ) -> DaemonResponse {
     match kind {
@@ -1239,6 +1417,15 @@ fn handle_workflow_request(
                 format!("unknown operator decision `{decision}`"),
             ),
         },
+        kind @ (DaemonRequestKind::WorkflowRecordSession { .. }
+        | DaemonRequestKind::WorkflowRecordCandidate { .. }
+        | DaemonRequestKind::WorkflowRecordCheckpoint { .. }
+        | DaemonRequestKind::WorkflowRecordTest { .. }
+        | DaemonRequestKind::WorkflowRecordReview { .. }
+        | DaemonRequestKind::WorkflowRecordBackup { .. }
+        | DaemonRequestKind::WorkflowAdvance { .. }) => {
+            handle_workflow_record_request(id, kind, plan_store_dir, workflow)
+        }
         DaemonRequestKind::WorkflowRecover { inventory } => match workflow.recover(&inventory) {
             Ok(report) => DaemonResponse {
                 id,
@@ -1250,6 +1437,165 @@ fn handle_workflow_request(
             }
         },
         _ => coded_error_response(id, "invalid_request", "not a workflow request"),
+    }
+}
+
+fn handle_workflow_record_request(
+    id: String,
+    kind: DaemonRequestKind,
+    plan_store_dir: &Path,
+    workflow: &mut dyn WorkflowBackend,
+) -> DaemonResponse {
+    match kind {
+        DaemonRequestKind::WorkflowRecordSession {
+            run_id,
+            expected_version,
+            worker,
+            instance_id,
+            capsule_epoch,
+            session_id,
+            process_identity,
+            agent_profile,
+            auth_profile,
+        } => workflow_record_response(
+            id,
+            workflow.record_session(
+                &run_id,
+                expected_version,
+                &worker,
+                instance_id.as_deref(),
+                capsule_epoch,
+                session_id,
+                process_identity.as_deref(),
+                agent_profile.as_deref(),
+                auth_profile.as_deref(),
+            ),
+        ),
+        DaemonRequestKind::WorkflowRecordCandidate {
+            run_id,
+            candidate,
+            expected_version,
+        } => workflow_record_response(
+            id,
+            workflow.record_candidate(&run_id, &candidate, expected_version),
+        ),
+        DaemonRequestKind::WorkflowRecordCheckpoint {
+            run_id,
+            expected_version,
+            candidate,
+            commit,
+            tree,
+            source_manifest,
+            local_path,
+            backup_state,
+        } => workflow_record_response(
+            id,
+            workflow.record_checkpoint(
+                &run_id,
+                expected_version,
+                &candidate,
+                &commit,
+                &tree,
+                &source_manifest,
+                &local_path,
+                &backup_state,
+            ),
+        ),
+        DaemonRequestKind::WorkflowRecordTest {
+            run_id,
+            expected_version,
+            check_program,
+            check_script,
+            bundle_digest,
+            repo,
+            scratch,
+            timeout_secs,
+        } => match check_test_binding(
+            workflow,
+            plan_store_dir,
+            &run_id,
+            &check_program,
+            &bundle_digest,
+            timeout_secs,
+        )
+        .and_then(|()| {
+            workflow.record_test(
+                &run_id,
+                expected_version,
+                &check_program,
+                &check_script,
+                &bundle_digest,
+                repo.as_deref(),
+                &scratch,
+                timeout_secs,
+            )
+        }) {
+            Ok((summary, test)) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowTestRecord { summary, test },
+            },
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
+        },
+        DaemonRequestKind::WorkflowRecordReview {
+            run_id,
+            expected_version,
+            review_file,
+            policy_hash,
+        } => match workflow.record_review(&run_id, expected_version, &review_file, &policy_hash) {
+            Ok((summary, review)) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowReviewRecord { summary, review },
+            },
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
+        },
+        DaemonRequestKind::WorkflowRecordBackup {
+            run_id,
+            expected_version,
+            remote,
+            git_ref,
+        } => workflow_record_response(
+            id,
+            workflow.record_backup(&run_id, expected_version, &remote, &git_ref),
+        ),
+        DaemonRequestKind::WorkflowAdvance {
+            run_id,
+            expected_version,
+            actor,
+            observation,
+            expected_policy_hash,
+        } => workflow_response(
+            id,
+            workflow.advance_run(
+                &run_id,
+                expected_version,
+                &actor,
+                &observation,
+                expected_policy_hash.as_deref(),
+            ),
+        ),
+        _ => coded_error_response(id, "invalid_request", "not a workflow record request"),
+    }
+}
+
+fn workflow_record_response(
+    id: String,
+    result: Result<RunSummary, jackin_workflow::WorkflowError>,
+) -> DaemonResponse {
+    match result {
+        Ok(summary) => DaemonResponse {
+            id,
+            kind: DaemonResponseKind::WorkflowRecord { summary },
+        },
+        Err(error) => {
+            let code = workflow_error_code(&error);
+            coded_error_response(id, code, error.to_string())
+        }
     }
 }
 

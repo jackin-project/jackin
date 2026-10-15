@@ -68,6 +68,13 @@ jackin workflow attach RUN --worker implementer --observe
 jackin workflow attach RUN --worker implementer --control
 jackin workflow resolve-input RUN COMMAND --action ACTION --reason TEXT [--instruction FILE]
 jackin workflow export RUN --out DIRECTORY
+jackin workflow record session RUN --worker WORKER --expected-version V [--instance INSTANCE ...]
+jackin workflow record candidate RUN --candidate CANDIDATE
+jackin workflow record checkpoint RUN --candidate CANDIDATE --commit COMMIT --manifest MANIFEST --local-path PATH --expected-version V
+jackin workflow record test RUN --check-script PATH --bundle-digest DIGEST --expected-version V
+jackin workflow record review RUN --review-file PATH --expected-version V
+jackin workflow record backup RUN --remote REMOTE --ref REF --expected-version V
+jackin workflow record advance RUN --observation OBSERVATION [--actor ACTOR]
 ```
 
 `status` without a run ID lists runs.
@@ -113,7 +120,10 @@ worker_started
 prompt_dispatch_started
 prompt_written
 prompt_delivery_unknown
+turn_started
 turn_ended
+test_started
+candidate_recorded
 operator_control_acquired
 operator_control_released
 vendor_child_reported

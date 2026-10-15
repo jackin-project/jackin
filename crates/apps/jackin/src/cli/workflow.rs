@@ -32,6 +32,8 @@ pub enum WorkflowCommand {
     ResolveInput(WorkflowResolveInputArgs),
     #[command(about = "Write the Markdown run report for a run", long_about = "Write the Markdown run report for a run", before_help = BANNER, styles = HELP_STYLES)]
     Export(WorkflowExportArgs),
+    #[command(about = "Record a phase observation for a durable run", long_about = "Record a phase observation for a durable run", before_help = BANNER, styles = HELP_STYLES)]
+    Record(WorkflowRecordArgs),
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -357,6 +359,276 @@ pub struct WorkflowPlanArgs {
         long_help = "Print the plan or diagnostics as JSON",
         long
     )]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(
+    about = "Record subcommand for `jackin workflow record`.",
+    long_about = "Record subcommand for `jackin workflow record`."
+)]
+pub struct WorkflowRecordArgs {
+    #[command(subcommand)]
+    pub action: WorkflowRecordAction,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum WorkflowRecordAction {
+    #[command(about = "Record a worker session attachment for a run")]
+    Session(WorkflowRecordSessionArgs),
+    #[command(about = "Record the candidate under verification for a run")]
+    Candidate(WorkflowRecordCandidateArgs),
+    #[command(about = "Record a source checkpoint for the run candidate")]
+    Checkpoint(WorkflowRecordCheckpointArgs),
+    #[command(about = "Run the frozen check in a pinned worker and record the verdict")]
+    Test(WorkflowRecordTestArgs),
+    #[command(about = "Validate an isolated review file and record the verdict")]
+    Review(WorkflowRecordReviewArgs),
+    #[command(about = "Confirm the candidate at its backup ref and mark backup done")]
+    Backup(WorkflowRecordBackupArgs),
+    #[command(about = "Advance a run with one named observation")]
+    Advance(WorkflowRecordAdvanceArgs),
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(about = "Arguments for `jackin workflow record session`.")]
+pub struct WorkflowRecordSessionArgs {
+    #[arg(help = "Run ID", value_name = "RUN_ID")]
+    pub run_id: String,
+    #[arg(
+        help = "Worker to attach (implementer or reviewer)",
+        long = "worker",
+        value_name = "WORKER",
+        default_value = "implementer"
+    )]
+    pub worker: String,
+    #[arg(
+        help = "Exact instance identity",
+        long = "instance",
+        value_name = "INSTANCE"
+    )]
+    pub instance: Option<String>,
+    #[arg(
+        help = "Capsule epoch of the session",
+        long = "capsule-epoch",
+        value_name = "EPOCH"
+    )]
+    pub capsule_epoch: Option<u64>,
+    #[arg(help = "Capsule session ID", long = "session-id", value_name = "ID")]
+    pub session_id: Option<u64>,
+    #[arg(
+        help = "Process identity of the session",
+        long = "process-identity",
+        value_name = "IDENTITY"
+    )]
+    pub process_identity: Option<String>,
+    #[arg(
+        help = "Agent profile reference",
+        long = "agent-profile",
+        value_name = "PROFILE"
+    )]
+    pub agent_profile: Option<String>,
+    #[arg(
+        help = "Auth profile reference",
+        long = "auth-profile",
+        value_name = "PROFILE"
+    )]
+    pub auth_profile: Option<String>,
+    #[arg(
+        help = "Expected run row version (required; see `workflow status`)",
+        long = "expected-version",
+        value_name = "V"
+    )]
+    pub expected_version: i64,
+    #[arg(help = "Print the run as JSON", long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(about = "Arguments for `jackin workflow record candidate`.")]
+pub struct WorkflowRecordCandidateArgs {
+    #[arg(help = "Run ID", value_name = "RUN_ID")]
+    pub run_id: String,
+    #[arg(
+        help = "Candidate identity token",
+        long = "candidate",
+        value_name = "CANDIDATE"
+    )]
+    pub candidate: String,
+    #[arg(help = "Expected run row version (-1 reads the current version)", long = "expected-version", value_name = "V", default_value_t = -1)]
+    pub expected_version: i64,
+    #[arg(help = "Print the run as JSON", long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(about = "Arguments for `jackin workflow record checkpoint`.")]
+pub struct WorkflowRecordCheckpointArgs {
+    #[arg(help = "Run ID", value_name = "RUN_ID")]
+    pub run_id: String,
+    #[arg(
+        help = "Candidate identity (must match the recorded run candidate)",
+        long = "candidate",
+        value_name = "CANDIDATE"
+    )]
+    pub candidate: String,
+    #[arg(
+        help = "Exact commit of the candidate source",
+        long = "commit",
+        value_name = "COMMIT"
+    )]
+    pub commit: String,
+    #[arg(
+        help = "Tree of the candidate source (must match the local source when given)",
+        long = "tree",
+        value_name = "TREE",
+        default_value = ""
+    )]
+    pub tree: String,
+    #[arg(
+        help = "Source manifest reference",
+        long = "manifest",
+        value_name = "MANIFEST"
+    )]
+    pub manifest: String,
+    #[arg(
+        help = "Local path of the candidate source",
+        long = "local-path",
+        value_name = "PATH"
+    )]
+    pub local_path: String,
+    #[arg(
+        help = "Backup state (pending until record backup confirms)",
+        long = "backup-state",
+        value_name = "STATE",
+        default_value = "pending"
+    )]
+    pub backup_state: String,
+    #[arg(
+        help = "Expected run row version (required; see `workflow status`)",
+        long = "expected-version",
+        value_name = "V"
+    )]
+    pub expected_version: i64,
+    #[arg(help = "Print the run as JSON", long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(about = "Arguments for `jackin workflow record test`.")]
+pub struct WorkflowRecordTestArgs {
+    #[arg(help = "Run ID", value_name = "RUN_ID")]
+    pub run_id: String,
+    #[arg(
+        help = "Trusted check script (frozen bundle bytes; the daemon verifies the digest)",
+        long = "check-script",
+        value_name = "PATH"
+    )]
+    pub check_script: PathBuf,
+    #[arg(
+        help = "Expected SHA-256 of the check script bytes",
+        long = "bundle-digest",
+        value_name = "DIGEST"
+    )]
+    pub bundle_digest: String,
+    #[arg(
+        help = "Program running the check (must match the frozen plan argv)",
+        long = "program",
+        value_name = "PROGRAM",
+        default_value = "python3"
+    )]
+    pub program: String,
+    #[arg(
+        help = "Repository holding the candidate (defaults to the checkpoint local path)",
+        long = "repo",
+        value_name = "PATH"
+    )]
+    pub repo: Option<PathBuf>,
+    #[arg(
+        help = "Scratch root for the single-use test worker",
+        long = "scratch",
+        value_name = "DIR"
+    )]
+    pub scratch: Option<PathBuf>,
+    #[arg(
+        help = "Expected run row version (required; see `workflow status`)",
+        long = "expected-version",
+        value_name = "V"
+    )]
+    pub expected_version: i64,
+    #[arg(help = "Print the verdict as JSON", long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(about = "Arguments for `jackin workflow record review`.")]
+pub struct WorkflowRecordReviewArgs {
+    #[arg(help = "Run ID", value_name = "RUN_ID")]
+    pub run_id: String,
+    #[arg(
+        help = "Review result file written by the isolated review worker",
+        long = "review-file",
+        value_name = "PATH"
+    )]
+    pub review_file: PathBuf,
+    #[arg(
+        help = "Expected run row version (required; see `workflow status`)",
+        long = "expected-version",
+        value_name = "V"
+    )]
+    pub expected_version: i64,
+    #[arg(help = "Print the verdict as JSON", long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(about = "Arguments for `jackin workflow record backup`.")]
+pub struct WorkflowRecordBackupArgs {
+    #[arg(help = "Run ID", value_name = "RUN_ID")]
+    pub run_id: String,
+    #[arg(
+        help = "Backup remote (path or URL)",
+        long = "remote",
+        value_name = "REMOTE"
+    )]
+    pub remote: String,
+    #[arg(
+        help = "Backup ref that must resolve to the candidate commit",
+        long = "ref",
+        value_name = "REF"
+    )]
+    pub git_ref: String,
+    #[arg(
+        help = "Expected run row version (required; see `workflow status`)",
+        long = "expected-version",
+        value_name = "V"
+    )]
+    pub expected_version: i64,
+    #[arg(help = "Print the run as JSON", long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(about = "Arguments for `jackin workflow record advance`.")]
+pub struct WorkflowRecordAdvanceArgs {
+    #[arg(help = "Run ID", value_name = "RUN_ID")]
+    pub run_id: String,
+    #[arg(
+        help = "Named observation (turn_started, turn_ended, test_started, test_passed, test_failed, review_passed, review_failed, verified_current, infra_failed, session_lost, uncertain_delivery, capture_stalled)",
+        long = "observation",
+        value_name = "OBSERVATION"
+    )]
+    pub observation: String,
+    #[arg(
+        help = "Submitting actor (host or worker)",
+        long = "actor",
+        value_name = "ACTOR",
+        default_value = "host"
+    )]
+    pub actor: String,
+    #[arg(help = "Expected run row version (-1 reads the current version)", long = "expected-version", value_name = "V", default_value_t = -1)]
+    pub expected_version: i64,
+    #[arg(help = "Print the run as JSON", long)]
     pub json: bool,
 }
 

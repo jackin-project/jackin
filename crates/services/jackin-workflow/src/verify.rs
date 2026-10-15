@@ -250,7 +250,7 @@ impl PreparedTestWorker {
     }
 }
 
-fn run_git(dir: &Path, args: &[&str]) -> Result<String, WorkflowError> {
+pub(crate) fn run_git(dir: &Path, args: &[&str]) -> Result<String, WorkflowError> {
     // Spawn plus wait_with_output (never Command::output): short-lived
     // local git plumbing on the host verification path, off
     // render/runtime threads like the rest of this module.
