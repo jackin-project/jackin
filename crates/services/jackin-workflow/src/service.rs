@@ -15,6 +15,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
+use jackin_workflow_spec::digest::bundle_manifest_digest;
+use jackin_workflow_spec::model::TestBundleFile;
+
 use super::model::{Actor, NextState, Observation, RunStatus, RunView, Stage, advance};
 use super::store::{
     CheckpointRecord, NewEffect, RunStore, RunTransition, SessionAttachment, StoredCheckpoint,
@@ -218,6 +221,7 @@ pub trait WorkflowBackend {
         check_program: &str,
         check_script: &str,
         bundle_digest: &str,
+        bundle_files: &[TestBundleFile],
         repo: Option<&str>,
         scratch: &str,
         timeout_secs: u64,
@@ -377,6 +381,7 @@ impl WorkflowBackend for UnavailableBackend {
         _check_program: &str,
         _check_script: &str,
         _bundle_digest: &str,
+        _bundle_files: &[TestBundleFile],
         _repo: Option<&str>,
         _scratch: &str,
         _timeout_secs: u64,
@@ -621,14 +626,17 @@ pub struct RecordedReview {
     pub artifact_digest: String,
 }
 
-/// Host paths for one trusted test recording. The check script must
-/// carry the frozen bundle bytes; the repository defaults to the
-/// recorded checkpoint's local path.
+/// Host paths for one trusted test recording. The executed check
+/// script must be a member of `bundle_files`, and `bundle_files`
+/// must recompute to `bundle_digest` (the manifest digest the daemon
+/// already bound to the run's stored plan); the repository defaults
+/// to the recorded checkpoint's local path.
 #[derive(Debug, Clone)]
 pub struct RecordTestParams<'a> {
     pub check_program: &'a str,
     pub check_script: &'a Path,
     pub bundle_digest: &'a str,
+    pub bundle_files: &'a [TestBundleFile],
     pub repo: Option<&'a Path>,
     pub scratch: &'a Path,
     pub timeout_secs: u64,
@@ -881,9 +889,10 @@ impl WorkflowService {
     /// Run the frozen check in a fresh pinned test worker and bind the
     /// host-observed verdict to the run. Only the test stage records
     /// tests, and only one verdict per candidate: re-verification
-    /// needs a new candidate. The script bytes must hash to the frozen
-    /// bundle digest; the recorded policy hash covers the exact host
-    /// argv that ran.
+    /// needs a new candidate. The executed script must be a manifest
+    /// member and the manifest must recompute to the frozen bundle
+    /// digest; the recorded policy hash covers the exact host argv
+    /// that ran.
     pub fn record_test(
         &self,
         run_id: &str,
@@ -940,9 +949,24 @@ impl WorkflowService {
         let mut hasher = Sha256::new();
         hasher.update(&script_bytes);
         let script_digest = hex::encode(hasher.finalize());
-        if script_digest != params.bundle_digest {
+        if !params
+            .bundle_files
+            .iter()
+            .any(|file| file.digest == script_digest)
+        {
             return Err(WorkflowError::invalid(
-                "check script does not match the frozen bundle digest".to_owned(),
+                "check script is not a member of the frozen test bundle".to_owned(),
+            ));
+        }
+        let manifest_digest = bundle_manifest_digest(
+            params
+                .bundle_files
+                .iter()
+                .map(|file| (file.logical_path.as_str(), file.digest.as_str())),
+        );
+        if manifest_digest != params.bundle_digest {
+            return Err(WorkflowError::invalid(
+                "test bundle manifest does not match the frozen bundle digest".to_owned(),
             ));
         }
         let round = u32::try_from(stored.round.max(0)).unwrap_or(0);
@@ -2133,6 +2157,7 @@ impl WorkflowBackend for WorkflowService {
         check_program: &str,
         check_script: &str,
         bundle_digest: &str,
+        bundle_files: &[TestBundleFile],
         repo: Option<&str>,
         scratch: &str,
         timeout_secs: u64,
@@ -2145,6 +2170,7 @@ impl WorkflowBackend for WorkflowService {
                 check_program,
                 check_script: Path::new(check_script),
                 bundle_digest,
+                bundle_files,
                 repo: repo.map(Path::new),
                 scratch: Path::new(scratch),
                 timeout_secs,

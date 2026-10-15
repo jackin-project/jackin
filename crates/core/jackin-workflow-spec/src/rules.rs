@@ -21,7 +21,8 @@ use crate::error::{Diagnostic, ErrorCode, WorkflowError, WorkflowResult};
 use crate::eval::PKLR_VERSION;
 use crate::model::{
     AgentSelection, BackupPolicy, CapabilityFacts, ExecutionPlan, InputFile, PlanNode,
-    REPAIR_STAGES, ResourceLimits, SCHEMA_VERSION, TEMPLATE_REPAIR_V1, VerificationPolicy,
+    REPAIR_STAGES, ResourceLimits, SCHEMA_VERSION, TEMPLATE_REPAIR_V1, TestBundleFile,
+    VerificationPolicy,
 };
 use crate::resolve::ResolvedInputs;
 
@@ -555,6 +556,14 @@ pub fn compile_plan(
         verification: VerificationPolicy {
             test_bundle: inputs.test_bundle_name.clone(),
             test_bundle_digest: inputs.test_bundle_digest.clone(),
+            test_bundle_files: inputs
+                .test_bundle
+                .iter()
+                .map(|file| TestBundleFile {
+                    logical_path: file.logical_path.clone(),
+                    digest: file.digest.clone(),
+                })
+                .collect(),
             check_argv: checked.checks_argv.clone(),
             check_image_digest: inputs.check_image_digest.clone(),
             timeout_seconds: checked.checks_timeout,

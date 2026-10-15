@@ -33,7 +33,7 @@ Use these core DTOs:
 | `InputFile` | Logical path, content digest, byte length, read-only mount path. |
 | `RepositoryInput` | Authorized repository ID, exact base commit, source manifest digest. |
 | `ResourceLimits` | Integer CPU millicores, memory bytes, process count, run seconds, disk monitor bytes. |
-| `VerificationPolicy` | Test bundle digest, exact argv, test image digest, timeout, review schema version. |
+| `VerificationPolicy` | Test bundle digest plus the per-file manifest it covers (`test_bundle_files`), exact argv, test image digest, timeout, review schema version. The manifest entry is part of the canonical plan bytes, so identical definitions hash differently than plans compiled before it existed; those older stored plans refuse as legacy (`plan_digest_mismatch`) and must be recompiled. |
 | `BackupPolicy` | Mode, authorized remote ID, host credential reference, permitted ref prefix. |
 | `ExecutionPlan` | Schema version, template, all DTOs above, repair limit, input digests, granted capability facts. |
 

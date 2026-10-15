@@ -78,6 +78,25 @@ fn sort_json_keys(value: serde_json::Value) -> serde_json::Value {
     }
 }
 
+/// Manifest digest over test-bundle entries: `logical_path\0`
+/// `file_digest\0` per entry with entries sorted by logical path, so
+/// the digest is order-insensitive. Shared by bundle resolution
+/// ([`crate::resolve`]) and test verification: both sides must agree
+/// on these exact bytes, and the plan pins both the per-file entries
+/// and this digest together.
+pub fn bundle_manifest_digest<'a>(files: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
+    let mut entries: Vec<(&str, &str)> = files.into_iter().collect();
+    entries.sort_unstable();
+    let mut input = Vec::new();
+    for (logical_path, digest) in entries {
+        input.extend_from_slice(logical_path.as_bytes());
+        input.push(0);
+        input.extend_from_slice(digest.as_bytes());
+        input.push(0);
+    }
+    sha256_hex(&input)
+}
+
 /// Hash a plan: SHA-256 over the version prefix plus canonical bytes.
 pub fn plan_hash(plan: &ExecutionPlan) -> WorkflowResult<String> {
     let canonical = canonical_plan_bytes(plan)?;

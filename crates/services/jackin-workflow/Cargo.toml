@@ -20,6 +20,7 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-usage-store-backend = { workspace = true }
+jackin-workflow-spec = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

@@ -17,6 +17,8 @@ use super::super::{
     advance,
 };
 use super::support::Fixture;
+use jackin_workflow_spec::digest::bundle_manifest_digest;
+use jackin_workflow_spec::model::TestBundleFile;
 
 fn view(status: RunStatus, stage: Stage) -> RunView {
     RunView {
@@ -319,6 +321,10 @@ fn k7_checkpoint_refuses_drift_and_dirt() {
 /// the host-observed verdict; a failing check records fail and the
 /// advance moves back to implement for the repair turn.
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Single record walk covers early, tampered, passing, and double records in stage order"
+)]
 fn k7_record_test_binds_host_observed_verdict() {
     let fixture = Fixture::new();
     let service = fixture.open();
@@ -342,8 +348,7 @@ fn k7_record_test_binds_host_observed_verdict() {
          print('PASS')\n",
     )
     .expect("stage check script");
-    let script_bytes = std::fs::read(&script).expect("read check script");
-    let bundle_digest = sha256_hex(&script_bytes);
+    let (bundle_files, bundle_digest) = bundle_binding(&script);
 
     let started = service
         .start_run("557632d5", 2, "key-k7-test")
@@ -377,6 +382,7 @@ fn k7_record_test_binds_host_observed_verdict() {
             check_program: "python3",
             check_script: &script,
             bundle_digest: &bundle_digest,
+            bundle_files: &bundle_files,
             repo: Some(repo.path()),
             scratch: scratch.path(),
             timeout_secs: 120,
@@ -420,6 +426,7 @@ fn k7_record_test_binds_host_observed_verdict() {
             check_program: "python3",
             check_script: &script,
             bundle_digest: "deadbeef",
+            bundle_files: &bundle_files,
             repo: Some(repo.path()),
             scratch: scratch.path(),
             timeout_secs: 120,
@@ -438,6 +445,7 @@ fn k7_record_test_binds_host_observed_verdict() {
                 check_program: "python3",
                 check_script: &script,
                 bundle_digest: &bundle_digest,
+                bundle_files: &bundle_files,
                 repo: Some(repo.path()),
                 scratch: scratch.path(),
                 timeout_secs: 120,
@@ -459,6 +467,7 @@ fn k7_record_test_binds_host_observed_verdict() {
             check_program: "python3",
             check_script: &script,
             bundle_digest: &bundle_digest,
+            bundle_files: &bundle_files,
             repo: Some(repo.path()),
             scratch: scratch.path(),
             timeout_secs: 120,
@@ -483,11 +492,203 @@ fn k7_record_test_binds_host_observed_verdict() {
     assert_eq!(reviewed.round, 0);
 }
 
+/// A run staged to the test stage with one trusted check script:
+/// the shared setup for the bundle-binding regression tests.
+struct TestStage {
+    _fixture: Fixture,
+    _repo: tempfile::TempDir,
+    scratch: tempfile::TempDir,
+    service: WorkflowService,
+    run_id: String,
+    version: i64,
+    script: std::path::PathBuf,
+    bundle_files: Vec<TestBundleFile>,
+    bundle_digest: String,
+}
+
+fn stage_test_run(key: &str, script_text: &str) -> TestStage {
+    let fixture = Fixture::new();
+    let service = fixture.open();
+    let repo = tempfile::tempdir().expect("binding repo tempdir");
+    let (commit, tree) = init_git_repo(repo.path());
+    let scratch = tempfile::tempdir().expect("binding scratch tempdir");
+    let script = scratch.path().join("check_add.py");
+    std::fs::write(&script, script_text).expect("stage check script");
+    let (bundle_files, bundle_digest) = bundle_binding(&script);
+    let started = service
+        .start_run("557632d5", 2, key)
+        .expect("start binding run");
+    let run_id = started.run_id.clone();
+    let candidate = service
+        .record_candidate(&run_id, "cand-r0", started.version, "operator")
+        .expect("record candidate");
+    let implementing = service
+        .advance_run(&run_id, candidate.version, "host", "turn_started", None)
+        .expect("turn started");
+    let captured = service
+        .advance_run(&run_id, implementing.version, "host", "turn_ended", None)
+        .expect("turn ended");
+    let local = repo.path().to_string_lossy().into_owned();
+    service
+        .record_checkpoint(
+            &CheckpointRecord {
+                run_id: &run_id,
+                candidate: "cand-r0",
+                commit: &commit,
+                tree: &tree,
+                source_manifest: "manifest-k7",
+                local_path: &local,
+                backup_state: "pending",
+                preservation_hold: None,
+            },
+            captured.version,
+        )
+        .expect("record checkpoint");
+    let testing = service
+        .advance_run(&run_id, captured.version, "host", "test_started", None)
+        .expect("test started");
+    TestStage {
+        _fixture: fixture,
+        _repo: repo,
+        scratch,
+        service,
+        run_id,
+        version: testing.version,
+        script,
+        bundle_files,
+        bundle_digest,
+    }
+}
+
+/// `record_test` refuses a foreign script: the claimed manifest
+/// digest is correct, but the executed script matches no manifest
+/// member, so the record refuses before any worker launches.
+#[test]
+fn k7_record_test_refuses_foreign_script() {
+    let stage = stage_test_run("key-k7-foreign-script", "print('PASS')\n");
+    let foreign = stage.script.with_file_name("foreign.py");
+    std::fs::write(&foreign, "print('FOREIGN')\n").expect("stage foreign script");
+    let refused = stage.service.record_test(
+        &stage.run_id,
+        stage.version,
+        &RecordTestParams {
+            check_program: "python3",
+            check_script: &foreign,
+            bundle_digest: &stage.bundle_digest,
+            bundle_files: &stage.bundle_files,
+            repo: None,
+            scratch: stage.scratch.path(),
+            timeout_secs: 120,
+        },
+    );
+    assert_eq!(
+        refused.expect_err("foreign script must refuse").kind(),
+        ErrorKind::Invalid
+    );
+}
+
+/// `record_test` refuses a tampered manifest: the executed script
+/// is a member of the claimed files, but the files do not recompute
+/// to the claimed manifest digest.
+#[test]
+fn k7_record_test_refuses_tampered_manifest() {
+    let stage = stage_test_run("key-k7-tampered-manifest", "print('PASS')\n");
+    let mut tampered = stage.bundle_files.clone();
+    tampered.push(TestBundleFile {
+        logical_path: "ghost.py".to_owned(),
+        digest: "0".repeat(64),
+    });
+    let recomputed = bundle_manifest_digest(
+        tampered
+            .iter()
+            .map(|file| (file.logical_path.as_str(), file.digest.as_str())),
+    );
+    assert_ne!(
+        recomputed, stage.bundle_digest,
+        "tampered files must recompute elsewhere"
+    );
+    let refused = stage.service.record_test(
+        &stage.run_id,
+        stage.version,
+        &RecordTestParams {
+            check_program: "python3",
+            check_script: &stage.script,
+            bundle_digest: &stage.bundle_digest,
+            bundle_files: &tampered,
+            repo: None,
+            scratch: stage.scratch.path(),
+            timeout_secs: 120,
+        },
+    );
+    assert_eq!(
+        refused.expect_err("tampered manifest must refuse").kind(),
+        ErrorKind::Invalid
+    );
+}
+
+/// `record_test` accepts any manifest member of a multi-file
+/// bundle: the executed script matches one entry while the manifest
+/// covers two files.
+#[test]
+fn k7_record_test_accepts_multi_file_bundle_member() {
+    let stage = stage_test_run("key-k7-multi-file", "print('PASS')\n");
+    let mut files = stage.bundle_files.clone();
+    files.push(TestBundleFile {
+        logical_path: "helper.py".to_owned(),
+        digest: sha256_hex(b"helper"),
+    });
+    let manifest = bundle_manifest_digest(
+        files
+            .iter()
+            .map(|file| (file.logical_path.as_str(), file.digest.as_str())),
+    );
+    let (summary, recorded) = stage
+        .service
+        .record_test(
+            &stage.run_id,
+            stage.version,
+            &RecordTestParams {
+                check_program: "python3",
+                check_script: &stage.script,
+                bundle_digest: &manifest,
+                bundle_files: &files,
+                repo: None,
+                scratch: stage.scratch.path(),
+                timeout_secs: 120,
+            },
+        )
+        .expect("multi-file member must record");
+    assert!(recorded.passed);
+    assert_eq!(summary.stage, "test");
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest as _, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hex::encode(hasher.finalize())
+}
+
+/// Manifest binding for one staged check script: the per-file
+/// manifest plus the manifest digest `record_test` must be told.
+/// Mirrors the plan's frozen bundle for a single-file bundle.
+fn bundle_binding(script: &Path) -> (Vec<TestBundleFile>, String) {
+    let digest = sha256_hex(&std::fs::read(script).expect("read check script"));
+    let logical_path = script
+        .file_name()
+        .expect("check script has a file name")
+        .to_string_lossy()
+        .into_owned();
+    let files = vec![TestBundleFile {
+        logical_path,
+        digest,
+    }];
+    let manifest = bundle_manifest_digest(
+        files
+            .iter()
+            .map(|file| (file.logical_path.as_str(), file.digest.as_str())),
+    );
+    (files, manifest)
 }
 
 /// A run driven to decide with passing tests and an acceptable
@@ -513,7 +714,7 @@ fn drive_to_decide(key: &str) -> DecideSetup {
     std::fs::create_dir_all(&bundle).expect("bundle dir");
     let script = bundle.join("check_add.py");
     std::fs::write(&script, "print('PASS')\n").expect("stage check script");
-    let bundle_digest = sha256_hex(&std::fs::read(&script).expect("read script"));
+    let (bundle_files, bundle_digest) = bundle_binding(&script);
 
     let started = service
         .start_run("557632d5", 2, key)
@@ -555,6 +756,7 @@ fn drive_to_decide(key: &str) -> DecideSetup {
                 check_program: "python3",
                 check_script: &script,
                 bundle_digest: &bundle_digest,
+                bundle_files: &bundle_files,
                 repo: Some(repo.path()),
                 scratch: scratch.path(),
                 timeout_secs: 120,
@@ -756,7 +958,7 @@ fn k7_acceptance_gate_refuses_unresolved_uncertainty() {
     std::fs::create_dir_all(&bundle).expect("bundle dir");
     let script = bundle.join("check_add.py");
     std::fs::write(&script, "print('PASS')\n").expect("stage check script");
-    let bundle_digest = sha256_hex(&std::fs::read(&script).expect("read script"));
+    let (bundle_files, bundle_digest) = bundle_binding(&script);
 
     let started = service
         .start_run("557632d5", 2, "key-k7-uncertain-accept")
@@ -832,6 +1034,7 @@ fn k7_acceptance_gate_refuses_unresolved_uncertainty() {
                 check_program: "python3",
                 check_script: &script,
                 bundle_digest: &bundle_digest,
+                bundle_files: &bundle_files,
                 repo: Some(repo.path()),
                 scratch: scratch.path(),
                 timeout_secs: 120,
@@ -895,7 +1098,7 @@ fn k7_acceptance_gate_refuses_failed_verification() {
     std::fs::create_dir_all(&bundle).expect("bundle dir");
     let script = bundle.join("check_fail.py");
     std::fs::write(&script, "import sys\nsys.exit(3)\n").expect("stage failing check");
-    let bundle_digest = sha256_hex(&std::fs::read(&script).expect("read script"));
+    let (bundle_files, bundle_digest) = bundle_binding(&script);
 
     let started = service
         .start_run("557632d5", 0, "key-k7-failed-accept")
@@ -937,6 +1140,7 @@ fn k7_acceptance_gate_refuses_failed_verification() {
                 check_program: "python3",
                 check_script: &script,
                 bundle_digest: &bundle_digest,
+                bundle_files: &bundle_files,
                 repo: Some(repo.path()),
                 scratch: scratch.path(),
                 timeout_secs: 120,
@@ -1007,7 +1211,7 @@ fn drift_copy(
     std::fs::create_dir_all(&bundle).expect("bundle dir");
     let script = bundle.join("check_add.py");
     std::fs::write(&script, "print('PASS')\n").expect("stage check script");
-    let bundle_digest = sha256_hex(&std::fs::read(&script).expect("read script"));
+    let (bundle_files, bundle_digest) = bundle_binding(&script);
 
     let started = service
         .start_run("557632d5", 2, "key-k7-drifted-accept")
@@ -1065,6 +1269,7 @@ fn drift_copy(
                 check_program: "python3",
                 check_script: &script,
                 bundle_digest: &bundle_digest,
+                bundle_files: &bundle_files,
                 repo: Some(repo),
                 scratch,
                 timeout_secs: 120,
@@ -1147,7 +1352,7 @@ fn k7_record_paths_refuse_moved_versions() {
     let scratch = tempfile::tempdir().expect("k7 scratch tempdir");
     let script = scratch.path().join("check_add.py");
     std::fs::write(&script, "print('PASS')\n").expect("stage check script");
-    let bundle_digest = sha256_hex(&std::fs::read(&script).expect("read script"));
+    let (bundle_files, bundle_digest) = bundle_binding(&script);
 
     let started = service
         .start_run("557632d5", 2, "key-k7-versions")
@@ -1221,6 +1426,7 @@ fn k7_record_paths_refuse_moved_versions() {
         check_program: "python3",
         check_script: &script,
         bundle_digest: &bundle_digest,
+        bundle_files: &bundle_files,
         repo: Some(repo.path()),
         scratch: scratch.path(),
         timeout_secs: 120,
@@ -1283,7 +1489,7 @@ fn k7_record_review_binds_recorded_test_policy() {
     let scratch = tempfile::tempdir().expect("k7 scratch tempdir");
     let script = scratch.path().join("check_add.py");
     std::fs::write(&script, "print('PASS')\n").expect("stage check script");
-    let bundle_digest = sha256_hex(&std::fs::read(&script).expect("read script"));
+    let (bundle_files, bundle_digest) = bundle_binding(&script);
 
     // Run A reaches review with a recorded test verdict: a foreign
     // policy hash refuses, the recorded one records.
@@ -1327,6 +1533,7 @@ fn k7_record_review_binds_recorded_test_policy() {
                 check_program: "python3",
                 check_script: &script,
                 bundle_digest: &bundle_digest,
+                bundle_files: &bundle_files,
                 repo: Some(repo.path()),
                 scratch: scratch.path(),
                 timeout_secs: 120,

@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::digest::sha256_hex;
+use crate::digest::{bundle_manifest_digest, sha256_hex};
 use crate::error::{Diagnostic, ErrorCode, WorkflowError, WorkflowResult};
 use crate::model::RepositoryInput;
 use crate::rules::{CheckedDefinition, Selections};
@@ -171,19 +171,17 @@ pub fn resolve_workflow_files(
             ),
         )));
     }
-    let mut bundle_digest_input = Vec::new();
-    for file in &bundle_files {
-        bundle_digest_input.extend_from_slice(file.logical_path.as_bytes());
-        bundle_digest_input.push(0);
-        bundle_digest_input.extend_from_slice(file.digest.as_bytes());
-        bundle_digest_input.push(0);
-    }
+    let test_bundle_digest = bundle_manifest_digest(
+        bundle_files
+            .iter()
+            .map(|file| (file.logical_path.as_str(), file.digest.as_str())),
+    );
     Ok(ResolvedInputs {
         task,
         references,
         test_bundle_name: checked.checks_bundle.clone(),
         test_bundle: bundle_files,
-        test_bundle_digest: sha256_hex(&bundle_digest_input),
+        test_bundle_digest,
         check_image_digest: resolution.check_image_digest.clone(),
         repository: resolution.repository.clone(),
         module_digests: resolution.module_digests.clone(),

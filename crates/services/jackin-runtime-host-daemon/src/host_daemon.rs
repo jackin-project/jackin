@@ -1276,10 +1276,12 @@ fn workflow_error_code(error: &jackin_workflow::WorkflowError) -> &'static str {
 /// Verify `record_test` inputs against the run's stored plan
 /// before the daemon freezes anything: the check program must match
 /// the frozen plan argv, the bundle digest must match the frozen
-/// bundle, and the timeout must match the plan timeout. The CLI
-/// checks the program early for a fast failure; this daemon-side
-/// check is authoritative for every RPC caller, including direct
-/// socket clients that bypass the CLI.
+/// bundle manifest digest, and the timeout must match the plan
+/// timeout. The CLI checks the program early for a fast failure;
+/// this daemon-side check is authoritative for every RPC caller,
+/// including direct socket clients that bypass the CLI. On success
+/// the stored per-file bundle manifest is returned so the service
+/// can verify the executed script is a manifest member.
 fn check_test_binding(
     workflow: &mut dyn WorkflowBackend,
     plan_store_dir: &Path,
@@ -1287,7 +1289,7 @@ fn check_test_binding(
     check_program: &str,
     bundle_digest: &str,
     timeout_secs: u64,
-) -> Result<(), jackin_workflow::WorkflowError> {
+) -> Result<Vec<jackin_workflow_spec::model::TestBundleFile>, jackin_workflow::WorkflowError> {
     let summary = workflow.run_status(Some(run_id))?;
     let plan = jackin_workflow_spec::store::InputStore::open(plan_store_dir)
         .and_then(|store| store.read_plan(&summary.plan_hash))
@@ -1301,7 +1303,8 @@ fn check_test_binding(
         check_program,
         bundle_digest,
         timeout_secs,
-    )
+    )?;
+    Ok(plan.verification.test_bundle_files.clone())
 }
 
 /// Pure binding comparison, unit-tested without a store.
@@ -1518,13 +1521,14 @@ fn handle_workflow_record_request(
             &bundle_digest,
             timeout_secs,
         )
-        .and_then(|()| {
+        .and_then(|bundle_files| {
             workflow.record_test(
                 &run_id,
                 expected_version,
                 &check_program,
                 &check_script,
                 &bundle_digest,
+                &bundle_files,
                 repo.as_deref(),
                 &scratch,
                 timeout_secs,

@@ -676,6 +676,72 @@ fn workflow_post_compile_edit_unchanged() {
     );
 }
 
+/// The plan pins the per-file bundle manifest the manifest digest
+/// covers: a two-file bundle lists both entries sorted, and the
+/// stored digest recomputes from them with the shared helper.
+#[test]
+fn workflow_test_bundle_manifest_lists_every_file() {
+    use jackin_workflow_spec::digest::bundle_manifest_digest;
+
+    let scratch = scratch_repo();
+    std::fs::write(scratch.path().join("checks/helper.py"), "x = 2\n").unwrap();
+    let (_checked, inputs, plan) = compile_in_repo(
+        scratch.path(),
+        &fixture_repair_text(),
+        &fixture_grant(),
+        &fixture_selections(),
+    );
+    assert_eq!(inputs.test_bundle.len(), 2);
+    let files = &plan.verification.test_bundle_files;
+    assert_eq!(files.len(), 2);
+    assert_eq!(files[0].logical_path, "check_add.py");
+    assert_eq!(files[1].logical_path, "helper.py");
+    for (frozen, pinned) in inputs.test_bundle.iter().zip(files.iter()) {
+        assert_eq!(frozen.logical_path, pinned.logical_path);
+        assert_eq!(frozen.digest, pinned.digest);
+    }
+    let recomputed = bundle_manifest_digest(
+        files
+            .iter()
+            .map(|file| (file.logical_path.as_str(), file.digest.as_str())),
+    );
+    assert_eq!(recomputed, plan.verification.test_bundle_digest);
+    assert_eq!(recomputed, inputs.test_bundle_digest);
+}
+
+/// Stored plans compiled before the per-file manifest existed
+/// refuse as legacy: without `test_bundle_files` the bytes are not
+/// a valid plan, and `read_plan` reports `plan_digest_mismatch`.
+#[test]
+fn workflow_legacy_plan_without_bundle_manifest_refuses() {
+    let scratch = scratch_repo();
+    let (_checked, _inputs, plan) = compile_in_repo(
+        scratch.path(),
+        &fixture_repair_text(),
+        &fixture_grant(),
+        &fixture_selections(),
+    );
+    let store_dir = tempfile::tempdir().unwrap();
+    let store = InputStore::open(store_dir.path()).unwrap();
+    let mut value = serde_json::to_value(&plan).unwrap();
+    value
+        .get_mut("verification")
+        .expect("plan has verification")
+        .as_object_mut()
+        .expect("verification is an object")
+        .remove("test_bundle_files");
+    let bytes = serde_json::to_vec(&value).unwrap();
+    let path = store_dir
+        .path()
+        .join("plans")
+        .join(format!("{}.plan.json", plan.plan_hash));
+    std::fs::write(&path, &bytes).unwrap();
+    let error = store
+        .read_plan(&plan.plan_hash)
+        .expect_err("legacy plan must refuse");
+    assert_eq!(error.primary_code(), ErrorCode::PlanDigestMismatch);
+}
+
 #[test]
 fn workflow_evaluation_deadline() {
     let mut limits = EvalLimits::defaults();

@@ -92,6 +92,27 @@ pub struct ResourceLimits {
     pub disk_monitor_bytes: u64,
 }
 
+/// One frozen test-bundle file pinned in the plan: the logical name
+/// plus the hex SHA-256 over its frozen bytes. The plan stores this
+/// per-file manifest beside [`VerificationPolicy::test_bundle_digest`]
+/// so verification can check that an executed script is a bundle
+/// member instead of comparing script bytes against the manifest
+/// digest (which can never match by construction).
+///
+/// This entry joined the plan after the first persisted plans. It is
+/// part of the canonical plan bytes, so identical definitions hash
+/// differently than before the entry existed; stored plans compiled
+/// without it fail to deserialize and
+/// [`crate::store::InputStore::read_plan`] reports them as
+/// `plan_digest_mismatch` (legacy refusal: recompile the plan).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestBundleFile {
+    /// File name inside the frozen bundle directory.
+    pub logical_path: String,
+    /// Hex SHA-256 over the frozen file bytes.
+    pub digest: String,
+}
+
 /// Trusted test bundle plus the exact check command.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationPolicy {
@@ -99,6 +120,8 @@ pub struct VerificationPolicy {
     pub test_bundle: String,
     /// Digest over the frozen test bundle bytes.
     pub test_bundle_digest: String,
+    /// Per-file manifest the digest covers, sorted by logical path.
+    pub test_bundle_files: Vec<TestBundleFile>,
     /// Exact check argv, never empty.
     pub check_argv: Vec<String>,
     /// Digest of the test image.

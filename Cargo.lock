@@ -5361,6 +5361,7 @@ dependencies = [
  "hex",
  "jackin-isolation",
  "jackin-usage-store-backend",
+ "jackin-workflow-spec",
  "serde",
  "serde_json",
  "sha2 0.11.1",

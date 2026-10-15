@@ -257,17 +257,26 @@ fn record_summary(
 
 /// Store a minimal digest-verified plan with the given frozen
 /// test binding, so the daemon-side binding check has a stored plan
-/// to verify against. Returns the plan hash to start the run with.
+/// to verify against. The manifest digest is recomputed from the
+/// given files, so the stored plan always carries a self-consistent
+/// bundle binding. Returns the plan hash to start the run with plus
+/// the manifest digest to record with.
 fn store_test_plan(
     layout: &DaemonLayout,
     check_program: &str,
-    bundle_digest: &str,
+    bundle_files: &[jackin_workflow_spec::model::TestBundleFile],
     timeout_secs: u64,
-) -> String {
+) -> (String, String) {
+    use jackin_workflow_spec::digest::bundle_manifest_digest;
     use jackin_workflow_spec::model::{
         AgentSelection, BackupPolicy, CapabilityFacts, ExecutionPlan, InputFile, PlanNode,
         RepositoryInput, ResourceLimits, VerificationPolicy,
     };
+    let bundle_digest = bundle_manifest_digest(
+        bundle_files
+            .iter()
+            .map(|file| (file.logical_path.as_str(), file.digest.as_str())),
+    );
     let agent = |runtime: &str| AgentSelection {
         runtime: runtime.to_owned(),
         agent_slug: "test-agent".to_owned(),
@@ -311,7 +320,8 @@ fn store_test_plan(
         },
         verification: VerificationPolicy {
             test_bundle: "fixture-checks".to_owned(),
-            test_bundle_digest: bundle_digest.to_owned(),
+            test_bundle_digest: bundle_digest.clone(),
+            test_bundle_files: bundle_files.to_vec(),
             check_argv: vec![check_program.to_owned()],
             check_image_digest: "0".repeat(64),
             timeout_seconds: timeout_secs,
@@ -340,7 +350,7 @@ fn store_test_plan(
         .expect("open plan store")
         .persist(&plan, &[])
         .expect("persist test plan");
-    hash
+    (hash, bundle_digest)
 }
 
 /// K7 record path through the request line: session, candidate,
@@ -379,14 +389,18 @@ fn workflow_record_round_trip_walks_to_accept() {
     let script = scratch.path().join("check_add.py");
     fs::write(&script, "print('PASS')\n").expect("stage check script");
     let script_bytes = fs::read(&script).expect("read check script");
-    let bundle_digest = {
+    let script_digest = {
         use sha2::{Digest as _, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&script_bytes);
         hex::encode(hasher.finalize())
     };
+    let bundle_files = vec![jackin_workflow_spec::model::TestBundleFile {
+        logical_path: "check_add.py".to_owned(),
+        digest: script_digest,
+    }];
 
-    let plan_hash = store_test_plan(&layout, "python3", &bundle_digest, 120);
+    let (plan_hash, bundle_digest) = store_test_plan(&layout, "python3", &bundle_files, 120);
     let DaemonResponseKind::WorkflowRun { summary } = round_trip(
         &layout,
         &mut attention,
@@ -555,6 +569,30 @@ fn workflow_record_round_trip_walks_to_accept() {
         };
         assert_eq!(code, "invalid_request", "unexpected message: {message}");
     }
+
+    // Unified binding end to end: a foreign script passes the
+    // daemon's manifest-digest check (the caller digest matches the
+    // plan) but the service refuses it as a bundle non-member.
+    let foreign = scratch.path().join("foreign.py");
+    fs::write(&foreign, "print('FOREIGN')\n").expect("stage foreign script");
+    let DaemonResponseKind::Error { code, message } = round_trip(
+        &layout,
+        &mut attention,
+        &mut workflow,
+        DaemonRequestKind::WorkflowRecordTest {
+            run_id: run_id.clone(),
+            expected_version: recorded.version,
+            check_program: "python3".to_owned(),
+            check_script: foreign.display().to_string(),
+            bundle_digest: bundle_digest.clone(),
+            repo: Some(repo.path().to_string_lossy().into_owned()),
+            scratch: scratch.path().to_string_lossy().into_owned(),
+            timeout_secs: 120,
+        },
+    ) else {
+        panic!("expected a foreign-script refusal");
+    };
+    assert_eq!(code, "invalid_request", "unexpected message: {message}");
 
     let DaemonResponseKind::WorkflowTestRecord { summary, test } = round_trip(
         &layout,
