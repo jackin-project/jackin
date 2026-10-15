@@ -70,6 +70,7 @@ fn allowlist_union_dedups_and_includes_all_sources() {
         vec![
             "example.com".to_owned(),
             "api.anthropic.com".to_owned(),
+            "platform.claude.com".to_owned(),
             "github.com".to_owned(),
             "host.docker.internal".to_owned(),
         ]

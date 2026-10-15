@@ -25,6 +25,16 @@ fn grok_has_default_allowed_host() {
 }
 
 #[test]
+fn claude_default_includes_api_and_platform_hosts() {
+    let hosts = default_allowed_hosts_for_agent("claude");
+    assert!(hosts.contains(&"api.anthropic.com"));
+    assert!(
+        hosts.contains(&"platform.claude.com"),
+        "claude default must allowlist platform.claude.com: pinned Claude Code requires it for OAuth token exchange/refresh at startup"
+    );
+}
+
+#[test]
 fn validate_effective_grants_catches_cross_source_root_and_sudo() {
     let grants = EffectiveGrants {
         user: "root".to_owned(),
