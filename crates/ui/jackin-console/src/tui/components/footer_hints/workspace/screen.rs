@@ -63,7 +63,8 @@ pub const fn workspace_screen_footer_plan(
             WorkspaceScreenFooterPlan::DestructiveConfirm
         }
         crate::tui::model::ConsoleManagerStageRoute::Editor
-        | crate::tui::model::ConsoleManagerStageRoute::Settings => {
+        | crate::tui::model::ConsoleManagerStageRoute::Settings
+        | crate::tui::model::ConsoleManagerStageRoute::Workflows => {
             WorkspaceScreenFooterPlan::ScreenOwned
         }
     }

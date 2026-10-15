@@ -45,6 +45,16 @@ pub fn handle_list_key(
         state.usage.visible = true;
         return Ok(InputOutcome::Continue);
     }
+    if matches!(key.code, KeyCode::Char('f' | 'F')) {
+        dispatch_manager(
+            state,
+            ManagerMessage::EnterWorkflows(Box::new(
+                crate::tui::screens::workflows::model::WorkflowScreen::new(Vec::new()),
+            )),
+        );
+        state.request_effect(crate::tui::effect::ConsoleEffect::RequestWorkflowsRefresh.into());
+        return Ok(InputOutcome::Continue);
+    }
     let selected_row = state.selected_row();
     let selected_preview_pane_count =
         selected_instance_container(state, ConcreteInstanceAction::Reconnect)

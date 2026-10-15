@@ -13,12 +13,14 @@ use crate::tui::debug::{
     ConsoleCreatePreludeDebugFacts, ConsoleEditorDebugFacts, ConsoleSettingsDebugFacts,
     ConsoleStageDebug,
 };
+use crate::tui::screens::workflows::model::WorkflowScreen;
 
 #[derive(Debug)]
 pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
     List,
     Editor(Editor),
     Settings(Settings),
+    Workflows(WorkflowScreen),
     CreatePrelude(CreatePrelude),
     ConfirmDelete {
         name: String,
@@ -36,6 +38,7 @@ pub enum ConsoleManagerStageRoute {
     List,
     Editor,
     Settings,
+    Workflows,
     CreatePrelude,
     ConfirmDelete,
     ConfirmInstancePurge,
@@ -56,6 +59,7 @@ impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor,
             Self::List => ConsoleManagerStageRoute::List,
             Self::Editor(_) => ConsoleManagerStageRoute::Editor,
             Self::Settings(_) => ConsoleManagerStageRoute::Settings,
+            Self::Workflows(_) => ConsoleManagerStageRoute::Workflows,
             Self::CreatePrelude(_) => ConsoleManagerStageRoute::CreatePrelude,
             Self::ConfirmDelete { .. } => ConsoleManagerStageRoute::ConfirmDelete,
             Self::ConfirmInstancePurge { .. } => ConsoleManagerStageRoute::ConfirmInstancePurge,
@@ -72,7 +76,7 @@ where
     #[must_use]
     pub fn modal_facts(&self) -> ConsoleStageModalFacts {
         match self {
-            Self::List => ConsoleStageModalFacts::default(),
+            Self::List | Self::Workflows(_) => ConsoleStageModalFacts::default(),
             Self::Editor(editor) => ConsoleStageModalFacts {
                 editor_modal_open: editor.editor_modal_open(),
                 ..ConsoleStageModalFacts::default()
@@ -128,6 +132,7 @@ where
             Self::Editor(editor) => editor.poll_pending_role_load(),
             Self::List
             | Self::Settings(_)
+            | Self::Workflows(_)
             | Self::CreatePrelude(_)
             | Self::ConfirmDelete { .. }
             | Self::ConfirmInstancePurge { .. } => None,
@@ -149,6 +154,7 @@ where
             Self::Editor(editor) => editor.poll_pending_drift_check(),
             Self::List
             | Self::Settings(_)
+            | Self::Workflows(_)
             | Self::CreatePrelude(_)
             | Self::ConfirmDelete { .. }
             | Self::ConfirmInstancePurge { .. } => None,
@@ -167,6 +173,7 @@ where
             Self::Editor(editor) => editor.poll_pending_isolation_cleanup(),
             Self::List
             | Self::Settings(_)
+            | Self::Workflows(_)
             | Self::CreatePrelude(_)
             | Self::ConfirmDelete { .. }
             | Self::ConfirmInstancePurge { .. } => None,
@@ -198,6 +205,7 @@ where
                 })
             }
             Self::List
+            | Self::Workflows(_)
             | Self::CreatePrelude(_)
             | Self::ConfirmDelete { .. }
             | Self::ConfirmInstancePurge { .. } => None,
@@ -215,6 +223,7 @@ where
             Self::Editor(editor) => editor.tick_active_animation(),
             Self::Settings(settings) => settings.tick_active_animation(),
             Self::List
+            | Self::Workflows(_)
             | Self::CreatePrelude(_)
             | Self::ConfirmDelete { .. }
             | Self::ConfirmInstancePurge { .. } => false,
@@ -232,6 +241,7 @@ where
     pub fn debug_stage(&self) -> ConsoleStageDebug {
         match self {
             Self::List => ConsoleStageDebug::List,
+            Self::Workflows(_) => ConsoleStageDebug::Workflows,
             Self::Editor(editor) => editor.editor_stage_debug(),
             Self::Settings(settings) => settings.settings_stage_debug(),
             Self::CreatePrelude(prelude) => prelude.create_prelude_stage_debug(),

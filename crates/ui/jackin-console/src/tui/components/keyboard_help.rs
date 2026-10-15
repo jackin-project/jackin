@@ -9,7 +9,7 @@ use crate::tui::keymap::{
     AUTH_MANAGE_KEYMAP, CONSOLE_GLOBAL_KEYMAP, EDITOR_CONTENT_KEYMAP, EDITOR_GLOBAL_KEYMAP,
     EDITOR_TAB_BAR_KEYMAP, PREVIEW_PANE_KEYMAP, SETTINGS_CONTENT_SHELL_KEYMAP,
     SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TAB_KEYMAP, SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP,
-    SETTINGS_TAB_BAR_KEYMAP, SETTINGS_TRUST_TAB_KEYMAP, WORKSPACE_LIST_KEYMAP,
+    SETTINGS_TAB_BAR_KEYMAP, SETTINGS_TRUST_TAB_KEYMAP, WORKFLOWS_KEYMAP, WORKSPACE_LIST_KEYMAP,
 };
 use crate::tui::screens::settings::model::SettingsTab;
 use crate::tui::state::{ManagerStage, ManagerState};
@@ -69,6 +69,9 @@ pub fn console_help_entries(state: &ManagerState<'_>, system: &DesignSystem) -> 
                 SettingsTab::Auth => entries_from(&AUTH_MANAGE_KEYMAP, system, "Settings"),
             };
             parts.push(tab);
+        }
+        ManagerStage::Workflows(_) => {
+            parts.push(entries_from(&WORKFLOWS_KEYMAP, system, "Workflows"));
         }
         ManagerStage::CreatePrelude(_)
         | ManagerStage::ConfirmDelete { .. }

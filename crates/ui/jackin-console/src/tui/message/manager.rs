@@ -40,6 +40,7 @@ pub enum ConsoleManagerMessage<
     EnterCreatePrelude(CreatePrelude),
     EnterEditor(Editor),
     EnterSettings(Settings),
+    EnterWorkflows(Box<crate::tui::screens::workflows::model::WorkflowScreen>),
     FileBrowserCommitValidated(FileBrowserCommit),
     FileBrowserListingLoaded(FileBrowserListing),
     InstancesRefreshed(Result<InstanceRefreshSnapshot, String>),

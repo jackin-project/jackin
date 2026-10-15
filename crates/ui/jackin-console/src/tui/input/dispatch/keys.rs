@@ -107,6 +107,11 @@ pub fn handle_key(
                     after_settings_event(state);
                     Ok(InputOutcome::Continue)
                 }
+                ConsoleManagerStageRoute::Workflows => {
+                    let export_dir = paths.data_dir.join("workflow-exports");
+                    crate::tui::screens::workflows::screen::handle_key(state, key, &export_dir);
+                    return Ok(InputOutcome::Continue);
+                }
                 ConsoleManagerStageRoute::CreatePrelude => {
                     Ok(handle_prelude_key(state, config, paths, cwd, key))
                 }

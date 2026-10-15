@@ -65,6 +65,7 @@ pub struct StageFooterHeightFacts {
 pub enum ConsoleMainFramePlan {
     Editor,
     Settings,
+    Workflows,
     Workspace { render_list_body: bool },
 }
 
@@ -81,6 +82,7 @@ pub enum ConsoleModalRenderPlan {
     List,
     Editor,
     Settings,
+    Workflows,
     CreatePrelude,
     ConfirmDelete,
     ConfirmInstancePurge,

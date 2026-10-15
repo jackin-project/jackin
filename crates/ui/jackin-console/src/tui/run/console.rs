@@ -60,6 +60,7 @@ pub const fn letter_input_state_for_console(
             None => None,
         },
         ManagerStage::List
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => None,
     };

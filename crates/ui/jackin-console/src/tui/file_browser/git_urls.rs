@@ -45,6 +45,7 @@ pub fn execute_file_browser_git_url_resolution(
             }
         }
         ManagerStage::List
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
@@ -105,6 +106,7 @@ pub fn poll_file_browser_git_urls(state: &mut ManagerState<'_>) -> bool {
             }
         }
         ManagerStage::List
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => {}
     }

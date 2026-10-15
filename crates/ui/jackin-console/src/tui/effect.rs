@@ -6,6 +6,7 @@ pub enum ConsoleEffect {
     RequestActiveMountInfoRefresh,
     RequestInstanceRefresh,
     RequestUsageRefresh,
+    RequestWorkflowsRefresh,
     SaveSettings,
 }
 
@@ -51,6 +52,11 @@ pub enum ConsoleManagerEffect<RoleSelector, RoleSource, OpRef> {
     StartAccountScan {
         generation: u64,
     },
+    /// Host-executed workflow intent from the Workflows screen
+    /// (resume/cancel/takeover/release/observe/export). The host
+    /// performs the daemon and Capsule calls, then refreshes the
+    /// screen snapshots.
+    Workflows(crate::tui::screens::workflows::effect::WorkflowsEffect),
 }
 
 #[derive(Debug, Clone)]

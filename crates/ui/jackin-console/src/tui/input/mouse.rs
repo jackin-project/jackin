@@ -294,6 +294,7 @@ pub fn clickable_at(
             ),
         },
         ManagerStage::CreatePrelude(_)
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => ConsoleClickStageFacts::Other,
     };

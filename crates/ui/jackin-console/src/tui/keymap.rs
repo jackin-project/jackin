@@ -12,6 +12,7 @@ mod settings_shell;
 mod settings_trust;
 #[cfg(test)]
 mod tests;
+mod workflows;
 mod workspace;
 pub(crate) use bridge::bridged_keymap_action;
 pub(crate) use editor::{
@@ -37,4 +38,5 @@ pub(crate) use settings_shell::{
     SettingsTabBarAction,
 };
 pub(crate) use settings_trust::{SETTINGS_TRUST_TAB_KEYMAP, SettingsTrustTabAction};
+pub(crate) use workflows::WORKFLOWS_KEYMAP;
 pub(crate) use workspace::{WORKSPACE_LIST_KEYMAP, WorkspaceListAction};

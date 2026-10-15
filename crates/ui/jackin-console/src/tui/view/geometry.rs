@@ -59,6 +59,7 @@ pub const fn stage_modal_area_for_route(
 ) -> Option<StageModalArea> {
     match route {
         ConsoleManagerStageRoute::List
+        | ConsoleManagerStageRoute::Workflows
         | ConsoleManagerStageRoute::ConfirmDelete
         | ConsoleManagerStageRoute::ConfirmInstancePurge => None,
         ConsoleManagerStageRoute::Editor => Some(StageModalArea::Editor(areas.editor)),

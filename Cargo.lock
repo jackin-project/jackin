@@ -3144,6 +3144,7 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime",
+ "jackin-runtime-session-control",
  "jackin-telemetry",
  "jackin-test-support",
  "jackin-tui",

@@ -48,7 +48,8 @@ pub(crate) fn telemetry_screen(
     match state.stage {
         ManagerStage::List
         | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => ScreenId::WorkspaceList,
+        | ManagerStage::ConfirmInstancePurge { .. }
+        | ManagerStage::Workflows(_) => ScreenId::WorkspaceList,
         ManagerStage::Editor(_) => ScreenId::WorkspaceEditor,
         ManagerStage::Settings(_) => ScreenId::Settings,
         ManagerStage::CreatePrelude(_) => ScreenId::WorkspaceCreate,
@@ -95,6 +96,7 @@ pub(crate) const fn action_of(
         ManagerMessage::EnterCreatePrelude(_) => Some(UiActionName::WorkspaceCreate),
         ManagerMessage::EnterEditor(_) => Some(UiActionName::WorkspaceOpen),
         ManagerMessage::EnterSettings(_) => Some(UiActionName::SettingsOpen),
+        ManagerMessage::EnterWorkflows(_) => None,
         ManagerMessage::ReturnToList => Some(UiActionName::ScreenBack),
         ManagerMessage::DismissSettingsErrorPopup
         | ManagerMessage::DismissStatusPopup
