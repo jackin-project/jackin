@@ -674,7 +674,7 @@ fn plan(
     config: &jackin_config::AppConfig,
     paths: &jackin_core::JackinPaths,
 ) -> Result<()> {
-    let outcome = plan_inner(&args.file, config, paths);
+    let outcome = plan_inner(&args.file, config, paths, args.model.as_deref());
     match outcome {
         Ok(summary) => {
             if args.json {
@@ -702,6 +702,7 @@ fn plan_inner(
     file: &Path,
     config: &jackin_config::AppConfig,
     paths: &jackin_core::JackinPaths,
+    model_override: Option<&str>,
 ) -> Result<PlanSummary, WorkflowError> {
     use jackin_workflow_spec::resolve::{
         FileResolution, resolve_live_selections, resolve_workflow_files,
@@ -747,7 +748,7 @@ fn plan_inner(
     let role_revision = role_manifest_revision(paths, &role_id, file_label)?;
     let image_digest = role_image_digest(&role_id, file_label)?;
 
-    let implementer = live_agent_facts(
+    let mut implementer = live_agent_facts(
         config,
         &workspace_key,
         &role_id,
@@ -756,6 +757,7 @@ fn plan_inner(
         &image_digest,
         file_label,
     )?;
+    implementer.requested_model = apply_model_override(implementer.requested_model, model_override);
     let reviewer = live_agent_facts(
         config,
         &workspace_key,
@@ -995,6 +997,17 @@ fn role_image_digest(role_id: &str, file_label: &str) -> Result<String, Workflow
 /// account binding (claude/codex), its auth mode, the requested
 /// model, and the agent binary digest. Identifiers and digests only;
 /// secret values are never read.
+/// Operator `--model` precedence for the frozen requested model: a
+/// non-blank plan-time override wins; otherwise the resolved role or
+/// account default stands. Only the implementer (Claude) side takes
+/// an override in this release; the reviewer keeps its resolved model.
+fn apply_model_override(resolved: Option<String>, model_override: Option<&str>) -> Option<String> {
+    match model_override.map(str::trim) {
+        Some(override_model) if !override_model.is_empty() => Some(override_model.to_owned()),
+        _ => resolved,
+    }
+}
+
 fn live_agent_facts(
     config: &jackin_config::AppConfig,
     workspace: &jackin_core::WorkspaceName,
@@ -1040,7 +1053,7 @@ fn live_agent_facts(
         jackin_config::AccountCredential::OAuthToken { .. } => "oauth_token",
     }
     .to_owned();
-    let requested_model = config
+    let resolved_model = config
         .agent_configurations
         .values()
         .filter(|configuration| configuration.agent == agent && configuration.account == account_id)
@@ -1048,8 +1061,8 @@ fn live_agent_facts(
         .or_else(|| match &account.credential {
             jackin_config::AccountCredential::ApiKey { model, .. } => model.clone(),
             _ => None,
-        })
-        .or(Some(VENDOR_DEFAULT_MODEL.to_owned()));
+        });
+    let requested_model = resolved_model.or(Some(VENDOR_DEFAULT_MODEL.to_owned()));
     let binary_name = agent.slug();
     let binary_digest = agent_binary_digest(binary_name, side, file_label)?;
     Ok(LiveAgentFacts {
@@ -1182,3 +1195,6 @@ fn print_diagnostics_json(error: &WorkflowError) {
         .collect();
     println!("{}", serde_json::json!({ "diagnostics": diagnostics }));
 }
+
+#[cfg(test)]
+mod tests;

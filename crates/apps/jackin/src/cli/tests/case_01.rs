@@ -594,3 +594,41 @@ fn all_subcommand_help_pages_show_banner() {
         );
     }
 }
+
+#[test]
+fn parses_workflow_plan_model_override() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "workflow",
+        "plan",
+        "repair.pkl",
+        "--model",
+        "haiku",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Workflow(
+            WorkflowCommand::Plan(ref args)
+        ))
+        if args.model.as_deref() == Some("haiku")
+    ));
+}
+
+#[test]
+fn parses_workflow_plan_without_model_override() {
+    let cli = Cli::try_parse_from(["jackin", "workflow", "plan", "repair.pkl"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Workflow(
+            WorkflowCommand::Plan(ref args)
+        ))
+        if args.model.is_none()
+    ));
+}
+
+#[test]
+fn rejects_workflow_plan_blank_model_override() {
+    Cli::try_parse_from(["jackin", "workflow", "plan", "repair.pkl", "--model", "   "])
+        .unwrap_err();
+}

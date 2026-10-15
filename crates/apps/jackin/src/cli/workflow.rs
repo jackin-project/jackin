@@ -345,11 +345,27 @@ pub struct WorkflowPlanArgs {
     )]
     pub file: PathBuf,
     #[arg(
+        help = "Requested model ID frozen into the plan for the implementer (Claude); overrides role and account defaults for this plan only.",
+        long_help = "Requested model ID frozen into the plan for the implementer (Claude); overrides role and account defaults for this plan only.",
+        long,
+        value_name = "MODEL",
+        value_parser = parse_plan_model
+    )]
+    pub model: Option<String>,
+    #[arg(
         help = "Print the plan or diagnostics as JSON",
         long_help = "Print the plan or diagnostics as JSON",
         long
     )]
     pub json: bool,
+}
+
+fn parse_plan_model(s: &str) -> Result<String, String> {
+    let model = s.trim();
+    if model.is_empty() {
+        return Err("model ID cannot be empty".to_owned());
+    }
+    Ok(model.to_owned())
 }
 
 /// Typed workflow CLI failure: carries the C7 exit code (0/2/3/4/1)
