@@ -213,6 +213,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
         url: "https://example.invalid/claude".to_owned(),
         checksum: None,
         archive_member: None,
+        extra_files: Vec::new(),
     };
     let latest_path = paths
         .cache_dir

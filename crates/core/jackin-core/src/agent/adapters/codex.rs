@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::auth::AuthForwardMode;
-
 use crate::agent::runtime::{
     AgentRuntime, AgentStatePaths, FolderVar, FolderVarKind, bounded_fallback_curl,
     looks_like_version, render_fallback_install_block,
 };
+use crate::auth::AuthForwardMode;
+use crate::constants::CODEX_CODE_MODE_HOST_BINARY;
 
 const FALLBACK_INSTALL_COMMAND: &str = bounded_fallback_curl!(
     "https://chatgpt.com/codex/install.sh",
@@ -28,10 +28,15 @@ impl AgentRuntime for CodexRuntime {
     }
 
     fn install_block(&self, source: &str) -> String {
+        let sibling_source = match source.rsplit_once('/') {
+            Some((dir, _)) => format!("{dir}/{CODEX_CODE_MODE_HOST_BINARY}"),
+            None => CODEX_CODE_MODE_HOST_BINARY.to_owned(),
+        };
         format!(
             "\
 USER agent
 COPY --link --chown=agent:0 --chmod=0755 {source} /home/agent/.local/bin/codex
+COPY --link --chown=agent:0 --chmod=0755 {sibling_source} /home/agent/.local/bin/{CODEX_CODE_MODE_HOST_BINARY}
 ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     codex --version

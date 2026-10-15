@@ -90,5 +90,6 @@ pub(super) fn release_fixture_for(agent: Agent, version: &str) -> AgentRelease {
         url: format!("https://example.test/{}", agent.slug()),
         checksum: Some("abc".to_owned()),
         archive_member: None,
+        extra_files: Vec::new(),
     }
 }

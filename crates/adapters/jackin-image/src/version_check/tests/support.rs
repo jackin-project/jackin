@@ -9,6 +9,7 @@ pub(super) fn seed_latest(paths: &JackinPaths, agent: Agent, version: &str) {
         url: "https://example.invalid/agent".to_owned(),
         checksum: None,
         archive_member: None,
+        extra_files: Vec::new(),
     };
     let path = paths
         .cache_dir
