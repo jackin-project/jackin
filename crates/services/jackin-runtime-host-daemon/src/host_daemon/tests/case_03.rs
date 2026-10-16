@@ -265,6 +265,7 @@ fn store_test_plan(
     layout: &DaemonLayout,
     check_program: &str,
     bundle_files: &[jackin_workflow_spec::model::TestBundleFile],
+    bundle_inputs: &[(&str, &[u8])],
     timeout_secs: u64,
 ) -> (String, String) {
     use jackin_workflow_spec::digest::bundle_manifest_digest;
@@ -322,8 +323,12 @@ fn store_test_plan(
             test_bundle: "fixture-checks".to_owned(),
             test_bundle_digest: bundle_digest.clone(),
             test_bundle_files: bundle_files.to_vec(),
-            check_argv: vec![check_program.to_owned()],
-            check_image_digest: "0".repeat(64),
+            check_argv: vec![
+                check_program.to_owned(),
+                format!("/jackin/checks/{}", bundle_files[0].logical_path),
+                "/work/repo".to_owned(),
+            ],
+            check_image_digest: jackin_workflow::TEST_SANDBOX_IMAGE.to_owned(),
             timeout_seconds: timeout_secs,
             review_schema_version: 1,
         },
@@ -344,11 +349,27 @@ fn store_test_plan(
         },
         plan_hash: String::new(),
     };
+    let frozen_inputs = bundle_inputs
+        .iter()
+        .map(
+            |(logical_path, bytes)| jackin_workflow_spec::resolve::FrozenInput {
+                logical_path: (*logical_path).to_owned(),
+                bytes: bytes.to_vec(),
+                digest: bundle_files
+                    .iter()
+                    .find(|file| file.logical_path == *logical_path)
+                    .expect("frozen input has a bundle manifest entry")
+                    .digest
+                    .clone(),
+            },
+        )
+        .collect::<Vec<_>>();
+    let frozen_input_refs = frozen_inputs.iter().collect::<Vec<_>>();
     let hash = jackin_workflow_spec::digest::plan_hash(&plan).expect("hash test plan");
     plan.plan_hash = hash.clone();
     jackin_workflow_spec::store::InputStore::open(&layout.plan_store_dir)
         .expect("open plan store")
-        .persist(&plan, &[])
+        .persist(&plan, &frozen_input_refs)
         .expect("persist test plan");
     (hash, bundle_digest)
 }
@@ -399,8 +420,84 @@ fn workflow_record_round_trip_walks_to_accept() {
         logical_path: "check_add.py".to_owned(),
         digest: script_digest,
     }];
+    let foreign = scratch.path().join("foreign.py");
+    let foreign_bytes = b"print('FOREIGN')\n";
+    fs::write(&foreign, foreign_bytes).expect("stage foreign script");
+    let foreign_digest = {
+        use sha2::{Digest as _, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(foreign_bytes);
+        hex::encode(hasher.finalize())
+    };
+    let mut bundle_files = bundle_files;
+    bundle_files.push(jackin_workflow_spec::model::TestBundleFile {
+        logical_path: "foreign.py".to_owned(),
+        digest: foreign_digest,
+    });
 
-    let (plan_hash, bundle_digest) = store_test_plan(&layout, "python3", &bundle_files, 120);
+    let (plan_hash, bundle_digest) = store_test_plan(
+        &layout,
+        "python3",
+        &bundle_files,
+        &[
+            ("check_add.py", &script_bytes),
+            ("foreign.py", foreign_bytes),
+        ],
+        120,
+    );
+    let input_store = jackin_workflow_spec::store::InputStore::open(&layout.plan_store_dir)
+        .expect("open plan store for binding checks");
+    let stored_plan = input_store
+        .read_plan(&plan_hash)
+        .expect("read frozen plan for binding checks");
+    verify_test_binding(
+        &stored_plan.verification,
+        "python3",
+        &script.display().to_string(),
+        &bundle_digest,
+        120,
+        &input_store,
+    )
+    .expect("the selected frozen script binding is valid");
+    let mut extra_argv = stored_plan.verification.clone();
+    extra_argv.check_argv.push("--verbose".to_owned());
+    assert!(
+        verify_test_binding(
+            &extra_argv,
+            "python3",
+            &script.display().to_string(),
+            &bundle_digest,
+            120,
+            &input_store,
+        )
+        .is_err()
+    );
+    let mut wrong_selected_script = stored_plan.verification.clone();
+    wrong_selected_script.check_argv[1] = "/jackin/checks/foreign.py".to_owned();
+    assert!(
+        verify_test_binding(
+            &wrong_selected_script,
+            "python3",
+            &script.display().to_string(),
+            &bundle_digest,
+            120,
+            &input_store,
+        )
+        .is_err()
+    );
+    let mut wrong_image = stored_plan.verification.clone();
+    wrong_image.check_image_digest = "python:latest".to_owned();
+    assert!(
+        verify_test_binding(
+            &wrong_image,
+            "python3",
+            &script.display().to_string(),
+            &bundle_digest,
+            120,
+            &input_store,
+        )
+        .is_err()
+    );
     let DaemonResponseKind::WorkflowRun { summary } = round_trip(
         &layout,
         &mut attention,
@@ -570,11 +667,8 @@ fn workflow_record_round_trip_walks_to_accept() {
         assert_eq!(code, "invalid_request", "unexpected message: {message}");
     }
 
-    // Unified binding end to end: a foreign script passes the
-    // daemon's manifest-digest check (the caller digest matches the
-    // plan) but the service refuses it as a bundle non-member.
-    let foreign = scratch.path().join("foreign.py");
-    fs::write(&foreign, "print('FOREIGN')\n").expect("stage foreign script");
+    // A different manifest member still fails: the frozen argv selects
+    // `check_add.py`, so matching any bundle digest cannot authorize `foreign.py`.
     let DaemonResponseKind::Error { code, message } = round_trip(
         &layout,
         &mut attention,

@@ -68,3 +68,29 @@ Exact next action: provide the role, then coordinator re-runs K1-Codex + K5-revi
 ## Final release record
 
 Accepted checkpoint: candidate round-1 @ `e88fe8c2` (tree `43dbd6d0`, one-line `a-b`→`a+b`), run `run-9db3cc2a`, plan `3c37c8c9`, accepted v15. Original sessions: implementer `xaa772dc` (agent-smith, default-claude, Haiku 5.5/low), reviewer `jbs9dg84` (the-architect, default-codex, gpt-6-luna/low). Independent review: PASS, zero findings, commit/tree re-derived. Trusted test: exit 0 `PASS: required arithmetic cases` (round-1; round-0 exit 1 recorded). Host restarts: daemon interruptions proven safe repeatedly (K6, K7-partial, fresh run mid Codex turn epoch 9→10, crash test with SIGKILL); accepted state intact across all. Operator control: observe both workers, exclusive takeover with refusal text, return via release. Backup: exact ref `refs/jackin/k7-accept-fresh` == candidate, idempotent repeat; acceptance separate from preservation. Auth: Claude subscription (Max, OAuth, manual renewal — refresh unsupported in practice) and Codex ChatGPT login, each proven in workers; API-key modes unverified. Remote transport not verified (temporary bare remotes only). Hard limits: no disk quota (monitor only), IPv6 deny-all, IP-level enforcement. Deferred scope: none built. MVP PASS.
+
+
+## CI and merge hardening — 2026-10-16
+
+Independent pre-merge review found that C6's original exact-argv runner
+executed candidate code on the host. The earlier live repair evidence did
+not prove test-worker containment. The runner now requires a pinned Docker
+sandbox with no host fallback, read-only private candidate and digest-checked
+trusted bundle mounts, no network or credentials, bounded writable tmpfs,
+and host plus container deadlines. Only a confirmed exited container can
+produce evidence; transport failures and unavailable infrastructure block
+acceptance. The frozen plan now binds the actual test image and full
+supported argv shape. Older image bindings require a fresh plan.
+
+Validation: workflow suite 38 passed, 1 pre-existing ignored; strict workflow
+Clippy passed. Actual Docker regressions prove host-secret and network
+denial, read-only mounts, bounded retention while draining oversized stdout
+and stderr, and timeout cleanup. Host-daemon suite passed 24/24, including
+direct-RPC rejection of extra argv, another valid bundle member, and a
+mismatched test image. The CLI regression rejects unsupported argv before
+planning. Architecture inventory now includes both workflow crates; the
+telemetry registry includes all workflow commands, nested record actions
+use their exact command names, and managed lifecycle helpers own daemon
+and output-reader spawns. The xtask suite passed 477/477 after registry
+regeneration; the telemetry registry gate and MVP link gate passed. The
+released Velnor 0.1.8 generator preview matched the checked-in workflows.

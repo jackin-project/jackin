@@ -632,6 +632,8 @@ fn k7_record_test_refuses_tampered_manifest() {
 #[test]
 fn k7_record_test_accepts_multi_file_bundle_member() {
     let stage = stage_test_run("key-k7-multi-file", "print('PASS')\n");
+    std::fs::write(stage.scratch.path().join("helper.py"), b"helper")
+        .expect("stage helper bundle file");
     let mut files = stage.bundle_files.clone();
     files.push(TestBundleFile {
         logical_path: "helper.py".to_owned(),
@@ -660,6 +662,47 @@ fn k7_record_test_accepts_multi_file_bundle_member() {
         .expect("multi-file member must record");
     assert!(recorded.passed);
     assert_eq!(summary.stage, "test");
+}
+
+#[test]
+fn k7_record_test_timeout_removes_sandbox_container() {
+    let stage = stage_test_run("key-k7-test-timeout", "import time\ntime.sleep(30)\n");
+    let result = stage.service.record_test(
+        &stage.run_id,
+        stage.version,
+        &RecordTestParams {
+            check_program: "python3",
+            check_script: &stage.script,
+            bundle_digest: &stage.bundle_digest,
+            bundle_files: &stage.bundle_files,
+            repo: None,
+            scratch: stage.scratch.path(),
+            timeout_secs: 2,
+        },
+    );
+    assert_eq!(
+        result
+            .expect_err("timeout must be recorded as infrastructure failure")
+            .kind(),
+        ErrorKind::Blocked
+    );
+    let worker = format!("test-{}-r0-cand-r0", stage.run_id);
+    let filter = format!("label=jackin.workflow.worker={worker}");
+    let containers = super::super::verify::run_host_command_output_until(
+        std::process::Command::new("docker").args(["ps", "-aq", "--filter", &filter]),
+        std::time::Instant::now() + std::time::Duration::from_secs(2),
+    )
+    .expect("list timed out test containers")
+    .expect("Docker container listing timed out");
+    assert!(
+        containers.status.success(),
+        "Docker container listing failed"
+    );
+    assert!(
+        containers.stdout.is_empty(),
+        "timed-out sandbox container remains: {}",
+        String::from_utf8_lossy(&containers.stdout)
+    );
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

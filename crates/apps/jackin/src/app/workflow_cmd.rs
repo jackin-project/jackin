@@ -1028,6 +1028,7 @@ fn load_definition(file: &Path) -> Result<LoadedDefinition, WorkflowError> {
     };
     let evaluated = evaluate_bounded(&bundle, &file_label, &helper, &EvalLimits::defaults())?;
     let checked = validate_definition(&evaluated.json, &file_label)?;
+    validate_check_argv(&checked.checks_argv, &file_label)?;
     let workspace_field = evaluated
         .json
         .get("workspace")
@@ -1040,6 +1041,28 @@ fn load_definition(file: &Path) -> Result<LoadedDefinition, WorkflowError> {
         workspace_field,
         module_digests: evaluated.module_digests,
     })
+}
+
+fn validate_check_argv(argv: &[String], file_label: &str) -> Result<(), WorkflowError> {
+    let script = argv
+        .get(1)
+        .and_then(|arg| arg.strip_prefix("/jackin/checks/"));
+    let supported_script = script.is_some_and(|path| {
+        !path.is_empty()
+            && Path::new(path)
+                .components()
+                .all(|part| matches!(part, std::path::Component::Normal(_)))
+    });
+    if argv.len() != 3 || argv[0].is_empty() || !supported_script || argv[2] != "/work/repo" {
+        return Err(WorkflowError::single(Diagnostic::new(
+            file_label,
+            "checks.argv",
+            ErrorCode::InvalidDefinition,
+            "the test sandbox requires [program, /jackin/checks/<bundle member>, /work/repo]",
+            "select one frozen bundle script and the fixed candidate mount; extra arguments are unsupported",
+        )));
+    }
+    Ok(())
 }
 
 fn missing(file_label: &str, field: &str, message: String, action: &str) -> WorkflowError {
@@ -1199,7 +1222,7 @@ fn plan_inner(
         workflow_file: file.to_path_buf(),
         file_label: file_label.to_owned(),
         check_bundle_dir: dir.join("checks"),
-        check_image_digest: image_digest,
+        check_image_digest: jackin_workflow::TEST_SANDBOX_IMAGE.to_owned(),
         module_digests: loaded.module_digests,
         repository,
         selections,
@@ -1344,7 +1367,8 @@ fn role_manifest_revision(
 /// Resolve the single local image digest for the role repository
 /// `jk_<role>`. Zero images is a missing input; more than one
 /// distinct digest is ambiguous. Both workers share the workspace
-/// role image in this release, and the test bundle runs in it too.
+/// role image in this release. The test bundle uses its separately
+/// pinned credential-free sandbox image.
 fn role_image_digest(role_id: &str, file_label: &str) -> Result<String, WorkflowError> {
     let selector = jackin_core::RoleSelector::parse(role_id).map_err(|_| {
         missing(

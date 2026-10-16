@@ -31,6 +31,22 @@ Mount the trusted test bundle read-only outside the implementation source.
 Use exact argv from the frozen policy, not an agent-generated shell command.
 Execute all candidate code inside the test sandbox.
 
+The MVP executor uses the immutable `jackin_workflow::TEST_SANDBOX_IMAGE`
+reference, frozen separately from the agent role image in the plan. Its
+supported argv is `[program, /jackin/checks/<bundle member>, /work/repo]`;
+CLI validation rejects extra arguments or other mount paths, and the daemon
+independently binds the selected script bytes, full argv shape, image,
+bundle manifest, and timeout to the stored plan. Plans with an older test
+image binding must be compiled again.
+
+Each execution stages and rechecks every frozen bundle member before
+mounting the bundle and private candidate checkout read-only. The container
+has no network, host credentials, or Docker socket; it drops capabilities
+and uses a read-only root with bounded writable `/tmp` and `/build` tmpfs
+mounts. Docker is required; there is no host execution fallback. Output is
+drained after its retained byte limit, and only a confirmed completed
+container can produce a test verdict.
+
 The test worker may use its own writable build directory.
 It must not share writable build caches or Git state with the implementer.
 Verify that its initial source matches the checkpoint manifest.

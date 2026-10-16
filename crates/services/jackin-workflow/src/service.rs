@@ -1028,7 +1028,7 @@ impl WorkflowService {
                 return Err(error);
             }
         };
-        let execution = match run_test_command(&policy, &worker) {
+        let execution = match run_test_command(&policy, &worker, params.bundle_files) {
             Ok(execution) => execution,
             Err(error) => {
                 drop(std::fs::remove_dir_all(&work_dir));

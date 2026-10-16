@@ -42,3 +42,19 @@ fn plan_model_override_trims_surrounding_whitespace() {
         Some("haiku".to_owned())
     );
 }
+
+#[test]
+fn frozen_check_argv_rejects_arguments_the_executor_would_drop() {
+    let argv = vec![
+        "python3".to_owned(),
+        "/jackin/checks/check_add.py".to_owned(),
+        "/work/repo".to_owned(),
+    ];
+    super::super::validate_check_argv(&argv, "repair.pkl").expect("supported frozen argv");
+    let mut extra = argv.clone();
+    extra.push("--required-check".to_owned());
+    assert!(super::super::validate_check_argv(&extra, "repair.pkl").is_err());
+    let mut traversal = argv;
+    traversal[1] = "/jackin/checks/../foreign.py".to_owned();
+    assert!(super::super::validate_check_argv(&traversal, "repair.pkl").is_err());
+}

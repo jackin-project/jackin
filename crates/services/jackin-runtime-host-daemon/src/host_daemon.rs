@@ -1327,54 +1327,107 @@ fn workflow_error_code(error: &jackin_workflow::WorkflowError) -> &'static str {
 }
 
 /// Verify `record_test` inputs against the run's stored plan
-/// before the daemon freezes anything: the check program must match
-/// the frozen plan argv, the bundle digest must match the frozen
-/// bundle manifest digest, and the timeout must match the plan
-/// timeout. The CLI checks the program early for a fast failure;
+/// before the daemon freezes anything: the full check argv must match
+/// the supported frozen shape, script bytes must match the selected
+/// bundle entry, the bundle digest must match the frozen manifest,
+/// and timeout must match the plan. The CLI checks the program early
+/// for a fast failure;
 /// this daemon-side check is authoritative for every RPC caller,
 /// including direct socket clients that bypass the CLI. On success
-/// the stored per-file bundle manifest is returned so the service
-/// can verify the executed script is a manifest member.
+/// the stored per-file bundle manifest is returned to the service.
 fn check_test_binding(
     workflow: &mut dyn WorkflowBackend,
     plan_store_dir: &Path,
     run_id: &str,
     check_program: &str,
+    check_script: &str,
     bundle_digest: &str,
     timeout_secs: u64,
 ) -> Result<Vec<jackin_workflow_spec::model::TestBundleFile>, jackin_workflow::WorkflowError> {
     let summary = workflow.run_status(Some(run_id))?;
-    let plan = jackin_workflow_spec::store::InputStore::open(plan_store_dir)
-        .and_then(|store| store.read_plan(&summary.plan_hash))
-        .map_err(|error| {
-            jackin_workflow::WorkflowError::invalid(format!(
-                "cannot verify the test binding for run `{run_id}`: {error}"
-            ))
-        })?;
+    let store = jackin_workflow_spec::store::InputStore::open(plan_store_dir).map_err(|error| {
+        jackin_workflow::WorkflowError::invalid(format!(
+            "cannot verify the test binding for run `{run_id}`: {error}"
+        ))
+    })?;
+    let plan = store.read_plan(&summary.plan_hash).map_err(|error| {
+        jackin_workflow::WorkflowError::invalid(format!(
+            "cannot verify the test binding for run `{run_id}`: {error}"
+        ))
+    })?;
     verify_test_binding(
         &plan.verification,
         check_program,
+        check_script,
         bundle_digest,
         timeout_secs,
+        &store,
     )?;
     Ok(plan.verification.test_bundle_files.clone())
 }
 
-/// Pure binding comparison, unit-tested without a store.
+/// Binding comparison against the frozen input store.
 fn verify_test_binding(
     verification: &jackin_workflow_spec::model::VerificationPolicy,
     check_program: &str,
+    check_script: &str,
     bundle_digest: &str,
     timeout_secs: u64,
+    store: &jackin_workflow_spec::store::InputStore,
 ) -> Result<(), jackin_workflow::WorkflowError> {
-    let frozen = verification
-        .check_argv
-        .first()
-        .map(String::as_str)
-        .unwrap_or_default();
-    if frozen != check_program {
+    let argv = &verification.check_argv;
+    if argv.len() != 3
+        || argv[0] != check_program
+        || argv[2] != "/work/repo"
+        || !argv[1].starts_with("/jackin/checks/")
+    {
         return Err(jackin_workflow::WorkflowError::invalid(format!(
-            "check program `{check_program}` does not match the frozen plan argv `{frozen}`"
+            "check argv does not match the supported frozen shape [program, /jackin/checks/<manifest path>, /work/repo]: {argv:?}"
+        )));
+    }
+    let logical_path = &argv[1]["/jackin/checks/".len()..];
+    let logical_path = Path::new(logical_path);
+    if logical_path.as_os_str().is_empty()
+        || logical_path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        || !Path::new(check_script).ends_with(logical_path)
+    {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "supplied check script path `{check_script}` does not match frozen bundle path `{}`",
+            logical_path.display()
+        )));
+    }
+    let logical_path = logical_path.to_string_lossy();
+    let file = verification
+        .test_bundle_files
+        .iter()
+        .find(|file| file.logical_path == logical_path)
+        .ok_or_else(|| {
+            jackin_workflow::WorkflowError::invalid(format!(
+                "frozen check script `{logical_path}` is not a member of the selected test bundle"
+            ))
+        })?;
+    let frozen_bytes = store.read_input(&file.digest).map_err(|error| {
+        jackin_workflow::WorkflowError::invalid(format!(
+            "cannot read frozen check script `{logical_path}`: {error}"
+        ))
+    })?;
+    let supplied_bytes = fs::read(check_script).map_err(|error| {
+        jackin_workflow::WorkflowError::invalid(format!(
+            "cannot read supplied check script `{check_script}`: {error}"
+        ))
+    })?;
+    if supplied_bytes != frozen_bytes {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "supplied check script bytes do not match frozen bundle entry `{logical_path}`"
+        )));
+    }
+    if verification.check_image_digest != jackin_workflow::TEST_SANDBOX_IMAGE {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "check image `{}` does not match the supported sandbox image `{}`",
+            verification.check_image_digest,
+            jackin_workflow::TEST_SANDBOX_IMAGE
         )));
     }
     if verification.test_bundle_digest != bundle_digest {
@@ -1572,6 +1625,7 @@ fn handle_workflow_record_request(
             plan_store_dir,
             &run_id,
             &check_program,
+            &check_script,
             &bundle_digest,
             timeout_secs,
         )

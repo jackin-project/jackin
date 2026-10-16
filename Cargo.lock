@@ -5360,6 +5360,7 @@ dependencies = [
  "anyhow",
  "hex",
  "jackin-isolation",
+ "jackin-telemetry",
  "jackin-usage-store-backend",
  "jackin-workflow-spec",
  "serde",

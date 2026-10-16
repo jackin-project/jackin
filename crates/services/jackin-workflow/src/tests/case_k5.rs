@@ -10,14 +10,16 @@ use std::path::{Path, PathBuf};
 
 use super::super::{
     Actor, CandidateEvidence, CandidateRef, Decision, DeliveryGate, ErrorKind, FeedbackInput,
-    HostReadiness, InputOwnership, MAX_FEEDBACK_BYTES, Observation, PreparedTestWorker,
-    ReviewExpectation, ReviewFinding, ReviewWorkerSpec, SessionIdentity, Severity, TestPolicy,
-    TestWorkerSpec, VerificationOutcome, admit_repair_delivery, build_feedback, decide_candidate,
-    persist_test_output, prepare_test_worker, read_review_bytes, record_review_evidence,
-    record_test_evidence, review_acceptable, run_test_command, stage_repair_feedback,
-    summarize_test_failure, validate_review,
+    HostReadiness, InputOwnership, MAX_FEEDBACK_BYTES, MAX_TEST_OUTPUT_BYTES, Observation,
+    PreparedTestWorker, ReviewExpectation, ReviewFinding, ReviewWorkerSpec, SessionIdentity,
+    Severity, TestPolicy, TestWorkerSpec, VerificationOutcome, admit_repair_delivery,
+    build_feedback, decide_candidate, persist_test_output, prepare_test_worker, read_review_bytes,
+    record_review_evidence, record_test_evidence, review_acceptable, run_test_command,
+    stage_repair_feedback, summarize_test_failure, validate_review,
 };
 use super::support::Fixture;
+use jackin_workflow_spec::model::TestBundleFile;
+use sha2::Digest as _;
 
 const BUGGY_CALCULATOR: &str = "def add(a: int, b: int) -> int:\n    return a - b\n";
 const FIXED_CALCULATOR: &str = "def add(a: int, b: int) -> int:\n    return a + b\n";
@@ -105,6 +107,18 @@ fn policy_for(bundle_check: &Path, work_dir: &Path) -> TestPolicy {
     .expect("freeze k5 policy")
 }
 
+fn bundle_manifest_for(script: &Path) -> Vec<TestBundleFile> {
+    let bytes = std::fs::read(script).expect("read trusted test bundle file");
+    vec![TestBundleFile {
+        logical_path: script
+            .file_name()
+            .expect("script filename")
+            .to_string_lossy()
+            .into_owned(),
+        digest: hex::encode(sha2::Sha256::digest(bytes)),
+    }]
+}
+
 fn test_round(
     repo: &Path,
     scratch: &Path,
@@ -139,7 +153,8 @@ fn test_round(
     assert_eq!(worker.work_dir(), &work_dir);
     assert_eq!(worker.commit(), point.commit);
     assert_eq!(worker.tree(), point.tree);
-    let execution = run_test_command(&policy, &worker).expect("run k5 pinned command");
+    let execution = run_test_command(&policy, &worker, &bundle_manifest_for(bundle_check))
+        .expect("run k5 pinned command");
     (spec, policy, worker, execution)
 }
 
@@ -1286,9 +1301,35 @@ fn k5_runner_never_emits_bytecode() {
     let repo = temp.path().join("bytecode-src");
     std::fs::create_dir_all(&repo).expect("bytecode src dir");
     std::fs::write(repo.join("helpermod.py"), "VALUE = 41\n").expect("write helper module");
+    let host_secret = temp.path().join("host-secret");
+    std::fs::write(&host_secret, "never-visible-to-test").expect("write host secret sentinel");
     std::fs::write(
         repo.join("check_import.py"),
-        "import sys\nsys.path.insert(0, sys.argv[1])\nimport helpermod\nassert helpermod.VALUE == 41, helpermod.VALUE\nprint('PASS: import without bytecode')\n",
+        format!(
+            concat!(
+                "import pathlib, socket, sys\n",
+                "sys.path.insert(0, sys.argv[1])\n",
+                "import helpermod\n",
+                "assert helpermod.VALUE == 41, helpermod.VALUE\n",
+                "assert pathlib.Path('/build').is_dir()\n",
+                "try: pathlib.Path('/work/repo/.sandbox-write').write_text('bad')\n",
+                "except OSError: pass\n",
+                "else: raise AssertionError('candidate source mount is writable')\n",
+                "try: pathlib.Path('/jackin/checks/check_import.py').write_text('bad')\n",
+                "except OSError: pass\n",
+                "else: raise AssertionError('trusted bundle mount is writable')\n",
+                "try: pathlib.Path({:?}).read_text()\n",
+                "except OSError: pass\n",
+                "else: raise AssertionError('host secret leaked into sandbox')\n",
+                "try: socket.create_connection(('1.1.1.1', 80), timeout=1)\n",
+                "except OSError: pass\n",
+                "else: raise AssertionError('sandbox network is available')\n",
+                "print('PASS: isolated trusted check')\n",
+                "sys.stdout.write('O' * 70000 + '\\n')\n",
+                "sys.stderr.write('E' * 70000 + '\\n')\n",
+            ),
+            host_secret.to_string_lossy(),
+        ),
     )
     .expect("write import check");
     run_git(&repo, &["init", "-q"]);
@@ -1323,13 +1364,22 @@ fn k5_runner_never_emits_bytecode() {
     .expect("bytecode worker spec");
     assert_eq!(spec.worker_id(), worker_id);
     let worker = prepare_test_worker(&repo, &spec, &scratch).expect("prepare bytecode worker");
-    let execution = run_test_command(&policy, &worker).expect("run bytecode pinned command");
+    let execution = run_test_command(
+        &policy,
+        &worker,
+        &bundle_manifest_for(&work_dir.join("check_import.py")),
+    )
+    .expect("run bytecode pinned command");
     assert_eq!(execution.exit_code(), 0, "import check must exit zero");
     assert!(
         execution.stdout().text().contains("PASS"),
         "import check names the pass, got: {}",
         execution.stdout().text()
     );
+    assert_eq!(execution.stdout().bytes().len(), MAX_TEST_OUTPUT_BYTES);
+    assert!(execution.stdout().truncated());
+    assert_eq!(execution.stderr().bytes().len(), MAX_TEST_OUTPUT_BYTES);
+    assert!(execution.stderr().truncated());
     let mut residue = Vec::new();
     let mut dirs = vec![worker.work_dir().to_owned()];
     while let Some(dir) = dirs.pop() {

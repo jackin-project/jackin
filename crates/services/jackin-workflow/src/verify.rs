@@ -11,10 +11,10 @@
 //! feedback document per round to the same healthy implementer
 //! session. Workers submit observations; only the host decides.
 
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use jackin_workflow_spec::model::TestBundleFile;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
@@ -40,6 +40,11 @@ pub const MAX_REVIEW_CORRECTIONS: u32 = 1;
 
 /// Timeout joining output-reader threads after the test process ends.
 const READER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Immutable Python runtime used by the frozen C6 check policy.
+pub const TEST_SANDBOX_IMAGE: &str =
+    "python@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4";
+const TEST_COMMAND_WRAPPER: &str = "import os,signal,subprocess,sys,time\ndeadline=float(sys.argv[1])\nargv=sys.argv[2:]\nremaining=deadline-time.time()\nif remaining <= 0: sys.exit(124)\ntry: child=subprocess.Popen(argv,start_new_session=True)\nexcept OSError as error:\n print(error,file=sys.stderr); sys.exit(125)\ntry: code=child.wait(timeout=remaining)\nexcept subprocess.TimeoutExpired:\n try: os.killpg(child.pid,signal.SIGKILL)\n except ProcessLookupError: pass\n child.wait(); sys.exit(124)\nsys.exit(code)";
 
 /// Frozen trusted test policy: the exact argv from the plan plus its
 /// canonical hash. A changed policy requires a new plan; the hash
@@ -70,6 +75,8 @@ impl TestPolicy {
             hasher.update(part.as_bytes());
             hasher.update([0]);
         }
+        hasher.update(TEST_SANDBOX_IMAGE.as_bytes());
+        hasher.update(b"\0sandbox-wrapper-v1;watchdog-grace=5s;network=none;readonly-root;cap-drop=all;memory=536870912;cpus=1;pids=64;trusted-ro;candidate-ro;tmpfs=/tmp:64m,/build:256m;env=PYTHONDONTWRITEBYTECODE=1\0");
         hasher.update(timeout_secs.to_be_bytes());
         Ok(Self {
             argv,
@@ -340,29 +347,6 @@ pub fn prepare_test_worker(
     })
 }
 
-/// Environment allowlist for the test process. Default-deny: agent
-/// credentials live in files and host variables that candidate code
-/// must never observe, so only locale, temp, and path entries pass.
-///
-/// Python bytecode writing is always disabled: trusted checks import
-/// candidate modules, and an emitted `__pycache__` would dirty the
-/// pinned worker source (and any host-mounted fixture tree) outside
-/// the candidate diff. The frozen policy argv stays untouched; the
-/// flag travels in the environment instead.
-fn test_command_env() -> Vec<(String, String)> {
-    const ALLOWED: &[&str] = &["PATH", "TMPDIR", "TZ", "LANG", "LC_ALL", "LC_CTYPE"];
-    let mut env: Vec<(String, String)> = ALLOWED
-        .iter()
-        .filter_map(|key| {
-            std::env::var(key)
-                .ok()
-                .map(|value| (key.to_string(), value))
-        })
-        .collect();
-    env.push(("PYTHONDONTWRITEBYTECODE".to_owned(), "1".to_owned()));
-    env
-}
-
 /// Bounded test output: at most [`MAX_TEST_OUTPUT_BYTES`] kept, with
 /// a flag recording whether the tail was dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -392,14 +376,115 @@ impl BoundedOutput {
 }
 
 fn read_bounded(stream: impl std::io::Read) -> BoundedOutput {
-    let limit = u64::try_from(MAX_TEST_OUTPUT_BYTES).unwrap_or(u64::MAX);
-    let mut capped = stream.take(limit + 1);
+    let mut stream = stream;
     let mut bytes = Vec::new();
-    let truncated = capped
-        .read_to_end(&mut bytes)
-        .is_ok_and(|_| bytes.len() > MAX_TEST_OUTPUT_BYTES);
-    bytes.truncate(MAX_TEST_OUTPUT_BYTES);
+    let mut buffer = [0_u8; 8 * 1024];
+    let mut truncated = false;
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => {
+                let remaining = MAX_TEST_OUTPUT_BYTES.saturating_sub(bytes.len());
+                let kept = remaining.min(read);
+                bytes.extend_from_slice(&buffer[..kept]);
+                truncated |= kept < read;
+            }
+        }
+    }
     BoundedOutput { bytes, truncated }
+}
+
+fn run_host_command_until(
+    command: &mut std::process::Command,
+    deadline: Instant,
+) -> Result<Option<std::process::ExitStatus>, WorkflowError> {
+    let mut child = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|err| WorkflowError::blocked(format!("Docker helper failed to spawn: {err}")))?;
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|err| WorkflowError::blocked(format!("Docker helper wait failed: {err}")))?
+        {
+            return Ok(Some(status));
+        }
+        if Instant::now() >= deadline {
+            child.kill().map_err(|err| {
+                WorkflowError::blocked(format!("Docker helper kill failed: {err}"))
+            })?;
+            child.wait().map_err(|err| {
+                WorkflowError::blocked(format!("Docker helper reap failed: {err}"))
+            })?;
+            return Ok(None);
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "bounded Docker helper deadline poll on the host verification path"
+        )]
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+pub(super) fn run_host_command_output_until(
+    command: &mut std::process::Command,
+    deadline: Instant,
+) -> Result<Option<std::process::Output>, WorkflowError> {
+    let mut child = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|err| {
+            WorkflowError::blocked(format!("Docker state query failed to spawn: {err}"))
+        })?;
+    let stdout = child
+        .stdout
+        .take()
+        .map(|stream| jackin_telemetry::spawn::thread_joined(move || read_bounded(stream)));
+    let stderr = child
+        .stderr
+        .take()
+        .map(|stream| jackin_telemetry::spawn::thread_joined(move || read_bounded(stream)));
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|err| {
+            WorkflowError::blocked(format!("Docker state query wait failed: {err}"))
+        })? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            child.kill().map_err(|err| {
+                WorkflowError::blocked(format!("Docker state query kill failed: {err}"))
+            })?;
+            child.wait().map_err(|err| {
+                WorkflowError::blocked(format!("Docker state query reap failed: {err}"))
+            })?;
+            return Ok(None);
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "bounded Docker state query deadline poll on the host verification path"
+        )]
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let read = |handle: Option<std::thread::JoinHandle<BoundedOutput>>| {
+        handle.map_or_else(
+            || Ok(Vec::new()),
+            |handle| {
+                handle
+                    .join()
+                    .map(|output| output.bytes)
+                    .map_err(|_| WorkflowError::blocked("Docker state reader panicked".to_owned()))
+            },
+        )
+    };
+    Ok(Some(std::process::Output {
+        status,
+        stdout: read(stdout)?,
+        stderr: read(stderr)?,
+    }))
 }
 
 /// Host-observed outcome of one pinned test execution. A completed
@@ -498,30 +583,75 @@ fn join_reader(
     }
 }
 
-/// Run the frozen policy argv in the prepared worker directory with
-/// the default-deny environment. Returns the actual exit status with
-/// bounded output; the caller maps it to pass or fail.
+/// Run the frozen executable policy in a disposable Docker sandbox. The
+/// trusted check bundle and candidate source are read-only, and the
+/// host filesystem and network are unavailable. Only bounded tmpfs
+/// directories are writable.
+/// Missing Docker or image fails closed; there is no host fallback.
 pub fn run_test_command(
     policy: &TestPolicy,
     worker: &PreparedTestWorker,
+    bundle_files: &[TestBundleFile],
 ) -> Result<TestExecution, WorkflowError> {
-    let mut child = std::process::Command::new(policy.program())
-        .args(policy.args())
-        .current_dir(worker.work_dir())
+    if policy.args().len() != 2 {
+        return Err(WorkflowError::invalid(
+            "sandboxed test policy requires exact argv: <program> <trusted-script> <work-dir>"
+                .to_owned(),
+        ));
+    }
+    let script = Path::new(&policy.args()[0]).canonicalize().map_err(|err| {
+        WorkflowError::invalid(format!("trusted test script cannot be resolved: {err}"))
+    })?;
+    if !script.is_file() {
+        return Err(WorkflowError::invalid(
+            "trusted test script is not a regular file".to_owned(),
+        ));
+    }
+    let worker_dir = worker.work_dir().canonicalize().map_err(|err| {
+        WorkflowError::storage(format!("test worker directory cannot be resolved: {err}"))
+    })?;
+    if Path::new(&policy.args()[1]) != worker.work_dir() {
+        return Err(WorkflowError::invalid(
+            "sandboxed test argv does not name its prepared worker".to_owned(),
+        ));
+    }
+    let (bundle_dir, script_relative) = stage_trusted_bundle(&script, bundle_files, worker)?;
+    let _bundle_cleanup = RemoveOnDrop(bundle_dir.clone());
+    let container_name = format!("jackin-test-{}", uuid::Uuid::new_v4());
+    let deadline = Instant::now() + policy.timeout();
+    let deadline_unix = std::time::SystemTime::now()
+        .checked_add(policy.timeout() + Duration::from_secs(5))
+        .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0.0, |value| value.as_secs_f64());
+    ensure_sandbox_image(worker.worker_id(), deadline)?;
+    if Instant::now() >= deadline {
+        return Err(WorkflowError::blocked(format!(
+            "test worker {} exhausted its deadline preparing the pinned sandbox image",
+            worker.worker_id()
+        )));
+    }
+    let mut command = docker_sandbox_command(
+        policy,
+        worker,
+        &worker_dir,
+        &bundle_dir,
+        &script_relative,
+        &container_name,
+        deadline_unix,
+    );
+    let mut child = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .env_clear()
-        .envs(test_command_env())
         .spawn()
         .map_err(|err| {
             WorkflowError::storage(format!(
-                "test worker {} failed to spawn {}: {err}",
-                worker.worker_id(),
-                policy.program()
+                "test worker {} failed to spawn Docker sandbox: {err}",
+                worker.worker_id()
             ))
         })?;
-    let stdout_handle = std::thread::spawn({
+    let mut container_cleanup = RemoveContainerOnDrop::new(container_name.clone());
+    let stdout_handle = jackin_telemetry::spawn::thread_joined({
         let stdout = child.stdout.take();
         move || {
             stdout.map_or(
@@ -533,7 +663,7 @@ pub fn run_test_command(
             )
         }
     });
-    let stderr_handle = std::thread::spawn({
+    let stderr_handle = jackin_telemetry::spawn::thread_joined({
         let stderr = child.stderr.take();
         move || {
             stderr.map_or(
@@ -545,9 +675,8 @@ pub fn run_test_command(
             )
         }
     });
-    let deadline = Instant::now() + policy.timeout();
     let mut timed_out = false;
-    let code = loop {
+    let docker_cli_code = loop {
         if let Some(status) = child
             .try_wait()
             .map_err(|err| WorkflowError::storage(format!("test worker wait failed: {err}")))?
@@ -559,6 +688,17 @@ pub fn run_test_command(
             child
                 .kill()
                 .map_err(|err| WorkflowError::storage(format!("test worker kill failed: {err}")))?;
+            let cleanup = run_host_command_until(
+                std::process::Command::new("docker").args(["rm", "--force", &container_name]),
+                Instant::now() + Duration::from_secs(2),
+            );
+            if !matches!(cleanup, Ok(Some(status)) if status.success()) {
+                return Err(WorkflowError::blocked(format!(
+                    "test worker {} timed out and Docker sandbox cleanup failed",
+                    worker.worker_id()
+                )));
+            }
+            container_cleanup.disarm();
             let status = child
                 .wait()
                 .map_err(|err| WorkflowError::storage(format!("test worker reap failed: {err}")))?;
@@ -580,12 +720,305 @@ pub fn run_test_command(
             policy.timeout().as_secs()
         )));
     }
+    finish_test_execution(
+        worker,
+        &container_name,
+        docker_cli_code,
+        stdout,
+        stderr,
+        &mut container_cleanup,
+    )
+}
+
+fn ensure_sandbox_image(worker_id: &str, deadline: Instant) -> Result<(), WorkflowError> {
+    let image_present = run_host_command_until(
+        std::process::Command::new("docker").args(["image", "inspect", TEST_SANDBOX_IMAGE]),
+        deadline,
+    )?
+    .is_some_and(|status| status.success());
+    if image_present {
+        return Ok(());
+    }
+    let pulled = run_host_command_until(
+        std::process::Command::new("docker").args(["pull", TEST_SANDBOX_IMAGE]),
+        deadline,
+    )?
+    .is_some_and(|status| status.success());
+    if pulled {
+        Ok(())
+    } else {
+        Err(WorkflowError::blocked(format!(
+            "test worker {worker_id} cannot obtain its pinned Docker sandbox image"
+        )))
+    }
+}
+
+fn finish_test_execution(
+    worker: &PreparedTestWorker,
+    container_name: &str,
+    docker_cli_code: i32,
+    stdout: BoundedOutput,
+    stderr: BoundedOutput,
+    container_cleanup: &mut RemoveContainerOnDrop,
+) -> Result<TestExecution, WorkflowError> {
+    let state = run_host_command_output_until(
+        std::process::Command::new("docker").args([
+            "inspect",
+            "--format",
+            "{{json .State}}",
+            container_name,
+        ]),
+        Instant::now() + Duration::from_secs(2),
+    )?
+    .ok_or_else(|| WorkflowError::blocked("Docker sandbox state query timed out".to_owned()))?;
+    let cleanup = run_host_command_until(
+        std::process::Command::new("docker").args(["rm", "--force", container_name]),
+        Instant::now() + Duration::from_secs(2),
+    );
+    if !matches!(cleanup, Ok(Some(status)) if status.success()) {
+        return Err(WorkflowError::blocked(format!(
+            "test worker {} Docker sandbox cleanup failed",
+            worker.worker_id()
+        )));
+    }
+    container_cleanup.disarm();
+    if !state.status.success() {
+        return Err(WorkflowError::blocked(format!(
+            "test worker {} Docker sandbox did not produce a container state",
+            worker.worker_id()
+        )));
+    }
+    let state: serde_json::Value = serde_json::from_slice(&state.stdout).map_err(|err| {
+        WorkflowError::blocked(format!(
+            "test worker Docker sandbox returned invalid state: {err}"
+        ))
+    })?;
+    if state
+        .get("Error")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|error| !error.is_empty())
+    {
+        return Err(WorkflowError::blocked(format!(
+            "test worker {} Docker sandbox failed before test completion",
+            worker.worker_id()
+        )));
+    }
+    if state.get("Status").and_then(serde_json::Value::as_str) != Some("exited")
+        || state.get("Running").and_then(serde_json::Value::as_bool) != Some(false)
+        || state
+            .get("StartedAt")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(|started| started.starts_with("0001-01-01"))
+    {
+        return Err(WorkflowError::blocked(format!(
+            "test worker {} Docker sandbox did not complete cleanly",
+            worker.worker_id()
+        )));
+    }
+    let code = state
+        .get("ExitCode")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|exit| i32::try_from(exit).ok())
+        .ok_or_else(|| {
+            WorkflowError::blocked("test worker Docker sandbox omitted its exit code".to_owned())
+        })?;
+    if code != docker_cli_code {
+        return Err(WorkflowError::blocked(format!(
+            "test worker {} Docker exit status disagrees with container state",
+            worker.worker_id()
+        )));
+    }
     Ok(TestExecution {
         exit_code: code,
         timed_out: false,
         stdout,
         stderr,
     })
+}
+
+fn stage_trusted_bundle(
+    script: &Path,
+    bundle_files: &[TestBundleFile],
+    worker: &PreparedTestWorker,
+) -> Result<(PathBuf, PathBuf), WorkflowError> {
+    let script_relative = bundle_files
+        .iter()
+        .find_map(|file| {
+            let relative = Path::new(&file.logical_path);
+            if relative
+                .components()
+                .any(|part| !matches!(part, std::path::Component::Normal(_)))
+            {
+                return None;
+            }
+            let mut root = script.to_path_buf();
+            for _ in relative.components() {
+                root.pop();
+            }
+            (root.join(relative).canonicalize().ok().as_deref() == Some(script))
+                .then_some(relative.to_path_buf())
+        })
+        .ok_or_else(|| {
+            WorkflowError::invalid(
+                "trusted test script is not addressable from its bundle manifest".to_owned(),
+            )
+        })?;
+    let mut bundle_root = script.to_path_buf();
+    for _ in script_relative.components() {
+        bundle_root.pop();
+    }
+    let bundle_dir = worker
+        .work_dir()
+        .parent()
+        .ok_or_else(|| WorkflowError::storage("test worker has no scratch parent".to_owned()))?
+        .join(format!(".trusted-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&bundle_dir).map_err(|err| {
+        WorkflowError::storage(format!("create isolated trusted bundle failed: {err}"))
+    })?;
+    for file in bundle_files {
+        let relative = Path::new(&file.logical_path);
+        if relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        {
+            let _unused = std::fs::remove_dir_all(&bundle_dir);
+            return Err(WorkflowError::invalid(
+                "trusted bundle path escapes its root".to_owned(),
+            ));
+        }
+        let bytes = std::fs::read(bundle_root.join(relative)).map_err(|err| {
+            WorkflowError::storage(format!(
+                "read trusted bundle file {} failed: {err}",
+                file.logical_path
+            ))
+        })?;
+        if hex::encode(Sha256::digest(&bytes)) != file.digest {
+            let _unused = std::fs::remove_dir_all(&bundle_dir);
+            return Err(WorkflowError::invalid(format!(
+                "trusted bundle file {} digest changed before sandbox staging",
+                file.logical_path
+            )));
+        }
+        let destination = bundle_dir.join(relative);
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent).map_err(|err| {
+                WorkflowError::storage(format!("create trusted bundle subdirectory failed: {err}"))
+            })?;
+        }
+        std::fs::write(destination, bytes).map_err(|err| {
+            WorkflowError::storage(format!(
+                "stage trusted bundle file {} failed: {err}",
+                file.logical_path
+            ))
+        })?;
+    }
+    Ok((bundle_dir, script_relative))
+}
+
+fn docker_sandbox_command(
+    policy: &TestPolicy,
+    worker: &PreparedTestWorker,
+    worker_dir: &Path,
+    bundle_dir: &Path,
+    script_relative: &Path,
+    container_name: &str,
+    deadline_unix: f64,
+) -> std::process::Command {
+    // Environment allowlist for the test process. Default-deny: agent
+    // credentials live in files and host variables that candidate code
+    // must never observe, so only locale, temp, and path entries pass.
+    //
+    // Python bytecode writing is always disabled: trusted checks import
+    // candidate modules, and an emitted `__pycache__` would dirty the
+    // pinned worker source (and any host-mounted fixture tree) outside
+    // the candidate diff. The frozen policy argv stays untouched; the
+    // flag travels in the environment instead.
+    let mut command = std::process::Command::new("docker");
+    command
+        .args([
+            "run",
+            "--pull=never",
+            "--network=none",
+            "--read-only",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            "--memory=536870912",
+            "--cpus=1",
+            "--pids-limit=64",
+            "--tmpfs=/tmp:rw,noexec,nosuid,size=67108864",
+            "--tmpfs=/build:rw,nosuid,size=268435456",
+            "--user=0:0",
+            "--workdir=/work/repo",
+        ])
+        .arg(format!("--name={container_name}"))
+        .arg(format!(
+            "--label=jackin.workflow.worker={}",
+            worker.worker_id()
+        ))
+        .arg("--mount")
+        .arg(format!(
+            "type=bind,src={},dst=/work/repo,readonly",
+            worker_dir.display()
+        ))
+        .arg("--mount")
+        .arg(format!(
+            "type=bind,src={},dst=/jackin/checks,readonly",
+            bundle_dir.display()
+        ))
+        .arg("--env=PYTHONDONTWRITEBYTECODE=1")
+        .arg("--entrypoint=python3")
+        .arg(TEST_SANDBOX_IMAGE)
+        .arg("-c")
+        .arg(TEST_COMMAND_WRAPPER)
+        .arg(deadline_unix.to_string())
+        .arg(policy.program());
+    for argument in policy.args() {
+        if Path::new(argument) == Path::new(&policy.args()[0]) {
+            command.arg(format!(
+                "/jackin/checks/{}",
+                script_relative.to_string_lossy()
+            ));
+        } else if Path::new(argument) == worker.work_dir() {
+            command.arg("/work/repo");
+        } else {
+            command.arg(argument);
+        }
+    }
+    command
+}
+
+struct RemoveOnDrop(PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        let _unused = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+struct RemoveContainerOnDrop {
+    name: String,
+    armed: bool,
+}
+
+impl RemoveContainerOnDrop {
+    fn new(name: String) -> Self {
+        Self { name, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for RemoveContainerOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            let _cleanup = run_host_command_until(
+                std::process::Command::new("docker").args(["rm", "--force", &self.name]),
+                Instant::now() + Duration::from_secs(2),
+            );
+        }
+    }
 }
 
 /// Host verdict on one candidate: the exact revision, the actual exit
