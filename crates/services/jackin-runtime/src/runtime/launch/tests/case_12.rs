@@ -142,7 +142,10 @@ plugins = []
         "workspace mode without --rebuild must not pass --pull"
     );
     assert!(
-        build_cmd.contains("--label jackin.image.recipe.version=v9"),
+        build_cmd.contains(&format!(
+            "--label jackin.image.recipe.version={}",
+            jackin_image::image_recipe::IMAGE_RECIPE_VERSION
+        )),
         "workspace build must stamp recipe version label; got: {build_cmd}"
     );
     assert!(
