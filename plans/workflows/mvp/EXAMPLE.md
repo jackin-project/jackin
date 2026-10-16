@@ -189,7 +189,7 @@ An incomplete result cannot use `pass`.
 6. Use `jackin workflow attach RUN --worker implementer --observe` to observe the original session.
 7. Use `--control` instead of `--observe` to request exclusive control.
 8. Use Capsule's normal detach action to release control.
-9. Run `jackin workflow resume RUN --reason "Operator work complete"`.
+9. Run `jackin workflow resume RUN` (`resume` takes no `--reason`; the reason is recorded on pause and resolve actions).
 10. Inspect the final candidate, test results, review, and backup state.
 11. Run `jackin workflow export RUN --out EXPORT_DIRECTORY`.
 
