@@ -266,6 +266,8 @@ fn real_tiers_table_covers_every_expected_member() {
         "jackin-usage-snapshot-store",
         "jackin-usage-store-backend",
         "jackin-usage-token-monitor",
+        "jackin-workflow",
+        "jackin-workflow-spec",
         "jackin-xtask",
     ]
     .into_iter()
@@ -275,7 +277,7 @@ fn real_tiers_table_covers_every_expected_member() {
         declared, expected,
         "TIERS drifted from the pinned member set — update both if a crate was added/removed"
     );
-    assert_eq!(TIERS.len(), 147);
+    assert_eq!(TIERS.len(), 149);
 }
 
 #[test]
