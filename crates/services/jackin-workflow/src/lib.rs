@@ -20,8 +20,8 @@ pub use model::{
 };
 pub use service::{
     GRAPH_STAGES, InstanceInventory, LiveInstance, OperatorDecision, RecordTestParams,
-    RecordedReview, RecordedTest, RecoveryReport, RunDetail, RunSummary, UnavailableBackend,
-    WorkflowBackend, WorkflowService, graph_node_state,
+    RecordedDispatch, RecordedReview, RecordedTest, RecoveryReport, RunDetail, RunSummary,
+    UnavailableBackend, WorkflowBackend, WorkflowService, graph_node_state,
 };
 pub use store::{
     ArtifactRef, CheckpointRecord, EvidenceRecord, NewCommand, NewEffect, RunStore, RunTransition,

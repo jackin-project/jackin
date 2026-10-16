@@ -296,6 +296,24 @@ fn run_record(
             emit_summary(&summary, action.json);
             Ok(())
         }
+        WorkflowRecordAction::DispatchIntent(action) => {
+            // Fault-test seam only: commits queued->dispatching with
+            // no transport send. Transport stays with the
+            // session-control / repair flow.
+            let (summary, dispatch) = daemon_record_dispatch(
+                layout,
+                DaemonRequestKind::WorkflowRecordDispatchIntent {
+                    run_id: action.run_id.clone(),
+                    session_ref: action.session,
+                    prompt: action.prompt,
+                    turn: action.turn,
+                    lease_generation: action.lease_generation,
+                },
+                action.json,
+            )?;
+            emit_dispatch_intent(&action.run_id, &summary, &dispatch, action.json);
+            Ok(())
+        }
         WorkflowRecordAction::Advance(action) => {
             let version =
                 resolve_version(layout, &action.run_id, action.expected_version, action.json)?;
@@ -558,6 +576,53 @@ fn daemon_record(
             json,
         )),
     }
+}
+
+/// One dispatch-intent record through the new record RPC: returns
+/// the run summary plus the committed command identity.
+#[cfg(unix)]
+fn daemon_record_dispatch(
+    layout: &jackin_runtime::host_daemon::DaemonLayout,
+    kind: jackin_runtime::host_daemon::DaemonRequestKind,
+    json: bool,
+) -> Result<(
+    jackin_workflow::RunSummary,
+    jackin_workflow::RecordedDispatch,
+)> {
+    use jackin_runtime::host_daemon::DaemonResponseKind;
+
+    match daemon_request(layout, kind, json)? {
+        DaemonResponseKind::WorkflowDispatchIntent { summary, dispatch } => Ok((summary, dispatch)),
+        DaemonResponseKind::Error { message, code } => Err(fail_err(&code, message, json)),
+        other => Err(fail_err(
+            "execution_error",
+            format!("unexpected daemon response: {other:?}"),
+            json,
+        )),
+    }
+}
+
+/// Human or JSON rendering of a recorded dispatch intent.
+#[cfg(unix)]
+fn emit_dispatch_intent(
+    run_id: &str,
+    summary: &jackin_workflow::RunSummary,
+    dispatch: &jackin_workflow::RecordedDispatch,
+    json: bool,
+) {
+    if json {
+        emit_envelope(serde_json::json!({
+            "run": summary,
+            "dispatch": dispatch,
+        }));
+        return;
+    }
+    println!("run: {run_id}");
+    println!("command: {}", dispatch.command_id);
+    println!("prompt: {}", dispatch.prompt_digest);
+    println!("state: dispatching (no transport send)");
+    println!("stage: {}", summary.stage);
+    println!("version: {}", summary.version);
 }
 
 /// Resolve the exact recorded session for a run worker.

@@ -10,8 +10,8 @@ use jackin_core::{ContainerId, JackinPaths};
 use jackin_protocol::control::AgentState;
 use jackin_protocol::{InstanceSnapshot, TelemetryContext};
 use jackin_workflow::{
-    InstanceInventory, OperatorDecision, RecordedReview, RecordedTest, RecoveryReport, RunDetail,
-    RunSummary, WorkflowBackend,
+    InstanceInventory, OperatorDecision, RecordedDispatch, RecordedReview, RecordedTest,
+    RecoveryReport, RunDetail, RunSummary, WorkflowBackend,
 };
 use serde::{Deserialize, Serialize};
 
@@ -132,6 +132,13 @@ pub enum DaemonRequestKind {
         observation: String,
         expected_policy_hash: Option<String>,
     },
+    WorkflowRecordDispatchIntent {
+        run_id: String,
+        session_ref: String,
+        prompt: String,
+        turn: u32,
+        lease_generation: u64,
+    },
     WorkflowRecover {
         inventory: InstanceInventory,
     },
@@ -160,6 +167,9 @@ impl DaemonRequestKind {
             Self::WorkflowRecordReview { .. } => "jackin.host.Daemon/WorkflowRecordReview",
             Self::WorkflowRecordBackup { .. } => "jackin.host.Daemon/WorkflowRecordBackup",
             Self::WorkflowAdvance { .. } => "jackin.host.Daemon/WorkflowAdvance",
+            Self::WorkflowRecordDispatchIntent { .. } => {
+                "jackin.host.Daemon/WorkflowRecordDispatchIntent"
+            }
             Self::WorkflowRecover { .. } => "jackin.host.Daemon/WorkflowRecover",
         }
     }
@@ -208,6 +218,10 @@ pub enum DaemonResponseKind {
     WorkflowReviewRecord {
         summary: RunSummary,
         review: RecordedReview,
+    },
+    WorkflowDispatchIntent {
+        summary: RunSummary,
+        dispatch: RecordedDispatch,
     },
     WorkflowRecovery {
         report: RecoveryReport,
@@ -584,6 +598,19 @@ pub fn serve_with_workflow(
         }
     };
     jackin_telemetry::stream::complete_success(open);
+    // Automatic recovery on daemon startup: the owner epoch was
+    // already bumped when the workflow service opened, so run
+    // `recover` now against the startup inventory before accepting
+    // clients. Crash-left `dispatching` commands become
+    // `delivery_unknown` here and are never resubmitted.
+    //
+    // Fail-open rationale: recovery is re-runnable through the
+    // explicit `WorkflowRecover` RPC, and refusing to serve would
+    // hide the store behind a dead socket with no operator path to
+    // inspect it. A startup failure is logged and serving continues;
+    // per-run storage failures are still reported by the recovery
+    // report itself and by later RPC errors.
+    startup_recovery(workflow, &InstanceInventory::default());
     let close = jackin_telemetry::stream::close_on_drop();
     let coredump_policy = disable_coredumps();
     let attention_enabled = std::env::var_os("JACKIN_ATTENTION").is_some_and(|value| value == "1");
@@ -617,6 +644,27 @@ pub fn serve_with_workflow(
         Err(_) => close.complete_error(jackin_telemetry::schema::enums::ErrorType::IoError),
     }
     result
+}
+
+/// Run one recovery pass and return its report, or `None` when
+/// recovery itself fails. Extracted so unit tests can prove both
+/// outcomes without binding the control socket: `Some` means the
+/// startup pass ran, `None` means the caller logs and keeps serving.
+pub fn startup_recovery(
+    workflow: &mut dyn WorkflowBackend,
+    inventory: &InstanceInventory,
+) -> Option<RecoveryReport> {
+    match workflow.recover(inventory) {
+        Ok(report) => Some(report),
+        Err(error) => {
+            use std::io::Write as _;
+            drop(writeln!(
+                std::io::stderr().lock(),
+                "daemon startup recovery failed: {error}; serving continues"
+            ));
+            None
+        }
+    }
 }
 
 pub fn request(
@@ -763,6 +811,10 @@ fn daemon_response_matches_method(method: &str, response: &DaemonResponseKind) -
             | (
                 "jackin.host.Daemon/WorkflowAdvance",
                 DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordDispatchIntent",
+                DaemonResponseKind::WorkflowDispatchIntent { .. }
             )
             | (
                 "jackin.host.Daemon/WorkflowRecover",
@@ -1087,6 +1139,7 @@ fn handle_request(
             | DaemonRequestKind::WorkflowRecordReview { .. }
             | DaemonRequestKind::WorkflowRecordBackup { .. }
             | DaemonRequestKind::WorkflowAdvance { .. }
+            | DaemonRequestKind::WorkflowRecordDispatchIntent { .. }
             | DaemonRequestKind::WorkflowRecover { .. }) => {
                 handle_workflow_request(id, kind, &layout.plan_store_dir, workflow)
             }
@@ -1426,6 +1479,7 @@ fn handle_workflow_request(
         | DaemonRequestKind::WorkflowRecordTest { .. }
         | DaemonRequestKind::WorkflowRecordReview { .. }
         | DaemonRequestKind::WorkflowRecordBackup { .. }
+        | DaemonRequestKind::WorkflowRecordDispatchIntent { .. }
         | DaemonRequestKind::WorkflowAdvance { .. }) => {
             handle_workflow_record_request(id, kind, plan_store_dir, workflow)
         }
@@ -1583,7 +1637,33 @@ fn handle_workflow_record_request(
                 expected_policy_hash.as_deref(),
             ),
         ),
+        DaemonRequestKind::WorkflowRecordDispatchIntent {
+            run_id,
+            session_ref,
+            prompt,
+            turn,
+            lease_generation,
+        } => workflow_dispatch_response(
+            id,
+            workflow.record_dispatch_intent(&run_id, &session_ref, &prompt, turn, lease_generation),
+        ),
         _ => coded_error_response(id, "invalid_request", "not a workflow record request"),
+    }
+}
+
+fn workflow_dispatch_response(
+    id: String,
+    result: Result<(RunSummary, RecordedDispatch), jackin_workflow::WorkflowError>,
+) -> DaemonResponse {
+    match result {
+        Ok((summary, dispatch)) => DaemonResponse {
+            id,
+            kind: DaemonResponseKind::WorkflowDispatchIntent { summary, dispatch },
+        },
+        Err(error) => {
+            let code = workflow_error_code(&error);
+            coded_error_response(id, code, error.to_string())
+        }
     }
 }
 

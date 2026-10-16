@@ -134,6 +134,15 @@ pub struct InstanceInventory {
     pub backup_refs: Vec<String>,
 }
 
+/// Outcome of `record_dispatch_intent`: the committed command ID
+/// plus the staged prompt digest. The command row is left in
+/// `dispatching` with no transport send.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordedDispatch {
+    pub command_id: String,
+    pub prompt_digest: String,
+}
+
 /// Recovery findings for one restart.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecoveryReport {
@@ -248,6 +257,14 @@ pub trait WorkflowBackend {
         observation: &str,
         expected_policy_hash: Option<&str>,
     ) -> Result<RunSummary, WorkflowError>;
+    fn record_dispatch_intent(
+        &mut self,
+        run_id: &str,
+        session_ref: &str,
+        prompt: &str,
+        turn: u32,
+        lease_generation: u64,
+    ) -> Result<(RunSummary, RecordedDispatch), WorkflowError>;
     fn recover(&mut self, inventory: &InstanceInventory) -> Result<RecoveryReport, WorkflowError>;
 }
 
@@ -417,6 +434,17 @@ impl WorkflowBackend for UnavailableBackend {
         _observation: &str,
         _expected_policy_hash: Option<&str>,
     ) -> Result<RunSummary, WorkflowError> {
+        Err(self.error())
+    }
+
+    fn record_dispatch_intent(
+        &mut self,
+        _run_id: &str,
+        _session_ref: &str,
+        _prompt: &str,
+        _turn: u32,
+        _lease_generation: u64,
+    ) -> Result<(RunSummary, RecordedDispatch), WorkflowError> {
         Err(self.error())
     }
 
@@ -1673,6 +1701,58 @@ impl WorkflowService {
         Ok((command_id, artifact.digest))
     }
 
+    /// Record a dispatch intent as a `queued` row and immediately
+    /// commit it to `dispatching`, WITHOUT any transport send. This
+    /// is the fault-test seam for crash-between-commit-and-receipt
+    /// coverage: it stages the prompt artifact and leaves the exact
+    /// row a restart must recover as `delivery_unknown`.
+    ///
+    /// Transport stays with the session-control / repair flow; this
+    /// method must never gain a send path. Recovery never resubmits:
+    /// only an inspected operator resolution moves the run forward.
+    pub fn record_dispatch_intent(
+        &self,
+        run_id: &str,
+        session_ref: &str,
+        prompt: &str,
+        turn: u32,
+        lease_generation: u64,
+    ) -> Result<(RunSummary, RecordedDispatch), WorkflowError> {
+        if self.store.load_run(run_id)?.is_none() {
+            return Err(WorkflowError::not_found(format!("run {run_id} not found")));
+        }
+        if session_ref.trim().is_empty() {
+            return Err(WorkflowError::invalid("session ref is required".to_owned()));
+        }
+        if prompt.is_empty() {
+            return Err(WorkflowError::invalid("prompt is required".to_owned()));
+        }
+        let command_id = format!("cmd-{}", uuid::Uuid::new_v4().as_simple());
+        let artifact = self.store.write_artifact(&command_id, prompt.as_bytes())?;
+        self.store.insert_queued_command(
+            run_id,
+            &command_id,
+            session_ref,
+            &artifact.digest,
+            turn,
+            lease_generation,
+        )?;
+        self.store.set_command_state(
+            &command_id,
+            CommandState::Dispatching,
+            None,
+            Some("dispatch intent recorded; no transport send"),
+        )?;
+        let summary = self.summary_of(run_id)?;
+        Ok((
+            summary,
+            RecordedDispatch {
+                command_id,
+                prompt_digest: artifact.digest,
+            },
+        ))
+    }
+
     /// Record the matched Capsule receipt: only this moves a command
     /// to `written`. Never called on a lost receipt.
     pub fn command_written(&self, command_id: &str, bytes: u64) -> Result<(), WorkflowError> {
@@ -2219,6 +2299,24 @@ impl WorkflowBackend for WorkflowService {
             actor,
             observation,
             expected_policy_hash,
+        )
+    }
+
+    fn record_dispatch_intent(
+        &mut self,
+        run_id: &str,
+        session_ref: &str,
+        prompt: &str,
+        turn: u32,
+        lease_generation: u64,
+    ) -> Result<(RunSummary, RecordedDispatch), WorkflowError> {
+        WorkflowService::record_dispatch_intent(
+            self,
+            run_id,
+            session_ref,
+            prompt,
+            turn,
+            lease_generation,
         )
     }
 

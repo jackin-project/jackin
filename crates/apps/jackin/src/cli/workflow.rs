@@ -386,6 +386,10 @@ pub enum WorkflowRecordAction {
     Review(WorkflowRecordReviewArgs),
     #[command(about = "Confirm the candidate at its backup ref and mark backup done")]
     Backup(WorkflowRecordBackupArgs),
+    #[command(
+        about = "Record a dispatch intent (queued->dispatching) without transport; fault-test seam only"
+    )]
+    DispatchIntent(WorkflowRecordDispatchIntentArgs),
     #[command(about = "Advance a run with one named observation")]
     Advance(WorkflowRecordAdvanceArgs),
 }
@@ -604,6 +608,37 @@ pub struct WorkflowRecordBackupArgs {
         value_name = "V"
     )]
     pub expected_version: i64,
+    #[arg(help = "Print the run as JSON", long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(about = "Arguments for `jackin workflow record dispatch-intent`.")]
+pub struct WorkflowRecordDispatchIntentArgs {
+    #[arg(help = "Run ID", value_name = "RUN_ID")]
+    pub run_id: String,
+    #[arg(help = "Target session ref", long = "session", value_name = "SESSION")]
+    pub session: String,
+    #[arg(
+        help = "Prompt text to stage (no transport send is performed)",
+        long = "prompt",
+        value_name = "PROMPT"
+    )]
+    pub prompt: String,
+    #[arg(
+        help = "Command turn",
+        long = "turn",
+        value_name = "TURN",
+        default_value_t = 0
+    )]
+    pub turn: u32,
+    #[arg(
+        help = "Lease generation",
+        long = "lease-generation",
+        value_name = "GEN",
+        default_value_t = 0
+    )]
+    pub lease_generation: u64,
     #[arg(help = "Print the run as JSON", long)]
     pub json: bool,
 }
