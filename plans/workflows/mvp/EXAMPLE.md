@@ -103,6 +103,19 @@ Resolve all relative input paths from the workflow file's directory.
 `workflow-local` names the actual tested host profile from Steps 1 and 2.
 Do not claim these named resources already exist in current Jackin.
 
+## Backup override for K7
+
+The fixture keeps backup `off`.
+K7 still checks an authorized test-remote ref.
+Run the demonstration with backup `off`.
+Then confirm backup with `jackin workflow record backup`.
+Pass the run ID, the remote, the ref, and the expected version.
+Use a temporary bare remote as the remote.
+Use an exact ref such as `refs/jackin/k7-accept-fresh` as the ref.
+The command requires the ref to resolve to the candidate commit.
+Repeat the command to confirm idempotent behavior.
+Acceptance and backup stay separate actions.
+
 ## Fixture task and source
 
 The fixture uses Python only to keep the product test small.

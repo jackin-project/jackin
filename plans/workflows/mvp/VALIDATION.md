@@ -22,8 +22,6 @@ The documents do not prove that the product works.
 | Goal command size | The complete command has 3,792 characters. |
 | Instruction sentence length | The automated check found no sentence above the selected limit. |
 | Step and requirement references | Eight steps and checks K0 through K7 are consistent. |
-| Combined Markdown export | Local document links point to document anchors. |
-| ZIP export | The archive contains the 18 Markdown files with matching file bytes. |
 
 The sentence check uses a 20-word limit for GOAL and PLAN instructions.
 It uses a 25-word limit for other prose.
@@ -42,6 +40,8 @@ All product checks remain NOT RUN in [PROGRESS.md](PROGRESS.md).
 ## Export use
 
 Use the separate Markdown files as the implementation source.
-Use the combined Markdown file for reading or transfer.
-The ZIP retains the component directory and relative links.
+The pack ships no combined Markdown file and no ZIP archive.
+For a transferable artifact, use the product export.
+Run `jackin workflow export RUN --out EXPORT_DIRECTORY`.
+The command writes one Markdown report named `<run_id>.md`.
 Do not treat a valid document export as a passing product test.
