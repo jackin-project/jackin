@@ -644,6 +644,7 @@ pub fn configure_accounts(
     slots: &BTreeMap<String, jackin_instance::ProvisionedInstanceAuth>,
     models: &BTreeMap<String, String>,
     efforts: &BTreeMap<String, String>,
+    trusted_paths: &[String],
 ) -> anyhow::Result<Vec<(PathBuf, String)>> {
     let mut mounts = Vec::new();
     for instance in instances {
@@ -682,6 +683,7 @@ pub fn configure_accounts(
                 slot,
                 model,
                 efforts.get(&instance.config_id).map(String::as_str),
+                trusted_paths,
             )?),
             Agent::Opencode => {
                 mounts.extend(configure_opencode(root, config, instance, slot, model)?);
@@ -700,8 +702,18 @@ fn configure_codex(
     slot: &jackin_instance::ProvisionedInstanceAuth,
     model: Option<&str>,
     effort: Option<&str>,
+    trusted_paths: &[String],
 ) -> anyhow::Result<Vec<(PathBuf, String)>> {
-    configure_codex_with_publish_hook(root, config, instance, slot, model, effort, |_| Ok(()))
+    configure_codex_with_publish_hook(
+        root,
+        config,
+        instance,
+        slot,
+        model,
+        effort,
+        trusted_paths,
+        |_| Ok(()),
+    )
 }
 
 #[cfg(not(unix))]
@@ -712,13 +724,56 @@ fn configure_codex(
     _slot: &jackin_instance::ProvisionedInstanceAuth,
     _model: Option<&str>,
     _effort: Option<&str>,
+    _trusted_paths: &[String],
 ) -> anyhow::Result<Vec<(PathBuf, String)>> {
     anyhow::bail!(
         "private Codex config publication requires Unix descriptor-relative file operations"
     )
 }
 
+/// Workspace trust merged into the published Codex generation. The
+/// mounted `config.toml` shadows the session home file, so entries
+/// seeded only into the session home never reach Codex when this
+/// publication happens (model/effort overrides, API-key accounts).
+/// Merging here keeps the interactive trust gate from blocking
+/// isolated workers such as the C6 review session. Non-table
+/// `projects` values are replaced, mirroring the session home seed.
 #[cfg(unix)]
+fn merge_codex_workspace_trust(document: &mut toml::Table, trusted_paths: &[String]) {
+    if trusted_paths.is_empty() {
+        return;
+    }
+    let mut table = match document.remove("projects") {
+        Some(toml::Value::Table(table)) => table,
+        _ => toml::Table::new(),
+    };
+    for path in trusted_paths {
+        let entry = table
+            .entry(path.clone())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        match entry {
+            toml::Value::Table(entry_table) => {
+                entry_table.insert(
+                    "trust_level".to_owned(),
+                    toml::Value::String("trusted".to_owned()),
+                );
+            }
+            not_table => {
+                *not_table = toml::Value::Table(toml::Table::from_iter([(
+                    "trust_level".to_owned(),
+                    toml::Value::String("trusted".to_owned()),
+                )]));
+            }
+        }
+    }
+    document.insert("projects".to_owned(), toml::Value::Table(table));
+}
+
+#[cfg(unix)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "publication needs root, config, instance, slot, model, effort, trust, and the test hook together"
+)]
 fn configure_codex_with_publish_hook<F>(
     root: &Path,
     config: &AppConfig,
@@ -726,6 +781,7 @@ fn configure_codex_with_publish_hook<F>(
     slot: &jackin_instance::ProvisionedInstanceAuth,
     model: Option<&str>,
     effort: Option<&str>,
+    trusted_paths: &[String],
     mut hook: F,
 ) -> anyhow::Result<Vec<(PathBuf, String)>>
 where
@@ -735,25 +791,11 @@ where
         .accounts
         .get(&instance.account_id)
         .ok_or_else(|| anyhow::anyhow!("unknown account {:?}", instance.account_id))?;
-    let AccountCredential::ApiKey { .. } = &account.credential else {
+    let api_key = matches!(&account.credential, AccountCredential::ApiKey { .. });
+    if !api_key && model.is_none() && effort.is_none() {
         return Ok(Vec::new());
-    };
-    let base_url = instance.base_url.as_deref();
-    let cross_provider = account.provider != AiProvider::OpenAi;
-    anyhow::ensure!(
-        !cross_provider || model.is_some(),
-        "a model is required for a Codex provider account"
-    );
-    let default_url = match account.provider {
-        AiProvider::Moonshot => "https://api.kimi.com/coding/v1",
-        AiProvider::Zai => "https://api.z.ai/api/v1",
-        AiProvider::Minimax => "https://api.minimax.io/v1",
-        AiProvider::OpenAi => "https://api.openai.com/v1",
-        _ => anyhow::bail!("selected provider cannot authenticate Codex"),
-    };
-    let key = account
-        .resolved_credential_descriptor(Agent::Codex)?
-        .env_name;
+    }
+    let provider_wiring = codex_provider_wiring(account, instance, model, api_key)?;
     let target_home = format!("/home/agent/{}", slot.container_home_rel);
     anyhow::ensure!(
         slot.folder_target == target_home,
@@ -784,27 +826,35 @@ where
             }
             None => toml::Table::new(),
         };
-    let mut provider = toml::Table::new();
-    provider.insert("name".into(), account.provider.slug().into());
-    provider.insert("base_url".into(), base_url.unwrap_or(default_url).into());
-    provider.insert("env_key".into(), key.into());
-    provider.insert("wire_api".into(), "responses".into());
-    provider.insert("requires_openai_auth".into(), false.into());
-    if document
-        .get("model_providers")
-        .is_some_and(|value| !value.is_table())
-    {
-        private_config_fs::quarantine(&directory, "config.toml", "model_providers is not a table")?;
-        document = toml::Table::new();
+    if let Some((provider_endpoint, provider_env_key)) = provider_wiring {
+        let mut provider = toml::Table::new();
+        provider.insert("name".into(), account.provider.slug().into());
+        provider.insert("base_url".into(), provider_endpoint.into());
+        provider.insert("env_key".into(), provider_env_key.into());
+        provider.insert("wire_api".into(), "responses".into());
+        provider.insert("requires_openai_auth".into(), false.into());
+        if document
+            .get("model_providers")
+            .is_some_and(|value| !value.is_table())
+        {
+            private_config_fs::quarantine(
+                &directory,
+                "config.toml",
+                "model_providers is not a table",
+            )?;
+            document = toml::Table::new();
+        }
+        let providers = document
+            .entry("model_providers")
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        let providers = providers
+            .as_table_mut()
+            .context("Codex model_providers must be a table")?;
+        providers.insert("jackin_account".into(), provider.into());
+        document.insert("model_provider".into(), "jackin_account".into());
+    } else {
+        document.remove("model_provider");
     }
-    let providers = document
-        .entry("model_providers")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let providers = providers
-        .as_table_mut()
-        .context("Codex model_providers must be a table")?;
-    providers.insert("jackin_account".into(), provider.into());
-    document.insert("model_provider".into(), "jackin_account".into());
     let mut catalog_to_publish = None;
     if let Some(model) = model {
         document.insert("model".into(), model.into());
@@ -835,6 +885,7 @@ where
     } else {
         document.remove("model_reasoning_effort");
     }
+    merge_codex_workspace_trust(&mut document, trusted_paths);
     let config_contents = toml::to_string_pretty(&document)?.into_bytes();
     private_config_fs::validate_config_contents(&config_contents, "config.toml")?;
     if let Some((catalog_name, catalog_contents)) = catalog_to_publish {
@@ -866,6 +917,40 @@ where
     )
     .context("publish private Codex account configuration")?;
     Ok(mounts)
+}
+
+fn codex_provider_wiring(
+    account: &jackin_config::AccountConfig,
+    instance: &jackin_config::ResolvedInstance,
+    model: Option<&str>,
+    api_key: bool,
+) -> anyhow::Result<Option<(String, String)>> {
+    if !api_key {
+        return Ok(None);
+    }
+    let cross_provider = account.provider != AiProvider::OpenAi;
+    anyhow::ensure!(
+        !cross_provider || model.is_some(),
+        "a model is required for a Codex provider account"
+    );
+    let default_url = match account.provider {
+        AiProvider::Moonshot => "https://api.kimi.com/coding/v1",
+        AiProvider::Zai => "https://api.z.ai/api/v1",
+        AiProvider::Minimax => "https://api.minimax.io/v1",
+        AiProvider::OpenAi => "https://api.openai.com/v1",
+        _ => anyhow::bail!("selected provider cannot authenticate Codex"),
+    };
+    Ok(Some((
+        instance
+            .base_url
+            .as_deref()
+            .unwrap_or(default_url)
+            .to_owned(),
+        account
+            .resolved_credential_descriptor(Agent::Codex)?
+            .env_name
+            .to_owned(),
+    )))
 }
 
 fn provider_config_filename(contents: &[u8], extension: &str) -> String {

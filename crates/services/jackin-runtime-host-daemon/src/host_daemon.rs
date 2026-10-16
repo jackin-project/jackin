@@ -9,6 +9,10 @@ use anyhow::{Context, Result, bail};
 use jackin_core::{ContainerId, JackinPaths};
 use jackin_protocol::control::AgentState;
 use jackin_protocol::{InstanceSnapshot, TelemetryContext};
+use jackin_workflow::{
+    InstanceInventory, OperatorDecision, RecordedDispatch, RecordedReview, RecordedTest,
+    RecoveryReport, RunDetail, RunSummary, WorkflowBackend,
+};
 use serde::{Deserialize, Serialize};
 
 pub const DAEMON_PROTOCOL_VERSION: u16 = 2;
@@ -39,6 +43,105 @@ pub enum DaemonRequestKind {
         panes: Vec<AttentionPaneStatus>,
     },
     Shutdown,
+    WorkflowStart {
+        plan_hash: String,
+        max_repair_turns: u32,
+        idempotency_key: String,
+    },
+    WorkflowStatus {
+        run_id: Option<String>,
+    },
+    WorkflowList {
+        limit: u32,
+    },
+    WorkflowDetail {
+        run_id: String,
+        after_seq: i64,
+        event_limit: u32,
+    },
+    WorkflowPause {
+        run_id: String,
+        reason: String,
+        checkpoint: bool,
+    },
+    WorkflowResume {
+        run_id: String,
+    },
+    WorkflowCancel {
+        run_id: String,
+        reason: String,
+    },
+    WorkflowResolve {
+        run_id: String,
+        command_id: String,
+        decision: String,
+        observed_session_state: String,
+    },
+    WorkflowRecordSession {
+        run_id: String,
+        expected_version: i64,
+        worker: String,
+        instance_id: Option<String>,
+        capsule_epoch: Option<u64>,
+        session_id: Option<u64>,
+        process_identity: Option<String>,
+        agent_profile: Option<String>,
+        auth_profile: Option<String>,
+    },
+    WorkflowRecordCandidate {
+        run_id: String,
+        candidate: String,
+        expected_version: i64,
+    },
+    WorkflowRecordCheckpoint {
+        run_id: String,
+        expected_version: i64,
+        candidate: String,
+        commit: String,
+        tree: String,
+        source_manifest: String,
+        local_path: String,
+        backup_state: String,
+    },
+    WorkflowRecordTest {
+        run_id: String,
+        expected_version: i64,
+        check_program: String,
+        check_script: String,
+        bundle_digest: String,
+        repo: Option<String>,
+        scratch: String,
+        timeout_secs: u64,
+    },
+    WorkflowRecordReview {
+        run_id: String,
+        expected_version: i64,
+        review_file: String,
+        policy_hash: String,
+    },
+    WorkflowRecordBackup {
+        run_id: String,
+        expected_version: i64,
+        remote: String,
+        git_ref: String,
+    },
+    WorkflowAdvance {
+        run_id: String,
+        expected_version: i64,
+        actor: String,
+        observation: String,
+        expected_policy_hash: Option<String>,
+    },
+    WorkflowRecordDispatchIntent {
+        run_id: String,
+        session_ref: String,
+        prompt: String,
+        turn: u32,
+        lease_generation: u64,
+    },
+    WorkflowRecover {
+        inventory: InstanceInventory,
+    },
 }
 
 impl DaemonRequestKind {
@@ -49,6 +152,25 @@ impl DaemonRequestKind {
             Self::TelemetryHealth => "jackin.host.Daemon/TelemetryHealth",
             Self::AttentionSnapshot { .. } => "jackin.host.Daemon/AttentionSnapshot",
             Self::Shutdown => "jackin.host.Daemon/Shutdown",
+            Self::WorkflowStart { .. } => "jackin.host.Daemon/WorkflowStart",
+            Self::WorkflowStatus { .. } => "jackin.host.Daemon/WorkflowStatus",
+            Self::WorkflowList { .. } => "jackin.host.Daemon/WorkflowList",
+            Self::WorkflowDetail { .. } => "jackin.host.Daemon/WorkflowDetail",
+            Self::WorkflowPause { .. } => "jackin.host.Daemon/WorkflowPause",
+            Self::WorkflowResume { .. } => "jackin.host.Daemon/WorkflowResume",
+            Self::WorkflowCancel { .. } => "jackin.host.Daemon/WorkflowCancel",
+            Self::WorkflowResolve { .. } => "jackin.host.Daemon/WorkflowResolve",
+            Self::WorkflowRecordSession { .. } => "jackin.host.Daemon/WorkflowRecordSession",
+            Self::WorkflowRecordCandidate { .. } => "jackin.host.Daemon/WorkflowRecordCandidate",
+            Self::WorkflowRecordCheckpoint { .. } => "jackin.host.Daemon/WorkflowRecordCheckpoint",
+            Self::WorkflowRecordTest { .. } => "jackin.host.Daemon/WorkflowRecordTest",
+            Self::WorkflowRecordReview { .. } => "jackin.host.Daemon/WorkflowRecordReview",
+            Self::WorkflowRecordBackup { .. } => "jackin.host.Daemon/WorkflowRecordBackup",
+            Self::WorkflowAdvance { .. } => "jackin.host.Daemon/WorkflowAdvance",
+            Self::WorkflowRecordDispatchIntent { .. } => {
+                "jackin.host.Daemon/WorkflowRecordDispatchIntent"
+            }
+            Self::WorkflowRecover { .. } => "jackin.host.Daemon/WorkflowRecover",
         }
     }
 }
@@ -77,8 +199,41 @@ pub enum DaemonResponseKind {
     Shutdown {
         accepted: bool,
     },
+    WorkflowRun {
+        summary: RunSummary,
+    },
+    WorkflowRuns {
+        summaries: Vec<RunSummary>,
+    },
+    WorkflowRunDetail {
+        detail: RunDetail,
+    },
+    WorkflowRecord {
+        summary: RunSummary,
+    },
+    WorkflowTestRecord {
+        summary: RunSummary,
+        test: RecordedTest,
+    },
+    WorkflowReviewRecord {
+        summary: RunSummary,
+        review: RecordedReview,
+    },
+    WorkflowDispatchIntent {
+        summary: RunSummary,
+        dispatch: RecordedDispatch,
+    },
+    WorkflowRecovery {
+        report: RecoveryReport,
+    },
     Error {
         message: String,
+        /// C7 typed error code (`invalid_request`, `not_found`,
+        /// `busy`, `denied`, `state_conflict`, `needs_operator`,
+        /// `execution_error`). Defaults for readers of older daemon
+        /// responses that carry no code.
+        #[serde(default)]
+        code: String,
     },
 }
 
@@ -353,6 +508,9 @@ pub struct DaemonLayout {
     pub run_dir: PathBuf,
     pub socket_path: PathBuf,
     pub pid_path: PathBuf,
+    /// Digest-verified plan store the daemon cross-checks frozen
+    /// test bindings against before recording a verdict.
+    pub plan_store_dir: PathBuf,
 }
 
 impl DaemonLayout {
@@ -363,6 +521,7 @@ impl DaemonLayout {
             socket_path: run_dir.join(SOCKET_FILE_NAME),
             pid_path: run_dir.join(PID_FILE_NAME),
             run_dir,
+            plan_store_dir: paths.data_dir.join("workflow-plans"),
         }
     }
 }
@@ -397,6 +556,32 @@ pub fn bind_control_socket(layout: &DaemonLayout) -> Result<UnixListener> {
 }
 
 pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
+    match jackin_workflow::WorkflowService::open(
+        &layout.run_dir.join("workflow-runs.db"),
+        &layout.run_dir.join("workflow-artifacts"),
+    ) {
+        Ok(mut workflow) => serve_with_workflow(layout, build_id, &mut workflow),
+        Err(error) => serve_with_workflow(
+            layout,
+            build_id,
+            &mut jackin_workflow::UnavailableBackend::new(error.to_string()),
+        ),
+    }
+}
+
+/// Serve with an injected workflow backend (trait-param injection for
+/// run control, mirroring [`AttentionNotifierAdapter`]). Opening the
+/// service persists the incremented owner epoch, so every `serve()`
+/// startup invalidates automatic input stamped with older epochs.
+///
+/// This blocks the calling thread (synchronous socket loop plus
+/// blocking store calls). Callers on an async runtime must move it to
+/// a blocking thread instead of stalling the executor.
+pub fn serve_with_workflow(
+    layout: &DaemonLayout,
+    build_id: &str,
+    workflow: &mut dyn WorkflowBackend,
+) -> Result<ServeOutcome> {
     let open =
         jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
     let listener = match bind_control_socket(layout).and_then(|listener| {
@@ -413,6 +598,19 @@ pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
         }
     };
     jackin_telemetry::stream::complete_success(open);
+    // Automatic recovery on daemon startup: the owner epoch was
+    // already bumped when the workflow service opened, so run
+    // `recover` now against the startup inventory before accepting
+    // clients. Crash-left `dispatching` commands become
+    // `delivery_unknown` here and are never resubmitted.
+    //
+    // Fail-open rationale: recovery is re-runnable through the
+    // explicit `WorkflowRecover` RPC, and refusing to serve would
+    // hide the store behind a dead socket with no operator path to
+    // inspect it. A startup failure is logged and serving continues;
+    // per-run storage failures are still reported by the recovery
+    // report itself and by later RPC errors.
+    startup_recovery(workflow, &InstanceInventory::default());
     let close = jackin_telemetry::stream::close_on_drop();
     let coredump_policy = disable_coredumps();
     let attention_enabled = std::env::var_os("JACKIN_ATTENTION").is_some_and(|value| value == "1");
@@ -429,6 +627,7 @@ pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
                 build_id,
                 &coredump_policy,
                 &mut attention,
+                workflow,
             )?;
             if matches!(
                 response.kind,
@@ -445,6 +644,27 @@ pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
         Err(_) => close.complete_error(jackin_telemetry::schema::enums::ErrorType::IoError),
     }
     result
+}
+
+/// Run one recovery pass and return its report, or `None` when
+/// recovery itself fails. Extracted so unit tests can prove both
+/// outcomes without binding the control socket: `Some` means the
+/// startup pass ran, `None` means the caller logs and keeps serving.
+pub fn startup_recovery(
+    workflow: &mut dyn WorkflowBackend,
+    inventory: &InstanceInventory,
+) -> Option<RecoveryReport> {
+    match workflow.recover(inventory) {
+        Ok(report) => Some(report),
+        Err(error) => {
+            use std::io::Write as _;
+            drop(writeln!(
+                std::io::stderr().lock(),
+                "daemon startup recovery failed: {error}; serving continues"
+            ));
+            None
+        }
+    }
 }
 
 pub fn request(
@@ -532,6 +752,74 @@ fn daemon_response_matches_method(method: &str, response: &DaemonResponseKind) -
                 "jackin.host.Daemon/Shutdown",
                 DaemonResponseKind::Shutdown { .. }
             )
+            | (
+                "jackin.host.Daemon/WorkflowStart",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowStatus",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowList",
+                DaemonResponseKind::WorkflowRuns { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowDetail",
+                DaemonResponseKind::WorkflowRunDetail { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowPause",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowResume",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowCancel",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowResolve",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordSession",
+                DaemonResponseKind::WorkflowRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordCandidate",
+                DaemonResponseKind::WorkflowRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordCheckpoint",
+                DaemonResponseKind::WorkflowRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordTest",
+                DaemonResponseKind::WorkflowTestRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordReview",
+                DaemonResponseKind::WorkflowReviewRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordBackup",
+                DaemonResponseKind::WorkflowRecord { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowAdvance",
+                DaemonResponseKind::WorkflowRun { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecordDispatchIntent",
+                DaemonResponseKind::WorkflowDispatchIntent { .. }
+            )
+            | (
+                "jackin.host.Daemon/WorkflowRecover",
+                DaemonResponseKind::WorkflowRecovery { .. }
+            )
     )
 }
 
@@ -594,6 +882,7 @@ fn handle_stream(
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
+    workflow: &mut dyn WorkflowBackend,
 ) -> Result<DaemonResponse> {
     let mut line = String::new();
     let read = BufReader::new(stream.try_clone().context("cloning daemon stream")?)
@@ -612,6 +901,7 @@ fn handle_stream(
             build_id,
             coredump_policy,
             attention,
+            workflow,
         )
     };
     let response = handled.response;
@@ -673,7 +963,29 @@ pub fn handle_request_line(
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
 ) -> DaemonResponse {
-    handle_request_line_inner(line, layout, build_id, coredump_policy, attention)
+    let mut workflow = jackin_workflow::UnavailableBackend::new("no workflow service on this path");
+    handle_request_line_inner(
+        line,
+        layout,
+        build_id,
+        coredump_policy,
+        attention,
+        &mut workflow,
+    )
+    .complete_without_transport()
+}
+
+/// Request-line entry point with an injected workflow backend for
+/// run control.
+pub fn handle_request_line_with_workflow(
+    line: &str,
+    layout: &DaemonLayout,
+    build_id: &str,
+    coredump_policy: &CoredumpPolicy,
+    attention: &mut impl AttentionNotifierAdapter,
+    workflow: &mut dyn WorkflowBackend,
+) -> DaemonResponse {
+    handle_request_line_inner(line, layout, build_id, coredump_policy, attention, workflow)
         .complete_without_transport()
 }
 
@@ -683,6 +995,7 @@ fn handle_request_line_inner(
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
+    workflow: &mut dyn WorkflowBackend,
 ) -> HandledResponse {
     if line.is_empty() {
         return HandledResponse::without_operation(error_response(
@@ -691,7 +1004,14 @@ fn handle_request_line_inner(
         ));
     }
     match serde_json::from_str::<DaemonRequest>(line) {
-        Ok(request) => handle_request(request, layout, build_id, coredump_policy, attention),
+        Ok(request) => handle_request(
+            request,
+            layout,
+            build_id,
+            coredump_policy,
+            attention,
+            workflow,
+        ),
         Err(error) => HandledResponse::without_operation(error_response(
             "unknown",
             format!("invalid daemon request: {error}"),
@@ -705,6 +1025,7 @@ fn handle_request(
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
     attention: &mut impl AttentionNotifierAdapter,
+    workflow: &mut dyn WorkflowBackend,
 ) -> HandledResponse {
     let extracted = jackin_telemetry::propagation::extract(&request.ctx);
     if matches!(
@@ -803,6 +1124,25 @@ fn handle_request(
                 id,
                 kind: DaemonResponseKind::Shutdown { accepted: true },
             },
+            kind @ (DaemonRequestKind::WorkflowStart { .. }
+            | DaemonRequestKind::WorkflowStatus { .. }
+            | DaemonRequestKind::WorkflowList { .. }
+            | DaemonRequestKind::WorkflowDetail { .. }
+            | DaemonRequestKind::WorkflowPause { .. }
+            | DaemonRequestKind::WorkflowResume { .. }
+            | DaemonRequestKind::WorkflowCancel { .. }
+            | DaemonRequestKind::WorkflowResolve { .. }
+            | DaemonRequestKind::WorkflowRecordSession { .. }
+            | DaemonRequestKind::WorkflowRecordCandidate { .. }
+            | DaemonRequestKind::WorkflowRecordCheckpoint { .. }
+            | DaemonRequestKind::WorkflowRecordTest { .. }
+            | DaemonRequestKind::WorkflowRecordReview { .. }
+            | DaemonRequestKind::WorkflowRecordBackup { .. }
+            | DaemonRequestKind::WorkflowAdvance { .. }
+            | DaemonRequestKind::WorkflowRecordDispatchIntent { .. }
+            | DaemonRequestKind::WorkflowRecover { .. }) => {
+                handle_workflow_request(id, kind, &layout.plan_store_dir, workflow)
+            }
         }
     };
     let response = if let Some(operation) = operation.as_ref() {
@@ -956,11 +1296,460 @@ fn read_response(stream: UnixStream) -> Result<DaemonResponse> {
 }
 
 fn error_response(id: impl Into<String>, message: impl Into<String>) -> DaemonResponse {
+    coded_error_response(id, "execution_error", message)
+}
+
+fn coded_error_response(
+    id: impl Into<String>,
+    code: &str,
+    message: impl Into<String>,
+) -> DaemonResponse {
     DaemonResponse {
         id: id.into(),
         kind: DaemonResponseKind::Error {
             message: message.into(),
+            code: code.to_owned(),
         },
+    }
+}
+
+/// C7 typed error code for a workflow failure kind.
+fn workflow_error_code(error: &jackin_workflow::WorkflowError) -> &'static str {
+    use jackin_workflow::ErrorKind;
+    match error.kind() {
+        ErrorKind::Invalid => "invalid_request",
+        ErrorKind::NotFound => "not_found",
+        ErrorKind::Busy => "busy",
+        ErrorKind::StaleVersion | ErrorKind::StaleEpoch => "state_conflict",
+        ErrorKind::Blocked => "needs_operator",
+        ErrorKind::Storage => "execution_error",
+    }
+}
+
+/// Verify `record_test` inputs against the run's stored plan
+/// before the daemon freezes anything: the full check argv must match
+/// the supported frozen shape, script bytes must match the selected
+/// bundle entry, the bundle digest must match the frozen manifest,
+/// and timeout must match the plan. The CLI checks the program early
+/// for a fast failure;
+/// this daemon-side check is authoritative for every RPC caller,
+/// including direct socket clients that bypass the CLI. On success
+/// the stored per-file bundle manifest is returned to the service.
+fn check_test_binding(
+    workflow: &mut dyn WorkflowBackend,
+    plan_store_dir: &Path,
+    run_id: &str,
+    check_program: &str,
+    check_script: &str,
+    bundle_digest: &str,
+    timeout_secs: u64,
+) -> Result<Vec<jackin_workflow_spec::model::TestBundleFile>, jackin_workflow::WorkflowError> {
+    let summary = workflow.run_status(Some(run_id))?;
+    let store = jackin_workflow_spec::store::InputStore::open(plan_store_dir).map_err(|error| {
+        jackin_workflow::WorkflowError::invalid(format!(
+            "cannot verify the test binding for run `{run_id}`: {error}"
+        ))
+    })?;
+    let plan = store.read_plan(&summary.plan_hash).map_err(|error| {
+        jackin_workflow::WorkflowError::invalid(format!(
+            "cannot verify the test binding for run `{run_id}`: {error}"
+        ))
+    })?;
+    verify_test_binding(
+        &plan.verification,
+        check_program,
+        check_script,
+        bundle_digest,
+        timeout_secs,
+        &store,
+    )?;
+    Ok(plan.verification.test_bundle_files.clone())
+}
+
+/// Binding comparison against the frozen input store.
+fn verify_test_binding(
+    verification: &jackin_workflow_spec::model::VerificationPolicy,
+    check_program: &str,
+    check_script: &str,
+    bundle_digest: &str,
+    timeout_secs: u64,
+    store: &jackin_workflow_spec::store::InputStore,
+) -> Result<(), jackin_workflow::WorkflowError> {
+    let argv = &verification.check_argv;
+    if argv.len() != 3
+        || argv[0] != check_program
+        || argv[2] != "/work/repo"
+        || !argv[1].starts_with("/jackin/checks/")
+    {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "check argv does not match the supported frozen shape [program, /jackin/checks/<manifest path>, /work/repo]: {argv:?}"
+        )));
+    }
+    let logical_path = &argv[1]["/jackin/checks/".len()..];
+    let logical_path = Path::new(logical_path);
+    if logical_path.as_os_str().is_empty()
+        || logical_path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        || !Path::new(check_script).ends_with(logical_path)
+    {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "supplied check script path `{check_script}` does not match frozen bundle path `{}`",
+            logical_path.display()
+        )));
+    }
+    let logical_path = logical_path.to_string_lossy();
+    let file = verification
+        .test_bundle_files
+        .iter()
+        .find(|file| file.logical_path == logical_path)
+        .ok_or_else(|| {
+            jackin_workflow::WorkflowError::invalid(format!(
+                "frozen check script `{logical_path}` is not a member of the selected test bundle"
+            ))
+        })?;
+    let frozen_bytes = store.read_input(&file.digest).map_err(|error| {
+        jackin_workflow::WorkflowError::invalid(format!(
+            "cannot read frozen check script `{logical_path}`: {error}"
+        ))
+    })?;
+    let supplied_bytes = fs::read(check_script).map_err(|error| {
+        jackin_workflow::WorkflowError::invalid(format!(
+            "cannot read supplied check script `{check_script}`: {error}"
+        ))
+    })?;
+    if supplied_bytes != frozen_bytes {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "supplied check script bytes do not match frozen bundle entry `{logical_path}`"
+        )));
+    }
+    if verification.check_image_digest != jackin_workflow::TEST_SANDBOX_IMAGE {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "check image `{}` does not match the supported sandbox image `{}`",
+            verification.check_image_digest,
+            jackin_workflow::TEST_SANDBOX_IMAGE
+        )));
+    }
+    if verification.test_bundle_digest != bundle_digest {
+        return Err(jackin_workflow::WorkflowError::invalid(
+            "check bundle digest does not match the frozen plan bundle".to_owned(),
+        ));
+    }
+    if verification.timeout_seconds != timeout_secs {
+        return Err(jackin_workflow::WorkflowError::invalid(format!(
+            "check timeout {timeout_secs}s does not match the frozen plan timeout {}s",
+            verification.timeout_seconds
+        )));
+    }
+    Ok(())
+}
+
+/// Run-control dispatch: every variant drives the injected
+/// workflow backend as the `operator` actor. `plan_store_dir` is the
+/// digest-verified plan store `record_test` bindings are checked
+/// against before any verdict is frozen.
+fn handle_workflow_request(
+    id: String,
+    kind: DaemonRequestKind,
+    plan_store_dir: &Path,
+    workflow: &mut dyn WorkflowBackend,
+) -> DaemonResponse {
+    match kind {
+        DaemonRequestKind::WorkflowStart {
+            plan_hash,
+            max_repair_turns,
+            idempotency_key,
+        } => workflow_response(
+            id,
+            workflow.start_run(&plan_hash, max_repair_turns, &idempotency_key),
+        ),
+        DaemonRequestKind::WorkflowStatus { run_id } => {
+            workflow_response(id, workflow.run_status(run_id.as_deref()))
+        }
+        DaemonRequestKind::WorkflowList { limit } => match workflow.list_runs(limit) {
+            Ok(summaries) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowRuns { summaries },
+            },
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
+        },
+        DaemonRequestKind::WorkflowDetail {
+            run_id,
+            after_seq,
+            event_limit,
+        } => match workflow.run_detail(&run_id, after_seq, event_limit) {
+            Ok(detail) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowRunDetail { detail },
+            },
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
+        },
+        DaemonRequestKind::WorkflowPause {
+            run_id,
+            reason,
+            checkpoint,
+        } => workflow_response(
+            id,
+            workflow.pause_run(&run_id, "operator", &reason, checkpoint),
+        ),
+        DaemonRequestKind::WorkflowResume { run_id } => {
+            workflow_response(id, workflow.resume_run(&run_id, "operator"))
+        }
+        DaemonRequestKind::WorkflowCancel { run_id, reason } => {
+            workflow_response(id, workflow.cancel_run(&run_id, "operator", &reason))
+        }
+        DaemonRequestKind::WorkflowResolve {
+            run_id,
+            command_id,
+            decision,
+            observed_session_state,
+        } => match OperatorDecision::parse(&decision) {
+            Some(parsed) => workflow_response(
+                id,
+                workflow.resolve_input(
+                    &run_id,
+                    &command_id,
+                    parsed,
+                    "operator",
+                    &observed_session_state,
+                ),
+            ),
+            None => coded_error_response(
+                id,
+                "invalid_request",
+                format!("unknown operator decision `{decision}`"),
+            ),
+        },
+        kind @ (DaemonRequestKind::WorkflowRecordSession { .. }
+        | DaemonRequestKind::WorkflowRecordCandidate { .. }
+        | DaemonRequestKind::WorkflowRecordCheckpoint { .. }
+        | DaemonRequestKind::WorkflowRecordTest { .. }
+        | DaemonRequestKind::WorkflowRecordReview { .. }
+        | DaemonRequestKind::WorkflowRecordBackup { .. }
+        | DaemonRequestKind::WorkflowRecordDispatchIntent { .. }
+        | DaemonRequestKind::WorkflowAdvance { .. }) => {
+            handle_workflow_record_request(id, kind, plan_store_dir, workflow)
+        }
+        DaemonRequestKind::WorkflowRecover { inventory } => match workflow.recover(&inventory) {
+            Ok(report) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowRecovery { report },
+            },
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
+        },
+        _ => coded_error_response(id, "invalid_request", "not a workflow request"),
+    }
+}
+
+fn handle_workflow_record_request(
+    id: String,
+    kind: DaemonRequestKind,
+    plan_store_dir: &Path,
+    workflow: &mut dyn WorkflowBackend,
+) -> DaemonResponse {
+    match kind {
+        DaemonRequestKind::WorkflowRecordSession {
+            run_id,
+            expected_version,
+            worker,
+            instance_id,
+            capsule_epoch,
+            session_id,
+            process_identity,
+            agent_profile,
+            auth_profile,
+        } => workflow_record_response(
+            id,
+            workflow.record_session(
+                &run_id,
+                expected_version,
+                &worker,
+                instance_id.as_deref(),
+                capsule_epoch,
+                session_id,
+                process_identity.as_deref(),
+                agent_profile.as_deref(),
+                auth_profile.as_deref(),
+            ),
+        ),
+        DaemonRequestKind::WorkflowRecordCandidate {
+            run_id,
+            candidate,
+            expected_version,
+        } => workflow_record_response(
+            id,
+            workflow.record_candidate(&run_id, &candidate, expected_version),
+        ),
+        DaemonRequestKind::WorkflowRecordCheckpoint {
+            run_id,
+            expected_version,
+            candidate,
+            commit,
+            tree,
+            source_manifest,
+            local_path,
+            backup_state,
+        } => workflow_record_response(
+            id,
+            workflow.record_checkpoint(
+                &run_id,
+                expected_version,
+                &candidate,
+                &commit,
+                &tree,
+                &source_manifest,
+                &local_path,
+                &backup_state,
+            ),
+        ),
+        DaemonRequestKind::WorkflowRecordTest {
+            run_id,
+            expected_version,
+            check_program,
+            check_script,
+            bundle_digest,
+            repo,
+            scratch,
+            timeout_secs,
+        } => match check_test_binding(
+            workflow,
+            plan_store_dir,
+            &run_id,
+            &check_program,
+            &check_script,
+            &bundle_digest,
+            timeout_secs,
+        )
+        .and_then(|bundle_files| {
+            workflow.record_test(
+                &run_id,
+                expected_version,
+                &check_program,
+                &check_script,
+                &bundle_digest,
+                &bundle_files,
+                repo.as_deref(),
+                &scratch,
+                timeout_secs,
+            )
+        }) {
+            Ok((summary, test)) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowTestRecord { summary, test },
+            },
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
+        },
+        DaemonRequestKind::WorkflowRecordReview {
+            run_id,
+            expected_version,
+            review_file,
+            policy_hash,
+        } => match workflow.record_review(&run_id, expected_version, &review_file, &policy_hash) {
+            Ok((summary, review)) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::WorkflowReviewRecord { summary, review },
+            },
+            Err(error) => {
+                let code = workflow_error_code(&error);
+                coded_error_response(id, code, error.to_string())
+            }
+        },
+        DaemonRequestKind::WorkflowRecordBackup {
+            run_id,
+            expected_version,
+            remote,
+            git_ref,
+        } => workflow_record_response(
+            id,
+            workflow.record_backup(&run_id, expected_version, &remote, &git_ref),
+        ),
+        DaemonRequestKind::WorkflowAdvance {
+            run_id,
+            expected_version,
+            actor,
+            observation,
+            expected_policy_hash,
+        } => workflow_response(
+            id,
+            workflow.advance_run(
+                &run_id,
+                expected_version,
+                &actor,
+                &observation,
+                expected_policy_hash.as_deref(),
+            ),
+        ),
+        DaemonRequestKind::WorkflowRecordDispatchIntent {
+            run_id,
+            session_ref,
+            prompt,
+            turn,
+            lease_generation,
+        } => workflow_dispatch_response(
+            id,
+            workflow.record_dispatch_intent(&run_id, &session_ref, &prompt, turn, lease_generation),
+        ),
+        _ => coded_error_response(id, "invalid_request", "not a workflow record request"),
+    }
+}
+
+fn workflow_dispatch_response(
+    id: String,
+    result: Result<(RunSummary, RecordedDispatch), jackin_workflow::WorkflowError>,
+) -> DaemonResponse {
+    match result {
+        Ok((summary, dispatch)) => DaemonResponse {
+            id,
+            kind: DaemonResponseKind::WorkflowDispatchIntent { summary, dispatch },
+        },
+        Err(error) => {
+            let code = workflow_error_code(&error);
+            coded_error_response(id, code, error.to_string())
+        }
+    }
+}
+
+fn workflow_record_response(
+    id: String,
+    result: Result<RunSummary, jackin_workflow::WorkflowError>,
+) -> DaemonResponse {
+    match result {
+        Ok(summary) => DaemonResponse {
+            id,
+            kind: DaemonResponseKind::WorkflowRecord { summary },
+        },
+        Err(error) => {
+            let code = workflow_error_code(&error);
+            coded_error_response(id, code, error.to_string())
+        }
+    }
+}
+
+fn workflow_response(
+    id: String,
+    result: Result<RunSummary, jackin_workflow::WorkflowError>,
+) -> DaemonResponse {
+    match result {
+        Ok(summary) => DaemonResponse {
+            id,
+            kind: DaemonResponseKind::WorkflowRun { summary },
+        },
+        Err(error) => {
+            let code = workflow_error_code(&error);
+            coded_error_response(id, code, error.to_string())
+        }
     }
 }
 

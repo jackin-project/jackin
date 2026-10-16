@@ -287,7 +287,13 @@ pub fn render_derived_dockerfile(
         s
     };
 
-    let claude_plugin_section = render_claude_plugin_section(claude_config);
+    // Claude plugin steps need the claude CLI baked earlier in this same
+    // image. Variants that do not install Claude must not emit them.
+    let claude_plugin_section = if supported.contains(&Agent::Claude) {
+        render_claude_plugin_section(claude_config)
+    } else {
+        String::new()
+    };
 
     let mut agent_bin_dirs: Vec<&str> = Vec::new();
     for agent in Agent::ALL {
@@ -430,6 +436,37 @@ pub fn create_derived_build_context(
     )
 }
 
+fn stage_prefetched_agent_binary(
+    agent_bin_dir: &Path,
+    agent: Agent,
+    host_path: &Path,
+) -> Result<String, ImageError> {
+    let ctx_path = format!(".jackin-runtime/agent-binaries/{}", agent.slug());
+    let dst = agent_bin_dir.join(agent.slug());
+    std::fs::copy(host_path, &dst).map_err(|e| {
+        ImageError::msg(format!(
+            "failed to copy {} binary into build context: {e}",
+            agent.slug()
+        ))
+    })?;
+    // The codex CLI spawns its execution host from the binary directory; the
+    // sibling must ride the same build context or every tool call fails at
+    // runtime. A missing sibling file fails loudly at the COPY step of
+    // install_block instead.
+    if agent == Agent::Codex {
+        let sibling = host_path.with_file_name(jackin_core::CODEX_CODE_MODE_HOST_BINARY);
+        if sibling.is_file() {
+            let sibling_dst = agent_bin_dir.join(jackin_core::CODEX_CODE_MODE_HOST_BINARY);
+            std::fs::copy(&sibling, &sibling_dst).map_err(|e| {
+                ImageError::msg(format!(
+                    "failed to copy codex sibling binary into build context: {e}"
+                ))
+            })?;
+        }
+    }
+    Ok(ctx_path)
+}
+
 pub fn create_derived_build_context_for_agents(
     repo_dir: &Path,
     validated: &ValidatedRoleRepo,
@@ -492,14 +529,8 @@ pub fn create_derived_build_context_for_agents(
                         std::fs::create_dir_all(&agent_bin_dir)?;
                         agent_bin_dir_created = true;
                     }
-                    let ctx_path = format!(".jackin-runtime/agent-binaries/{}", agent.slug());
-                    let dst = agent_bin_dir.join(agent.slug());
-                    std::fs::copy(host_path, &dst).map_err(|e| {
-                        ImageError::msg(format!(
-                            "failed to copy {} binary into build context: {e}",
-                            agent.slug()
-                        ))
-                    })?;
+                    let ctx_path =
+                        stage_prefetched_agent_binary(&agent_bin_dir, *agent, host_path)?;
                     AgentInstall::Prefetched(ctx_path)
                 }
                 AgentInstall::ScriptFallback => AgentInstall::ScriptFallback,

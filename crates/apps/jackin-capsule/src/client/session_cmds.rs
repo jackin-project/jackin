@@ -34,6 +34,56 @@ pub async fn run_session_send(args: &[String]) -> Result<()> {
     }
 }
 
+pub async fn run_session_take_control(args: &[String]) -> Result<()> {
+    let session: u64 = args
+        .get(2)
+        .context("usage: jackin-capsule take-control <session_id>")?
+        .parse()
+        .context("session_id must be a u64")?;
+    let reply = request_control(&ClientMsg::TakeControl { session }).await?;
+    match reply {
+        ServerMsg::Ack => {
+            crate::output::stdout_line(format_args!(
+                "{}",
+                serde_json::json!({ "session": session, "operator_owned": true })
+            ));
+            Ok(())
+        }
+        ServerMsg::SessionSendDenied { session, reason } => {
+            anyhow::bail!("session {session}: {}", reason.label())
+        }
+        other => anyhow::bail!(
+            "daemon replied with {} for TakeControl request",
+            other.kind()
+        ),
+    }
+}
+
+pub async fn run_session_release_control(args: &[String]) -> Result<()> {
+    let session: u64 = args
+        .get(2)
+        .context("usage: jackin-capsule release-control <session_id>")?
+        .parse()
+        .context("session_id must be a u64")?;
+    let reply = request_control(&ClientMsg::ReleaseControl { session }).await?;
+    match reply {
+        ServerMsg::Ack => {
+            crate::output::stdout_line(format_args!(
+                "{}",
+                serde_json::json!({ "session": session, "operator_owned": false })
+            ));
+            Ok(())
+        }
+        ServerMsg::SessionSendDenied { session, reason } => {
+            anyhow::bail!("session {session}: {}", reason.label())
+        }
+        other => anyhow::bail!(
+            "daemon replied with {} for ReleaseControl request",
+            other.kind()
+        ),
+    }
+}
+
 pub async fn run_session_events(args: &[String]) -> Result<()> {
     let session = flag_value(args, "--session")
         .map(|raw| raw.parse::<u64>().context("--session must be a u64"))

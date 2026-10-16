@@ -54,6 +54,7 @@ fn codex_install_block_installs_cli_as_agent_with_current_archive_layout() {
         "\
 USER agent
 COPY --link --chown=agent:0 --chmod=0755 .jackin-runtime/agent-binaries/codex /home/agent/.local/bin/codex
+COPY --link --chown=agent:0 --chmod=0755 .jackin-runtime/agent-binaries/codex-code-mode-host /home/agent/.local/bin/codex-code-mode-host
 ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     codex --version

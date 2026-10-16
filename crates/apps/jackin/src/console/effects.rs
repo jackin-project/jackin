@@ -107,6 +107,12 @@ pub(crate) fn execute_manager_effect(
         ManagerEffect::Console(ConsoleEffect::RequestUsageRefresh) => {
             crate::console::adapter::run::execute_usage_refresh_effect(state, paths)
         }
+        ManagerEffect::Console(ConsoleEffect::RequestWorkflowsRefresh) => {
+            crate::console::workflows::execute_workflows_refresh(state, paths)
+        }
+        ManagerEffect::Workflows(effect) => {
+            crate::console::workflows::execute_workflows_effect(state, paths, effect)
+        }
         ManagerEffect::StartRoleRegistration {
             raw,
             key,

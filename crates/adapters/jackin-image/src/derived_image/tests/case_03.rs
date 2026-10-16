@@ -61,6 +61,76 @@ fn claude_plugins_render_one_readable_run_layer() {
 }
 
 #[test]
+fn codex_only_variant_omits_claude_plugin_run() {
+    let claude = ClaudeConfig {
+        model: None,
+        marketplaces: vec![jackin_core::ClaudeMarketplaceConfig {
+            source: "jackin-project/jackin-marketplace".to_owned(),
+            sparse: vec![],
+        }],
+        plugins: vec!["caveman@caveman".to_owned()],
+    };
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Codex],
+        None,
+        &BTreeMap::new(),
+        Some(&claude),
+    );
+
+    assert!(
+        !dockerfile.contains("claude plugin"),
+        "codex-only variant must not emit claude plugin steps for a claude CLI that was never staged: {dockerfile}"
+    );
+}
+
+#[test]
+fn codex_only_build_context_omits_claude_plugin_run() {
+    let repo = tempdir().unwrap();
+    std::fs::write(
+        repo.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.path().join("jackin.role.toml"),
+        r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = [
+  "caveman@caveman",
+]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+
+[codex]
+"#,
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let build = create_derived_build_context_for_agents(
+        repo.path(),
+        &validated,
+        None,
+        None,
+        &[Agent::Codex],
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
+
+    assert!(
+        !dockerfile.contains("claude plugin"),
+        "codex-only build context must not emit claude plugin steps: {dockerfile}"
+    );
+}
+
+#[test]
 fn entrypoint_delegates_security_tool_mcp_registration_to_jackin_capsule() {
     let claude_section = ENTRYPOINT_SH
         .split("claude)")

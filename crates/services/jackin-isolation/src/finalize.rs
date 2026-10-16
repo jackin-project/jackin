@@ -63,6 +63,7 @@ impl FinalizeDecision {
 pub enum PreservedReason {
     Dirty,
     Unpushed,
+    Held,
 }
 
 impl PreservedReason {
@@ -70,6 +71,7 @@ impl PreservedReason {
         match self {
             Self::Dirty => "uncommitted changes",
             Self::Unpushed => "unpushed commits on a local branch",
+            Self::Held => "durable preservation hold",
         }
     }
 
@@ -77,8 +79,17 @@ impl PreservedReason {
         match self {
             Self::Dirty => "uncommitted changes",
             Self::Unpushed => "unpushed commits",
+            Self::Held => "preservation hold",
         }
     }
+}
+
+/// Returns the hold message when a preservation hold blocks removal of the
+/// recorded source.
+fn hold_message(container_state_dir: &Path, record: &IsolationRecord) -> Option<String> {
+    crate::holds::check_removal(container_state_dir, &record.worktree_path)
+        .err()
+        .map(|e| format!("{e:#}"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -303,6 +314,16 @@ async fn finalize_clean_exit(
     let mut preserved_records: Vec<(IsolationRecord, PreservedReason)> = Vec::new();
 
     for record in records {
+        // Holds are enforced in finalization as well as in the force-cleanup
+        // path: a held source is preserved even when its tree looks clean.
+        if let Some(hold) = hold_message(container_state_dir, &record) {
+            eprintln!(
+                "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: {hold}",
+                wt = record.worktree_path,
+            );
+            preserved_records.push((record, PreservedReason::Held));
+            continue;
+        }
         let assessment = assess_cleanup(&record, runner).await?;
         match assessment {
             CleanupAssessment::SafeToDelete => {
@@ -332,6 +353,14 @@ async fn finalize_clean_exit(
         DirtyExitPolicy::Discard => {
             let mut any_failed = false;
             for (rec, reason) in &preserved_records {
+                if *reason == PreservedReason::Held {
+                    eprintln!(
+                        "[jackin] preserved isolated worktree for {container_name} (discard policy overruled by hold):\n         {wt}",
+                        wt = rec.worktree_path,
+                    );
+                    any_failed = true;
+                    continue;
+                }
                 if let Err(e) = force_cleanup_isolated(rec, container_state_dir, runner).await {
                     let reason_str = reason.describe();
                     eprintln!(
@@ -380,7 +409,15 @@ async fn finalize_clean_exit(
         ExitDialogChoice::KeepAll => Ok(FinalizeDecision::Preserved),
         ExitDialogChoice::DiscardAll => {
             let mut any_failed = false;
-            for (rec, _reason) in preserved_records {
+            for (rec, reason) in preserved_records {
+                if reason == PreservedReason::Held {
+                    eprintln!(
+                        "[jackin] preserved isolated worktree for {container_name} (discard overruled by hold):\n         {wt}",
+                        wt = rec.worktree_path,
+                    );
+                    any_failed = true;
+                    continue;
+                }
                 if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner).await {
                     eprintln!(
                         "[jackin] warning: force-delete of isolated worktree `{wt}` failed: {e}\n         record retained — re-run `jackin purge {short}` to retry",

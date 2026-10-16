@@ -18,6 +18,7 @@ mod probe;
 mod profile;
 mod sizes;
 mod tmpfs;
+pub mod workflow_grant;
 
 pub use allowlist::{allowlist_hosts, default_allowed_hosts_for_agent, github_allowlist_hosts};
 pub use capabilities::{MINIMUM_CAPABILITIES, VALID_CAPABILITIES};
@@ -41,6 +42,10 @@ pub use profile::{
 };
 pub use sizes::parse_memory_bytes;
 pub use tmpfs::{readonly_home_env, readonly_root_flags, tmpfs_paths};
+pub use workflow_grant::{
+    DiskPolicy, GrantMismatch, NetworkEnforcementLevel, WorkflowGrant, WorkflowGrantError,
+    admit_disk_policy, admit_network_enforcement, apply_workflow_grant, compare_grant_vs_actual,
+};
 
 pub(crate) use flags::{TMPFS_PATHS_HARDENED_EXTRA, TMPFS_PATHS_MINIMAL};
 pub(crate) use grants::normalize_cap;

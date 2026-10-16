@@ -26,6 +26,7 @@ pub(crate) struct RoleStatePreparation {
     agent: jackin_core::Agent,
     model_override: Option<String>,
     effort: Option<jackin_core::ReasoningEffort>,
+    trusted_paths: Vec<String>,
 }
 
 pub(crate) async fn prepare_role_state(
@@ -42,6 +43,7 @@ pub(crate) async fn prepare_role_state(
         agent,
         model_override,
         effort,
+        trusted_paths,
     } = input;
     jackin_telemetry::spawn::joined_blocking(move || {
         let bindings =
@@ -77,6 +79,7 @@ pub(crate) async fn prepare_role_state(
                 &prepared.0.auth.slots,
                 &models,
                 &efforts,
+                &trusted_paths,
             )?;
         Ok(prepared)
     })
@@ -148,6 +151,10 @@ where
         cleanup.run(docker).await;
         return Err(error);
     }
+    let trusted_paths: Vec<String> =
+        crate::runtime::launch::trust::workspace_trusted_project_paths(workspace)
+            .into_iter()
+            .collect();
     let role_state_future = prepare_role_state(RoleStatePreparation {
         paths: paths_owned,
         container_name: container_name_owned,
@@ -159,6 +166,7 @@ where
         agent,
         model_override: model_override_owned,
         effort: effort_owned,
+        trusted_paths,
     });
     let mut role_state_future = std::pin::pin!(role_state_future);
     let select_role_state = async {

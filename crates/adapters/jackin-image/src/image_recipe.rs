@@ -18,7 +18,7 @@ use crate::naming::{
     LABEL_IMAGE_ROLE_GIT_SHA,
 };
 
-pub const IMAGE_RECIPE_VERSION: &str = "v9";
+pub const IMAGE_RECIPE_VERSION: &str = "v10";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageRecipe {

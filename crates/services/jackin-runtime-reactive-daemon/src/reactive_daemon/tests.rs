@@ -125,7 +125,7 @@ fn protocol_version_mismatch_fails_closed() {
 
     assert!(matches!(
         response.kind,
-        DaemonResponseKind::Error { ref message }
+        DaemonResponseKind::Error { ref message, .. }
             if message.contains("unsupported daemon protocol")
     ));
 }

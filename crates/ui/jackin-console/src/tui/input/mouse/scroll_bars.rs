@@ -129,6 +129,7 @@ pub fn try_drag_horizontal_scrollbar(
             )
         }
         ManagerStage::CreatePrelude(_)
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => false,
     }
@@ -254,6 +255,7 @@ pub fn try_drag_vertical_scrollbar(
             }
         }
         ManagerStage::CreatePrelude(_)
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => false,
     }

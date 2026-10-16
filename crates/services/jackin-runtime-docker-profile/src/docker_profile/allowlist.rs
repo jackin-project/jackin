@@ -5,7 +5,7 @@ use super::EffectiveGrants;
 
 pub fn default_allowed_hosts_for_agent(agent: &str) -> &'static [&'static str] {
     match agent {
-        "claude" => &["api.anthropic.com"],
+        "claude" => &["api.anthropic.com", "platform.claude.com"],
         "codex" => &["api.openai.com"],
         "amp" => &["ampcode.com", "sourcegraph.com"],
         "kimi" => &["api.kimi.com", "kimi.moonshot.cn"],

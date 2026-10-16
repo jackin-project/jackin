@@ -41,6 +41,9 @@ pub fn render(
                 );
             }
         }
+        ConsoleMainFramePlan::Workflows => {
+            crate::tui::screens::workflows::screen::render(frame, area, state);
+        }
         ConsoleMainFramePlan::Workspace {
             render_list_body: show_list_body,
         } => {
@@ -73,12 +76,43 @@ pub fn render(
         render_modal_backdrop(frame, modal_backdrop_area(area, footer_h));
     }
 
+    render_stage_modal(frame, area, state);
+
+    if let Some(overlay) = &state.status_overlay {
+        let overlay_area = status_overlay_area(area);
+        crate::tui::components::render_status_popup(frame, overlay_area, overlay);
+    }
+
+    if let Some(help) = &state.keyboard_help {
+        let footer_h = reserved_footer_height(state, config, area);
+        render_modal_backdrop(frame, modal_backdrop_area(area, footer_h));
+        let system = termrock::style::DesignSystem::default();
+        let entries = crate::tui::components::keyboard_help::console_help_entries(state, &system);
+        let rect = termrock::widgets::place_keyboard_help(
+            modal_backdrop_area(area, footer_h),
+            termrock::widgets::KeyboardHelpSize::default(),
+        );
+        let mut paint = help.clone();
+        termrock::widgets::KeyboardHelp::new(&entries, &system)
+            .title("Keyboard shortcuts")
+            .paint(rect, frame.buffer_mut(), &mut paint);
+    }
+}
+
+fn render_stage_modal(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::tui::state::ManagerState<'_>,
+) {
     match console_modal_render_plan(state.stage.route()) {
         ConsoleModalRenderPlan::List => {
             if let Some(modal) = &state.list_modal {
                 render_modal(frame, modal);
             }
         }
+        // The Workflows stage draws its confirmation dialog inline in
+        // its own surface; no modal overlay applies.
+        ConsoleModalRenderPlan::Workflows => {}
         ConsoleModalRenderPlan::Editor => {
             if let crate::tui::state::ManagerStage::Editor(editor) = &state.stage
                 && let Some(modal) = &editor.modal
@@ -153,25 +187,5 @@ pub fn render(
                 }
             }
         }
-    }
-
-    if let Some(overlay) = &state.status_overlay {
-        let overlay_area = status_overlay_area(area);
-        crate::tui::components::render_status_popup(frame, overlay_area, overlay);
-    }
-
-    if let Some(help) = &state.keyboard_help {
-        let footer_h = reserved_footer_height(state, config, area);
-        render_modal_backdrop(frame, modal_backdrop_area(area, footer_h));
-        let system = termrock::style::DesignSystem::default();
-        let entries = crate::tui::components::keyboard_help::console_help_entries(state, &system);
-        let rect = termrock::widgets::place_keyboard_help(
-            modal_backdrop_area(area, footer_h),
-            termrock::widgets::KeyboardHelpSize::default(),
-        );
-        let mut paint = help.clone();
-        termrock::widgets::KeyboardHelp::new(&entries, &system)
-            .title("Keyboard shortcuts")
-            .paint(rect, frame.buffer_mut(), &mut paint);
     }
 }

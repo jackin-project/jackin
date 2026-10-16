@@ -1,8 +1,8 @@
 use crate::instance::{InstanceManifest, InstanceStatus};
 use crate::runtime::docker_profile::{
-    DockerGrants, DockerSecurityProfile, EffectiveGrants, ProfileSource, dind_enabled,
-    fold_role_grants, profile_meets_floor, resolve_effective_grants, resolve_profile,
-    validate_effective_grants,
+    DockerGrants, DockerSecurityProfile, EffectiveGrants, ProfileSource, WorkflowGrant,
+    apply_workflow_grant, dind_enabled, fold_role_grants, profile_meets_floor,
+    resolve_effective_grants, resolve_profile, validate_effective_grants,
 };
 use jackin_config::{AppConfig, WorkspaceDockerConfig};
 use jackin_core::JackinPaths;
@@ -61,6 +61,9 @@ pub struct GrantPhaseInput<'a> {
     pub opts_docker_profile: Option<DockerSecurityProfile>,
     pub selector: &'a RoleSelector,
     pub role_manifest: &'a RoleManifest,
+    /// Final cap-only clamp for the headless workflow launch path. `None` on
+    /// the manual path, where launch profiles keep their existing meaning.
+    pub workflow_grant: Option<&'a WorkflowGrant>,
 }
 
 pub fn validate_launch_grants(input: GrantPhaseInput<'_>) -> anyhow::Result<GrantsValidated> {
@@ -113,6 +116,10 @@ pub fn validate_launch_grants(input: GrantPhaseInput<'_>) -> anyhow::Result<Gran
         };
         bail_on_grant_errors(tagged_grant_errors("role", &role_grants))?;
         effective_grants = fold_role_grants(effective_grants, &role_grants);
+    }
+    if let Some(grant) = input.workflow_grant {
+        effective_grants = apply_workflow_grant(effective_grants, grant)
+            .map_err(|err| anyhow::anyhow!("workflow grant rejected launch: {err:#}"))?;
     }
     bail_on_grant_errors(tag_errors(
         "merged",

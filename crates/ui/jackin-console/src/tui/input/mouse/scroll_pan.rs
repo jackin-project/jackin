@@ -113,6 +113,7 @@ pub fn update_scroll_focus(
             }
         }
         ManagerStage::CreatePrelude(_)
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
@@ -272,6 +273,7 @@ pub fn dispatch_wheel(
             )
         }
         ManagerStage::CreatePrelude(_)
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => ScrollOutcome::Ignored,
     }

@@ -67,6 +67,7 @@ pub fn try_scroll_file_browser_modal(
             false
         }
         ManagerStage::List
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => false,
     }
@@ -131,6 +132,7 @@ pub fn try_scroll_picker_modal(
             false
         }
         ManagerStage::List
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => false,
     }

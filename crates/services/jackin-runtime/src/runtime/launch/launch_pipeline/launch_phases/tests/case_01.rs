@@ -35,6 +35,7 @@ fn grant_phase_rejects_root_sudo_without_docker_io() {
         opts_docker_profile: None,
         selector: &selector,
         role_manifest: &role_manifest,
+        workflow_grant: None,
     })
     .unwrap_err();
     assert!(
@@ -278,6 +279,7 @@ fn typestate_grants_validated_carries_dind_flag() {
         opts_docker_profile: None,
         selector: &selector,
         role_manifest: &role_manifest,
+        workflow_grant: None,
     })
     .expect("default grants valid");
     let _profile = format!("{:?}", validated.resolved_profile);

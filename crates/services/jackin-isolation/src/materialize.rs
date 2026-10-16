@@ -747,6 +747,14 @@ async fn materialize_clone(
             .await?;
     }
 
+    // A bare `git clone --local` hardlinks objects to the host repository and
+    // records an alternates pointer. Workflow clones must be fully
+    // independent: drop the pointer, rewrite borrowed objects, and prove no
+    // shared inode remains. Git worktrees share `.git` by design and must
+    // NOT be used for workflow workers.
+    crate::dissociate::dissociate_clone(runner, &clone_path).await?;
+    crate::dissociate::verify_no_hardlinked_objects(Path::new(&mount.src), &clone_path)?;
+
     upsert_record(
         container_state_dir,
         IsolationRecord {

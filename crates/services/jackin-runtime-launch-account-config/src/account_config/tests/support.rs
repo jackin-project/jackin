@@ -66,7 +66,16 @@ pub(super) fn configure_for_test(
                 .map(|model| (instance.config_id.clone(), model.clone()))
         })
         .collect();
-    configure_accounts(root, config, instances, &slots, &models, &BTreeMap::new()).map(|_| ())
+    configure_accounts(
+        root,
+        config,
+        instances,
+        &slots,
+        &models,
+        &BTreeMap::new(),
+        &[],
+    )
+    .map(|_| ())
 }
 
 pub(super) fn configure_with_models(
@@ -76,7 +85,16 @@ pub(super) fn configure_with_models(
     models: &BTreeMap<String, String>,
 ) -> anyhow::Result<()> {
     let slots = slots_for(instances);
-    configure_accounts(root, config, instances, &slots, models, &BTreeMap::new()).map(|_| ())
+    configure_accounts(
+        root,
+        config,
+        instances,
+        &slots,
+        models,
+        &BTreeMap::new(),
+        &[],
+    )
+    .map(|_| ())
 }
 
 pub(super) fn instance(

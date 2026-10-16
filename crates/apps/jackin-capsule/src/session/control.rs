@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Session, lock_or_record_poison};
+use super::{InputOwnership, Session, lock_or_record_poison};
 
 use std::sync::atomic::Ordering;
 
@@ -14,6 +14,19 @@ impl Session {
     #[must_use]
     pub fn send_input(&self, data: &[u8]) -> bool {
         self.input_tx.send(data.to_vec()).is_ok()
+    }
+
+    #[must_use]
+    pub const fn operator_owned(&self) -> bool {
+        matches!(self.input_ownership, InputOwnership::Operator)
+    }
+
+    pub fn take_operator_control(&mut self) {
+        self.input_ownership = InputOwnership::Operator;
+    }
+
+    pub fn release_operator_control(&mut self) {
+        self.input_ownership = InputOwnership::Automatic;
     }
 
     pub fn mark_operator_input(&mut self) -> bool {

@@ -1,8 +1,12 @@
+pub mod backup;
 pub mod branch;
+pub mod capture;
 pub mod cleanup;
+pub mod dissociate;
 mod error;
 pub mod finalize;
 pub mod git_inspect;
+pub mod holds;
 pub mod materialize;
 mod ref_transaction;
 pub mod safe_remove;

@@ -251,6 +251,8 @@ jobs:
       - rust-jackin-tui
       - rust-jackin-usage
       - rust-jackin-usage-ffi
+      - rust-jackin-workflow
+      - rust-jackin-workflow-spec
       - rust-jackin-xtask
       - actionlint
     if: always()
@@ -287,14 +289,14 @@ jobs:
         env:
           VELNOR_INTERNAL_OP: write-request-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"actionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-process-directory\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-xtask\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"actionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-process-directory\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-workflow\",\"rust-jackin-workflow-spec\",\"rust-jackin-xtask\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: *r4
       - name: Merge reports
         env:
           VELNOR_INTERNAL_OP: merge-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"actionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-process-directory\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-xtask\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"actionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-process-directory\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-workflow\",\"rust-jackin-workflow-spec\",\"rust-jackin-xtask\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: *r4
       - name: Publish final report
@@ -5048,6 +5050,372 @@ jobs:
         with:
           if-no-files-found: error
           name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-usage-ffi
+          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
+          retention-days: "30"
+      - name: Clean MBX workspace outputs
+        if: always() && steps.mbx-ready.outcome == 'success'
+        env:
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r8
+  rust-jackin-workflow:
+    name: Rust / jackin-workflow
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      MBX_GC_AUTO: "0"
+      MBX_SHARE_OUT_DIR: "0"
+      RUSTUP_TOOLCHAIN: 1.98.1
+      VELNOR_ASSET_SHA256: 84dcfc3c62e509c70c24d2feb74e53866a1fb0d930d2a290efb3edfd0676e9f5
+      VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.8/velnor-actions-0.1.8-x86_64-unknown-linux-gnu
+      VELNOR_RELEASE_COMMIT: 7c594f7aef03990d8ff952727b0c56497372e355
+    needs:
+      - plan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: "false"
+      - name: V2 identity
+        id: v2
+        uses: ./.github/actions/velnor-tools-prelude-u26 # zizmor: ignore[self-repository]
+        with:
+          d: 8c09d17163064f5865e6a0cf17c91516dfa013b64dfc51c2335f94f34ce0d21a
+      - name: Restore Mise tools
+        if: steps.v2.outputs.enabled == 'true'
+        uses: ./.github/actions/velnor-tools-cache-restore # zizmor: ignore[self-repository]
+        with:
+          key: mise-tools-v2-${{steps.v2.outputs.identity}}
+          seed-admitted: ${{ steps.v2.outputs.seed_admitted }}
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
+        with:
+          cache: "false"
+          cache_save: "false"
+          env: "false"
+          install: "false"
+          sha256: c72477ae6c3a8e7d817a322f43da70e4643e75ee5c21265f1c19c894273b7428
+          version: 2026.10.8
+      - name: Acquire Velnor
+        run: *r3
+      - name: Download plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: velnor-plan-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
+      - name: Prepare pinned tools
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r1
+      - name: Prepare Rust components
+        env:
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r5
+      - name: Restore Cargo sources
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          key: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-${{hashFiles('Cargo.lock')}}
+          path: "${{ runner.temp }}/velnor/cargo/registry/index\n${{ runner.temp }}/velnor/cargo/registry/cache\n${{ runner.temp }}/velnor/cargo/git/db"
+          restore-keys: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-
+      - name: Verify Rust before MBX action
+        env:
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r6
+      - name: Restore MBX objects
+        if: github.event_name != 'workflow_dispatch'
+        uses: jdx/mr-boxington-action@1687e54eb349cadf61fa38b5813a77875489e8e6
+        with:
+          cache-generation: velnor-mbx-1.21.1-share-out-dir-disabled-v1-gc-auto-off-final-clean-v1-action-1687e54eb349cadf61fa38b5813a77875489e8e6-lane-${{ runner.environment }}-job-${{ github.job }}
+          github-cache-mode: objects
+          save-on-protected-branch: "false"
+          save-on-pull-request: "false"
+          save-on-workflow-dispatch: "false"
+          toolchain: 1.98.1
+          version: 1.21.1
+        env:
+          ACTIONS_CACHE_MODE: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && 'write' || 'read' }}
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+      - name: Verify native MBX version
+        id: mbx-ready
+        env:
+          ACTIONS_CACHE_MODE: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && 'write' || 'read' }}
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r7
+      - name: Fetch Cargo sources
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r2
+      - name: Format
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/services/jackin-workflow/fmt/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/services/jackin-workflow/fmt/default
+          VELNOR_MATRIX_KEY: m-a954217e6e099c9f
+          VELNOR_TASK_DIGEST: b3-d1078e5cd92b5fc92fb44f3dcfae61112793debef2611df3d2176cfbf1ffc6dc
+          VELNOR_TASK_ID: stack/rust/crates/services/jackin-workflow/fmt/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx fmt --check --manifest-path crates/services/jackin-workflow/Cargo.toml; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Clippy
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/services/jackin-workflow/clippy/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/services/jackin-workflow/clippy/default
+          VELNOR_MATRIX_KEY: m-31f2feee436a1924
+          VELNOR_TASK_DIGEST: b3-20f7528b5dcafb2d2d22f6a59726c39fecb72aff1de684341128f0d1cd8d839c
+          VELNOR_TASK_ID: stack/rust/crates/services/jackin-workflow/clippy/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx clippy --locked --offline --manifest-path crates/services/jackin-workflow/Cargo.toml --package jackin-workflow --all-targets -- -D warnings; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Build test executables
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/services/jackin-workflow/build/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/services/jackin-workflow/build/default
+          VELNOR_MATRIX_KEY: m-e5a3d9cbbe61aa9e
+          VELNOR_TASK_DIGEST: b3-8c33122bbe14660c24c4544b6a6f4ace3a58bfe1bcba88773448c64d69d2b71a
+          VELNOR_TASK_ID: stack/rust/crates/services/jackin-workflow/build/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx nextest list --profile ci --list-type binaries-only --locked --offline --manifest-path crates/services/jackin-workflow/Cargo.toml --package jackin-workflow; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Unit and integration tests
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/services/jackin-workflow/nextest/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/services/jackin-workflow/nextest/default
+          VELNOR_MATRIX_KEY: m-c00774bed499b2a4
+          VELNOR_TASK_DIGEST: b3-088b9de1fc85dde414dc9cd267d779ee33a8e5f9f7f3d7dfdf1149778d3b1933
+          VELNOR_TASK_ID: stack/rust/crates/services/jackin-workflow/nextest/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx nextest run --profile ci --locked --offline --manifest-path crates/services/jackin-workflow/Cargo.toml --package jackin-workflow --no-tests fail; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Doctests
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/services/jackin-workflow/doctest/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/services/jackin-workflow/doctest/default
+          VELNOR_MATRIX_KEY: m-ca79a0400e7d0922
+          VELNOR_TASK_DIGEST: b3-27cff52b75bb0dd19f85c6d107b5e0b65da91e1b39b7df2d0ac833f01485d1f1
+          VELNOR_TASK_ID: stack/rust/crates/services/jackin-workflow/doctest/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx test --locked --offline --manifest-path crates/services/jackin-workflow/Cargo.toml --package jackin-workflow --doc; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Documentation
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/services/jackin-workflow/doc/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTDOCFLAGS: "-D warnings"
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/services/jackin-workflow/doc/default
+          VELNOR_MATRIX_KEY: m-351544ff98897072
+          VELNOR_TASK_DIGEST: b3-5517afab713e9eca14996faeb1b1be041774376c1d494671c83ebbce2ac20e80
+          VELNOR_TASK_ID: stack/rust/crates/services/jackin-workflow/doc/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx doc --locked --offline --manifest-path crates/services/jackin-workflow/Cargo.toml --package jackin-workflow --no-deps; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Upload crate reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          if-no-files-found: error
+          name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-workflow
+          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
+          retention-days: "30"
+      - name: Clean MBX workspace outputs
+        if: always() && steps.mbx-ready.outcome == 'success'
+        env:
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r8
+  rust-jackin-workflow-spec:
+    name: Rust / jackin-workflow-spec
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      MBX_GC_AUTO: "0"
+      MBX_SHARE_OUT_DIR: "0"
+      RUSTUP_TOOLCHAIN: 1.98.1
+      VELNOR_ASSET_SHA256: 84dcfc3c62e509c70c24d2feb74e53866a1fb0d930d2a290efb3edfd0676e9f5
+      VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.8/velnor-actions-0.1.8-x86_64-unknown-linux-gnu
+      VELNOR_RELEASE_COMMIT: 7c594f7aef03990d8ff952727b0c56497372e355
+    needs:
+      - plan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: "false"
+      - name: V2 identity
+        id: v2
+        uses: ./.github/actions/velnor-tools-prelude-u26 # zizmor: ignore[self-repository]
+        with:
+          d: 8c09d17163064f5865e6a0cf17c91516dfa013b64dfc51c2335f94f34ce0d21a
+      - name: Restore Mise tools
+        if: steps.v2.outputs.enabled == 'true'
+        uses: ./.github/actions/velnor-tools-cache-restore # zizmor: ignore[self-repository]
+        with:
+          key: mise-tools-v2-${{steps.v2.outputs.identity}}
+          seed-admitted: ${{ steps.v2.outputs.seed_admitted }}
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
+        with:
+          cache: "false"
+          cache_save: "false"
+          env: "false"
+          install: "false"
+          sha256: c72477ae6c3a8e7d817a322f43da70e4643e75ee5c21265f1c19c894273b7428
+          version: 2026.10.8
+      - name: Acquire Velnor
+        run: *r3
+      - name: Download plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: velnor-plan-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
+      - name: Prepare pinned tools
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r1
+      - name: Prepare Rust components
+        env:
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r5
+      - name: Restore Cargo sources
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          key: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-${{hashFiles('Cargo.lock')}}
+          path: "${{ runner.temp }}/velnor/cargo/registry/index\n${{ runner.temp }}/velnor/cargo/registry/cache\n${{ runner.temp }}/velnor/cargo/git/db"
+          restore-keys: velnor-v1-sources-x86_64-unknown-linux-gnu-1.98.1-
+      - name: Verify Rust before MBX action
+        env:
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r6
+      - name: Restore MBX objects
+        if: github.event_name != 'workflow_dispatch'
+        uses: jdx/mr-boxington-action@1687e54eb349cadf61fa38b5813a77875489e8e6
+        with:
+          cache-generation: velnor-mbx-1.21.1-share-out-dir-disabled-v1-gc-auto-off-final-clean-v1-action-1687e54eb349cadf61fa38b5813a77875489e8e6-lane-${{ runner.environment }}-job-${{ github.job }}
+          github-cache-mode: objects
+          save-on-protected-branch: "false"
+          save-on-pull-request: "false"
+          save-on-workflow-dispatch: "false"
+          toolchain: 1.98.1
+          version: 1.21.1
+        env:
+          ACTIONS_CACHE_MODE: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && 'write' || 'read' }}
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+      - name: Verify native MBX version
+        id: mbx-ready
+        env:
+          ACTIONS_CACHE_MODE: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && 'write' || 'read' }}
+          CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r7
+      - name: Fetch Cargo sources
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+        run: *r2
+      - name: Format
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/core/jackin-workflow-spec/fmt/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/core/jackin-workflow-spec/fmt/default
+          VELNOR_MATRIX_KEY: m-4670624a481244d5
+          VELNOR_TASK_DIGEST: b3-c07e89838062c96ca7ec69355e261f9cae702e6f1ba0e31908c15d9b835042b3
+          VELNOR_TASK_ID: stack/rust/crates/core/jackin-workflow-spec/fmt/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx fmt --check --manifest-path crates/core/jackin-workflow-spec/Cargo.toml; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Clippy
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/core/jackin-workflow-spec/clippy/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/core/jackin-workflow-spec/clippy/default
+          VELNOR_MATRIX_KEY: m-bacc2635a5b8404d
+          VELNOR_TASK_DIGEST: b3-f04f78fd515f212b29b1d570ed5da2854ef6476da78056b8f891d3ea732c0ba2
+          VELNOR_TASK_ID: stack/rust/crates/core/jackin-workflow-spec/clippy/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx clippy --locked --offline --manifest-path crates/core/jackin-workflow-spec/Cargo.toml --package jackin-workflow-spec --all-targets -- -D warnings; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Build test executables
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/core/jackin-workflow-spec/build/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/core/jackin-workflow-spec/build/default
+          VELNOR_MATRIX_KEY: m-e03da6f7a2db986c
+          VELNOR_TASK_DIGEST: b3-75c20b88dffb3fbb28fbd95433e94fc19e23963299c06e428e53f6daf202803f
+          VELNOR_TASK_ID: stack/rust/crates/core/jackin-workflow-spec/build/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx nextest list --profile ci --list-type binaries-only --locked --offline --manifest-path crates/core/jackin-workflow-spec/Cargo.toml --package jackin-workflow-spec; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Unit and integration tests
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/core/jackin-workflow-spec/nextest/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/core/jackin-workflow-spec/nextest/default
+          VELNOR_MATRIX_KEY: m-e9205ec73fa5b529
+          VELNOR_TASK_DIGEST: b3-0ac9fb6b980dea3851c25534fcdb2f88d14d42685d754f88f91f5fad2aea1d9c
+          VELNOR_TASK_ID: stack/rust/crates/core/jackin-workflow-spec/nextest/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx nextest run --profile ci --locked --offline --manifest-path crates/core/jackin-workflow-spec/Cargo.toml --package jackin-workflow-spec --no-tests fail; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Doctests
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/core/jackin-workflow-spec/doctest/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/core/jackin-workflow-spec/doctest/default
+          VELNOR_MATRIX_KEY: m-2968f36343878d39
+          VELNOR_TASK_DIGEST: b3-9395815f06e8c8dea87c8d4c19d03e8013a41525c6b46bd89ab2f72063a55ac2
+          VELNOR_TASK_ID: stack/rust/crates/core/jackin-workflow-spec/doctest/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx test --locked --offline --manifest-path crates/core/jackin-workflow-spec/Cargo.toml --package jackin-workflow-spec --doc; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Documentation
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/core/jackin-workflow-spec/doc/default,')"
+        env:
+          MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
+          MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
+          RUSTDOCFLAGS: "-D warnings"
+          VELNOR_MATRIX_ID: stack:rust|task:stack/rust/crates/core/jackin-workflow-spec/doc/default
+          VELNOR_MATRIX_KEY: m-0ada12812aff3187
+          VELNOR_TASK_DIGEST: b3-7a2b1d857ac9858700a40bdfaf7226380ba8e1b380481bc79d8112c0afa580d5
+          VELNOR_TASK_ID: stack/rust/crates/core/jackin-workflow-spec/doc/default
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; s=$(date +%s%3N); mise --no-config --no-env --no-hooks exec rust@1.98.1 aqua:nextest-rs/nextest/cargo-nextest@0.9.148 -- mbx doc --locked --offline --manifest-path crates/core/jackin-workflow-spec/Cargo.toml --package jackin-workflow-spec --no-deps; code=$?; VELNOR_EXIT_CODE=\"$code\" VELNOR_START_MS=\"$s\" VELNOR_INTERNAL_OP=write-task-report-v1 \"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.8\"; helper_code=$?; if [ \"$code\" -ne 0 ]; then exit \"$code\"; fi; exit \"$helper_code\"'"
+      - name: Upload crate reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          if-no-files-found: error
+          name: velnor-crate-r${{ github.run_id }}-a${{ github.run_attempt }}-rust-jackin-workflow-spec
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ github.run_attempt }}
           retention-days: "30"
       - name: Clean MBX workspace outputs

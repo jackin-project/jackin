@@ -190,6 +190,7 @@ pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_telemetry::schema:
     let ConsoleStage::Manager(ms) = &state.stage;
     match ms.stage {
         ManagerStage::List
+        | ManagerStage::Workflows(_)
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => ScreenId::WorkspaceList,
         ManagerStage::Editor(_) => ScreenId::WorkspaceEditor,

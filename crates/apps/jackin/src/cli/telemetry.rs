@@ -16,6 +16,7 @@ use super::usage::{
     UsageAuthCommand, UsageBindingCommand, UsageMonitorCommand, UsagePolicyCommand, UsageScope,
     UsageServiceCommand, UsageSpendCommand, UsageStatuslineCommand,
 };
+use super::workflow::{WorkflowCommand, WorkflowRecordAction};
 
 #[must_use]
 pub const fn command_name(command: &Command) -> CliCommandName {
@@ -47,6 +48,7 @@ pub const fn command_name(command: &Command) -> CliCommandName {
             DiagnosticsCommand::Validate => CliCommandName::DiagnosticsValidate,
         },
         Command::Status(_) => CliCommandName::Status,
+        Command::Workflow(command) => workflow_command_name(command),
         Command::Usage(args) => usage_command_name(args.scope.as_ref()),
         Command::Help { .. } => CliCommandName::Help,
     }
@@ -109,6 +111,34 @@ const fn usage_command_name(scope: Option<&UsageScope>) -> CliCommandName {
         },
         Some(UsageScope::Auth(args)) => match &args.command {
             UsageAuthCommand::Prepare(_) => CliCommandName::UsageAuthPrepare,
+        },
+    }
+}
+
+#[must_use]
+pub const fn workflow_command_name(command: &WorkflowCommand) -> CliCommandName {
+    match command {
+        WorkflowCommand::Validate(_) => CliCommandName::WorkflowValidate,
+        WorkflowCommand::Plan(_) => CliCommandName::WorkflowPlan,
+        WorkflowCommand::Run(_) => CliCommandName::WorkflowRun,
+        WorkflowCommand::Status(_) => CliCommandName::WorkflowStatus,
+        WorkflowCommand::Pause(_) => CliCommandName::WorkflowPause,
+        WorkflowCommand::Resume(_) => CliCommandName::WorkflowResume,
+        WorkflowCommand::Cancel(_) => CliCommandName::WorkflowCancel,
+        WorkflowCommand::Graph(_) => CliCommandName::WorkflowGraph,
+        WorkflowCommand::Events(_) => CliCommandName::WorkflowEvents,
+        WorkflowCommand::Attach(_) => CliCommandName::WorkflowAttach,
+        WorkflowCommand::ResolveInput(_) => CliCommandName::WorkflowResolveInput,
+        WorkflowCommand::Export(_) => CliCommandName::WorkflowExport,
+        WorkflowCommand::Record(args) => match &args.action {
+            WorkflowRecordAction::Session(_) => CliCommandName::WorkflowRecordSession,
+            WorkflowRecordAction::Candidate(_) => CliCommandName::WorkflowRecordCandidate,
+            WorkflowRecordAction::Checkpoint(_) => CliCommandName::WorkflowRecordCheckpoint,
+            WorkflowRecordAction::Test(_) => CliCommandName::WorkflowRecordTest,
+            WorkflowRecordAction::Review(_) => CliCommandName::WorkflowRecordReview,
+            WorkflowRecordAction::Backup(_) => CliCommandName::WorkflowRecordBackup,
+            WorkflowRecordAction::DispatchIntent(_) => CliCommandName::WorkflowRecordDispatchIntent,
+            WorkflowRecordAction::Advance(_) => CliCommandName::WorkflowRecordAdvance,
         },
     }
 }

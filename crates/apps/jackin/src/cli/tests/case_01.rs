@@ -138,6 +138,25 @@ fn telemetry_command_mapper_covers_every_nested_leaf() {
         #[cfg(unix)]
         (&["daemon", "status"], Name::DaemonStatus),
         (&["diagnostics", "validate"], Name::DiagnosticsValidate),
+        (
+            &["workflow", "validate", "repair.pkl"],
+            Name::WorkflowValidate,
+        ),
+        (
+            &["workflow", "plan", "repair.pkl", "--json"],
+            Name::WorkflowPlan,
+        ),
+        (&["workflow", "run", "ebc1278f"], Name::WorkflowRun),
+        (&["workflow", "status"], Name::WorkflowStatus),
+        (
+            &["workflow", "pause", "run-1", "--reason", "hold"],
+            Name::WorkflowPause,
+        ),
+        (&["workflow", "resume", "run-1"], Name::WorkflowResume),
+        (
+            &["workflow", "cancel", "run-1", "--reason", "done"],
+            Name::WorkflowCancel,
+        ),
     ];
 
     assert_command_names(cases);
@@ -574,4 +593,42 @@ fn all_subcommand_help_pages_show_banner() {
             args.join(" ")
         );
     }
+}
+
+#[test]
+fn parses_workflow_plan_model_override() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "workflow",
+        "plan",
+        "repair.pkl",
+        "--model",
+        "haiku",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Workflow(
+            WorkflowCommand::Plan(ref args)
+        ))
+        if args.model.as_deref() == Some("haiku")
+    ));
+}
+
+#[test]
+fn parses_workflow_plan_without_model_override() {
+    let cli = Cli::try_parse_from(["jackin", "workflow", "plan", "repair.pkl"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Workflow(
+            WorkflowCommand::Plan(ref args)
+        ))
+        if args.model.is_none()
+    ));
+}
+
+#[test]
+fn rejects_workflow_plan_blank_model_override() {
+    Cli::try_parse_from(["jackin", "workflow", "plan", "repair.pkl", "--model", "   "])
+        .unwrap_err();
 }

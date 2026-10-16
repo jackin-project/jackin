@@ -40,7 +40,15 @@ fn newest_cached_executable_release_works_for_every_agent() {
     let paths = JackinPaths::for_tests(dir.path());
 
     for &agent in Agent::ALL {
-        let release = release_fixture_for(agent, "9.9.9");
+        let mut release = release_fixture_for(agent, "9.9.9");
+        if agent == Agent::Codex {
+            release.extra_files = vec![AgentExtraFile {
+                name: jackin_core::CODEX_CODE_MODE_HOST_BINARY.to_owned(),
+                url: "https://example.test/codex-code-mode-host".to_owned(),
+                checksum: None,
+                archive_member: None,
+            }];
+        }
         write_version_release(&paths, &release).unwrap();
         let binary = cached_binary_path(&paths, &release);
         std::fs::write(&binary, agent.slug()).unwrap();

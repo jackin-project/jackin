@@ -98,6 +98,114 @@ fn send_exec_script(session: u64, text: &str) -> String {
     )
 }
 
+fn ownership_exec_script(session: u64, action: &str) -> String {
+    format!("exec /jackin/runtime/jackin-capsule {action} {session}")
+}
+
+#[derive(serde::Deserialize)]
+struct OwnershipPayload {
+    session: u64,
+    operator_owned: bool,
+}
+
+fn ownership_confirmed(msg: ServerMsg, session: u64) -> Result<bool> {
+    match msg {
+        ServerMsg::Ack => Ok(true),
+        ServerMsg::SessionSendDenied { reason, .. } => {
+            bail!(
+                "daemon refused operator ownership of session {session}: {}",
+                reason.label()
+            )
+        }
+        ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
+        other => bail!(
+            "daemon replied with {}; expected Ack for operator ownership",
+            other.kind()
+        ),
+    }
+}
+
+/// Take exclusive operator input ownership of a session.
+///
+/// While ownership is held, automatic [`send_session_text`] input is rejected
+/// by the daemon with [`SessionSendRejection::OperatorOwned`](jackin_protocol::control::SessionSendRejection::OperatorOwned).
+/// Returns the owned flag the daemon confirmed alongside the transport used.
+pub fn take_session_control(
+    paths: &JackinPaths,
+    container: &ContainerHandle,
+    session: u64,
+) -> Result<(bool, ControlTransport)> {
+    ownership_roundtrip(paths, container, session, "take-control", true)
+}
+
+/// Release operator input ownership of a session, reopening automatic input.
+pub fn release_session_control(
+    paths: &JackinPaths,
+    container: &ContainerHandle,
+    session: u64,
+) -> Result<(bool, ControlTransport)> {
+    ownership_roundtrip(paths, container, session, "release-control", false)
+}
+
+fn ownership_roundtrip(
+    paths: &JackinPaths,
+    container: &ContainerHandle,
+    session: u64,
+    action: &str,
+    expected_owned: bool,
+) -> Result<(bool, ControlTransport)> {
+    let path = socket_path(paths, container.name());
+    let request = if action == "take-control" {
+        ClientMsg::TakeControl { session }
+    } else {
+        ClientMsg::ReleaseControl { session }
+    };
+    let mut direct_error = None;
+    if path.exists() {
+        match request_control_inner(&path, &request)
+            .and_then(|msg| ownership_confirmed(msg, session))
+        {
+            Ok(_) => return Ok((expected_owned, ControlTransport::DirectSocket)),
+            Err(error) => direct_error = Some(error),
+        }
+    }
+    ownership_via_docker_exec(container, session, action, expected_owned)
+        .map(|owned| (owned, ControlTransport::DockerExecFallback))
+        .map_err(|exec_error| match direct_error {
+            Some(error) => exec_error.context(format!(
+                "direct socket {action} to {} also failed: {error:#}",
+                container.name()
+            )),
+            None => exec_error,
+        })
+}
+
+fn ownership_via_docker_exec(
+    container: &ContainerHandle,
+    session: u64,
+    action: &str,
+    expected_owned: bool,
+) -> Result<bool> {
+    let output = run_docker_exec_capsule(container, &ownership_exec_script(session, action))?;
+    if !output.status.success() {
+        bail!(
+            "docker exec {action} failed with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let stdout = String::from_utf8(output.stdout).context("{action} stdout is not UTF-8")?;
+    let payload: OwnershipPayload =
+        serde_json::from_str(stdout.trim()).context("parsing jackin-capsule ownership JSON")?;
+    if payload.session != session || payload.operator_owned != expected_owned {
+        bail!(
+            "daemon confirmed unexpected ownership state for session {session}: {}",
+            stdout.trim()
+        );
+    }
+    Ok(payload.operator_owned)
+}
+
 fn single_quote(value: &str) -> String {
     let mut quoted = String::with_capacity(value.len() + 2);
     quoted.push('\'');
@@ -393,6 +501,21 @@ fn read_ndjson_events(
 #[must_use]
 pub fn control_socket_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
     socket_path(paths, container_name)
+}
+
+/// Mint a workflow command ID for session input correlation.
+///
+/// The Capsule `SessionSend`/`SessionSent` wire shape stays ID-less
+/// for backward compatibility, so correlation lives host-side in the
+/// workflow service: generate the ID BEFORE sending, commit the
+/// command as `dispatching`, run the transport call
+/// ([`send_session_text`]), then match the returned receipt to record
+/// `written` and match later session events to record `turn_ended`.
+/// A lost receipt leaves `dispatching`; restart recovery moves it to
+/// `delivery_unknown` and never resubmits automatically.
+#[must_use]
+pub fn new_command_id() -> String {
+    format!("cmd-{}", uuid::Uuid::new_v4().as_simple())
 }
 
 #[cfg(test)]

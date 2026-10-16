@@ -46,6 +46,12 @@ pub enum ClientMsg {
         session: u64,
         text: String,
     },
+    TakeControl {
+        session: u64,
+    },
+    ReleaseControl {
+        session: u64,
+    },
     Events {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session: Option<u64>,
@@ -70,6 +76,8 @@ impl ClientMsg {
             Self::ExecCommand { .. } => "jackin.capsule.Control/ExecCommand",
             Self::TokenUsage { .. } => "jackin.capsule.Control/TokenUsage",
             Self::SessionSend { .. } => "jackin.capsule.Control/SessionSend",
+            Self::TakeControl { .. } => "jackin.capsule.Control/TakeControl",
+            Self::ReleaseControl { .. } => "jackin.capsule.Control/ReleaseControl",
             Self::Events { .. } => "jackin.capsule.Control/Events",
             Self::Unknown => "jackin.capsule.Control/Unknown",
         }
@@ -157,6 +165,7 @@ pub enum ServerMsg {
 pub enum SessionSendRejection {
     UnknownSession,
     WriterClosed,
+    OperatorOwned,
 }
 
 impl SessionSendRejection {
@@ -165,6 +174,7 @@ impl SessionSendRejection {
         match self {
             Self::UnknownSession => "no such session",
             Self::WriterClosed => "session PTY writer has exited",
+            Self::OperatorOwned => "session input is owned by an operator",
         }
     }
 }

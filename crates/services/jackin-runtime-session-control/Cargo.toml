@@ -30,6 +30,7 @@ jackin-telemetry = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+uuid = { workspace = true }
 
 [lints]
 workspace = true

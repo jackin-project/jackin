@@ -1,0 +1,63 @@
+// MVP workflow schema, version 1.
+//
+// Language features used: typed classes, value constraints (isBetween),
+// string-literal unions, nullable members, local imports, amendments.
+// These are the only Pkl features the Step 3 fixture relies on; the
+// implementation does not promise full Pkl parity.
+//
+// pklr conformance notes (selected evaluator: pklr =5.1.1, eval-core):
+// pklr requires every string-literal union to declare a default before a
+// `new { ... }` amendment may select a member. The two `= ...` defaults
+// below (`Agent.runtime = "claude"`, `Backup.mode = "off"`) exist only
+// for that reason. They change no accepted value set: the Rust validator
+// in jackin-workflow-spec still requires implementer=claude,
+// reviewer=codex, and rejects any non-off backup without an authorized
+// remote ID.
+
+module jackin.workflow.mvp1
+
+schemaVersion: Int = 1
+template: "repair-v1" = "repair-v1"
+workspace: String = "current"
+repository: Repository = new {}
+task: String
+references: Listing<String> = new {}
+implementer: Agent = new { runtime = "claude" }
+reviewer: Agent = new { runtime = "codex" }
+checks: Checks
+sandbox: Sandbox = new {}
+backup: Backup = new { mode = "off" }
+maxRepairTurns: Int(isBetween(0, 2)) = 2
+
+class Repository {
+  source: "workspace" = "workspace"
+  revision: String = "HEAD"
+}
+
+class Agent {
+  runtime: "claude" | "codex" = "claude"
+  selection: "workspace-default" = "workspace-default"
+  vendorSubagents: "within_worker" | "forbid" = "within_worker"
+}
+
+class Checks {
+  bundle: String
+  argv: Listing<String>
+  timeoutSeconds: Int(isBetween(1, 3600)) = 120
+}
+
+class Sandbox {
+  backend: "docker" = "docker"
+  profile: String = "workflow-local"
+  cpuMillicores: Int(isBetween(1, 16000)) = 2000
+  memoryBytes: Int(isBetween(268435456, 68719476736)) = 4294967296
+  maxPids: Int(isBetween(1, 4096)) = 256
+  maxRunSeconds: Int(isBetween(1, 86400)) = 3600
+  diskMonitorBytes: Int(isBetween(1, 1099511627776)) = 10737418240
+  requireHardDiskLimit: Boolean = false
+}
+
+class Backup {
+  mode: "off" | "best_effort" | "required" = "off"
+  remote: String? = null
+}

@@ -13,6 +13,10 @@ pub fn current_manifest_version() -> String {
     CURRENT_MANIFEST_VERSION.to_owned()
 }
 
+/// Sibling binary the codex CLI spawns for tool execution. It ships as a
+/// separate release asset and must sit next to the `codex` binary.
+pub const CODEX_CODE_MODE_HOST_BINARY: &str = "codex-code-mode-host";
+
 pub const CONTAINER_PREFIX: &str = "jk";
 
 pub const CONTAINER_PREFIX_DASH: &str = "jk-";

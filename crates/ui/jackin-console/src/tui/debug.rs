@@ -85,6 +85,7 @@ pub struct ConsoleLocationDebug {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConsoleStageDebug {
     List,
+    Workflows,
     Editor {
         mode: String,
         tab: String,
@@ -147,6 +148,7 @@ pub fn console_location_debug_name(location: &ConsoleLocationDebug) -> String {
                 modal.map_or("none", modal_debug_name)
             )
         }
+        ConsoleStageDebug::Workflows => "workflows".to_owned(),
         ConsoleStageDebug::ConfirmDelete => "confirm-delete".to_owned(),
         ConsoleStageDebug::ConfirmInstancePurge => "confirm-instance-purge".to_owned(),
         ConsoleStageDebug::Settings {

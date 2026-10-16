@@ -59,6 +59,7 @@ pub fn scroll_block_registry(
         crate::tui::state::ManagerStage::Editor(editor) => editor_blocks(editor, term_size),
         crate::tui::state::ManagerStage::Settings(settings) => settings_blocks(settings, term_size),
         crate::tui::state::ManagerStage::CreatePrelude(_)
+        | crate::tui::state::ManagerStage::Workflows(_)
         | crate::tui::state::ManagerStage::ConfirmDelete { .. }
         | crate::tui::state::ManagerStage::ConfirmInstancePurge { .. } => Vec::new(),
     }

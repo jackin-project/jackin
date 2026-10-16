@@ -98,6 +98,9 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
         ManagerMessage::EnterSettings(settings) => {
             apply_manager_stage(state, ManagerStage::Settings(settings));
         }
+        ManagerMessage::EnterWorkflows(screen) => {
+            apply_manager_stage(state, ManagerStage::Workflows(*screen));
+        }
         ManagerMessage::FileBrowserCommitValidated(result) => {
             crate::tui::file_browser::apply_file_browser_commit_result(state, result);
         }

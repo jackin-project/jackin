@@ -65,6 +65,7 @@ pub(crate) async fn initialize_launch<D: DockerApi>(
             opts_docker_profile: opts.docker_profile,
             selector,
             role_manifest: &validated_repo.manifest,
+            workflow_grant: None,
         },
     )?;
     let adopted = if dind_started {

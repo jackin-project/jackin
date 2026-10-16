@@ -92,6 +92,54 @@ pub struct ContainerRow {
     pub labels: HashMap<String, String>,
 }
 
+/// Host-side readback of a container's launch-critical settings.
+///
+/// Returned by [`DockerApi::inspect_full_container_by_id`]. Used for the
+/// grant-vs-actual comparison before the first agent prompt: launch must stop
+/// when the actual settings differ from the admitted workflow grant.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "inspect readback mirrors the Docker HostConfig/Config flag set one-to-one for grant comparison"
+)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContainerFullInspection {
+    pub handle: ContainerHandleSnapshot,
+    pub running: bool,
+    pub paused: bool,
+    pub privileged: bool,
+    pub user: String,
+    pub readonly_rootfs: bool,
+    pub no_new_privileges: bool,
+    pub memory_bytes: Option<u64>,
+    pub memory_reservation_bytes: Option<u64>,
+    pub nano_cpus: Option<i64>,
+    pub pids_limit: Option<i64>,
+    pub cap_add: Vec<String>,
+    pub cap_drop: Vec<String>,
+    pub security_opt: Vec<String>,
+    pub network_mode: String,
+    pub extra_hosts: Vec<String>,
+    pub mounts: Vec<ContainerMountSnapshot>,
+    pub labels: HashMap<String, String>,
+    pub image: String,
+}
+
+/// Identity snapshot carried inside [`ContainerFullInspection`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContainerHandleSnapshot {
+    pub name: String,
+    pub id: String,
+}
+
+/// One bind/volume mount as reported by container inspect.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContainerMountSnapshot {
+    pub source: String,
+    pub destination: String,
+    pub mode: String,
+    pub read_write: bool,
+}
+
 impl ContainerRow {
     pub fn handle(&self) -> anyhow::Result<ContainerHandle> {
         ContainerHandle::new(self.name.clone(), self.id.clone())
@@ -181,4 +229,32 @@ pub trait DockerApi {
         container: &ContainerHandle,
         cmd: &[&str],
     ) -> anyhow::Result<String>;
+    /// Pause all processes in the container (SIGSTOP via the daemon).
+    ///
+    /// Used by the checkpoint capture barrier. Callers must confirm the
+    /// paused state with [`DockerApi::inspect_container_by_id`] before
+    /// copying source bytes, and must never `docker exec` into the paused
+    /// container for capture.
+    async fn pause_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
+        let _ = container;
+        anyhow::bail!("Docker backend does not support pausing containers")
+    }
+    /// Resume a container paused with [`DockerApi::pause_container_by_id`].
+    async fn unpause_container_by_id(&self, container: &ContainerHandle) -> anyhow::Result<()> {
+        let _ = container;
+        anyhow::bail!("Docker backend does not support unpausing containers")
+    }
+    /// Full host-side readback of launch-critical settings
+    /// (HostConfig/Config/mounts/network) for grant-vs-actual comparison.
+    ///
+    /// Unlike [`DockerApi::inspect_container_by_id`], which returns state and
+    /// handle only, this returns the actual limits, privilege flags, mounts,
+    /// and ownership labels needed to verify the admitted workflow grant.
+    async fn inspect_full_container_by_id(
+        &self,
+        container: &ContainerHandle,
+    ) -> anyhow::Result<ContainerFullInspection> {
+        let _ = container;
+        anyhow::bail!("Docker backend does not support full container inspection")
+    }
 }

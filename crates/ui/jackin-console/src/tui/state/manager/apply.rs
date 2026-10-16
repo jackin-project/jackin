@@ -66,6 +66,7 @@ impl ManagerState<'_> {
                     .collect(),
             },
             ManagerStage::CreatePrelude(_)
+            | ManagerStage::Workflows(_)
             | ManagerStage::ConfirmDelete { .. }
             | ManagerStage::ConfirmInstancePurge { .. } => MountInfoRefreshSourceFacts::Inactive,
         };

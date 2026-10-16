@@ -17,6 +17,7 @@ members = [
     "crates/core/jackin-env",
     "crates/core/jackin-manifest",
     "crates/core/jackin-process",
+    "crates/core/jackin-workflow-spec",
     "crates/core/jackin-process-directory",
     "crates/core/jackin-protocol",
     "crates/services/jackin-agent-status",
@@ -145,6 +146,7 @@ members = [
     "crates/services/jackin-usage-host-glance",
     "crates/services/jackin-usage-credential-resolver",
     "crates/services/jackin-usage-host-runtime",
+    "crates/services/jackin-workflow",
     "crates/testing/jackin-otlp-testbed",
     "crates/testing/jackin-test-support",
     "crates/tools/jackin-dev",
@@ -168,6 +170,7 @@ repository = "https://github.com/jackin-project/jackin"
 anyhow = "1.0"
 assert_cmd = "=2.2.2"
 base64 = "0.23.1"
+cap = "=0.1.2"
 chrono = { version = "0.4", default-features = false }
 clap = "4.5"
 clap_mangen = "0.3.3"
@@ -207,6 +210,7 @@ jackin-instance-roles = { version = "0.6.4", path = "crates/services/jackin-inst
 jackin-isolation = { version = "0.6.4", path = "crates/services/jackin-isolation" }
 jackin-launch = { version = "0.6.4", path = "crates/ui/jackin-launch" }
 jackin-manifest = { version = "0.6.4", path = "crates/core/jackin-manifest" }
+jackin-workflow-spec = { version = "0.6.4", path = "crates/core/jackin-workflow-spec" }
 jackin-omp-store = { version = "0.6.4", path = "crates/adapters/jackin-omp-store" }
 jackin-otlp-testbed = { version = "0.6.4", path = "crates/testing/jackin-otlp-testbed" }
 jackin-process = { version = "0.6.4", path = "crates/core/jackin-process" }
@@ -332,6 +336,7 @@ jackin-usage-projection = { version = "0.6.4", path = "crates/services/jackin-us
 jackin-usage-host-glance = { version = "0.6.4", path = "crates/services/jackin-usage-host-glance" }
 jackin-usage-credential-resolver = { version = "0.6.4", path = "crates/services/jackin-usage-credential-resolver" }
 jackin-usage-host-runtime = { version = "0.6.4", path = "crates/services/jackin-usage-host-runtime" }
+jackin-workflow = { version = "0.6.4", path = "crates/services/jackin-workflow" }
 nix = "0.31"
 rustix = { version = "=1.1.5", features = ["fs"] }
 opentelemetry_sdk = "0.33"
@@ -341,6 +346,7 @@ opentelemetry-appender-tracing = "0.33"
 opentelemetry-otlp = { version = "0.33", default-features = false, features = ["trace", "logs", "metrics", "grpc-tonic", "gzip-tonic", "tls-ring", "tls-roots"] }
 opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "trace", "logs", "metrics"] }
 owo-colors = "4"
+pklr = { version = "=5.1.1", default-features = false, features = ["eval-core"] }
 portable-pty = "0.9"
 predicates = "=3.1.4"
 proptest = "1.9"

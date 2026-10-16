@@ -538,6 +538,15 @@ dependencies = [
 
 [[package]]
 name = "bit-set"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
+dependencies = [
+ "bit-vec 0.8.0",
+]
+
+[[package]]
+name = "bit-set"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56d87354e4229f54a44f7bf2435906a4656dba36026ab6eaca629a2c436a691c"
@@ -550,6 +559,12 @@ name = "bit-vec"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
+
+[[package]]
+name = "bit-vec"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bit-vec"
@@ -845,6 +860,12 @@ name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+
+[[package]]
+name = "cap"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f125eb85b84a24c36b02ed1d22c9dd8632f53b3cde6e4d23512f94021030003"
 
 [[package]]
 name = "cast"
@@ -1964,6 +1985,17 @@ checksum = "b95f7c0680e4142284cf8b22c14a476e87d61b004a3a0861872b32ef7ead40a2"
 dependencies = [
  "bit-set 0.5.3",
  "regex",
+]
+
+[[package]]
+name = "fancy-regex"
+version = "0.19.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d301f5bf187b3c295fce6468d3875037a0bccc5f6b151c63cac2f85babf21912"
+dependencies = [
+ "bit-set 0.8.0",
+ "regex-automata",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -3112,6 +3144,7 @@ dependencies = [
  "jackin-process",
  "jackin-protocol",
  "jackin-runtime",
+ "jackin-runtime-session-control",
  "jackin-telemetry",
  "jackin-test-support",
  "jackin-tui",
@@ -3121,6 +3154,8 @@ dependencies = [
  "jackin-usage-discovery",
  "jackin-usage-host-credentials",
  "jackin-usage-provider-claude",
+ "jackin-workflow",
+ "jackin-workflow-spec",
  "nix 0.31.3",
  "owo-colors 4.4.0",
  "predicates",
@@ -3262,6 +3297,7 @@ dependencies = [
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-tui",
+ "jackin-workflow",
  "nix 0.31.3",
  "open",
  "opentelemetry-proto",
@@ -4172,6 +4208,7 @@ name = "jackin-runtime-host-daemon"
 version = "0.6.4"
 dependencies = [
  "anyhow",
+ "hex",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-otlp-testbed",
@@ -4179,9 +4216,12 @@ dependencies = [
  "jackin-protocol",
  "jackin-runtime-process-telemetry",
  "jackin-telemetry",
+ "jackin-workflow",
+ "jackin-workflow-spec",
  "nix 0.31.3",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "tempfile",
  "tokio",
  "tracing",
@@ -4653,6 +4693,7 @@ dependencies = [
  "jackin-telemetry",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -5313,6 +5354,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-workflow"
+version = "0.6.4"
+dependencies = [
+ "anyhow",
+ "hex",
+ "jackin-isolation",
+ "jackin-telemetry",
+ "jackin-usage-store-backend",
+ "jackin-workflow-spec",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "jackin-workflow-spec"
+version = "0.6.4"
+dependencies = [
+ "cap",
+ "hex",
+ "jackin-process",
+ "pklr",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "jackin-xtask"
 version = "0.6.4"
 dependencies = [
@@ -5686,6 +5760,16 @@ name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+
+[[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest 0.11.3",
+]
 
 [[package]]
 name = "memchr"
@@ -6679,6 +6763,24 @@ name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
+
+[[package]]
+name = "pklr"
+version = "5.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a7ccc91516ff59113663c375227da3bca2de7feaa376c318e3dfb0b642fdfb1"
+dependencies = [
+ "fancy-regex 0.19.2",
+ "indexmap 2.14.2",
+ "libm",
+ "md-5",
+ "rustc-hash 2.1.3",
+ "serde_json",
+ "sha1 0.11.0",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "url",
+]
 
 [[package]]
 name = "plotters"
@@ -8098,6 +8200,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "sha1_smol"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8772,7 +8885,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bitflags 2.13.2",
- "fancy-regex",
+ "fancy-regex 0.11.0",
  "filedescriptor",
  "finl_unicode",
  "fixedbitset 0.4.2",
@@ -10252,7 +10365,7 @@ checksum = "1301e935010a701ae5f8655edc0ad17c44bad3ac5ce8c39185f75453b720ae94"
 dependencies = [
  "const-oid 0.9.6",
  "der 0.7.10",
- "sha1",
+ "sha1 0.10.7",
  "signature",
  "spki 0.7.3",
  "tls_codec",

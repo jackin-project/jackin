@@ -5,7 +5,11 @@ use anyhow::Context;
 
 pub const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
 
-fn workspace_trusted_project_paths(
+/// Container paths Codex must trust without prompting: the workspace
+/// workdir plus every mount destination. Shared with the account
+/// publication path so the mounted generation carries the same trust
+/// the session home seed writes.
+pub fn workspace_trusted_project_paths(
     workspace: &jackin_config::ResolvedWorkspace,
 ) -> std::collections::BTreeSet<String> {
     let mut paths = std::collections::BTreeSet::new();

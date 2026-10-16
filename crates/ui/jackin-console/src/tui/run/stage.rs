@@ -8,6 +8,7 @@ pub enum ConsoleScreenStage {
     List,
     Editor,
     Settings,
+    Workflows,
     CreatePrelude,
     ConfirmDelete,
     ConfirmInstancePurge,
@@ -46,6 +47,7 @@ pub const fn console_screen_stage_for_route(route: ConsoleManagerStageRoute) -> 
         ConsoleManagerStageRoute::List => ConsoleScreenStage::List,
         ConsoleManagerStageRoute::Editor => ConsoleScreenStage::Editor,
         ConsoleManagerStageRoute::Settings => ConsoleScreenStage::Settings,
+        ConsoleManagerStageRoute::Workflows => ConsoleScreenStage::Workflows,
         ConsoleManagerStageRoute::CreatePrelude => ConsoleScreenStage::CreatePrelude,
         ConsoleManagerStageRoute::ConfirmDelete => ConsoleScreenStage::ConfirmDelete,
         ConsoleManagerStageRoute::ConfirmInstancePurge => ConsoleScreenStage::ConfirmInstancePurge,
@@ -59,6 +61,7 @@ pub const fn diagnostics_screen_for_stage(
     use jackin_telemetry::schema::enums::ScreenId;
     match stage {
         ConsoleScreenStage::List
+        | ConsoleScreenStage::Workflows
         | ConsoleScreenStage::ConfirmDelete
         | ConsoleScreenStage::ConfirmInstancePurge => ScreenId::WorkspaceList,
         ConsoleScreenStage::Editor => ScreenId::WorkspaceEditor,

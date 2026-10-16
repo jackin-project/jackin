@@ -44,6 +44,29 @@ pub struct AgentRelease {
     pub url: String,
     pub checksum: Option<String>,
     pub archive_member: Option<String>,
+    #[serde(default)]
+    pub extra_files: Vec<AgentExtraFile>,
+}
+
+/// Sibling file shipped alongside an agent binary in the same upstream
+/// release (e.g. the code execution host the codex CLI spawns next to its
+/// own binary). Verified and cached together with the primary binary so the
+/// pair can never skew across versions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentExtraFile {
+    pub name: String,
+    pub url: String,
+    pub checksum: Option<String>,
+    pub archive_member: Option<String>,
+}
+
+/// Releases cached before sibling files existed carry no sibling metadata;
+/// re-resolve them instead of installing a known-incomplete binary set.
+fn release_has_required_extras(release: &AgentRelease) -> bool {
+    if release.agent != Agent::Codex {
+        return true;
+    }
+    !release.extra_files.is_empty()
 }
 
 pub async fn latest_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
@@ -256,6 +279,59 @@ async fn cached_executable_after_failure_async(
     Some((fallback_release, fallback_path))
 }
 
+/// Sibling files declared by [`AgentRelease::extra_files`] live next to the
+/// cached primary binary and are re-verified on every launch path (cache hit
+/// included) so a half-populated cache can never ship an incomplete set.
+async fn ensure_extra_files(release: &AgentRelease, cached: &Path) -> Result<()> {
+    for extra in &release.extra_files {
+        let dest = cached.with_file_name(&extra.name);
+        if is_executable_file_async(&dest).await {
+            continue;
+        }
+        let sub_release = AgentRelease {
+            agent: release.agent,
+            version: release.version.clone(),
+            url: extra.url.clone(),
+            checksum: extra.checksum.clone(),
+            archive_member: extra.archive_member.clone(),
+            extra_files: Vec::new(),
+        };
+        record(
+            "agent_binary_download_started",
+            &format!(
+                "{} {} sibling {} from {} to {}",
+                release.agent.slug(),
+                release.version,
+                extra.name,
+                extra.url,
+                dest.display()
+            ),
+        );
+        download_and_cache(&sub_release, &dest)
+            .await
+            .with_context(|| {
+                format!(
+                    "downloading {} {} sibling {} from {}",
+                    release.agent.slug(),
+                    release.version,
+                    extra.name,
+                    extra.url
+                )
+            })?;
+        record(
+            "agent_binary_ready",
+            &format!(
+                "{} {} sibling {} at {}",
+                release.agent.slug(),
+                release.version,
+                extra.name,
+                dest.display()
+            ),
+        );
+    }
+    Ok(())
+}
+
 async fn ensure_binary_for_release(
     agent: Agent,
     release: &AgentRelease,
@@ -275,6 +351,7 @@ async fn ensure_binary_for_release(
                 cached.display()
             ),
         );
+        ensure_extra_files(release, cached).await?;
         return Ok(AgentBinary {
             agent,
             path: cached.to_path_buf(),
@@ -295,6 +372,7 @@ async fn ensure_binary_for_release(
                 cached.display()
             ),
         );
+        ensure_extra_files(release, cached).await?;
         return Ok(AgentBinary {
             agent,
             path: cached.to_path_buf(),
@@ -341,6 +419,7 @@ async fn ensure_binary_for_release(
             cached.display()
         ),
     );
+    ensure_extra_files(release, cached).await?;
     Ok(AgentBinary {
         agent,
         path: cached.to_path_buf(),
@@ -412,6 +491,7 @@ async fn resolve_antigravity() -> Result<AgentRelease> {
         url: manifest.url,
         checksum: Some(checksum),
         archive_member: Some("antigravity".to_owned()),
+        extra_files: Vec::new(),
     })
 }
 
@@ -457,6 +537,7 @@ async fn resolve_claude() -> Result<AgentRelease> {
         url: format!("{base}/{version}/{platform}/{}", entry.binary),
         checksum: Some(entry.checksum.clone()),
         archive_member: None,
+        extra_files: Vec::new(),
     })
 }
 
@@ -480,6 +561,7 @@ async fn resolve_amp() -> Result<AgentRelease> {
         url: format!("{base}/cli/{version}/amp-{platform}"),
         checksum: Some(checksum),
         archive_member: None,
+        extra_files: Vec::new(),
     })
 }
 
@@ -502,6 +584,7 @@ async fn resolve_kimi() -> Result<AgentRelease> {
         url: format!("{KIMI_BINARY_BASE_URL}/{version}/{}", entry.filename),
         checksum: Some(entry.checksum.clone()),
         archive_member: None,
+        extra_files: Vec::new(),
     })
 }
 
@@ -510,9 +593,17 @@ async fn resolve_codex() -> Result<AgentRelease> {
         "arm64" => "aarch64-unknown-linux-musl",
         _ => "x86_64-unknown-linux-musl",
     };
-    let asset = format!("codex-{arch}.tar.gz");
-    let release = github_latest_asset("openai/codex", &asset).await?;
-    let checksum = release.asset.sha256_digest();
+    let release = github_release("openai/codex").await?;
+    let asset = release
+        .asset_named(&format!("codex-{arch}.tar.gz"))
+        .with_context(|| {
+            format!("openai/codex latest release missing asset codex-{arch}.tar.gz")
+        })?;
+    let host_asset_name = format!("{}-{arch}.tar.gz", jackin_core::CODEX_CODE_MODE_HOST_BINARY);
+    let host_asset = release
+        .asset_named(&host_asset_name)
+        .with_context(|| format!("openai/codex latest release missing asset {host_asset_name}"))?;
+    let host_member = format!("{}-{arch}", jackin_core::CODEX_CODE_MODE_HOST_BINARY);
     Ok(AgentRelease {
         agent: Agent::Codex,
         version: release
@@ -520,9 +611,15 @@ async fn resolve_codex() -> Result<AgentRelease> {
             .trim_start_matches("rust-v")
             .trim_start_matches('v')
             .to_owned(),
-        url: release.asset.browser_download_url,
-        checksum,
+        url: asset.browser_download_url.clone(),
+        checksum: asset.sha256_digest(),
         archive_member: Some(format!("codex-{arch}")),
+        extra_files: vec![AgentExtraFile {
+            name: jackin_core::CODEX_CODE_MODE_HOST_BINARY.to_owned(),
+            url: host_asset.browser_download_url.clone(),
+            checksum: host_asset.sha256_digest(),
+            archive_member: Some(host_member),
+        }],
     })
 }
 
@@ -570,6 +667,7 @@ async fn resolve_grok() -> Result<AgentRelease> {
         url,
         checksum: None,
         archive_member: None,
+        extra_files: Vec::new(),
     })
 }
 
@@ -587,6 +685,7 @@ async fn resolve_opencode() -> Result<AgentRelease> {
         url: release.asset.browser_download_url,
         checksum,
         archive_member: Some("opencode".to_owned()),
+        extra_files: Vec::new(),
     })
 }
 
@@ -642,6 +741,17 @@ async fn github_auth_token_uncached() -> Option<String> {
 }
 
 async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubReleaseAssetMatch> {
+    let release = github_release(repo).await?;
+    let asset = release
+        .asset_named(asset_name)
+        .with_context(|| format!("{repo} latest release missing asset {asset_name}"))?;
+    Ok(GithubReleaseAssetMatch {
+        tag_name: release.tag_name,
+        asset,
+    })
+}
+
+async fn github_release(repo: &str) -> Result<GithubRelease> {
     let api_url = format!("https://api.github.com/repos/{repo}/releases/latest");
     let token = github_auth_token().await;
     let mut headers = HeaderMap::new();
@@ -669,15 +779,7 @@ async fn github_latest_asset(repo: &str, asset_name: &str) -> Result<GithubRelea
     .with_context(|| format!("fetching latest GitHub release metadata for {repo}"))?;
     let release: GithubRelease = serde_json::from_str(&body)
         .with_context(|| format!("parsing latest GitHub release metadata for {repo}"))?;
-    let asset = release
-        .assets
-        .into_iter()
-        .find(|asset| asset.name == asset_name)
-        .with_context(|| format!("{repo} latest release missing asset {asset_name}"))?;
-    Ok(GithubReleaseAssetMatch {
-        tag_name: release.tag_name,
-        asset,
-    })
+    Ok(release)
 }
 
 async fn retry_metadata_with_backoff<T, F, Fut>(
@@ -938,7 +1040,7 @@ fn read_cached_release_at(
     if now.duration_since(modified).ok()? >= CACHE_TTL {
         return None;
     }
-    read_release_file(&path)
+    read_release_file(&path).filter(release_has_required_extras)
 }
 
 async fn read_cached_release_async(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
@@ -961,7 +1063,9 @@ pub fn newest_cached_executable_release(
             .join(&arch_dir_name)
             .join("metadata.json");
         let Some(release) = read_release_file(&metadata_path).filter(|release| {
-            release.agent == agent && is_executable_file(&cached_binary_path(paths, release))
+            release.agent == agent
+                && release_has_required_extras(release)
+                && is_executable_file(&cached_binary_path(paths, release))
         }) else {
             continue;
         };
@@ -1060,7 +1164,16 @@ struct GithubRelease {
     assets: Vec<GithubAsset>,
 }
 
-#[derive(Debug, Deserialize)]
+impl GithubRelease {
+    fn asset_named(&self, asset_name: &str) -> Option<GithubAsset> {
+        self.assets
+            .iter()
+            .find(|asset| asset.name == asset_name)
+            .cloned()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct GithubAsset {
     name: String,
     browser_download_url: String,

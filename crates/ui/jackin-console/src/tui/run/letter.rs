@@ -47,6 +47,7 @@ pub const fn letter_input_state_for_route(
             state.settings_mount_modal = stage_modal;
         }
         ConsoleManagerStageRoute::List
+        | ConsoleManagerStageRoute::Workflows
         | ConsoleManagerStageRoute::ConfirmDelete
         | ConsoleManagerStageRoute::ConfirmInstancePurge => {}
     }

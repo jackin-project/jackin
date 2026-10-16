@@ -8,6 +8,7 @@
 
 pub mod effects;
 mod services;
+pub(crate) mod workflows;
 pub mod terminal {
 
     pub use jackin_console::tui::terminal::TerminalSession;

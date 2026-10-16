@@ -14,6 +14,7 @@ pub const fn console_main_frame_plan(route: ConsoleManagerStageRoute) -> Console
     match route {
         ConsoleManagerStageRoute::Editor => ConsoleMainFramePlan::Editor,
         ConsoleManagerStageRoute::Settings => ConsoleMainFramePlan::Settings,
+        ConsoleManagerStageRoute::Workflows => ConsoleMainFramePlan::Workflows,
         ConsoleManagerStageRoute::List => ConsoleMainFramePlan::Workspace {
             render_list_body: true,
         },
@@ -32,6 +33,7 @@ pub const fn console_prepare_frame_plan(
     match route {
         ConsoleManagerStageRoute::Editor => ConsolePrepareFramePlan::Editor,
         ConsoleManagerStageRoute::Settings => ConsolePrepareFramePlan::Settings,
+        ConsoleManagerStageRoute::Workflows => ConsolePrepareFramePlan::None,
         ConsoleManagerStageRoute::List => ConsolePrepareFramePlan::List,
         ConsoleManagerStageRoute::CreatePrelude
         | ConsoleManagerStageRoute::ConfirmDelete
@@ -45,6 +47,7 @@ pub const fn console_modal_render_plan(route: ConsoleManagerStageRoute) -> Conso
         ConsoleManagerStageRoute::List => ConsoleModalRenderPlan::List,
         ConsoleManagerStageRoute::Editor => ConsoleModalRenderPlan::Editor,
         ConsoleManagerStageRoute::Settings => ConsoleModalRenderPlan::Settings,
+        ConsoleManagerStageRoute::Workflows => ConsoleModalRenderPlan::Workflows,
         ConsoleManagerStageRoute::CreatePrelude => ConsoleModalRenderPlan::CreatePrelude,
         ConsoleManagerStageRoute::ConfirmDelete => ConsoleModalRenderPlan::ConfirmDelete,
         ConsoleManagerStageRoute::ConfirmInstancePurge => {
@@ -60,6 +63,7 @@ pub const fn console_reserved_footer_height_plan(
     match route {
         ConsoleManagerStageRoute::Editor => ConsoleReservedFooterHeightPlan::Editor,
         ConsoleManagerStageRoute::Settings => ConsoleReservedFooterHeightPlan::Settings,
+        ConsoleManagerStageRoute::Workflows => ConsoleReservedFooterHeightPlan::Workspace,
         ConsoleManagerStageRoute::List
         | ConsoleManagerStageRoute::CreatePrelude
         | ConsoleManagerStageRoute::ConfirmDelete
