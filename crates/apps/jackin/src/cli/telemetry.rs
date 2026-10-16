@@ -16,7 +16,7 @@ use super::usage::{
     UsageAuthCommand, UsageBindingCommand, UsageMonitorCommand, UsagePolicyCommand, UsageScope,
     UsageServiceCommand, UsageSpendCommand, UsageStatuslineCommand,
 };
-use super::workflow::WorkflowCommand;
+use super::workflow::{WorkflowCommand, WorkflowRecordAction};
 
 #[must_use]
 pub const fn command_name(command: &Command) -> CliCommandName {
@@ -130,7 +130,16 @@ pub const fn workflow_command_name(command: &WorkflowCommand) -> CliCommandName 
         WorkflowCommand::Attach(_) => CliCommandName::WorkflowAttach,
         WorkflowCommand::ResolveInput(_) => CliCommandName::WorkflowResolveInput,
         WorkflowCommand::Export(_) => CliCommandName::WorkflowExport,
-        WorkflowCommand::Record(_) => CliCommandName::WorkflowRecord,
+        WorkflowCommand::Record(args) => match &args.action {
+            WorkflowRecordAction::Session(_) => CliCommandName::WorkflowRecordSession,
+            WorkflowRecordAction::Candidate(_) => CliCommandName::WorkflowRecordCandidate,
+            WorkflowRecordAction::Checkpoint(_) => CliCommandName::WorkflowRecordCheckpoint,
+            WorkflowRecordAction::Test(_) => CliCommandName::WorkflowRecordTest,
+            WorkflowRecordAction::Review(_) => CliCommandName::WorkflowRecordReview,
+            WorkflowRecordAction::Backup(_) => CliCommandName::WorkflowRecordBackup,
+            WorkflowRecordAction::DispatchIntent(_) => CliCommandName::WorkflowRecordDispatchIntent,
+            WorkflowRecordAction::Advance(_) => CliCommandName::WorkflowRecordAdvance,
+        },
     }
 }
 

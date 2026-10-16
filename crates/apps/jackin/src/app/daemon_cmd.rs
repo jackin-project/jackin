@@ -22,9 +22,11 @@ pub(super) async fn handle(command: DaemonCommand, paths: &JackinPaths) -> Resul
             // runtime, and blocking that thread would deadlock any
             // nested `block_on` (the workflow store opens its own
             // runtime for its dedicated DB file).
-            tokio::task::spawn_blocking(move || serve(&layout, env!("JACKIN_VERSION")))
-                .await
-                .context("joining daemon serve")??;
+            jackin_telemetry::spawn::joined_blocking(move || {
+                serve(&layout, env!("JACKIN_VERSION"))
+            })
+            .await
+            .context("joining daemon serve")??;
             Ok(())
         }
         DaemonCommand::Install => install(paths),
