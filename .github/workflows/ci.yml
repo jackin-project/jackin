@@ -4603,6 +4603,10 @@ jobs:
         if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/tools/jackin-xtask/nextest/default,')"
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
         with: {"digest": "b3-b94164f6c8c4a648c6c25c45bc0cce5fb0320bc41f84ad34d298bd8b766391c8"}
+      - name: Doctests
+        if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/tools/jackin-xtask/doctest/default,')"
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-efde20aa2e0648bee6446966be8a5bf782a50b33d279b0186e27110fc09e74aa"}
       - name: Documentation
         if: "!contains(needs.plan.outputs.covered_tasks, ',stack/rust/crates/tools/jackin-xtask/doc/default,')"
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]

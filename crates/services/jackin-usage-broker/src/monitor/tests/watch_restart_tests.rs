@@ -9,7 +9,7 @@ use jackin_protocol::usage_monitor::{
     StatuslineRateLimits,
 };
 
-use super::MonitorStore;
+use super::super::MonitorStore;
 
 const NOW: i64 = 1_800_000_000;
 

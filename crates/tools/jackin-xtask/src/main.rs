@@ -41,7 +41,7 @@ mod schema;
 mod suppressions;
 mod telemetry_bench;
 mod telemetry_registry;
-mod workflow_yaml;
+use jackin_xtask::workflow_yaml;
 
 use std::{process::ExitCode, thread};
 

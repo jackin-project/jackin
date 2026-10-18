@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::super::*;
 use jackin_protocol::control::Money;
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorBudgetReadiness,

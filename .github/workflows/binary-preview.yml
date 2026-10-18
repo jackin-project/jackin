@@ -65,7 +65,7 @@ jobs:
   preview-producer:
     name: Build preview archives without publication credentials
     runs-on: xcode-27
-    timeout-minutes: 360
+    timeout-minutes: 5
     if: ${{ github.event_name == 'push' }}
     needs:
       - preview-eligibility

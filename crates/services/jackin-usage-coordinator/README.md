@@ -53,6 +53,6 @@ valid future schema versions fail closed while preserving their bytes.
 ## How to verify
 
 ```sh
-mbx +1.97.1 nextest run -p jackin-usage-coordinator --locked --offline
-mbx +1.97.1 clippy -p jackin-usage-coordinator --all-targets --locked --offline -- -D warnings
+mbx +1.99.1 nextest run -p jackin-usage-coordinator --locked --offline
+mbx +1.99.1 clippy -p jackin-usage-coordinator --all-targets --locked --offline -- -D warnings
 ```

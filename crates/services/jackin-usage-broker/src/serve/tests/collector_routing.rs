@@ -5,8 +5,8 @@ use super::*;
 
 use jackin_protocol::usage_broker::{UsageIdentityKindV1, UsagePercent, UsageProjectionV1};
 use jackin_protocol::usage_monitor::{
-    MonitorStatus, StatuslineObservation, StatuslineQuotaWindow, StatuslineRateLimits,
-    USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
+    MonitorAccountBinding, MonitorEvidenceSource, MonitorStatus, StatuslineObservation,
+    StatuslineQuotaWindow, StatuslineRateLimits, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
 };
 
 fn local_source_projection(
@@ -15,7 +15,7 @@ fn local_source_projection(
     now_epoch: i64,
 ) -> UsageProjectionV1 {
     let mut projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+        "../../../../jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     ))
     .expect("valid shared usage projection fixture");
     projection.generated_at_epoch = now_epoch;

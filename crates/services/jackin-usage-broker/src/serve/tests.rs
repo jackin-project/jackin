@@ -24,6 +24,13 @@ use jackin_usage_coordinator::{
 };
 
 mod collector;
+mod collector_routing;
+
+const SOURCE_ID_PREFIX: &str = "a";
+
+fn source_id() -> String {
+    SOURCE_ID_PREFIX.repeat(64)
+}
 
 const NOW: i64 = 1_800_000_000;
 const ACCOUNT_ID: &str = "acct-serve-ticker";
