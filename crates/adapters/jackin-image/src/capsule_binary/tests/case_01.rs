@@ -4,6 +4,17 @@
 use super::*;
 
 #[test]
+fn capsule_resolution_future_stays_within_launch_stack_budget() {
+    let paths = JackinPaths::for_tests(Path::new("/not-executed"));
+    let future = ensure_available(&paths);
+    let bytes = size_of_val(&future);
+    assert!(
+        bytes <= 8192,
+        "capsule future is {bytes} bytes; budget is 8192"
+    );
+}
+
+#[test]
 fn preview_url_uses_immutable_tag_and_canonical_target() {
     let version = "0.6.0-preview.411+bf7df07";
     for (arch, target) in [
