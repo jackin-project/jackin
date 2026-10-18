@@ -81,12 +81,12 @@ fn violation_fields_are_non_empty() {
 #[test]
 fn prose_gate_failure_maps_to_complete_structured_diagnostic() {
     let report = report_from_result(
-        "headers",
+        "arch",
         "crates/",
-        "restore headers",
-        "cargo xtask lint headers",
+        "restore descending dependency tiers",
+        "cargo xtask lint arch",
         Err(anyhow::anyhow!(
-            "crates/example/src/lib.rs: missing invariant"
+            "crates/example/Cargo.toml: dependency points to a higher tier"
         )),
     );
     let value = serde_json::to_value(report).expect("serialize report");

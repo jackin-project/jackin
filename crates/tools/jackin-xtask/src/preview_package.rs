@@ -32,7 +32,7 @@ pub(crate) fn run() -> Result<()> {
         "unexpected producer manifest path"
     );
     ensure!(
-        fs::read_dir(output)?.next().is_none(),
+        crate::fs_util::read_dir_sorted(output)?.is_empty(),
         "producer output must be empty"
     );
     crate::release_archive::build_preview(&version, output)?;
@@ -174,7 +174,10 @@ mod tests {
             manifest["companions"][0]["sha256"],
             archive_sha256(&temp.path().join("capsule-manifest.json")).unwrap()
         );
-        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 14);
+        assert_eq!(
+            crate::fs_util::read_dir_sorted(temp.path()).unwrap().len(),
+            14
+        );
     }
 
     #[test]

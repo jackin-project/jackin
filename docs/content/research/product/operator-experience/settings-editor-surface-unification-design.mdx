@@ -132,7 +132,7 @@ pub enum AuthSourceFolderOutcome { Apply(PathBuf), Reject(String) }
 pub fn decide_auth_source_folder(kind: Option<AuthKind>, committed: PathBuf) -> AuthSourceFolderOutcome;
 ```
 
-`decide_auth_source_folder` would wrap the already-shared `validate_auth_source_folder` (<RepoFile path="crates/apps/jackin/src/console.rs" />) → runtime gate `validate_sync_source_dir` (<RepoFile path="crates/services/jackin-instance/src/auth.rs" />). The plan: one `handle_auth_modal<H>` and one of each `apply_*`/`open_*`/`restore_*` would replace the auth twins, with the same shape generalizing to the other domains.
+`decide_auth_source_folder` would wrap the already-shared `validate_auth_source_folder` (<RepoFile path="crates/apps/jackin/src/console.rs" />) → runtime gate `validate_sync_source_dir` (<RepoFile path="crates/services/jackin-instance-agents/src/lib.rs" />). The plan: one `handle_auth_modal<H>` and one of each `apply_*`/`open_*`/`restore_*` would replace the auth twins, with the same shape generalizing to the other domains.
 
 Infra modals that the editor shares with non-auth flows (`TextInput` for mount destinations and env keys; the env-value `OpPicker`) are meant to stay surface-owned and reached through host openers; they would not fold into a domain modal.
 

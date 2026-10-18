@@ -20,10 +20,8 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-protocol = { workspace = true }
-jackin-telemetry = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
 
-serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
 [lints]

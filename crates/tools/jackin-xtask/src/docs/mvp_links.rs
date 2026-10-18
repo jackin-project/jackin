@@ -34,13 +34,8 @@ pub(crate) fn check_mvp_links(root: &Path) -> Result<()> {
 }
 
 fn collect_markdown(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-    let mut entries: Vec<PathBuf> = fs::read_dir(dir)
-        .with_context(|| format!("reading {}", dir.display()))?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<Result<_, _>>()
-        .with_context(|| format!("reading {}", dir.display()))?;
-    entries.sort();
-    for path in entries {
+    for entry in crate::fs_util::read_dir_sorted(dir)? {
+        let path = entry.path();
         if path.is_dir() {
             collect_markdown(&path, files)?;
         } else if path.extension().and_then(|ext| ext.to_str()) == Some("md") {

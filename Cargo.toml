@@ -292,7 +292,6 @@ jackin-runtime-prune-output = { version = "0.6.4", path = "crates/services/jacki
 jackin-runtime-reactive-daemon = { version = "0.6.4", path = "crates/services/jackin-runtime-reactive-daemon" }
 jackin-runtime-repo-cache = { version = "0.6.4", path = "crates/services/jackin-runtime-repo-cache" }
 jackin-runtime-session-control = { version = "0.6.4", path = "crates/services/jackin-runtime-session-control" }
-jackin-runtime-shared-runner = { version = "0.6.4", path = "crates/services/jackin-runtime-shared-runner" }
 jackin-runtime-snapshot = { version = "0.6.4", path = "crates/services/jackin-runtime-snapshot" }
 jackin-runtime-spin-wait = { version = "0.6.4", path = "crates/services/jackin-runtime-spin-wait" }
 jackin-runtime-universe = { version = "0.6.4", path = "crates/services/jackin-runtime-universe" }
@@ -332,8 +331,6 @@ jackin-usage-broker-wire = { version = "0.6.4", path = "crates/services/jackin-u
 jackin-usage-destination = { version = "0.6.4", path = "crates/services/jackin-usage-destination" }
 jackin-usage-discovery = { version = "0.6.4", path = "crates/services/jackin-usage-discovery" }
 jackin-usage-broker = { version = "0.6.4", path = "crates/services/jackin-usage-broker" }
-jackin-usage-projection = { version = "0.6.4", path = "crates/services/jackin-usage-projection" }
-jackin-usage-host-glance = { version = "0.6.4", path = "crates/services/jackin-usage-host-glance" }
 jackin-usage-credential-resolver = { version = "0.6.4", path = "crates/services/jackin-usage-credential-resolver" }
 jackin-usage-host-runtime = { version = "0.6.4", path = "crates/services/jackin-usage-host-runtime" }
 jackin-workflow = { version = "0.6.4", path = "crates/services/jackin-workflow" }

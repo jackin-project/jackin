@@ -37,7 +37,6 @@ tokio = { workspace = true, features = ["io-util", "io-std", "macros", "rt", "sy
 
 [dev-dependencies]
 tempfile = { workspace = true }
-toml = { workspace = true }
 
 [lints]
 workspace = true

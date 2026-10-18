@@ -27,7 +27,6 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 | [`agent_links.rs`](src/agent_links.rs) · [`agent_links/`](src/agent_links) | no-cross-ref gate (README/AGENTS) | [`tests.rs`](src/agent_links/tests.rs) |
 | [`container_paths_gate.rs`](src/container_paths_gate.rs) · [`container_paths_gate/`](src/container_paths_gate) | container-path gate | [`tests.rs`](src/container_paths_gate/tests.rs) |
 | [`suppressions.rs`](src/suppressions.rs) · [`suppressions/`](src/suppressions) | lint-suppression gate | [`tests.rs`](src/suppressions/tests.rs) |
-| [`headers.rs`](src/headers.rs) · [`headers/`](src/headers) | ownership-header contract gate | [`tests.rs`](src/headers/tests.rs) |
 | [`arch.rs`](src/arch.rs) · [`arch/`](src/arch) | tier-graph dependency-direction gate (`TIERS` table; prod edges must descend; dev-cycle allowlist) | [`tests.rs`](src/arch/tests.rs) |
 | [`readme_freshness.rs`](src/readme_freshness.rs) · [`readme_freshness/`](src/readme_freshness) | structural src change ⇒ README same-PR gate | [`tests.rs`](src/readme_freshness/tests.rs) |
 |  [`layout_lint.rs`](src/layout_lint.rs) · [`layout_lint/`](src/layout_lint) | test-layout gate | [`tests.rs`](src/layout_lint/tests.rs) |

@@ -19,7 +19,6 @@ name = "jackin_instance_credentials"
 path = "src/lib.rs"
 
 [dependencies]
-jackin-core   = { workspace = true }
 jackin-config = { workspace = true }
 
 anyhow     = { workspace = true }
