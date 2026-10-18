@@ -86,7 +86,7 @@ public struct UsageWindowSidebar: View {
     }
 
     @ViewBuilder
-    private func providerMark(_ provider: PresentationStore.GlanceProviderRow) -> some View {
+    private func providerMark(_ provider: GlanceProviderRow) -> some View {
         if let mark = ProviderMarks.swiftUIImage(forIconKey: provider.iconKey) {
             mark
                 .resizable()

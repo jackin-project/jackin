@@ -26,7 +26,7 @@ jackin-workflow = { workspace = true }
 termrock = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync"] }
 nix = { workspace = true, features = ["term"] }
-open = "5.3.4"
+open = "5.4.4"
 ratatui = { workspace = true }
 
 [dev-dependencies]

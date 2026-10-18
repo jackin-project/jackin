@@ -133,7 +133,7 @@ pub(super) fn resolve_app_path(app: &Path) -> Result<PathBuf> {
     };
     if !path.exists() {
         bail!(
-            "app not found at {}\n  build first: mise exec -- mbx +1.99.0 xtask desktop build --version 0.6.0 --build 1",
+            "app not found at {}\n  build first: mise exec -- mbx +1.99.1 xtask desktop build --version 0.6.0 --build 1",
             path.display()
         );
     }
@@ -181,7 +181,7 @@ fn run_desktop_tests(root: &Path) -> Result<()> {
     progress("┌─────────────────────────────────────────────────────────────");
     progress("│ jackin❯ desktop — tests OK");
     progress("│   host nextest + all five pure Swift harnesses");
-    progress("│   (counted SwiftPM unit tests: mise exec -- mbx +1.99.0 xtask desktop test-swift)");
+    progress("│   (counted SwiftPM unit tests: mise exec -- mbx +1.99.1 xtask desktop test-swift)");
     progress("└─────────────────────────────────────────────────────────────");
     Ok(())
 }
@@ -719,8 +719,8 @@ fn print_app_ready_banner(app: &Path, version: &str, build: &str) {
     progress(format!("│   app:     {}", abs.display()));
     progress(format!("│   rel:     {}", rel.display()));
     progress("│");
-    progress("│   verify:  mise exec -- mbx +1.99.0 xtask desktop verify");
-    progress("│   run:     mise exec -- mbx +1.99.0 xtask desktop run");
+    progress("│   verify:  mise exec -- mbx +1.99.1 xtask desktop verify");
+    progress("│   run:     mise exec -- mbx +1.99.1 xtask desktop run");
     progress(format!("│   open:    open {}", abs.display()));
     progress("│");
     progress("│   (menu bar only — no Dock icon; LSUIElement)");
@@ -837,7 +837,7 @@ fn bindings_check(root: &Path, profile: &str) -> Result<()> {
         return Ok(());
     }
     let mut report = String::from(
-        "committed boltffi bindings are stale; run `mise exec -- mbx +1.99.0 xtask desktop bindings` and commit:",
+        "committed boltffi bindings are stale; run `mise exec -- mbx +1.99.1 xtask desktop bindings` and commit:",
     );
     for difference in &differences {
         report.push_str("\n  ");
@@ -1015,6 +1015,7 @@ fn build_xcframework(root: &Path) -> Result<()> {
         ])
         .args(["pack", "apple"]);
     cmd::run_streaming(&mut pack)?;
+    normalize_xcframework_modulemap(&xcframework)?;
 
     let generated_sources = root.join("native/Sources/JackinUsageBindings");
     for generated in find_files_with_ext(&generated_sources, "swift")? {
@@ -1053,6 +1054,19 @@ fn build_xcframework(root: &Path) -> Result<()> {
     }
 
     progress(format!("==> XCFramework ready: {}", xcframework.display()));
+    Ok(())
+}
+
+fn normalize_xcframework_modulemap(xcframework: &Path) -> Result<()> {
+    let headers = xcframework.join(format!("macos-{ARCH}/Headers"));
+    let generated = headers.join(format!("{MODULE_NAME}.modulemap"));
+    let canonical = headers.join("module.modulemap");
+    if generated.exists() && canonical.exists() {
+        bail!("xcframework has both generated and canonical module maps");
+    }
+    if generated.is_file() && !canonical.exists() {
+        fs::rename(&generated, &canonical)?;
+    }
     Ok(())
 }
 
@@ -1214,7 +1228,7 @@ pub(super) fn verify_app(
 
     if !app.is_dir() {
         bail!(
-            "usage: mise exec -- mbx +1.99.0 xtask desktop verify <JackinDesktop.app> [archive.zip]"
+            "usage: mise exec -- mbx +1.99.1 xtask desktop verify <JackinDesktop.app> [archive.zip]"
         );
     }
 
@@ -1328,7 +1342,7 @@ pub(super) fn verify_app(
             "ad-hoc / PR"
         }
     ));
-    progress("│   run:     mise exec -- mbx +1.99.0 xtask desktop run");
+    progress("│   run:     mise exec -- mbx +1.99.1 xtask desktop run");
     progress("└─────────────────────────────────────────────────────────────");
     progress("");
     progress(format!("DESKTOP_APP={}", abs.display()));

@@ -44,7 +44,7 @@ mirrors the CI definition it cites):
 
 - `cargo_fmt` (hk builtin): `cargo fmt --check` over the workspace (fix: `cargo fmt`)
 - `cargo_clippy` (hk builtin): workspace-wide `cargo clippy`, the same scope
-  CI lints (`mise exec -- mbx +1.99.0 xtask ci --only lint`)
+  CI lints (`mise exec -- mbx +1.99.1 xtask ci --only lint`)
 - `actionlint`: workflows (`*.yml` only, matching CI)
 - `swiftlint`, `swift-format`: `native/**` on macOS; skipped elsewhere
 
@@ -149,19 +149,19 @@ DCO fail on PR: fix first, before anything else.
 Run when PR ready to merge (not before every commit):
 
 ```sh
-mise exec -- mbx +1.99.0 xtask ci
+mise exec -- mbx +1.99.1 xtask ci
 # or
-mise exec -- mbx +1.99.0 xtask ci
+mise exec -- mbx +1.99.1 xtask ci
 ```
 
 For a faster local pass that skips feature-powerset and Docker-backed smoke tests:
 
 ```sh
-mise exec -- mbx +1.99.0 xtask ci --fast
+mise exec -- mbx +1.99.1 xtask ci --fast
 ```
 
-`mise exec -- mbx +1.99.0 xtask ci --e2e` includes the Docker-backed lane. It first checks that Docker is running, builds and exports the local capsule binary, then runs `mise exec -- mbx +1.99.0 nextest run -p jackin --features e2e --profile docker-e2e`. In PR checkouts, `jackin-dev pr sync <PR_NUMBER>` still prepares the isolated env and capsule export for manual smoke tests; source `$(jackin-dev pr path <PR_NUMBER>)/env.sh` before manual `jackin` commands.
+`mise exec -- mbx +1.99.1 xtask ci --e2e` includes the Docker-backed lane. It first checks that Docker is running, builds and exports the local capsule binary, then runs `mise exec -- mbx +1.99.1 nextest run -p jackin --features e2e --profile docker-e2e`. In PR checkouts, `jackin-dev pr sync <PR_NUMBER>` still prepares the isolated env and capsule export for manual smoke tests; source `$(jackin-dev pr path <PR_NUMBER>)/env.sh` before manual `jackin` commands.
 
 Local builds outside CI default to the package version for `JACKIN_VERSION` / `JACKIN_CAPSULE_VERSION` so each commit does not invalidate every build-meta consumer and capsule cache entry. GitHub Actions sets `CI`, so release, preview, construct, and CI builds still stamp the real `<version>+<sha>`. Set `JACKIN_VERSION_OVERRIDE=<value>` only when you need an explicit local version.
 
-Fmt fail → `mise exec -- mbx +1.99.0 fmt`, then re-check with `mise exec -- mbx +1.99.0 fmt --check`.
+Fmt fail → `mise exec -- mbx +1.99.1 fmt`, then re-check with `mise exec -- mbx +1.99.1 fmt --check`.

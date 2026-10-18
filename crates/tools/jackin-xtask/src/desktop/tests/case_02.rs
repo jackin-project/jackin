@@ -86,14 +86,14 @@ fn cadence_tasks_define_the_canonical_graph() {
     assert_subsequence(
         task_block(&mise, "ci"),
         &[
-            "mbx +1.99.0 xtask desktop bindings-check",
+            "mbx +1.99.1 xtask desktop bindings-check",
             "xcodegen generate",
             "xcrun swift-format lint",
             "swiftlint lint --strict",
-            "mbx +1.99.0 xtask desktop test",
-            "mbx +1.99.0 xtask desktop build",
+            "mbx +1.99.1 xtask desktop test",
+            "mbx +1.99.1 xtask desktop build",
             "desktop test-swift",
-            "mbx +1.99.0 xtask desktop verify",
+            "mbx +1.99.1 xtask desktop verify",
         ],
         "native ci",
     );
@@ -135,15 +135,15 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
     let mise = repo_text("mise.toml");
     let rust_toolchain = repo_text("rust-toolchain.toml");
     assert!(
-        mise.contains("rust = { version = \"1.99.0\", mr_boxington = true }"),
+        mise.contains("rust = { version = \"1.99.1\", mr_boxington = true }"),
         "Mise's Rust integration must route Cargo through MBX natively"
     );
     assert!(
-        mise.contains("mr-boxington = \"1.24.0\""),
+        mise.contains("mr-boxington = \"1.24.1\""),
         "the native integration must resolve the current pinned MBX tool"
     );
     assert!(
-        rust_toolchain.contains("channel = \"1.99.0\""),
+        rust_toolchain.contains("channel = \"1.99.1\""),
         "the Mise and rustup Rust pins must stay aligned"
     );
     assert!(
@@ -160,13 +160,15 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
     );
     assert_eq!(
         mise.matches("[tasks.").count(),
-        1,
-        "root task aliases removed"
+        2,
+        "the root keeps only the upstream check and native preview producer tasks"
     );
+    assert!(mise.contains("[tasks.renovate-upstream-sources]"));
+    assert!(mise.contains("[tasks.\"release:preview-package\"]"));
 
     let native_mise = repo_text("native/mise.toml");
     let desktop_ci = task_block(&native_mise, "ci");
-    assert!(desktop_ci.contains("mbx +1.99.0 xtask desktop test-swift --jobs 2"));
+    assert!(desktop_ci.contains("mbx +1.99.1 xtask desktop test-swift --jobs 2"));
     assert!(
         !desktop_ci.contains("cargo xtask desktop"),
         "native Rust task invocations must pass through MBX explicitly"

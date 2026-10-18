@@ -37,6 +37,9 @@ struct DesktopArchitectureLint {
 
         let popover = read("PopoverRoot.swift")
         let delegate = read("DesktopAppDelegate.swift")
+        let delegateAutomation = read("DesktopAppDelegate+VisualQA.swift")
+        let statusBar = read("StatusBarController.swift")
+        let providerDetails = read("PopoverProviderDetails.swift")
         let usage = read("UsageWindow/UsageWindowRoot.swift")
         let splitController = read("UsageWindow/UsageWindowSplitController.swift")
         let overview = read("UsageWindow/OverviewListView.swift")
@@ -44,41 +47,44 @@ struct DesktopArchitectureLint {
         let usageController = read("UsageWindowController.swift")
         let mainMenu = read("AppMainMenu.swift")
 
-        require(delegate.contains("NSPopover()"), "real NSPopover host")
+        require(statusBar.contains("NSPopover()"), "real NSPopover host")
         require(
-            delegate.contains("compactStatusItems ? .applicationDefined : .transient"),
+            statusBar.contains("compactStatusItems ? .applicationDefined : .transient"),
             "production popover remains transient with fixture-only automation persistence"
         )
         require(
-            delegate.contains("NSHostingController(rootView: root)"), "ordinary native popover host"
+            statusBar.contains("NSHostingController(rootView: root)"),
+            "ordinary native popover host"
         )
         require(
             delegate.contains("NSApp.setActivationPolicy(initialActivationPolicy)")
-                && delegate.contains("visualQALaunchOptions.openUsage")
-                && delegate.contains("visualQALaunchOptions.openPopover")
-                && !delegate.contains(
+                && delegateAutomation.contains("visualQALaunchOptions.openUsage")
+                && delegateAutomation.contains("visualQALaunchOptions.openPopover")
+                && !delegateAutomation.contains(
                     "if visualQALaunchOptions.elevatesFixtureWindow {\n            return .accessory"
                 )
-                && delegate.contains("return .accessory"),
+                && delegateAutomation.contains("return .accessory"),
             "fixture windows launch regular while production menu-bar mode stays accessory"
         )
         require(
-            !delegate.contains("popover.appearance =")
-                && !delegate.contains("popover.contentViewController?.view.wantsLayer"),
+            !statusBar.contains("popover.appearance =")
+                && !statusBar.contains("popover.contentViewController?.view.wantsLayer"),
             "system popover appearance preserved"
         )
         require(
-            !delegate.contains("popover.backgroundColor")
-                && !delegate.contains("popover.hasShadow"),
+            !statusBar.contains("popover.backgroundColor")
+                && !statusBar.contains("popover.hasShadow"),
             "system popover material and shadow preserved"
         )
 
-        require(popover.contains("Form {"), "popover uses native Form")
+        require(providerDetails.contains("Form {"), "popover uses native Form")
         require(
             popover.contains("Picker(") && popover.contains("\"Account\","),
             "popover uses native account Picker"
         )
-        require(popover.contains("ProgressView(value:"), "popover uses native limit progress")
+        require(
+            providerDetails.contains("ProgressView(value:"), "popover uses native limit progress"
+        )
         require(!popover.contains("PopoverTabGrid"), "popover has no provider tab strip")
         require(
             popover.contains("HStack(spacing: 4) {")

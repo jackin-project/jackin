@@ -8,8 +8,8 @@ pub(crate) enum DownloadRoute {
     AgentMetadata,
     AgentArtifact,
     CapsuleArtifact,
-    CapsuleManifest,
-    CapsuleManifestBundle,
+    CapsuleEvidence,
+    CapsuleAttestation,
 }
 
 impl DownloadRoute {
@@ -18,10 +18,8 @@ impl DownloadRoute {
             Self::AgentMetadata => "/agent-binaries/{version}/metadata",
             Self::AgentArtifact => "/agent-binaries/{version}/{artifact}",
             Self::CapsuleArtifact => "/releases/download/{version}/{artifact}",
-            Self::CapsuleManifest => "/releases/download/{version}/capsule-manifest.json",
-            Self::CapsuleManifestBundle => {
-                "/releases/download/{version}/capsule-manifest.json.bundle"
-            }
+            Self::CapsuleEvidence => "/releases/download/{version}/{evidence}",
+            Self::CapsuleAttestation => "/repos/{owner}/{repo}/attestations/{digest}",
         }
     }
 }

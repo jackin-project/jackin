@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::env;
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
-use sha2::{Digest, Sha256};
 
 use crate::cmd;
 
@@ -20,7 +18,6 @@ mod tests;
 pub(crate) enum ArchivePackage {
     Jackin,
     JackinCapsule,
-    JackinRole,
 }
 
 #[derive(Args, Debug)]
@@ -29,12 +26,8 @@ pub(crate) struct ReleaseArchivesArgs {
     package: ArchivePackage,
     #[arg(long)]
     version: String,
-    #[arg(long)]
-    archive_version: Option<String>,
     #[arg(long, default_value = "dist")]
     output_dir: PathBuf,
-    #[arg(long)]
-    checksum_only: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,6 +71,17 @@ const CAPSULE_TARGETS: [TargetSpec; 2] = [
     },
 ];
 
+pub(crate) fn build_preview(version: &str, output: &Path) -> Result<()> {
+    for package in [ArchivePackage::Jackin, ArchivePackage::JackinCapsule] {
+        run(ReleaseArchivesArgs {
+            package,
+            version: version.to_owned(),
+            output_dir: output.to_owned(),
+        })?;
+    }
+    Ok(())
+}
+
 pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
     fs::create_dir_all(&args.output_dir)
         .with_context(|| format!("creating {}", args.output_dir.display()))?;
@@ -91,10 +95,6 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
 
     let targets = targets(args.package);
     let jobs_per_target = jobs_per_target(1);
-    for target in targets {
-        prepare_target(target.rust)?;
-    }
-
     for target in targets {
         build(
             args.package,
@@ -111,25 +111,34 @@ pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
         let archive = package(
             args.package,
             target.rust,
-            args.archive_version.as_deref(),
             &build_root.join(target.rust),
             &args.output_dir,
         )?;
-        write_checksum(&archive)?;
-        if !args.checksum_only {
-            sign(&archive)?;
-            write_sbom(&archive)?;
-        }
-    }
-    for target in targets {
-        preserve_cargo_timings(&build_root.join(target.rust), &args.output_dir)?;
+        crate::release_sbom::generate(
+            &archive,
+            &sidecar(&archive, "sbom.json"),
+            &crate::release_sbom::BuildEvidence {
+                version: &args.version,
+                release_dir: &build_root
+                    .join(target.rust)
+                    .join(target.rust)
+                    .join("release"),
+                artifacts: &build_root
+                    .join(target.rust)
+                    .join("cargo-build-artifacts.jsonl"),
+            },
+        )?;
     }
     Ok(())
 }
 
 fn jobs_per_target(target_count: usize) -> usize {
     jobs_per_target_for(
-        thread::available_parallelism().map_or(1, usize::from),
+        env::var("CARGO_BUILD_JOBS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or_else(|| thread::available_parallelism().map_or(1, usize::from)),
         target_count,
     )
 }
@@ -142,7 +151,6 @@ fn targets(package: ArchivePackage) -> &'static [TargetSpec] {
     match package {
         ArchivePackage::Jackin => &JACKIN_TARGETS,
         ArchivePackage::JackinCapsule => &CAPSULE_TARGETS,
-        ArchivePackage::JackinRole => &CAPSULE_TARGETS,
     }
 }
 
@@ -150,7 +158,6 @@ fn binaries(package: ArchivePackage) -> &'static [&'static str] {
     match package {
         ArchivePackage::Jackin => &["jackin", "jackin-role", "jackin-usage-broker"],
         ArchivePackage::JackinCapsule => &["jackin-capsule"],
-        ArchivePackage::JackinRole => &["jackin-role"],
     }
 }
 
@@ -158,7 +165,6 @@ fn package_name(package: ArchivePackage) -> &'static str {
     match package {
         ArchivePackage::Jackin => "jackin",
         ArchivePackage::JackinCapsule => "jackin-capsule",
-        ArchivePackage::JackinRole => "jackin-role",
     }
 }
 
@@ -177,39 +183,23 @@ fn zig_cache() -> Result<ZigCache> {
     Ok(cache)
 }
 
-fn prepare_target(target: &str) -> Result<()> {
-    cmd::run_streaming(cmd::command("rustup").args(["target", "add", target]))
-        .with_context(|| format!("preparing Rust target {target}"))
-}
-
 fn prepare_macos_sdk() -> Result<PathBuf> {
-    let runner_temp = env::var_os("RUNNER_TEMP").context("RUNNER_TEMP is required in CI")?;
-    let root = PathBuf::from(runner_temp).join("macos-sdk");
-    let sdk = root.join("MacOSX26.1.sdk");
-    if sdk.is_dir() {
-        return Ok(sdk);
+    if !cfg!(target_os = "macos") {
+        bail!("Apple release archives require a qualified macOS Xcode host");
     }
-    fs::create_dir_all(&root).with_context(|| format!("creating {}", root.display()))?;
-    let archive = root.join("MacOSX26.1.sdk.tar.xz");
-    cmd::run_streaming(cmd::command("curl").args([
-        OsStr::new("-fsSL"),
-        OsStr::new("-o"),
-        archive.as_os_str(),
-        OsStr::new(
-            "https://github.com/joseluisq/macosx-sdks/releases/download/26.1/MacOSX26.1.sdk.tar.xz",
-        ),
-    ]))
-    .context("downloading macOS 26.1 SDK")?;
-    cmd::run_streaming(cmd::command("tar").args([
-        OsStr::new("-xJf"),
-        archive.as_os_str(),
-        OsStr::new("-C"),
-        root.as_os_str(),
-    ]))
-    .context("extracting macOS 26.1 SDK")?;
-    fs::remove_file(&archive).with_context(|| format!("removing {}", archive.display()))?;
-    if !sdk.is_dir() {
-        bail!("macOS SDK extraction did not create {}", sdk.display());
+    let version = cmd::output(cmd::command("/usr/bin/xcrun").args([
+        "--sdk",
+        "macosx",
+        "--show-sdk-version",
+    ]))?;
+    if String::from_utf8(version)?.trim() != "27.0" {
+        bail!("Apple release archives require the qualified macOS 27.0 SDK");
+    }
+    let output =
+        cmd::output(cmd::command("/usr/bin/xcrun").args(["--sdk", "macosx", "--show-sdk-path"]))?;
+    let sdk = PathBuf::from(String::from_utf8(output)?.trim());
+    if !sdk.is_absolute() || !sdk.is_dir() {
+        bail!("Xcode did not return an installed absolute macOS SDK path");
     }
     Ok(sdk)
 }
@@ -224,13 +214,7 @@ fn build(
     macos_sdk: Option<&Path>,
 ) -> Result<()> {
     let mut command = cmd::command("cargo");
-    command.args(["zigbuild", "--timings", "--release", "--locked"]);
-    if package == ArchivePackage::JackinCapsule {
-        command.args(["-p", "jackin-capsule"]);
-    } else if package == ArchivePackage::JackinRole {
-        command.args(["--bin", "jackin-role"]);
-    }
-    command.args(["--target", target.zigbuild]);
+    command.args(build_arguments(package, target));
     command.env("CARGO_BUILD_JOBS", jobs.to_string());
     command.env("CARGO_TARGET_DIR", target_dir);
     command.env("JACKIN_VERSION_OVERRIDE", version);
@@ -244,22 +228,49 @@ fn build(
         command.env("SDKROOT", sdk);
         command.env("MACOSX_DEPLOYMENT_TARGET", "12.0");
     }
-    cmd::run_streaming(&mut command)
-        .with_context(|| format!("building {} for {}", package_name(package), target.rust))
+    fs::create_dir_all(target_dir)?;
+    cmd::run_stdout_file(
+        &mut command,
+        &target_dir.join("cargo-build-artifacts.jsonl"),
+    )
+    .with_context(|| format!("building {} for {}", package_name(package), target.rust))
 }
 
-fn package(
+fn build_arguments(package: ArchivePackage, target: TargetSpec) -> Vec<&'static str> {
+    let mut args = vec![
+        if target.rust.contains("apple") {
+            "build"
+        } else {
+            "zigbuild"
+        },
+        "--timings",
+        "--release",
+        "--locked",
+        "-p",
+        package_name(package),
+    ];
+    for binary in binaries(package) {
+        args.extend(["--bin", *binary]);
+    }
+    args.extend([
+        "--target",
+        target.zigbuild,
+        "--message-format=json-render-diagnostics",
+    ]);
+    args
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "release packaging is synchronous host-side xtask work, outside runtime/render threads"
+)]
+pub(crate) fn package(
     package: ArchivePackage,
     target: &str,
-    archive_version: Option<&str>,
     target_dir: &Path,
     output_dir: &Path,
 ) -> Result<PathBuf> {
-    let basename = archive_version.map_or_else(
-        || format!("{}-{target}", package_name(package)),
-        |version| format!("{}-{version}-{target}", package_name(package)),
-    );
-    let archive = output_dir.join(format!("{basename}.tar.gz"));
+    let archive = output_dir.join(format!("{}-{target}.tar.gz", package_name(package)));
     let release_dir = target_dir.join(target).join("release");
     for binary in binaries(package) {
         if !release_dir.join(binary).is_file() {
@@ -270,70 +281,52 @@ fn package(
         }
     }
 
-    let mut tar = cmd::command("tar");
-    tar.args([
-        OsStr::new("--sort=name"),
-        OsStr::new("--mtime=@0"),
-        OsStr::new("--owner=0"),
-        OsStr::new("--group=0"),
-        OsStr::new("--numeric-owner"),
-        OsStr::new("-cf"),
-        OsStr::new("-"),
-        OsStr::new("-C"),
-        release_dir.as_os_str(),
-    ]);
-    tar.args(binaries(package));
-    let mut gzip = cmd::command("gzip");
-    gzip.arg("-n");
-    cmd::run_pipeline_to_file(&mut tar, &mut gzip, &archive)?;
+    let file = fs::File::create(&archive)?;
+    let gzip = flate2::GzBuilder::new()
+        .mtime(0)
+        .write(file, flate2::Compression::default());
+    let mut tar = tar::Builder::new(gzip);
+    for binary in binaries(package) {
+        let mut file = fs::File::open(release_dir.join(binary))?;
+        let mut header = tar::Header::new_gnu();
+        header.set_size(file.metadata()?.len());
+        header.set_mode(0o755);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mtime(0);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_cksum();
+        tar.append_data(&mut header, binary, &mut file)?;
+    }
+    tar.into_inner()?.finish()?.sync_all()?;
     Ok(archive)
 }
 
-fn write_checksum(archive: &Path) -> Result<()> {
-    let bytes = fs::read(archive).with_context(|| format!("reading {}", archive.display()))?;
-    let filename = archive
+pub(crate) struct PayloadIdentity {
+    pub(crate) package: &'static str,
+    pub(crate) target: &'static str,
+    pub(crate) binaries: &'static [&'static str],
+}
+
+pub(crate) fn payload_identity(archive: &Path) -> Result<PayloadIdentity> {
+    let name = archive
         .file_name()
-        .context("release archive path has no filename")?
-        .to_string_lossy();
-    let checksum = format!("{}  {filename}\n", hex::encode(Sha256::digest(bytes)));
-    fs::write(sidecar(archive, "sha256"), checksum)
-        .with_context(|| format!("writing checksum for {}", archive.display()))
-}
-
-fn sign(archive: &Path) -> Result<()> {
-    let bundle = sidecar(archive, "bundle");
-    cmd::run_streaming(cmd::command("cosign").args([
-        OsStr::new("sign-blob"),
-        OsStr::new("--bundle"),
-        bundle.as_os_str(),
-        OsStr::new("--yes"),
-        archive.as_os_str(),
-    ]))
-    .with_context(|| format!("signing {}", archive.display()))
-}
-
-fn write_sbom(archive: &Path) -> Result<()> {
-    crate::release_sbom::generate(archive, &sidecar(archive, "sbom.json"))
+        .and_then(|name| name.to_str())
+        .context("archive filename must be UTF-8")?;
+    for package in [ArchivePackage::Jackin, ArchivePackage::JackinCapsule] {
+        for target in targets(package) {
+            if name == format!("{}-{}.tar.gz", package_name(package), target.rust) {
+                return Ok(PayloadIdentity {
+                    package: package_name(package),
+                    target: target.rust,
+                    binaries: binaries(package),
+                });
+            }
+        }
+    }
+    bail!("archive is not one of the six declared release payloads: {name}")
 }
 
 fn sidecar(archive: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(format!("{}.{}", archive.display(), suffix))
-}
-
-fn preserve_cargo_timings(target_dir: &Path, output_dir: &Path) -> Result<()> {
-    let source = target_dir.join("cargo-timings");
-    if !source.is_dir() {
-        return Ok(());
-    }
-    let destination = output_dir.join("cargo-timings");
-    fs::create_dir_all(&destination)
-        .with_context(|| format!("creating {}", destination.display()))?;
-    for entry in crate::fs_util::read_dir_sorted(&source)? {
-        let path = entry.path();
-        if path.is_file() {
-            fs::copy(&path, destination.join(entry.file_name()))
-                .with_context(|| format!("copying cargo timing {}", path.display()))?;
-        }
-    }
-    Ok(())
 }

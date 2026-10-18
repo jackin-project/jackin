@@ -11,8 +11,8 @@ final class OverviewInventoryTests: XCTestCase {
         key: String,
         provider: String,
         account: String
-    ) -> PresentationStore.AccountRow {
-        PresentationStore.AccountRow(
+    ) -> AccountRow {
+        AccountRow(
             surfaceId: surface,
             providerColumnLabel: provider,
             accountKey: key,
@@ -40,9 +40,9 @@ final class OverviewInventoryTests: XCTestCase {
     private func group(
         surface: String,
         provider: String,
-        accounts: [PresentationStore.AccountRow]
-    ) -> PresentationStore.ProviderGroupRow {
-        PresentationStore.ProviderGroupRow(
+        accounts: [AccountRow]
+    ) -> ProviderGroupRow {
+        ProviderGroupRow(
             surfaceId: surface,
             displayLabel: provider,
             iconKey: surface,
@@ -119,11 +119,11 @@ final class OverviewInventoryTests: XCTestCase {
             provider: "",
             account: "work@example.test"
         )
-        let route = PresentationStore.SelectedAccountRoute.unavailable(
+        let route = SelectedAccountRoute.unavailable(
             accountKey: "removed",
             notice: "Selected account is no longer available."
         )
-        let projected = PresentationStore.ProviderGroupRow(
+        let projected = ProviderGroupRow(
             surfaceId: "codex",
             displayLabel: "OpenAI",
             iconKey: "codex",

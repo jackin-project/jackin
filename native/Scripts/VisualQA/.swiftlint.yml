@@ -1,3 +1,5 @@
 parent_config: ../../.swiftlint.yml
+# Owner: native Visual QA maintainers.
+# Deletion condition: remove this exception when all Visual QA scripts satisfy the root line-length rule.
 disabled_rules:
   - line_length

@@ -888,7 +888,7 @@ async fn download_and_cache_inner(
             crate::telemetry_boundary::download_request(
                 crate::telemetry_boundary::DownloadRoute::AgentArtifact,
                 &telemetry_url,
-                jackin_docker::net::download_parallel(&url, &tmp_download),
+                jackin_docker::net::download_parallel(&url, &tmp_download, None),
             )
             .await
         }

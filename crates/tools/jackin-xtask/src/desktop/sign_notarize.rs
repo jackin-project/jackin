@@ -35,7 +35,7 @@ pub(crate) fn run(args: SignNotarizeArgs) -> Result<()> {
         .context("set DEVELOPER_ID_APPLICATION to the Developer ID Application identity")?;
     if !app.is_dir() {
         bail!(
-            "app not found at {} — run `mise exec -- mbx +1.99.0 xtask desktop build` first",
+            "app not found at {} — run `mise exec -- mbx +1.99.1 xtask desktop build` first",
             app.display()
         );
     }

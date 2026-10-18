@@ -39,18 +39,21 @@ struct DesktopParityMatrixHarness {
 
         let desktop = desktopSourcesRoot()
         let statusItem = read(desktop.appendingPathComponent("StatusItemLabel.swift"))
-        let popover = read(desktop.appendingPathComponent("PopoverRoot.swift"))
+        let popoverDetails = read(desktop.appendingPathComponent("PopoverProviderDetails.swift"))
         let overview = read(desktop.appendingPathComponent("UsageWindow/OverviewListView.swift"))
         let provider = read(desktop.appendingPathComponent("UsageWindow/ProviderDetailView.swift"))
 
         check("status item consumes compact reset field", statusItem.contains("compactResetLabel"))
-        check("popover consumes Rust identity", popover.contains("provider.activityLabel"))
+        check(
+            "popover consumes Rust identity",
+            popoverDetails.contains("provider.activityLabel")
+        )
         check(
             "popover limits precede details",
             appearsBefore(
                 "sectionHeader(\"Limits\")",
                 "sectionHeader(\"Details\")",
-                in: popover
+                in: popoverDetails
             ))
         check("overview is grouped native table", overview.contains("DisclosureTableRow"))
         check("overview uses atomic groups", overview.contains("OverviewInventory.tree(groups:"))

@@ -97,7 +97,10 @@ fn developer_id_signs_and_checks_broker_before_notarization() {
 
 #[test]
 fn xcframework_pack_generates_bindings_and_headers_for_clean_builds() {
-    assert!(include_str!("../../desktop.rs").contains(".args([\"pack\", \"apple\"]);"));
+    let desktop = include_str!("../../desktop.rs");
+    assert!(desktop.contains(".args([\"pack\", \"apple\"]);"));
+    assert!(desktop.contains("normalize_xcframework_modulemap(&xcframework)?"));
+    assert!(desktop.contains("Headers/module.modulemap"));
 }
 
 #[test]

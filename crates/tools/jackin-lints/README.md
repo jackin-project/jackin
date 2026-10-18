@@ -44,10 +44,10 @@ the shims would bypass that selection.
 The UI test runs Dylint 6.2.0's supported compiletest harness inside Nextest and
 checks the positive, clean, and closure-boundary fixtures.
 
-Scheduled enforced lane: Hygiene job `dylint-advisory`. Pinned 6.2.0 tools are
-source-built (upstream prebuilt embeds its release-builder `dylint_driver`
-path). Real exit status is in the step summary and fails the job on findings
-or tool failure.
+The current generated CI does not run this lint on a schedule or as a required
+job. The pinned tools and UI corpus support local qualification; they do not
+provide hosted enforcement. Wire an explicit generated task and required lane
+before describing Dylint as a CI gate.
 
 ## Pilot closure (plan 012, 2026-07-14)
 
@@ -57,7 +57,7 @@ or tool failure.
 | UI corpus | `ui/render_blocks.rs` (positive), `ui/render_clean.rs` (negative), `ui/render_spawn_boundary.rs` (boundary) |
 | UI false-positive rate | **0** against the committed corpus (UI tests document intended positives only) |
 | Workspace FP rate | **0% (0 false positives / 0 findings)** from `cargo dylint --all -- --workspace`, 2026-07-15; the committed positive UI fixture supplies the non-zero signal check |
-| Decision | **Promote** to the pinned, exit-status-enforced Hygiene lane. Any workspace finding or Dylint tool failure now fails the scheduled job; the UI corpus remains mandatory. |
+| Decision | **Pilot only**. The earlier promotion proposal was not wired into the current generated workflow; no scheduled or required Dylint lane is active. |
 
 ## Architecture tier
 

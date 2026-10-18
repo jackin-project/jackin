@@ -36,9 +36,12 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 reqwest = { workspace = true }
-sigstore = { version = "0.14", default-features = false, features = ["cosign"] }
-base64 = { workspace = true }
-x509-cert = { workspace = true, features = ["pem"] }
+sigstore-verify = { workspace = true }
+sigstore-trust-root = { workspace = true }
+sigstore-bundle = { workspace = true }
+sigstore-types = { workspace = true }
+sigstore-crypto = { workspace = true }
+velnor-actions-contract = { workspace = true }
 
 [build-dependencies]
 jackin-build-meta = { workspace = true }

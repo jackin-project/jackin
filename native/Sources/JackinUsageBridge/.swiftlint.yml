@@ -1,4 +1,6 @@
 parent_config: ../../.swiftlint.yml
+# Owner: native usage bridge maintainers.
+# Deletion condition: remove each size-rule exception after its owning type is split under root limits.
 disabled_rules:
   - file_length
   - function_body_length

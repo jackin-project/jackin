@@ -149,6 +149,14 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
         splitController = split
         window.contentViewController = split
         onSplitControllerCreated(split)
+        installSidebarKeyMonitor(window: window, split: split)
+        installToolbar(in: window, split: split)
+
+        window.center()
+        return window
+    }
+
+    private func installSidebarKeyMonitor(window: NSWindow, split: UsageWindowSplitController) {
         sidebarKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
             [weak window, weak split] event in
             guard window?.isKeyWindow == true, AppMainMenu.isSidebarKeyEquivalent(event) else {
@@ -157,21 +165,20 @@ public final class UsageWindowController: NSObject, NSWindowDelegate {
             split?.toggleSidebar(window)
             return nil
         }
+    }
 
-        let toolbarController = UsageWindowToolbar(
+    private func installToolbar(in window: NSWindow, split: UsageWindowSplitController) {
+        let controller = UsageWindowToolbar(
             sidebarItem: split.splitViewItems[0],
             onSidebarStateChange: { [weak self, weak window] in
                 guard let self, let window else { return }
                 self.installCenteredBrand(in: window)
             })
-        self.toolbarController = toolbarController
-        let toolbar = toolbarController.makeToolbar()
+        toolbarController = controller
+        let toolbar = controller.makeToolbar()
         window.toolbar = toolbar
-        toolbarController.installStandardItems(in: toolbar)
+        controller.installStandardItems(in: toolbar)
         installCenteredBrand(in: window)
-
-        window.center()
-        return window
     }
 
     private func installCenteredBrand(in window: NSWindow) {

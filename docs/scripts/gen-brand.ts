@@ -2,12 +2,13 @@
 import { Resvg } from '@resvg/resvg-js'
 import ImageResponse from '@takumi-rs/image-response'
 import React from 'react'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chevron, chevronHeight, chevronSvg, wordChevronGap } from './brand-geometry'
 import { font, interData, interFont, jbBoldData, outlineWord, placeWord } from './brand-outline'
 
 const root = join(import.meta.dirname, '..')
+const interWoff2Data = readFileSync(join(root, 'node_modules', '@fontsource', 'inter', 'files', 'inter-latin-500-normal.woff2'))
 
 const WHITE = '#ffffff'
 const GREEN = '#5cf07a'
@@ -197,7 +198,7 @@ async function renderPng(element: React.ReactElement, width: number, height: num
     format: 'png',
     fonts: [
       { name: 'JetBrainsMono', data: jbBoldData, weight: 700, style: 'normal' },
-      { name: 'Inter', data: interData, weight: 500, style: 'normal' },
+      { name: 'Inter', data: interWoff2Data, weight: 500, style: 'normal' },
     ],
   })
   await response.ready

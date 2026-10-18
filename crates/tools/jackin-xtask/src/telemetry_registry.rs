@@ -9,7 +9,7 @@ use crate::docs::repo_root;
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde::Deserialize;
-use serde_yaml_ng::Value as YamlValue;
+use serde_json::Value as YamlValue;
 use sha2::{Digest as _, Sha256};
 use syn::visit::Visit as _;
 mod ownership_census;
@@ -868,8 +868,8 @@ fn requirement_level_name(attribute: &YamlValue) -> &str {
         return level;
     }
     requirement
-        .as_mapping()
-        .and_then(|mapping| mapping.keys().find_map(YamlValue::as_str))
+        .as_object()
+        .and_then(|mapping| mapping.keys().next().map(String::as_str))
         .unwrap_or("recommended")
 }
 
@@ -918,7 +918,7 @@ fn validate_adoption_metadata(root: &Path) -> Result<()> {
     let registry = root.join("crates/services/jackin-telemetry/registry");
     let metadata = load_rust_metadata(&registry)?;
     let manifest: YamlValue =
-        serde_yaml_ng::from_str(&fs::read_to_string(registry.join("manifest.yaml"))?)?;
+        serde_saphyr::from_str(&fs::read_to_string(registry.join("manifest.yaml"))?)?;
     let manifest_schema_url = yaml_string(&manifest, "schema_url")?;
     let dependencies = yaml_sequence(&manifest, "dependencies")
         .ok_or_else(|| anyhow::anyhow!("registry manifest has no dependencies"))?;
@@ -1111,7 +1111,7 @@ fn yaml_string<'a>(value: &'a YamlValue, key: &str) -> Result<&'a str> {
 }
 
 fn yaml_sequence<'a>(value: &'a YamlValue, key: &str) -> Option<&'a [YamlValue]> {
-    value.get(key)?.as_sequence().map(Vec::as_slice)
+    value.get(key)?.as_array().map(Vec::as_slice)
 }
 
 fn rust_constant(value: &str) -> String {

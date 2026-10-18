@@ -119,7 +119,7 @@ impl AccountStateStore for PanicAfterDurableStore {
     ) -> Result<(), StateStoreError> {
         self.inner.store(envelope, now_epoch)?;
         assert!(
-            self.panic_after_store.swap(0, Ordering::SeqCst) <= 0,
+            self.panic_after_store.swap(0, Ordering::SeqCst) == 0,
             "injected crash after durable catalog marker"
         );
         Ok(())
@@ -1512,6 +1512,14 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
         uncertain.success_deadline_epoch = None;
     }
 
+    complete_unresolved_reload_fence(&store, &account, &purged_marker);
+}
+
+fn complete_unresolved_reload_fence(
+    store: &Arc<MemoryStore>,
+    account: &UsageAccountCapability,
+    purged_marker: &AccountStateEnvelope,
+) {
     let restarted_clock = Arc::new(ManualClock::at(2_500));
     let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(3_300, 78),
@@ -1540,7 +1548,7 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
         restarted_clock_port,
     );
     let after_reload = restarted
-        .request_refresh(&account, purged_marker.generation, true, 2_500)
+        .request_refresh(account, purged_marker.generation, true, 2_500)
         .unwrap();
     assert_eq!(after_reload.generation, purged_marker.generation);
     assert_eq!(after_reload.phase, UsageRefreshPhase::Idle);
@@ -1548,28 +1556,28 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
 
     restarted_clock.set_wall_epoch(3_000);
     let after_forward_jump = restarted
-        .request_refresh(&account, after_reload.generation, true, 3_000)
+        .request_refresh(account, after_reload.generation, true, 3_000)
         .unwrap();
     assert_eq!(after_forward_jump.generation, after_reload.generation);
     assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
     restarted_clock.advance(Duration::from_secs(299));
     let before_reload_fence = restarted
-        .request_refresh(&account, after_reload.generation, true, 3_299)
+        .request_refresh(account, after_reload.generation, true, 3_299)
         .unwrap();
     assert_eq!(before_reload_fence.generation, after_reload.generation);
     assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 0);
 
     restarted_clock.advance(Duration::from_secs(1));
     let allowed = restarted
-        .request_refresh(&account, after_reload.generation, true, 3_300)
+        .request_refresh(account, after_reload.generation, true, 3_300)
         .unwrap();
     assert_eq!(allowed.generation, after_reload.generation + 1);
     assert_eq!(
-        join_ok(&restarted, &account, allowed.generation, 3_300).phase,
+        join_ok(&restarted, account, allowed.generation, 3_300).phase,
         UsageRefreshPhase::Completed
     );
     assert_eq!(restarted_executor.calls.load(Ordering::SeqCst), 1);
-    let invoked = store.load(&account, 3_300).unwrap().unwrap();
+    let invoked = store.load(account, 3_300).unwrap().unwrap();
     assert_eq!(invoked.provider_invoked_at_epoch, Some(3_300));
     assert!(!invoked.reload_fence_required);
 }

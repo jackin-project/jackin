@@ -14,9 +14,9 @@ public func severityTint(_ severity: String) -> Color {
 public let statusBarMaxChips = 3
 
 public func selectStatusBarGlanceRows(
-    from rows: [PresentationStore.GlanceProviderRow],
+    from rows: [GlanceProviderRow],
     maxCount: Int = statusBarMaxChips
-) -> [PresentationStore.GlanceProviderRow] {
+) -> [GlanceProviderRow] {
     let cap = min(statusBarMaxChips, max(1, maxCount))
     return Array(
         rows

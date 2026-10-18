@@ -492,15 +492,15 @@ fn checked_in_generation_rejects_single_byte_drift() {
 
 #[test]
 fn event_severity_registry_rejects_missing_and_unknown_values() {
-    let valid: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str("name: example.event\nnote: runtime_severity=error\n")
+    let valid: serde_json::Value =
+        serde_saphyr::from_str("name: example.event\nnote: runtime_severity=error\n")
             .expect("fixture parses");
     assert_eq!(event_runtime_severity(&valid).unwrap(), "error");
     for source in [
         "name: example.event\n",
         "name: example.event\nnote: runtime_severity=verbose\n",
     ] {
-        let invalid = serde_yaml_ng::from_str(source).expect("fixture parses");
+        let invalid = serde_saphyr::from_str(source).expect("fixture parses");
         event_runtime_severity(&invalid).unwrap_err();
     }
 }

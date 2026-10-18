@@ -189,7 +189,7 @@ impl CollectorHarness {
             },
         )]);
         let coordinator_clock = Arc::new(CollectorCoordinatorClock::at(NOW));
-        let coordinator_clock_for_coordinator: Arc<dyn MonotonicClock> = coordinator_clock.clone();
+        let coordinator_clock_for_coordinator = Arc::clone(&coordinator_clock);
         let coordinator = Arc::new(UsageCoordinator::with_catalog_and_clock(
             executor,
             Arc::new(FileAccountStateStore::at(temp.path().join("accounts"))),

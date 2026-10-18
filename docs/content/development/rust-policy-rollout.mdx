@@ -694,7 +694,7 @@ passes.
   one `tests/` suite (`GAP-TEST-001` names the suite
   `tests` exactly; cases renamed `auth_case_NN`,
   duplicate `simple_manifest` dropped); provision-fn
-  imports keep all case files <= 400 lines.
+  imports keep all case files &lt;= 400 lines.
 - Verify: `cargo check --locked --workspace
   --all-targets` green; `cargo fmt --all --check`
   clean; `cargo clippy` 0 errors, 0 warnings in the
@@ -9074,7 +9074,7 @@ bound 720.
   takes T7 per the
   1+max rule --
   over the slice
-  <=T6 target but
+  &lt;=T6 target but
   under the T8 hub
   ceiling, same as
   the earlier
@@ -9268,7 +9268,7 @@ bound 720.
   leaf takes T6
   per the 1+max
   rule -- inside
-  the slice <=T6
+  the slice &lt;=T6
   target;
   `render_exit`
   stays out
@@ -9404,7 +9404,7 @@ bound 720.
   takes T3 per the
   1+max rule --
   inside the slice
-  <=T6 target. Zero
+  &lt;=T6 target. Zero
   hub fns named.
   Three `pub(crate)`
   items widen to
@@ -9456,7 +9456,7 @@ bound 720.
   attach/backend/launch
   edges. `timing.rs`
   is the only
-  whole-module <=T7
+  whole-module &lt;=T7
   leaf. No hub
   renumber.)
 
@@ -9556,7 +9556,7 @@ bound 720.
   takes T6 per the
   1+max rule --
   inside the slice
-  <=T6 target. Zero
+  &lt;=T6 target. Zero
   true hub edges:
   the three apparent
   ones resolve through
@@ -9758,7 +9758,7 @@ bound 720.
   takes T7 per the
   1+max rule --
   inside the slice
-  <=T7 ceiling (T7
+  &lt;=T7 ceiling (T7
   is compliant; T6
   is impossible here
   since both T6 deps
@@ -9958,7 +9958,7 @@ bound 720.
   takes T7 per the
   1+max rule --
   inside the slice
-  <=T7 ceiling (T6
+  &lt;=T7 ceiling (T6
   is impossible here
   since both T6 deps
   are load-bearing).
@@ -10177,7 +10177,7 @@ bound 720.
   lesson), so the leaf
   takes T6 per the
   1+max rule -- inside the
-  slice <=T7 ceiling (the
+  slice &lt;=T7 ceiling (the
   T7 `universe` edge stays
   in the hub wrapper;
   whole-file extraction

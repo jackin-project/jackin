@@ -18,7 +18,7 @@ public struct OverviewTreeRow: Identifiable, Equatable, Sendable {
 
     public var isProvider: Bool { accountKey == nil }
 
-    public init(group: PresentationStore.ProviderGroupRow) {
+    public init(group: ProviderGroupRow) {
         id = "provider#\(group.surfaceId)"
         surfaceId = group.surfaceId
         accountKey = nil
@@ -32,7 +32,7 @@ public struct OverviewTreeRow: Identifiable, Equatable, Sendable {
         children = group.accounts.isEmpty ? nil : group.accounts.map(Self.init(account:))
     }
 
-    public init(account: PresentationStore.AccountRow) {
+    public init(account: AccountRow) {
         id = "account#\(account.surfaceId)#\(account.accountKey)"
         surfaceId = account.surfaceId
         accountKey = account.accountKey
@@ -49,7 +49,7 @@ public struct OverviewTreeRow: Identifiable, Equatable, Sendable {
 
 public enum OverviewInventory: Sendable {
     public static func tree(
-        groups: [PresentationStore.ProviderGroupRow]
+        groups: [ProviderGroupRow]
     ) -> [OverviewTreeRow] {
         groups.map(OverviewTreeRow.init(group:))
     }

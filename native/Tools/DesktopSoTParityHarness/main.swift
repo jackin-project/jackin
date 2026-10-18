@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-
 import Foundation
 import JackinUsageBridge
 
@@ -72,9 +71,9 @@ struct DesktopSoTParityHarness {
     private static func group(
         surface: String,
         label: String,
-        accounts: [PresentationStore.AccountRow]
-    ) -> PresentationStore.ProviderGroupRow {
-        PresentationStore.ProviderGroupRow(
+        accounts: [AccountRow]
+    ) -> ProviderGroupRow {
+        ProviderGroupRow(
             surfaceId: surface,
             displayLabel: label,
             iconKey: surface,
@@ -97,9 +96,9 @@ struct DesktopSoTParityHarness {
         key: String,
         label: String,
         pct: UInt8
-    ) -> PresentationStore.AccountRow {
+    ) -> AccountRow {
         let provider = surface == "codex" ? "OpenAI" : "Anthropic"
-        return PresentationStore.AccountRow(
+        return AccountRow(
             surfaceId: surface,
             providerColumnLabel: "—",
             accountKey: key,
