@@ -134,7 +134,7 @@ pub(super) fn validate_statement(
         ),
         (
             "/predicate/buildDefinition/internalParameters/github/event_name",
-            "push",
+            "workflow_run",
         ),
         (
             "/predicate/buildDefinition/internalParameters/github/repository_id",
