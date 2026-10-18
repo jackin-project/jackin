@@ -3,7 +3,7 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, OpenFlags, limits::Limit};
@@ -14,6 +14,12 @@ use crate::query;
 use crate::query::OmpCredential;
 use crate::wal::{MAX_DATABASE_BYTES, MAX_WAL_BYTES, WalError, validate_database, validate_wal};
 use crate::{OmpAccount, OmpError, OmpSelector};
+
+#[cfg(unix)]
+#[path = "capture/directory.rs"]
+mod directory;
+#[cfg(unix)]
+use directory::open_source_directory;
 
 const OPERATION_BUDGET: Duration = Duration::from_secs(10);
 const SQLITE_MIN_VERSION: i32 = 3_051_003;
@@ -756,70 +762,6 @@ fn secure_directory_identity(file: &File, require_owner: bool) -> Result<FileIde
         return Err(OmpError::Unavailable);
     }
     Ok(identity)
-}
-
-#[cfg(unix)]
-fn open_source_directory(path: &Path, deadline: Instant) -> Result<Option<File>, OmpError> {
-    use std::ffi::CString;
-
-    use std::os::unix::ffi::OsStrExt;
-
-    use nix::errno::Errno;
-    use nix::fcntl::{OFlag, open, openat};
-    use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
-
-    let path = match std::fs::canonicalize(path) {
-        Ok(resolved) => resolved,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(OmpError::Unavailable),
-    };
-    let start = if path.is_absolute() { "/" } else { "." };
-    let start_fd = open(
-        start,
-        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|_| OmpError::Unavailable)?;
-    let mut directory = File::from(start_fd);
-    for component in path.components() {
-        check_deadline(deadline)?;
-        let Component::Normal(name) = component else {
-            match component {
-                Component::RootDir | Component::CurDir => continue,
-                Component::ParentDir | Component::Prefix(_) => return Err(OmpError::Unavailable),
-                Component::Normal(_) => unreachable!(),
-            }
-        };
-        let name = CString::new(name.as_bytes()).map_err(|_| OmpError::Unavailable)?;
-        let entry = match fstatat(
-            &directory,
-            name.as_c_str(),
-            nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
-        ) {
-            Ok(stat) => stat,
-            Err(Errno::ENOENT) => return Ok(None),
-            Err(_) => return Err(OmpError::Unavailable),
-        };
-        if !SFlag::from_bits_truncate(entry.st_mode).contains(SFlag::S_IFDIR) {
-            return Err(OmpError::Unavailable);
-        }
-        let opened = openat(
-            &directory,
-            name.as_c_str(),
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-            Mode::empty(),
-        )
-        .map_err(|_| OmpError::Unavailable)?;
-        let next = File::from(opened);
-        let opened_stat = fstat(&next).map_err(|_| OmpError::Unavailable)?;
-        if FileIdentity::from_stat(&entry) != FileIdentity::from_stat(&opened_stat) {
-            return Err(OmpError::Unavailable);
-        }
-        directory = next;
-    }
-    check_deadline(deadline)?;
-    secure_directory_identity(&directory, true)?;
-    Ok(Some(directory))
 }
 
 #[cfg(unix)]
