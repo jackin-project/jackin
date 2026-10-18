@@ -1,5 +1,5 @@
 fn helper_reads() {
-    let _ = std::fs::read("/tmp/x");
+    let _ = std::fs::read("io.txt");
 }
 
 fn render() {
