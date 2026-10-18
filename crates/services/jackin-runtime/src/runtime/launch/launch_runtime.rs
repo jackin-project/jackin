@@ -900,7 +900,7 @@ pub(crate) async fn launch_role_runtime(
             .map(|path| format!("{path}:rw,nosuid,nodev"))
             .collect::<Vec<_>>();
         if grants.sudo {
-            mounts.push("/etc/sudoers.d:rw,nosuid,nodev,mode=0755".to_owned());
+            mounts.push(jackin_core::container_paths::SUDOERS_TMPFS_SPEC.to_owned());
         }
         mounts
     };

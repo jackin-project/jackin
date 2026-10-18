@@ -123,3 +123,133 @@ fn every_event_enforces_generated_attribute_contract() {
         }
     }
 }
+
+#[test]
+fn upstream_error_enum_accepts_custom_instrumentation_values() {
+    let requirements = schema::events::OPERATION_WARN_DEF.attributes;
+    for value in ["timeout", "custom_domain_error", "_OTHER"] {
+        assert_eq!(
+            validation::attribute(
+                requirements,
+                Attr {
+                    key: schema::attrs::std_attrs::ERROR_TYPE,
+                    value: Value::Str(value)
+                }
+            ),
+            Ok(())
+        );
+    }
+    assert!(
+        requirements
+            .iter()
+            .find(|field| field.name == "error.type")
+            .unwrap()
+            .allowed_values
+            .is_empty()
+    );
+    assert_eq!(
+        validation::attribute(
+            requirements,
+            Attr {
+                key: schema::attrs::std_attrs::ERROR_TYPE,
+                value: Value::Bool(true)
+            }
+        ),
+        Err(Rejection::InvalidValue)
+    );
+}
+
+#[test]
+fn upstream_http_and_db_known_values_are_not_exhaustive() {
+    for (requirements, attribute) in [
+        (
+            schema::spans::HTTP_CLIENT_DEF.attributes,
+            Attr {
+                key: schema::attrs::std_attrs::HTTP_REQUEST_METHOD,
+                value: Value::Str("CUSTOM_METHOD"),
+            },
+        ),
+        (
+            schema::spans::DB_CLIENT_DEF.attributes,
+            Attr {
+                key: schema::attrs::std_attrs::DB_SYSTEM_NAME,
+                value: Value::Str("custom_database"),
+            },
+        ),
+    ] {
+        assert!(
+            requirements
+                .iter()
+                .find(|field| field.name == attribute.key)
+                .unwrap()
+                .allowed_values
+                .is_empty()
+        );
+        assert_eq!(validation::attribute(requirements, attribute), Ok(()));
+    }
+}
+
+#[test]
+fn local_enum_closure_and_open_enum_privacy_limits_are_preserved() {
+    for (metadata, attribute) in [
+        (
+            schema::attrs::APP_MODE_DEF,
+            Attr {
+                key: schema::attrs::APP_MODE,
+                value: Value::Str("invalid-local-value"),
+            },
+        ),
+        (
+            schema::attrs::OUTCOME_DEF,
+            Attr {
+                key: schema::attrs::OUTCOME,
+                value: Value::Str("invalid-local-value"),
+            },
+        ),
+    ] {
+        let requirement = schema::AttributeRequirement {
+            name: metadata.name,
+            value_type: metadata.value_type,
+            requirement: schema::RequirementLevel::Recommended,
+            allowed_values: metadata.allowed_values,
+        };
+        assert!(!requirement.allowed_values.is_empty());
+        assert_eq!(
+            validation::attribute(&[requirement], attribute),
+            Err(Rejection::InvalidValue)
+        );
+    }
+    let requirements = schema::events::OPERATION_WARN_DEF.attributes;
+    let key = "error.type";
+    assert_eq!(
+        validation::attribute(
+            requirements,
+            Attr {
+                key,
+                value: Value::Str("password=secret")
+            }
+        ),
+        Err(Rejection::Privacy)
+    );
+    let oversized = "x".repeat(4097);
+    assert_eq!(
+        validation::attribute(
+            requirements,
+            Attr {
+                key,
+                value: Value::Str(&oversized)
+            }
+        ),
+        Err(Rejection::SizeLimit)
+    );
+    assert_eq!(
+        validation::attribute(
+            requirements,
+            Attr {
+                key: "unknown.attribute",
+                value: Value::Str("safe")
+            }
+        ),
+        Err(Rejection::UnknownAttribute)
+    );
+}

@@ -186,7 +186,7 @@ fn observe_session(target: &ObserveTarget) -> Result<()> {
         [
             "exec",
             container.name(),
-            "/jackin/runtime/jackin-capsule",
+            jackin_core::container_paths::CAPSULE_BIN,
             "status",
         ],
     );

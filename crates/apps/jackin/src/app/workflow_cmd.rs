@@ -1046,7 +1046,7 @@ fn load_definition(file: &Path) -> Result<LoadedDefinition, WorkflowError> {
 fn validate_check_argv(argv: &[String], file_label: &str) -> Result<(), WorkflowError> {
     let script = argv
         .get(1)
-        .and_then(|arg| arg.strip_prefix("/jackin/checks/"));
+        .and_then(|arg| arg.strip_prefix(jackin_core::container_paths::CHECKS_PREFIX));
     let supported_script = script.is_some_and(|path| {
         !path.is_empty()
             && Path::new(path)

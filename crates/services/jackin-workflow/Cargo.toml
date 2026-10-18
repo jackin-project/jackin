@@ -19,6 +19,7 @@ name = "jackin_workflow"
 path = "src/lib.rs"
 
 [dependencies]
+jackin-core = { workspace = true }
 jackin-usage-store-backend = { workspace = true }
 jackin-workflow-spec = { workspace = true }
 jackin-telemetry = { workspace = true }

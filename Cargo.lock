@@ -4904,6 +4904,7 @@ name = "jackin-workflow"
 version = "0.6.4"
 dependencies = [
  "hex",
+ "jackin-core",
  "jackin-isolation",
  "jackin-telemetry",
  "jackin-usage-store-backend",

@@ -975,7 +975,8 @@ fn docker_sandbox_command(
     for argument in policy.args() {
         if Path::new(argument) == Path::new(&policy.args()[0]) {
             command.arg(format!(
-                "/jackin/checks/{}",
+                "{}{}",
+                jackin_core::container_paths::CHECKS_PREFIX,
                 script_relative.to_string_lossy()
             ));
         } else if Path::new(argument) == worker.work_dir() {

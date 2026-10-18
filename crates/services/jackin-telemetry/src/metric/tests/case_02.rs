@@ -114,3 +114,40 @@ fn agent_state_metrics_require_the_governed_dimensions() {
         Err(Rejection::InvalidValue)
     );
 }
+
+#[test]
+fn upstream_cpu_mode_is_open_without_relaxing_value_types() {
+    for mode in [
+        "user",
+        "system",
+        "nice",
+        "idle",
+        "iowait",
+        "interrupt",
+        "steal",
+        "kernel",
+        "future_mode",
+    ] {
+        assert_eq!(
+            validate_attributes(
+                &PROCESS_CPU_TIME,
+                &[Attr {
+                    key: "cpu.mode",
+                    value: Value::Str(mode)
+                }]
+            ),
+            Ok(()),
+            "{mode}"
+        );
+    }
+    assert_eq!(
+        validate_attributes(
+            &PROCESS_CPU_TIME,
+            &[Attr {
+                key: "cpu.mode",
+                value: Value::Bool(true)
+            }]
+        ),
+        Err(Rejection::InvalidValue)
+    );
+}

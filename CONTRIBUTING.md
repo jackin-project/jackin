@@ -29,24 +29,26 @@ idempotent, safe to re-run:
 scripts/hooks-install   # installs scripts/pre-commit-snapshot
 ```
 
-No shell activation needed. Requirements: Git 2.54+ (config-based hooks;
-Apple Git 2.54 meets the floor exactly) and `mise` on Git's runtime PATH —
+No shell activation needed. Requirements: Git 2.56+ (config-based hooks with
+named-hook disabling) and `mise` on Git's runtime PATH —
 true in terminals with mise shims, otherwise the hook fails closed with
 `mise: command not found` (use a terminal or add the shims directory to
 the GUI client's PATH). Each hook invocation builds in its own temporary Cargo target directory.
 Compiler artifacts cannot collide with builds in the live checkout.
-Python 3 (pinned in mise) provides process group isolation and symlink checks. A global hk pre-commit
-hook is rejected because it would bypass the repository-owned snapshot
-boundary.
+Python 3 (pinned in mise) provides process group isolation and symlink checks.
+The installer disables the named `hk-pre-commit` hook locally so an inherited
+global hook cannot bypass the repository-owned snapshot boundary. Global
+configuration and unrelated hooks remain unchanged.
 
-What runs on every commit (see `hk.pkl` for the exact commands — each
-mirrors the CI definition it cites):
+The hook selects steps from the staged diff (see `hk.pkl` for exact commands):
 
-- `cargo_fmt` (hk builtin): `cargo fmt --check` over the workspace (fix: `cargo fmt`)
-- `cargo_clippy` (hk builtin): workspace-wide `cargo clippy`, the same scope
-  CI lints (`mise exec -- mbx +1.99.1 xtask ci --only lint`)
-- `actionlint`: workflows (`*.yml` only, matching CI)
+- `cargo_fmt` (hk builtin): `cargo fmt` for affected Cargo manifests
+- `cargo_clippy` (hk builtin): `cargo clippy --fix --allow-dirty --allow-staged --quiet` for affected Cargo manifests
+- `actionlint`: changed workflows (`.github/workflows/*.yml`)
 - `swiftlint`, `swift-format`: `native/**` on macOS; skipped elsewhere
+
+Rust fixers run in the private snapshot. Strict whole-workspace Clippy and
+`xtask ci --only lint` remain required merge-readiness gates.
 
 Review mode, not auto-stage: the launcher validates the exact staged tree in
 an isolated temporary repository. Original tracked, untracked, ignored files,
@@ -77,10 +79,11 @@ patches remain until the author removes them. Bypass with `HK=0 git commit`
 One intentional divergence from CI: `hk check --all` scopes steps by `git status`
 (skips green on a clean tree). The global install
 (`hk install --global --mise`) is GUI-robust but forces `--staged`,
-which disables stashing — hence the repo-owned bootstrap above. Do not
-install hk globally for this repository: a global hk hook is rejected by
-`scripts/hooks-install` because it does not use the repository-owned
-snapshot boundary.
+which disables stashing — hence the repo-owned bootstrap above.
+`scripts/hooks-install` sets `hook.hk-pre-commit.enabled=false` locally while
+keeping the repository-owned snapshot hook enabled. A global hk installation
+can remain active for other projects; reinstalling it does not remove this
+local ownership setting. Event-wide pre-commit disabling fails installation.
 
 Linux developers: same setup (`mise install`, `scripts/hooks-install`;
 hook commands are POSIX `sh` and the Swift steps skip themselves where

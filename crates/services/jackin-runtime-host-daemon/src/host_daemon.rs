@@ -1379,13 +1379,13 @@ fn verify_test_binding(
     if argv.len() != 3
         || argv[0] != check_program
         || argv[2] != "/work/repo"
-        || !argv[1].starts_with("/jackin/checks/")
+        || !argv[1].starts_with(jackin_core::container_paths::CHECKS_PREFIX)
     {
         return Err(jackin_workflow::WorkflowError::invalid(format!(
             "check argv does not match the supported frozen shape [program, /jackin/checks/<manifest path>, /work/repo]: {argv:?}"
         )));
     }
-    let logical_path = &argv[1]["/jackin/checks/".len()..];
+    let logical_path = &argv[1][jackin_core::container_paths::CHECKS_PREFIX.len()..];
     let logical_path = Path::new(logical_path);
     if logical_path.as_os_str().is_empty()
         || logical_path

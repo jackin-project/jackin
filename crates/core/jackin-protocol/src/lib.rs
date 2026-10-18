@@ -81,7 +81,7 @@ pub const INSTANCE_ENV: &str = "JACKIN_INSTANCE";
 
 pub const INSTANCE_FORWARDED_DIR_ENV: &str = "JACKIN_FORWARDED_DIR";
 
-pub const ACCOUNT_CREDENTIALS_DIR: &str = "/jackin/account-credentials";
+pub use jackin_core::container_paths::ACCOUNT_CREDENTIALS_DIR;
 
 pub const EXIT_ACTION_FILENAME: &str = "exit-action.json";
 

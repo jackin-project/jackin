@@ -389,4 +389,72 @@ EOF
 (cd "$unborn" && PATH="$fake_bin:$PATH" TMPDIR="$snapshot_tmp" "$hook")
 test -z "$(ls -A "$snapshot_tmp")"
 if git -C "$unborn" rev-parse --verify HEAD >/dev/null 2>&1; then exit 1; fi
+# Installer ownership composes with global hooks without changing their bytes.
+(
+    install_fixture="$fixture/installer"
+    mkdir -p "$install_fixture/scripts"
+    export GIT_CONFIG_GLOBAL="$fake_bin/isolated-global.gitconfig"
+    export GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1
+    unset GIT_CONFIG GIT_CONFIG_COUNT
+    git -C "$install_fixture" init -q
+    cp "$repo_root/scripts/hooks-install" "$install_fixture/scripts/hooks-install"
+    cat > "$install_fixture/scripts/pre-commit-snapshot" <<'EOF'
+#!/bin/sh
+printf '%s\n' snapshot >> hook-events
+EOF
+    git config --global hook.hk-pre-commit.command 'printf "%s\n" unsafe-hk >> hook-events'
+    git config --global hook.hk-pre-commit.event pre-commit
+    git config --global hook.other-project.command 'printf "%s\n" unrelated >> hook-events'
+    git config --global hook.other-project.event pre-commit
+    cp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-before"
+    git -C "$install_fixture" config hook.hk-pre-commit.command obsolete
+    git -C "$install_fixture" config hook.hk-pre-commit.event pre-commit
+    (cd "$install_fixture" && sh scripts/hooks-install)
+    cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-before"
+    test "$(git -C "$install_fixture" config --local --get hook.hk-pre-commit.enabled)" = false
+    test "$(git -C "$install_fixture" config --local --get hook.jackin-pre-commit.enabled)" = true
+    if git -C "$install_fixture" config --local --get hook.hk-pre-commit.command; then exit 1; fi
+    if git -C "$install_fixture" config --local --get hook.hk-pre-commit.event; then exit 1; fi
+    if git -C "$install_fixture" config --local --get hook.pre-commit.enabled; then exit 1; fi
+    git -C "$install_fixture" hook list --show-scope pre-commit > "$fake_bin/effective-hooks"
+    grep -Fx "$(printf 'global\tdisabled\thk-pre-commit')" "$fake_bin/effective-hooks"
+    grep -Fx "$(printf 'global\tother-project')" "$fake_bin/effective-hooks"
+    grep -Fx "$(printf 'local\tjackin-pre-commit')" "$fake_bin/effective-hooks"
+    git -C "$install_fixture" hook run pre-commit
+    printf 'unrelated\nsnapshot\n' > "$fake_bin/expected-events"
+    cmp "$install_fixture/hook-events" "$fake_bin/expected-events"
+    cp "$install_fixture/.git/config" "$fake_bin/local-before"
+    (cd "$install_fixture" && sh scripts/hooks-install)
+    cmp "$install_fixture/.git/config" "$fake_bin/local-before"
+    cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-before"
+
+    # Rewriting the global install cannot override the local named-hook disable.
+    git config --global --replace-all hook.hk-pre-commit.command 'printf "%s\n" reinstalled-hk >> hook-events'
+    git config --global --replace-all hook.hk-pre-commit.event pre-commit
+    git -C "$install_fixture" hook run pre-commit
+    cat "$fake_bin/expected-events" "$fake_bin/expected-events" > "$fake_bin/twice-events"
+    cmp "$install_fixture/hook-events" "$fake_bin/twice-events"
+    cp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-reinstalled"
+    git -C "$install_fixture" config hook.pre-commit.enabled false
+    if (cd "$install_fixture" && sh scripts/hooks-install); then exit 1; fi
+    cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-reinstalled"
+    git -C "$install_fixture" config --unset hook.pre-commit.enabled
+
+    # Unsupported Git fails admission before touching repository configuration.
+    real_git=$(command -v git)
+    mkdir "$fake_bin/unsupported-git"
+    cat > "$fake_bin/unsupported-git/git" <<'EOF'
+#!/bin/sh
+for arg in "$@"; do
+    if [ "$arg" = hook ]; then exit 129; fi
+done
+exec "$REAL_GIT" "$@"
+EOF
+    chmod +x "$fake_bin/unsupported-git/git"
+    export REAL_GIT="$real_git"
+    cp "$install_fixture/.git/config" "$fake_bin/local-supported"
+    if (cd "$install_fixture" && PATH="$fake_bin/unsupported-git:$PATH" sh scripts/hooks-install); then exit 1; fi
+    cmp "$install_fixture/.git/config" "$fake_bin/local-supported"
+    cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-reinstalled"
+)
 printf '%s\n' 'pre-commit isolated staged-tree fixture passed'
