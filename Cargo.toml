@@ -162,7 +162,7 @@ resolver = "3"
 [workspace.package]
 version = "0.6.4"
 edition = "2024"
-rust-version = "1.98"
+rust-version = "1.99"
 license = "Apache-2.0"
 repository = "https://github.com/jackin-project/jackin"
 
@@ -172,15 +172,15 @@ assert_cmd = "=2.2.2"
 base64 = "0.23.1"
 cap = "=0.1.2"
 chrono = { version = "0.4", default-features = false }
-clap = "4.5"
+clap = "4.6"
 clap_mangen = "0.3.3"
 criterion = "=0.8.2"
 crossterm = "0.29"
 dhat = "=0.3.3"
 dialoguer = "0.12"
 directories = "6.0"
-dockerfile-parser-rs = "3.3.0"
-fast-down = "6.0.1"
+dockerfile-parser-rs = "3.4.0"
+fast-down = "7.0.0"
 filetime = "=0.2.29"
 flate2 = "1.1.10"
 fs4 = "1.1.0"
@@ -340,16 +340,16 @@ jackin-workflow = { version = "0.6.4", path = "crates/services/jackin-workflow" 
 nix = "0.31"
 rustix = { version = "=1.1.5", features = ["fs"] }
 opentelemetry_sdk = "0.33"
-opentelemetry-semantic-conventions = { version = "=0.33.0", default-features = false }
+opentelemetry-semantic-conventions = { version = "=0.33.1", default-features = false }
 opentelemetry = "0.33"
 opentelemetry-appender-tracing = "0.33"
 opentelemetry-otlp = { version = "0.33", default-features = false, features = ["trace", "logs", "metrics", "grpc-tonic", "gzip-tonic", "tls-ring", "tls-roots"] }
 opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic", "trace", "logs", "metrics"] }
 owo-colors = "4"
-pklr = { version = "=5.1.1", default-features = false, features = ["eval-core"] }
+pklr = { version = "=5.1.2", default-features = false, features = ["eval-core"] }
 portable-pty = "0.9"
 predicates = "=3.1.4"
-proptest = "1.9"
+proptest = "1.12"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 procfs = "0.18"
 quick-xml = "0.42.0"
@@ -369,30 +369,35 @@ security-framework = "3.7"
 semver = "1"
 serde = "1.0"
 serde_json = "=1.0.154"
-serde_yaml_ng = "0.10.0"
+serde-saphyr = "2.0.0"
 sha2 = "0.11"
-syn = { version = "3.0.6", features = ["full", "visit"] }
+syn = { version = "3.0.9", features = ["full", "visit"] }
 tabled = "0.22.0"
 tar = "0.4"
 tempfile = "=3.27.0"
 thiserror = "2.0"
+sigstore-verify = { version = "=0.15.0", features = ["tuf"] }
+sigstore-trust-root = { version = "=0.15.0" }
+sigstore-bundle = "=0.15.0"
+sigstore-types = "=0.15.0"
+sigstore-crypto = "=0.15.0"
+velnor-actions-contract = { version = "=0.1.15", git = "https://github.com/tailrocks/velnor-new", rev = "ccdd9c1bf4d6e34158971deddb30bdb33cb45ebe" }
 tokio = { version = "=1.53.3", default-features = false }
 tokio-util = "0.7"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
-toml = "=1.1.6"
+toml = "=1.1.8"
 toml_edit = "0.25"
 tracing = "0.1"
 tracing-opentelemetry = "0.34"
 tower = "0.5.3"
 tracing-subscriber = "0.3"
-tonic = { version = "0.14.1", default-features = false, features = ["transport", "router", "codegen", "gzip"] }
+tonic = { version = "0.14.6", default-features = false, features = ["transport", "router", "codegen", "gzip"] }
 turso = { version = "=0.8.3", default-features = false }
 unicode-width = "0.2"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
-zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
-x509-cert = { version = "0.3", default-features = false }
+zeroize = { version = "=1.9.1", default-features = false, features = ["alloc"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
 [workspace.lints.rust]
 rust_2024_compatibility = { level = "deny", priority = -1 }

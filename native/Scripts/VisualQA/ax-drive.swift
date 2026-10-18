@@ -4,7 +4,8 @@ import Foundation
 
 guard AXIsProcessTrusted() else {
     fputs(
-        "Accessibility permission missing; grant this terminal in System Settings > Privacy & Security > Accessibility\n",
+        "Accessibility permission missing; grant this terminal in System Settings > Privacy &\n"
+            + "Security > Accessibility\n",
         stderr
     )
     exit(3)

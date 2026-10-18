@@ -47,7 +47,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         NSApp.mainMenu = main
     }
 
-
     private var appMenuTitle: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
@@ -185,7 +184,6 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         return menu
     }
 
-
     @objc private func orderFrontAbout(_: Any?) {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: appMenuTitle,
@@ -237,38 +235,9 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
     @objc private func showUsageWindow(_: Any?) {
         openUsage()
     }
+}
 
-
-    static func sidebarMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(
-            title: "Hide Sidebar",
-            action: #selector(NSSplitViewController.toggleSidebar(_:)),
-            keyEquivalent: sidebarKeyEquivalent
-        )
-        item.keyEquivalentModifierMask = sidebarKeyModifiers
-        item.target = nil
-        return item
-    }
-
-    static func isSidebarKeyEquivalent(_ event: NSEvent) -> Bool {
-        let commandModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
-        return event.type == .keyDown
-            && (event.keyCode == 1
-                || event.charactersIgnoringModifiers?.lowercased() == sidebarKeyEquivalent)
-            && event.modifierFlags.intersection(commandModifiers) == sidebarKeyModifiers
-    }
-
-    func routeSidebar(to splitController: NSSplitViewController) {
-        sidebarSplitController = splitController
-    }
-
-    public func menuWillOpen(_ menu: NSMenu) {
-        guard menu.title == "View", let sidebarSplitController else { return }
-        sidebarCommandItem.title =
-            sidebarSplitController.splitViewItems.first?.isCollapsed == true
-            ? "Show Sidebar" : "Hide Sidebar"
-    }
-
+extension AppMainMenu {
     private func wrap(_ menu: NSMenu, title: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.submenu = menu
@@ -316,6 +285,36 @@ public final class AppMainMenu: NSObject, NSMenuDelegate {
         }
         row.target = target
         return row
+    }
+
+    static func sidebarMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(
+            title: "Hide Sidebar",
+            action: #selector(NSSplitViewController.toggleSidebar(_:)),
+            keyEquivalent: sidebarKeyEquivalent
+        )
+        item.keyEquivalentModifierMask = sidebarKeyModifiers
+        item.target = nil
+        return item
+    }
+
+    static func isSidebarKeyEquivalent(_ event: NSEvent) -> Bool {
+        let commandModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
+        return event.type == .keyDown
+            && (event.keyCode == 1
+                || event.charactersIgnoringModifiers?.lowercased() == sidebarKeyEquivalent)
+            && event.modifierFlags.intersection(commandModifiers) == sidebarKeyModifiers
+    }
+
+    func routeSidebar(to splitController: NSSplitViewController) {
+        sidebarSplitController = splitController
+    }
+
+    public func menuWillOpen(_ menu: NSMenu) {
+        guard menu.title == "View", let sidebarSplitController else { return }
+        sidebarCommandItem.title =
+            sidebarSplitController.splitViewItems.first?.isCollapsed == true
+            ? "Show Sidebar" : "Hide Sidebar"
     }
 }
 

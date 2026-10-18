@@ -313,7 +313,7 @@ async fn read_captured(
         return Ok(Vec::new());
     };
     let mut bytes = Vec::new();
-    let mut buffer = [0; 8192];
+    let mut buffer = vec![0_u8; 8192];
     loop {
         let count = stream
             .read(&mut buffer)

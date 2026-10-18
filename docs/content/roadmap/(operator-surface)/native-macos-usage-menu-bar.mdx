@@ -47,7 +47,7 @@ Operator behavior lives in [jackin❯ desktop for macOS](/guides/macos-usage-men
 2. Cut the first non-development release from `main`; sign, notarize, staple, Gatekeeper-validate, and publish the immutable ZIP plus SHA-256, Sigstore, SBOM, and GitHub attestation.
 3. Advance the stable formula and `jackin-desktop` cask in one independently reviewed tap PR. The first cask must not auto-merge.
 4. On Apple Silicon macOS 26+, install the public cask, run the status item, popover, Usage, and Settings surfaces, uninstall cleanly, and prove a completed-version release rerun performs no writes.
-5. Verify the downloaded public artifact with `cargo xtask release-verify` and reconcile observed production behavior in durable release docs.
+5. Verify the downloaded public artifact with GitHub Attestations and the standard Sigstore bundle tooling; record the immutable receipt and observed production behavior in durable release docs. The retired `cargo xtask release-verify` command is not available for current releases.
 
 ### Operator-owned visual preference observation
 

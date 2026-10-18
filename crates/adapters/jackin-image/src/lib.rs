@@ -8,6 +8,7 @@ pub mod image_decision;
 pub mod image_recipe;
 pub mod naming;
 mod process_telemetry;
+mod release_evidence;
 mod telemetry_boundary;
 pub mod version_check;
 

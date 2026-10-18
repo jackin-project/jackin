@@ -4,113 +4,94 @@
 use super::*;
 
 #[test]
-fn download_url_dev_uses_preview_tag() {
-    let url = download_url("0.6.0-dev+bf7df07", "amd64");
-    assert!(url.contains("/releases/download/preview/"), "{url}");
+fn capsule_resolution_future_stays_within_launch_stack_budget() {
+    let paths = JackinPaths::for_tests(Path::new("/not-executed"));
+    let future = ensure_available(&paths);
+    let bytes = size_of_val(&future);
     assert!(
-        url.ends_with("/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"),
-        "{url}"
+        bytes <= 8192,
+        "capsule future is {bytes} bytes; budget is 8192"
     );
 }
 
 #[test]
-fn download_url_stable_uses_version_tag() {
-    let url = download_url("0.6.0", "amd64");
-    assert!(url.contains("/releases/download/v0.6.0/"), "{url}");
-    assert!(
-        url.ends_with("/jackin-capsule-0.6.0-x86_64-unknown-linux-gnu.tar.gz"),
-        "{url}"
+fn preview_url_uses_immutable_tag_and_canonical_target() {
+    let version = "0.6.0-preview.411+bf7df07";
+    for (arch, target) in [
+        ("amd64", "x86_64-unknown-linux-gnu"),
+        ("arm64", "aarch64-unknown-linux-gnu"),
+    ] {
+        assert_eq!(
+            download_url(version, arch, ReleaseChannel::Preview),
+            format!(
+                "https://github.com/jackin-project/jackin/releases/download/v{version}/jackin-capsule-{target}.tar.gz"
+            )
+        );
+    }
+}
+
+#[test]
+fn only_canonical_preview_versions_authorize_remote_downloads() {
+    assert_eq!(
+        release_channel("0.6.0-preview.411+bf7df07"),
+        ReleaseChannel::Preview
     );
+    for version in [
+        "0.6.0",
+        "0.6.0-dev+bf7df07",
+        "preview",
+        "0.6.0-preview.0+bf7df07",
+        "0.6.0-preview.01+bf7df07",
+        "0.6.0-preview.+1+bf7df07",
+        "0.6.0-preview.411+BF7DF07",
+        "0.6.0-preview.411+bf7df0",
+        "00.6.0-preview.411+bf7df07",
+    ] {
+        assert_eq!(
+            release_channel(version),
+            ReleaseChannel::LocalOnly,
+            "{version}"
+        );
+    }
+    assert!(local_capsule_only_message("0.6.0").contains("No release download was attempted"));
 }
 
 #[test]
-fn download_url_arm64_uses_aarch64_target() {
-    let url = download_url("0.6.0-dev+bf7df07", "arm64");
-    assert!(
-        url.ends_with("/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz"),
-        "{url}"
-    );
-}
-
-#[test]
-fn download_url_preview_uses_preview_tag() {
-    let url = download_url("0.6.0-preview.411+bf7df07", "amd64");
-    assert!(url.contains("/releases/download/preview/"), "{url}");
-    assert!(
-        url.ends_with("/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"),
-        "{url}"
-    );
-}
-
-#[test]
-fn cached_path_replaces_plus_in_version() {
-    let path = cached_binary_path(Path::new("/cache"), "0.6.0-dev+bf7df07", "amd64");
-    let s = path.to_string_lossy();
-    assert!(s.contains("0.6.0-dev_bf7df07"), "{s}");
-    assert!(!s.contains('+'), "{s}");
-}
-
-#[test]
-fn cache_key_version_collapses_dev_shas_to_preview_channel() {
-    assert_eq!(cache_key_version("0.6.0-dev+bf7df07"), "0.6.0-dev+preview");
+fn cache_paths_bind_exact_immutable_version() {
     assert_eq!(
         cache_key_version("0.6.0-preview.411+bf7df07"),
-        "0.6.0-preview.411+preview"
+        "0.6.0-preview.411_bf7df07"
     );
-    assert_eq!(cache_key_version("0.6.0"), "0.6.0");
+    assert_ne!(
+        cached_binary_path(Path::new("/cache"), "0.6.0-preview.411+bf7df07", "amd64"),
+        cached_binary_path(Path::new("/cache"), "0.6.0-preview.412+1111111", "amd64")
+    );
+    assert_eq!(
+        resolved_cache_path(Path::new("/cache")),
+        cached_binary_path(Path::new("/cache"), REQUIRED_VERSION, container_arch())
+    );
+}
+
+#[tokio::test]
+async fn explicit_test_stub_is_accepted_by_the_versioned_cache_resolver() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    let cached = resolved_cache_path(&paths.cache_dir);
+
+    install_test_stub(&paths).unwrap();
+
+    assert!(cached.is_file());
+    assert!(!paths.cache_dir.join("jackin-capsule-test-stub").exists());
+    assert_eq!(resolve_cached_or_fetch(&paths).await.unwrap(), cached);
 }
 
 #[test]
-fn normalize_sigstore_v03_bundle_maps_current_cosign_fields() {
-    let raw = serde_json::json!({
-        "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
-        "verificationMaterial": {
-            "certificate": {
-                "rawBytes": BASE64.encode([1, 2, 3, 4])
-            },
-            "tlogEntries": [{
-                "logIndex": "42",
-                "logId": { "keyId": BASE64.encode(b"rekor-key") },
-                "integratedTime": "1234",
-                "inclusionPromise": {
-                    "signedEntryTimestamp": "set"
-                },
-                "canonicalizedBody": "body"
-            }]
-        },
-        "messageSignature": {
-            "signature": "sig"
-        }
-    })
-    .to_string();
-
-    let normalized = normalize_sigstore_v03_bundle(&raw).unwrap();
-    let json: serde_json::Value = serde_json::from_str(&normalized).unwrap();
-
-    assert_eq!(json["base64Signature"], "sig");
-    assert_eq!(json["rekorBundle"]["SignedEntryTimestamp"], "set");
-    assert_eq!(json["rekorBundle"]["Payload"]["body"], "body");
-    assert_eq!(json["rekorBundle"]["Payload"]["integratedTime"], 1234);
-    assert_eq!(json["rekorBundle"]["Payload"]["logIndex"], 42);
+fn packaged_binary_path_uses_libexec_arch() {
     assert_eq!(
-        json["rekorBundle"]["Payload"]["logID"],
-        "72656b6f722d6b6579"
-    );
-
-    let cert = BASE64.decode(json["cert"].as_str().unwrap()).unwrap();
-    let cert = String::from_utf8(cert).unwrap();
-    assert!(cert.starts_with("-----BEGIN CERTIFICATE-----\n"));
-    assert!(cert.ends_with("-----END CERTIFICATE-----\n"));
-}
-
-#[test]
-fn packaged_binary_path_for_keg_uses_libexec_arch_dir() {
-    let path = packaged_binary_path_for_keg(
-        Path::new("/opt/homebrew/Cellar/jackin-preview/0.6.0-preview.1"),
-        "arm64",
-    );
-    assert_eq!(
-        path,
+        packaged_binary_path_for_keg(
+            Path::new("/opt/homebrew/Cellar/jackin-preview/0.6.0-preview.1"),
+            "arm64"
+        ),
         Path::new(
             "/opt/homebrew/Cellar/jackin-preview/0.6.0-preview.1/libexec/jackin-capsule/linux-arm64/jackin-capsule"
         )
@@ -118,209 +99,75 @@ fn packaged_binary_path_for_keg_uses_libexec_arch_dir() {
 }
 
 #[test]
-fn linux_target_maps_arch() {
-    assert_eq!(linux_target("arm64"), "aarch64-unknown-linux-gnu");
-    assert_eq!(linux_target("amd64"), "x86_64-unknown-linux-gnu");
-    assert_eq!(linux_target("x86_64"), "x86_64-unknown-linux-gnu");
-}
-
-#[test]
-fn base_download_url_dev_uses_preview_tag() {
-    let url = base_download_url("0.6.0-dev+bf7df07");
+fn cleanup_and_failure_messages_name_actionable_local_recovery() {
     assert_eq!(
-        url,
-        "https://github.com/jackin-project/jackin/releases/download/preview"
-    );
-}
-
-#[test]
-fn base_download_url_preview_uses_preview_tag() {
-    let url = base_download_url("0.6.0-preview.411+bf7df07");
-    assert_eq!(
-        url,
-        "https://github.com/jackin-project/jackin/releases/download/preview"
-    );
-}
-
-#[test]
-fn base_download_url_stable_uses_version_tag() {
-    let url = base_download_url("0.6.0");
-    assert_eq!(
-        url,
-        "https://github.com/jackin-project/jackin/releases/download/v0.6.0"
-    );
-}
-
-#[test]
-fn capsule_manifest_failure_message_stable_names_versioned_channel_and_urls() {
-    let base_url = base_download_url("0.6.0");
-    let message = capsule_manifest_failure_message("0.6.0", &base_url, false);
-    assert!(message.contains("stable channel"), "{message}");
-    assert!(message.contains("`v0.6.0`"), "{message}");
-    assert!(
-        message.contains("/releases/download/v0.6.0/capsule-manifest.json"),
-        "{message}"
-    );
-    assert!(
-        message.contains("/releases/download/v0.6.0/capsule-manifest.json.bundle"),
-        "{message}"
-    );
-    assert!(!message.contains("rolling `preview`"), "{message}");
-}
-
-#[test]
-fn capsule_manifest_failure_message_preview_names_rolling_channel_and_urls() {
-    let base_url = base_download_url("0.6.0-dev+bf7df07");
-    let message = capsule_manifest_failure_message("0.6.0-dev+bf7df07", &base_url, true);
-    assert!(message.contains("preview channel"), "{message}");
-    assert!(message.contains("rolling `preview`"), "{message}");
-    assert!(
-        message.contains("/releases/download/preview/capsule-manifest.json"),
-        "{message}"
-    );
-    assert!(
-        message.contains("/releases/download/preview/capsule-manifest.json.bundle"),
-        "{message}"
-    );
-    assert!(!message.contains("stable channel"), "{message}");
-}
-
-#[test]
-fn rekor_keys_decode_and_contain_expected_id() {
-    let keys = rekor_verification_keys();
-    assert_eq!(keys.len(), 2, "expected base64 and hex Rekor key IDs");
-    assert!(
-        keys.contains_key(SIGSTORE_REKOR_KEY_ID),
-        "expected key ID {SIGSTORE_REKOR_KEY_ID} not found in decoded map"
-    );
-    assert!(
-        keys.contains_key("c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d"),
-        "expected hex Rekor key ID not found in decoded map"
-    );
-    let key = keys.get(SIGSTORE_REKOR_KEY_ID).unwrap();
-    assert!(
-        matches!(
-            key,
-            sigstore::crypto::CosignVerificationKey::ECDSA_P256_SHA256_ASN1(_)
+        cleanup_warning_for(
+            Path::new("/tmp/missing"),
+            &std::io::Error::from(std::io::ErrorKind::NotFound)
         ),
-        "expected Rekor key to be ECDSA_P256_SHA256_ASN1 variant, got: {key:?}"
-    );
-}
-
-#[test]
-fn is_preview_version_matches_dev_and_preview_suffixes() {
-    assert!(is_preview_version("0.6.0-dev+bf7df07"));
-    assert!(is_preview_version("0.6.0-preview.411+bf7df07"));
-    assert!(is_preview_version("0.6.0-developer"));
-    assert!(!is_preview_version("0.6.0"));
-    assert!(!is_preview_version("0.6.0-preview1"));
-}
-
-#[test]
-fn is_allowed_signer_san_accepts_release_and_preview_workflows() {
-    assert!(is_allowed_signer_san(
-        "https://github.com/jackin-project/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
-    ));
-    assert!(is_allowed_signer_san(
-        "https://github.com/jackin-project/jackin/.github/workflows/preview.yml@refs/heads/main"
-    ));
-    assert!(!is_allowed_signer_san(
-        "https://github.com/jackin-project/jackin/.github/workflows/evil.yml@refs/heads/main"
-    ));
-    assert!(!is_allowed_signer_san(
-        "https://github.com/attacker/jackin/.github/workflows/release.yml@refs/tags/v0.6.0"
-    ));
-    assert!(!is_allowed_signer_san(
-        "https://github.com/jackin-project/jackin/.github/workflows/release.yml"
-    ));
-    assert!(!is_allowed_signer_san(""));
-}
-
-#[test]
-fn resolved_cache_path_uses_container_arch_not_host_arch() {
-    let path = resolved_cache_path(Path::new("/cache"));
-    let s = path.to_string_lossy();
-    assert!(s.contains(&format!("linux-{}", container_arch())), "{s}");
-    assert!(!s.contains(std::env::consts::ARCH), "{s}");
-}
-
-#[test]
-fn cleanup_warning_ignores_not_found() {
-    let err = std::io::Error::new(std::io::ErrorKind::NotFound, "no such file");
-    assert_eq!(
-        cleanup_warning_for(Path::new("/tmp/jackin-capsule-never-created.tmp"), &err),
-        None,
-        "nothing to clean is success, not a warning",
-    );
-}
-
-#[test]
-fn cleanup_warning_names_path_on_real_failure() {
-    let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
-    let line = cleanup_warning_for(Path::new("/tmp/jackin-capsule-stuck.tmp"), &err)
-        .expect("a real removal failure must warn");
-    assert!(
-        line.starts_with("[jackin❯] warning: temporary download file cleanup failed"),
-        "{line}",
-    );
-    assert!(line.contains("/tmp/jackin-capsule-stuck.tmp"), "{line}");
-    assert!(line.contains("manual cleanup may be needed"), "{line}");
-}
-
-#[test]
-fn remove_with_debug_log_missing_file_is_silent_success() {
-    let missing = std::env::temp_dir().join(format!(
-        "jackin-capsule-test-missing-{}.tmp",
-        std::process::id()
-    ));
-    drop(std::fs::remove_file(&missing));
-    remove_with_debug_log(&missing);
-    assert!(!missing.exists());
-}
-
-#[test]
-fn download_failure_message_stable_names_versioned_asset_tag_and_url() {
-    let url = download_url("0.6.4", "arm64");
-    let msg = download_failure_message("0.6.4", &url, false);
-    assert!(msg.contains("jackin-capsule 0.6.4"), "{msg}");
-    assert!(
-        msg.contains("releases/tag/v0.6.4"),
-        "stable runbook must link the versioned tag: {msg}",
-    );
-    assert!(msg.contains("JACKIN_CAPSULE_BIN"), "{msg}");
-    assert!(msg.contains("build-jackin-capsule"), "{msg}");
-    assert!(
-        msg.contains(&url),
-        "attempted URL must always be shown: {msg}"
+        None
     );
     assert!(
-        !msg.contains("releases/tag/preview"),
-        "stable runbook must not blame the preview build: {msg}",
+        cleanup_warning_for(
+            Path::new("/tmp/stuck"),
+            &std::io::Error::from(std::io::ErrorKind::PermissionDenied)
+        )
+        .unwrap()
+        .contains("manual cleanup")
     );
+    let version = "0.6.0-preview.411+bf7df07";
+    let message = download_failure_message(
+        version,
+        &download_url(version, "amd64", ReleaseChannel::Preview),
+    );
+    assert!(message.contains(&format!("releases/tag/v{version}")));
+    assert!(message.contains("JACKIN_CAPSULE_BIN"));
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn embedded_version_requires_exact_token() {
+    assert!(contains_exact_version(
+        b"\0jackin-capsule\x000.6.4\0",
+        b"0.6.4"
+    ));
+    for bytes in [
+        b"0.6.40".as_slice(),
+        b"0.6.4-preview.1+abcdef0",
+        b"10.6.4",
+        b"0.6.4-dev",
+    ] {
+        assert!(!contains_exact_version(bytes, b"0.6.4"));
+    }
 }
 
 #[test]
-fn download_failure_message_preview_keeps_preview_runbook_and_url() {
-    let url = download_url("0.6.5-dev+abc1234", "amd64");
-    let msg = download_failure_message("0.6.5-dev+abc1234", &url, true);
-    assert!(msg.contains("releases/tag/preview"), "{msg}");
-    assert!(msg.contains("build-jackin-capsule"), "{msg}");
-    assert!(
-        msg.contains(&url),
-        "attempted URL must always be shown: {msg}"
-    );
-    assert!(
-        !msg.contains("releases/tag/v0.6.5"),
-        "preview runbook must not link a versioned tag: {msg}",
-    );
-}
-
-#[test]
-fn resolved_cache_path_matches_the_path_the_resolver_reads() {
-    let expected = cached_binary_path(
-        Path::new("/cache"),
-        &cache_key_version(REQUIRED_VERSION),
-        container_arch(),
-    );
-    assert_eq!(resolved_cache_path(Path::new("/cache")), expected);
+fn archive_rejects_noncanonical_members_and_requires_one_executable() {
+    for (name, mode, repeat, accepted) in [
+        ("jackin-capsule", 0o755, 1, true),
+        ("jackin-capsule", 0o644, 1, false),
+        ("nested/jackin-capsule", 0o755, 1, false),
+        ("jackin-capsule", 0o755, 2, false),
+        ("wrong", 0o755, 1, false),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("archive.tar.gz");
+        let file = std::fs::File::create(&path).unwrap();
+        let gzip = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut tar = tar::Builder::new(gzip);
+        for _ in 0..repeat {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(4);
+            header.set_mode(mode);
+            header.set_cksum();
+            tar.append_data(&mut header, name, b"test".as_slice())
+                .unwrap();
+        }
+        tar.into_inner().unwrap().finish().unwrap();
+        assert_eq!(
+            archive::extract_capsule(&path, &dir.path().join("capsule")).is_ok(),
+            accepted,
+            "{name} {mode:o} {repeat}"
+        );
+    }
 }

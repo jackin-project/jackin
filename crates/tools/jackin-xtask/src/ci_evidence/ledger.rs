@@ -366,7 +366,10 @@ fn read_push_head_zip(zip_bytes: &[u8], run_id: u64) -> Result<(Vec<u8>, Vec<u8>
         let mut file = archive
             .by_index(index)
             .context("reading push-head artifact ZIP entry")?;
-        let name = file.name().to_owned();
+        let name = file
+            .name()
+            .context("reading push-head artifact ZIP entry name")?
+            .into_owned();
         if file.is_dir()
             || !matches!(name.as_str(), "event.json" | "push-head.json")
             || file.size() > MAX_ARTIFACT_FILE_BYTES

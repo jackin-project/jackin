@@ -327,13 +327,15 @@ mod tests {
         MonitorAccountBinding, MonitorPolicy, MonitorPolicyOrigin, MonitorPolicyRecord,
         MonitorProvider, SpendRecord, SpendRecordSource, SpendVerification,
     };
-    use std::os::unix::fs::OpenOptionsExt as _;
+    use std::os::unix::fs::PermissionsExt as _;
 
     fn legacy_snapshot(version: u16) -> Vec<u8> {
-        let mut state = StoreState::default();
-        state.schema_version = version;
-        state.last_now_epoch = 10;
-        state.next_binding_id = 2;
+        let mut state = StoreState {
+            schema_version: version,
+            last_now_epoch: 10,
+            next_binding_id: 2,
+            ..StoreState::default()
+        };
         state
             .accounts
             .insert("account-1".to_owned(), AccountObservations::default());
@@ -375,14 +377,9 @@ mod tests {
             .join(crate::BROKER_DIR)
             .join(STORE_DIR)
             .join(STORE_FILE);
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(STORE_MODE)
-            .open(&path)
-            .expect("create owner-only snapshot");
-        file.write_all(bytes).expect("write snapshot fixture");
-        file.sync_all().expect("sync snapshot fixture");
+        std::fs::write(&path, bytes).expect("write snapshot fixture");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(STORE_MODE))
+            .expect("set owner-only snapshot permissions");
         (directory, path)
     }
 

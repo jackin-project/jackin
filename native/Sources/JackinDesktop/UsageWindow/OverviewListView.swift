@@ -5,14 +5,14 @@ import JackinUsageBridge
 import SwiftUI
 
 public struct OverviewListView: View {
-    public let groups: [PresentationStore.ProviderGroupRow]
+    public let groups: [ProviderGroupRow]
     @Binding public var selectedRowID: String?
     @Binding public var expandedProviderIDs: Set<String>
     public var onSelect: (String, String?) -> Void
     public var onRetry: (String) -> Void
 
     public init(
-        groups: [PresentationStore.ProviderGroupRow],
+        groups: [ProviderGroupRow],
         selectedRowID: Binding<String?>,
         expandedProviderIDs: Binding<Set<String>>,
         onSelect: @escaping (String, String?) -> Void,

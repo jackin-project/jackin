@@ -255,11 +255,11 @@ These commands match the inspected `mise.toml` and `.velnor/config.toml` configu
 Confirm them again in Step 0. New crate commands require the new crates to exist.
 
 ```sh
-mise exec -- mbx +1.99.0 nextest run -p jackin-workflow-spec
-mise exec -- mbx +1.99.0 nextest run -p jackin-workflow
-mise exec -- mbx +1.99.0 nextest run -p jackin-capsule -E 'test(workflow_)'
-mise exec -- mbx +1.99.0 nextest run -p jackin-isolation -E 'test(workflow_)'
-mise exec -- mbx +1.99.0 nextest run -p jackin-runtime-docker-profile -E 'test(workflow_)'
+mise exec -- mbx +1.99.1 nextest run -p jackin-workflow-spec
+mise exec -- mbx +1.99.1 nextest run -p jackin-workflow
+mise exec -- mbx +1.99.1 nextest run -p jackin-capsule -E 'test(workflow_)'
+mise exec -- mbx +1.99.1 nextest run -p jackin-isolation -E 'test(workflow_)'
+mise exec -- mbx +1.99.1 nextest run -p jackin-runtime-docker-profile -E 'test(workflow_)'
 ```
 
 Register new focused tests with the `workflow_` prefix where the commands use that filter.

@@ -141,8 +141,8 @@ fn conformance_wire_download_cache_and_retry_are_bounded_and_private() -> Result
     assert!(failure.is_err());
     for route in [
         crate::telemetry_boundary::DownloadRoute::CapsuleArtifact,
-        crate::telemetry_boundary::DownloadRoute::CapsuleManifest,
-        crate::telemetry_boundary::DownloadRoute::CapsuleManifestBundle,
+        crate::telemetry_boundary::DownloadRoute::CapsuleEvidence,
+        crate::telemetry_boundary::DownloadRoute::CapsuleAttestation,
     ] {
         runtime.block_on(crate::telemetry_boundary::download_request(
             route,
@@ -183,8 +183,8 @@ fn conformance_wire_download_cache_and_retry_are_bounded_and_private() -> Result
         "/agent-binaries/{version}/metadata",
         "/agent-binaries/{version}/{artifact}",
         "/releases/download/{version}/{artifact}",
-        "/releases/download/{version}/capsule-manifest.json",
-        "/releases/download/{version}/capsule-manifest.json.bundle",
+        "/releases/download/{version}/{evidence}",
+        "/repos/{owner}/{repo}/attestations/{digest}",
         "downloads.claude.ai",
         "github.com",
         "success",

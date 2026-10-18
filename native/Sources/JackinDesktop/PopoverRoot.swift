@@ -23,11 +23,6 @@ final class PopoverPresentationState: ObservableObject {
     }
 }
 
-private struct ProviderScrollReset: Equatable {
-    let presentationSequence: UInt64
-    let accountLabel: String
-}
-
 private enum PopoverQIFullPlateKey: EnvironmentKey {
     static let defaultValue = false
 }
@@ -44,7 +39,6 @@ public struct PopoverRoot: View {
 
     @ObservedObject public var store: PresentationStore
     @ObservedObject private var presentationState: PopoverPresentationState
-    @State private var providerScrollPosition = ScrollPosition(edge: .top)
     public var onOpenUsage: ((UsageNavigationContext?) -> Void)?
     @Environment(\.popoverQIFullPlate) private var qiFullPlate
 
@@ -123,7 +117,11 @@ public struct PopoverRoot: View {
             }
             .accessibilityIdentifier("popover.global-error")
         } else if let provider = selectedProvider {
-            providerForm(provider)
+            PopoverProviderDetails(
+                store: store,
+                provider: provider,
+                presentationState: presentationState
+            )
         } else {
             ContentUnavailableView(
                 "No providers detected",
@@ -134,7 +132,7 @@ public struct PopoverRoot: View {
         }
     }
 
-    private var selectedProvider: PresentationStore.GlanceProviderRow? {
+    private var selectedProvider: GlanceProviderRow? {
         if let selection = store.popoverSelection,
             let match = store.providerGlanceRows.first(where: { $0.surfaceId == selection })
         {
@@ -143,159 +141,14 @@ public struct PopoverRoot: View {
         return store.providerGlanceRows.first
     }
 
-    private func providerForm(_ provider: PresentationStore.GlanceProviderRow) -> some View {
-        let surface = store.surfaces.first { $0.id == provider.surfaceId }
-        let metadataRows = surface?.detailPresentation.rows.filter { $0.kind != .bucket } ?? []
-        let limitRows = surface?.detailPresentation.rows.filter { $0.kind == .bucket } ?? []
-        let scrollReset = ProviderScrollReset(
-            presentationSequence: presentationState.sequence,
-            accountLabel: provider.accountLabel
-        )
-
-        return Form {
-            Section {
-                providerIdentity(provider)
-            }
-
-            if !limitRows.isEmpty {
-                Section {
-                    ForEach(limitRows) { row in
-                        limitRow(row)
-                    }
-                } header: {
-                    sectionHeader("Limits")
-                }
-            } else if surface?.lastError == nil {
-                Section {
-                    Text("No limit details available")
-                        .foregroundStyle(.secondary)
-                } header: {
-                    sectionHeader("Limits")
-                }
-            }
-
-            if !metadataRows.isEmpty {
-                Section {
-                    ForEach(metadataRows) { row in
-                        LabeledContent {
-                            Text(row.displayLabel)
-                                .foregroundStyle(.primary)
-                        } label: {
-                            Text(row.label)
-                                .foregroundStyle(.primary)
-                                .accessibilityIdentifier(
-                                    "popover.detail-label.\(row.rowId)"
-                                )
-                        }
-                        .accessibilityLabel("\(row.label), \(row.displayLabel)")
-                        .accessibilityIdentifier("popover.detail.\(row.rowId)")
-                    }
-                } header: {
-                    sectionHeader("Details")
-                }
-            }
-
-            if let error = surface?.lastError ?? provider.lastError {
-                Section {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .accessibilityIdentifier("popover.provider-error")
-                    Button("Retry") { store.refresh(surfaceId: provider.surfaceId) }
-                        .disabled(store.refreshInProgress)
-                        .accessibilityIdentifier("popover.provider-retry")
-                } header: {
-                    sectionHeader("Provider status")
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .scrollPosition($providerScrollPosition)
-        .defaultScrollAnchor(.top, for: .initialOffset)
-        .task(id: scrollReset) {
-            await resetProviderScrollPosition(ifNeededFor: scrollReset)
-        }
-        .accessibilityLabel("\(provider.displayLabel) usage details")
-        .accessibilityIdentifier("popover.provider.\(provider.surfaceId)")
-    }
-
-    private func resetProviderScrollPosition(ifNeededFor reset: ProviderScrollReset) async {
-        guard presentationState.claimScrollReset(accountLabel: reset.accountLabel) else { return }
-        await Task.yield()
-        providerScrollPosition.scrollTo(edge: .top)
-    }
-
-    private func providerIdentity(_ provider: PresentationStore.GlanceProviderRow) -> some View {
-        HStack(spacing: 10) {
-            if let mark = ProviderMarks.swiftUIImage(forIconKey: provider.iconKey) {
-                mark
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
-                    .accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(provider.displayLabel)
-                    .font(.headline)
-                Text(provider.accountLabel)
-                    .foregroundStyle(.primary)
-                    .accessibilityIdentifier("popover.provider-account")
-                Text(provider.activityLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("popover.provider-activity")
-            }
-            Spacer()
-            if provider.isRefreshing {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel(provider.activityLabel)
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(provider.accessibilityLabel)
-        .accessibilityIdentifier("popover.provider-identity")
-    }
-
     private func accountSelection(
-        _ accounts: [PresentationStore.AccountRow],
-        provider: PresentationStore.GlanceProviderRow
+        _ accounts: [AccountRow],
+        provider: GlanceProviderRow
     ) -> Binding<String> {
         Binding(
             get: { accounts.first(where: \.selected)?.accountKey ?? accounts[0].accountKey },
             set: { store.setSelectedAccount(surfaceId: provider.surfaceId, accountKey: $0) }
         )
-    }
-
-    private func limitRow(_ row: UsageDetailRow) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            LabeledContent(row.label) {
-                Text(row.layoutLines.first?.leading ?? row.displayLabel)
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-            }
-            if let percent = row.meterPercent {
-                ProgressView(value: Double(percent), total: 100)
-                    .tint(severityTint(row.severity))
-                    .accessibilityHidden(true)
-            }
-            ForEach(Array(row.layoutLines.dropFirst().enumerated()), id: \.offset) { _, line in
-                if let value = line.leading ?? line.trailing {
-                    Text(value)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                }
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityRepresentation {
-            Text(row.displayLabel)
-                .accessibilityLabel("\(row.label), \(row.displayLabel)")
-                .accessibilityIdentifier("popover.limit.\(row.rowId)")
-        }
-    }
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .accessibilityLabel(title)
     }
 
     private var controls: some View {

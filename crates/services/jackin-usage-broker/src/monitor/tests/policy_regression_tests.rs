@@ -24,9 +24,11 @@ const BILLING_PERIOD_END: i64 = NOW + 100_000;
 const TEST_OPERATOR: &str = "isolated-test-operator";
 
 fn persisted_policy_fixture() -> super::StoreState {
-    let mut state = super::StoreState::default();
-    state.last_now_epoch = 100;
-    state.next_binding_id = 2;
+    let mut state = super::StoreState {
+        last_now_epoch: 100,
+        next_binding_id: 2,
+        ..super::StoreState::default()
+    };
     state.bindings.insert(
         "binding-00000001".to_owned(),
         vec![MonitorAccountBinding {

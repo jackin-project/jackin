@@ -35,7 +35,16 @@ fn create_writes_a_valid_role_repo() {
     assert!(repo.join("jackin.role.toml").is_file());
     assert!(repo.join("Dockerfile").is_file());
     assert!(repo.join(".github/workflows/validate.yml").is_file());
-    validate_role_repo(&repo).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(repo.join("Dockerfile")).unwrap(),
+        "FROM projectjackin/construct:0.37-trixie\n"
+    );
+    let validated = validate_role_repo(&repo).unwrap();
+    assert_eq!(validated.dockerfile.construct_version, "0.37-trixie");
+    assert_eq!(
+        validated.dockerfile.construct_version,
+        jackin_manifest::CONSTRUCT_PINNED_TAG
+    );
 }
 
 #[test]

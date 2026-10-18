@@ -1,16 +1,14 @@
-schema = 1
+schema = 2
 
 [workflow]
 name = "CI"
 policy = "consumer-v1"
 default_branch = "main"
-runner_label = "ubuntu-26.04"
 generator_validation = "bootstrap"
 max_parallel_jobs = 4
 mise_quiet = false
-
-# Source-qualified native tasks are preserved in docs/integration/unpublished-workflow-tasks.toml.
-# velnor-actions 0.1.8 rejects those source fields and a root mise min_version beside verification tasks.
+pull_request_cache_policy = "read-only"
+runner_label = "ubuntu-26.04"
 
 [resources]
 compiler_process_budget = 4
@@ -19,144 +17,230 @@ test_process_budget = 4
 [test_sharding]
 default_shards = 1
 
-[discovery]
-exclude = [
-  "native/**",
-  "docs/**",
-  "docker/**",
-  "**/fuzz/**",
-  "fuzz/**",
-  "crates/tools/jackin-lints/**",
-  "crates/adapters/jackin-omp-store/**",
-  "crates/adapters/jackin-oppicker/**",
-  "crates/core/jackin-brand/**",
-  "crates/core/jackin-build-meta/**",
-  "crates/services/jackin-instance-agents/**",
-  "crates/services/jackin-instance-credentials/**",
-  "crates/services/jackin-instance-roles/**",
-  "crates/services/jackin-runtime-apple-container-activate-entry/**",
-  "crates/services/jackin-runtime-apple-container-attach/**",
-  "crates/services/jackin-runtime-apple-container-attach-outcome/**",
-  "crates/services/jackin-runtime-apple-container-check-dns/**",
-  "crates/services/jackin-runtime-apple-container-client/**",
-  "crates/services/jackin-runtime-apple-container-probe-version/**",
-  "crates/services/jackin-runtime-apple-container-running/**",
-  "crates/services/jackin-runtime-apple-container-session-contract/**",
-  "crates/services/jackin-runtime-apple-container-stop/**",
-  "crates/services/jackin-runtime-apple-container-supervisor-env/**",
-  "crates/services/jackin-runtime-apple-container-wait/**",
-  "crates/services/jackin-runtime-attach-admission/**",
-  "crates/services/jackin-runtime-attach-capsule-ready/**",
-  "crates/services/jackin-runtime-attach-exec-args/**",
-  "crates/services/jackin-runtime-attach-inspect/**",
-  "crates/services/jackin-runtime-attach-running-gate/**",
-  "crates/services/jackin-runtime-attach-sessions/**",
-  "crates/services/jackin-runtime-attach-transport/**",
-  "crates/services/jackin-runtime-backend-selection/**",
-  "crates/services/jackin-runtime-cleanup-absent-guards/**",
-  "crates/services/jackin-runtime-cleanup-dind-gc/**",
-  "crates/services/jackin-runtime-cleanup-eject-resources/**",
-  "crates/services/jackin-runtime-cleanup-prune-cache/**",
-  "crates/services/jackin-runtime-cleanup-prune-dir/**",
-  "crates/services/jackin-runtime-cleanup-prune-home/**",
-  "crates/services/jackin-runtime-cleanup-prune-images/**",
-  "crates/services/jackin-runtime-cleanup-prune-roles/**",
-  "crates/services/jackin-runtime-cleanup-resolve/**",
-  "crates/services/jackin-runtime-cleanup-socket-dir/**",
-  "crates/services/jackin-runtime-cleanup-timing/**",
-  "crates/services/jackin-runtime-coordination/**",
-  "crates/services/jackin-runtime-discovery/**",
-  "crates/services/jackin-runtime-docker-profile/**",
-  "crates/services/jackin-runtime-drift/**",
-  "crates/services/jackin-runtime-exec-host/**",
-  "crates/services/jackin-runtime-exit-summary/**",
-  "crates/services/jackin-runtime-host-attach/**",
-  "crates/services/jackin-runtime-host-daemon/**",
-  "crates/services/jackin-runtime-identity/**",
-  "crates/services/jackin-runtime-image/**",
-  "crates/services/jackin-runtime-isolation/**",
-  "crates/services/jackin-runtime-launch-account-config/**",
-  "crates/services/jackin-runtime-launch-account-identity/**",
-  "crates/services/jackin-runtime-launch-attach-outcome/**",
-  "crates/services/jackin-runtime-launch-auth-error/**",
-  "crates/services/jackin-runtime-launch-capsule-setup/**",
-  "crates/services/jackin-runtime-launch-debug-envs/**",
-  "crates/services/jackin-runtime-launch-dind/**",
-  "crates/services/jackin-runtime-launch-dry-run/**",
-  "crates/services/jackin-runtime-launch-exit-diagnosis/**",
-  "crates/services/jackin-runtime-launch-exit-outro/**",
-  "crates/services/jackin-runtime-launch-failure/**",
-  "crates/services/jackin-runtime-launch-git-pull/**",
-  "crates/services/jackin-runtime-launch-image-plan/**",
-  "crates/services/jackin-runtime-launch-load-cleanup/**",
-  "crates/services/jackin-runtime-launch-load-options/**",
-  "crates/services/jackin-runtime-launch-mounts/**",
-  "crates/services/jackin-runtime-launch-plan/**",
-  "crates/services/jackin-runtime-launch-post-run-failure/**",
-  "crates/services/jackin-runtime-launch-programmatic-selection/**",
-  "crates/services/jackin-runtime-launch-progress-helpers/**",
-  "crates/services/jackin-runtime-launch-restore/**",
-  "crates/services/jackin-runtime-launch-run-envs/**",
-  "crates/services/jackin-runtime-launch-sibling-auth-prewarm/**",
-  "crates/services/jackin-runtime-launch-slot/**",
-  "crates/services/jackin-runtime-launch-supported-agents/**",
-  "crates/services/jackin-runtime-launch-trust/**",
-  "crates/services/jackin-runtime-naming/**",
-  "crates/services/jackin-runtime-prewarm-trigger/**",
-  "crates/services/jackin-runtime-process-telemetry/**",
-  "crates/services/jackin-runtime-progress/**",
-  "crates/services/jackin-runtime-prune-output/**",
-  "crates/services/jackin-runtime-reactive-daemon/**",
-  "crates/services/jackin-runtime-repo-cache/**",
-  "crates/services/jackin-runtime-session-control/**",
-  "crates/services/jackin-runtime-shared-runner/**",
-  "crates/services/jackin-runtime-snapshot/**",
-  "crates/services/jackin-runtime-spin-wait/**",
-  "crates/services/jackin-runtime-universe/**",
-  "crates/services/jackin-runtime-universe-claims/**",
-  "crates/services/jackin-runtime-usage-relay/**",
-  "crates/services/jackin-usage-broker/**",
-  "crates/services/jackin-usage-broker-publish/**",
-  "crates/services/jackin-usage-broker-wire/**",
-  "crates/services/jackin-usage-capsule-telemetry/**",
-  "crates/services/jackin-usage-coordinator/**",
-  "crates/services/jackin-usage-credential-resolver/**",
-  "crates/services/jackin-usage-credential-snapshots/**",
-  "crates/services/jackin-usage-destination/**",
-  "crates/services/jackin-usage-discovery/**",
-  "crates/services/jackin-usage-host-accounts/**",
-  "crates/services/jackin-usage-host-credentials/**",
-  "crates/services/jackin-usage-host-glance/**",
-  "crates/services/jackin-usage-host-presentation/**",
-  "crates/services/jackin-usage-host-runtime/**",
-  "crates/services/jackin-usage-output/**",
-  "crates/services/jackin-usage-projection/**",
-  "crates/services/jackin-usage-provider-amp/**",
-  "crates/services/jackin-usage-provider-antigravity/**",
-  "crates/services/jackin-usage-provider-claude/**",
-  "crates/services/jackin-usage-provider-codex/**",
-  "crates/services/jackin-usage-provider-core/**",
-  "crates/services/jackin-usage-provider-cursor/**",
-  "crates/services/jackin-usage-provider-gemini/**",
-  "crates/services/jackin-usage-provider-grok/**",
-  "crates/services/jackin-usage-provider-hermes/**",
-  "crates/services/jackin-usage-provider-kimi/**",
-  "crates/services/jackin-usage-provider-minimax/**",
-  "crates/services/jackin-usage-provider-muse/**",
-  "crates/services/jackin-usage-provider-opencode/**",
-  "crates/services/jackin-usage-provider-openrouter/**",
-  "crates/services/jackin-usage-provider-zai/**",
-  "crates/services/jackin-usage-snapshot-store/**",
-  "crates/services/jackin-usage-store-backend/**",
-  "crates/services/jackin-usage-token-monitor/**",
-  "crates/tools/jackin-lints/**",
-  "crates/tools/jackin-pr-trailers/**",
-  "fuzz/jackin-config/**",
-  "fuzz/jackin-env/**",
-  "fuzz/jackin-manifest/**",
-  "fuzz/jackin-protocol/**"
-]
+[test_sharding.by_manifest]
+
+[stacks]
+ignore = []
 
 [stacks.rust]
 compile_driver = "mbx"
 test_runner = "cargo_nextest"
+
+[[stacks.rust.configurations]]
+name = "default"
+features = ["default"]
+target = "host"
+
+[stacks.rust.release]
+enabled = false
+manifest_path = "Cargo.toml"
+packages = []
+publishable_workspace = false
+environment = "release"
+authentication = "trusted-publishing"
+release_pr = true
+tag_name = "{{ package }}-v{{ version }}"
+
+[stacks.rust.binary_release]
+enabled = false
+manifest_path = "Cargo.toml"
+package = "jackin"
+bin = "jackin"
+
+[stacks.rust.binary_release.preview]
+enabled = true
+versioning = "package-preview-commit-count-sha7"
+version_env = "JACKIN_VERSION_OVERRIDE"
+environment = "preview-publish"
+
+[stacks.rust.binary_release.preview.producer]
+task = "release:preview-package"
+output_directory = "dist/preview"
+manifest = "dist/preview/package-output.json"
+tools = ["cargo-zigbuild", "rust", "zig"]
+inputs = [".cargo/config.toml", ".velnor/config.toml", "Cargo.lock", "Cargo.toml", "crates/apps/jackin-capsule/Cargo.toml", "crates/apps/jackin-capsule/build.rs", "crates/apps/jackin/Cargo.toml", "crates/apps/jackin/build.rs", "crates/core/jackin-build-meta/Cargo.toml", "crates/core/jackin-build-meta/src/lib.rs", "crates/tools/jackin-xtask/Cargo.toml", "crates/tools/jackin-xtask/src/cmd.rs", "crates/tools/jackin-xtask/src/main.rs", "crates/tools/jackin-xtask/src/preview_package.rs", "crates/tools/jackin-xtask/src/release_archive.rs", "crates/tools/jackin-xtask/src/release_sbom.rs", "crates/tools/jackin-xtask/src/release_sbom/archive.rs", "crates/tools/jackin-xtask/src/release_sbom/cargo.rs", "crates/tools/jackin-xtask/src/release_sbom/document.rs", "mise.lock", "mise.toml", "rust-toolchain.toml"]
+runner = "xcode-27-arm64"
+timeout_minutes = 360
+build_jobs = 2
+
+[stacks.rust.binary_release.preview.producer.source]
+mise_config = "mise.toml"
+working_directory = "."
+
+[[stacks.rust.binary_release.preview.producer.system_tools]]
+kind = "xcode"
+version = "27.1"
+build = "27A9275"
+sdk_version = "27.0"
+developer_dir = "/Applications/Xcode_27.1_Release_Candidate.app/Contents/Developer"
+
+[[stacks.rust.binary_release.preview.products]]
+id = "jackin"
+package = "jackin"
+bins = ["jackin", "jackin-role", "jackin-usage-broker"]
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+archive = "tar.gz"
+
+[[stacks.rust.binary_release.preview.products]]
+id = "jackin-capsule"
+package = "jackin-capsule"
+bins = ["jackin-capsule"]
+targets = ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+archive = "tar.gz"
+
+[[stacks.rust.binary_release.preview.companions]]
+id = "capsule-manifest"
+path = "capsule-manifest.json"
+asset_name = "capsule-manifest.json"
+
+[stacks.rust.binary_release.preview.evidence]
+profile = "signed-sbom-v1"
+
+[discovery]
+exclude = ["native/**", "docs/**", "docker/**", "**/fuzz/**", "fuzz/**", "crates/tools/jackin-lints/**", "crates/adapters/jackin-omp-store/**", "crates/adapters/jackin-oppicker/**", "crates/core/jackin-brand/**", "crates/core/jackin-build-meta/**", "crates/services/jackin-instance-agents/**", "crates/services/jackin-instance-credentials/**", "crates/services/jackin-instance-roles/**", "crates/services/jackin-runtime-apple-container-activate-entry/**", "crates/services/jackin-runtime-apple-container-attach/**", "crates/services/jackin-runtime-apple-container-attach-outcome/**", "crates/services/jackin-runtime-apple-container-check-dns/**", "crates/services/jackin-runtime-apple-container-client/**", "crates/services/jackin-runtime-apple-container-probe-version/**", "crates/services/jackin-runtime-apple-container-running/**", "crates/services/jackin-runtime-apple-container-session-contract/**", "crates/services/jackin-runtime-apple-container-stop/**", "crates/services/jackin-runtime-apple-container-supervisor-env/**", "crates/services/jackin-runtime-apple-container-wait/**", "crates/services/jackin-runtime-attach-admission/**", "crates/services/jackin-runtime-attach-capsule-ready/**", "crates/services/jackin-runtime-attach-exec-args/**", "crates/services/jackin-runtime-attach-inspect/**", "crates/services/jackin-runtime-attach-running-gate/**", "crates/services/jackin-runtime-attach-sessions/**", "crates/services/jackin-runtime-attach-transport/**", "crates/services/jackin-runtime-backend-selection/**", "crates/services/jackin-runtime-cleanup-absent-guards/**", "crates/services/jackin-runtime-cleanup-dind-gc/**", "crates/services/jackin-runtime-cleanup-eject-resources/**", "crates/services/jackin-runtime-cleanup-prune-cache/**", "crates/services/jackin-runtime-cleanup-prune-dir/**", "crates/services/jackin-runtime-cleanup-prune-home/**", "crates/services/jackin-runtime-cleanup-prune-images/**", "crates/services/jackin-runtime-cleanup-prune-roles/**", "crates/services/jackin-runtime-cleanup-resolve/**", "crates/services/jackin-runtime-cleanup-socket-dir/**", "crates/services/jackin-runtime-cleanup-timing/**", "crates/services/jackin-runtime-coordination/**", "crates/services/jackin-runtime-discovery/**", "crates/services/jackin-runtime-docker-profile/**", "crates/services/jackin-runtime-drift/**", "crates/services/jackin-runtime-exec-host/**", "crates/services/jackin-runtime-exit-summary/**", "crates/services/jackin-runtime-host-attach/**", "crates/services/jackin-runtime-host-daemon/**", "crates/services/jackin-runtime-identity/**", "crates/services/jackin-runtime-image/**", "crates/services/jackin-runtime-isolation/**", "crates/services/jackin-runtime-launch-account-config/**", "crates/services/jackin-runtime-launch-account-identity/**", "crates/services/jackin-runtime-launch-attach-outcome/**", "crates/services/jackin-runtime-launch-auth-error/**", "crates/services/jackin-runtime-launch-capsule-setup/**", "crates/services/jackin-runtime-launch-debug-envs/**", "crates/services/jackin-runtime-launch-dind/**", "crates/services/jackin-runtime-launch-dry-run/**", "crates/services/jackin-runtime-launch-exit-diagnosis/**", "crates/services/jackin-runtime-launch-exit-outro/**", "crates/services/jackin-runtime-launch-failure/**", "crates/services/jackin-runtime-launch-git-pull/**", "crates/services/jackin-runtime-launch-image-plan/**", "crates/services/jackin-runtime-launch-load-cleanup/**", "crates/services/jackin-runtime-launch-load-options/**", "crates/services/jackin-runtime-launch-mounts/**", "crates/services/jackin-runtime-launch-plan/**", "crates/services/jackin-runtime-launch-post-run-failure/**", "crates/services/jackin-runtime-launch-programmatic-selection/**", "crates/services/jackin-runtime-launch-progress-helpers/**", "crates/services/jackin-runtime-launch-restore/**", "crates/services/jackin-runtime-launch-run-envs/**", "crates/services/jackin-runtime-launch-sibling-auth-prewarm/**", "crates/services/jackin-runtime-launch-slot/**", "crates/services/jackin-runtime-launch-supported-agents/**", "crates/services/jackin-runtime-launch-trust/**", "crates/services/jackin-runtime-naming/**", "crates/services/jackin-runtime-prewarm-trigger/**", "crates/services/jackin-runtime-process-telemetry/**", "crates/services/jackin-runtime-progress/**", "crates/services/jackin-runtime-prune-output/**", "crates/services/jackin-runtime-reactive-daemon/**", "crates/services/jackin-runtime-repo-cache/**", "crates/services/jackin-runtime-session-control/**", "crates/services/jackin-runtime-shared-runner/**", "crates/services/jackin-runtime-snapshot/**", "crates/services/jackin-runtime-spin-wait/**", "crates/services/jackin-runtime-universe/**", "crates/services/jackin-runtime-universe-claims/**", "crates/services/jackin-runtime-usage-relay/**", "crates/services/jackin-usage-broker/**", "crates/services/jackin-usage-broker-publish/**", "crates/services/jackin-usage-broker-wire/**", "crates/services/jackin-usage-capsule-telemetry/**", "crates/services/jackin-usage-coordinator/**", "crates/services/jackin-usage-credential-resolver/**", "crates/services/jackin-usage-credential-snapshots/**", "crates/services/jackin-usage-destination/**", "crates/services/jackin-usage-discovery/**", "crates/services/jackin-usage-host-accounts/**", "crates/services/jackin-usage-host-credentials/**", "crates/services/jackin-usage-host-glance/**", "crates/services/jackin-usage-host-presentation/**", "crates/services/jackin-usage-host-runtime/**", "crates/services/jackin-usage-output/**", "crates/services/jackin-usage-projection/**", "crates/services/jackin-usage-provider-amp/**", "crates/services/jackin-usage-provider-antigravity/**", "crates/services/jackin-usage-provider-claude/**", "crates/services/jackin-usage-provider-codex/**", "crates/services/jackin-usage-provider-core/**", "crates/services/jackin-usage-provider-cursor/**", "crates/services/jackin-usage-provider-gemini/**", "crates/services/jackin-usage-provider-grok/**", "crates/services/jackin-usage-provider-hermes/**", "crates/services/jackin-usage-provider-kimi/**", "crates/services/jackin-usage-provider-minimax/**", "crates/services/jackin-usage-provider-muse/**", "crates/services/jackin-usage-provider-opencode/**", "crates/services/jackin-usage-provider-openrouter/**", "crates/services/jackin-usage-provider-zai/**", "crates/services/jackin-usage-snapshot-store/**", "crates/services/jackin-usage-store-backend/**", "crates/services/jackin-usage-token-monitor/**", "crates/tools/jackin-lints/**", "crates/tools/jackin-pr-trailers/**", "fuzz/jackin-config/**", "fuzz/jackin-env/**", "fuzz/jackin-manifest/**", "fuzz/jackin-protocol/**"]
+
+[actions.overrides]
+
+[execution]
+default_profile = "hosted"
+hosted_profile = "hosted"
+scale_set_profile = "local"
+
+[execution.profiles.hosted]
+kind = "github-hosted"
+label = "ubuntu-26.04"
+platform = "linux/amd64"
+
+[execution.profiles.local]
+kind = "github-scale-set"
+name = "ubuntu-26.04-scale-set"
+labels = ["velnor", "ubuntu-26.04-scale-set"]
+platform = "linux/amd64"
+
+[[qualified_tools]]
+id = "cargo-zigbuild"
+version = "0.23.4"
+depends_on = ["rust", "zig"]
+
+[qualified_tools.backend]
+kind = "aqua"
+package = "rust-cross/cargo-zigbuild"
+
+[qualified_tools.options]
+kind = "default"
+
+[[qualified_tools.platforms]]
+platform = "macos_arm64"
+dependency_artifacts = []
+install_tree_sha256 = "f7c88b93e610ab4fde39812f0622cd8421b3364b5621004c762b25dc564a6c51"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.23.4/cargo-zigbuild-aarch64-apple-darwin.tar.xz"
+sha256 = "ca2369ae1a9995542206a6c18dd372acff94dddeb9d7c07e09bfb7594197cea3"
+
+[[qualified_tools.platforms.executables]]
+name = "cargo-zigbuild"
+path = "cargo-zigbuild"
+sha256 = "c6d03127641e360e6c550117ff084607c1dfe25abf4359ca384c7d28cccd6e52"
+
+[qualified_tools.platforms.executables.probe]
+kind = "version"
+expected = "cargo-zigbuild 0.23.4"
+
+[[qualified_tools]]
+id = "rust"
+version = "1.99.1"
+depends_on = []
+
+[qualified_tools.backend]
+kind = "core"
+tool = "rust"
+
+[qualified_tools.options]
+kind = "rust"
+components = []
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+
+[[qualified_tools.platforms]]
+platform = "macos_arm64"
+dependency_artifacts = []
+install_tree_sha256 = "f7272bba8918bde1a7807f814fa28cd537c9db63f8155cd5aa73d3161dce5953"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://static.rust-lang.org/dist/2026-10-15/cargo-1.99.1-aarch64-apple-darwin.tar.xz"
+sha256 = "685e563d94db1f003ffa5f5831439eec02569b9950b69867953c8213269c1eaf"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-aarch64-apple-darwin.tar.xz"
+sha256 = "fe79d6ab5a0321de26463999d8c112b8ad3eafbcbcf822d66a2300b45dde1031"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-aarch64-unknown-linux-gnu.tar.xz"
+sha256 = "e25668477083d6a9ddb87b9beb9c00742225f38233ccb4bfba3afa7a07427f52"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-apple-darwin.tar.xz"
+sha256 = "484d5b88b424ddd29df196e1eb9420c8335bb5fac90a3c37140253345a8c65c4"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-unknown-linux-gnu.tar.xz"
+sha256 = "109b074225bf5b9ea3820890876bfdf4ed161adbfaf94b2b4b5984c85ee5d958"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://static.rust-lang.org/dist/2026-10-15/rustc-1.99.1-aarch64-apple-darwin.tar.xz"
+sha256 = "23948a0a9c162fd2952defb3fb0462c44e8fcfd1a4ab8a274a1e1bdb2cf810a3"
+
+[[qualified_tools.platforms.executables]]
+name = "cargo"
+path = "bin/cargo"
+sha256 = "6d576d8058f8ca643e8fce55b64ee3c614ba64c9da2e536bae843e6a2e1f3951"
+
+[qualified_tools.platforms.executables.probe]
+kind = "version"
+expected = "cargo 1.99.1 (5f94df478 2026-08-27)"
+
+[[qualified_tools.platforms.executables]]
+name = "rustc"
+path = "bin/rustc"
+sha256 = "1ba7bb8e273bd64125f4048d2ecce530e0a6470e565ab1b3aecf0b82b532f7b1"
+
+[qualified_tools.platforms.executables.probe]
+kind = "rustc_verbose"
+expected = """
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: aarch64-apple-darwin
+release: 1.99.1
+LLVM version: 23.1.1"""
+
+[[qualified_tools]]
+id = "zig"
+version = "0.17.0"
+depends_on = []
+
+[qualified_tools.backend]
+kind = "core"
+tool = "zig"
+
+[qualified_tools.options]
+kind = "default"
+
+[[qualified_tools.platforms]]
+platform = "macos_arm64"
+dependency_artifacts = []
+install_tree_sha256 = "a4b7f79cb595c7c5b6e99f47a69f408d176786feacc39a247d96809a70ccc816"
+
+[[qualified_tools.platforms.artifacts]]
+url = "https://ziglang.org/download/0.17.0/zig-aarch64-macos-0.17.0.tar.xz"
+sha256 = "b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a"
+
+[[qualified_tools.platforms.executables]]
+name = "zig"
+path = "zig"
+sha256 = "1c5f706db0ed6d55451940f31dc05a6177d05696bc1fa5d853696d04c718b523"
+
+[qualified_tools.platforms.executables.probe]
+kind = "version_subcommand"
+expected = "0.17.0"

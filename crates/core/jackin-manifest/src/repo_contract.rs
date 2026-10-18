@@ -14,8 +14,15 @@ pub use jackin_core::MANIFEST_FILENAME;
 pub const CONSTRUCT_REGISTRY_IMAGE: &str = "projectjackin/construct";
 pub const CONSTRUCT_STABLE_TAG: &str = "trixie";
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
-pub const CONSTRUCT_PINNED_TAG: &str = "0.1-trixie";
-pub const BASE_DOCKERFILE_FROM: &str = "FROM projectjackin/construct:0.1-trixie\n";
+// Advance only after publication is verified; the build VERSION may be unpublished.
+macro_rules! pinned_construct_defaults {
+    ($tag:literal) => {
+        pub const CONSTRUCT_PINNED_TAG: &str = $tag;
+        pub const BASE_DOCKERFILE_FROM: &str = concat!("FROM projectjackin/construct:", $tag, "\n");
+    };
+}
+
+pinned_construct_defaults!("0.37-trixie");
 
 pub const LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct.version";
 pub const LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA: &str = "jackin.role.git.sha";

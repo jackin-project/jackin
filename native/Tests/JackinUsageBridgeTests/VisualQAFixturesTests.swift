@@ -76,17 +76,7 @@ final class VisualQAFixturesTests: XCTestCase {
     func testFixtureAccountSelectionNeverCallsBridge() {
         let fixture = VisualQAFixtures.fixture(id: .multiAccount)
         let store = PresentationStore()
-        store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            statusBarGlanceRows: fixture.statusGlanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: fixture.providerGroups,
-            refreshingProjection: fixture.refreshingProjection,
-            accountProjections: fixture.accountProjections,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: fixture.usageSelection
-        )
+        store.applyQIFixture(fixture.input)
 
         store.setSelectedAccount(surfaceId: "codex", accountKey: "codex-organization")
 
@@ -114,17 +104,7 @@ final class VisualQAFixturesTests: XCTestCase {
         let scheduler = RefreshScheduler()
         scheduler.invalidateAndShutdown()
         let store = PresentationStore(scheduler: scheduler)
-        store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            statusBarGlanceRows: fixture.statusGlanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: fixture.providerGroups,
-            refreshingProjection: fixture.refreshingProjection,
-            accountProjections: fixture.accountProjections,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: fixture.usageSelection
-        )
+        store.applyQIFixture(fixture.input)
 
         store.displayMode = .focusPercent
         store.percentStyle = "used"
@@ -142,17 +122,7 @@ final class VisualQAFixturesTests: XCTestCase {
     func testFixtureRefreshTransitionsToUpdatingAndBack() async throws {
         let fixture = VisualQAFixtures.fixture(id: .catalogNormal)
         let store = PresentationStore()
-        store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            statusBarGlanceRows: fixture.statusGlanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: fixture.providerGroups,
-            refreshingProjection: fixture.refreshingProjection,
-            accountProjections: fixture.accountProjections,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: fixture.usageSelection
-        )
+        store.applyQIFixture(fixture.input)
 
         store.refreshAll()
         XCTAssertTrue(store.refreshInProgress)
@@ -172,14 +142,19 @@ final class VisualQAFixturesTests: XCTestCase {
         let remainingAccounts = fixture.accounts.filter { $0.surfaceId != "codex" }
         let remainingGroups = fixture.providerGroups.filter { $0.surfaceId != "codex" }
 
-        store.applyQIFixture(
+        let projection = QIFixtureProjection(
             glanceRows: remainingGlance,
+            statusBarGlanceRows: fixture.statusGlanceRows.filter { $0.surfaceId != "codex" },
             surfaces: remainingSurfaces,
             accounts: remainingAccounts,
-            providerGroups: remainingGroups,
-            popoverSelection: "codex",
-            usageSelection: "codex"
+            providerGroups: remainingGroups
         )
+        let input = fixture.input.replacing(
+            projection: projection,
+            transitions: QIFixtureTransitions(),
+            selection: QIFixtureSelection(popover: "codex", usage: "codex")
+        )
+        store.applyQIFixture(input)
 
         XCTAssertNil(store.usageSelection)
         XCTAssertEqual(store.popoverSelection, remainingGlance.first?.surfaceId)
@@ -190,14 +165,7 @@ final class VisualQAFixturesTests: XCTestCase {
         _ = NSApplication.shared
         let fixture = VisualQAFixtures.fixture(id: .multiAccount)
         let store = PresentationStore()
-        store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: fixture.providerGroups,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: fixture.usageSelection
-        )
+        store.applyQIFixture(fixture.input)
         let controller = UsageWindowController(store: store)
         defer { controller.invalidate() }
 
@@ -221,6 +189,7 @@ final class VisualQAFixturesTests: XCTestCase {
             .appendingPathComponent("Sources/JackinDesktop")
         for relativePath in [
             "PopoverRoot.swift",
+            "PopoverProviderDetails.swift",
             "UsageWindow/UsageWindowRoot.swift",
             "UsageWindow/ProviderDetailView.swift",
         ] {
@@ -248,12 +217,17 @@ final class VisualQAFixturesTests: XCTestCase {
     }
 
     func testRefreshingStatusUsesAccessibleNonfocusedProgress() throws {
-        let source = URL(fileURLWithPath: #filePath)
+        let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Sources/JackinDesktop/PopoverRoot.swift")
-        let text = try String(contentsOf: source, encoding: .utf8)
+            .appendingPathComponent("Sources/JackinDesktop")
+        let root = try String(
+            contentsOf: sources.appendingPathComponent("PopoverRoot.swift"), encoding: .utf8)
+        let details = try String(
+            contentsOf: sources.appendingPathComponent("PopoverProviderDetails.swift"),
+            encoding: .utf8)
+        let text = root + details
 
         XCTAssertTrue(text.contains("if provider.isRefreshing"))
         XCTAssertTrue(text.contains(".accessibilityLabel(provider.activityLabel)"))

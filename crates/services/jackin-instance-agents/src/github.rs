@@ -203,7 +203,7 @@ pub fn parse_gh_hosts_yml(text: &str) -> Option<HostGhAuth> {
         user: Option<String>,
     }
 
-    let parsed: HostsFile = match serde_yaml_ng::from_str(text) {
+    let parsed: HostsFile = match serde_saphyr::from_str(text) {
         Ok(p) => p,
         Err(_) => return None,
     };

@@ -20,6 +20,7 @@ const TEXT_GET_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(5);
 const DOWNLOAD_CONCURRENCY: usize = 8;
+const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024;
 
 pub const USER_AGENT: &str = concat!("jackin/", env!("JACKIN_VERSION"));
 
@@ -64,7 +65,15 @@ pub async fn fetch_text(url: &str) -> Result<String> {
     get_text(default_http_client()?, url).await
 }
 
-pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
+/// Download a bounded artifact, requiring the authenticated length when known.
+/// Network metadata cannot increase the allocation or the declared byte range.
+pub async fn download_parallel(url: &str, dest: &Path, expected_size: Option<u64>) -> Result<()> {
+    if let Some(size) = expected_size {
+        anyhow::ensure!(
+            (1..=MAX_DOWNLOAD_BYTES).contains(&size),
+            "authenticated download size exceeds the supported artifact bound"
+        );
+    }
     let proxy = Proxy::System;
     let accept_invalid_certs = false;
     let accept_invalid_hostnames = false;
@@ -88,6 +97,14 @@ pub async fn download_parallel(url: &str, dest: &Path) -> Result<()> {
             detail: format!("{err:?}"),
         })
     })?;
+    anyhow::ensure!(
+        (1..=MAX_DOWNLOAD_BYTES).contains(&info.size),
+        "announced download size exceeds the supported artifact bound"
+    );
+    anyhow::ensure!(
+        expected_size.is_none_or(|size| size == info.size),
+        "announced download size differs from authenticated artifact size"
+    );
     if !info.fast_download {
         return Err(DockerError::RangeUnsupported {
             url: url.to_owned(),

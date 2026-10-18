@@ -159,16 +159,13 @@ fn join_publication_timeout_leaves_broker_ownership_intact() {
     .unwrap();
     client.subscribe(capability()).unwrap();
     started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    let refreshing = loop {
-        let first = client.current_projection().unwrap();
-        thread::park_timeout(Duration::from_millis(250));
-        let second = client.current_projection().unwrap();
-        if first.projection_id == second.projection_id
-            && second.refresh_state == UsageProjectionRefreshStateV1::Refreshing
-        {
-            break second;
-        }
-    };
+    let active = client.current(capability()).unwrap();
+    assert_eq!(active.phase, UsageRefreshPhase::Updating);
+    let refreshing = client.current_projection().unwrap();
+    assert_eq!(
+        refreshing.refresh_state,
+        UsageProjectionRefreshStateV1::Refreshing
+    );
 
     let error = client
         .join_publication(refreshing.projection_id.clone(), Duration::from_millis(50))

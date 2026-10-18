@@ -3,6 +3,17 @@
 
 use super::*;
 
+#[test]
+fn captured_process_future_keeps_io_buffers_off_the_caller_stack() {
+    let request = ExecRequest::new("not-executed", None::<&str>);
+    let future = exec_async(&request);
+    let bytes = size_of_val(&future);
+    assert!(
+        bytes <= 4096,
+        "process future is {bytes} bytes; budget is 4096"
+    );
+}
+
 #[tokio::test]
 async fn true_succeeds() {
     let result = exec_async(&ExecRequest::new("true", None::<&str>))

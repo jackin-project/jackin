@@ -14,11 +14,11 @@ macos_architectures = ["arm64"]
 
 [targets.apple.xcframework]
 name = "JackinUsage"
-output = "../../target/xcframework"
+output = "../../../target/xcframework"
 
 [targets.apple.spm]
 layout = "split"
 skip_package_swift = true
 
 [targets.apple.swift]
-output = "../../native/Sources/JackinUsageBindings"
+output = "../../../native/Sources/JackinUsageBindings"

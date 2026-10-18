@@ -147,13 +147,13 @@ fn generated_evidence_workflows_are_complete_and_tamper_bound() {
 #[test]
 fn generated_evidence_workflows_reject_skip_controls() {
     let workflow: serde_json::Value =
-        serde_yaml_ng::from_slice(CI_EVIDENCE_WORKFLOW_FIXTURE.as_bytes()).unwrap();
+        crate::workflow_yaml::parse(CI_EVIDENCE_WORKFLOW_FIXTURE.as_bytes()).unwrap();
     let contract = EvidenceWorkflowContract {
         file: DEFAULT_CI_EVIDENCE_WORKFLOW,
         display_name: "CI first-attempt evidence",
         artifact: CI_EVIDENCE_ARTIFACT_PATH,
         job_id: "ci-evidence",
-        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.99.0 xtask ci-evidence run",
+        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.99.1 xtask ci-evidence run",
         timeout: 30,
         schedule: Some("47 4 * * *"),
         push_main: false,
@@ -182,13 +182,13 @@ fn generated_evidence_workflows_reject_skip_controls() {
 #[test]
 fn push_head_ledger_requires_full_history_checkout() {
     let workflow: serde_json::Value =
-        serde_yaml_ng::from_slice(CI_PUSH_HEAD_LEDGER_WORKFLOW_FIXTURE.as_bytes()).unwrap();
+        crate::workflow_yaml::parse(CI_PUSH_HEAD_LEDGER_WORKFLOW_FIXTURE.as_bytes()).unwrap();
     let contract = EvidenceWorkflowContract {
         file: DEFAULT_PUSH_HEAD_LEDGER_WORKFLOW,
         display_name: "CI push-head ledger",
         artifact: CI_PUSH_HEAD_LEDGER_ARTIFACT_PATH,
         job_id: "ci-push-head-ledger",
-        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.99.0 xtask ci-evidence record-push",
+        command: "MISE_AUTO_INSTALL=false mise exec -- mbx +1.99.1 xtask ci-evidence record-push",
         timeout: 10,
         schedule: None,
         push_main: true,

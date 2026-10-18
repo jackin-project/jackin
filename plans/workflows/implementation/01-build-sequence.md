@@ -82,16 +82,16 @@ The following are instructions based on the inspected testing policy, **not comm
 
 ```sh
 mise install
-mise exec -- mbx +1.99.0 nextest run -p jackin-workflow-spec
-mise exec -- mbx +1.99.0 nextest run -p jackin-workflow -p jackin-workflow-store
-mise exec -- mbx +1.99.0 nextest run -p jackin-capsule -p jackin-console
-mise exec -- mbx +1.99.0 clippy -p jackin-workflow-spec -p jackin-workflow --all-targets -- -D warnings
-mise exec -- mbx +1.99.0 xtask ci --fast
-mise exec -- mbx +1.99.0 xtask ci
-mise exec -- mbx +1.99.0 xtask ci --e2e
-mise exec -- mbx +1.99.0 xtask ci-doc-examples --package jackin-workflow-spec
-mise exec -- mbx +1.99.0 xtask lint files
-mise exec -- mbx +1.99.0 xtask lint agents
+mise exec -- mbx +1.99.1 nextest run -p jackin-workflow-spec
+mise exec -- mbx +1.99.1 nextest run -p jackin-workflow -p jackin-workflow-store
+mise exec -- mbx +1.99.1 nextest run -p jackin-capsule -p jackin-console
+mise exec -- mbx +1.99.1 clippy -p jackin-workflow-spec -p jackin-workflow --all-targets -- -D warnings
+mise exec -- mbx +1.99.1 xtask ci --fast
+mise exec -- mbx +1.99.1 xtask ci
+mise exec -- mbx +1.99.1 xtask ci --e2e
+mise exec -- mbx +1.99.1 xtask ci-doc-examples --package jackin-workflow-spec
+mise exec -- mbx +1.99.1 xtask lint files
+mise exec -- mbx +1.99.1 xtask lint agents
 ```
 
 Runtime/container changes require the real Docker-backed lane and current Capsule build preparation documented in TESTING.md. Changes touching the specified usage/launch assembly surfaces also require the repository’s Apple Silicon macOS 27/OrbStack lane; a generic Linux Docker run does not substitute for it. Zero selected e2e tests is failure. New crate README/AGENTS/dependency rules and documentation example tests must be included. Do not hand-edit generated CI workflow outputs instead of their authoritative inputs.

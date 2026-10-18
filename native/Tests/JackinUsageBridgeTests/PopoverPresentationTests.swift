@@ -18,29 +18,41 @@ final class PopoverPresentationTests: XCTestCase {
         }
     }
 
-    private var appDelegateSource: String {
+    private var providerDetailsSource: String {
         get throws {
             let url = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("Sources/JackinDesktop/DesktopAppDelegate.swift")
+                .appendingPathComponent("Sources/JackinDesktop/PopoverProviderDetails.swift")
+            return try String(contentsOf: url, encoding: .utf8)
+        }
+    }
+
+    private var statusBarControllerSource: String {
+        get throws {
+            let url = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/JackinDesktop/StatusBarController.swift")
             return try String(contentsOf: url, encoding: .utf8)
         }
     }
 
     func testPopoverContentOrderAndFooterPlacement() throws {
-        let source = try popoverSource
-        let identity = try XCTUnwrap(source.range(of: "providerIdentity(provider)"))
-        let limits = try XCTUnwrap(source.range(of: "if !limitRows.isEmpty"))
-        let details = try XCTUnwrap(source.range(of: "if !metadataRows.isEmpty"))
-        let formEnd = try XCTUnwrap(source.range(of: "private func providerIdentity"))
-        let controls = try XCTUnwrap(source.range(of: "private var controls"))
-        let formSource = source[identity.lowerBound..<formEnd.lowerBound]
-        let controlsSource = source[controls.lowerBound...]
+        let root = try popoverSource
+        let details = try providerDetailsSource
+        let identity = try XCTUnwrap(details.range(of: "Section { providerIdentity }"))
+        let limits = try XCTUnwrap(details.range(of: "limitsSection(limitRows, surface: surface)"))
+        let metadata = try XCTUnwrap(details.range(of: "detailsSection(metadataRows)"))
+        let identityEnd = try XCTUnwrap(details.range(of: "private func limitsSection"))
+        let controls = try XCTUnwrap(root.range(of: "private var controls"))
+        let formSource = details[identity.lowerBound..<identityEnd.lowerBound]
+        let controlsSource = root[controls.lowerBound...]
 
         XCTAssertLessThan(identity.lowerBound, limits.lowerBound)
-        XCTAssertLessThan(limits.lowerBound, details.lowerBound)
+        XCTAssertLessThan(limits.lowerBound, metadata.lowerBound)
         XCTAssertFalse(formSource.contains("Picker("))
         XCTAssertTrue(controlsSource.contains("HStack(spacing: 4)"))
         XCTAssertTrue(
@@ -59,24 +71,22 @@ final class PopoverPresentationTests: XCTestCase {
         XCTAssertTrue(controlsSource.contains("Spacer(minLength: 12)"))
         XCTAssertTrue(controlsSource.contains("Picker("))
         XCTAssertTrue(controlsSource.contains(".labelsHidden()"))
-        XCTAssertFalse(source.contains("ScrollViewReader { proxy in"))
+        XCTAssertFalse(details.contains("ScrollViewReader { proxy in"))
         XCTAssertTrue(
-            source.contains(
-                "@State private var providerScrollPosition = ScrollPosition(edge: .top)"
-            )
+            details.contains("@State private var scrollPosition = ScrollPosition(edge: .top)")
         )
-        XCTAssertTrue(source.contains(".scrollPosition($providerScrollPosition)"))
-        XCTAssertTrue(source.contains(".defaultScrollAnchor(.top, for: .initialOffset)"))
-        XCTAssertTrue(source.contains(".task(id: scrollReset)"))
+        XCTAssertTrue(details.contains(".scrollPosition($scrollPosition)"))
+        XCTAssertTrue(details.contains(".defaultScrollAnchor(.top, for: .initialOffset)"))
+        XCTAssertTrue(details.contains(".task(id: reset)"))
         XCTAssertTrue(
-            source.contains(
+            details.contains(
                 "presentationState.claimScrollReset(accountLabel: reset.accountLabel)"
             )
         )
-        XCTAssertFalse(source.contains(".task(id: presentationState.sequence)"))
-        XCTAssertFalse(source.contains(".task(id: provider.accountLabel)"))
-        XCTAssertTrue(source.contains("providerScrollPosition.scrollTo(edge: .top)"))
-        XCTAssertFalse(source.contains(".scrollPosition(id:"))
+        XCTAssertFalse(details.contains(".task(id: presentationState.sequence)"))
+        XCTAssertFalse(details.contains(".task(id: provider.accountLabel)"))
+        XCTAssertTrue(details.contains("scrollPosition.scrollTo(edge: .top)"))
+        XCTAssertFalse(details.contains(".scrollPosition(id:"))
         XCTAssertTrue(controlsSource.contains(".help(\"Refresh\")"))
         XCTAssertTrue(controlsSource.contains(".help(\"Open Usage\")"))
         XCTAssertTrue(controlsSource.contains(".help(\"Choose account\")"))
@@ -95,7 +105,7 @@ final class PopoverPresentationTests: XCTestCase {
     }
 
     func testPopoverResetsScrollOnlyAfterExplicitNativePresentation() throws {
-        let source = try appDelegateSource
+        let source = try statusBarControllerSource
         let toggle = try XCTUnwrap(source.range(of: "private func togglePopover"))
         let reset = try XCTUnwrap(
             source.range(of: "private func resetPopoverScrollAfterPresentation")
@@ -114,10 +124,10 @@ final class PopoverPresentationTests: XCTestCase {
     }
 
     func testPopoverActivatesBeforePresentingFromSecondaryDisplayStatusItem() throws {
-        let source = try appDelegateSource
+        let source = try statusBarControllerSource
         let toggle = try XCTUnwrap(source.range(of: "private func togglePopover"))
-        let visualQA = try XCTUnwrap(source.range(of: "/// Deterministic visual-QA launch seam"))
-        let body = source[toggle.lowerBound..<visualQA.lowerBound]
+        let show = try XCTUnwrap(source.range(of: "func showPopover"))
+        let body = source[toggle.lowerBound..<show.lowerBound]
         let activation = try XCTUnwrap(body.range(of: "NSApp.activate(ignoringOtherApps: true)"))
         let presentation = try XCTUnwrap(
             body.range(of: "popover.show(relativeTo: sender.bounds, of: sender")
@@ -144,17 +154,7 @@ final class PopoverPresentationTests: XCTestCase {
     func testExactAccountSelectionUpdatesIdentityAndUsageHandoff() {
         let fixture = VisualQAFixtures.fixture(id: .multiAccount)
         let store = PresentationStore()
-        store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            statusBarGlanceRows: fixture.statusGlanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: fixture.providerGroups,
-            refreshingProjection: fixture.refreshingProjection,
-            accountProjections: fixture.accountProjections,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: fixture.usageSelection
-        )
+        store.applyQIFixture(fixture.input)
 
         store.setSelectedAccount(surfaceId: "codex", accountKey: "codex-organization")
         let context = UsageNavigationContext(

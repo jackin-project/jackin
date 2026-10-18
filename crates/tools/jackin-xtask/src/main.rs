@@ -30,19 +30,19 @@ mod health;
 mod layout_lint;
 mod lint;
 mod pr;
-mod preview;
+mod preview_package;
 mod profile_matrix;
 mod pty_fixture;
 mod ratchet;
 mod readme_freshness;
 mod release_archive;
 mod release_sbom;
-mod release_verify;
 mod report;
 mod schema;
 mod suppressions;
 mod telemetry_bench;
 mod telemetry_registry;
+mod workflow_yaml;
 
 use std::{process::ExitCode, thread};
 
@@ -116,12 +116,10 @@ enum Command {
     },
     #[command(name = "profile-matrix")]
     ProfileMatrix(profile_matrix::ProfileMatrixArgs),
-    #[command(name = "release-verify")]
-    ReleaseVerify(release_verify::ReleaseVerifyArgs),
-    #[command(subcommand)]
-    Preview(preview::PreviewCommand),
     #[command(name = "release-archives")]
     ReleaseArchives(release_archive::ReleaseArchivesArgs),
+    #[command(name = "release-preview-package")]
+    ReleasePreviewPackage,
     Health(health::HealthArgs),
 }
 
@@ -230,9 +228,8 @@ fn main() -> ExitCode {
         Command::TelemetryRegistry(args) => telemetry_registry::run(args),
         Command::TelemetryBench(args) => telemetry_bench::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
-        Command::Preview(command) => preview::run(command),
-        Command::ReleaseVerify(args) => release_verify::run(args),
         Command::ReleaseArchives(args) => release_archive::run(args),
+        Command::ReleasePreviewPackage => preview_package::run(),
         Command::Health(args) => health::run(args),
         Command::Lint { command, strict } => run_lint(command, strict),
     };

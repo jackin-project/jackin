@@ -169,11 +169,7 @@ fn selected_cadence_polls_only_the_opted_in_capability() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         cadence_quota_view(1_000),
     )));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to shared trait object"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<ImmediateExecutor>::clone(&executor);
     let coordinator = catalog_coordinator_with_fake_clock(
         provider,
         Arc::new(MemoryStore::default()),
@@ -238,11 +234,7 @@ fn selected_cadence_empty_duplicate_and_revoked_inputs_are_safe() {
     )));
     let selected = capability("selected-account");
     let revoked = capability("revoked-account");
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to shared trait object"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<ImmediateExecutor>::clone(&executor);
     let coordinator = catalog_coordinator_with_fake_clock(
         provider,
         Arc::new(MemoryStore::default()),
@@ -355,10 +347,10 @@ fn reload_attempt_fence_moves_scheduler_due_with_wall_clock_jumps() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         cadence_quota_view(100_300),
     )));
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<ImmediateExecutor>::clone(&executor);
     let state_store: Arc<dyn AccountStateStore> = store;
     let clock = Arc::new(ManualClock::at(5_000));
-    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&clock);
     let coordinator = UsageCoordinator::start_with_clock(
         provider,
         state_store,
@@ -400,10 +392,10 @@ fn recovered_monotonic_fence_does_not_shorten_a_later_retry_after() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         cadence_quota_view(21_001),
     )));
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<ImmediateExecutor>::clone(&executor);
     let state_store: Arc<dyn AccountStateStore> = store;
     let clock = Arc::new(ManualClock::at(10_000));
-    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&clock);
     let coordinator = UsageCoordinator::start_with_clock(
         provider,
         state_store,

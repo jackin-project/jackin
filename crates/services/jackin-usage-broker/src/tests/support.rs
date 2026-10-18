@@ -242,12 +242,19 @@ pub(super) struct HeldExecutor {
 impl UsageProviderExecutor for HeldExecutor {
     fn probe(&self, _: &UsageAccountCapability, _: u64) -> ProviderProbeOutcome {
         self.started.send(()).unwrap();
-        self.release
+        match self
+            .release
             .lock()
             .unwrap()
             .recv_timeout(Duration::from_secs(10))
-            .unwrap();
-        ProviderProbeOutcome::success(quota_view())
+        {
+            Ok(()) => ProviderProbeOutcome::success(quota_view()),
+            Err(_) => ProviderProbeOutcome::Failure {
+                kind: UsageCoordinationErrorKind::ProviderTimeout,
+                message: "held test executor was released without completion".to_owned(),
+                retry_at_epoch: None,
+            },
+        }
     }
 }
 

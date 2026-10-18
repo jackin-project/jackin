@@ -2,17 +2,28 @@
 title: "Verifying Releases"
 ---
 
-Every jackin❯ release publishes signed artifacts alongside the binaries. This page explains what is available and how to use it.
+Historical Jackin releases included signed artifacts. The current generated
+workflow does not yet publish Jackin preview releases or Homebrew updates, so
+there is no current preview release to install or audit. This page describes
+the available GitHub verification command and the verification contract used
+by the capsule downloader when immutable previews are published.
 
 ## What you need to do
 
-Nothing. When jackin❯ downloads `jackin-capsule` for the first time (or after clearing the cache), it automatically verifies a signed manifest before accepting and caching the binary. Subsequent launches reuse the already-verified cached binary. The verification is silent and transparent — you only notice it if something is wrong (in which case the launch aborts with an error message).
+For an eligible immutable preview version, Jackin's capsule downloader verifies
+the signed release receipt, the selected capsule payload, and the capsule
+manifest before caching the binary. It also verifies Sigstore transparency
+evidence and GitHub provenance against the fixed Jackin preview workflow
+identity. This describes the consumer verification code; it is not proof that
+the release publisher is enabled or that a live capsule download has passed.
 
 The verification tools described below are for operators who want to audit a download themselves, integrate jackin❯ into a supply chain policy, or confirm the integrity of any release asset manually.
 
-## What is published per release
+## Historical release assets
 
-Each release includes the following assets for every binary archive (CLI/capsule `.tar.gz` and the macOS usage menu-bar `.zip` use the same sidecar layout):
+Historical release assets used per-archive sidecars. The current Velnor receipt
+contract instead binds an exact payload inventory, CycloneDX SBOMs, companions,
+and their signatures; future published previews must follow that contract.
 
 | Asset | Purpose |
 |---|---|
@@ -21,14 +32,14 @@ Each release includes the following assets for every binary archive (CLI/capsule
 | `<name>.…bundle` | Cosign keyless signature bundle |
 | `<name>.…sbom.json` | CycloneDX SBOM (software bill of materials) |
 
-The capsule binary additionally has a signed manifest:
+Historical capsule releases additionally used a signed manifest:
 
 | Asset | Purpose |
 |---|---|
 | `capsule-manifest.json` | Version + per-architecture SHA256 digests |
 | `capsule-manifest.json.bundle` | Cosign keyless signature bundle for the manifest |
 
-## Verify with SLSA provenance (GitHub Attestations)
+## Verify GitHub provenance
 
 Requires `gh` CLI (already installed if you used Homebrew to install jackin❯).
 
@@ -36,57 +47,13 @@ Requires `gh` CLI (already installed if you used Homebrew to install jackin❯).
 gh attestation verify <file> --repo jackin-project/jackin
 ```
 
-This checks that the file was produced by a jackin❯ GitHub Actions run and is linked to the source commit. No extra tools required.
+This verifies the attestation for the selected file against the named repository.
+It does not by itself validate the Jackin release receipt, asset inventory, or
+the exact workflow policy required by the capsule downloader.
 
-## Verify everything with one local gate
-
-From a checkout of this repository, download an archive and its sidecars, then run:
-
-```sh
-cargo xtask release-verify <file>.tar.gz
-# or, for the usage menu-bar app:
-cargo xtask release-verify jackin-desktop-<VERSION>-aarch64-apple-darwin.zip
-```
-
-The gate checks the archive against the sibling `.sha256` sidecar, verifies the `.bundle` with the same cosign identity and issuer policy shown below, verifies the GitHub artifact attestation for `jackin-project/jackin`, and parses the `.sbom.json` sidecar. Extension-agnostic: any archive path with those three siblings works.
-
-For example:
-
-```sh
-gh release download jackin-dev-v0.1.13 \
-  --repo jackin-project/jackin \
-  --pattern 'jackin-dev-0.1.13-aarch64-unknown-linux-gnu.tar.gz*' \
-  --dir /tmp/jackin-release-check
-
-cargo xtask release-verify \
-  /tmp/jackin-release-check/jackin-dev-0.1.13-aarch64-unknown-linux-gnu.tar.gz
-```
-
-The command fails closed. If the archive content changes after the `.sha256` file is published, the digest mismatch aborts verification before signature or provenance checks run.
-
-## Verify with cosign bundle
-
-Requires `cosign` installed locally (`brew install cosign` or `mise install cosign`).
-
-```sh
-cosign verify-blob \
-  --bundle <file>.bundle \
-  --certificate-identity-regexp 'https://github.com/jackin-project/jackin/' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  <file>
-```
-
-This verifies the keyless OIDC signature, confirms the certificate was issued to a jackin❯ GitHub Actions workflow, and checks the Sigstore transparency log entry.
-
-To verify the capsule manifest specifically:
-
-```sh
-cosign verify-blob \
-  --bundle capsule-manifest.json.bundle \
-  --certificate-identity-regexp 'https://github.com/jackin-project/jackin/' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  capsule-manifest.json
-```
+There is no current `cargo xtask release-verify` command. The historical
+`jackin-dev-v0.1.13` check performed on 2026-07-04 remains historical evidence;
+it does not validate the new receipt format or establish current publication.
 
 ## Inspect the SBOM
 
@@ -102,4 +69,7 @@ cyclonedx validate --input-file <file>.sbom.json
 
 ## Download release assets
 
-All assets are available at `https://github.com/jackin-project/jackin/releases`. Preview builds are published to the `preview` rolling tag; stable releases use versioned `v<version>` tags.
+When native preview publication is enabled, it uses immutable `v<version>` tags.
+The former rolling `preview` tag is not the installation source. Until the
+publisher is enabled and a live release is verified, use only releases and
+assets actually listed on the GitHub Releases page.

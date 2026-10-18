@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, ensure};
-use serde_yaml_ng::Value as YamlValue;
+use serde_json::Value as YamlValue;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
@@ -7,6 +7,9 @@ use std::{
     path::{Path, PathBuf},
 };
 use toml::Value as TomlValue;
+
+#[path = "../src/workflow_yaml.rs"]
+mod workflow_yaml;
 
 const ARCHITECT_REPOSITORY: &str = "jackin-project/jackin-the-architect";
 const ARCHITECT_COMMIT: &str = "7db69b62f598a0971809ee4a006ad3f5477d0996";
@@ -18,7 +21,7 @@ fn repository_root() -> PathBuf {
 }
 
 fn yaml_field<'a>(value: &'a YamlValue, name: &str) -> Option<&'a YamlValue> {
-    value.as_mapping()?.get(YamlValue::String(name.to_owned()))
+    value.as_object()?.get(name)
 }
 
 fn workspace_rust_job_ids(root: &Path) -> Result<BTreeSet<String>> {
@@ -61,21 +64,14 @@ fn workspace_rust_job_ids(root: &Path) -> Result<BTreeSet<String>> {
 }
 
 fn workflow_jobs(root: &Path) -> Result<(YamlValue, BTreeSet<String>)> {
-    let workflow: YamlValue = serde_yaml_ng::from_slice(
-        &fs::read(root.join(".github/workflows/ci.yml")).context("generated CI workflow exists")?,
-    )
-    .context("generated CI workflow is valid YAML")?;
+    let workflow_bytes =
+        fs::read(root.join(".github/workflows/ci.yml")).context("generated CI workflow exists")?;
+    let workflow: YamlValue =
+        workflow_yaml::parse(&workflow_bytes).context("generated CI workflow is valid YAML")?;
     let jobs = yaml_field(&workflow, "jobs")
-        .and_then(YamlValue::as_mapping)
+        .and_then(YamlValue::as_object)
         .context("generated CI workflow declares jobs")?;
-    let ids = jobs
-        .keys()
-        .map(|key| {
-            key.as_str()
-                .map(ToOwned::to_owned)
-                .context("workflow job IDs are strings")
-        })
-        .collect::<Result<BTreeSet<_>>>()?;
+    let ids = jobs.keys().cloned().collect::<BTreeSet<_>>();
     Ok((workflow, ids))
 }
 
@@ -185,7 +181,7 @@ fn configured_task_source(task: &TomlValue) -> Result<(&str, &str)> {
 
 fn job_needs(job: &YamlValue) -> Result<BTreeSet<String>> {
     yaml_field(job, "needs")
-        .and_then(YamlValue::as_sequence)
+        .and_then(YamlValue::as_array)
         .into_iter()
         .flatten()
         .map(|need| {
@@ -245,7 +241,7 @@ fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<
     }
     let (workflow, job_ids) = workflow_jobs(&root)?;
     let jobs = yaml_field(&workflow, "jobs")
-        .and_then(YamlValue::as_mapping)
+        .and_then(YamlValue::as_object)
         .context("generated CI workflow declares jobs")?;
     ensure!(
         !job_ids.iter().any(|id| id.starts_with("task-")),
@@ -267,7 +263,7 @@ fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<
     }
 
     let required = jobs
-        .get(YamlValue::String("required".to_owned()))
+        .get("required")
         .context("generated workflow has the Required gate")?;
     let required_needs = job_needs(required)?;
     for job_id in workspace_jobs
@@ -449,7 +445,7 @@ fn configured_native_build_is_mac26_bounded_locked_and_mbx_routed() -> Result<()
         .and_then(TomlValue::as_str)
         .context("native ci task has an inline script")?;
     ensure!(
-        ci_script.contains("mbx +1.99.0 xtask desktop")
+        ci_script.contains("mbx +1.99.1 xtask desktop")
             && !ci_script
                 .lines()
                 .any(|line| line.trim_start().starts_with("cargo ")),

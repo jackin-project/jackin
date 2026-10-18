@@ -2144,17 +2144,30 @@ fn scoped_metric_scope(axis: PrincipalScopeAxis) -> UsageMetricScopeV1 {
     scope
 }
 
-fn principal_window_group(
-    group_id: &str,
+struct PrincipalWindowGroupSpec<'a> {
+    group_id: &'a str,
     rank: u32,
-    label: &str,
+    label: &'a str,
     used_raw_percent: i32,
     reset_at_epoch: Option<i64>,
     observed_at_epoch: Option<i64>,
     last_success_at_epoch: Option<i64>,
     scope: UsageMetricScopeV1,
     current: bool,
-) -> UsageMetricGroupV1 {
+}
+
+fn principal_window_group(spec: PrincipalWindowGroupSpec<'_>) -> UsageMetricGroupV1 {
+    let PrincipalWindowGroupSpec {
+        group_id,
+        rank,
+        label,
+        used_raw_percent,
+        reset_at_epoch,
+        observed_at_epoch,
+        last_success_at_epoch,
+        scope,
+        current,
+    } = spec;
     let fetched_at_epoch = observed_at_epoch.or(last_success_at_epoch).unwrap_or(NOW);
     UsageMetricGroupV1 {
         group_id: group_id.to_owned(),
@@ -2260,293 +2273,272 @@ fn long_range_projection(
 
 #[test]
 fn unique_unscoped_metric_group_supplies_window_evidence_time() {
-    let (_directory, store) = open_store();
-    let account_id = "acct-principal-window";
-    let window_label = "All models";
-    let reset_at = NOW + 86_400;
-    let started = start(
-        &store,
-        config(account_id, "goal-principal-window", None, None),
-        NOW,
-    );
-    let baseline_source = NOW;
-    let baseline = long_range_projection(
-        account_id,
-        1,
-        window_label,
-        72,
-        Some(reset_at),
-        baseline_source - 30,
-        vec![principal_window_group(
-            "all-models-weekly",
-            0,
-            window_label,
+    let fixture = WeeklyWindowFixture::new();
+    reject_duplicate_and_scoped_windows(&fixture);
+    reject_missing_or_stale_windows(&fixture);
+    accept_unique_unscoped_window(&fixture);
+}
+
+struct WeeklyWindowFixture {
+    _directory: tempfile::TempDir,
+    store: MonitorStore,
+    account_id: &'static str,
+    monitor_id: String,
+    reset_at: i64,
+    before: WeeklyWindowEvidence,
+}
+
+impl WeeklyWindowFixture {
+    fn new() -> Self {
+        let (directory, store) = open_store();
+        let account_id = "acct-principal-window";
+        let reset_at = NOW + 86_400;
+        let started = start(
+            &store,
+            config(account_id, "goal-principal-window", None, None),
+            NOW,
+        );
+        let baseline = long_range_projection(
+            account_id,
+            1,
+            "All models",
             72,
             Some(reset_at),
-            Some(baseline_source),
-            Some(baseline_source),
-            UsageMetricScopeV1::default(),
-            true,
-        )],
-    );
-    let (baseline_used_at, baseline_reset_at) = projected_weekly_evidence_at(&baseline, NOW);
-    store
-        .observe_projection(&baseline, NOW)
-        .expect("observe the unique principal window");
-    let before = weekly_window_evidence(&store, account_id);
-    assert_eq!(before.used_basis_points, Some(7_200));
-    assert_eq!(before.reset_at, Some(reset_at));
-    assert_eq!(before.used_at, baseline_used_at);
-    assert_eq!(before.reset_evidence_at, baseline_reset_at);
-    assert_eq!(baseline_used_at, Some(baseline_source));
-    assert_ne!(before.used_at, Some(baseline_source - 30));
-    assert_weekly_status_evidence(&status(&store, &started.monitor_id, NOW), &before, NOW);
-
-    let mut received = NOW;
-    let mut generation = 1_u64;
-    let reject = |name: &str,
-                  store: &MonitorStore,
-                  account_id: &str,
-                  monitor_id: &str,
-                  projection: UsageProjectionV1,
-                  received_at: i64,
-                  before: &WeeklyWindowEvidence| {
-        let (projected_used_at, projected_reset_at) =
-            projected_weekly_evidence_at(&projection, received_at);
-        assert_eq!(
-            projected_used_at, None,
-            "{name} must not supply a used timestamp"
+            NOW - 30,
+            vec![principal_window_group(PrincipalWindowGroupSpec {
+                group_id: "all-models-weekly",
+                rank: 0,
+                label: "All models",
+                used_raw_percent: 72,
+                reset_at_epoch: Some(reset_at),
+                observed_at_epoch: Some(NOW),
+                last_success_at_epoch: Some(NOW),
+                scope: UsageMetricScopeV1::default(),
+                current: true,
+            })],
         );
-        assert_eq!(
-            projected_reset_at, None,
-            "{name} must not supply a reset timestamp"
-        );
+        let (used_at, reset_evidence_at) = projected_weekly_evidence_at(&baseline, NOW);
         store
+            .observe_projection(&baseline, NOW)
+            .expect("observe the unique principal window");
+        let before = weekly_window_evidence(&store, account_id);
+        assert_eq!(before.used_basis_points, Some(7_200));
+        assert_eq!(before.reset_at, Some(reset_at));
+        assert_eq!(before.used_at, used_at);
+        assert_eq!(before.reset_evidence_at, reset_evidence_at);
+        assert_eq!(used_at, Some(NOW));
+        assert_ne!(before.used_at, Some(NOW - 30));
+        assert_weekly_status_evidence(&status(&store, &started.monitor_id, NOW), &before, NOW);
+        Self {
+            _directory: directory,
+            store,
+            account_id,
+            monitor_id: started.monitor_id,
+            reset_at,
+            before,
+        }
+    }
+
+    fn reject(&self, name: &str, projection: UsageProjectionV1, received_at: i64) {
+        let (used_at, reset_at) = projected_weekly_evidence_at(&projection, received_at);
+        assert_eq!(used_at, None, "{name} must not supply a used timestamp");
+        assert_eq!(reset_at, None, "{name} must not supply a reset timestamp");
+        self.store
             .observe_projection(&projection, received_at)
             .unwrap_or_else(|error| panic!("observe {name} projection: {error:?}"));
-        let actual = weekly_window_evidence(store, account_id);
-        assert_eq!(&actual, before, "{name} must not move window evidence time");
-        assert_weekly_status_evidence(
-            &status(store, monitor_id, received_at),
-            before,
-            before.used_received_at.expect("baseline receipt"),
+        let actual = weekly_window_evidence(&self.store, self.account_id);
+        assert_eq!(
+            actual, self.before,
+            "{name} must not move window evidence time"
         );
-    };
+        assert_weekly_status_evidence(
+            &status(&self.store, &self.monitor_id, received_at),
+            &self.before,
+            self.before.used_received_at.expect("baseline receipt"),
+        );
+    }
+}
 
-    received += 8;
-    generation += 1;
-    let duplicate_source = received;
+fn reject_duplicate_and_scoped_windows(fixture: &WeeklyWindowFixture) {
+    let source = NOW + 8;
     let duplicate = long_range_projection(
-        account_id,
-        generation,
-        window_label,
+        fixture.account_id,
+        2,
+        "All models",
         90,
-        Some(reset_at),
-        duplicate_source,
+        Some(fixture.reset_at),
+        source,
         vec![
-            principal_window_group(
-                "all-models-weekly-a",
-                0,
-                window_label,
-                90,
-                Some(reset_at),
-                Some(duplicate_source),
-                Some(duplicate_source),
-                UsageMetricScopeV1::default(),
-                true,
-            ),
-            principal_window_group(
-                "all-models-weekly-b",
-                1,
-                window_label,
-                90,
-                Some(reset_at),
-                Some(duplicate_source + 20),
-                Some(duplicate_source + 20),
-                UsageMetricScopeV1::default(),
-                true,
-            ),
+            principal_window_group(PrincipalWindowGroupSpec {
+                group_id: "all-models-weekly-a",
+                rank: 0,
+                label: "All models",
+                used_raw_percent: 90,
+                reset_at_epoch: Some(fixture.reset_at),
+                observed_at_epoch: Some(source),
+                last_success_at_epoch: Some(source),
+                scope: UsageMetricScopeV1::default(),
+                current: true,
+            }),
+            principal_window_group(PrincipalWindowGroupSpec {
+                group_id: "all-models-weekly-b",
+                rank: 1,
+                label: "All models",
+                used_raw_percent: 90,
+                reset_at_epoch: Some(fixture.reset_at),
+                observed_at_epoch: Some(source + 20),
+                last_success_at_epoch: Some(source + 20),
+                scope: UsageMetricScopeV1::default(),
+                current: true,
+            }),
         ],
     );
-    reject(
-        "duplicate-label",
-        &store,
-        account_id,
-        &started.monitor_id,
-        duplicate,
-        received + 1,
-        &before,
-    );
+    fixture.reject("duplicate-label", duplicate, source + 1);
 
+    let mut generation = 2;
+    let mut received = source;
     for (name, axis) in [
         ("scoped-service", PrincipalScopeAxis::Service),
         ("scoped-model", PrincipalScopeAxis::Model),
         ("scoped-pool", PrincipalScopeAxis::Pool),
         ("scoped-key", PrincipalScopeAxis::KeyId),
     ] {
-        received += 8;
         generation += 1;
-        let source_at = received;
+        received += 8;
         let scoped = long_range_projection(
-            account_id,
+            fixture.account_id,
             generation,
-            window_label,
+            "All models",
             90,
-            Some(reset_at),
-            source_at,
-            vec![principal_window_group(
-                &format!("{name}-weekly"),
-                0,
-                window_label,
-                90,
-                Some(reset_at),
-                Some(source_at),
-                Some(source_at),
-                scoped_metric_scope(axis),
-                true,
-            )],
+            Some(fixture.reset_at),
+            received,
+            vec![principal_window_group(PrincipalWindowGroupSpec {
+                group_id: &format!("{name}-weekly"),
+                rank: 0,
+                label: "All models",
+                used_raw_percent: 90,
+                reset_at_epoch: Some(fixture.reset_at),
+                observed_at_epoch: Some(received),
+                last_success_at_epoch: Some(received),
+                scope: scoped_metric_scope(axis),
+                current: true,
+            })],
         );
-        reject(
-            name,
-            &store,
-            account_id,
-            &started.monitor_id,
-            scoped,
-            received + 1,
-            &before,
-        );
+        fixture.reject(name, scoped, received + 1);
     }
+}
 
-    received += 8;
-    generation += 1;
-    let missing_reset_source = received;
+fn reject_missing_or_stale_windows(fixture: &WeeklyWindowFixture) {
+    let missing_source = NOW + 48;
     let missing_reset = long_range_projection(
-        account_id,
-        generation,
-        window_label,
+        fixture.account_id,
+        7,
+        "All models",
         90,
-        Some(reset_at),
-        missing_reset_source,
-        vec![principal_window_group(
-            "all-models-missing-reset",
-            0,
-            window_label,
-            90,
-            None,
-            Some(missing_reset_source),
-            Some(missing_reset_source),
-            UsageMetricScopeV1::default(),
-            true,
-        )],
+        Some(fixture.reset_at),
+        missing_source,
+        vec![principal_window_group(PrincipalWindowGroupSpec {
+            group_id: "all-models-missing-reset",
+            rank: 0,
+            label: "All models",
+            used_raw_percent: 90,
+            reset_at_epoch: None,
+            observed_at_epoch: Some(missing_source),
+            last_success_at_epoch: Some(missing_source),
+            scope: UsageMetricScopeV1::default(),
+            current: true,
+        })],
     );
-    reject(
-        "missing-group-reset",
-        &store,
-        account_id,
-        &started.monitor_id,
-        missing_reset,
-        received + 1,
-        &before,
-    );
+    fixture.reject("missing-group-reset", missing_reset, missing_source + 1);
 
-    received += 8;
-    generation += 1;
-    let stale_source = received;
+    let stale_source = NOW + 56;
     let stale = long_range_projection(
-        account_id,
-        generation,
-        window_label,
+        fixture.account_id,
+        8,
+        "All models",
         90,
-        Some(reset_at),
+        Some(fixture.reset_at),
         stale_source,
-        vec![principal_window_group(
-            "all-models-stale",
-            0,
-            window_label,
-            90,
-            Some(reset_at),
-            None,
-            Some(stale_source),
-            UsageMetricScopeV1::default(),
-            false,
-        )],
+        vec![principal_window_group(PrincipalWindowGroupSpec {
+            group_id: "all-models-stale",
+            rank: 0,
+            label: "All models",
+            used_raw_percent: 90,
+            reset_at_epoch: Some(fixture.reset_at),
+            observed_at_epoch: None,
+            last_success_at_epoch: Some(stale_source),
+            scope: UsageMetricScopeV1::default(),
+            current: false,
+        })],
     );
-    reject(
-        "stale-last-success",
-        &store,
-        account_id,
-        &started.monitor_id,
-        stale,
-        received + 1,
-        &before,
-    );
+    fixture.reject("stale-last-success", stale, stale_source + 1);
+}
 
-    received += 8;
-    generation += 1;
-    let accepted_source = received;
-    let sibling_source = accepted_source + 20;
+fn accept_unique_unscoped_window(fixture: &WeeklyWindowFixture) {
+    let source = NOW + 64;
+    let sibling_source = source + 20;
     let accepted = long_range_projection(
-        account_id,
-        generation,
-        window_label,
+        fixture.account_id,
+        9,
+        "All models",
         82,
-        Some(reset_at),
-        accepted_source - 15,
+        Some(fixture.reset_at),
+        source - 15,
         vec![
-            principal_window_group(
-                "all-models-weekly-current",
-                0,
-                window_label,
-                82,
-                Some(reset_at),
-                Some(accepted_source),
-                Some(accepted_source),
-                UsageMetricScopeV1::default(),
-                true,
-            ),
-            principal_window_group(
-                "all-models-weekly-scoped",
-                1,
-                window_label,
-                82,
-                Some(reset_at),
-                Some(sibling_source),
-                Some(sibling_source),
-                scoped_metric_scope(PrincipalScopeAxis::Service),
-                true,
-            ),
-            principal_window_group(
-                "fable-weekly-newer",
-                2,
-                "Fable",
-                82,
-                Some(reset_at),
-                Some(sibling_source),
-                Some(sibling_source),
-                scoped_metric_scope(PrincipalScopeAxis::Model),
-                true,
-            ),
+            principal_window_group(PrincipalWindowGroupSpec {
+                group_id: "all-models-weekly-current",
+                rank: 0,
+                label: "All models",
+                used_raw_percent: 82,
+                reset_at_epoch: Some(fixture.reset_at),
+                observed_at_epoch: Some(source),
+                last_success_at_epoch: Some(source),
+                scope: UsageMetricScopeV1::default(),
+                current: true,
+            }),
+            principal_window_group(PrincipalWindowGroupSpec {
+                group_id: "all-models-weekly-scoped",
+                rank: 1,
+                label: "All models",
+                used_raw_percent: 82,
+                reset_at_epoch: Some(fixture.reset_at),
+                observed_at_epoch: Some(sibling_source),
+                last_success_at_epoch: Some(sibling_source),
+                scope: scoped_metric_scope(PrincipalScopeAxis::Service),
+                current: true,
+            }),
+            principal_window_group(PrincipalWindowGroupSpec {
+                group_id: "fable-weekly-newer",
+                rank: 2,
+                label: "Fable",
+                used_raw_percent: 82,
+                reset_at_epoch: Some(fixture.reset_at),
+                observed_at_epoch: Some(sibling_source),
+                last_success_at_epoch: Some(sibling_source),
+                scope: scoped_metric_scope(PrincipalScopeAxis::Model),
+                current: true,
+            }),
         ],
     );
-    let accepted_received = received + 1;
-    let (accepted_used_at, accepted_reset_at) =
-        projected_weekly_evidence_at(&accepted, accepted_received);
-    store
-        .observe_projection(&accepted, accepted_received)
+    let received = source + 1;
+    let (used_at, reset_evidence_at) = projected_weekly_evidence_at(&accepted, received);
+    fixture
+        .store
+        .observe_projection(&accepted, received)
         .expect("observe the unique unscoped principal window");
-    let after = weekly_window_evidence(&store, account_id);
+    let after = weekly_window_evidence(&fixture.store, fixture.account_id);
     assert_eq!(after.used_basis_points, Some(8_200));
-    assert_eq!(after.reset_at, Some(reset_at));
-    assert_eq!(after.used_at, accepted_used_at);
-    assert_eq!(after.reset_evidence_at, accepted_reset_at);
-    assert_eq!(accepted_used_at, Some(accepted_source));
+    assert_eq!(after.reset_at, Some(fixture.reset_at));
+    assert_eq!(after.used_at, used_at);
+    assert_eq!(after.reset_evidence_at, reset_evidence_at);
+    assert_eq!(used_at, Some(source));
     assert_ne!(after.used_at, Some(sibling_source));
-    assert_ne!(after.used_at, Some(accepted_source - 15));
-    assert_eq!(after.used_received_at, Some(accepted_received));
-    assert_eq!(after.reset_received_at, Some(accepted_received));
+    assert_ne!(after.used_at, Some(source - 15));
+    assert_eq!(after.used_received_at, Some(received));
+    assert_eq!(after.reset_received_at, Some(received));
     assert_weekly_status_evidence(
-        &status(&store, &started.monitor_id, accepted_received),
+        &status(&fixture.store, &fixture.monitor_id, received),
         &after,
-        accepted_received,
+        received,
     );
 }

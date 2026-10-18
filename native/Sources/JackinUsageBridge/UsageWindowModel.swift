@@ -107,10 +107,10 @@ public struct UsageWindowModel: Equatable, Sendable {
         public let iconKey: String?
         public let fallbackGlyph: String?
         public let usageURL: String?
-        public let identity: PresentationStore.IdentityRow
+        public let identity: IdentityRow
         public let detail: UsageDetailPresentation
-        public let accounts: [PresentationStore.AccountRow]
-        public let selectedAccountRoute: PresentationStore.SelectedAccountRoute
+        public let accounts: [AccountRow]
+        public let selectedAccountRoute: SelectedAccountRoute
 
         public init(
             surfaceId: String,
@@ -118,10 +118,10 @@ public struct UsageWindowModel: Equatable, Sendable {
             iconKey: String? = nil,
             fallbackGlyph: String?,
             usageURL: String?,
-            identity: PresentationStore.IdentityRow,
+            identity: IdentityRow,
             detail: UsageDetailPresentation,
-            accounts: [PresentationStore.AccountRow],
-            selectedAccountRoute: PresentationStore.SelectedAccountRoute
+            accounts: [AccountRow],
+            selectedAccountRoute: SelectedAccountRoute
         ) {
             self.surfaceId = surfaceId
             self.displayLabel = displayLabel
@@ -141,14 +141,22 @@ public struct UsageWindowModel: Equatable, Sendable {
             return nil
         }
 
-        public var headAccount: PresentationStore.AccountRow? {
+        public var headAccount: AccountRow? {
             selectedAccountKey.flatMap { key in
                 accounts.first(where: { $0.accountKey == key })
             }
         }
     }
 
-    public let sidebar: [PresentationStore.GlanceProviderRow]
+    private struct Resolution {
+        let selection: Selection
+        let content: Content?
+        let routeNotice: AccountRouteNotice?
+
+        static let overview = Resolution(selection: .overview, content: nil, routeNotice: nil)
+    }
+
+    public let sidebar: [GlanceProviderRow]
     public let selection: Selection
     public let content: Content?
     public let routeNotice: AccountRouteNotice?
@@ -157,81 +165,94 @@ public struct UsageWindowModel: Equatable, Sendable {
     public static let emptyHint = "no agent credentials found"
 
     public init(
-        glanceRows: [PresentationStore.GlanceProviderRow],
-        surfaces: [PresentationStore.SurfaceRow],
-        accounts: [PresentationStore.AccountRow],
-        providerGroups: [PresentationStore.ProviderGroupRow] = [],
+        glanceRows: [GlanceProviderRow],
+        surfaces: [SurfaceRow],
+        accounts: [AccountRow],
+        providerGroups: [ProviderGroupRow] = [],
         selection surfaceId: String?
     ) {
         sidebar = glanceRows
         isEmpty = glanceRows.isEmpty
-        if let surfaceId,
-            let surface = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
-        {
-            let group = providerGroups.first(where: { $0.surfaceId == surfaceId })
-            let surfaceAccounts = group?.accounts ?? accounts.filter { $0.surfaceId == surfaceId }
-            let route: PresentationStore.SelectedAccountRoute? = group == nil
-                ? .unselected : group?.selectedAccountRoute
-            guard let route else {
-                selection = .overview
-                content = nil
-                routeNotice = nil
-                return
-            }
-            switch route {
-            case .unselected:
-                break
-            case .resolving(let accountKey):
-                guard !surfaceAccounts.contains(where: { $0.accountKey == accountKey }) else {
-                    selection = .overview
-                    content = nil
-                    routeNotice = nil
-                    return
-                }
-            case .available(let accountKey):
-                guard surfaceAccounts.contains(where: { $0.accountKey == accountKey }) else {
-                    selection = .overview
-                    content = nil
-                    routeNotice = nil
-                    return
-                }
-            case .unavailable(let accountKey, let notice):
-                guard !surfaceAccounts.contains(where: { $0.accountKey == accountKey }),
-                    !notice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                else {
-                    selection = .overview
-                    content = nil
-                    routeNotice = nil
-                    return
-                }
-                selection = .overview
-                content = nil
-                routeNotice = AccountRouteNotice(surfaceId: surfaceId, message: notice)
-                return
-            }
+        let resolution = Self.resolve(
+            glanceRows: glanceRows,
+            surfaces: surfaces,
+            accounts: accounts,
+            providerGroups: providerGroups,
+            surfaceId: surfaceId
+        )
+        selection = resolution.selection
+        content = resolution.content
+        routeNotice = resolution.routeNotice
+    }
 
-            selection = .provider(surfaceId)
-            routeNotice = nil
-            let glance = glanceRows.first(where: { $0.surfaceId == surfaceId })
-            if let identity = surface.identity {
-                content = Content(
-                    surfaceId: surfaceId,
-                    displayLabel: identity.providerTitle,
-                    iconKey: group?.iconKey ?? glance?.iconKey,
-                    fallbackGlyph: group?.fallbackGlyph ?? glance?.fallbackGlyph,
-                    usageURL: group?.usageURL ?? glance?.usageURL,
-                    identity: identity,
-                    detail: surface.detailPresentation,
-                    accounts: surfaceAccounts,
-                    selectedAccountRoute: route
-                )
-            } else {
-                content = nil
-            }
+    private static func resolve(
+        glanceRows: [GlanceProviderRow],
+        surfaces: [SurfaceRow],
+        accounts: [AccountRow],
+        providerGroups: [ProviderGroupRow],
+        surfaceId: String?
+    ) -> Resolution {
+        guard let surfaceId,
+            let surface = surfaces.first(where: { $0.id == surfaceId && $0.enabled })
+        else { return .overview }
+
+        let group = providerGroups.first(where: { $0.surfaceId == surfaceId })
+        let surfaceAccounts = group?.accounts ?? accounts.filter { $0.surfaceId == surfaceId }
+        let route: SelectedAccountRoute
+        if let group {
+            guard let selectedRoute = group.selectedAccountRoute else { return .overview }
+            route = selectedRoute
         } else {
-            selection = .overview
-            content = nil
-            routeNotice = nil
+            route = .unselected
         }
+        if let notice = invalidRouteNotice(route, accounts: surfaceAccounts, surfaceId: surfaceId) {
+            return Resolution(selection: .overview, content: nil, routeNotice: notice)
+        }
+        if isInvalidRoute(route, accounts: surfaceAccounts) { return .overview }
+
+        let content = surface.identity.map { identity in
+            let glance = glanceRows.first(where: { $0.surfaceId == surfaceId })
+            return Content(
+                surfaceId: surfaceId,
+                displayLabel: identity.providerTitle,
+                iconKey: group?.iconKey ?? glance?.iconKey,
+                fallbackGlyph: group?.fallbackGlyph ?? glance?.fallbackGlyph,
+                usageURL: group?.usageURL ?? glance?.usageURL,
+                identity: identity,
+                detail: surface.detailPresentation,
+                accounts: surfaceAccounts,
+                selectedAccountRoute: route
+            )
+        }
+        return Resolution(selection: .provider(surfaceId), content: content, routeNotice: nil)
+    }
+
+    private static func isInvalidRoute(
+        _ route: SelectedAccountRoute,
+        accounts: [AccountRow]
+    ) -> Bool {
+        switch route {
+        case .unselected:
+            return false
+        case .resolving(let key):
+            return accounts.contains(where: { $0.accountKey == key })
+        case .available(let key):
+            return !accounts.contains(where: { $0.accountKey == key })
+        case .unavailable(let key, let notice):
+            return accounts.contains(where: { $0.accountKey == key })
+                || notice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    private static func invalidRouteNotice(
+        _ route: SelectedAccountRoute,
+        accounts: [AccountRow],
+        surfaceId: String
+    ) -> AccountRouteNotice? {
+        guard case .unavailable(let key, let notice) = route,
+            !accounts.contains(where: { $0.accountKey == key }),
+            !notice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return AccountRouteNotice(surfaceId: surfaceId, message: notice)
     }
 }

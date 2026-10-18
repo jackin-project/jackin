@@ -12,13 +12,13 @@ final class PresentationStoreTests: XCTestCase {
         case failed
     }
 
-    private func providerGroups(
-        copying groups: [PresentationStore.ProviderGroupRow],
-        accounts: [PresentationStore.AccountRow],
-        codexRoute: PresentationStore.SelectedAccountRoute? = nil
-    ) -> [PresentationStore.ProviderGroupRow] {
+    func providerGroups(
+        copying groups: [ProviderGroupRow],
+        accounts: [AccountRow],
+        codexRoute: SelectedAccountRoute? = nil
+    ) -> [ProviderGroupRow] {
         groups.map { group in
-            PresentationStore.ProviderGroupRow(
+            ProviderGroupRow(
                 surfaceId: group.surfaceId,
                 displayLabel: group.displayLabel,
                 iconKey: group.iconKey,
@@ -47,7 +47,7 @@ final class PresentationStoreTests: XCTestCase {
     }
 
     func testDiscoveryDiagnosticKeepsRustOwnedSanitizedCopy() {
-        let diagnostic = PresentationStore.DiscoveryDiagnostic(
+        let diagnostic = DiscoveryDiagnostic(
             surfaceId: "claude",
             scopeLabel: "workspace sample",
             issue: "credential_denied",
@@ -66,17 +66,19 @@ final class PresentationStoreTests: XCTestCase {
 
     func testSelectedAccountRouteValidatesStatusKeyNoticeCombinations() {
         let notice = "Selected account is no longer available."
-        let valid: [(SelectedAccountRouteDto, PresentationStore.SelectedAccountRoute)] = [
+        let valid: [(SelectedAccountRouteDto, SelectedAccountRoute)] = [
             (
                 SelectedAccountRouteDto(status: "unselected", accountKey: nil, notice: nil),
                 .unselected
             ),
             (
-                SelectedAccountRouteDto(status: "resolving", accountKey: "persisted-key", notice: nil),
+                SelectedAccountRouteDto(
+                    status: "resolving", accountKey: "persisted-key", notice: nil),
                 .resolving(accountKey: "persisted-key")
             ),
             (
-                SelectedAccountRouteDto(status: "available", accountKey: "persisted-key", notice: nil),
+                SelectedAccountRouteDto(
+                    status: "available", accountKey: "persisted-key", notice: nil),
                 .available(accountKey: "persisted-key")
             ),
             (
@@ -89,20 +91,23 @@ final class PresentationStoreTests: XCTestCase {
             ),
         ]
         for (dto, expected) in valid {
-            XCTAssertEqual(PresentationStore.SelectedAccountRoute(dto: dto), expected)
+            XCTAssertEqual(SelectedAccountRoute(dto: dto), expected)
         }
 
         let invalid = [
             SelectedAccountRouteDto(status: "unselected", accountKey: "persisted-key", notice: nil),
             SelectedAccountRouteDto(status: "resolving", accountKey: nil, notice: nil),
-            SelectedAccountRouteDto(status: "resolving", accountKey: "persisted-key", notice: notice),
+            SelectedAccountRouteDto(
+                status: "resolving", accountKey: "persisted-key", notice: notice),
             SelectedAccountRouteDto(status: "available", accountKey: "  ", notice: nil),
-            SelectedAccountRouteDto(status: "unavailable", accountKey: "persisted-key", notice: nil),
-            SelectedAccountRouteDto(status: "unavailable", accountKey: "persisted-key", notice: "  "),
+            SelectedAccountRouteDto(
+                status: "unavailable", accountKey: "persisted-key", notice: nil),
+            SelectedAccountRouteDto(
+                status: "unavailable", accountKey: "persisted-key", notice: "  "),
             SelectedAccountRouteDto(status: "unknown", accountKey: "persisted-key", notice: nil),
         ]
         for dto in invalid {
-            XCTAssertNil(PresentationStore.SelectedAccountRoute(dto: dto))
+            XCTAssertNil(SelectedAccountRoute(dto: dto))
         }
     }
 
@@ -110,17 +115,7 @@ final class PresentationStoreTests: XCTestCase {
     func testProjectionFailureRetainsExactLastGoodStateAndSelection() {
         let fixture = VisualQAFixtures.fixture(id: .multiAccount)
         let store = PresentationStore()
-        store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            statusBarGlanceRows: fixture.statusGlanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: fixture.providerGroups,
-            refreshingProjection: fixture.refreshingProjection,
-            accountProjections: fixture.accountProjections,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: fixture.usageSelection
-        )
+        store.applyQIFixture(fixture.input)
         store.selectUsageContext(surfaceId: "codex", accountKey: "codex-plus")
 
         let glances = store.providerGlanceRows
@@ -160,7 +155,7 @@ final class PresentationStoreTests: XCTestCase {
         let projectedAccounts = fixture.accounts.filter { $0.id != claudeAccount.id }
         let store = PresentationStore()
 
-        store.applyQIFixture(
+        let projection = QIFixtureProjection(
             glanceRows: fixture.glanceRows,
             statusBarGlanceRows: fixture.statusGlanceRows,
             surfaces: fixture.surfaces,
@@ -168,10 +163,18 @@ final class PresentationStoreTests: XCTestCase {
             providerGroups: providerGroups(
                 copying: fixture.providerGroups,
                 accounts: projectedAccounts
-            ),
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: "codex",
-            usageAccountSelection: codexAccount.accountKey
+            )
+        )
+        store.applyQIFixture(
+            fixture.input.replacing(
+                projection: projection,
+                transitions: QIFixtureTransitions(),
+                selection: QIFixtureSelection(
+                    popover: fixture.popoverSelection,
+                    usage: "codex",
+                    account: codexAccount.accountKey
+                )
+            )
         )
 
         XCTAssertFalse(store.accounts.contains { $0.id == claudeAccount.id })
@@ -199,15 +202,13 @@ final class PresentationStoreTests: XCTestCase {
         }
         let store = PresentationStore()
         store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            statusBarGlanceRows: fixture.statusGlanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: fixture.providerGroups,
-            accountProjections: fixture.accountProjections,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: "claude",
-            usageAccountSelection: claudeAccount.accountKey
+            fixture.input.replacing(
+                selection: QIFixtureSelection(
+                    popover: fixture.popoverSelection,
+                    usage: "claude",
+                    account: claudeAccount.accountKey
+                )
+            )
         )
 
         store.setSelectedAccount(surfaceId: "codex", accountKey: codexAccount.accountKey)
@@ -220,112 +221,5 @@ final class PresentationStoreTests: XCTestCase {
                     && $0.accountKey == codexAccount.accountKey
             }?.selected == true
         )
-    }
-
-    @MainActor
-    func testAvailableRustRouteSupersedesPriorExplicitAccountContext() {
-        let fixture = VisualQAFixtures.fixture(id: .multiAccount)
-        guard
-            let priorAccount = fixture.accounts.first(where: {
-                $0.surfaceId == "codex" && $0.selected
-            }),
-            let rustSelectedAccount = fixture.accounts.first(where: {
-                $0.surfaceId == "codex" && $0.accountKey != priorAccount.accountKey
-            })
-        else {
-            return XCTFail("multi-account fixture is missing distinct Codex accounts")
-        }
-        let groups = providerGroups(
-            copying: fixture.providerGroups,
-            accounts: fixture.accounts,
-            codexRoute: .available(accountKey: rustSelectedAccount.accountKey)
-        )
-        let store = PresentationStore()
-        store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            statusBarGlanceRows: fixture.statusGlanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: groups,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: "codex",
-            usageAccountSelection: priorAccount.accountKey
-        )
-
-        let model = UsageWindowModel(
-            glanceRows: store.providerGlanceRows,
-            surfaces: store.surfaces,
-            accounts: store.accounts,
-            providerGroups: store.providerGroups,
-            selection: store.usageSelection
-        )
-
-        XCTAssertEqual(store.usageAccountSelection, priorAccount.accountKey)
-        XCTAssertEqual(model.content?.selectedAccountKey, rustSelectedAccount.accountKey)
-        XCTAssertEqual(model.content?.headAccount?.accountKey, rustSelectedAccount.accountKey)
-    }
-
-    @MainActor
-    func testMissingActiveAccountReturnsToOverviewInsteadOfSelectingSibling() {
-        let fixture = VisualQAFixtures.fixture(id: .multiAccount)
-        guard
-            let sibling = fixture.accounts.first(where: {
-                $0.surfaceId == "codex" && $0.selected
-            })
-        else {
-            return XCTFail("multi-account fixture is missing its selected Codex sibling")
-        }
-        let store = PresentationStore()
-
-        store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            statusBarGlanceRows: fixture.statusGlanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: fixture.providerGroups,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: "codex",
-            usageAccountSelection: "removed-codex-account"
-        )
-
-        XCTAssertNotEqual(sibling.accountKey, "removed-codex-account")
-        XCTAssertTrue(store.accounts.contains { $0.id == sibling.id })
-        XCTAssertNil(store.usageSelection)
-        XCTAssertNil(store.usageAccountSelection)
-    }
-
-    @MainActor
-    func testUnavailablePersistedRouteKeepsProviderScopeForOverviewNotice() {
-        let fixture = VisualQAFixtures.fixture(id: .multiAccount)
-        let notice = "Selected account is no longer available."
-        let groups = providerGroups(
-            copying: fixture.providerGroups,
-            accounts: fixture.accounts,
-            codexRoute: .unavailable(accountKey: "removed-codex-account", notice: notice)
-        )
-        let store = PresentationStore()
-        store.applyQIFixture(
-            glanceRows: fixture.glanceRows,
-            statusBarGlanceRows: fixture.statusGlanceRows,
-            surfaces: fixture.surfaces,
-            accounts: fixture.accounts,
-            providerGroups: groups,
-            popoverSelection: fixture.popoverSelection,
-            usageSelection: "codex",
-            usageAccountSelection: "removed-codex-account"
-        )
-
-        XCTAssertEqual(store.usageSelection, "codex")
-        XCTAssertNil(store.usageAccountSelection)
-        let model = UsageWindowModel(
-            glanceRows: store.providerGlanceRows,
-            surfaces: store.surfaces,
-            accounts: store.accounts,
-            providerGroups: store.providerGroups,
-            selection: store.usageSelection
-        )
-        XCTAssertEqual(model.selection, .overview)
-        XCTAssertEqual(model.routeNotice?.surfaceId, "codex")
-        XCTAssertEqual(model.routeNotice?.message, notice)
     }
 }

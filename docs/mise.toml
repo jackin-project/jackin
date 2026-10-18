@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [tools]
-bun = "1.4.2"
+bun = "1.4.3"
 lychee = "0.24.2"
-node = "26.10.0"
+node = "26.12.0"
 
 [settings]
 lockfile = true

@@ -669,7 +669,7 @@ fn workflow_run_name_at(
     if bytes.len() > 1024 * 1024 {
         bail!("workflow file at {commit} exceeds the identity size limit");
     }
-    let workflow_yaml: serde_json::Value = serde_yaml_ng::from_slice(&bytes)
+    let workflow_yaml = crate::workflow_yaml::parse(&bytes)
         .with_context(|| format!("parsing workflow file at {commit}"))?;
     let template = workflow_yaml
         .get("run-name")
