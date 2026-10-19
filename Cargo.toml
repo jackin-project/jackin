@@ -537,14 +537,3 @@ lto = "thin"
 codegen-units = 1
 strip = false
 debug = "line-tables-only"
-
-[workspace.metadata.dylint]
-libraries = [
-    { path = "crates/tools/jackin-lints" },
-]
-
-
-
-
-
-
