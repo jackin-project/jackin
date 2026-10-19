@@ -19,5 +19,8 @@ path = "src/lib.rs"
 [dependencies]
 jackin-process = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true

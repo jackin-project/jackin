@@ -1,10 +1,9 @@
 use jackin_process::ExecRequest;
-
-const WORKSPACE_GIT_DIR_FROM_CRATE: &str = "../../.git";
+use std::path::{Path, PathBuf};
 
 #[must_use]
 pub fn derive_workspace_crate_version() -> String {
-    derive_version(WORKSPACE_GIT_DIR_FROM_CRATE)
+    derive_version()
 }
 
 #[must_use]
@@ -12,7 +11,7 @@ pub fn derive_workspace_crate_version() -> String {
     clippy::print_stdout,
     reason = "build-script helper must emit Cargo directives on stdout"
 )]
-fn derive_version(git_dir_relative: &str) -> String {
+fn derive_version() -> String {
     println!("cargo:rerun-if-env-changed=JACKIN_VERSION_OVERRIDE");
     println!("cargo:rerun-if-env-changed=CI");
     let cargo_version =
@@ -25,9 +24,14 @@ fn derive_version(git_dir_relative: &str) -> String {
         return version;
     }
 
-    println!("cargo:rerun-if-changed={git_dir_relative}/HEAD");
-    println!("cargo:rerun-if-changed={git_dir_relative}/refs");
-    println!("cargo:rerun-if-changed={git_dir_relative}/packed-refs");
+    // Git owns administrative-path discovery: linked worktrees have a private
+    // HEAD and shared refs, and packed-refs is legitimately absent in fresh clones.
+    // Cargo treats a missing watched input as dirty on every subsequent build.
+    if let Ok(directory) = std::env::current_dir() {
+        for path in git_watch_paths(&directory) {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
 
     let short_sha =
         jackin_process::exec_sync(&ExecRequest::new("git", ["rev-parse", "--short=7", "HEAD"]))
@@ -58,3 +62,33 @@ fn local_version_override(
 
 #[cfg(test)]
 mod tests;
+
+/// Watch only existing Git inputs, independently of the caller crate's depth.
+fn git_watch_paths(directory: &Path) -> Vec<PathBuf> {
+    let request = ExecRequest::new(
+        "git",
+        [
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "HEAD",
+            "--git-path",
+            "refs",
+            "--git-path",
+            "packed-refs",
+        ],
+    )
+    .cwd(directory);
+    let Some(output) = jackin_process::exec_sync(&request)
+        .ok()
+        .filter(|output| output.success)
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+    else {
+        return Vec::new();
+    };
+    let paths = output.lines().map(PathBuf::from).collect::<Vec<_>>();
+    if paths.len() != 3 || paths.iter().any(|path| !path.is_absolute()) {
+        return Vec::new();
+    }
+    paths.into_iter().filter(|path| path.exists()).collect()
+}

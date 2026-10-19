@@ -107,15 +107,108 @@ fn sccache_is_absent_from_generated_workflow_environment() {
     }
 }
 
+fn assert_no_sccache_value(value: &serde_json::Value, context: &str) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (key, value) in fields {
+                match key.as_str() {
+                    "CARGO_INCREMENTAL" => assert!(
+                        value.as_str() != Some("0") && value.as_u64() != Some(0),
+                        "{context} disables incremental compilation"
+                    ),
+                    "RUSTC_WRAPPER" => assert!(
+                        !value.as_str().is_some_and(
+                            |wrapper| wrapper == "sccache" || wrapper.ends_with("/sccache")
+                        ),
+                        "{context} selects sccache"
+                    ),
+                    "SCCACHE_GHA_ENABLED" => assert!(
+                        value.as_str() != Some("true") && value.as_bool() != Some(true),
+                        "{context} enables sccache"
+                    ),
+                    _ => {}
+                }
+                assert_no_sccache_value(value, context);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                assert_no_sccache_value(value, context);
+            }
+        }
+        serde_json::Value::String(text) => assert_no_sccache_env(text, context),
+        _ => {}
+    }
+}
+
+fn assert_installer_environments(workflow: &serde_json::Value, context: &str) -> usize {
+    let jobs = workflow["jobs"].as_object().expect("workflow jobs");
+    let mut installers = 0;
+    for (id, job) in jobs {
+        let Some(steps) = job["steps"].as_array() else {
+            continue;
+        };
+        for (index, step) in steps.iter().enumerate() {
+            if !step["uses"]
+                .as_str()
+                .is_some_and(|uses| uses.starts_with("jdx/mise-action@"))
+            {
+                continue;
+            }
+            installers += 1;
+            let context = format!("{context} job {id} installer {index}");
+            assert_no_sccache_value(&workflow["env"], &context);
+            assert_no_sccache_value(&job["env"], &context);
+            for prior in &steps[..=index] {
+                assert_no_sccache_value(prior, &context);
+            }
+        }
+    }
+    assert!(installers > 0, "{context} has no Mise installer");
+    installers
+}
+
 #[test]
 fn sccache_is_absent_from_installer_environment() {
     for workflow in GENERATED_WORKFLOWS {
         let text = workspace_file(workflow);
-        let setup = ["- name: Set up Mise", "- name: Setup Mise"]
-            .iter()
-            .filter_map(|marker| text.find(marker))
-            .min()
-            .unwrap_or_else(|| panic!("{workflow} has no Mise installer"));
-        assert_no_sccache_env(&text[..setup], &format!("{workflow} installer prefix"));
+        let parsed = jackin_xtask::workflow_yaml::parse(text.as_bytes()).expect("workflow YAML");
+        assert_installer_environments(&parsed, workflow);
     }
+}
+
+#[test]
+fn installer_environment_checks_expand_step_and_environment_aliases() {
+    let good = jackin_xtask::workflow_yaml::parse(
+        br"
+jobs:
+  first:
+    steps:
+      - &installer
+        name: Setup Mise
+        uses: jdx/mise-action@fixed
+  second:
+    steps:
+      - *installer
+",
+    )
+    .expect("aliased installer");
+    assert_eq!(assert_installer_environments(&good, "fixture"), 2);
+    let bad = jackin_xtask::workflow_yaml::parse(
+        br"
+jobs:
+  definition:
+    steps:
+      - name: Define an environment without installing Mise
+        env: &forbidden
+          RUSTC_WRAPPER: sccache
+  installer:
+    env: *forbidden
+    steps:
+      - uses: jdx/mise-action@fixed
+",
+    )
+    .expect("aliased environment");
+    std::panic::catch_unwind(|| assert_installer_environments(&bad, "fixture"))
+        .expect_err("aliased forbidden environment must be rejected");
 }
