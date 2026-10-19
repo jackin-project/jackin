@@ -8723,8 +8723,8 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.23"
-source = "git+https://github.com/tailrocks/velnor-new?rev=91506072795b5f5fd3d0b8de68afebc4c4ed3d4f#91506072795b5f5fd3d0b8de68afebc4c4ed3d4f"
+version = "0.1.25"
+source = "git+https://github.com/tailrocks/velnor-new?rev=e48d577d35e4a2c7c650bbedcfbdbafc3b34ac57#e48d577d35e4a2c7c650bbedcfbdbafc3b34ac57"
 dependencies = [
  "blake3",
  "serde",

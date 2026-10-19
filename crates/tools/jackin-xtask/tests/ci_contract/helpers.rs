@@ -264,7 +264,7 @@ pub(super) fn assert_complete_required_fan_in(
     );
     let expected = jobs
         .iter()
-        .filter(|id| !matches!(id.as_str(), "required" | "publish-baseline"))
+        .filter(|id| id.as_str() != "required")
         .cloned()
         .collect::<BTreeSet<_>>();
     ensure!(

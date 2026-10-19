@@ -212,3 +212,36 @@ jobs:
     std::panic::catch_unwind(|| assert_installer_environments(&bad, "fixture"))
         .expect_err("aliased forbidden environment must be rejected");
 }
+
+#[test]
+fn actionlint_uses_the_native_bridge_and_sorted_complete_workflow_inventory() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let workflows = temp.path().join(".github/workflows");
+    fs::create_dir_all(&workflows).unwrap();
+    for name in ["z.yml", "a.yml", "README.md"] {
+        fs::write(workflows.join(name), "").unwrap();
+    }
+    let actual = super::workflow_lint::actionlint_args(temp.path()).unwrap();
+    let expected = [
+        "-color",
+        "-ignore",
+        r#"^unexpected key "background" for step to (run shell command|execute action)\. "#,
+        "-ignore",
+        r#"^step must run script with "run" section or run action with "uses" section$"#,
+        ".github/workflows/a.yml",
+        ".github/workflows/z.yml",
+    ];
+    assert_eq!(actual, expected.map(std::ffi::OsString::from));
+}
+
+#[test]
+fn actionlint_refuses_missing_or_empty_workflow_inventory() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let missing = super::workflow_lint::actionlint_args(temp.path())
+        .expect_err("missing workflows must reject");
+    assert!(missing.to_string().contains("does not exist"));
+    fs::create_dir_all(temp.path().join(".github/workflows")).unwrap();
+    let empty = super::workflow_lint::actionlint_args(temp.path())
+        .expect_err("empty workflows must reject");
+    assert!(empty.to_string().contains("no workflow files found"));
+}
