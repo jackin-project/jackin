@@ -1688,5 +1688,4 @@ fn unavailable() -> MonitorIssue {
 }
 
 #[cfg(test)]
-#[path = "legacy/tests.rs"]
 mod tests;

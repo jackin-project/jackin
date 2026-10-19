@@ -4,17 +4,28 @@ set -eu
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
-global_hooks=''
-if global_hooks=$(git config --global --get-regexp '^hook\.hk-pre-commit\.(command|event)$' 2>/dev/null); then
-    printf '%s\n' "error: a global hk pre-commit hook is active; remove it before installing Jackin's staged-snapshot hook" >&2
-    printf '%s\n' "$global_hooks" >&2
-    exit 1
-else
-    status=$?
-    if [ "$status" -ne 1 ]; then
-        exit "$status"
+# Named-hook disabling must work independently of the actual event policy.
+for enabled in true false; do
+    if ! probe=$(git -c hook.jackin-capability-probe.event=jackin-capability-event \
+        -c hook.jackin-capability-probe.command=: \
+        -c hook.jackin-capability-probe.enabled="$enabled" \
+        -c hook.jackin-capability-event.enabled=true \
+        hook list --allow-unknown-hook-name jackin-capability-event); then
+        printf '%s\n' 'error: Git with config-based named-hook disabling is required' >&2
+        exit 1
     fi
-fi
+    expected=jackin-capability-probe
+    if [ "$enabled" = false ]; then
+        expected=$(printf 'disabled\tjackin-capability-probe')
+    fi
+    if [ "$probe" != "$expected" ]; then
+        printf '%s\n' 'error: Git does not enforce config-based named-hook disabling' >&2
+        exit 1
+    fi
+done
+
+# Preserve global hooks for other repositories while owning this boundary.
+git config --local --replace-all hook.hk-pre-commit.enabled false
 
 for key in hook.hk-pre-commit.command hook.hk-pre-commit.event; do
     if git config --local --unset-all "$key" >/dev/null 2>&1; then
@@ -29,5 +40,13 @@ done
 
 git config --local --replace-all hook.jackin-pre-commit.command 'sh scripts/pre-commit-snapshot'
 git config --local --replace-all hook.jackin-pre-commit.event pre-commit
+git config --local --replace-all hook.jackin-pre-commit.enabled true
+
+effective=$(git hook list pre-commit)
+if ! printf '%s\n' "$effective" | grep -Fx 'jackin-pre-commit' >/dev/null ||
+    printf '%s\n' "$effective" | grep -Fx 'hk-pre-commit' >/dev/null; then
+    printf '%s\n' 'error: pre-commit must enable Jackin snapshot ownership and disable direct hk' >&2
+    exit 1
+fi
 
 printf '%s\n' "installed Jackin staged-snapshot pre-commit hook"

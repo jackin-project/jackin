@@ -90,11 +90,7 @@ fn verify_retry_after_survives_restart(retry_after_header: &str, minimum_retry_a
     });
     let executor_clone = Arc::<RetryAfterHttpExecutor>::clone(&executor);
     let executor_trait: Arc<dyn UsageProviderExecutor> = executor_clone;
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce the paired test clock into the coordinator clock port"
-    )]
-    let clock_trait: Arc<dyn MonotonicClock> = clock.clone();
+    let clock_trait: Arc<dyn MonotonicClock> = Arc::<PairedTestClock>::clone(&clock);
     let coordinator = UsageCoordinator::new_with_clock(
         executor_trait,
         Arc::<FileAccountStateStore>::clone(&store),
@@ -136,11 +132,8 @@ fn verify_retry_after_survives_restart(retry_after_header: &str, minimum_retry_a
     let restarted_executor_trait: Arc<dyn UsageProviderExecutor> = restarted_executor_clone;
     let restarted_at_epoch = clock.wall_epoch();
     let restarted_clock = Arc::new(PairedTestClock::at(restarted_at_epoch));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce the paired test clock into the coordinator clock port"
-    )]
-    let restarted_clock_trait: Arc<dyn MonotonicClock> = restarted_clock.clone();
+    let restarted_clock_trait: Arc<dyn MonotonicClock> =
+        Arc::<PairedTestClock>::clone(&restarted_clock);
     let restarted = UsageCoordinator::new_with_clock(
         restarted_executor_trait,
         store,

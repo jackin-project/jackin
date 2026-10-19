@@ -1808,19 +1808,3 @@ fn store_unavailable() -> MonitorIssue {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-#[path = "monitor/session_capacity_tests.rs"]
-mod session_capacity_tests;
-
-#[cfg(test)]
-#[path = "monitor/watch_restart_tests.rs"]
-mod watch_restart_tests;
-
-#[cfg(test)]
-#[path = "monitor/tests/policy_regression_tests.rs"]
-mod policy_regression_tests;
-
-#[cfg(test)]
-#[path = "monitor/v2_tests.rs"]
-mod v2_tests;

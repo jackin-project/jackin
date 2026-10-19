@@ -35,7 +35,7 @@ pub fn readonly_root_flags(
     }
     if grants.sudo {
         flags.push("--tmpfs".to_owned());
-        flags.push("/etc/sudoers.d:rw,nosuid,nodev,mode=0755".to_owned());
+        flags.push(jackin_core::container_paths::SUDOERS_TMPFS_SPEC.to_owned());
     }
     flags
 }

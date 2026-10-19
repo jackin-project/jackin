@@ -51,3 +51,4 @@ fn contains_legacy_telemetry_name(path: &str, source: &str) -> bool {
 
 mod case_01;
 mod case_02;
+mod case_03;

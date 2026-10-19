@@ -116,3 +116,25 @@ fn stable_directory_identity_rejects_every_object_and_security_field_change() {
         assert!(!same_object_and_security(&expected, &actual));
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn full_file_identity_preserves_native_device_and_link_counts() {
+    let file = tempfile::tempfile().unwrap();
+    let mut first = fstat(&file).unwrap();
+    first.st_dev = nix::libc::dev_t::MAX;
+    first.st_nlink = nix::libc::nlink_t::MAX;
+    let mut second = first;
+    second.st_dev -= 1;
+    let first_identity = super::super::FileIdentity::from_stat(&first);
+    assert_ne!(
+        first_identity,
+        super::super::FileIdentity::from_stat(&second)
+    );
+    second = first;
+    second.st_nlink -= 1;
+    assert_ne!(
+        first_identity,
+        super::super::FileIdentity::from_stat(&second)
+    );
+}

@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde_json::Value as YamlValue;
 use sha2::{Digest as _, Sha256};
 use syn::visit::Visit as _;
+mod enum_policy;
 mod ownership_census;
 mod source_policy;
 use source_policy::{SourcePolicyScanner, WorkspaceSpawnTypesBuilder};
@@ -104,7 +105,6 @@ pub(crate) fn run(args: TelemetryRegistryArgs) -> Result<()> {
         write_generated_sources(&root, &generated)?;
     }
     validate_registry_matches_rust(&root, &generated)?;
-    validate_adoption_metadata(&root)?;
     namespace::validate_legacy_namespaces(&root)?;
     ownership_census::validate(&root, args.generate)?;
     validate_source_policy(&root)
@@ -228,6 +228,7 @@ fn write_generated_sources(root: &Path, generated: &[(String, String)]) -> Resul
 }
 
 fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
+    validate_adoption_metadata(root)?;
     let registry = root.join("crates/services/jackin-telemetry/registry");
     let metadata = load_rust_metadata(&registry)?;
     let header_path = root.join("crates/services/jackin-telemetry/templates/rust.j2");
@@ -246,6 +247,7 @@ fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
         .find(|group| group.get("id").and_then(YamlValue::as_str) == Some("registry.jackin"))
         .ok_or_else(|| anyhow::anyhow!("Weaver resolved registry has no registry.jackin group"))?;
     let attributes = yaml_sequence(attribute_group, "attributes").unwrap_or_default();
+    let enum_policy = enum_policy::EnumPolicy::load(root, groups, &metadata)?;
     let mut local_groups = groups
         .iter()
         .filter(|group| is_local_resolved_group(group, &metadata.registry_schema_url))
@@ -260,63 +262,76 @@ fn generate_rust_sources(root: &Path) -> Result<Vec<(String, String)>> {
     }
     validate_facade_name_overrides(&local_groups, &metadata)?;
 
+    generate_output_sources(&header, attributes, &local_groups, &metadata, &enum_policy)
+}
+
+fn generate_output_sources(
+    header: &str,
+    attributes: &[YamlValue],
+    local_groups: &[YamlValue],
+    metadata: &RustRegistryMetadata,
+    enum_policy: &enum_policy::EnumPolicy,
+) -> Result<Vec<(String, String)>> {
     let generated = vec![
         (
             "crates/services/jackin-telemetry/src/schema/attrs.rs".to_owned(),
-            generate_attributes(&header, attributes, &metadata)?,
+            generate_attributes(header, attributes, metadata, enum_policy)?,
         ),
         (
             "crates/services/jackin-telemetry/src/schema/enums.rs".to_owned(),
-            generate_enums(&header, attributes, &metadata)?,
+            generate_enums(header, attributes, metadata)?,
         ),
         (
             "crates/services/jackin-telemetry/src/schema/events.rs".to_owned(),
             generate_signal_constants(
-                &header,
-                &local_groups,
+                header,
+                local_groups,
                 attributes,
                 "name",
                 SignalKind::Event,
-                &metadata,
+                metadata,
+                enum_policy,
             )?,
         ),
         (
             "crates/services/jackin-telemetry/src/event_emit.rs".to_owned(),
-            generate_event_emitters(&header, &local_groups)?,
+            generate_event_emitters(header, local_groups)?,
         ),
         (
             "crates/services/jackin-telemetry/src/event_defs.rs".to_owned(),
-            generate_facade_definitions(&header, &local_groups, SignalKind::Event, &metadata)?,
+            generate_facade_definitions(header, local_groups, SignalKind::Event, metadata)?,
         ),
         (
             "crates/services/jackin-telemetry/src/schema/spans.rs".to_owned(),
             generate_signal_constants(
-                &header,
-                &local_groups,
+                header,
+                local_groups,
                 attributes,
                 "id",
                 SignalKind::Span,
-                &metadata,
+                metadata,
+                enum_policy,
             )?,
         ),
         (
             "crates/services/jackin-telemetry/src/operation_defs.rs".to_owned(),
-            generate_facade_definitions(&header, &local_groups, SignalKind::Span, &metadata)?,
+            generate_facade_definitions(header, local_groups, SignalKind::Span, metadata)?,
         ),
         (
             "crates/services/jackin-telemetry/src/schema/metrics.rs".to_owned(),
             generate_signal_constants(
-                &header,
-                &local_groups,
+                header,
+                local_groups,
                 attributes,
                 "metric_name",
                 SignalKind::Metric,
-                &metadata,
+                metadata,
+                enum_policy,
             )?,
         ),
         (
             "crates/services/jackin-telemetry/src/metric_defs.rs".to_owned(),
-            generate_facade_definitions(&header, &local_groups, SignalKind::Metric, &metadata)?,
+            generate_facade_definitions(header, local_groups, SignalKind::Metric, metadata)?,
         ),
     ];
     generated
@@ -399,6 +414,7 @@ fn generate_attributes(
     header: &str,
     attributes: &[YamlValue],
     metadata: &RustRegistryMetadata,
+    enum_policy: &enum_policy::EnumPolicy,
 ) -> Result<String> {
     let mut output = header.to_owned();
     let mut names = Vec::new();
@@ -411,7 +427,7 @@ fn generate_attributes(
             "pub const {constant}_DEF: super::AttributeMetadata = super::AttributeMetadata {{ name: {constant}, description: {:?}, value_type: super::ValueType::{}, allowed_values: {} }};\n",
             yaml_string(attribute, "brief")?,
             value_type_variant(yaml_required(attribute, "type")?)?,
-            allowed_values(yaml_required(attribute, "type")?)?
+            enum_policy.allowed_values(id)?
         ));
         definitions.push(format!("{constant}_DEF"));
         names.push(constant);
@@ -552,6 +568,7 @@ fn generate_signal_constants(
     name_key: &str,
     kind: SignalKind,
     rust_metadata: &RustRegistryMetadata,
+    enum_policy: &enum_policy::EnumPolicy,
 ) -> Result<String> {
     let mut output = header.to_owned();
     let mut names = Vec::new();
@@ -617,7 +634,7 @@ fn generate_signal_constants(
             ));
             output.push_str(&format!(
                 "            allowed_values: {},\n",
-                allowed_values(attribute_type)?
+                enum_policy.allowed_values(attribute_name)?
             ));
             output.push_str("        },\n");
         }
@@ -849,17 +866,6 @@ fn value_type_variant(value: &YamlValue) -> Result<&'static str> {
     }
 }
 
-fn allowed_values(value: &YamlValue) -> Result<String> {
-    let Some(members) = yaml_sequence(value, "members") else {
-        return Ok("&[]".to_owned());
-    };
-    let values = members
-        .iter()
-        .map(|member| yaml_string(member, "value").map(|value| format!("{value:?}")))
-        .collect::<Result<Vec<_>>>()?;
-    Ok(format!("&[{}]", values.join(", ")))
-}
-
 fn requirement_level_name(attribute: &YamlValue) -> &str {
     let Some(requirement) = attribute.get("requirement_level") else {
         return "recommended";
@@ -937,10 +943,10 @@ fn validate_adoption_metadata(root: &Path) -> Result<()> {
     let expected = (
         "1.45.0",
         "https://jackin.tailrocks.com/telemetry/schemas/1.45.0",
-        "1.43.0",
-        "https://opentelemetry.io/schemas/1.43.0",
-        "crates/services/jackin-telemetry/vendor/semconv-1.43.0",
-        "=0.33.0",
+        "1.44.0",
+        "https://opentelemetry.io/schemas/1.44.0",
+        "crates/services/jackin-telemetry/vendor/semconv-1.44.0",
+        "=0.33.1",
         "https://opentelemetry.io/schemas/1.42.0",
     );
     let actual = (
@@ -959,7 +965,7 @@ fn validate_adoption_metadata(root: &Path) -> Result<()> {
     {
         bail!("telemetry schema-version metadata does not exactly match the pinned registry");
     }
-    if metadata.dependency_registry_revision != "89aae438b3b3b0a8dd33003c9d70592baf7dbd0d"
+    if metadata.dependency_registry_revision != "e10a930844c6951757a43b849d364f7d056ac32b"
         || vendored_registry_checksum(root, &metadata.dependency_registry_path)?
             != metadata.dependency_registry_checksum
     {

@@ -180,7 +180,7 @@ pub(super) fn validate_ci_claims(
             claims.build_config_digest.as_deref(),
             receipt.workflow.authority_sha.as_str(),
         ),
-        ("trigger", claims.build_trigger.as_deref(), "push"),
+        ("trigger", claims.build_trigger.as_deref(), "workflow_run"),
         (
             "runner",
             claims.runner_environment.as_deref(),

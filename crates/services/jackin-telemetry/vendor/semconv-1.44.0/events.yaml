@@ -1,0 +1,83 @@
+{
+  "groups": [
+    {
+      "id": "event.app.crash",
+      "stability": "development",
+      "type": "event",
+      "name": "app.crash",
+      "brief": "This event represents a termination of a user-facing application due to\nunrecoverable programming errors such as exceptions or signals that\nindicate an error has happened at a lower level.\n",
+      "note": "Crash events can be produced asynchronously by an OTel SDK instance that is\nnot running in the application instance in which the crash happened. For\nexample, the instrumentation may report crashes from previous app instances\nbased on information found in tombstones on disk.\nIf the reporter of the crash is not the crashing application instance itself,\nrelevant resource attributes that identify the application instance that\ncrashed MUST be provided as event attributes so that the corresponding\nattributes from the reporter's resource aren't used instead.\nHow the instrumentation will determine whether an instance of a crash has\nalready been reported and how the necessary data will be retrieved is left up\nto the instrumentation. Providing enough data to dedupe is NOT REQUIRED.\n",
+      "attributes": [
+        {
+          "ref": "app.build_id",
+          "requirement_level": {
+            "conditionally_required": "If reporter is not the crashing application instance itself and it's available."
+          }
+        },
+        {
+          "ref": "app.crash.id",
+          "requirement_level": "recommended"
+        },
+        {
+          "ref": "exception.type",
+          "requirement_level": "recommended",
+          "note": "If this contains obfuscated symbols, `app.build_id` SHOULD be provided so they can be deobfuscated."
+        },
+        {
+          "ref": "exception.message",
+          "requirement_level": "recommended",
+          "note": "If this contains obfuscated symbols, `app.build_id` SHOULD be provided so they can be deobfuscated."
+        },
+        {
+          "ref": "exception.stacktrace",
+          "requirement_level": "recommended",
+          "note": "If this contains obfuscated symbols, `app.build_id` SHOULD be provided so they can be deobfuscated."
+        },
+        {
+          "ref": "os.name",
+          "requirement_level": {
+            "conditionally_required": "If reporter is not the crashing application instance itself and the OS name is available."
+          }
+        },
+        {
+          "ref": "os.version",
+          "requirement_level": {
+            "conditionally_required": "If reporter is not the crashing application instance itself."
+          }
+        },
+        {
+          "ref": "service.version",
+          "requirement_level": {
+            "conditionally_required": "If reporter is not the crashing application instance itself."
+          }
+        },
+        {
+          "ref": "session.id",
+          "requirement_level": "recommended"
+        }
+      ]
+    },
+    {
+      "id": "event.app.jank",
+      "stability": "development",
+      "type": "event",
+      "name": "app.jank",
+      "brief": "This event indicates that the application has detected substandard UI rendering performance.\n",
+      "note": "Jank happens when the UI is rendered slowly enough for the user to experience some disruption or sluggishness.\n",
+      "attributes": [
+        {
+          "ref": "app.jank.frame_count",
+          "requirement_level": "recommended"
+        },
+        {
+          "ref": "app.jank.threshold",
+          "requirement_level": "recommended"
+        },
+        {
+          "ref": "app.jank.period",
+          "requirement_level": "recommended"
+        }
+      ]
+    }
+  ]
+}

@@ -144,17 +144,44 @@ fn pane_sgr_regions_clamps_run_to_inner_width() {
 
 #[test]
 fn status_tick_select_arm_stays_above_pty_output() {
-    let source = include_str!("../run_loop.rs");
+    let source = include_str!("../run_loop/events.rs");
     let tick_arm = source
-        .find("_ = state_ticker.tick()")
+        .find("_ = self.state_ticker.tick()")
         .unwrap_or_else(|| panic!("state ticker select arm missing"));
     let output_arm = source
-        .find("Some(event) = mux.control.event_rx.recv()")
+        .find("Some(event) = self.mux.control.event_rx.recv()")
         .unwrap_or_else(|| panic!("PTY event select arm missing"));
     assert!(
         tick_arm < output_arm,
         "state ticker must stay above PTY output in the biased select"
     );
+    let priority = [
+        "_ = self.sigterm.recv()",
+        "_ = self.sigint.recv()",
+        "Some((stream, client_permit)) = self.new_clients.recv()",
+        "Some(request) = self.control_rx.recv()",
+        "Some(ready) = self.handshake_rx.recv()",
+        "Some(frame) = self.cmd_rx.recv()",
+        "_ = self.state_ticker.tick()",
+        "Some(event) = self.mux.control.event_rx.recv()",
+        "}, if self.esc_deadline.is_some()",
+        "}, if render_deadline.is_some()",
+        "_ = self.branch_context_ticker.tick()",
+        "_ = self.usage_account_ticker.tick()",
+    ];
+    let mut previous = source
+        .find("biased;")
+        .unwrap_or_else(|| panic!("daemon select must retain biased priority"));
+    for arm in priority {
+        let position = source
+            .find(arm)
+            .unwrap_or_else(|| panic!("daemon select arm missing: {arm}"));
+        assert!(
+            position > previous,
+            "daemon select priority changed at {arm}"
+        );
+        previous = position;
+    }
 }
 
 #[tokio::test(start_paused = true)]

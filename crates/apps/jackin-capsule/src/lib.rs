@@ -1,14 +1,14 @@
 pub mod agent_status;
-pub(crate) mod alloc_telemetry;
+mod alloc_telemetry;
 pub mod attach_context;
 pub mod attach_protocol;
 pub mod client;
-pub(crate) mod client_writer;
-pub(crate) mod clipboard;
+mod client_writer;
+mod clipboard;
 pub mod config;
 pub mod container_context;
 pub mod daemon;
-pub(crate) mod debug_panic;
+mod debug_panic;
 pub mod exec;
 pub mod exit_assess;
 pub mod firewall;
@@ -29,7 +29,7 @@ pub mod socket;
 pub mod sudo_provision;
 pub mod util;
 
-pub(crate) mod support {
+mod support {
     #[cfg(test)]
     use std::sync::{Arc, OnceLock};
     #[cfg(test)]

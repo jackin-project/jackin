@@ -7,10 +7,6 @@
     clippy::print_stderr,
     reason = "primary CLI crate owns command output rendering until output helpers are factored"
 )]
-#![expect(
-    clippy::unwrap_used,
-    reason = "primary CLI crate still carries state-machine invariants under the strict lint transition"
-)]
 
 mod app;
 pub mod brand_output;

@@ -110,3 +110,105 @@ fn path_relations_normalize_components_without_prefix_collisions() {
         Path::new("/workspace/project-v2"),
     ));
 }
+
+const ORIGINAL_PATH_BYTES: &[(&str, &str)] = &[
+    (JACKIN_ROOT, "/jackin"),
+    (RUNTIME_DIR, "/jackin/runtime"),
+    (STATE_DIR, "/jackin/state"),
+    (RUN_DIR, "/jackin/run"),
+    (SESSION_ROOTS_DIR, "/jackin/run/sessions"),
+    (HOST_DIR, "/jackin/host"),
+    (DEFAULT_HOME_DIR, "/jackin/default-home"),
+    (AMP_DIR, "/jackin/amp"),
+    (CLAUDE_DIR, "/jackin/claude"),
+    (CODEX_DIR, "/jackin/codex"),
+    (GROK_DIR, "/jackin/grok"),
+    (OPENCODE_DIR, "/jackin/opencode"),
+    (KIMI_CODE_DIR, "/jackin/kimi-code"),
+    (ANTIGRAVITY_DIR, "/jackin/antigravity"),
+    (GEMINI_DIR, "/jackin/gemini"),
+    (CURSOR_DIR, "/jackin/cursor"),
+    (MUSE_DIR, "/jackin/muse"),
+    (OMP_DIR, "/jackin/omp"),
+    (HERMES_DIR, "/jackin/hermes"),
+    (CAPSULE_BIN, "/jackin/runtime/jackin-capsule"),
+    (ENTRYPOINT, "/jackin/runtime/entrypoint.sh"),
+    (AGENT_STATUS_PACKS_DIR, "/jackin/runtime/agent-status/packs"),
+    (AGENT_STATUS_HOOKS_DIR, "/jackin/runtime/agent-status/hooks"),
+    (CAPSULE_SOCKET, "/jackin/run/jackin.sock"),
+    (HOST_SOCK, "/jackin/run/host.sock"),
+    (USAGE_SOCK, "/jackin/run/usage.sock"),
+    (DIND_CERTS_CLIENT_DIR, "/jackin/run/dind-certs/client"),
+    (CAPSULE_CONFIG, "/jackin/run/agent.toml"),
+    (CLIPBOARD_DIR, "/jackin/run/clipboard"),
+    (USAGE_ACCOUNTS, "/jackin/run/usage/accounts.json"),
+    (GIT_HOOKS_DIR, "/jackin/state/git-hooks"),
+    (EXIT_ACTION, "/jackin/state/exit-action.json"),
+    (USAGE_SNAPSHOT_STORE, "/jackin/state/usage/snapshots.db"),
+    (
+        AGENT_STATUS_CAPTURES_DIR,
+        "/jackin/state/agent-status/captures",
+    ),
+    (CONTAINER_INIT_MARKER, "/jackin/state/container-init.done"),
+    (GIT_DCO_IDENTITY_CACHE, "/jackin/state/git-dco-identity"),
+    (CLAUDE_CREDENTIALS, "/jackin/claude/credentials.json"),
+    (CLAUDE_ACCOUNT, "/jackin/claude/account.json"),
+    (CODEX_AUTH, "/jackin/codex/auth.json"),
+    (AMP_SECRETS, "/jackin/amp/secrets.json"),
+    (OPENCODE_AUTH, "/jackin/opencode/auth.json"),
+    (GROK_AUTH, "/jackin/grok/auth.json"),
+    (ANTIGRAVITY_SETTINGS, "/jackin/antigravity/settings.json"),
+    (GEMINI_AUTH, "/jackin/gemini/oauth_creds.json"),
+    (CURSOR_AUTH, "/jackin/cursor/auth.json"),
+    (MUSE_AUTH, "/jackin/muse/auth.json"),
+    (OMP_AGENT_DB, "/jackin/omp/agent.db"),
+    (HERMES_AUTH, "/jackin/hermes/auth.json"),
+    (
+        GIT_HOOK_PREPARE_COMMIT_MSG,
+        "/jackin/state/git-hooks/prepare-commit-msg",
+    ),
+    (
+        GIT_HOOK_PREPARE_COMMIT_MSG_MARKER,
+        "/jackin/state/git-hooks/prepare-commit-msg.v3.done",
+    ),
+    (
+        AGENT_STATUS_CLAUDE_HOOK,
+        "/jackin/runtime/agent-status/hooks/claude/report-hook.sh",
+    ),
+    (
+        AGENT_STATUS_CODEX_HOOK,
+        "/jackin/runtime/agent-status/hooks/codex/report-hook.sh",
+    ),
+    (
+        AGENT_STATUS_OPENCODE_PLUGIN,
+        "/jackin/runtime/agent-status/hooks/opencode/plugin.js",
+    ),
+];
+
+#[test]
+fn canonical_root_migration_preserves_all_existing_path_bytes() {
+    assert_eq!(ORIGINAL_PATH_BYTES.len(), 53);
+    for (actual, expected) in ORIGINAL_PATH_BYTES {
+        assert_eq!(actual, expected);
+    }
+    assert_eq!(CHECKS_PREFIX, "/jackin/checks/");
+    assert_eq!(ACCOUNT_CREDENTIALS_DIR, "/jackin/account-credentials");
+}
+
+#[test]
+fn system_paths_retain_distro_paths_and_sudoers_options() {
+    assert_eq!(SYSTEM_ETC_DIR, "/etc");
+    assert_eq!(SYSTEM_VAR_DIR, "/var");
+    assert_eq!(SYSTEM_RUN_DIR, "/run");
+    assert_eq!(SYSTEM_VAR_RUN_DIR, "/var/run");
+    assert_eq!(SYSTEM_VAR_TMP_DIR, "/var/tmp");
+    assert_eq!(SYSTEM_VAR_CACHE_DIR, "/var/cache");
+    assert_eq!(SYSTEM_VAR_LOG_DIR, "/var/log");
+    assert_eq!(SYSTEM_APT_LISTS_DIR, "/var/lib/apt/lists");
+    assert_eq!(SYSTEM_APT_ARCHIVES_DIR, "/var/cache/apt/archives");
+    assert_eq!(SYSTEM_DPKG_DIR, "/var/lib/dpkg");
+    assert_eq!(
+        SUDOERS_TMPFS_SPEC,
+        "/etc/sudoers.d:rw,nosuid,nodev,mode=0755"
+    );
+}

@@ -20,8 +20,6 @@ path = "src/lib.rs"
 default = []
 
 [dependencies]
-jackin-core = { workspace = true }
-jackin-config = { workspace = true }
 jackin-protocol = { workspace = true }
 jackin-diagnostics = { workspace = true }
 jackin-telemetry = { workspace = true }
@@ -41,56 +39,25 @@ jackin-usage-provider-muse = { workspace = true }
 jackin-usage-provider-opencode = { workspace = true }
 jackin-usage-provider-claude = { workspace = true }
 jackin-usage-output = { workspace = true }
-jackin-usage-credential-snapshots = { workspace = true }
 jackin-usage-coordinator = { workspace = true }
 jackin-usage-store-backend = { workspace = true }
 jackin-usage-snapshot-store = { workspace = true }
 jackin-usage-token-monitor = { workspace = true }
-jackin-usage-host-presentation = { workspace = true }
-jackin-usage-host-credentials = { workspace = true }
-jackin-usage-host-accounts = { workspace = true }
 jackin-usage-capsule-telemetry = { workspace = true }
-jackin-usage-broker-publish = { workspace = true }
-jackin-usage-broker-wire = { workspace = true }
-jackin-usage-destination = { workspace = true }
-jackin-usage-discovery = { workspace = true }
-jackin-usage-broker = { workspace = true }
-jackin-usage-projection = { workspace = true }
-jackin-usage-host-glance = { workspace = true }
 jackin-usage-credential-resolver = { workspace = true }
 jackin-usage-host-runtime = { workspace = true }
 base64 = { workspace = true }
-chrono = { workspace = true, features = ["clock"] }
-httpdate = { workspace = true }
-icu_collator = { workspace = true }
-icu_locale = { workspace = true }
-nix = { workspace = true, features = ["fs", "signal", "term", "user"] }
-reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
-tokio = { workspace = true, features = ["rt", "sync", "macros", "time", "net"] }
-tower = { workspace = true }
 tracing = { workspace = true }
-thiserror = { workspace = true }
-url = { workspace = true }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework = { workspace = true }
 
 [dev-dependencies]
-toml = { workspace = true }
-anyhow = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
-jackin-console = { workspace = true }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
-jackin-otlp-testbed = { workspace = true }
 jackin-usage-provider-codex = { workspace = true, features = ["test-support"] }
 jackin-usage-provider-claude = { workspace = true, features = ["test-support"] }
 jackin-usage-snapshot-store = { workspace = true, features = ["test-support"] }
-ratatui = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
 tracing = { workspace = true }
 
 [lints]

@@ -2542,3 +2542,8 @@ fn accept_unique_unscoped_window(fixture: &WeeklyWindowFixture) {
         received,
     );
 }
+
+mod policy_regression_tests;
+mod session_capacity_tests;
+mod v2_tests;
+mod watch_restart_tests;

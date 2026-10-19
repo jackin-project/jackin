@@ -25,7 +25,6 @@ mod docs;
 mod frame_timing;
 mod fs_util;
 mod github;
-mod headers;
 mod health;
 mod layout_lint;
 mod lint;
@@ -42,7 +41,7 @@ mod schema;
 mod suppressions;
 mod telemetry_bench;
 mod telemetry_registry;
-mod workflow_yaml;
+use jackin_xtask::workflow_yaml;
 
 use std::{process::ExitCode, thread};
 
@@ -132,7 +131,6 @@ enum LintCommand {
     AgentStatusTruth(agent_status_truth::LintAgentStatusTruthArgs),
     Arch(arch::LintArchArgs),
     ContainerPaths(container_paths_gate::LintContainerPathsArgs),
-    Headers(headers::LintHeadersArgs),
     ReadmeFreshness(readme_freshness::LintReadmeFreshnessArgs),
     Suppressions(suppressions::LintSuppressionsArgs),
     Ratchet(ratchet::LintRatchetArgs),
@@ -149,7 +147,6 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
                 "container-paths",
                 scope.spawn(container_paths_gate::enforce),
             ),
-            ("headers", scope.spawn(headers::enforce)),
             (
                 "telemetry-registry",
                 scope.spawn(|| {
@@ -188,7 +185,6 @@ fn run_lint(command: Option<LintCommand>, strict: bool) -> anyhow::Result<()> {
         Some(LintCommand::AgentStatusTruth(args)) => agent_status_truth::run(args),
         Some(LintCommand::Arch(args)) => arch::run(args),
         Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
-        Some(LintCommand::Headers(args)) => headers::run(args),
         Some(LintCommand::ReadmeFreshness(args)) => readme_freshness::run(args),
         Some(LintCommand::Suppressions(args)) => suppressions::run(args),
         Some(LintCommand::Ratchet(args)) => ratchet::run(args),

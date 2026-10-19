@@ -3104,7 +3104,6 @@ dependencies = [
  "fs4",
  "hex",
  "jackin-config",
- "jackin-core",
  "nix 0.31.3",
  "serde",
  "serde_json",
@@ -3276,13 +3275,7 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "criterion",
- "crossterm",
- "dialoguer",
- "directories",
  "fs4",
- "futures-util",
- "hex",
- "jackin-brand",
  "jackin-build-meta",
  "jackin-config",
  "jackin-core",
@@ -3293,7 +3286,6 @@ dependencies = [
  "jackin-image",
  "jackin-instance",
  "jackin-isolation",
- "jackin-launch",
  "jackin-manifest",
  "jackin-otlp-testbed",
  "jackin-process",
@@ -3380,13 +3372,10 @@ dependencies = [
  "jackin-telemetry",
  "jackin-test-support",
  "jackin-usage",
- "nix 0.31.3",
  "owo-colors 4.4.0",
- "serde",
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
- "thiserror 2.0.21",
  "tokio",
  "toml",
  "toml_edit",
@@ -4371,7 +4360,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
- "toml",
 ]
 
 [[package]]
@@ -4414,36 +4402,16 @@ dependencies = [
 name = "jackin-usage"
 version = "0.6.4"
 dependencies = [
- "anyhow",
  "base64 0.23.1",
- "chrono",
  "criterion",
- "httpdate",
- "icu_collator",
- "icu_locale",
- "jackin-config",
- "jackin-console",
- "jackin-core",
  "jackin-diagnostics",
- "jackin-otlp-testbed",
  "jackin-protocol",
  "jackin-telemetry",
- "jackin-usage-broker",
- "jackin-usage-broker-publish",
- "jackin-usage-broker-wire",
  "jackin-usage-capsule-telemetry",
  "jackin-usage-coordinator",
  "jackin-usage-credential-resolver",
- "jackin-usage-credential-snapshots",
- "jackin-usage-destination",
- "jackin-usage-discovery",
- "jackin-usage-host-accounts",
- "jackin-usage-host-credentials",
- "jackin-usage-host-glance",
- "jackin-usage-host-presentation",
  "jackin-usage-host-runtime",
  "jackin-usage-output",
- "jackin-usage-projection",
  "jackin-usage-provider-amp",
  "jackin-usage-provider-antigravity",
  "jackin-usage-provider-claude",
@@ -4462,20 +4430,10 @@ dependencies = [
  "jackin-usage-snapshot-store",
  "jackin-usage-store-backend",
  "jackin-usage-token-monitor",
- "nix 0.31.3",
- "ratatui",
- "reqwest",
- "security-framework",
  "serde",
  "serde_json",
- "sha2 0.11.1",
  "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "toml",
- "tower",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -4724,9 +4682,7 @@ name = "jackin-usage-provider-antigravity"
 version = "0.6.4"
 dependencies = [
  "jackin-protocol",
- "jackin-telemetry",
  "jackin-usage-provider-core",
- "serde",
  "serde_json",
 ]
 
@@ -4947,8 +4903,8 @@ dependencies = [
 name = "jackin-workflow"
 version = "0.6.4"
 dependencies = [
- "anyhow",
  "hex",
+ "jackin-core",
  "jackin-isolation",
  "jackin-telemetry",
  "jackin-usage-store-backend",
@@ -8765,8 +8721,8 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.16"
-source = "git+https://github.com/tailrocks/velnor-new?rev=66719d14f87a893b4c8f52f76204fad19f124909#66719d14f87a893b4c8f52f76204fad19f124909"
+version = "0.1.19"
+source = "git+https://github.com/tailrocks/velnor-new?rev=2749ed88c7a82437a488c99a5f8de37477c7491d#2749ed88c7a82437a488c99a5f8de37477c7491d"
 dependencies = [
  "blake3",
  "serde",

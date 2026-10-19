@@ -6,17 +6,18 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 
 - CI orchestration (`ci`) and the lint gates (`lint` — file-size budget, and the lanes planned under it).
 - Docs checks (`docs` — repo-links, brand prose, spec↔test citations), schema checks (`schema`), profile/feature matrix (`profile_matrix`), and the agent-file symlink gate (`agent_files`, including per-crate README presence).
-- Architecture/structure tooling (`arch`), test-layout gate (`layout_lint`), PTY fixture extraction (`pty_fixture`), construct helpers (`construct`), release verification (`release_verify`), and PR tooling (`pr`).
+- Architecture/structure tooling (`arch`), test-layout gate (`layout_lint`), PTY fixture extraction (`pty_fixture`), construct helpers (`construct`), unsigned preview packaging (`preview_package`, `release_archive`, `release_sbom`), and PR tooling (`pr`).
 
 ## Architecture tier and allowed dependencies
 
-**Build/CI tooling (xtask).** No workspace dependencies — it inspects the workspace from the outside (files, `cargo metadata`, running cargo) and must not link against runtime crates. Runs on the host toolchain only.
+**Build/CI tooling (xtask).** It inspects the workspace from the outside (files, `cargo metadata`, running cargo) and uses the foundational `jackin-process` transport for subprocess execution. It must not link against runtime crates. Runs on the host toolchain only.
 
 ## Structure
 
 | Module | Owns | Tests |
 |---|---|---|
 | [`main.rs`](src/main.rs) | MBX `xtask` dispatcher | — |
+| [`lib.rs`](src/lib.rs) · [`workflow_yaml.rs`](src/workflow_yaml.rs) | One bounded workflow parser shared by the binary and integration checks | [`tests.rs`](src/workflow_yaml/tests.rs), run once in the library |
 | [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
 | [`ci_audit.rs`](src/ci_audit.rs) · [`ci_cargo_audit.rs`](src/ci_cargo_audit.rs) · [`ci_target.rs`](src/ci_target.rs) | workflow audit, advisory-cache selection, and target transport | sibling `tests.rs` files |
 | [`ci_doc_examples.rs`](src/ci_doc_examples.rs) · [`ci_doc_examples/`](src/ci_doc_examples) | nextest-only documentation-example gate | [`tests.rs`](src/ci_doc_examples/tests.rs) |
@@ -27,7 +28,6 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 | [`agent_links.rs`](src/agent_links.rs) · [`agent_links/`](src/agent_links) | no-cross-ref gate (README/AGENTS) | [`tests.rs`](src/agent_links/tests.rs) |
 | [`container_paths_gate.rs`](src/container_paths_gate.rs) · [`container_paths_gate/`](src/container_paths_gate) | container-path gate | [`tests.rs`](src/container_paths_gate/tests.rs) |
 | [`suppressions.rs`](src/suppressions.rs) · [`suppressions/`](src/suppressions) | lint-suppression gate | [`tests.rs`](src/suppressions/tests.rs) |
-| [`headers.rs`](src/headers.rs) · [`headers/`](src/headers) | ownership-header contract gate | [`tests.rs`](src/headers/tests.rs) |
 | [`arch.rs`](src/arch.rs) · [`arch/`](src/arch) | tier-graph dependency-direction gate (`TIERS` table; prod edges must descend; dev-cycle allowlist) | [`tests.rs`](src/arch/tests.rs) |
 | [`readme_freshness.rs`](src/readme_freshness.rs) · [`readme_freshness/`](src/readme_freshness) | structural src change ⇒ README same-PR gate | [`tests.rs`](src/readme_freshness/tests.rs) |
 |  [`layout_lint.rs`](src/layout_lint.rs) · [`layout_lint/`](src/layout_lint) | test-layout gate | [`tests.rs`](src/layout_lint/tests.rs) |

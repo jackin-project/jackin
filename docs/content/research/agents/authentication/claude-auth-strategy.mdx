@@ -249,7 +249,7 @@ At minimum, this design would touch:
 - <RepoFile path="crates/core/jackin-config/src/app_config.rs">crates/core/jackin-config/src/app_config.rs</RepoFile> — `AuthForwardMode` enum, persistence types
 - <RepoFile path="crates/apps/jackin/src/cli/config.rs">crates/apps/jackin/src/cli/config.rs</RepoFile> — `config auth` subcommand help text and examples
 - <RepoFile path="crates/apps/jackin/src/app.rs">crates/apps/jackin/src/app.rs</RepoFile> — `config auth` command dispatch
-- <RepoFile path="crates/services/jackin-instance/src/auth.rs">crates/services/jackin-instance/src/auth.rs</RepoFile> — auth provisioning semantics for the new mode
+- <RepoFile path="crates/services/jackin-instance-agents/src/lib.rs">crates/services/jackin-instance-agents/src/lib.rs</RepoFile> — auth provisioning semantics for the new mode
 - <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs">crates/services/jackin-runtime/src/runtime/launch.rs</RepoFile> — runtime env injection and launch-time warnings
 - [Agent authentication](/guides/authentication/agents/) — explain concurrent-session tradeoffs and token mode
 - [config command](/commands/config/) — document setup and mode selection
@@ -286,7 +286,7 @@ copy-paste flow. A follow-up design proposal addresses that:
 - <RepoFile path="crates/core/jackin-config/src/app_config/roles.rs">crates/core/jackin-config/src/app_config/roles.rs</RepoFile> — auth mode resolution
 - <RepoFile path="crates/apps/jackin/src/cli/config.rs">crates/apps/jackin/src/cli/config.rs</RepoFile> — `jackin config auth` help text
 - <RepoFile path="crates/apps/jackin/src/app.rs">crates/apps/jackin/src/app.rs</RepoFile> — auth config command handlers
-- <RepoFile path="crates/services/jackin-instance/src/auth.rs">crates/services/jackin-instance/src/auth.rs</RepoFile> — credential forwarding and state preparation
+- <RepoFile path="crates/services/jackin-instance-agents/src/lib.rs">crates/services/jackin-instance-agents/src/lib.rs</RepoFile> — credential forwarding and state preparation
 - <RepoFile path="crates/services/jackin-runtime/src/runtime/launch.rs">crates/services/jackin-runtime/src/runtime/launch.rs</RepoFile> — launch-time env injection and notices
 - [Agent authentication](/guides/authentication/agents/) — current forwarding model and troubleshooting
 - [config command](/commands/config/) — current operator auth commands

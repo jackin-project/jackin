@@ -6,7 +6,7 @@ mod waits;
 mod authorize;
 mod capabilities;
 mod catalog;
-pub(crate) mod catalog_diagnostics;
+mod catalog_diagnostics;
 mod client;
 mod config;
 mod dispatch;

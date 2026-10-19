@@ -7,9 +7,12 @@ use super::super::linux::{
 };
 use anyhow::Context;
 use jackin_protocol::CapsuleConfig;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::fs::{self, File, OpenOptions};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use jackin_process::{ExecRequest, ExecResult};
 
 #[test]
 fn null_stdio_has_only_an_exact_null_device_write_grant() {
@@ -69,381 +72,313 @@ fn dind_client_cert_mount_is_exactly_read_only() {
     }));
 }
 
+const CHILD_TEST: &str = "JACKIN_LINUX_PRIVILEGE_PROBE_TEST";
+const CHILD_FIXTURE: &str = "JACKIN_LINUX_PRIVILEGE_PROBE_FIXTURE";
+const CHILD_CONTROL: &str = "JACKIN_LINUX_PRIVILEGE_PROBE_CONTROL";
+const OUTPUT_LIMIT: usize = 64 * 1024;
+
+fn running_as_root() -> bool {
+    // SAFETY: geteuid has no pointer arguments and reports this process's uid.
+    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
+    unsafe {
+        libc::geteuid() == 0
+    }
+}
+
+fn child_fixture(name: &str) -> Option<PathBuf> {
+    if std::env::var(CHILD_TEST).ok().as_deref() != Some(name) {
+        return None;
+    }
+    assert!(
+        running_as_root(),
+        "privilege probe child must start as root"
+    );
+    Some(PathBuf::from(
+        std::env::var_os(CHILD_FIXTURE).expect("parent fixture path"),
+    ))
+}
+
+fn marker(name: &str) -> String {
+    format!("JACKIN_LINUX_PRIVILEGE_PROBE_OK:{name}")
+}
+
+fn child_request(name: &str, root: &Path, timeout: Duration) -> ExecRequest {
+    ExecRequest::new(
+        std::env::current_exe().expect("current test executable"),
+        ["--exact", name, "--nocapture", "--test-threads=1"],
+    )
+    .env_remove([CHILD_CONTROL])
+    .envs([
+        (CHILD_TEST, std::ffi::OsStr::new(name)),
+        (CHILD_FIXTURE, root.as_os_str()),
+    ])
+    .timeout(timeout)
+    .output_limits(OUTPUT_LIMIT, OUTPUT_LIMIT)
+}
+
+fn probe_passed(output: &ExecResult, name: &str) -> bool {
+    let text = String::from_utf8_lossy(&output.stdout);
+    output.success
+        && output.code == Some(0)
+        && !output.timed_out
+        && text.lines().filter(|line| *line == marker(name)).count() == 1
+        && text
+            .lines()
+            .filter(|line| *line == "running 1 test")
+            .count()
+            == 1
+        && text
+            .lines()
+            .filter(|line| {
+                line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; ")
+            })
+            .count()
+            == 1
+}
+
+fn require_probe(name: &str, root: &Path) {
+    let output = jackin_process::exec_sync(&child_request(name, root, Duration::from_secs(30)))
+        .expect("bounded privilege probe subprocess");
+    assert!(
+        probe_passed(&output, name),
+        "privilege probe failed: {output:?}"
+    );
+}
+
 #[test]
 fn isolated_runtime_setup_can_spawn_git_config_with_null_stdio() {
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    if unsafe { libc::geteuid() } != 0 {
+    let name = concat!(
+        module_path!(),
+        "::isolated_runtime_setup_can_spawn_git_config_with_null_stdio"
+    )
+    .split_once("::")
+    .expect("crate-qualified test path")
+    .1;
+    if let Some(root) = child_fixture(name) {
+        runtime_setup_probe(&root).expect("isolated runtime setup probe");
+        println!("\n{}", marker(name));
         return;
     }
-
-    let temp = tempfile::tempdir().expect("temporary runtime setup fixture");
-    let workspace = temp.path().join("workspace");
-    let session_root = temp.path().join("session");
-    fs::create_dir(&workspace).expect("workspace");
-    fs::create_dir(&session_root).expect("session root");
-    fs::set_permissions(&workspace, fs::Permissions::from_mode(0o777))
-        .expect("workspace permissions");
-    fs::set_permissions(&session_root, fs::Permissions::from_mode(0o777))
-        .expect("session root permissions");
-
-    let (read_fd, write_fd) = {
-        let mut fds = [0; 2];
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        let pipe_status = unsafe { libc::pipe(fds.as_mut_ptr()) };
-        assert_eq!(pipe_status, 0);
-        (fds[0], fds[1])
-    };
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    let child = unsafe { libc::fork() };
-    assert!(child >= 0, "fork runtime setup probe");
-    if child == 0 {
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        unsafe {
-            libc::close(read_fd)
-        };
-        let result = (|| -> anyhow::Result<()> {
-            drop_privileges(jackin_protocol::SessionIdentity {
-                uid: 65_534,
-                gid: 65_534,
-            })?;
-            let rules = rules_for_test(&CapsuleConfig::default(), None, &workspace, &session_root)?;
-            install_landlock(&rules)?;
-
-            let global_config = session_root.join("gitconfig");
-            let request = jackin_process::ExecRequest::new(
-                "git",
-                [
-                    "config",
-                    "--global",
-                    "--get-all",
-                    "url.https://github.com/.insteadOf",
-                ],
-            )
-            .cwd(&workspace)
-            .envs([("GIT_CONFIG_GLOBAL", global_config.as_os_str())]);
-            let output = jackin_process::exec_sync(&request)
-                .context("spawn git config under session Landlock");
-            let output = output?;
-            anyhow::ensure!(
-                output.code == Some(1),
-                "git config probe exited unexpectedly: {:?}, stderr={}",
-                output.code,
-                String::from_utf8_lossy(&output.stderr)
-            );
-            Ok(())
-        })();
-        if let Err(error) = &result {
-            eprintln!("isolated runtime setup probe failed: {error:#}");
-        }
-        let status = [u8::from(result.is_ok())];
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        unsafe {
-            libc::write(write_fd, status.as_ptr().cast(), 1)
-        };
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        unsafe {
-            libc::close(write_fd)
-        };
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        unsafe {
-            libc::_exit(i32::from(result.is_err()))
-        };
+    if !running_as_root() {
+        return;
     }
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    unsafe {
-        libc::close(write_fd)
-    };
-    let mut status = [0u8; 1];
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    let bytes_read = unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) };
-    assert_eq!(bytes_read, 1);
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    unsafe {
-        libc::close(read_fd)
-    };
-    let mut wait_status = 0;
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    let wait_result = unsafe { libc::waitpid(child, &raw mut wait_status, 0) };
-    assert_eq!(wait_result, child);
-    assert_eq!(status[0], 1, "isolated runtime setup probe failed");
-    assert!(libc::WIFEXITED(wait_status));
-    assert_eq!(libc::WEXITSTATUS(wait_status), 0);
+    let temp = tempfile::tempdir().expect("temporary runtime setup fixture");
+    for path in [temp.path().join("workspace"), temp.path().join("session")] {
+        fs::create_dir(&path).expect("runtime fixture directory");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o777))
+            .expect("runtime fixture permissions");
+    }
+    require_probe(name, temp.path());
+}
+
+fn runtime_setup_probe(root: &Path) -> anyhow::Result<()> {
+    let workspace = root.join("workspace");
+    let session_root = root.join("session");
+    drop_privileges(jackin_protocol::SessionIdentity {
+        uid: 65_534,
+        gid: 65_534,
+    })?;
+    let rules = rules_for_test(&CapsuleConfig::default(), None, &workspace, &session_root)?;
+    install_landlock(&rules)?;
+    let global_config = session_root.join("gitconfig");
+    let request = ExecRequest::new(
+        "git",
+        [
+            "config",
+            "--global",
+            "--get-all",
+            "url.https://github.com/.insteadOf",
+        ],
+    )
+    .cwd(&workspace)
+    .envs([("GIT_CONFIG_GLOBAL", global_config.as_os_str())])
+    .timeout(Duration::from_secs(5))
+    .output_limits(OUTPUT_LIMIT, OUTPUT_LIMIT);
+    let output =
+        jackin_process::exec_sync(&request).context("spawn git config under session Landlock")?;
+    anyhow::ensure!(
+        output.code == Some(1) && !output.timed_out,
+        "git config probe exited unexpectedly: {:?}, stderr={}",
+        output.code,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
+}
+
+#[test]
+fn sibling_home_read_and_write_are_denied_after_uid_drop() {
+    let name = concat!(
+        module_path!(),
+        "::sibling_home_read_and_write_are_denied_after_uid_drop"
+    )
+    .split_once("::")
+    .expect("crate-qualified test path")
+    .1;
+    if let Some(root) = child_fixture(name) {
+        sibling_access_probe(&root).expect("Linux isolation probe");
+        println!("\n{}", marker(name));
+        return;
+    }
+    if !running_as_root() {
+        return;
+    }
+    let temp = tempfile::tempdir().expect("temporary isolation fixture");
+    let home = temp.path().join("home");
+    fs::create_dir(&home).expect("home root");
+    for path in [
+        home.join("slot-a"),
+        home.join("slot-b"),
+        temp.path().join("account-credentials"),
+        temp.path().join("workspace"),
+    ] {
+        fs::create_dir(&path).expect("isolation fixture directory");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+            .expect("isolation fixture permissions");
+    }
+    for (path, bytes) in [
+        (home.join("slot-a/credential"), b"own".as_slice()),
+        (home.join("slot-b/credential"), b"sibling".as_slice()),
+        (
+            temp.path().join("account-credentials/acct-slot-b.json"),
+            b"sibling-staged".as_slice(),
+        ),
+        (
+            temp.path().join("selected-auth.json"),
+            b"selected-auth".as_slice(),
+        ),
+    ] {
+        fs::write(path, bytes).expect("isolation fixture credential");
+    }
+    require_probe(name, temp.path());
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "owned subprocess probe performs blocking permission checks outside render/runtime threads"
+)]
+fn create_for_write(path: &Path) -> std::io::Result<File> {
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(path)
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "fresh subprocess owns blocking filesystem permission probes after privilege isolation"
+)]
+fn sibling_access_probe(root: &Path) -> anyhow::Result<()> {
+    let own = root.join("home/slot-a");
+    let sibling = root.join("home/slot-b");
+    let staged = root.join("account-credentials/acct-slot-b.json");
+    let workspace = root.join("workspace");
+    let selected_auth = root.join("selected-auth.json");
+    drop_privileges(jackin_protocol::SessionIdentity {
+        uid: 65_534,
+        gid: 65_534,
+    })?;
+    let mut rules = Vec::new();
+    for (path, access) in [
+        (&own, FULL),
+        (&workspace, FULL),
+        (&selected_auth, READ_FILE_ONLY),
+    ] {
+        add_execute_only_ancestors(&mut rules, path);
+        rules.push(Rule {
+            path: path.clone(),
+            access,
+            required: true,
+        });
+    }
+    install_landlock(&rules)?;
+    drop(File::open(own.join("credential")).context("selected slot read denied")?);
+    drop(create_for_write(&own.join("selected-write")).context("selected slot write denied")?);
+    drop(create_for_write(&workspace.join("agent-write")).context("workspace write denied")?);
+    drop(File::open(&selected_auth).context("selected auth read denied")?);
+    anyhow::ensure!(
+        create_for_write(&selected_auth).is_err(),
+        "read-only selected auth mount was writable"
+    );
+    anyhow::ensure!(
+        File::open(sibling.join("credential")).is_err(),
+        "sibling slot read was allowed"
+    );
+    anyhow::ensure!(
+        create_for_write(&sibling.join("new-file")).is_err(),
+        "sibling slot write was allowed"
+    );
+    anyhow::ensure!(
+        File::open(&staged).is_err(),
+        "sibling staged credential read was allowed"
+    );
+    anyhow::ensure!(
+        create_for_write(&staged).is_err(),
+        "sibling staged credential write was allowed"
+    );
+    Ok(())
 }
 
 #[test]
 #[expect(
-    clippy::too_many_lines,
-    reason = "the UID-drop denial probe is one fork sequence and is one line over the limit"
+    clippy::disallowed_methods,
+    reason = "intentional sleeping child verifies bounded subprocess cancellation outside render/runtime threads"
 )]
-fn sibling_home_read_and_write_are_denied_after_uid_drop() {
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    if unsafe { libc::geteuid() } != 0 {
+fn bounded_privilege_probe_rejects_panic_zero_tests_and_timeout() {
+    let name = concat!(
+        module_path!(),
+        "::bounded_privilege_probe_rejects_panic_zero_tests_and_timeout"
+    )
+    .split_once("::")
+    .expect("crate-qualified test path")
+    .1;
+    if std::env::var(CHILD_TEST).ok().as_deref() == Some(name) {
+        match std::env::var(CHILD_CONTROL).as_deref() {
+            Ok("panic") => panic!("intentional privilege probe control panic"),
+            Ok("timeout") => {
+                let root =
+                    PathBuf::from(std::env::var_os(CHILD_FIXTURE).expect("control fixture path"));
+                fs::write(
+                    root.join("timeout-entered"),
+                    b"JACKIN_PRIVILEGE_TIMEOUT_CONTROL_ENTERED",
+                )
+                .expect("timeout control handshake");
+                std::thread::sleep(Duration::from_secs(60));
+            }
+            _ => panic!("unknown privilege probe control"),
+        }
         return;
     }
-    let temp = tempfile::tempdir().expect("temporary isolation fixture");
-    let own = temp.path().join("home/slot-a");
-    let sibling = temp.path().join("home/slot-b");
-    let staged = temp.path().join("account-credentials");
-    let workspace = temp.path().join("workspace");
-    let selected_auth = temp.path().join("selected-auth.json");
-    fs::create_dir_all(own.parent().expect("home parent")).expect("home root");
-    fs::create_dir(&own).expect("own slot");
-    fs::create_dir(&sibling).expect("sibling slot");
-    fs::create_dir(&staged).expect("staged credential root");
-    fs::create_dir(&workspace).expect("workspace");
-    fs::set_permissions(&own, fs::Permissions::from_mode(0o700)).expect("own permissions");
-    fs::set_permissions(&sibling, fs::Permissions::from_mode(0o700)).expect("sibling permissions");
-    fs::set_permissions(&staged, fs::Permissions::from_mode(0o700)).expect("staged permissions");
-    fs::set_permissions(&workspace, fs::Permissions::from_mode(0o700))
-        .expect("workspace permissions");
-    let own_secret = own.join("credential");
-    let sibling_secret = sibling.join("credential");
-    let sibling_staged = staged.join("acct-slot-b.json");
-    fs::write(&own_secret, b"own").expect("own credential");
-    fs::write(&sibling_secret, b"sibling").expect("sibling credential");
-    fs::write(&sibling_staged, b"sibling-staged").expect("sibling staged credential");
-    fs::write(&selected_auth, b"selected-auth").expect("selected auth mount");
-
-    let (read_fd, write_fd) = {
-        let mut fds = [0; 2];
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        let pipe_status = unsafe { libc::pipe(fds.as_mut_ptr()) };
-        assert_eq!(pipe_status, 0);
-        (fds[0], fds[1])
-    };
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    let child = unsafe { libc::fork() };
-    assert!(child >= 0, "fork isolation probe");
-    if child == 0 {
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        unsafe {
-            libc::close(read_fd)
-        };
-        let result = (|| -> anyhow::Result<()> {
-            drop_privileges(jackin_protocol::SessionIdentity {
-                uid: 65_534,
-                gid: 65_534,
-            })?;
-            let mut rules = Vec::new();
-            add_execute_only_ancestors(&mut rules, &own);
-            rules.push(Rule {
-                path: own.clone(),
-                access: FULL,
-                required: true,
-            });
-            add_execute_only_ancestors(&mut rules, &workspace);
-            rules.push(Rule {
-                path: workspace.clone(),
-                access: FULL,
-                required: true,
-            });
-            add_execute_only_ancestors(&mut rules, &selected_auth);
-            rules.push(Rule {
-                path: selected_auth.clone(),
-                access: READ_FILE_ONLY,
-                required: true,
-            });
-            install_landlock(&rules)?;
-            let own_fd = open(&own_secret, libc::O_RDONLY);
-            anyhow::ensure!(own_fd >= 0, "selected slot read denied");
-            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-            #[expect(
-                clippy::undocumented_unsafe_blocks,
-                reason = "test-only libc privilege probing with controlled fds and cleanup"
-            )]
-            unsafe {
-                libc::close(own_fd)
-            };
-            let own_write = open(&own.join("selected-write"), libc::O_WRONLY | libc::O_CREAT);
-            anyhow::ensure!(own_write >= 0, "selected slot write denied");
-            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-            #[expect(
-                clippy::undocumented_unsafe_blocks,
-                reason = "test-only libc privilege probing with controlled fds and cleanup"
-            )]
-            unsafe {
-                libc::close(own_write)
-            };
-            let workspace_write = open(
-                &workspace.join("agent-write"),
-                libc::O_WRONLY | libc::O_CREAT,
-            );
-            anyhow::ensure!(workspace_write >= 0, "workspace write denied");
-            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-            #[expect(
-                clippy::undocumented_unsafe_blocks,
-                reason = "test-only libc privilege probing with controlled fds and cleanup"
-            )]
-            unsafe {
-                libc::close(workspace_write)
-            };
-            let selected_auth_fd = open(&selected_auth, libc::O_RDONLY);
-            anyhow::ensure!(selected_auth_fd >= 0, "selected auth read denied");
-            #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-            #[expect(
-                clippy::undocumented_unsafe_blocks,
-                reason = "test-only libc privilege probing with controlled fds and cleanup"
-            )]
-            unsafe {
-                libc::close(selected_auth_fd)
-            };
-            let selected_auth_write = open(&selected_auth, libc::O_WRONLY | libc::O_CREAT);
-            anyhow::ensure!(
-                selected_auth_write < 0,
-                "read-only selected auth mount was writable"
-            );
-            let sibling_fd = open(&sibling_secret, libc::O_RDONLY);
-            anyhow::ensure!(sibling_fd < 0, "sibling slot read was allowed");
-            let sibling_write = open(&sibling.join("new-file"), libc::O_WRONLY | libc::O_CREAT);
-            anyhow::ensure!(sibling_write < 0, "sibling slot write was allowed");
-            let sibling_staged_fd = open(&sibling_staged, libc::O_RDONLY);
-            anyhow::ensure!(
-                sibling_staged_fd < 0,
-                "sibling staged credential read was allowed"
-            );
-            let sibling_staged_write = open(&sibling_staged, libc::O_WRONLY | libc::O_CREAT);
-            anyhow::ensure!(
-                sibling_staged_write < 0,
-                "sibling staged credential write was allowed"
-            );
-            Ok(())
-        })();
-        if let Err(error) = &result {
-            eprintln!("Linux isolation probe failed: {error:#}");
-        }
-        let status = [u8::from(result.is_ok())];
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        unsafe {
-            libc::write(write_fd, status.as_ptr().cast(), 1)
-        };
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        unsafe {
-            libc::close(write_fd)
-        };
-        #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-        #[expect(
-            clippy::undocumented_unsafe_blocks,
-            reason = "test-only libc privilege probing with controlled fds and cleanup"
-        )]
-        unsafe {
-            libc::_exit(i32::from(result.is_err()))
-        };
-    }
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    unsafe {
-        libc::close(write_fd)
-    };
-    let mut status = [0u8; 1];
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    let bytes_read = unsafe { libc::read(read_fd, status.as_mut_ptr().cast(), 1) };
-    assert_eq!(bytes_read, 1);
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    unsafe {
-        libc::close(read_fd)
-    };
-    let mut wait_status = 0;
-    #[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    let wait_result = unsafe { libc::waitpid(child, &raw mut wait_status, 0) };
-    assert_eq!(wait_result, child);
-    assert_eq!(status[0], 1, "isolation probe failed inside child");
-    assert!(libc::WIFEXITED(wait_status));
-    assert_eq!(libc::WEXITSTATUS(wait_status), 0);
-}
-
-#[expect(unsafe_code, reason = "audited isolation test-probe syscall")]
-fn open(path: &Path, flags: libc::c_int) -> libc::c_int {
-    let Ok(path) = std::ffi::CString::new(path.to_string_lossy().as_bytes()) else {
-        return -1;
-    };
-    #[expect(
-        clippy::undocumented_unsafe_blocks,
-        reason = "test-only libc privilege probing with controlled fds and cleanup"
-    )]
-    unsafe {
-        libc::open(path.as_ptr(), flags, 0o600)
-    }
+    let temp = tempfile::tempdir().expect("subprocess controls");
+    let absent = "jackin_privilege_probe_selector_that_does_not_exist";
+    let zero =
+        jackin_process::exec_sync(&child_request(absent, temp.path(), Duration::from_secs(5)))
+            .expect("zero-test subprocess");
+    assert!(zero.success && !zero.timed_out);
+    assert!(String::from_utf8_lossy(&zero.stdout).contains("running 0 tests"));
+    assert!(!probe_passed(&zero, absent), "zero selected tests accepted");
+    let mut panic_request = child_request(name, temp.path(), Duration::from_secs(5));
+    panic_request.env_remove.clear();
+    let panic_output = jackin_process::exec_sync(&panic_request.envs([(CHILD_CONTROL, "panic")]))
+        .expect("panic control subprocess");
+    assert!(!panic_output.success && !panic_output.timed_out);
+    assert!(
+        String::from_utf8_lossy(&panic_output.stdout)
+            .contains("intentional privilege probe control panic")
+            || String::from_utf8_lossy(&panic_output.stderr)
+                .contains("intentional privilege probe control panic")
+    );
+    assert!(!probe_passed(&panic_output, name));
+    let mut timeout_request = child_request(name, temp.path(), Duration::from_secs(1));
+    timeout_request.env_remove.clear();
+    let timeout_output =
+        jackin_process::exec_sync(&timeout_request.envs([(CHILD_CONTROL, "timeout")]))
+            .expect("timeout control subprocess");
+    assert!(timeout_output.timed_out && !timeout_output.success);
+    assert_eq!(
+        fs::read(temp.path().join("timeout-entered")).expect("child entered timeout branch"),
+        b"JACKIN_PRIVILEGE_TIMEOUT_CONTROL_ENTERED"
+    );
+    assert!(!probe_passed(&timeout_output, name));
 }

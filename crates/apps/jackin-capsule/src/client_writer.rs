@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+
 use tokio::sync::mpsc;
 
 use crate::protocol::attach::{ServerFrame, encode_server};
@@ -8,9 +10,13 @@ use crate::protocol::attach::{ServerFrame, encode_server};
 const SYNC_BEGIN: &[u8] = b"\x1b[?2026h";
 const SYNC_END: &[u8] = b"\x1b[?2026l";
 
+#[derive(Clone, Debug)]
+pub(crate) struct AttachmentIdentity(Arc<()>);
+
 #[derive(Debug, Default)]
 pub(crate) struct ClientWriter {
     tx: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    attachment: Option<AttachmentIdentity>,
     completion_tx: Option<mpsc::UnboundedSender<crate::attach_protocol::AttachResponseCompletion>>,
     out_of_band: Vec<Vec<u8>>,
 }
@@ -18,6 +24,7 @@ pub(crate) struct ClientWriter {
 impl ClientWriter {
     pub(crate) fn attach(&mut self, tx: mpsc::UnboundedSender<Vec<u8>>) {
         self.tx = Some(tx);
+        self.attachment = Some(AttachmentIdentity(Arc::new(())));
         self.completion_tx = None;
         self.out_of_band.clear();
     }
@@ -32,9 +39,28 @@ impl ClientWriter {
     }
 
     pub(crate) fn take(&mut self) -> Option<mpsc::UnboundedSender<Vec<u8>>> {
+        self.attachment = None;
         self.out_of_band.clear();
         self.completion_tx = None;
         self.tx.take()
+    }
+
+    pub(crate) fn attachment_identity(&self) -> Option<AttachmentIdentity> {
+        if self
+            .tx
+            .as_ref()
+            .is_none_or(mpsc::UnboundedSender::is_closed)
+        {
+            return None;
+        }
+        self.attachment.clone()
+    }
+
+    pub(crate) fn matches_attachment(&self, identity: &AttachmentIdentity) -> bool {
+        self.attachment
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(&current.0, &identity.0))
+            && self.tx.as_ref().is_some_and(|tx| !tx.is_closed())
     }
 
     pub(crate) fn is_attached(&self) -> bool {

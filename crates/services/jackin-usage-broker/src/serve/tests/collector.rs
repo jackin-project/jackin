@@ -19,9 +19,8 @@ use jackin_protocol::usage_broker::{
     UsageProjectionRefreshStateV1, UsageRefreshPhase,
 };
 use jackin_protocol::usage_monitor::{
-    MonitorAccountBinding, MonitorAccountBindingInput, MonitorConfig, MonitorEvidenceSource,
-    MonitorLifecycle, MonitorOperation, MonitorProvider, MonitorPurpose, MonitorReply,
-    MonitorScope,
+    MonitorAccountBindingInput, MonitorConfig, MonitorEvidenceSource, MonitorLifecycle,
+    MonitorOperation, MonitorProvider, MonitorPurpose, MonitorReply, MonitorScope,
 };
 use jackin_usage_coordinator::{
     ClockSample as CoordinatorClockSample, FileAccountStateStore, FileProjectionStateStore,
@@ -29,10 +28,7 @@ use jackin_usage_coordinator::{
     UsageProviderExecutor,
 };
 
-mod routing;
-
 const COLLECTOR_ACCOUNT_ID: &str = "collector-test-account";
-const SOURCE_ID_PREFIX: &str = "a";
 
 struct CollectorCoordinatorClock {
     sample: Mutex<ClockSample>,
@@ -74,10 +70,6 @@ impl MonotonicClock for CollectorCoordinatorClock {
         let sample = self.sample.lock().expect("collector test clock");
         CoordinatorClockSample::anchored(sample.wall_epoch, sample.monotonic_elapsed)
     }
-}
-
-fn source_id() -> String {
-    SOURCE_ID_PREFIX.repeat(64)
 }
 
 struct GatedExecutor {

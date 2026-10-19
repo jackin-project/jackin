@@ -158,11 +158,40 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         mise.contains("[tasks.renovate-upstream-sources]"),
         "the upstream asset check stays a root mise task"
     );
+    let config: toml::Value = toml::from_str(&mise).expect("root Mise config must parse");
+    let tasks = config["tasks"]
+        .as_table()
+        .expect("root Mise tasks must be a table");
+    let mut task_ids: Vec<_> = tasks.keys().map(String::as_str).collect();
+    task_ids.sort_unstable();
     assert_eq!(
-        mise.matches("[tasks.").count(),
-        2,
-        "the root keeps only the upstream check and native preview producer tasks"
+        task_ids,
+        [
+            "check:dependency-usage",
+            "check:repository-links",
+            "check:repository-policy",
+            "release:preview-package",
+            "renovate-upstream-sources",
+        ],
+        "root Mise tasks must match the native checks, producer, and upstream check"
     );
+    for (id, command) in [
+        ("check:dependency-usage", "cargo shear --deny-warnings"),
+        (
+            "check:repository-links",
+            "cargo run --locked -p jackin-xtask -- docs repo-links",
+        ),
+        (
+            "check:repository-policy",
+            "cargo run --locked -p jackin-xtask -- lint --strict",
+        ),
+    ] {
+        assert_eq!(
+            tasks[id]["run"].as_str(),
+            Some(command),
+            "native check task {id}"
+        );
+    }
     assert!(mise.contains("[tasks.renovate-upstream-sources]"));
     assert!(mise.contains("[tasks.\"release:preview-package\"]"));
 

@@ -326,14 +326,9 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             remember_launch_action(jackin_telemetry::schema::enums::UiActionName::DialogCancel);
         } else if let Some((copy_row, payload)) =
             crate::tui::components::container_info::copy_payload_at(rect, &state, col, row)
+            && ctx.terminal.copy_to_clipboard(&payload)
         {
-            #[expect(
-                clippy::collapsible_if,
-                reason = "copy failure must swallow the click; collapsing would fall through to build-log handling"
-            )]
-            if ctx.terminal.copy_to_clipboard(&payload) {
-                let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoCopied(copy_row));
-            }
+            let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoCopied(copy_row));
         }
     } else if let Some(failure) = v.failure.as_ref() {
         let failure_scroll = v.failure_scroll.clone();

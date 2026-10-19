@@ -11,6 +11,8 @@
 //! feedback document per round to the same healthy implementer
 //! session. Workers submit observations; only the host decides.
 
+mod process;
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -37,9 +39,6 @@ pub const MAX_TEST_EXCERPT_BYTES: usize = 1_500;
 /// At most one correction request for malformed review output in a
 /// review session. Further failure requires operator action.
 pub const MAX_REVIEW_CORRECTIONS: u32 = 1;
-
-/// Timeout joining output-reader threads after the test process ends.
-const READER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Immutable Python runtime used by the frozen C6 check policy.
 pub const TEST_SANDBOX_IMAGE: &str =
@@ -355,79 +354,6 @@ pub struct BoundedOutput {
     truncated: bool,
 }
 
-impl BoundedOutput {
-    /// Kept bytes, lossy-decoded for feedback use.
-    #[must_use]
-    pub fn text(&self) -> String {
-        String::from_utf8_lossy(&self.bytes).into_owned()
-    }
-
-    /// Whether output beyond the bound was dropped.
-    #[must_use]
-    pub const fn truncated(&self) -> bool {
-        self.truncated
-    }
-
-    /// Kept raw bytes.
-    #[must_use]
-    pub fn bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-}
-
-fn read_bounded(stream: impl std::io::Read) -> BoundedOutput {
-    let mut stream = stream;
-    let mut bytes = Vec::new();
-    let mut buffer = [0_u8; 8 * 1024];
-    let mut truncated = false;
-    loop {
-        match stream.read(&mut buffer) {
-            Ok(0) | Err(_) => break,
-            Ok(read) => {
-                let remaining = MAX_TEST_OUTPUT_BYTES.saturating_sub(bytes.len());
-                let kept = remaining.min(read);
-                bytes.extend_from_slice(&buffer[..kept]);
-                truncated |= kept < read;
-            }
-        }
-    }
-    BoundedOutput { bytes, truncated }
-}
-
-fn run_host_command_until(
-    command: &mut std::process::Command,
-    deadline: Instant,
-) -> Result<Option<std::process::ExitStatus>, WorkflowError> {
-    let mut child = command
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|err| WorkflowError::blocked(format!("Docker helper failed to spawn: {err}")))?;
-    loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|err| WorkflowError::blocked(format!("Docker helper wait failed: {err}")))?
-        {
-            return Ok(Some(status));
-        }
-        if Instant::now() >= deadline {
-            child.kill().map_err(|err| {
-                WorkflowError::blocked(format!("Docker helper kill failed: {err}"))
-            })?;
-            child.wait().map_err(|err| {
-                WorkflowError::blocked(format!("Docker helper reap failed: {err}"))
-            })?;
-            return Ok(None);
-        }
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "bounded Docker helper deadline poll on the host verification path"
-        )]
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
 pub(super) fn run_host_command_output_until(
     command: &mut std::process::Command,
     deadline: Instant,
@@ -440,14 +366,12 @@ pub(super) fn run_host_command_output_until(
         .map_err(|err| {
             WorkflowError::blocked(format!("Docker state query failed to spawn: {err}"))
         })?;
-    let stdout = child
-        .stdout
-        .take()
-        .map(|stream| jackin_telemetry::spawn::thread_joined(move || read_bounded(stream)));
-    let stderr = child
-        .stderr
-        .take()
-        .map(|stream| jackin_telemetry::spawn::thread_joined(move || read_bounded(stream)));
+    let stdout = child.stdout.take().map(|stream| {
+        jackin_telemetry::spawn::thread_joined(move || process::read_bounded(stream))
+    });
+    let stderr = child.stderr.take().map(|stream| {
+        jackin_telemetry::spawn::thread_joined(move || process::read_bounded(stream))
+    });
     let status = loop {
         if let Some(status) = child.try_wait().map_err(|err| {
             WorkflowError::blocked(format!("Docker state query wait failed: {err}"))
@@ -497,90 +421,6 @@ pub struct TestExecution {
     timed_out: bool,
     stdout: BoundedOutput,
     stderr: BoundedOutput,
-}
-
-impl TestExecution {
-    /// Actual process exit code, or `-1` when killed by a signal.
-    #[must_use]
-    pub const fn exit_code(&self) -> i32 {
-        self.exit_code
-    }
-
-    /// Whether the deadline killed the process. Timeouts are recorded
-    /// separately from code failures: one clean retry is allowed for a
-    /// recorded infrastructure failure, never for a code failure.
-    #[must_use]
-    pub const fn timed_out(&self) -> bool {
-        self.timed_out
-    }
-
-    /// Bounded captured stdout.
-    #[must_use]
-    pub const fn stdout(&self) -> &BoundedOutput {
-        &self.stdout
-    }
-
-    /// Bounded captured stderr.
-    #[must_use]
-    pub const fn stderr(&self) -> &BoundedOutput {
-        &self.stderr
-    }
-
-    #[cfg(test)]
-    pub fn from_test_parts(exit_code: i32, output: &str) -> Self {
-        let text = output.as_bytes();
-        let half = text.len() / 2;
-        Self {
-            exit_code,
-            timed_out: false,
-            stdout: BoundedOutput {
-                bytes: text[..half].to_vec(),
-                truncated: false,
-            },
-            stderr: BoundedOutput {
-                bytes: text[half..].to_vec(),
-                truncated: false,
-            },
-        }
-    }
-
-    /// Short exit label for evidence and feedback (`exit 0`, `exit 3`,
-    /// `signal`, `timeout`).
-    #[must_use]
-    pub fn exit_label(&self) -> String {
-        if self.timed_out {
-            "timeout".to_owned()
-        } else if self.exit_code < 0 {
-            "signal".to_owned()
-        } else {
-            format!("exit {}", self.exit_code)
-        }
-    }
-}
-
-fn join_reader(
-    handle: std::thread::JoinHandle<BoundedOutput>,
-    stream: &str,
-) -> Result<BoundedOutput, WorkflowError> {
-    let deadline = Instant::now() + READER_JOIN_TIMEOUT;
-    loop {
-        if handle.is_finished() {
-            return handle.join().map_err(|_| {
-                WorkflowError::storage(format!("test worker {stream} reader panicked"))
-            });
-        }
-        if Instant::now() >= deadline {
-            return Err(WorkflowError::blocked(format!(
-                "test worker {stream} reader did not finish; \
-                 a child process may hold the pipe open"
-            )));
-        }
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "bounded reader join on the host verification path, off render/runtime threads"
-        )]
-        std::thread::sleep(Duration::from_millis(10));
-    }
 }
 
 /// Run the frozen executable policy in a disposable Docker sandbox. The
@@ -659,7 +499,7 @@ pub fn run_test_command(
                     bytes: Vec::new(),
                     truncated: false,
                 },
-                read_bounded,
+                process::read_bounded,
             )
         }
     });
@@ -671,7 +511,7 @@ pub fn run_test_command(
                     bytes: Vec::new(),
                     truncated: false,
                 },
-                read_bounded,
+                process::read_bounded,
             )
         }
     });
@@ -688,7 +528,7 @@ pub fn run_test_command(
             child
                 .kill()
                 .map_err(|err| WorkflowError::storage(format!("test worker kill failed: {err}")))?;
-            let cleanup = run_host_command_until(
+            let cleanup = process::run_host_command_until(
                 std::process::Command::new("docker").args(["rm", "--force", &container_name]),
                 Instant::now() + Duration::from_secs(2),
             );
@@ -710,8 +550,8 @@ pub fn run_test_command(
         )]
         std::thread::sleep(Duration::from_millis(10));
     };
-    let stdout = join_reader(stdout_handle, "stdout")?;
-    let stderr = join_reader(stderr_handle, "stderr")?;
+    let stdout = process::join_reader(stdout_handle, "stdout")?;
+    let stderr = process::join_reader(stderr_handle, "stderr")?;
     if timed_out {
         return Err(WorkflowError::blocked(format!(
             "test worker {} hit the {}s timeout; \
@@ -731,7 +571,7 @@ pub fn run_test_command(
 }
 
 fn ensure_sandbox_image(worker_id: &str, deadline: Instant) -> Result<(), WorkflowError> {
-    let image_present = run_host_command_until(
+    let image_present = process::run_host_command_until(
         std::process::Command::new("docker").args(["image", "inspect", TEST_SANDBOX_IMAGE]),
         deadline,
     )?
@@ -739,7 +579,7 @@ fn ensure_sandbox_image(worker_id: &str, deadline: Instant) -> Result<(), Workfl
     if image_present {
         return Ok(());
     }
-    let pulled = run_host_command_until(
+    let pulled = process::run_host_command_until(
         std::process::Command::new("docker").args(["pull", TEST_SANDBOX_IMAGE]),
         deadline,
     )?
@@ -771,7 +611,7 @@ fn finish_test_execution(
         Instant::now() + Duration::from_secs(2),
     )?
     .ok_or_else(|| WorkflowError::blocked("Docker sandbox state query timed out".to_owned()))?;
-    let cleanup = run_host_command_until(
+    let cleanup = process::run_host_command_until(
         std::process::Command::new("docker").args(["rm", "--force", container_name]),
         Instant::now() + Duration::from_secs(2),
     );
@@ -975,7 +815,8 @@ fn docker_sandbox_command(
     for argument in policy.args() {
         if Path::new(argument) == Path::new(&policy.args()[0]) {
             command.arg(format!(
-                "/jackin/checks/{}",
+                "{}{}",
+                jackin_core::container_paths::CHECKS_PREFIX,
                 script_relative.to_string_lossy()
             ));
         } else if Path::new(argument) == worker.work_dir() {
@@ -1013,7 +854,7 @@ impl RemoveContainerOnDrop {
 impl Drop for RemoveContainerOnDrop {
     fn drop(&mut self) {
         if self.armed {
-            let _cleanup = run_host_command_until(
+            let _cleanup = process::run_host_command_until(
                 std::process::Command::new("docker").args(["rm", "--force", &self.name]),
                 Instant::now() + Duration::from_secs(2),
             );

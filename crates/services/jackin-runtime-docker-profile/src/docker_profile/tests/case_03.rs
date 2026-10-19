@@ -218,3 +218,64 @@ fn role_network_internal_only_for_locked() {
         );
     }
 }
+
+#[test]
+fn canonical_tmpfs_paths_preserve_exact_order_and_sudoers_flags() {
+    assert_eq!(
+        tmpfs_paths(DockerSecurityProfile::Hardened),
+        [
+            "/tmp",
+            "/run",
+            "/var/run",
+            "/home/agent/.zsh_sessions",
+            "/home/agent/.zsh_history",
+            "/home/agent/.bash_history",
+            "/var/tmp",
+            "/var/cache",
+            "/var/log",
+            "/var/lib/apt/lists",
+            "/var/cache/apt/archives",
+            "/var/lib/dpkg",
+            "/home/agent/.cache",
+        ]
+    );
+    let grants = EffectiveGrants {
+        sudo: true,
+        no_new_privileges: false,
+        ..profile_base_grants(DockerSecurityProfile::Hardened)
+    };
+    assert_eq!(
+        readonly_root_flags(DockerSecurityProfile::Hardened, &grants),
+        [
+            "--read-only",
+            "--tmpfs",
+            "/tmp:rw,nosuid,nodev",
+            "--tmpfs",
+            "/run:rw,nosuid,nodev",
+            "--tmpfs",
+            "/var/run:rw,nosuid,nodev",
+            "--tmpfs",
+            "/home/agent/.zsh_sessions:rw,nosuid,nodev",
+            "--tmpfs",
+            "/home/agent/.zsh_history:rw,nosuid,nodev",
+            "--tmpfs",
+            "/home/agent/.bash_history:rw,nosuid,nodev",
+            "--tmpfs",
+            "/var/tmp:rw,nosuid,nodev",
+            "--tmpfs",
+            "/var/cache:rw,nosuid,nodev",
+            "--tmpfs",
+            "/var/log:rw,nosuid,nodev",
+            "--tmpfs",
+            "/var/lib/apt/lists:rw,nosuid,nodev",
+            "--tmpfs",
+            "/var/cache/apt/archives:rw,nosuid,nodev",
+            "--tmpfs",
+            "/var/lib/dpkg:rw,nosuid,nodev",
+            "--tmpfs",
+            "/home/agent/.cache:rw,nosuid,nodev",
+            "--tmpfs",
+            "/etc/sudoers.d:rw,nosuid,nodev,mode=0755",
+        ]
+    );
+}

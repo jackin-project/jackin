@@ -22,9 +22,9 @@ pub(super) async fn resolve_role_to_container(
 ) -> Result<String> {
     let candidates =
         runtime::matching_family(class, &runtime::list_managed_role_names(docker).await?);
-    match candidates.len() {
-        1 => Ok(candidates.into_iter().next().unwrap()),
-        0 => anyhow::bail!("no managed container found for role `{}`", class.key()),
+    match candidates.as_slice() {
+        [container] => Ok(container.clone()),
+        [] => anyhow::bail!("no managed container found for role `{}`", class.key()),
         _ => anyhow::bail!(
             "multiple containers found for role `{}`: {}; pass a specific container name",
             class.key(),

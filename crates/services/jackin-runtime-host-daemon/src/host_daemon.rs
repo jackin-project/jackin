@@ -10,8 +10,9 @@ use jackin_core::{ContainerId, JackinPaths};
 use jackin_protocol::control::AgentState;
 use jackin_protocol::{InstanceSnapshot, TelemetryContext};
 use jackin_workflow::{
-    InstanceInventory, OperatorDecision, RecordedDispatch, RecordedReview, RecordedTest,
-    RecoveryReport, RunDetail, RunSummary, WorkflowBackend,
+    CheckpointRecord, InstanceInventory, OperatorDecision, RecordTestParams, RecordedDispatch,
+    RecordedReview, RecordedTest, RecoveryReport, RunDetail, RunSummary, SessionAttachment,
+    WorkflowBackend,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1379,13 +1380,13 @@ fn verify_test_binding(
     if argv.len() != 3
         || argv[0] != check_program
         || argv[2] != "/work/repo"
-        || !argv[1].starts_with("/jackin/checks/")
+        || !argv[1].starts_with(jackin_core::container_paths::CHECKS_PREFIX)
     {
         return Err(jackin_workflow::WorkflowError::invalid(format!(
             "check argv does not match the supported frozen shape [program, /jackin/checks/<manifest path>, /work/repo]: {argv:?}"
         )));
     }
-    let logical_path = &argv[1]["/jackin/checks/".len()..];
+    let logical_path = &argv[1][jackin_core::container_paths::CHECKS_PREFIX.len()..];
     let logical_path = Path::new(logical_path);
     if logical_path.as_os_str().is_empty()
         || logical_path
@@ -1570,15 +1571,17 @@ fn handle_workflow_record_request(
         } => workflow_record_response(
             id,
             workflow.record_session(
-                &run_id,
+                &SessionAttachment {
+                    run_id: &run_id,
+                    worker_id: &worker,
+                    instance_id: instance_id.as_deref(),
+                    capsule_epoch,
+                    session_id,
+                    process_identity: process_identity.as_deref(),
+                    agent_profile: agent_profile.as_deref(),
+                    auth_profile: auth_profile.as_deref(),
+                },
                 expected_version,
-                &worker,
-                instance_id.as_deref(),
-                capsule_epoch,
-                session_id,
-                process_identity.as_deref(),
-                agent_profile.as_deref(),
-                auth_profile.as_deref(),
             ),
         ),
         DaemonRequestKind::WorkflowRecordCandidate {
@@ -1601,14 +1604,17 @@ fn handle_workflow_record_request(
         } => workflow_record_response(
             id,
             workflow.record_checkpoint(
-                &run_id,
+                &CheckpointRecord {
+                    run_id: &run_id,
+                    candidate: &candidate,
+                    commit: &commit,
+                    tree: &tree,
+                    source_manifest: &source_manifest,
+                    local_path: &local_path,
+                    backup_state: &backup_state,
+                    preservation_hold: None,
+                },
                 expected_version,
-                &candidate,
-                &commit,
-                &tree,
-                &source_manifest,
-                &local_path,
-                &backup_state,
             ),
         ),
         DaemonRequestKind::WorkflowRecordTest {
@@ -1620,37 +1626,33 @@ fn handle_workflow_record_request(
             repo,
             scratch,
             timeout_secs,
-        } => match check_test_binding(
-            workflow,
-            plan_store_dir,
-            &run_id,
-            &check_program,
-            &check_script,
-            &bundle_digest,
-            timeout_secs,
-        )
-        .and_then(|bundle_files| {
-            workflow.record_test(
+        } => workflow_test_record_response(
+            id,
+            check_test_binding(
+                workflow,
+                plan_store_dir,
                 &run_id,
-                expected_version,
                 &check_program,
                 &check_script,
                 &bundle_digest,
-                &bundle_files,
-                repo.as_deref(),
-                &scratch,
                 timeout_secs,
             )
-        }) {
-            Ok((summary, test)) => DaemonResponse {
-                id,
-                kind: DaemonResponseKind::WorkflowTestRecord { summary, test },
-            },
-            Err(error) => {
-                let code = workflow_error_code(&error);
-                coded_error_response(id, code, error.to_string())
-            }
-        },
+            .and_then(|bundle_files| {
+                workflow.record_test(
+                    &run_id,
+                    expected_version,
+                    &RecordTestParams {
+                        check_program: &check_program,
+                        check_script: Path::new(&check_script),
+                        bundle_digest: &bundle_digest,
+                        bundle_files: &bundle_files,
+                        repo: repo.as_deref().map(Path::new),
+                        scratch: Path::new(&scratch),
+                        timeout_secs,
+                    },
+                )
+            }),
+        ),
         DaemonRequestKind::WorkflowRecordReview {
             run_id,
             expected_version,
@@ -1702,6 +1704,22 @@ fn handle_workflow_record_request(
             workflow.record_dispatch_intent(&run_id, &session_ref, &prompt, turn, lease_generation),
         ),
         _ => coded_error_response(id, "invalid_request", "not a workflow record request"),
+    }
+}
+
+fn workflow_test_record_response(
+    id: String,
+    result: Result<(RunSummary, RecordedTest), jackin_workflow::WorkflowError>,
+) -> DaemonResponse {
+    match result {
+        Ok((summary, test)) => DaemonResponse {
+            id,
+            kind: DaemonResponseKind::WorkflowTestRecord { summary, test },
+        },
+        Err(error) => {
+            let code = workflow_error_code(&error);
+            coded_error_response(id, code, error.to_string())
+        }
     }
 }
 

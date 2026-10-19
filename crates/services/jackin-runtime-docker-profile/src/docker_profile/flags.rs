@@ -53,19 +53,19 @@ pub fn capability_flags(profile: DockerSecurityProfile, extra_caps: &[String]) -
 
 pub(crate) const TMPFS_PATHS_MINIMAL: &[&str] = &[
     "/tmp",
-    "/run",
-    "/var/run",
+    jackin_core::container_paths::SYSTEM_RUN_DIR,
+    jackin_core::container_paths::SYSTEM_VAR_RUN_DIR,
     "/home/agent/.zsh_sessions",
     "/home/agent/.zsh_history",
     "/home/agent/.bash_history",
 ];
 
 pub(crate) const TMPFS_PATHS_HARDENED_EXTRA: &[&str] = &[
-    "/var/tmp",
-    "/var/cache",
-    "/var/log",
-    "/var/lib/apt/lists",
-    "/var/cache/apt/archives",
-    "/var/lib/dpkg",
+    jackin_core::container_paths::SYSTEM_VAR_TMP_DIR,
+    jackin_core::container_paths::SYSTEM_VAR_CACHE_DIR,
+    jackin_core::container_paths::SYSTEM_VAR_LOG_DIR,
+    jackin_core::container_paths::SYSTEM_APT_LISTS_DIR,
+    jackin_core::container_paths::SYSTEM_APT_ARCHIVES_DIR,
+    jackin_core::container_paths::SYSTEM_DPKG_DIR,
     "/home/agent/.cache",
 ];
