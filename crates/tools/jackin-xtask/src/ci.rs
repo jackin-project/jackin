@@ -7,6 +7,8 @@ use clap::Args;
 
 use crate::docs::repo_root;
 
+mod workflow_lint;
+
 pub(crate) const PARTITIONS: &[&str] = &[
     "lint",
     "policy",
@@ -148,7 +150,7 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
         steps.push(Step::with_args(
             "actionlint",
             "actionlint",
-            actionlint_args(root)?,
+            workflow_lint::actionlint_args(root)?,
             "lint",
         ));
         steps.push(cargo("fmt", &["fmt", "--check"], "lint"));
@@ -275,30 +277,6 @@ fn cargo_xtask(name: &str, args: &[&str], partition: &'static str) -> Step {
     let mut cargo_args = vec!["xtask"];
     cargo_args.extend_from_slice(args);
     cargo(name, &cargo_args, partition)
-}
-
-fn actionlint_args(root: &Path) -> Result<Vec<OsString>> {
-    let workflows = root.join(".github/workflows");
-    if !workflows.is_dir() {
-        bail!("{} does not exist", workflows.display());
-    }
-    let mut files = Vec::new();
-    for entry in crate::fs_util::read_dir_sorted(&workflows)? {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "yml") {
-            files.push(
-                path.strip_prefix(root)
-                    .unwrap_or(&path)
-                    .as_os_str()
-                    .to_owned(),
-            );
-        }
-    }
-    if files.is_empty() {
-        bail!("no workflow files found under {}", workflows.display());
-    }
-    files.sort();
-    Ok(files)
 }
 
 fn build_e2e_step(root: &Path, args: &CiArgs) -> Result<Step> {
