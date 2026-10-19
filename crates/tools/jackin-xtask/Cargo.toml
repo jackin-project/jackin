@@ -21,7 +21,7 @@ fs4 = { workspace = true }
 jackin-process = { workspace = true }
 portable-pty = { workspace = true }
 hex = { workspace = true }
-nix = { workspace = true, features = ["dir", "fs"] }
+nix = { workspace = true, features = ["dir", "fs", "user"] }
 proc-macro2 = { workspace = true }
 quick-xml = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

@@ -314,3 +314,62 @@ fn assembly_refuses_linked_inputs_and_existing_output_without_overwrite() {
             .is_empty()
     );
 }
+
+fn native_request_path(root: &Path) -> std::path::PathBuf {
+    let directory = root.canonicalize().unwrap().join("velnor");
+    fs::create_dir(&directory).unwrap();
+    let path = directory.join("preview-task-request.json");
+    fs::write(&path, canonical_json_bytes(&request(false)).unwrap()).unwrap();
+    path
+}
+
+#[test]
+fn native_request_rejects_wrong_paths_links_fifo_and_oversize() {
+    let root = tempfile::tempdir().unwrap();
+    let path = native_request_path(root.path());
+    handoff::load_path(&path).unwrap();
+    handoff::load_path(Path::new("velnor/preview-task-request.json")).unwrap_err();
+    handoff::load_path(&path.parent().unwrap().join("./preview-task-request.json")).unwrap_err();
+    let wrong = path.with_file_name("wrong.json");
+    fs::copy(&path, &wrong).unwrap();
+    handoff::load_path(&wrong).unwrap_err();
+    let link = path.with_file_name("retained.json");
+    fs::hard_link(&path, &link).unwrap();
+    handoff::load_path(&path).unwrap_err();
+    fs::remove_file(&link).unwrap();
+    fs::rename(&path, &link).unwrap();
+    std::os::unix::fs::symlink(&link, &path).unwrap();
+    handoff::load_path(&path).unwrap_err();
+    fs::remove_file(&path).unwrap();
+    nix::unistd::mkfifo(&path, nix::sys::stat::Mode::S_IRUSR).unwrap();
+    handoff::load_path(&path).unwrap_err();
+    fs::remove_file(&path).unwrap();
+    fs::File::create(&path)
+        .unwrap()
+        .set_len(32 * 1024 * 1024 + 1)
+        .unwrap();
+    handoff::load_path(&path).unwrap_err();
+    fs::remove_file(&path).unwrap();
+    fs::rename(&link, &path).unwrap();
+    let alias_root = tempfile::tempdir().unwrap();
+    let alias = alias_root.path().canonicalize().unwrap().join("velnor");
+    std::os::unix::fs::symlink(path.parent().unwrap(), &alias).unwrap();
+    handoff::load_path(&alias.join("preview-task-request.json")).unwrap_err();
+}
+
+#[test]
+fn native_request_detects_replacement_and_held_file_mutation() {
+    for replace in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let path = native_request_path(root.path());
+        let (file, metadata) = handoff::open_request(&path).unwrap();
+        let mut bytes = fs::read(&path).unwrap();
+        if replace {
+            fs::rename(&path, path.with_file_name("retained.json")).unwrap();
+        } else {
+            bytes[0] ^= 1;
+        }
+        fs::write(&path, bytes).unwrap();
+        handoff::read_request(&path, file, &metadata).unwrap_err();
+    }
+}

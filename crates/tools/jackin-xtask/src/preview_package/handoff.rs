@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
-use std::{env, fs, io::Read, path::Path};
+use std::{env, fs, io::Read, os::unix::fs::MetadataExt, path::Path};
 use velnor_actions_contract::{
     canonical_json_bytes, parse_strict_json,
     preview_production::{
@@ -33,21 +33,59 @@ pub(super) struct TaskRequest {
 }
 
 pub(super) fn load() -> Result<TaskRequest> {
-    let path = env::var("VELNOR_PREVIEW_REQUEST_FILE")?;
-    let expected = Path::new(&env::var("RUNNER_TEMP")?).join("velnor/preview-task-request.json");
+    load_path(Path::new(&native_env("VELNOR_PREVIEW_REQUEST_FILE")?))
+}
+
+fn native_env(key: &str) -> Result<String> {
+    env::var(key).with_context(|| format!("missing native environment variable {key}"))
+}
+
+pub(super) fn load_path(path: &Path) -> Result<TaskRequest> {
+    let (file, metadata) = open_request(path)?;
+    read_request(path, file, &metadata)
+}
+
+fn validate_path(path: &Path) -> Result<()> {
     ensure!(
-        Path::new(&path).is_absolute() && Path::new(&path) == expected,
+        path.is_absolute()
+            && path
+                .file_name()
+                .is_some_and(|name| name == "preview-task-request.json")
+            && path
+                .parent()
+                .and_then(Path::file_name)
+                .is_some_and(|name| name == "velnor"),
         "unexpected native request path"
     );
-    let metadata = fs::symlink_metadata(&path)?;
+    let mut component_path = std::path::PathBuf::new();
+    for component in path.components() {
+        component_path.push(component.as_os_str());
+        ensure!(
+            !fs::symlink_metadata(&component_path)?
+                .file_type()
+                .is_symlink(),
+            "native request path contains a symlink"
+        );
+    }
+    ensure!(
+        path.canonicalize()?.as_os_str() == path.as_os_str(),
+        "native request path must be canonical"
+    );
+    Ok(())
+}
+
+pub(super) fn open_request(path: &Path) -> Result<(fs::File, fs::Metadata)> {
+    validate_path(path)?;
+    let metadata = fs::symlink_metadata(path)?;
     ensure!(
         metadata.is_file()
-            && !metadata.file_type().is_symlink()
+            && metadata.nlink() == 1
+            && metadata.uid() == nix::unistd::geteuid().as_raw()
             && metadata.len() <= MAX_REQUEST_BYTES,
-        "native request must be a bounded regular file"
+        "native request must be an owned single-link bounded regular file"
     );
     let descriptor = nix::fcntl::open(
-        Path::new(&path),
+        path,
         nix::fcntl::OFlag::O_RDONLY
             | nix::fcntl::OFlag::O_NOFOLLOW
             | nix::fcntl::OFlag::O_NONBLOCK
@@ -56,12 +94,43 @@ pub(super) fn load() -> Result<TaskRequest> {
     )?;
     let file = fs::File::from(descriptor);
     ensure!(
-        file.metadata()?.is_file(),
-        "native request descriptor must be regular"
+        same_file(&metadata, &file.metadata()?),
+        "native request changed during open"
     );
+    Ok((file, metadata))
+}
+
+pub(super) fn read_request(
+    path: &Path,
+    mut file: fs::File,
+    metadata: &fs::Metadata,
+) -> Result<TaskRequest> {
     let mut bytes = Vec::new();
-    file.take(MAX_REQUEST_BYTES + 1).read_to_end(&mut bytes)?;
+    (&mut file)
+        .take(MAX_REQUEST_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    validate_path(path)?;
+    ensure!(
+        bytes.len() as u64 == metadata.len()
+            && same_file(metadata, &file.metadata()?)
+            && same_file(metadata, &fs::symlink_metadata(path)?),
+        "native request changed during read"
+    );
     parse(&bytes)
+}
+
+fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    a.dev() == b.dev()
+        && a.ino() == b.ino()
+        && a.mode() == b.mode()
+        && a.uid() == b.uid()
+        && a.gid() == b.gid()
+        && a.nlink() == b.nlink()
+        && a.len() == b.len()
+        && a.mtime() == b.mtime()
+        && a.mtime_nsec() == b.mtime_nsec()
+        && a.ctime() == b.ctime()
+        && a.ctime_nsec() == b.ctime_nsec()
 }
 
 pub(super) fn parse(bytes: &[u8]) -> Result<TaskRequest> {
@@ -88,19 +157,19 @@ pub(super) fn parse(bytes: &[u8]) -> Result<TaskRequest> {
 pub(super) fn validate_environment(request: &PreviewProductionRequest) -> Result<()> {
     let context = &request.context;
     ensure!(
-        env::var("VELNOR_RELEASE_SOURCE_COMMIT")? == context.source_sha,
+        native_env("VELNOR_RELEASE_SOURCE_COMMIT")? == context.source_sha,
         "source handoff mismatch"
     );
     ensure!(
-        env::var("VELNOR_RELEASE_SOURCE_REF")? == context.source_ref,
+        native_env("VELNOR_RELEASE_SOURCE_REF")? == context.source_ref,
         "ref handoff mismatch"
     );
     ensure!(
-        env::var("VELNOR_RELEASE_VERSION")? == context.version,
+        native_env("VELNOR_RELEASE_VERSION")? == context.version,
         "version handoff mismatch"
     );
     ensure!(
-        env::var("VELNOR_RELEASE_COMMIT_COUNT")? == context.commit_count.to_string(),
+        native_env("VELNOR_RELEASE_COMMIT_COUNT")? == context.commit_count.to_string(),
         "count handoff mismatch"
     );
     Ok(())
