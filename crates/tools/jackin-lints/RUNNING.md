@@ -55,6 +55,6 @@ separate dependency correction; it is not suppressed or treated as a passing
 workspace lint run. The historical pilot result below is not a current result.
 
 The canonical Mise task runs its regression controls and complete check in one
-script with a ten-minute execution timeout. It installs no toolchain and makes
+script. It installs no toolchain and makes
 no directory-level Rustup override. The task remains a local pilot, not a
 required native preview or CI gate.
