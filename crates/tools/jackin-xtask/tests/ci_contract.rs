@@ -1,217 +1,21 @@
 use anyhow::{Context, Result, ensure};
 use serde_json::Value as YamlValue;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::BTreeSet,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeSet, fs};
 use toml::Value as TomlValue;
-
-use jackin_xtask::workflow_yaml;
 
 const ARCHITECT_REPOSITORY: &str = "jackin-project/jackin-the-architect";
 const ARCHITECT_COMMIT: &str = "7db69b62f598a0971809ee4a006ad3f5477d0996";
 const ARCHITECT_MANIFEST_SHA256: &str =
     "b38e506587c98137d0a1a88247fb68afc9f9f215c8104c838df251933a917ae0";
 
-fn repository_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
-}
-
-fn yaml_field<'a>(value: &'a YamlValue, name: &str) -> Option<&'a YamlValue> {
-    value.as_object()?.get(name)
-}
-
-fn workspace_rust_job_ids(root: &Path) -> Result<BTreeSet<String>> {
-    let manifest: TomlValue = toml::from_str(
-        &fs::read_to_string(root.join("Cargo.toml")).context("workspace manifest exists")?,
-    )
-    .context("workspace manifest is valid TOML")?;
-    let members = manifest
-        .get("workspace")
-        .and_then(|workspace| workspace.get("members"))
-        .and_then(TomlValue::as_array)
-        .context("workspace members are explicit")?;
-    let mut jobs = BTreeSet::new();
-    for member in members {
-        let member = member
-            .as_str()
-            .context("workspace member paths are strings")?;
-        ensure!(
-            !member.contains('*'),
-            "workspace coverage contract requires explicit member paths"
-        );
-        let package_manifest = root.join(member).join("Cargo.toml");
-        let package: TomlValue = toml::from_str(
-            &fs::read_to_string(&package_manifest)
-                .with_context(|| format!("workspace package manifest exists: {member}"))?,
-        )
-        .with_context(|| format!("workspace package manifest is valid TOML: {member}"))?;
-        let name = package
-            .get("package")
-            .and_then(|package| package.get("name"))
-            .and_then(TomlValue::as_str)
-            .with_context(|| format!("workspace member declares package name: {member}"))?;
-        ensure!(
-            jobs.insert(format!("rust-{name}")),
-            "workspace package job ID is unique: {name}"
-        );
-    }
-    ensure!(!jobs.is_empty(), "workspace members are present");
-    Ok(jobs)
-}
-
-fn workflow_jobs(root: &Path) -> Result<(YamlValue, BTreeSet<String>)> {
-    let workflow_bytes =
-        fs::read(root.join(".github/workflows/ci.yml")).context("generated CI workflow exists")?;
-    let workflow: YamlValue =
-        workflow_yaml::parse(&workflow_bytes).context("generated CI workflow is valid YAML")?;
-    let jobs = yaml_field(&workflow, "jobs")
-        .and_then(YamlValue::as_object)
-        .context("generated CI workflow declares jobs")?;
-    let ids = jobs.keys().cloned().collect::<BTreeSet<_>>();
-    Ok((workflow, ids))
-}
-
-fn discovery_excludes(member: &str, pattern: &str) -> bool {
-    if let Some(prefix) = pattern.strip_suffix("/**") {
-        if let Some(name) = prefix.strip_prefix("**/") {
-            return member.split('/').any(|component| component == name);
-        }
-        return member == prefix || member.starts_with(&format!("{prefix}/"));
-    }
-    member == pattern || member.starts_with(&format!("{pattern}/"))
-}
-
-fn discovery_excluded_job_ids(root: &Path) -> Result<BTreeSet<String>> {
-    let config: TomlValue = toml::from_str(
-        &fs::read_to_string(root.join(".velnor/config.toml")).context("Velnor config exists")?,
-    )
-    .context("Velnor config is valid TOML")?;
-    let patterns = config
-        .get("discovery")
-        .and_then(|discovery| discovery.get("exclude"))
-        .and_then(TomlValue::as_array)
-        .context("discovery excludes are explicit")?
-        .iter()
-        .map(|pattern| {
-            pattern
-                .as_str()
-                .context("discovery exclude patterns are strings")
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let manifest: TomlValue = toml::from_str(
-        &fs::read_to_string(root.join("Cargo.toml")).context("workspace manifest exists")?,
-    )
-    .context("workspace manifest is valid TOML")?;
-    let members = manifest
-        .get("workspace")
-        .and_then(|workspace| workspace.get("members"))
-        .and_then(TomlValue::as_array)
-        .context("workspace members are explicit")?;
-    let mut jobs = BTreeSet::new();
-    for member in members {
-        let member = member
-            .as_str()
-            .context("workspace member paths are strings")?;
-        if !patterns
-            .iter()
-            .any(|pattern| discovery_excludes(member, pattern))
-        {
-            continue;
-        }
-        let package_manifest = root.join(member).join("Cargo.toml");
-        let package: TomlValue = toml::from_str(&fs::read_to_string(&package_manifest)?)
-            .with_context(|| format!("workspace package manifest is valid TOML: {member}"))?;
-        let name = package
-            .get("package")
-            .and_then(|package| package.get("name"))
-            .and_then(TomlValue::as_str)
-            .with_context(|| format!("workspace member declares package name: {member}"))?;
-        jobs.insert(format!("rust-{name}"));
-    }
-    Ok(jobs)
-}
-
-fn configured_workflow_tasks(root: &Path) -> Result<Vec<TomlValue>> {
-    let config: TomlValue = toml::from_str(
-        &fs::read_to_string(root.join("docs/integration/unpublished-workflow-tasks.toml"))
-            .context("unpublished workflow tasks exist")?,
-    )
-    .context("unpublished workflow tasks are valid TOML")?;
-    let tasks = config
-        .get("workflow")
-        .and_then(|workflow| workflow.get("tasks"))
-        .and_then(TomlValue::as_array)
-        .context("Velnor declares workflow task coverage")?;
-    let mut previous = None;
-    let mut ids = BTreeSet::new();
-    for task in tasks {
-        let id = task
-            .get("id")
-            .and_then(TomlValue::as_str)
-            .context("workflow task has an ID")?;
-        ensure!(ids.insert(id), "workflow task IDs are unique");
-        ensure!(
-            previous.is_none_or(|previous: &str| previous < id),
-            "workflow tasks are sorted by ID"
-        );
-        previous = Some(id);
-    }
-    Ok(tasks.clone())
-}
-
-fn configured_task_source(task: &TomlValue) -> Result<(&str, &str)> {
-    let source = task
-        .get("source")
-        .and_then(TomlValue::as_table)
-        .context("workflow task has an explicit source")?;
-    let mise_config = source
-        .get("mise_config")
-        .and_then(TomlValue::as_str)
-        .context("workflow task source has a Mise config path")?;
-    let working_directory = source
-        .get("working_directory")
-        .and_then(TomlValue::as_str)
-        .context("workflow task source has a working directory")?;
-    Ok((mise_config, working_directory))
-}
-
-fn job_needs(job: &YamlValue) -> Result<BTreeSet<String>> {
-    yaml_field(job, "needs")
-        .and_then(YamlValue::as_array)
-        .into_iter()
-        .flatten()
-        .map(|need| {
-            need.as_str()
-                .map(ToOwned::to_owned)
-                .context("job needs entries are strings")
-        })
-        .collect::<Result<BTreeSet<_>>>()
-}
-
-fn task_job_ids(workflow_job_ids: &BTreeSet<String>, task_id: &str) -> Vec<String> {
-    let prefix = format!("task-{task_id}");
-    workflow_job_ids
-        .iter()
-        .filter(|job_id| {
-            *job_id == &prefix
-                || job_id
-                    .strip_prefix(&prefix)
-                    .is_some_and(|suffix| matches!(suffix, "-hosted" | "-scale-set"))
-        })
-        .cloned()
-        .collect()
-}
-
-fn core_string_constant<'a>(contents: &'a str, name: &str) -> Result<&'a str> {
-    let marker = format!("pub const {name}: &str = \"");
-    contents
-        .split_once(marker.as_str())
-        .and_then(|(_, rest)| rest.split_once('"').map(|(value, _)| value))
-        .with_context(|| format!("Jackin declares {name}"))
-}
+#[path = "ci_contract/helpers.rs"]
+mod helpers;
+use helpers::{
+    assert_exact_rust_phase_inventory, configured_task_source, configured_workflow_tasks,
+    core_string_constant, discovery_excluded_job_ids, job_needs, repository_root, task_job_ids,
+    workflow_jobs, workspace_rust_job_ids, yaml_field,
+};
 
 #[test]
 fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<()> {
@@ -247,6 +51,7 @@ fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<
         "unpublished workflow tasks are not emitted as partial jobs"
     );
 
+    assert_exact_rust_phase_inventory(&job_ids, &workspace_jobs, &excluded)?;
     for job_id in &workspace_jobs {
         if excluded.contains(job_id) {
             ensure!(
@@ -257,7 +62,7 @@ fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<
         }
         ensure!(
             job_ids.contains(job_id),
-            "workspace member has a generated Rust job: {job_id}"
+            "workspace member has every generated Rust phase: {job_id}"
         );
     }
 
