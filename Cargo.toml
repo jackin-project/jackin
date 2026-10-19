@@ -520,7 +520,7 @@ cargo_common_metadata = "allow"
 multiple_crate_versions = "allow"
 
 [profile.dev]
-debug = 1
+debug = 0
 
 [profile.release]
 lto = "thin"
