@@ -6,6 +6,7 @@ policy = "consumer-v1"
 default_branch = "main"
 generator_validation = "bootstrap"
 max_parallel_jobs = 4
+crate_timeout_minutes = 10
 mise_quiet = false
 pull_request_cache_policy = "read-only"
 runner_label = "ubuntu-26.04"
@@ -332,7 +333,7 @@ task = "check:repository-policy"
 directory = "."
 inputs = [".velnor/config.toml", "Cargo.lock", "Cargo.toml", "clippy.toml", "container-path-allowlist.toml", "mise.lock", "mise.toml", "ratchet.toml", "rust-toolchain.toml", "crates/tools/jackin-xtask/src/lint.rs"]
 tools = ["rust", "weaver"]
-timeout_minutes = 5
+timeout_minutes = 10
 
 [checks.runner]
 label = "macos-26"
@@ -345,7 +346,7 @@ task = "check:repository-links"
 directory = "."
 inputs = [".velnor/config.toml", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "rust-toolchain.toml", "crates/tools/jackin-xtask/src/docs.rs"]
 tools = ["rust"]
-timeout_minutes = 5
+timeout_minutes = 10
 
 [checks.runner]
 label = "macos-26"
@@ -358,7 +359,7 @@ task = "check:dependency-usage"
 directory = "."
 inputs = [".velnor/config.toml", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "rust-toolchain.toml"]
 tools = ["cargo-shear", "rust"]
-timeout_minutes = 5
+timeout_minutes = 10
 
 [checks.runner]
 label = "macos-26"

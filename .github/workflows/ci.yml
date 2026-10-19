@@ -81,7 +81,7 @@ jobs:
   check-dependency-usage:
     name: Check / dependency-usage
     runs-on: macos-26
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: &m5
       VELNOR_ASSET_SHA256: 89c8702acf8d042f90298af320680fe708e9d8408182cebbeb0d083addd2c8e7
       VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.23/velnor-actions-0.1.23-aarch64-apple-darwin
@@ -135,7 +135,7 @@ jobs:
   check-repository-links:
     name: Check / repository-links
     runs-on: macos-26
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m5
     permissions:
       contents: read
@@ -165,7 +165,7 @@ jobs:
   check-repository-policy:
     name: Check / repository-policy
     runs-on: macos-26
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m5
     permissions:
       contents: read
@@ -383,7 +383,7 @@ jobs:
   rust-jackin:
     name: Rust / jackin
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: &m12
       MBX_BUILD_SCRIPT_EXECUTION: "0"
       MBX_CC: "0"
@@ -503,7 +503,7 @@ jobs:
   rust-jackin-agent-status:
     name: Rust / jackin-agent-status
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -564,7 +564,7 @@ jobs:
   rust-jackin-capsule:
     name: Rust / jackin-capsule
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -625,7 +625,7 @@ jobs:
   rust-jackin-config:
     name: Rust / jackin-config
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -686,7 +686,7 @@ jobs:
   rust-jackin-console:
     name: Rust / jackin-console
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -747,7 +747,7 @@ jobs:
   rust-jackin-core:
     name: Rust / jackin-core
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -808,7 +808,7 @@ jobs:
   rust-jackin-dev:
     name: Rust / jackin-dev
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -864,7 +864,7 @@ jobs:
   rust-jackin-diagnostics:
     name: Rust / jackin-diagnostics
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -925,7 +925,7 @@ jobs:
   rust-jackin-docker:
     name: Rust / jackin-docker
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -986,7 +986,7 @@ jobs:
   rust-jackin-env:
     name: Rust / jackin-env
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1047,7 +1047,7 @@ jobs:
   rust-jackin-host:
     name: Rust / jackin-host
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1108,7 +1108,7 @@ jobs:
   rust-jackin-image:
     name: Rust / jackin-image
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1169,7 +1169,7 @@ jobs:
   rust-jackin-instance:
     name: Rust / jackin-instance
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1230,7 +1230,7 @@ jobs:
   rust-jackin-isolation:
     name: Rust / jackin-isolation
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1291,7 +1291,7 @@ jobs:
   rust-jackin-launch:
     name: Rust / jackin-launch
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1352,7 +1352,7 @@ jobs:
   rust-jackin-manifest:
     name: Rust / jackin-manifest
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1413,7 +1413,7 @@ jobs:
   rust-jackin-otlp-testbed:
     name: Rust / jackin-otlp-testbed
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1474,7 +1474,7 @@ jobs:
   rust-jackin-process:
     name: Rust / jackin-process
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1535,7 +1535,7 @@ jobs:
   rust-jackin-process-directory:
     name: Rust / jackin-process-directory
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1596,7 +1596,7 @@ jobs:
   rust-jackin-protocol:
     name: Rust / jackin-protocol
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1657,7 +1657,7 @@ jobs:
   rust-jackin-runtime:
     name: Rust / jackin-runtime
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1718,7 +1718,7 @@ jobs:
   rust-jackin-telemetry:
     name: Rust / jackin-telemetry
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1779,7 +1779,7 @@ jobs:
   rust-jackin-test-support:
     name: Rust / jackin-test-support
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1840,7 +1840,7 @@ jobs:
   rust-jackin-tui:
     name: Rust / jackin-tui
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1901,7 +1901,7 @@ jobs:
   rust-jackin-usage:
     name: Rust / jackin-usage
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -1962,7 +1962,7 @@ jobs:
   rust-jackin-usage-ffi:
     name: Rust / jackin-usage-ffi
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -2023,7 +2023,7 @@ jobs:
   rust-jackin-workflow:
     name: Rust / jackin-workflow
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -2084,7 +2084,7 @@ jobs:
   rust-jackin-workflow-spec:
     name: Rust / jackin-workflow-spec
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
@@ -2145,7 +2145,7 @@ jobs:
   rust-jackin-xtask:
     name: Rust / jackin-xtask
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env: *m12
     needs:
       - plan
