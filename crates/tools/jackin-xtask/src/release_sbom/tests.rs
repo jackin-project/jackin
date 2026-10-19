@@ -268,6 +268,18 @@ fn uncompiled_workspace_packages_are_not_reported_as_build_inputs() {
         "name":"jackin-xtask", "version":env!("CARGO_PKG_VERSION"), "source":null,
         "manifest_path":dir.path().join("crates/tools/jackin-xtask/Cargo.toml"), "license":"Apache-2.0"
     })).unwrap());
+    // Full locked metadata can acquire unselected registry manifests too;
+    // their availability must not turn them into claimed build inputs.
+    fixture.metadata.packages.push(
+        serde_json::from_value(json!({
+            "id":"registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.18",
+            "name":"itoa", "version":"1.0.18",
+            "source":"registry+https://github.com/rust-lang/crates.io-index",
+            "manifest_path":dir.path().join("unselected-registry/itoa-1.0.18/Cargo.toml"),
+            "license":"MIT OR Apache-2.0"
+        }))
+        .unwrap(),
+    );
     let output = dir.path().join("bom.json");
     write_fixture(&fixture, &output, "0.6.4-preview.42+aaaaaaa").unwrap();
     let document: Value = serde_json::from_slice(&fs::read(output).unwrap()).unwrap();
@@ -276,7 +288,7 @@ fn uncompiled_workspace_packages_are_not_reported_as_build_inputs() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|component| component["name"] == "jackin-xtask")
+            .any(|component| component["name"] == "jackin-xtask" || component["name"] == "itoa")
     );
     fixture.records = String::from_utf8(fixture.records)
         .unwrap()
