@@ -69,7 +69,7 @@ fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<
     for job_id in &workspace_jobs {
         ensure!(
             required_needs.contains(job_id),
-            "Required waits for covered job {job_id}"
+            "Required waits for declared job {job_id}"
         );
     }
     Ok(())

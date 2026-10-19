@@ -14,6 +14,9 @@ use toml::Value as TomlValue;
 mod metadata;
 use metadata::workspace_package_ids;
 
+#[path = "execution.rs"]
+mod execution;
+
 pub(super) fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
@@ -286,37 +289,7 @@ pub(super) fn assert_rust_obligation_reports(
         .as_object()
         .context("task manifest has tasks")?;
     let jobs = workflow["jobs"].as_object().context("workflow has jobs")?;
-    for (id, task) in tasks.iter().filter(|(id, _)| id.starts_with("stack/rust/")) {
-        let needle = format!(",{id},");
-        let owners = jobs
-            .iter()
-            .flat_map(|(job_id, job)| {
-                job["steps"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(move |step| (job_id, step))
-            })
-            .filter(|(_, step)| {
-                step["if"]
-                    .as_str()
-                    .is_some_and(|condition| condition.contains(&needle))
-            })
-            .collect::<Vec<_>>();
-        ensure!(
-            owners.len() == 1,
-            "Rust obligation has one actual execution owner: {id}"
-        );
-        let (job_id, step) = owners[0];
-        ensure!(
-            job_id == expected_task_owner(id, expected_owners)?,
-            "Rust obligation belongs to its exact crate/configuration job: {id}"
-        );
-        ensure!(
-            step["with"]["digest"] == task["execution_digest"],
-            "actual step binds report execution identity: {id}"
-        );
-    }
+    execution::assert_rust_execution_inventory(tasks, jobs, expected_owners)?;
     for (id, job) in jobs.iter().filter(|(id, _)| id.starts_with("rust-")) {
         let steps = job["steps"].as_array().context("crate job has steps")?;
         for name in [
