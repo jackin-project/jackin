@@ -12,16 +12,17 @@ const ARCHITECT_MANIFEST_SHA256: &str =
 #[path = "ci_contract/helpers.rs"]
 mod helpers;
 use helpers::{
-    assert_exact_rust_phase_inventory, configured_task_source, configured_workflow_tasks,
-    core_string_constant, discovery_excluded_job_ids, job_needs, repository_root, task_job_ids,
-    workflow_jobs, workspace_rust_job_ids, yaml_field,
+    assert_complete_required_fan_in, assert_exact_rust_job_inventory,
+    assert_rust_obligation_reports, configured_task_source, configured_workflow_tasks,
+    core_string_constant, job_needs, repository_root, task_job_ids, workflow_jobs,
+    workspace_rust_job_owners, yaml_field,
 };
 
 #[test]
 fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<()> {
     let root = repository_root();
-    let workspace_jobs = workspace_rust_job_ids(&root)?;
-    let excluded = discovery_excluded_job_ids(&root)?;
+    let owners = workspace_rust_job_owners(&root)?;
+    let workspace_jobs = owners.values().cloned().collect();
     let active =
         fs::read_to_string(root.join(".velnor/config.toml")).context("Velnor config exists")?;
     ensure!(
@@ -51,18 +52,12 @@ fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<
         "unpublished workflow tasks are not emitted as partial jobs"
     );
 
-    assert_exact_rust_phase_inventory(&job_ids, &workspace_jobs, &excluded)?;
+    assert_exact_rust_job_inventory(&job_ids, &workspace_jobs)?;
+    assert_rust_obligation_reports(&root, &workflow, &owners)?;
     for job_id in &workspace_jobs {
-        if excluded.contains(job_id) {
-            ensure!(
-                !job_ids.contains(job_id),
-                "discovery-excluded member is not a generated Rust job: {job_id}"
-            );
-            continue;
-        }
         ensure!(
             job_ids.contains(job_id),
-            "workspace member has every generated Rust phase: {job_id}"
+            "workspace member/configuration has its generated Rust job: {job_id}"
         );
     }
 
@@ -70,10 +65,8 @@ fn required_fan_in_covers_every_workspace_crate_and_configured_task() -> Result<
         .get("required")
         .context("generated workflow has the Required gate")?;
     let required_needs = job_needs(required)?;
-    for job_id in workspace_jobs
-        .iter()
-        .filter(|job_id| !excluded.contains(*job_id))
-    {
+    assert_complete_required_fan_in(&root, &job_ids, &required_needs)?;
+    for job_id in &workspace_jobs {
         ensure!(
             required_needs.contains(job_id),
             "Required waits for covered job {job_id}"

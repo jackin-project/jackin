@@ -18,31 +18,32 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 |---|---|---|
 | [`main.rs`](src/main.rs) | MBX `xtask` dispatcher | — |
 | [`lib.rs`](src/lib.rs) · [`workflow_yaml.rs`](src/workflow_yaml.rs) | One bounded workflow parser shared by the binary and integration checks | [`tests.rs`](src/workflow_yaml/tests.rs), run once in the library |
-| [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
+| [`ci.rs`](src/ci.rs) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
 | [`ci_audit.rs`](src/ci_audit.rs) · [`ci_cargo_audit.rs`](src/ci_cargo_audit.rs) · [`ci_target.rs`](src/ci_target.rs) | workflow audit, advisory-cache selection, and target transport | sibling `tests.rs` files |
-| [`ci_doc_examples.rs`](src/ci_doc_examples.rs) · [`ci_doc_examples/`](src/ci_doc_examples) | nextest-only documentation-example gate | [`tests.rs`](src/ci_doc_examples/tests.rs) |
-| [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate (adapter; budgets also in `ratchet.toml`) | [`tests.rs`](src/lint/tests.rs) |
-| [`ratchet.rs`](src/ratchet.rs) · [`ratchet/`](src/ratchet) | unified shrink-only ratchet engine (`lint ratchet`) | [`tests.rs`](src/ratchet/tests.rs) |
-| [`agent_files.rs`](src/agent_files.rs) · [`agent_files/`](src/agent_files) | agent-file symlink gate (`--format human\|json\|github`) | [`tests.rs`](src/agent_files/tests.rs) |
-| [`report.rs`](src/report.rs) · [`report/`](src/report) | shared gate reporter (human/json/github) | [`tests.rs`](src/report/tests.rs) |
-| [`agent_links.rs`](src/agent_links.rs) · [`agent_links/`](src/agent_links) | no-cross-ref gate (README/AGENTS) | [`tests.rs`](src/agent_links/tests.rs) |
-| [`container_paths_gate.rs`](src/container_paths_gate.rs) · [`container_paths_gate/`](src/container_paths_gate) | container-path gate | [`tests.rs`](src/container_paths_gate/tests.rs) |
-| [`suppressions.rs`](src/suppressions.rs) · [`suppressions/`](src/suppressions) | lint-suppression gate | [`tests.rs`](src/suppressions/tests.rs) |
-| [`arch.rs`](src/arch.rs) · [`arch/`](src/arch) | tier-graph dependency-direction gate (`TIERS` table; prod edges must descend; dev-cycle allowlist) | [`tests.rs`](src/arch/tests.rs) |
-| [`readme_freshness.rs`](src/readme_freshness.rs) · [`readme_freshness/`](src/readme_freshness) | structural src change ⇒ README same-PR gate | [`tests.rs`](src/readme_freshness/tests.rs) |
-|  [`layout_lint.rs`](src/layout_lint.rs) · [`layout_lint/`](src/layout_lint) | test-layout gate | [`tests.rs`](src/layout_lint/tests.rs) |
-| [`schema.rs`](src/schema.rs) · [`schema/`](src/schema) | schema check | [`tests.rs`](src/schema/tests.rs) |
-| [`docs.rs`](src/docs.rs) · [`docs/`](src/docs) | docs repo-links / brand / specs / roadmap / research and semantic CI cache contracts | [`tests.rs`](src/docs/tests.rs), contract/brand/specs unit tests |
-| [`telemetry_registry.rs`](src/telemetry_registry.rs) · [`telemetry_registry/`](src/telemetry_registry) | closed-registry Weaver validation and namespace/privacy gates | [`tests.rs`](src/telemetry_registry/tests.rs) |
-| [`telemetry_bench.rs`](src/telemetry_bench.rs) · [`telemetry_bench/`](src/telemetry_bench) | telemetry performance capture and 5% comparison gate | [`tests.rs`](src/telemetry_bench/tests.rs) |
-| [`pr.rs`](src/pr.rs) · [`pr/`](src/pr) | PR tooling | [`tests.rs`](src/pr/tests.rs) |
+| [`ci_doc_examples.rs`](src/ci_doc_examples.rs) | nextest-only documentation-example gate | [`tests.rs`](src/ci_doc_examples/tests.rs) |
+| [`lint.rs`](src/lint.rs) | file-size lint gate (adapter; budgets also in `ratchet.toml`) | [`tests.rs`](src/lint/tests.rs) |
+| [`ratchet.rs`](src/ratchet.rs) | unified shrink-only ratchet engine (`lint ratchet`) | [`tests.rs`](src/ratchet/tests.rs) |
+| [`agent_files.rs`](src/agent_files.rs) | agent-file symlink gate (`--format human\|json\|github`) | [`tests.rs`](src/agent_files/tests.rs) |
+| [`report.rs`](src/report.rs) | shared gate reporter (human/json/github) | [`tests.rs`](src/report/tests.rs) |
+| [`agent_links.rs`](src/agent_links.rs) | no-cross-ref gate (README/AGENTS) | [`tests.rs`](src/agent_links/tests.rs) |
+| [`container_paths_gate.rs`](src/container_paths_gate.rs) | container-path gate | [`tests.rs`](src/container_paths_gate/tests.rs) |
+| [`suppressions.rs`](src/suppressions.rs) | lint-suppression gate | [`tests.rs`](src/suppressions/tests.rs) |
+| [`arch.rs`](src/arch.rs) | tier-graph dependency-direction gate (`TIERS` table; prod edges must descend; dev-cycle allowlist) | [`tests.rs`](src/arch/tests.rs) |
+| [`readme_freshness.rs`](src/readme_freshness.rs) | structural src change ⇒ README same-PR gate | [`tests.rs`](src/readme_freshness/tests.rs) |
+|  [`layout_lint.rs`](src/layout_lint.rs) | test-layout gate | [`tests.rs`](src/layout_lint/tests.rs) |
+| [`schema.rs`](src/schema.rs) | schema check | [`tests.rs`](src/schema/tests.rs) |
+| [`docs.rs`](src/docs.rs) | docs repo-links / brand / specs / roadmap / research and semantic CI cache contracts | [`tests.rs`](src/docs/tests.rs), contract/brand/specs unit tests |
+| [`telemetry_registry.rs`](src/telemetry_registry.rs) | closed-registry Weaver validation and namespace/privacy gates | [`tests.rs`](src/telemetry_registry/tests.rs) |
+| [`telemetry_bench.rs`](src/telemetry_bench.rs) | telemetry performance capture and 5% comparison gate | [`tests.rs`](src/telemetry_bench/tests.rs) |
+| [`pr.rs`](src/pr.rs) | PR tooling | [`tests.rs`](src/pr/tests.rs) |
 | [`profile_matrix.rs`](src/profile_matrix.rs) | feature-profile matrix | — |
-| [`pty_fixture.rs`](src/pty_fixture.rs) · [`pty_fixture/`](src/pty_fixture) | PTY fixture extraction | [`tests.rs`](src/pty_fixture/tests.rs) |
-| [`construct.rs`](src/construct.rs) · [`construct/`](src/construct) | construct image helpers | [`tests.rs`](src/construct/tests.rs) |
-| [`release_verify.rs`](src/release_verify.rs) · [`release_verify/`](src/release_verify) | release verification | [`tests.rs`](src/release_verify/tests.rs) |
-| [`health.rs`](src/health.rs) · [`health/`](src/health) | report-only code-health dashboard (Phase 0) | [`tests.rs`](src/health/tests.rs) |
-| [`fs_util.rs`](src/fs_util.rs) · [`fs_util/`](src/fs_util) | deterministic `read_dir_sorted` for gate code (plan 027) | [`tests.rs`](src/fs_util/tests.rs) |
-| [`desktop.rs`](src/desktop.rs) · [`desktop/`](src/desktop) | jackin❯ desktop assembly: bindings, XCFramework, build/verify/run, sign-notarize, release-state, bootstrap-secrets | [`tests.rs`](src/desktop/tests.rs) |
+| [`pty_fixture.rs`](src/pty_fixture.rs) | PTY fixture extraction | [`tests.rs`](src/pty_fixture/tests.rs) |
+| [`construct.rs`](src/construct.rs) | construct image helpers | [`tests.rs`](src/construct/tests.rs) |
+| [`preview_package.rs`](src/preview_package.rs) · [`preview_package/`](src/preview_package) | Native preview payload selection, handoff and assembly | [`tests.rs`](src/preview_package/tests.rs) |
+| [`release_archive.rs`](src/release_archive.rs) · [`release_sbom.rs`](src/release_sbom.rs) | Unsigned product archives and their build evidence | [`tests.rs`](src/release_archive/tests.rs) |
+| [`health.rs`](src/health.rs) | report-only code-health dashboard (Phase 0) | [`tests.rs`](src/health/tests.rs) |
+| [`fs_util.rs`](src/fs_util.rs) | deterministic `read_dir_sorted` for gate code (plan 027) | [`tests.rs`](src/fs_util/tests.rs) |
+| [`desktop.rs`](src/desktop.rs) | jackin❯ desktop assembly: bindings, XCFramework, build/verify/run, sign-notarize, release-state, bootstrap-secrets | [`tests.rs`](src/desktop/tests.rs) |
 
 ## Public API
 
@@ -53,6 +54,10 @@ artifact use repeatable `--only <family>` arguments so they do not measure
 unrelated families or launch nested build work. Artifact-backed families skip
 when their artifact is absent; the job that produces an artifact must run the
 matching scoped ratchet after generation.
+
+## Native preview packaging
+
+`mise run release:preview-package` consumes the request and payload context supplied by the generated Velnor workflow. Each production job builds one declared product/target pair: four Jackin payloads and two Linux capsule payloads. Assembly validates and copies the captured archives and SBOMs without rebuilding product binaries. Signing and immutable publication belong to separate generated jobs.
 
 ## How to verify
 

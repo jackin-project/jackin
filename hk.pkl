@@ -9,7 +9,8 @@ steps {
   ["cargo_clippy"] = Builtins.cargo_clippy
   ["actionlint"] {
     glob = ".github/workflows/*.yml"
-    check = "actionlint {{files}}"
+    // Match Velnor22’s exact native step-concurrency bridge; keep ShellCheck active.
+    check = "actionlint -color -ignore '^unexpected key \"background\" for step to (run shell command|execute action)\\. ' -ignore '^step must run script with \"run\" section or run action with \"uses\" section$' {{files}}"
   }
   ["swiftlint"] {
     glob = "native/**/*.swift"

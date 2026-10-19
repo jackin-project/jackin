@@ -71,29 +71,54 @@ const CAPSULE_TARGETS: [TargetSpec; 2] = [
     },
 ];
 
-pub(crate) fn build_preview(version: &str, output: &Path) -> Result<()> {
-    for package in [ArchivePackage::Jackin, ArchivePackage::JackinCapsule] {
-        run(ReleaseArchivesArgs {
+pub(crate) fn build_preview_payload(
+    product: &str,
+    target: &str,
+    version: &str,
+    output: &Path,
+) -> Result<()> {
+    let (package, target) = preview_selection(product, target)?;
+    run_targets(
+        ReleaseArchivesArgs {
             package,
             version: version.to_owned(),
             output_dir: output.to_owned(),
-        })?;
-    }
-    Ok(())
+        },
+        std::slice::from_ref(&target),
+    )
+}
+
+fn preview_selection(product: &str, target: &str) -> Result<(ArchivePackage, TargetSpec)> {
+    let package = [ArchivePackage::Jackin, ArchivePackage::JackinCapsule]
+        .into_iter()
+        .find(|package| package_name(*package) == product)
+        .context("unknown preview product")?;
+    let target = targets(package)
+        .iter()
+        .copied()
+        .find(|candidate| candidate.rust == target)
+        .context("preview target is not declared for this product")?;
+    Ok((package, target))
 }
 
 pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
+    let selected = targets(args.package);
+    run_targets(args, selected)
+}
+
+fn run_targets(args: ReleaseArchivesArgs, targets: &[TargetSpec]) -> Result<()> {
     fs::create_dir_all(&args.output_dir)
         .with_context(|| format!("creating {}", args.output_dir.display()))?;
     let target_dir =
         env::var_os("CARGO_TARGET_DIR").map_or_else(|| PathBuf::from("target"), PathBuf::from);
     let build_root = target_dir.join("release-archives");
     let zig_cache = zig_cache()?;
-    let macos_sdk = (args.package == ArchivePackage::Jackin)
+    let macos_sdk = targets
+        .iter()
+        .any(|target| target.rust.contains("apple"))
         .then(prepare_macos_sdk)
         .transpose()?;
 
-    let targets = targets(args.package);
     let jobs_per_target = jobs_per_target(1);
     for target in targets {
         build(
@@ -306,6 +331,19 @@ pub(crate) struct PayloadIdentity {
     pub(crate) package: &'static str,
     pub(crate) target: &'static str,
     pub(crate) binaries: &'static [&'static str],
+}
+
+pub(crate) fn preview_payloads() -> Vec<PayloadIdentity> {
+    [ArchivePackage::Jackin, ArchivePackage::JackinCapsule]
+        .into_iter()
+        .flat_map(|package| {
+            targets(package).iter().map(move |target| PayloadIdentity {
+                package: package_name(package),
+                target: target.rust,
+                binaries: binaries(package),
+            })
+        })
+        .collect()
 }
 
 pub(crate) fn payload_identity(archive: &Path) -> Result<PayloadIdentity> {
