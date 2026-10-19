@@ -193,7 +193,7 @@ fn claims(receipt: &PackageReleaseReceipt) -> sigstore_crypto::FulcioCiClaims {
     claims.build_signer_digest = Some(receipt.workflow.authority_sha.clone());
     claims.build_config_uri = Some(policy::IDENTITY.into());
     claims.build_config_digest = Some(receipt.workflow.authority_sha.clone());
-    claims.build_trigger = Some("push".into());
+    claims.build_trigger = Some("workflow_run".into());
     claims.runner_environment = Some("github-hosted".into());
     claims.run_invocation_uri = Some(format!(
         "{}/actions/runs/{}/attempts/{}",
@@ -209,6 +209,12 @@ fn claims(receipt: &PackageReleaseReceipt) -> sigstore_crypto::FulcioCiClaims {
 fn exact_ci_claim_policy_rejects_every_missing_or_changed_claim() {
     let receipt = receipt();
     policy::validate_ci_claims(&claims(&receipt), &receipt).unwrap();
+    for trigger in ["push", "pull_request", "workflow_dispatch"] {
+        let mut invalid = claims(&receipt);
+        invalid.build_trigger = Some(trigger.into());
+        policy::validate_ci_claims(&invalid, &receipt)
+            .expect_err("only the native completion-triggered preview signer is trusted");
+    }
     for index in 0..14 {
         for replacement in [None, Some("wrong".into())] {
             let mut claims = claims(&receipt);
@@ -351,7 +357,7 @@ fn statement(receipt: &PackageReleaseReceipt) -> (Value, BTreeMap<String, String
             "buildDefinition":{
                 "buildType":"https://actions.github.io/buildtypes/workflow/v1",
                 "externalParameters":{"workflow":{"ref":"refs/heads/main","repository":policy::REPOSITORY,"path":policy::WORKFLOW}},
-                "internalParameters":{"github":{"event_name":"push","repository_id":"1197700841","repository_owner_id":"273541039","runner_environment":"github-hosted"}},
+                "internalParameters":{"github":{"event_name":"workflow_run","repository_id":"1197700841","repository_owner_id":"273541039","runner_environment":"github-hosted"}},
                 "resolvedDependencies":[{"uri":format!("git+{}@refs/heads/main",policy::REPOSITORY),"digest":{"gitCommit":receipt.source.commit_sha}}]
             },
             "runDetails":{"builder":{"id":policy::IDENTITY},"metadata":{"invocationId":format!("{}/actions/runs/{}/attempts/{}",policy::REPOSITORY,receipt.workflow.run_id,receipt.workflow.run_attempt)}}
@@ -389,6 +395,13 @@ fn provenance_requires_exact_complete_eight_subject_inventory() {
             provenance::validate_statement(&invalid, &receipt, &subjects).is_err(),
             "{pointer}"
         );
+    }
+    for trigger in ["push", "pull_request", "workflow_dispatch"] {
+        let mut invalid = statement.clone();
+        invalid["predicate"]["buildDefinition"]["internalParameters"]["github"]["event_name"] =
+            json!(trigger);
+        provenance::validate_statement(&invalid, &receipt, &subjects)
+            .expect_err("only the native completion-triggered preview provenance is trusted");
     }
     let mut missing = statement.clone();
     missing["subject"].as_array_mut().unwrap().pop();
