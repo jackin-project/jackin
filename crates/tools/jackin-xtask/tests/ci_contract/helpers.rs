@@ -264,12 +264,42 @@ pub(super) fn assert_complete_required_fan_in(
     );
     let expected = jobs
         .iter()
-        .filter(|id| id.as_str() != "required")
+        .filter(|id| !matches!(id.as_str(), "required" | "required-gate"))
         .cloned()
         .collect::<BTreeSet<_>>();
     ensure!(
         *needs == expected,
-        "Required covers the exact complete job inventory"
+        "Required verdict covers the exact complete execution and setup inventory"
+    );
+    assert_terminal_required_gate(root)?;
+    Ok(())
+}
+
+fn assert_terminal_required_gate(root: &Path) -> Result<()> {
+    let (workflow, _) = workflow_jobs(root)?;
+    let gate = &workflow["jobs"]["required-gate"];
+    ensure!(
+        gate["name"] == "Required"
+            && gate["if"] == "${{ always() }}"
+            && job_needs(gate)? == BTreeSet::from(["required".to_owned()])
+            && gate.get("continue-on-error").is_none(),
+        "the stable Required gate always waits only for the verdict without ignoring failure"
+    );
+    let steps = gate["steps"]
+        .as_array()
+        .context("Required gate has steps")?;
+    ensure!(steps.len() == 1, "Required gate has exactly one fail step");
+    let step = &steps[0];
+    ensure!(
+        step["if"] == "${{ always() && needs.required.result != 'success' }}"
+            && step.get("continue-on-error").is_none()
+            && step["run"]
+                == concat!(
+                    "env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL ",
+                    "-u ACTIONS_RUNTIME_TOKEN -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN ",
+                    "-u GH_TOKEN -u GH_HOST -u GH_CONFIG_DIR false"
+                ),
+        "Required fails unless its verdict succeeded, using the credential-scrubbed false command"
     );
     Ok(())
 }
