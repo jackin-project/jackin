@@ -194,18 +194,22 @@ kind = "core"
 tool = "rust"
 
 [qualified_tools.options]
-components = ["rustfmt"]
+components = ["llvm-tools", "rustfmt"]
 kind = "rust"
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
 
 [[qualified_tools.platforms]]
 platform = "macos_arm64"
 dependency_artifacts = []
-install_tree_sha256 = "242f7731e171198efc145f59aab215e7e37a080b7193581d1b837e2f56e2fd42"
+install_tree_sha256 = "489ff9291d013769721102e4db52732a991350a54c1e64438f180e9c945c4a96"
 
 [[qualified_tools.platforms.artifacts]]
 sha256 = "685e563d94db1f003ffa5f5831439eec02569b9950b69867953c8213269c1eaf"
 url = "https://static.rust-lang.org/dist/2026-10-15/cargo-1.99.1-aarch64-apple-darwin.tar.xz"
+
+[[qualified_tools.platforms.artifacts]]
+sha256 = "b348db9d79666aee4b5e2ff4269029fffd16815cbd47f47018cd0b06e4f815f5"
+url = "https://static.rust-lang.org/dist/2026-10-15/llvm-tools-1.99.1-aarch64-apple-darwin.tar.xz"
 
 [[qualified_tools.platforms.artifacts]]
 sha256 = "fe79d6ab5a0321de26463999d8c112b8ad3eafbcbcf822d66a2300b45dde1031"
