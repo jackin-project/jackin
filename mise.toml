@@ -51,3 +51,15 @@ run = "cargo run --locked -p jackin-xtask -- release-preview-package"
 
 
 
+
+[tasks."check:repository-policy"]
+description = "Enforce repository-wide architecture, telemetry, and ratchet policy"
+run = "cargo run --locked -p jackin-xtask -- lint --strict"
+
+[tasks."check:repository-links"]
+description = "Validate links across tracked repository documentation"
+run = "cargo run --locked -p jackin-xtask -- docs repo-links"
+
+[tasks."check:dependency-usage"]
+description = "Reject unused workspace dependencies"
+run = "cargo shear --deny-warnings"

@@ -416,11 +416,7 @@ fn reset_barrier_does_not_bypass_shared_provider_retry_after() {
     let executor_trait: Arc<dyn UsageProviderExecutor> = executor_clone;
     let account_store = Arc::new(FileAccountStateStore::at(data_dir.join("accounts")));
     let clock = Arc::new(PairedTestClock::at(now));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce the paired test clock into the coordinator clock port"
-    )]
-    let clock_trait: Arc<dyn MonotonicClock> = clock.clone();
+    let clock_trait: Arc<dyn MonotonicClock> = Arc::<PairedTestClock>::clone(&clock);
     let coordinator = UsageCoordinator::new_with_clock(
         executor_trait,
         Arc::<FileAccountStateStore>::clone(&account_store),

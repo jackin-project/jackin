@@ -70,7 +70,15 @@ pub(crate) fn rules_for_impl(
         optional_exact_rule(&mut rules, Path::new(&path), READ_ONLY);
     }
     for path in [
-        "/bin", "/usr", "/lib", "/lib64", "/sbin", "/etc", "/dev", "/sys", "/var",
+        "/bin",
+        "/usr",
+        "/lib",
+        "/lib64",
+        "/sbin",
+        jackin_core::container_paths::SYSTEM_ETC_DIR,
+        "/dev",
+        "/sys",
+        jackin_core::container_paths::SYSTEM_VAR_DIR,
     ] {
         optional_exact_rule(&mut rules, Path::new(path), READ_ONLY);
     }

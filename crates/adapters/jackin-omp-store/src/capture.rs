@@ -499,11 +499,11 @@ fn configure_connection(
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FileIdentity {
-    device: i64,
+    device: nix::libc::dev_t,
     inode: u64,
     uid: u32,
     mode: i64,
-    links: i64,
+    links: nix::libc::nlink_t,
     size: i64,
     modified: i64,
     changed: i64,
@@ -511,21 +511,13 @@ struct FileIdentity {
 
 #[cfg(unix)]
 impl FileIdentity {
-    #[cfg_attr(
-        target_os = "macos",
-        expect(
-            clippy::unnecessary_fallible_conversions,
-            reason = "`st_dev`/`st_nlink` are narrow on macOS (infallible) but u64 on \
-             Linux (fallible); keep the fallible form so both targets compile"
-        )
-    )]
     fn from_stat(stat: &nix::sys::stat::FileStat) -> Self {
         Self {
-            device: i64::try_from(stat.st_dev).unwrap_or(i64::MAX),
+            device: stat.st_dev,
             inode: stat.st_ino,
             uid: stat.st_uid,
             mode: i64::from(stat.st_mode),
-            links: i64::try_from(stat.st_nlink).unwrap_or(i64::MAX),
+            links: stat.st_nlink,
             size: stat.st_size,
             modified: stat.st_mtime,
             changed: stat.st_ctime,

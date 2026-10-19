@@ -8,8 +8,7 @@ use std::{
 };
 use toml::Value as TomlValue;
 
-#[path = "../src/workflow_yaml.rs"]
-mod workflow_yaml;
+use jackin_xtask::workflow_yaml;
 
 const ARCHITECT_REPOSITORY: &str = "jackin-project/jackin-the-architect";
 const ARCHITECT_COMMIT: &str = "7db69b62f598a0971809ee4a006ad3f5477d0996";

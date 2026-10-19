@@ -45,7 +45,7 @@ toml = { workspace = true }
 tokio = { workspace = true, features = ["rt", "io-util", "io-std", "sync", "macros", "time", "net", "signal", "process"] }
 crossterm = { workspace = true }
 portable-pty = { workspace = true }
-nix = { workspace = true, features = ["term", "signal", "process", "inotify"] }
+nix = { workspace = true, features = ["term", "signal", "process", "inotify", "fs"] }
 libc = "0.2"
 termpane = { workspace = true }
 url = { workspace = true }

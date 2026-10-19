@@ -18,7 +18,6 @@ name = "jackin_runtime"
 path = "src/lib.rs"
 
 [dependencies]
-jackin-brand = { workspace = true }
 jackin-core = { workspace = true }
 jackin-config = { workspace = true }
 jackin-env = { workspace = true }
@@ -26,7 +25,6 @@ jackin-manifest = { workspace = true }
 jackin-docker = { workspace = true }
 jackin-image = { workspace = true }
 jackin-diagnostics = { workspace = true }
-jackin-launch = { workspace = true }
 jackin-host = { workspace = true }
 jackin-process = { workspace = true }
 jackin-protocol = { workspace = true }
@@ -112,30 +110,20 @@ jackin-runtime-snapshot = { workspace = true }
 jackin-runtime-spin-wait = { workspace = true }
 jackin-runtime-universe = { workspace = true }
 jackin-runtime-usage-relay = { workspace = true }
-jackin-usage = { workspace = true }
 
 tokio = { workspace = true, features = ["rt", "process", "io-util", "io-std", "net", "signal", "sync", "macros", "time", "fs"] }
-futures-util = { workspace = true }
 anyhow = { workspace = true }
-thiserror = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
-crossterm = { workspace = true }
-dialoguer = { workspace = true }
 sha2 = { workspace = true }
 fs4 = { workspace = true }
-hex = { workspace = true }
-directories = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
 tempfile = { workspace = true }
 tracing.workspace = true
 
-[target.'cfg(unix)'.dependencies]
-nix = { workspace = true, features = ["user", "socket", "poll", "process", "signal", "fs"] }
-
 [dev-dependencies]
+jackin-usage = { workspace = true }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-runtime-apple-container-client = { workspace = true, features = ["test-support"] }
 jackin-runtime-identity = { workspace = true, features = ["test-support"] }

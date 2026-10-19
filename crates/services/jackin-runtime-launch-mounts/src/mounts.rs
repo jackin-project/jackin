@@ -598,7 +598,7 @@ pub fn apple_agent_mounts(
         "per-instance state directory is missing before apple/container launch"
     );
     let mut mounts = vec![
-        AppleContainerMount::new(state_dir, "/jackin/state", false),
+        AppleContainerMount::new(state_dir, jackin_core::container_paths::STATE_DIR, false),
         AppleContainerMount::new(credentials, jackin_protocol::ACCOUNT_CREDENTIALS_DIR, true),
     ];
 
@@ -647,7 +647,11 @@ pub fn apple_agent_mounts(
                 );
                 mounts.push(AppleContainerMount::new(
                     store,
-                    format!("/jackin/{}", slot.container_store_rel),
+                    format!(
+                        "{}/{}",
+                        jackin_core::container_paths::JACKIN_ROOT,
+                        slot.container_store_rel
+                    ),
                     true,
                 ));
             }

@@ -198,11 +198,8 @@ fn coordinator_stale_and_error_success_results_schedule_retry() {
         let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
             quota_view(1_000, 80),
         )));
-        #[expect(
-            clippy::clone_on_ref_ptr,
-            reason = "coerce concrete executor to shared trait object"
-        )]
-        let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+        let provider_executor: Arc<dyn UsageProviderExecutor> =
+            Arc::<ImmediateExecutor>::clone(&executor);
         let coordinator = coordinator_with_fake_clock(
             provider_executor,
             Arc::new(MemoryStore::default()),
@@ -248,11 +245,8 @@ fn coordinator_unsupported_result_stays_unsupported_without_quota() {
     view.source = UsageSource::None;
     view.confidence = UsageConfidence::None;
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(view)));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to shared trait object"
-    )]
-    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let provider_executor: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&executor);
     let coordinator = coordinator_with_fake_clock(
         provider_executor,
         Arc::new(MemoryStore::default()),

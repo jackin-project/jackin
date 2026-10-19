@@ -232,11 +232,8 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
     for (id, initial_outcome, failed) in scenarios {
         let account = capability(id);
         let executor = Arc::new(ImmediateExecutor::new(initial_outcome));
-        #[expect(
-            clippy::clone_on_ref_ptr,
-            reason = "coerce concrete executor to shared trait object"
-        )]
-        let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+        let provider_executor: Arc<dyn UsageProviderExecutor> =
+            Arc::<ImmediateExecutor>::clone(&executor);
         let coordinator = coordinator_with_fake_clock(
             provider_executor,
             Arc::<FileAccountStateStore>::clone(&store),
@@ -269,19 +266,12 @@ fn claude_attempt_floor_persists_across_restart_and_force_cannot_bypass() {
         let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
             quota_view(attempt_floor, 79),
         )));
-        #[expect(
-            clippy::clone_on_ref_ptr,
-            reason = "coerce concrete executor to shared trait object"
-        )]
-        let provider_executor: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
+        let provider_executor: Arc<dyn UsageProviderExecutor> =
+            Arc::<ImmediateExecutor>::clone(&restarted_executor);
         let restarted_clock = Arc::new(ManualClock::at(
             u64::try_from(attempt_floor - 1).expect("attempt floor is positive"),
         ));
-        #[expect(
-            clippy::clone_on_ref_ptr,
-            reason = "share the controllable clock with the coordinator"
-        )]
-        let clock_port: Arc<dyn MonotonicClock> = restarted_clock.clone();
+        let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&restarted_clock);
         let restarted = UsageCoordinator::start_with_clock(
             provider_executor,
             Arc::<FileAccountStateStore>::clone(&store),
@@ -341,21 +331,9 @@ fn claude_attempt_floor_starts_at_invocation_after_fake_clock_queue_delay() {
     )));
     let store = Arc::new(MemoryStore::default());
     let clock = Arc::new(FakeMonotonicClock::default());
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share fake clock with the delayed-queue fixture"
-    )]
-    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<GateExecutor>::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<FakeMonotonicClock>::clone(&clock);
     let coordinator = UsageCoordinator::start_with_clock(
         provider,
         state_store,
@@ -461,11 +439,7 @@ fn account_state_v1_migration_preserves_results_and_enforces_fresh_attempt_floor
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(2_300, 79),
     )));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to the coordinator port"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<ImmediateExecutor>::clone(&executor);
     let coordinator = coordinator_with_fake_clock(
         provider,
         Arc::<FileAccountStateStore>::clone(&store),
@@ -516,11 +490,8 @@ fn catalog_revision_retains_retry_after_across_restart() {
         message: "provider rate limited".into(),
         retry_at_epoch: Some(5_000),
     }));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to shared trait object"
-    )]
-    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
+    let provider_executor: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&executor);
     let coordinator = catalog_coordinator_with_fake_clock(
         provider_executor,
         Arc::<FileAccountStateStore>::clone(&store),
@@ -549,22 +520,11 @@ fn catalog_revision_retains_retry_after_across_restart() {
     let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(5_000, 75),
     )));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to shared trait object"
-    )]
-    let provider_executor: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
+    let provider_executor: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&restarted_executor);
     let restarted_clock = Arc::new(ManualClock::at(2_000));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete store to the coordinator state port"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let clock_port: Arc<dyn MonotonicClock> = restarted_clock.clone();
+    let state_store: Arc<dyn AccountStateStore> = Arc::<FileAccountStateStore>::clone(&store);
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&restarted_clock);
     let restarted = UsageCoordinator::start_with_clock(
         provider_executor,
         state_store,
@@ -869,21 +829,9 @@ fn crash_after_durable_cooldown_marker_precedes_purge_and_survives_restart() {
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),
     )));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<ImmediateExecutor>::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<PanicAfterDurableStore>::clone(&store);
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&clock);
     let coordinator = UsageCoordinator::start_with_clock(
         provider,
         state_store,
@@ -926,21 +874,10 @@ fn crash_after_durable_cooldown_marker_precedes_purge_and_survives_restart() {
     let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(100_301, 80),
     )));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to coordinator trait object"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete store to coordinator trait object"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let clock_port: Arc<dyn MonotonicClock> = restarted_clock.clone();
+    let provider: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&restarted_executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<PanicAfterDurableStore>::clone(&store);
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&restarted_clock);
     let restarted = UsageCoordinator::start_with_clock(
         provider,
         state_store,
@@ -1193,21 +1130,9 @@ fn claude_cooldown_uses_monotonic_time_when_wall_clock_jumps_forward() {
     )));
     let store = Arc::new(MemoryStore::default());
     let clock = Arc::new(ManualClock::at(2_000));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<ImmediateExecutor>::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&clock);
     let coordinator = UsageCoordinator::start_with_clock(
         provider,
         state_store,
@@ -1266,21 +1191,10 @@ fn restart_reload_fence_blocks_forward_wall_jump_but_not_fresh_accounts() {
         quota_view(1_000, 80),
     )));
     let initial_clock = Arc::new(ManualClock::at(1_000));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let initial_provider: Arc<dyn UsageProviderExecutor> = initial_executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let initial_clock_port: Arc<dyn MonotonicClock> = initial_clock.clone();
+    let initial_provider: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&initial_executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
+    let initial_clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&initial_clock);
     let initial = UsageCoordinator::start_with_clock(
         initial_provider,
         state_store,
@@ -1302,21 +1216,10 @@ fn restart_reload_fence_blocks_forward_wall_jump_but_not_fresh_accounts() {
         quota_view(2_800, 79),
     )));
     let restarted_clock = Arc::new(ManualClock::at(2_000));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let restarted_provider: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let restarted_clock_port: Arc<dyn MonotonicClock> = restarted_clock.clone();
+    let restarted_provider: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&restarted_executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
+    let restarted_clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&restarted_clock);
     let restarted = UsageCoordinator::start_with_clock(
         restarted_provider,
         state_store,
@@ -1397,21 +1300,9 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
         quota_view(2_800, 78),
     )));
     let clock = Arc::new(ManualClock::at(2_000));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<ImmediateExecutor>::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&clock);
     let coordinator = UsageCoordinator::start_with_clock(
         provider,
         state_store,
@@ -1464,22 +1355,11 @@ fn unresolved_updating_marker_gets_reload_fence_without_fabricated_invocation() 
     let removal_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(3_300, 78),
     )));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to coordinator trait object"
-    )]
-    let removal_provider: Arc<dyn UsageProviderExecutor> = removal_executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete store to coordinator trait object"
-    )]
-    let removal_store: Arc<dyn AccountStateStore> = store.clone();
+    let removal_provider: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&removal_executor);
+    let removal_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
     let removal_clock = Arc::new(ManualClock::at(2_002));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let removal_clock_port: Arc<dyn MonotonicClock> = removal_clock.clone();
+    let removal_clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&removal_clock);
     let removal_coordinator = UsageCoordinator::start_with_clock(
         removal_provider,
         removal_store,
@@ -1524,21 +1404,10 @@ fn complete_unresolved_reload_fence(
     let restarted_executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
         quota_view(3_300, 78),
     )));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to coordinator trait objects"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = restarted_executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete store to the coordinator state port"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let restarted_clock_port: Arc<dyn MonotonicClock> = restarted_clock.clone();
+    let provider: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&restarted_executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(store);
+    let restarted_clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&restarted_clock);
     let restarted = UsageCoordinator::start_with_clock(
         provider,
         state_store,
@@ -1590,21 +1459,9 @@ fn catalog_revision_keeps_pending_marker_and_completion_floor_across_readd() {
     )));
     let store = Arc::new(MemoryStore::default());
     let clock = Arc::new(ManualClock::at(1_000));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let provider: Arc<dyn UsageProviderExecutor> = executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete ports to coordinator trait objects"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<GateExecutor>::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&clock);
     let coordinator = UsageCoordinator::start_with_clock(
         provider,
         state_store,
@@ -1880,11 +1737,7 @@ fn coordinator_on_manual_clock(
     epoch_seconds: u64,
 ) -> (UsageCoordinator, Arc<ManualClock>) {
     let clock = Arc::new(ManualClock::at(epoch_seconds));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "share the controllable clock with the coordinator"
-    )]
-    let clock_port: Arc<dyn MonotonicClock> = clock.clone();
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&clock);
     let coordinator = UsageCoordinator::start_with_clock(
         executor,
         store,
@@ -1906,16 +1759,9 @@ fn claude_rate_limit_circuit_uses_consecutive_failures_and_survives_restart() {
         message: "first generation had an authorization failure".into(),
         retry_at_epoch: None,
     }));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to the coordinator port"
-    )]
-    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete store to the coordinator state port"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let provider_executor: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<FileAccountStateStore>::clone(&store);
     let (coordinator, clock) = coordinator_on_manual_clock(provider_executor, state_store, 1_000);
 
     let first = coordinator
@@ -1973,16 +1819,9 @@ fn claude_rate_limit_circuit_uses_consecutive_failures_and_survives_restart() {
     let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(5_300, 70),
     )));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to the coordinator port"
-    )]
-    let restart_provider: Arc<dyn UsageProviderExecutor> = restart_executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete store to the coordinator state port"
-    )]
-    let restart_store: Arc<dyn AccountStateStore> = store.clone();
+    let restart_provider: Arc<dyn UsageProviderExecutor> =
+        Arc::<GateExecutor>::clone(&restart_executor);
+    let restart_store: Arc<dyn AccountStateStore> = Arc::<FileAccountStateStore>::clone(&store);
     let (restarted, restart_clock) =
         coordinator_on_manual_clock(restart_provider, restart_store, 5_000);
     let restored = restarted.current(&account, 5_000).unwrap();
@@ -2025,16 +1864,9 @@ fn claude_rate_limit_circuit_ignores_non_rate_limited_latest_kind() {
         message: "provider timed out".into(),
         retry_at_epoch: Some(1_400),
     }));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to the coordinator port"
-    )]
-    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete store to the coordinator state port"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let provider_executor: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
     let (coordinator, clock) = coordinator_on_manual_clock(provider_executor, state_store, 1_000);
 
     let first = coordinator
@@ -2095,16 +1927,9 @@ fn claude_rate_limit_circuit_ignores_non_claude_surface() {
         message: "provider rate limited".into(),
         retry_at_epoch: Some(1_200),
     }));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to the coordinator port"
-    )]
-    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete store to the coordinator state port"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let provider_executor: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
     let (coordinator, clock) = coordinator_on_manual_clock(provider_executor, state_store, 1_000);
 
     let first = coordinator
@@ -2162,16 +1987,9 @@ fn claude_rate_limit_circuit_keeps_longer_provider_deadline() {
         message: "first generation had an authorization failure".into(),
         retry_at_epoch: None,
     }));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete executor to the coordinator port"
-    )]
-    let provider_executor: Arc<dyn UsageProviderExecutor> = executor.clone();
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "coerce concrete store to the coordinator state port"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let provider_executor: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&executor);
+    let state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&store);
     let (coordinator, clock) = coordinator_on_manual_clock(provider_executor, state_store, 1_000);
 
     let first = coordinator

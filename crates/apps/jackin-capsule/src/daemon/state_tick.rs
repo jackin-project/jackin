@@ -22,6 +22,7 @@ pub(crate) async fn handle_state_tick(
     mux: &mut Multiplexer,
     rule_registry: Option<&RulePackRegistry>,
 ) {
+    mux.poll_file_export().await;
     mux.record_resource_metrics().await;
     mux.maybe_spawn_pull_request_context_lookup(Instant::now());
     let stale_image_transfer_ids = mux

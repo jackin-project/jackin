@@ -25,6 +25,7 @@ async fn modified_click_accepts_mailto_osc8_target() {
             button: 8,
         },
     );
+    mux.finish_pending_file_export_for_test().await.unwrap();
 
     input_rx
         .try_recv()
@@ -64,6 +65,7 @@ async fn modified_click_accepts_visible_mailto_token() {
             button: 8,
         },
     );
+    mux.finish_pending_file_export_for_test().await.unwrap();
 
     input_rx
         .try_recv()
@@ -103,6 +105,7 @@ async fn modified_click_rejects_unsafe_visible_url_without_forwarding() {
             button: 8,
         },
     );
+    mux.finish_pending_file_export_for_test().await.unwrap();
 
     input_rx
         .try_recv()
@@ -137,6 +140,7 @@ async fn modified_click_rejects_unsafe_osc8_url_without_forwarding() {
             button: 8,
         },
     );
+    mux.finish_pending_file_export_for_test().await.unwrap();
 
     input_rx
         .try_recv()
@@ -357,6 +361,7 @@ async fn export_file_under_cursor_palette_action_sends_file_export_frames() {
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
     mux.handle_palette_command(PaletteCommand::ExportFileUnderCursorAndReveal);
+    mux.finish_pending_file_export_for_test().await.unwrap();
     mux.client_registry.client.flush_out_of_band();
 
     input_rx

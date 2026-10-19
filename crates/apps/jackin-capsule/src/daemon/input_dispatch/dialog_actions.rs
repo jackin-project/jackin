@@ -115,7 +115,12 @@ impl Multiplexer {
                 open_after_export,
             } => {
                 self.dialog_clear();
-                self.export_file_to_host(path, reveal_after_export, open_after_export);
+                self.export_file_to_host(
+                    path,
+                    reveal_after_export,
+                    open_after_export,
+                    self.active_focused_id(),
+                );
             }
             DialogAction::RefreshUsage => {
                 self.request_usage_refresh_for_provider(None);

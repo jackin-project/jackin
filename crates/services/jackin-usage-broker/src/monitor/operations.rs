@@ -112,10 +112,6 @@ impl MonitorStore {
         }
     }
 
-    #[expect(
-        clippy::excessive_nesting,
-        reason = "projection observation walks provider, account, and destination before one commit"
-    )]
     pub(crate) fn observe_projection(
         &self,
         projection: &UsageProjectionV1,
@@ -137,21 +133,15 @@ impl MonitorStore {
         staged.last_now_epoch = now_epoch;
         let mut observations_changed = false;
         for provider in &projection.providers {
-            if provider.provider_id == "claude" {
-                for account in &provider.accounts {
-                    let destinations = projection_account_destinations(
-                        &staged,
-                        account,
-                        configured_source.as_deref(),
-                    );
-                    for destination in destinations {
-                        observations_changed |= observe_projection_account(
-                            &mut staged,
-                            account,
-                            &destination,
-                            now_epoch,
-                        )?;
-                    }
+            if provider.provider_id != "claude" {
+                continue;
+            }
+            for account in &provider.accounts {
+                let destinations =
+                    projection_account_destinations(&staged, account, configured_source.as_deref());
+                for destination in destinations {
+                    observations_changed |=
+                        observe_projection_account(&mut staged, account, &destination, now_epoch)?;
                 }
             }
         }

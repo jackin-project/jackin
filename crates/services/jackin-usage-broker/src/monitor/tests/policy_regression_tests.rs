@@ -16,18 +16,18 @@ use jackin_protocol::usage_monitor::{
 
 use crate::projection::empty_projection;
 
-use super::MonitorStore;
+use super::super::MonitorStore;
 
 const NOW: i64 = 1_800_000_000;
 const ACCOUNT: &str = "acct-policy-regressions";
 const BILLING_PERIOD_END: i64 = NOW + 100_000;
 const TEST_OPERATOR: &str = "isolated-test-operator";
 
-fn persisted_policy_fixture() -> super::StoreState {
-    let mut state = super::StoreState {
+fn persisted_policy_fixture() -> super::super::StoreState {
+    let mut state = super::super::StoreState {
         last_now_epoch: 100,
         next_binding_id: 2,
-        ..super::StoreState::default()
+        ..super::super::StoreState::default()
     };
     state.bindings.insert(
         "binding-00000001".to_owned(),
@@ -331,7 +331,7 @@ fn wait_for_cursor(
     store.tick(NOW).expect("reconcile before waiting on cursor");
     let deadline = Instant::now() + Duration::from_secs(2);
     let mut state = store.lock();
-    let (events, next_sequence) = super::watch_snapshot(&state, monitor_id, after_sequence)
+    let (events, next_sequence) = super::super::watch_snapshot(&state, monitor_id, after_sequence)
         .expect("read initial cursor snapshot");
     if !events.is_empty() {
         return MonitorReply::Watch {
@@ -357,8 +357,9 @@ fn wait_for_cursor(
             .wait_timeout(state, remaining)
             .expect("wait on monitor event condition variable");
         state = next_state;
-        let (events, next_sequence) = super::watch_snapshot(&state, monitor_id, after_sequence)
-            .expect("read cursor snapshot after wake");
+        let (events, next_sequence) =
+            super::super::watch_snapshot(&state, monitor_id, after_sequence)
+                .expect("read cursor snapshot after wake");
         if !events.is_empty() {
             return MonitorReply::Watch {
                 events,
@@ -1082,7 +1083,7 @@ fn persisted_strict_policy_cannot_be_downgraded_to_quota_only() {
         ],
     );
 
-    let error = super::validate_store_state(&state).expect_err("strict downgrade must fail");
+    let error = super::super::validate_store_state(&state).expect_err("strict downgrade must fail");
     assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
 }
 
@@ -1107,7 +1108,7 @@ fn persisted_strict_budget_cannot_increase() {
         ],
     );
 
-    let error = super::validate_store_state(&state).expect_err("budget loosening must fail");
+    let error = super::super::validate_store_state(&state).expect_err("budget loosening must fail");
     assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
 }
 
@@ -1133,7 +1134,7 @@ fn persisted_strict_budget_can_stay_equal_or_tighten() {
             ],
         );
 
-        super::validate_store_state(&state)
+        super::super::validate_store_state(&state)
             .expect("equal or tighter persisted strict policy remains valid");
     }
 }
@@ -1154,7 +1155,7 @@ fn persisted_unactivated_quota_only_policy_can_be_replaced_with_strict() {
         ],
     );
 
-    super::validate_store_state(&state)
+    super::super::validate_store_state(&state)
         .expect("an unactivated quota-only policy can be replaced with strict");
 }
 
@@ -1183,7 +1184,7 @@ fn persisted_migrated_zero_budget_repair_remains_valid() {
         ],
     );
 
-    super::validate_store_state(&state)
+    super::super::validate_store_state(&state)
         .expect("the explicit migrated zero-budget repair remains valid");
 }
 
@@ -1226,6 +1227,6 @@ fn persisted_policy_history_cannot_move_between_accounts() {
         ],
     );
 
-    let error = super::validate_store_state(&state).expect_err("account move must fail");
+    let error = super::super::validate_store_state(&state).expect_err("account move must fail");
     assert_eq!(error.code, MonitorIssueCode::MonitorStoreUnavailable);
 }

@@ -9,38 +9,38 @@ This document describes jackin❯ security implementation from a contributor per
 | Threat | Defended? | Where in code | Residual risk |
 |---|---|---|---|
 | Agent reads/writes files on host | Yes | Mount scoping in <RepoFile path="crates/core/jackin-config/src/mounts.rs">crates/core/jackin-config/src/mounts.rs</RepoFile> | Explicitly mounted rw paths |
-| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="crates/services/jackin-instance/src/auth.rs">crates/services/jackin-instance/src/auth.rs</RepoFile> | TOCTOU window between symlink check and file use |
+| Credential theft via symlink | Yes | Directory-relative admission in <RepoFile path="crates/services/jackin-instance-credentials/src/auth_directory/files.rs" /> | Explicitly shared credential state remains sensitive |
 | Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/research/platform/isolation/smolvm-backend/) | Shared kernel; future microVM work addresses this |
 | Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/roadmap/network-egress-policy/) | Open egress by default today |
 | Supply chain (capsule binary) | SHA256 + signed manifest | <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs">crates/adapters/jackin-image/src/capsule_binary.rs</RepoFile> | See [signed releases](/roadmap/security-threat-model-and-signed-releases/) |
 
 ## Security functions
 
-All six functions live in <RepoFile path="crates/services/jackin-instance/src/auth.rs">crates/services/jackin-instance/src/auth.rs</RepoFile> and are called during credential provisioning at every `jackin load` / `jackin console` launch.
+Credential filesystem helpers are re-exported by <RepoFile path="crates/services/jackin-instance-credentials/src/lib.rs" />. Provider provisioning and GitHub source resolution live in <RepoFile path="crates/services/jackin-instance-agents/src/lib.rs" />.
 
-### `reject_symlink` (line 925)
+### `reject_symlink`
 
-Uses `symlink_metadata` (lstat, not stat — the call does not follow the symlink) to detect symlinks at `path` before any write or chmod. An agent-controlled role-state directory is mounted read-write into the container; a compromised role can plant a symlink between launches to redirect credential writes to arbitrary host paths. `reject_symlink` is called unconditionally before every write path and at the top of every `provision_*` function. No-ops on `ENOENT`. Returns an operator-readable error naming the path and suggesting the operator remove the symlink and retry.
+<RepoFile path="crates/services/jackin-instance-credentials/src/paths.rs" /> checks the final path with `symlink_metadata` and rejects symlinks. `reject_auth_path` also checks ancestors. A path check alone is not atomic admission; Unix file operations use the directory-relative helpers below.
 
-### `repair_permissions` (line 1012)
+### `repair_permissions`
 
-Tightens existing credential files to `0o600` on Unix via `set_permissions`. Uses `symlink_metadata` (lstat) before calling `set_permissions` so it never chmods through a symlink. Errors (permission denied, stat failure) are logged via `eprintln!` rather than returned — callers are mid-Sync and must not abort the launch, but a silent chmod failure on a credential file is a security regression that must surface.
+<RepoFile path="crates/services/jackin-instance-credentials/src/permissions.rs" /> delegates Unix permission repair to <RepoFile path="crates/services/jackin-instance-credentials/src/auth_directory/files.rs" />. The implementation locks the target, checks ownership and regular-file identity, opens without following symlinks, compares the opened identity, and applies `0o600` through the file descriptor. Failures are returned to the caller; missing files are harmless.
 
-### `write_private_bytes` / `write_private_file` (lines 951, 947)
+### `write_private_bytes` / `write_private_file`
 
-Atomically writes bytes with `0o600` permissions. Calls `reject_symlink` at entry. Uses `tempfile::NamedTempFile` (opens with `O_EXCL` internally, so a pre-planted symlink at the temp path is impossible because `O_EXCL` fails on any existing path) with a random suffix, sets permissions on the temp file before rename. Closes the TOCTOU window completely: no intermediate state where a world-readable file exists at the destination path.
+On Unix, <RepoFile path="crates/services/jackin-instance-credentials/src/auth_directory/files.rs" /> admits the parent directory and existing target, checks ownership and identity, writes a private temporary file relative to that directory, and publishes it with `renameat`. Unchanged contents retain their file while permissions are tightened. The implementation synchronizes writes and cleans up failed temporary files.
 
-### `create_private_file_if_absent` (line 986)
+### `create_private_file_if_absent`
 
-Race-free skeleton seeding via `O_CREAT|O_EXCL`. Used to seed `{}` into `account_json` before the Claude CLI runs so the downstream consumer never sees a missing file. Returns `Ok(())` on `EEXIST` without touching existing content. The `O_EXCL` flag prevents any race between a missing-file check and the create.
+The same Unix owner uses `openat` with `O_CREAT|O_EXCL|O_NOFOLLOW` and `0o600` to seed a missing credential file. An existing entry is accepted only after regular-file and identity validation; existing content is retained.
 
-### `host_home_is_real` (line 231)
+### `host_home_is_real`
 
-Gates host-binary shellouts (`gh auth token`, macOS `security` keychain) on whether `host_home` matches the value returned by `directories::BaseDirs::new().home_dir()`. Keeps integration tests hermetic (they pass temp dirs as `host_home`) while allowing the real `gh` and `security` binaries in production runs. Without this gate, tests would shell out to the operator's installed `gh` and contaminate results.
+<RepoFile path="crates/services/jackin-instance-agents/src/github.rs" /> gates host GitHub credential fallback on whether `host_home` matches `directories::BaseDirs::new().home_dir()`. Temporary test homes cannot silently consume the operator's host credentials.
 
-### `parse_gh_hosts_yml` (line 346)
+### `parse_gh_hosts_yml`
 
-Uses `serde_yaml_ng` to parse `~/.config/gh/hosts.yml`. Returns `None` on any malformed input, including a document that has a `github.com` block but no `oauth_token` field, or one where `oauth_token` is empty/whitespace. Partial results are never returned: silently accepting half-parsed scalars would land bogus credentials in the container's `hosts.yml` and surface as unrelated authentication failures mid-session.
+The GitHub owner uses `serde_saphyr` to parse `~/.config/gh/hosts.yml`. Malformed input, a missing `github.com` token, and empty or whitespace-only tokens return `None`. An optional nonempty user name accompanies the accepted token.
 
 ## External security tools
 

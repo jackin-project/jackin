@@ -32,6 +32,7 @@ async fn export_selected_file_palette_action_sends_file_export_frames() {
     });
 
     mux.handle_palette_command(PaletteCommand::ExportSelectedFileAndOpen);
+    mux.finish_pending_file_export_for_test().await.unwrap();
     mux.client_registry.client.flush_out_of_band();
 
     input_rx
@@ -371,4 +372,56 @@ fn double_click_on_scrolled_back_row_copies_the_history_word() {
         5,
         "word selection must not move the scrollback view"
     );
+}
+
+#[tokio::test]
+async fn selected_file_export_is_bound_to_selected_session_not_current_focus() {
+    for removed_session in [1, 2] {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("report.txt"), b"selected payload").unwrap();
+        let mut mux = single_pane_tab_mux();
+        mux.launch_env.workdir = temp.path().to_owned();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        mux.client_registry.client.attach(tx);
+        let (mut selected, _selected_input) = test_shell_session(20, 78);
+        selected.feed_pty(b"\x1b[1;1Hsee report.txt now\x1b[1;1H");
+        let (focused, _focused_input) = test_shell_session(20, 78);
+        mux.session_supervisor.sessions.insert(1, selected);
+        mux.session_supervisor.sessions.insert(2, focused);
+        drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+        let inner = mux.visible_panes()[0].inner;
+        mux.clipboard.selection = Some(SelectionState {
+            session_id: 1,
+            inner,
+            anchor_row: 0,
+            anchor_col: 4,
+            end_row: 0,
+            end_col: 13,
+        });
+        mux.session_supervisor.tabs[0] = Tab::new_single("focused", 2, "test");
+        mux.handle_palette_command(PaletteCommand::ExportSelectedFile);
+        assert!(mux.has_pending_file_export_for_test());
+        drop(mux.session_supervisor.sessions.remove(removed_session));
+        mux.finish_pending_file_export_for_test().await.unwrap();
+        if removed_session == 1 {
+            assert!(rx.try_recv().is_err(), "selected source disappeared");
+            assert!(mux.clipboard.clipboard_image_notice.is_none());
+        } else {
+            let bytes = rx.try_recv().expect("selected session remains valid");
+            let mut payload = &bytes[1..];
+            let frame = read_server_frame(&mut payload, bytes[0])
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                matches!(frame, ServerFrame::FileExportStart(start) if start.file_name == "report.txt")
+            );
+            assert!(
+                mux.clipboard
+                    .clipboard_image_notice
+                    .as_deref()
+                    .is_some_and(|notice| notice.contains("File export queued: report.txt"))
+            );
+        }
+    }
 }

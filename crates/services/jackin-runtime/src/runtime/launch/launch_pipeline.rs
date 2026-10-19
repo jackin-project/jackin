@@ -11,13 +11,14 @@ use jackin_docker::docker_client::DockerApi;
 use tracing::Instrument as _;
 
 use super::launch_slot::{claim_container_name, claim_known_container_name};
-use super::trust::inject_workspace_mise_env;
 use crate::runtime::attach::{
     ContainerState, start_or_hardline_agent, start_or_hardline_agent_with_container_handle,
 };
 use crate::runtime::naming::{image_name, image_name_for_branch};
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
+mod account_admission;
+mod environment_admission;
 mod launch_core;
 pub(super) mod launch_phases;
 
@@ -721,26 +722,14 @@ fn breadcrumb_auth_mode(
 
 #[expect(
     clippy::too_many_lines,
-    reason = "Top-level launch pipeline that drives run_launch_core with preflight \
-              validation, image-materialization, env resolution, and post-launch \
-              cleanup. Body extraction follows the same deferred-parallel-pass \
-              plan as launch_role_runtime + run_launch_core — helpers \
-              `prepare_launch_inputs`, `materialize_role_image`, `resolve_launch_\
-              env`, `invoke_run_launch_core`, and `cleanup_post_launch` to land \
-              in a follow-up slice. Until that slice lands, the inline shape \
-              preserves captured-locals across phases."
+    reason = "Launch coordination keeps restore exits, revision checks, repository and name \
+              locks, trust callbacks, and the final launch handoff in their execution order."
 )]
 #[expect(
     clippy::too_many_arguments,
-    reason = "Top-level launch pipeline needs paths, config, selector, workspace, \
-              docker, runner, opts, and the two trust/branch confirm callbacks to \
-              propagate through every phase. Named-arg reads match the per-input \
-              propagation idiom; bundling into a config struct is the deferred- \
-              parallel-pass."
-)]
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "load_role_with stays one phase sequence until the deferred helper split"
+    reason = "Launch coordination requires paths, mutable config, selector, workspace, \
+              Docker, command runner, options, and independently owned FnOnce trust \
+              and branch confirmation callbacks."
 )]
 pub(crate) async fn load_role_with(
     paths: &JackinPaths,
@@ -757,48 +746,12 @@ pub(crate) async fn load_role_with(
         &str,
     ) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    let initial_account_revision =
-        super::account_identity::AccountConfigRevision::acquire_bound(paths, config)?;
-    let selected_workspace = config
-        .workspaces
-        .contains_key(workspace.name.as_str())
-        .then(|| WorkspaceName::parse(&workspace.name))
-        .transpose()?;
-    if absent_container_can_apply_model_and_effort(docker, opts).await? {
-        validate_absent_rebuild_restore_options(paths, opts)?;
-    } else {
-        validate_explicit_restore_options(paths, opts)?;
-    }
-    let admission_config = config.clone();
-    let mut account_config = opts
-        .selection
-        .as_ref()
-        .map(|selection| {
-            let agent = opts.agent.or(workspace.default_agent).ok_or_else(|| {
-                anyhow::anyhow!("select an agent when selecting an account or configuration")
-            })?;
-            match selection {
-                jackin_core::LaunchSelection::Account(id) => {
-                    super::programmatic::with_account_selection(
-                        config,
-                        agent,
-                        selected_workspace.as_ref(),
-                        &selector.key(),
-                        id,
-                    )
-                }
-                jackin_core::LaunchSelection::Configuration(id) => {
-                    super::programmatic::with_configuration_selection(
-                        config,
-                        agent,
-                        selected_workspace.as_ref(),
-                        &selector.key(),
-                        id,
-                    )
-                }
-            }
-        })
-        .transpose()?;
+    let account_admission::AccountAdmission {
+        initial_account_revision,
+        selected_workspace,
+        admission_config,
+        mut account_config,
+    } = account_admission::prepare(paths, config, selector, workspace, docker, opts).await?;
     let config = account_config.as_mut().unwrap_or(config);
 
     let ((), git) = tokio::join!(
@@ -1381,88 +1334,20 @@ pub(crate) async fn load_role_with(
     let auth_mode = breadcrumb_auth_mode(config, agent, auth_workspace.as_ref(), &role_key)?;
     let operator_env = await_operator_env(operator_env).await?;
 
-    jackin_diagnostics::active_timing_started(
-        jackin_diagnostics::DiagnosticStage::Credentials,
-        "manifest_env",
-        None,
-    );
-    let manifest_env: std::collections::BTreeMap<_, _> = validated_repo
-        .manifest
-        .env
-        .iter()
-        .filter(|(key, _)| !jackin_env::is_account_env(key))
-        .map(|(key, decl)| (key.clone(), decl.clone()))
-        .collect();
-    let manifest_env_skipped = manifest_env.is_empty();
-    let manifest_resolved_result = if manifest_env_skipped {
-        Ok(jackin_env::ResolvedEnv { vars: vec![] })
-    } else {
-        let prompter = super::LaunchEnvPrompter::new(steps.progress_mut());
-        jackin_env::resolve_env_with_overrides(&manifest_env, &prompter, &operator_env)
-    };
-    let manifest_resolved = match manifest_resolved_result {
-        Ok(env) => {
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Credentials,
-                "manifest_env",
-                Some(&manifest_env_timing_detail(
-                    manifest_env_skipped,
-                    env.vars.len(),
-                )),
-            );
-            env
-        }
-        Err(error) => {
-            jackin_diagnostics::active_timing_done(
-                jackin_diagnostics::DiagnosticStage::Credentials,
-                "manifest_env",
-                Some("error"),
-            );
-            return Err(error);
-        }
-    };
-
-    let mut merged_vars: Vec<(String, String)> = manifest_resolved.vars;
-    for (k, v) in &operator_env {
-        if let Some(slot) = merged_vars.iter_mut().find(|(mk, _)| mk == k) {
-            slot.1.clone_from(v);
-        } else {
-            merged_vars.push((k.clone(), v.clone()));
-        }
-    }
-    for (k, v) in &opts.env {
-        anyhow::ensure!(
-            !jackin_env::is_account_env(k),
-            "credential {k} must come from an assigned account"
-        );
-        if let Some(slot) = merged_vars.iter_mut().find(|(mk, _)| mk == k) {
-            slot.1.clone_from(v);
-        } else {
-            merged_vars.push((k.clone(), v.clone()));
-        }
-    }
-    inject_workspace_mise_env(&mut merged_vars, workspace);
-
-    let exec_ws = workspace_name
-        .as_deref()
-        .and_then(|n| WorkspaceName::parse(n).ok());
-    let mut exec_bindings =
-        jackin_env::collect_on_demand_bindings(config, Some(role_key.as_str()), exec_ws.as_ref());
-    for binding in &opts.on_demand_bindings {
-        anyhow::ensure!(
-            !jackin_env::is_account_env(&binding.name),
-            "credential {} must come from an assigned account",
-            binding.name
-        );
-        exec_bindings.retain(|existing| existing.name != binding.name);
-        exec_bindings.push(binding.clone());
-    }
-    exec_bindings.sort_by(|a, b| a.name.cmp(&b.name));
-    if !exec_bindings.is_empty() {
-        let names = super::exec_binding_names(&exec_bindings);
-        merged_vars.retain(|(k, _)| k != "JACKIN_EXEC_BINDINGS");
-        merged_vars.push(("JACKIN_EXEC_BINDINGS".to_owned(), names));
-    }
+    let mut merged_vars = environment_admission::resolve(
+        &validated_repo.manifest,
+        &operator_env,
+        workspace,
+        opts,
+        &mut steps,
+    )?;
+    let exec_bindings = environment_admission::compose_exec_bindings(
+        config,
+        workspace_name.as_deref(),
+        &role_key,
+        opts,
+        &mut merged_vars,
+    )?;
     let resolved_env = jackin_env::ResolvedEnv { vars: merged_vars };
 
     if !operator_env.is_empty() {

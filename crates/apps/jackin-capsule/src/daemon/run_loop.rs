@@ -5,46 +5,24 @@ use std::path::Path;
 
 use anyhow::Result;
 use jackin_protocol::CapsuleConfig;
-use std::time::Instant;
-
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::signal::unix::{Signal, SignalKind, signal};
 use tokio::sync::mpsc;
-use tokio::time::interval;
+use tokio::time::{Duration, Interval, interval};
 
 use crate::agent_status::rules::RulePackRegistry;
-use crate::attach_protocol::{
-    AttachHandshake, ControlRequest, detach_client, drain_and_exit, initial_spawn_requests,
-    perform_handshake,
-};
-use crate::clipboard::cleanup_clipboard_run_dir;
+use crate::attach_protocol::{AttachHandshake, ControlRequest, initial_spawn_requests};
 use crate::git_context::start_git_context_watcher;
-
-use crate::protocol::attach::ClientFrame;
-
+use crate::protocol::attach::{ClientFrame, SpawnRequest};
 use crate::socket;
-
 use crate::tui::subscriptions::{
-    GIT_BRANCH_CONTEXT_POLL_INTERVAL, RENDER_TICK_INTERVAL, STATE_TICK_INTERVAL,
-    USAGE_ACCOUNT_REFRESH_POLL_INTERVAL,
+    GIT_BRANCH_CONTEXT_POLL_INTERVAL, STATE_TICK_INTERVAL, USAGE_ACCOUNT_REFRESH_POLL_INTERVAL,
 };
 use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 
-use crate::tui::update::dialog_change_redraw_reason;
+use super::{Multiplexer, configured_escape_time, screen_detection_disabled_message};
 
-use super::{
-    Multiplexer, accept_attach_handshake, coalesce_client_frames, configured_escape_time,
-    handle_client_frame, handle_control_request, handle_last_session_exit, handle_session_event,
-    handle_state_tick, screen_detection_disabled_message,
-};
+mod events;
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "Top-level daemon entry point: spawns the event loop, the attach \
-              socket acceptor, and the input parser in sequence. Each stage has \
-              its own focused init + handoff. Body extraction follows the same \
-              deferred-parallel-pass plan as the launch fns — the inline shape \
-              preserves captured-runtime state across stages."
-)]
 pub(crate) async fn run_daemon_loop(
     initial_agent: String,
     launch_config: CapsuleConfig,
@@ -65,168 +43,99 @@ pub(crate) async fn run_daemon_loop(
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
 
-    let initial_spawns = initial_spawn_requests(&initial_agent, &launch_config);
-    let mut mux = Multiplexer::new(rows, cols, launch_config)?;
-    start_git_context_watcher(mux.launch_env.workdir.clone(), mux.control.event_tx.clone());
-    let mut pending_initial_spawns = initial_spawns;
+    DaemonLoop::initialize(
+        &initial_agent,
+        launch_config,
+        telemetry,
+        socket_path,
+        rows,
+        cols,
+    )?
+    .run()
+    .await
+}
 
-    let mut new_clients = socket::start_listener_at(socket_path)?;
-    telemetry.listener_ready();
-    let rule_registry = match RulePackRegistry::bundled() {
-        Ok(registry) => Some(registry),
-        Err(e) => {
-            let _warning = jackin_telemetry::record_recovered_degradation();
-            mux.open_spawn_failure_dialog(screen_detection_disabled_message(&e));
-            None
-        }
-    };
-    let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
-    let mut state_ticker = interval(STATE_TICK_INTERVAL);
-    let mut usage_account_ticker = interval(USAGE_ACCOUNT_REFRESH_POLL_INTERVAL);
-    let mut sigterm = signal(SignalKind::terminate())?;
-    let mut sigint = signal(SignalKind::interrupt())?;
+// Fields follow the reverse order of the original local bindings: Rust drops
+// struct fields in declaration order, retaining the loop resources' teardown order.
+struct DaemonLoop {
+    last_frame_at: Option<tokio::time::Instant>,
+    esc_deadline: Option<tokio::time::Instant>,
+    escape_time: Duration,
+    control_rx: mpsc::UnboundedReceiver<ControlRequest>,
+    control_tx: mpsc::UnboundedSender<ControlRequest>,
+    handshake_rx: mpsc::UnboundedReceiver<AttachHandshake>,
+    handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
+    cmd_rx: mpsc::UnboundedReceiver<ClientFrame>,
+    cmd_tx: mpsc::UnboundedSender<ClientFrame>,
+    sigint: Signal,
+    sigterm: Signal,
+    usage_account_ticker: Interval,
+    state_ticker: Interval,
+    branch_context_ticker: Interval,
+    rule_registry: Option<RulePackRegistry>,
+    new_clients:
+        mpsc::UnboundedReceiver<(tokio::net::UnixStream, tokio::sync::OwnedSemaphorePermit)>,
+    pending_initial_spawns: Vec<SpawnRequest>,
+    mux: Multiplexer,
+}
 
-    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ClientFrame>();
-    let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
-    let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlRequest>();
+impl DaemonLoop {
+    fn initialize(
+        initial_agent: &str,
+        launch_config: CapsuleConfig,
+        telemetry: &mut crate::telemetry::FlushGuard,
+        socket_path: &Path,
+        rows: u16,
+        cols: u16,
+    ) -> Result<Self> {
+        let initial_spawns = initial_spawn_requests(initial_agent, &launch_config);
+        let mut mux = Multiplexer::new(rows, cols, launch_config)?;
+        start_git_context_watcher(mux.launch_env.workdir.clone(), mux.control.event_tx.clone());
+        let pending_initial_spawns = initial_spawns;
 
-    let escape_time = configured_escape_time();
-
-    let mut esc_deadline: Option<tokio::time::Instant> = None;
-    let mut last_frame_at: Option<tokio::time::Instant> = None;
-    loop {
-        if let Some(action) = mux.control.exit_request.take() {
-            if let Err(error) = crate::exit_assess::write_exit_action(action) {
+        let new_clients = socket::start_listener_at(socket_path)?;
+        telemetry.listener_ready();
+        let rule_registry = match RulePackRegistry::bundled() {
+            Ok(registry) => Some(registry),
+            Err(e) => {
                 let _warning = jackin_telemetry::record_recovered_degradation();
-                crate::output::stderr_line(format_args!(
-                    "[daemon] exit: failed to write exit-action file, retrying: {error}"
-                ));
-                mux.control.exit_request = Some(action);
-            } else {
-                drain_and_exit(&mut mux).await;
-                return Ok(());
-            }
-        }
-        if mux.control.input_parser.esc_pending() {
-            if esc_deadline.is_none() {
-                esc_deadline = Some(tokio::time::Instant::now() + escape_time);
-            }
-        } else {
-            esc_deadline = None;
-        }
-        let render_deadline: Option<tokio::time::Instant> =
-            if mux.has_pending_render() || mux.client_registry.client.has_out_of_band() {
-                Some(
-                    last_frame_at.map_or_else(tokio::time::Instant::now, |last| {
-                        (last + RENDER_TICK_INTERVAL).max(tokio::time::Instant::now())
-                    }),
-                )
-            } else {
+                mux.open_spawn_failure_dialog(screen_detection_disabled_message(&e));
                 None
-            };
-        tokio::select! {
-            biased;
-
-            _ = sigterm.recv() => {
-                detach_client(&mut mux).await;
-                cleanup_clipboard_run_dir();
-                return Ok(());
             }
-            _ = sigint.recv() => {
-                detach_client(&mut mux).await;
-                cleanup_clipboard_run_dir();
-                return Ok(());
-            }
+        };
+        let branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
+        let state_ticker = interval(STATE_TICK_INTERVAL);
+        let usage_account_ticker = interval(USAGE_ACCOUNT_REFRESH_POLL_INTERVAL);
+        let sigterm = signal(SignalKind::terminate())?;
+        let sigint = signal(SignalKind::interrupt())?;
 
-            Some((stream, client_permit)) = new_clients.recv() => {
-                let handshake_tx = handshake_tx.clone();
-                let control_tx = control_tx.clone();
-                jackin_telemetry::spawn::spawn_detached_with_completion(
-                    &jackin_telemetry::operation::CONNECTION_ATTEMPT,
-                    perform_handshake(stream, client_permit, handshake_tx, control_tx),
-                );
-            }
+        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<ClientFrame>();
+        let (handshake_tx, handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
+        let (control_tx, control_rx) = mpsc::unbounded_channel::<ControlRequest>();
 
-            Some(request) = control_rx.recv() => handle_control_request(&mut mux, request),
+        let escape_time = configured_escape_time();
 
-            Some(ready) = handshake_rx.recv() => {
-                accept_attach_handshake(
-                    &mut mux,
-                    ready,
-                    &mut pending_initial_spawns,
-                    &cmd_tx,
-                    &mut cmd_rx,
-                )
-                .await?;
-            }
-
-            Some(frame) = cmd_rx.recv() => {
-                let (frames, _coalesced) =
-                    coalesce_client_frames(frame, || cmd_rx.try_recv().ok());
-                for frame in frames {
-                    handle_client_frame(&mut mux, frame);
-                    if mux.client_registry.detach_requested {
-                        break;
-                    }
-                }
-                if mux.client_registry.detach_requested {
-                    mux.client_registry.detach_requested = false;
-                    detach_client(&mut mux).await;
-                }
-                if mux.no_live_sessions()
-                    && handle_last_session_exit(&mut mux, None).await
-                {
-                    cleanup_clipboard_run_dir();
-                    return Ok(());
-                }
-            }
-
-            _ = state_ticker.tick() => {
-                handle_state_tick(&mut mux, rule_registry.as_ref()).await;
-            }
-
-            Some(event) = mux.control.event_rx.recv() => {
-                if handle_session_event(&mut mux, event).await {
-                    return Ok(());
-                }
-            }
-
-            () = async {
-                match esc_deadline {
-                    Some(d) => tokio::time::sleep_until(d).await,
-                    None => std::future::pending().await,
-                }
-            }, if esc_deadline.is_some() => {
-                esc_deadline = None;
-                let events = mux.control.input_parser.flush_pending_esc();
-                for event in events {
-                    mux.handle_input(event);
-                }
-            }
-
-            () = async {
-                match render_deadline {
-                    Some(deadline) => tokio::time::sleep_until(deadline).await,
-                    None => std::future::pending().await,
-                }
-            }, if render_deadline.is_some() => {
-                let frame_data = mux.compose_pending_frame();
-                mux.send_frame(frame_data);
-                last_frame_at = Some(tokio::time::Instant::now());
-            }
-
-            _ = branch_context_ticker.tick() => {
-                mux.maybe_spawn_git_branch_context_lookup(Instant::now());
-            }
-
-            _ = usage_account_ticker.tick() => {
-                let refreshed = mux.finish_usage_account_refresh_if_ready().await;
-                mux.spawn_active_usage_account_refresh();
-                if refreshed && mux.refresh_open_usage_dialog_from_cache() {
-                    mux.invalidate(dialog_change_redraw_reason());
-                }
-            }
-
-        }
+        let esc_deadline: Option<tokio::time::Instant> = None;
+        let last_frame_at: Option<tokio::time::Instant> = None;
+        Ok(Self {
+            last_frame_at,
+            esc_deadline,
+            escape_time,
+            control_rx,
+            control_tx,
+            handshake_rx,
+            handshake_tx,
+            cmd_rx,
+            cmd_tx,
+            sigint,
+            sigterm,
+            usage_account_ticker,
+            state_ticker,
+            branch_context_ticker,
+            rule_registry,
+            new_clients,
+            pending_initial_spawns,
+            mux,
+        })
     }
 }

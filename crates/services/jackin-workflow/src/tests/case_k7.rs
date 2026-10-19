@@ -13,8 +13,8 @@ use std::path::Path;
 
 use super::super::{
     Actor, CheckpointRecord, EffectKind, EffectStatus, ErrorKind, EvidenceRecord,
-    InstanceInventory, Observation, RecordTestParams, RunStatus, RunView, Stage, WorkflowService,
-    advance,
+    InstanceInventory, Observation, RecordTestParams, RunStatus, RunView, SessionAttachment, Stage,
+    WorkflowService, advance,
 };
 use super::support::Fixture;
 use jackin_workflow_spec::digest::bundle_manifest_digest;
@@ -169,15 +169,17 @@ fn k7_record_walk_reaches_capture_with_verified_checkpoint() {
 
     let recorded = service
         .record_session(
-            &started.run_id,
+            &SessionAttachment {
+                run_id: &started.run_id,
+                worker_id: "implementer",
+                instance_id: Some("instance-k7"),
+                capsule_epoch: None,
+                session_id: None,
+                process_identity: None,
+                agent_profile: Some("claude"),
+                auth_profile: Some("default-claude"),
+            },
             started.version,
-            "implementer",
-            Some("instance-k7"),
-            None,
-            None,
-            None,
-            Some("claude"),
-            Some("default-claude"),
             "operator",
         )
         .expect("record implementer session");
@@ -1433,15 +1435,17 @@ fn k7_record_paths_refuse_moved_versions() {
     let stale = testing.version - 1;
 
     let session = service.record_session(
-        &run_id,
+        &SessionAttachment {
+            run_id: &run_id,
+            worker_id: "implementer",
+            instance_id: None,
+            capsule_epoch: None,
+            session_id: None,
+            process_identity: None,
+            agent_profile: None,
+            auth_profile: None,
+        },
         stale,
-        "implementer",
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
         "operator",
     );
     assert_eq!(
@@ -1506,15 +1510,17 @@ fn k7_record_paths_refuse_moved_versions() {
     // The current version still records on every path.
     service
         .record_session(
-            &run_id,
+            &SessionAttachment {
+                run_id: &run_id,
+                worker_id: "implementer",
+                instance_id: None,
+                capsule_epoch: None,
+                session_id: None,
+                process_identity: None,
+                agent_profile: None,
+                auth_profile: None,
+            },
             testing.version,
-            "implementer",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             "operator",
         )
         .expect("current session records");

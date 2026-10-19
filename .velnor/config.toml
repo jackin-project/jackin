@@ -118,6 +118,42 @@ labels = ["velnor", "ubuntu-26.04-scale-set"]
 platform = "linux/amd64"
 
 [[qualified_tools]]
+depends_on = ["rust"]
+id = "cargo-shear"
+version = "1.14.0"
+
+[qualified_tools.backend]
+crate_name = "cargo-shear"
+kind = "cargo"
+
+[qualified_tools.options]
+default_features = true
+features = []
+kind = "cargo"
+
+[qualified_tools.options.installation]
+mode = "prebuilt"
+repository = "Boshen/cargo-shear"
+
+[[qualified_tools.platforms]]
+dependency_artifacts = []
+install_tree_sha256 = "3fd48027033a5735831f9bdefd63f2fa1904a776a74947d9d1af49b33f950adf"
+platform = "macos_arm64"
+
+[[qualified_tools.platforms.artifacts]]
+sha256 = "e50b9375b1e93d2293c803819c118337f1e8fce519e4188a93bb0f5e08041ca3"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-aarch64-apple-darwin.tar.gz"
+
+[[qualified_tools.platforms.executables]]
+name = "cargo-shear"
+path = "cargo-shear"
+sha256 = "34edccc283039ed8c2351c72c45c21a13ed65cf1fdde915f689ac97b060150c5"
+
+[qualified_tools.platforms.executables.probe]
+expected = "Version: 1.14.0"
+kind = "version"
+
+[[qualified_tools]]
 id = "cargo-zigbuild"
 version = "0.23.4"
 depends_on = ["rust", "zig"]
@@ -157,38 +193,42 @@ kind = "core"
 tool = "rust"
 
 [qualified_tools.options]
+components = ["rustfmt"]
 kind = "rust"
-components = []
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
 
 [[qualified_tools.platforms]]
 platform = "macos_arm64"
 dependency_artifacts = []
-install_tree_sha256 = "f7272bba8918bde1a7807f814fa28cd537c9db63f8155cd5aa73d3161dce5953"
+install_tree_sha256 = "242f7731e171198efc145f59aab215e7e37a080b7193581d1b837e2f56e2fd42"
 
 [[qualified_tools.platforms.artifacts]]
-url = "https://static.rust-lang.org/dist/2026-10-15/cargo-1.99.1-aarch64-apple-darwin.tar.xz"
 sha256 = "685e563d94db1f003ffa5f5831439eec02569b9950b69867953c8213269c1eaf"
+url = "https://static.rust-lang.org/dist/2026-10-15/cargo-1.99.1-aarch64-apple-darwin.tar.xz"
 
 [[qualified_tools.platforms.artifacts]]
-url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-aarch64-apple-darwin.tar.xz"
 sha256 = "fe79d6ab5a0321de26463999d8c112b8ad3eafbcbcf822d66a2300b45dde1031"
+url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-aarch64-apple-darwin.tar.xz"
 
 [[qualified_tools.platforms.artifacts]]
-url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-aarch64-unknown-linux-gnu.tar.xz"
 sha256 = "e25668477083d6a9ddb87b9beb9c00742225f38233ccb4bfba3afa7a07427f52"
+url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-aarch64-unknown-linux-gnu.tar.xz"
 
 [[qualified_tools.platforms.artifacts]]
-url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-apple-darwin.tar.xz"
 sha256 = "484d5b88b424ddd29df196e1eb9420c8335bb5fac90a3c37140253345a8c65c4"
+url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-apple-darwin.tar.xz"
 
 [[qualified_tools.platforms.artifacts]]
-url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-unknown-linux-gnu.tar.xz"
 sha256 = "109b074225bf5b9ea3820890876bfdf4ed161adbfaf94b2b4b5984c85ee5d958"
+url = "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-unknown-linux-gnu.tar.xz"
 
 [[qualified_tools.platforms.artifacts]]
-url = "https://static.rust-lang.org/dist/2026-10-15/rustc-1.99.1-aarch64-apple-darwin.tar.xz"
 sha256 = "23948a0a9c162fd2952defb3fb0462c44e8fcfd1a4ab8a274a1e1bdb2cf810a3"
+url = "https://static.rust-lang.org/dist/2026-10-15/rustc-1.99.1-aarch64-apple-darwin.tar.xz"
+
+[[qualified_tools.platforms.artifacts]]
+sha256 = "8b80dda570f140ee9ced8799294e812bba847a025f185bae4cba85a2ba235570"
+url = "https://static.rust-lang.org/dist/2026-10-15/rustfmt-1.99.1-aarch64-apple-darwin.tar.xz"
 
 [[qualified_tools.platforms.executables]]
 name = "cargo"
@@ -196,8 +236,17 @@ path = "bin/cargo"
 sha256 = "6d576d8058f8ca643e8fce55b64ee3c614ba64c9da2e536bae843e6a2e1f3951"
 
 [qualified_tools.platforms.executables.probe]
-kind = "version"
 expected = "cargo 1.99.1 (5f94df478 2026-08-27)"
+kind = "version"
+
+[[qualified_tools.platforms.executables]]
+name = "cargo-fmt"
+path = "bin/cargo-fmt"
+sha256 = "d2930490951b3170699e8c9fd6c81e2165e925410fc1cbf2cb989b4c54688563"
+
+[qualified_tools.platforms.executables.probe]
+expected = "rustfmt 1.10.0-stable (58cf8f9c35 2026-10-13)"
+kind = "rustfmt_version"
 
 [[qualified_tools.platforms.executables]]
 name = "rustc"
@@ -205,15 +254,47 @@ path = "bin/rustc"
 sha256 = "1ba7bb8e273bd64125f4048d2ecce530e0a6470e565ab1b3aecf0b82b532f7b1"
 
 [qualified_tools.platforms.executables.probe]
+expected = "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1"
 kind = "rustc_verbose"
-expected = """
-rustc 1.99.1 (58cf8f9c3 2026-10-13)
-binary: rustc
-commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
-commit-date: 2026-10-13
-host: aarch64-apple-darwin
-release: 1.99.1
-LLVM version: 23.1.1"""
+
+[[qualified_tools.platforms.executables]]
+name = "rustfmt"
+path = "bin/rustfmt"
+sha256 = "fae904bce0d6e9fcdd0ac4a4b597bdec4e571133dc7e9e9527b3e54bf5008a8d"
+
+[qualified_tools.platforms.executables.probe]
+expected = "rustfmt 1.10.0-stable (58cf8f9c35 2026-10-13)"
+kind = "rustfmt_version"
+
+[[qualified_tools]]
+depends_on = []
+id = "weaver"
+version = "0.28.0"
+
+[qualified_tools.backend]
+kind = "aqua"
+package = "open-telemetry/weaver"
+
+[qualified_tools.options]
+kind = "default"
+
+[[qualified_tools.platforms]]
+dependency_artifacts = []
+install_tree_sha256 = "b04580bf9cc42faecc78669d43f4cbe17895359e438eaed96ce7f0ee2f4c594e"
+platform = "macos_arm64"
+
+[[qualified_tools.platforms.artifacts]]
+sha256 = "b334b37372325f77374b461fd6a11d38bc050122832eb83a9732fcd6831a5ab1"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.28.0/weaver-aarch64-apple-darwin.tar.xz"
+
+[[qualified_tools.platforms.executables]]
+name = "weaver"
+path = "weaver"
+sha256 = "95258767cc6e1b2959996ed89f0b62b930fbb90d8297bbc55e254bc54b0984e4"
+
+[qualified_tools.platforms.executables.probe]
+expected = "weaver 0.28.0"
+kind = "version"
 
 [[qualified_tools]]
 id = "zig"
@@ -244,3 +325,42 @@ sha256 = "1c5f706db0ed6d55451940f31dc05a6177d05696bc1fa5d853696d04c718b523"
 [qualified_tools.platforms.executables.probe]
 kind = "version_subcommand"
 expected = "0.17.0"
+
+[[checks]]
+id = "repository-policy"
+task = "check:repository-policy"
+directory = "."
+inputs = [".velnor/config.toml", "Cargo.lock", "Cargo.toml", "clippy.toml", "container-path-allowlist.toml", "mise.lock", "mise.toml", "ratchet.toml", "rust-toolchain.toml", "crates/tools/jackin-xtask/src/lint.rs"]
+tools = ["rust", "weaver"]
+timeout_minutes = 5
+
+[checks.runner]
+label = "macos-26"
+platform = "macos_arm64"
+executor = "hosted"
+
+[[checks]]
+id = "repository-links"
+task = "check:repository-links"
+directory = "."
+inputs = [".velnor/config.toml", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "rust-toolchain.toml", "crates/tools/jackin-xtask/src/docs.rs"]
+tools = ["rust"]
+timeout_minutes = 5
+
+[checks.runner]
+label = "macos-26"
+platform = "macos_arm64"
+executor = "hosted"
+
+[[checks]]
+id = "dependency-usage"
+task = "check:dependency-usage"
+directory = "."
+inputs = [".velnor/config.toml", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "rust-toolchain.toml"]
+tools = ["cargo-shear", "rust"]
+timeout_minutes = 5
+
+[checks.runner]
+label = "macos-26"
+platform = "macos_arm64"
+executor = "hosted"

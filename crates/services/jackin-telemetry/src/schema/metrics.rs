@@ -1201,7 +1201,7 @@ pub const PROCESS_CPU_TIME_DEF: super::MetricMetadata = super::MetricMetadata {
         name: "cpu.mode",
         value_type: super::ValueType::String,
         requirement: super::RequirementLevel::Required,
-        allowed_values: &["user", "system"],
+        allowed_values: &[],
     }],
 };
 pub const PROCESS_MEMORY_USAGE: &str = "process.memory.usage";
