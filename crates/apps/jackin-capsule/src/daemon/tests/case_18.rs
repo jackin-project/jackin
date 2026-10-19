@@ -187,6 +187,7 @@ async fn modified_click_visible_url_sends_typed_protocol_frame() {
             button: 8,
         },
     );
+    mux.finish_pending_file_export_for_test().await.unwrap();
 
     input_rx.try_recv().expect_err(
         "host-open URL gesture should not forward mouse bytes to a mouse-disabled pane",
@@ -224,6 +225,7 @@ async fn modified_click_in_mouse_enabled_pane_forwards_to_pty() {
             button: 8,
         },
     );
+    mux.finish_pending_file_export_for_test().await.unwrap();
 
     let forwarded = input_rx
         .try_recv()
@@ -264,6 +266,7 @@ async fn modified_click_visible_file_path_sends_file_export_frames() {
             button: 8,
         },
     );
+    mux.finish_pending_file_export_for_test().await.unwrap();
     mux.client_registry.client.flush_out_of_band();
 
     input_rx
@@ -293,8 +296,8 @@ async fn modified_click_visible_file_path_sends_file_export_frames() {
     assert!(!start.open_after_export);
 }
 
-#[test]
-fn modified_click_plain_word_without_file_falls_through_quietly() {
+#[tokio::test]
+async fn modified_click_plain_word_without_file_falls_through_quietly() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client_registry.client.attach(tx);
@@ -313,6 +316,7 @@ fn modified_click_plain_word_without_file_falls_through_quietly() {
             button: 8,
         },
     );
+    mux.finish_pending_file_export_for_test().await.unwrap();
     mux.client_registry.client.flush_out_of_band();
 
     rx.try_recv()
@@ -342,6 +346,7 @@ async fn modified_click_prefers_osc8_target_over_visible_text() {
             button: 8,
         },
     );
+    mux.finish_pending_file_export_for_test().await.unwrap();
 
     input_rx
         .try_recv()
@@ -359,4 +364,88 @@ async fn modified_click_prefers_osc8_target_over_visible_text() {
         frame,
         ServerFrame::HostOpenUrl("https://example.com/osc8".to_owned())
     );
+}
+
+#[tokio::test]
+async fn modified_click_delayed_rejection_never_uses_new_mouse_mode_or_focus() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut mux = single_pane_tab_mux();
+    mux.launch_env.workdir = temp.path().to_owned();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client_registry.client.attach(tx);
+    let (mut original, mut original_input) = test_shell_session(20, 78);
+    original.feed_pty(b"missing path\r\n");
+    let (mut replacement, mut replacement_input) = test_shell_session(20, 78);
+    replacement.feed_pty(b"\x1b[?1000h\x1b[?1006h");
+    mux.session_supervisor.sessions.insert(1, original);
+    mux.session_supervisor.sessions.insert(2, replacement);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + 2,
+            button: 8,
+        },
+    );
+    assert!(
+        mux.has_pending_file_export_for_test(),
+        "fixture must queue an export worker"
+    );
+    assert!(
+        original_input.try_recv().is_err(),
+        "admission has not completed"
+    );
+    mux.session_supervisor
+        .sessions
+        .get_mut(1)
+        .unwrap()
+        .feed_pty(b"\x1b[?1000h\x1b[?1006h");
+    mux.session_supervisor.tabs[0] = Tab::new_single("other", 2, "test");
+    mux.resize(30, 100);
+    mux.finish_pending_file_export_for_test().await.unwrap();
+    original_input
+        .try_recv()
+        .expect_err("delayed rejection must not send mouse input");
+    replacement_input
+        .try_recv()
+        .expect_err("delayed rejection must not send mouse input");
+    rx.try_recv()
+        .expect_err("rejected, cancelled, or stale export must not emit host frames");
+    assert!(mux.clipboard.clipboard_image_notice.is_none());
+}
+
+#[tokio::test]
+async fn modified_click_disappeared_session_discards_delayed_fallback() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut mux = single_pane_tab_mux();
+    mux.launch_env.workdir = temp.path().to_owned();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client_registry.client.attach(tx);
+    let (mut original, mut input) = test_shell_session(20, 78);
+    original.feed_pty(b"missing path\r\n");
+    mux.session_supervisor.sessions.insert(1, original);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + 2,
+            button: 8,
+        },
+    );
+    assert!(
+        mux.has_pending_file_export_for_test(),
+        "fixture must queue an export worker"
+    );
+    drop(mux.session_supervisor.sessions.remove(1));
+    mux.finish_pending_file_export_for_test().await.unwrap();
+    input
+        .try_recv()
+        .expect_err("delayed rejection must not send mouse input");
+    rx.try_recv()
+        .expect_err("rejected, cancelled, or stale export must not emit host frames");
+    assert!(mux.clipboard.clipboard_image_notice.is_none());
 }

@@ -17,11 +17,7 @@ fn corrupt_revoked_account_is_replaced_with_result_free_uncertainty_marker() {
         quota_view(1_000, 80),
     )));
     let store = Arc::new(FileAccountStateStore::at(accounts.clone()));
-    #[expect(
-        clippy::clone_on_ref_ptr,
-        reason = "inspect the persisted replacement marker after catalog rotation"
-    )]
-    let state_store: Arc<dyn AccountStateStore> = store.clone();
+    let state_store: Arc<dyn AccountStateStore> = Arc::<FileAccountStateStore>::clone(&store);
     let coordinator = catalog_coordinator_with_fake_clock(
         executor,
         state_store,

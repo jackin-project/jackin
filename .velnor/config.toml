@@ -118,6 +118,42 @@ labels = ["velnor", "ubuntu-26.04-scale-set"]
 platform = "linux/amd64"
 
 [[qualified_tools]]
+depends_on = ["rust"]
+id = "cargo-shear"
+version = "1.14.0"
+
+[qualified_tools.backend]
+crate_name = "cargo-shear"
+kind = "cargo"
+
+[qualified_tools.options]
+default_features = true
+features = []
+kind = "cargo"
+
+[qualified_tools.options.installation]
+mode = "prebuilt"
+repository = "Boshen/cargo-shear"
+
+[[qualified_tools.platforms]]
+dependency_artifacts = []
+install_tree_sha256 = "3fd48027033a5735831f9bdefd63f2fa1904a776a74947d9d1af49b33f950adf"
+platform = "macos_arm64"
+
+[[qualified_tools.platforms.artifacts]]
+sha256 = "e50b9375b1e93d2293c803819c118337f1e8fce519e4188a93bb0f5e08041ca3"
+url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-shear-aarch64-apple-darwin.tar.gz"
+
+[[qualified_tools.platforms.executables]]
+name = "cargo-shear"
+path = "cargo-shear"
+sha256 = "34edccc283039ed8c2351c72c45c21a13ed65cf1fdde915f689ac97b060150c5"
+
+[qualified_tools.platforms.executables.probe]
+expected = "Version: 1.14.0"
+kind = "version"
+
+[[qualified_tools]]
 id = "cargo-zigbuild"
 version = "0.23.4"
 depends_on = ["rust", "zig"]
@@ -216,6 +252,36 @@ release: 1.99.1
 LLVM version: 23.1.1"""
 
 [[qualified_tools]]
+depends_on = []
+id = "weaver"
+version = "0.28.0"
+
+[qualified_tools.backend]
+kind = "aqua"
+package = "open-telemetry/weaver"
+
+[qualified_tools.options]
+kind = "default"
+
+[[qualified_tools.platforms]]
+dependency_artifacts = []
+install_tree_sha256 = "b04580bf9cc42faecc78669d43f4cbe17895359e438eaed96ce7f0ee2f4c594e"
+platform = "macos_arm64"
+
+[[qualified_tools.platforms.artifacts]]
+sha256 = "b334b37372325f77374b461fd6a11d38bc050122832eb83a9732fcd6831a5ab1"
+url = "https://github.com/open-telemetry/weaver/releases/download/v0.28.0/weaver-aarch64-apple-darwin.tar.xz"
+
+[[qualified_tools.platforms.executables]]
+name = "weaver"
+path = "weaver"
+sha256 = "95258767cc6e1b2959996ed89f0b62b930fbb90d8297bbc55e254bc54b0984e4"
+
+[qualified_tools.platforms.executables.probe]
+expected = "weaver 0.28.0"
+kind = "version"
+
+[[qualified_tools]]
 id = "zig"
 version = "0.17.0"
 depends_on = []
@@ -244,3 +310,42 @@ sha256 = "1c5f706db0ed6d55451940f31dc05a6177d05696bc1fa5d853696d04c718b523"
 [qualified_tools.platforms.executables.probe]
 kind = "version_subcommand"
 expected = "0.17.0"
+
+[[checks]]
+id = "repository-policy"
+task = "check:repository-policy"
+directory = "."
+inputs = [".velnor/config.toml", "Cargo.lock", "Cargo.toml", "clippy.toml", "container-path-allowlist.toml", "mise.lock", "mise.toml", "ratchet.toml", "rust-toolchain.toml", "crates/tools/jackin-xtask/src/lint.rs"]
+tools = ["rust", "weaver"]
+timeout_minutes = 5
+
+[checks.runner]
+label = "macos-26"
+platform = "macos_arm64"
+executor = "hosted"
+
+[[checks]]
+id = "repository-links"
+task = "check:repository-links"
+directory = "."
+inputs = [".velnor/config.toml", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "rust-toolchain.toml", "crates/tools/jackin-xtask/src/docs.rs"]
+tools = ["rust"]
+timeout_minutes = 5
+
+[checks.runner]
+label = "macos-26"
+platform = "macos_arm64"
+executor = "hosted"
+
+[[checks]]
+id = "dependency-usage"
+task = "check:dependency-usage"
+directory = "."
+inputs = [".velnor/config.toml", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "rust-toolchain.toml"]
+tools = ["cargo-shear", "rust"]
+timeout_minutes = 5
+
+[checks.runner]
+label = "macos-26"
+platform = "macos_arm64"
+executor = "hosted"

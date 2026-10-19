@@ -13,10 +13,7 @@ pub enum ClaudeKeychainPolicyError {
     InvalidService,
 }
 
-#[expect(
-    missing_debug_implementations,
-    reason = "RAII guard owns process-wide Security.framework state"
-)]
+#[derive(Debug)]
 pub struct ClaudeUnattendedKeychainGuard {
     #[cfg(target_os = "macos")]
     active: bool,

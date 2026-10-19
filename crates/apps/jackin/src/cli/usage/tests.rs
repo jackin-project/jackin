@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::Money;
+use jackin_protocol::usage_monitor::SpendRecordSource;
 
 #[test]
 fn canonical_overview() {

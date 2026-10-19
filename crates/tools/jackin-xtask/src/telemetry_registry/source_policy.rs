@@ -112,23 +112,17 @@ impl TelemetryImports {
             .insert(source.to_owned());
     }
 
-    #[expect(
-        clippy::excessive_nesting,
-        reason = "the use-statement scan walks token groups until the terminating semicolon"
-    )]
     fn collect_macro_imports(&mut self, tokens: TokenStream) {
         let trees = tokens.into_iter().collect::<Vec<_>>();
         for (index, token) in trees.iter().enumerate() {
-            if matches!(token, TokenTree::Ident(name) if name == "use") {
-                for (end, token) in trees.iter().enumerate().skip(index + 1) {
-                    if matches!(token, TokenTree::Punct(punct) if punct.as_char() == ';') {
-                        let statement = trees[index..=end].iter().cloned().collect();
-                        if let Ok(item) = syn::parse2::<syn::ItemUse>(statement) {
-                            self.collect_tree(&item.tree, &mut Vec::new());
-                        }
-                        break;
-                    }
-                }
+            if matches!(token, TokenTree::Ident(name) if name == "use")
+                && let Some((end, _)) = trees.iter().enumerate().skip(index + 1).find(
+                    |(_, token)| matches!(token, TokenTree::Punct(punct) if punct.as_char() == ';'),
+                )
+                && let Ok(item) =
+                    syn::parse2::<syn::ItemUse>(trees[index..=end].iter().cloned().collect())
+            {
+                self.collect_tree(&item.tree, &mut Vec::new());
             }
             if let TokenTree::Group(group) = token {
                 self.collect_macro_imports(group.stream());

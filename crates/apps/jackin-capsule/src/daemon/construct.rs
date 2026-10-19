@@ -164,6 +164,7 @@ impl Multiplexer {
                 workdir_context,
             },
             resource_metrics: super::resource_metrics::ResourceMetricsSampler::default(),
+            file_exports: super::file_export::FileExportState::default(),
             pane_home_seq: 0,
             widget_focus: jackin_telemetry::ui::WidgetFocusTracker::default(),
             clock,

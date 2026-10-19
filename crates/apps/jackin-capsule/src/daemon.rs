@@ -169,6 +169,7 @@ pub struct Multiplexer {
     pub(crate) render: RenderState,
     pub(crate) launch_env: LaunchEnv,
     pub(crate) resource_metrics: resource_metrics::ResourceMetricsSampler,
+    pub(crate) file_exports: file_export::FileExportState,
     pub(crate) pane_home_seq: u64,
     pub(crate) widget_focus: jackin_telemetry::ui::WidgetFocusTracker,
     pub(crate) clock: Arc<dyn Clock>,

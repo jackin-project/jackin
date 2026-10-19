@@ -4,8 +4,7 @@
 #![expect(
     clippy::print_stdout,
     clippy::print_stderr,
-    clippy::expect_used,
-    reason = "developer build helper emits shell snippets/progress and fails fast on workspace discovery invariants"
+    reason = "developer build helper owns shell snippets and progress output"
 )]
 
 use std::ffi::{OsStr, OsString};
@@ -44,7 +43,7 @@ fn main() -> Result<()> {
             .with_context(|| format!("failed to create cache dir {}", parent.display()))?;
     }
 
-    let workspace = workspace_root();
+    let workspace = workspace_root()?;
     build_via_zigbuild(&workspace, &arch, profile, &features, &cached)?;
 
     if export {
@@ -149,19 +148,19 @@ fn sanitize_feature_for_filename(feature: &str) -> String {
         .collect()
 }
 
-fn workspace_root() -> PathBuf {
+fn workspace_root() -> Result<PathBuf> {
     let mut dir = PathBuf::from(MANIFEST_DIR);
     loop {
         let toml = dir.join("Cargo.toml");
         if toml.exists() {
             let contents = std::fs::read_to_string(&toml).unwrap_or_default();
             if contents.contains("[workspace]") {
-                return dir;
+                return Ok(dir);
             }
         }
         dir = dir
             .parent()
-            .expect("hit filesystem root without finding workspace Cargo.toml")
+            .context("hit filesystem root without finding workspace Cargo.toml")?
             .to_path_buf();
     }
 }

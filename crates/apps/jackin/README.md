@@ -1,6 +1,6 @@
 # jackin
 
-The jackin❯ CLI — the operator-facing binary that loads roles into isolated containers, drives the console, and wires the workspace together. This crate is the L4 entry/glue layer: `lib.rs` re-exports the module tree consumed by `main.rs`, `src/bin/role.rs`, and integration tests; the crate is simultaneously a library and a binary.
+The jackin❯ CLI — the operator-facing binary that loads roles into isolated containers, drives the console, and wires the workspace together. This crate is the entry/glue layer: `lib.rs` re-exports the module tree consumed by `main.rs`, `src/bin/role.rs`, and integration tests; the crate is simultaneously a library and a binary.
 
 ## What this crate owns
 
@@ -11,7 +11,7 @@ The jackin❯ CLI — the operator-facing binary that loads roles into isolated 
 
 ## Architecture tier and allowed dependencies
 
-**L4 entry/glue crate.** It depends on the whole stack, including TermRock-backed presentation crates. Nothing depends on this crate; it is the top of the graph. Keep it thin — it assembles, it does not implement domain logic. Product-owned terminal formatting and ownership policy now live with their CLI callers instead of the retired shared donor modules.
+**entry/glue crate.** It depends on the whole stack, including TermRock-backed presentation crates. Nothing depends on this crate; it is the top of the graph. Keep it thin — it assembles, it does not implement domain logic. Product-owned terminal formatting and ownership policy now live with their CLI callers instead of the retired shared donor modules.
 
 ## Structure
 

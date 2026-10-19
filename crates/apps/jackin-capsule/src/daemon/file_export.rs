@@ -1,26 +1,55 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fs::{File, Metadata};
-use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use anyhow::{Context, Result, bail};
-use jackin_core::container_paths;
-use jackin_protocol::attach::{
-    FileExportChunk, FileExportEnd, FileExportStart, MAX_FILE_EXPORT_CHUNK_BYTES,
-    MAX_FILE_EXPORT_NAME_BYTES, MAX_FILE_EXPORT_PATH_BYTES, ServerFrame,
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
-use jackin_telemetry::ResultTelemetryExt as _;
-use sha2::{Digest, Sha256};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use anyhow::{Context, Result};
+use jackin_protocol::attach::{
+    FileExportChunk, FileExportEnd, FileExportStart, MAX_FILE_EXPORT_CHUNK_BYTES, ServerFrame,
+};
+use tokio::task::JoinHandle;
 
 use super::Multiplexer;
+use crate::client_writer::AttachmentIdentity;
 use crate::tui::pane_snapshot::RowSnapshot;
 use crate::tui::selection::{selection_text, word_bounds_in_row};
 
-const JACKIN_RUN_DIR: &str = container_paths::RUN_DIR;
-const MAX_EXPORT_FILE_BYTES: u64 = 64 * 1024 * 1024;
+mod source;
+use source::{PrepareError, PreparedExport};
+
+const EXPORT_PREPARATION_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Debug, Default)]
+pub(crate) struct FileExportState {
+    pending: Option<PendingExport>,
+}
+
+#[derive(Debug)]
+struct PendingExport {
+    task: JoinHandle<std::result::Result<PreparedExport, PrepareError>>,
+    attachment: AttachmentIdentity,
+    session_id: Option<u64>,
+    intent: ExportIntent,
+    reveal_after_export: bool,
+    open_after_export: bool,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Drop for PendingExport {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+}
+
+#[derive(Clone, Debug)]
+enum ExportIntent {
+    Explicit,
+    ModifiedClick,
+}
 
 impl Multiplexer {
     pub(super) fn export_file_to_host(
@@ -28,25 +57,150 @@ impl Multiplexer {
         requested_path: String,
         reveal_after_export: bool,
         open_after_export: bool,
+        session_id: Option<u64>,
     ) {
-        match self
-            .send_file_export_frames(&requested_path, reveal_after_export, open_after_export)
-            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
-        {
-            Ok(file_name) => {
-                let action = if open_after_export {
-                    "File export and open queued"
-                } else if reveal_after_export {
-                    "File export and reveal queued"
-                } else {
-                    "File export queued"
-                };
-                self.set_clipboard_image_notice(format!("{action}: {file_name}"));
-            }
-            Err(err) => {
-                self.set_clipboard_image_notice(format!("File export rejected: {err:#}"));
+        if !self.start_file_export(
+            requested_path,
+            reveal_after_export,
+            open_after_export,
+            ExportIntent::Explicit,
+            session_id,
+        ) {
+            self.set_clipboard_image_notice(
+                "File export rejected: no attached client or another export is in progress"
+                    .to_owned(),
+            );
+        }
+    }
+
+    fn start_file_export(
+        &mut self,
+        requested_path: String,
+        reveal_after_export: bool,
+        open_after_export: bool,
+        intent: ExportIntent,
+        session_id: Option<u64>,
+    ) -> bool {
+        if self.file_exports.pending.is_some() {
+            return false;
+        }
+        let Some(attachment) = self.client_registry.client.attachment_identity() else {
+            return false;
+        };
+        let workdir = self.launch_env.workdir.clone();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = Arc::clone(&cancelled);
+        let deadline = Instant::now() + EXPORT_PREPARATION_TIMEOUT;
+        let task = jackin_telemetry::spawn::joined_blocking(move || {
+            source::prepare_export(&requested_path, &workdir, &worker_cancelled, deadline)
+        });
+        self.file_exports.pending = Some(PendingExport {
+            task,
+            attachment,
+            session_id,
+            intent,
+            reveal_after_export,
+            open_after_export,
+            cancelled,
+        });
+        true
+    }
+
+    pub(super) async fn poll_file_export(&mut self) {
+        let Some(pending) = self.file_exports.pending.as_mut() else {
+            return;
+        };
+        let current = self
+            .client_registry
+            .client
+            .matches_attachment(&pending.attachment)
+            && pending
+                .session_id
+                .is_none_or(|id| self.session_supervisor.sessions.get(id).is_some());
+        if !current {
+            pending.cancelled.store(true, Ordering::Release);
+        }
+        if !pending.task.is_finished() {
+            return;
+        }
+        let outcome = (&mut pending.task).await;
+        let cancelled = pending.cancelled.load(Ordering::Acquire);
+        let intent = pending.intent.clone();
+        let reveal = pending.reveal_after_export;
+        let open = pending.open_after_export;
+        if current && !cancelled {
+            match outcome {
+                Ok(Ok(prepared)) => match self.emit_prepared_export(prepared, reveal, open) {
+                    Ok(file_name) => {
+                        let action = if open {
+                            "File export and open queued"
+                        } else if reveal {
+                            "File export and reveal queued"
+                        } else {
+                            "File export queued"
+                        };
+                        self.set_clipboard_image_notice(format!("{action}: {file_name}"));
+                    }
+                    Err(error) => self.reject_file_export(error),
+                },
+                Ok(Err(PrepareError::CandidateRejected(error))) => match intent {
+                    ExportIntent::Explicit => self.reject_file_export(error),
+                    ExportIntent::ModifiedClick => {
+                        jackin_telemetry::record_error(
+                            jackin_telemetry::schema::enums::ErrorType::IoError,
+                        )
+                        .unwrap_or(());
+                        // Selection candidates exclude mouse-reporting panes. Their
+                        // original fallback is empty; never recompute it after
+                        // focus, geometry, or protocol changes while awaiting I/O.
+                    }
+                },
+                Ok(Err(PrepareError::ReadFailed(error))) => self.reject_file_export(error),
+                Err(error) => self.reject_file_export(error.into()),
             }
         }
+        drop(self.file_exports.pending.take());
+    }
+
+    fn reject_file_export(&mut self, error: anyhow::Error) {
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError)
+            .unwrap_or(());
+        self.set_clipboard_image_notice(format!("File export rejected: {error:#}"));
+    }
+
+    fn emit_prepared_export(
+        &mut self,
+        prepared: PreparedExport,
+        reveal_after_export: bool,
+        open_after_export: bool,
+    ) -> Result<String> {
+        let transfer_id = next_transfer_id();
+        let size = u64::try_from(prepared.bytes.len()).context("export size overflow")?;
+        self.send_protocol_frame(ServerFrame::FileExportStart(FileExportStart {
+            transfer_id,
+            source_path: prepared.source.display().to_string(),
+            file_name: prepared.file_name.clone(),
+            size,
+            reveal_after_export,
+            open_after_export,
+        }));
+        let mut offset = 0u64;
+        for bytes in prepared.bytes.chunks(MAX_FILE_EXPORT_CHUNK_BYTES) {
+            let next = offset
+                .checked_add(u64::try_from(bytes.len()).context("export chunk length overflow")?)
+                .context("export offset overflow")?;
+            self.send_protocol_frame(ServerFrame::FileExportChunk(FileExportChunk {
+                transfer_id,
+                offset,
+                bytes: bytes.to_vec(),
+            }));
+            offset = next;
+        }
+        self.send_protocol_frame(ServerFrame::FileExportEnd(FileExportEnd {
+            transfer_id,
+            sha256: prepared.sha256,
+        }));
+        Ok(prepared.file_name)
     }
 
     pub(super) fn export_file_under_cursor_to_host(
@@ -57,7 +211,12 @@ impl Multiplexer {
         let Some(requested_path) = self.export_path_under_cursor() else {
             return false;
         };
-        self.export_file_to_host(requested_path, reveal_after_export, open_after_export);
+        self.export_file_to_host(
+            requested_path,
+            reveal_after_export,
+            open_after_export,
+            self.active_focused_id(),
+        );
         true
     }
 
@@ -77,23 +236,26 @@ impl Multiplexer {
         if requested_path.is_empty() {
             return false;
         }
-        self.export_file_to_host(requested_path, reveal_after_export, open_after_export);
+        self.export_file_to_host(
+            requested_path,
+            reveal_after_export,
+            open_after_export,
+            Some(selection.session_id),
+        );
         true
     }
 
     pub(super) fn export_visible_file_at(&mut self, row: u16, col: u16) -> bool {
-        let Some(requested_path) = self.export_path_at_mouse_cell(row, col) else {
+        let Some((session_id, requested_path)) = self.export_path_at_mouse_cell(row, col) else {
             return false;
         };
-        if self
-            .resolve_export_candidate(&requested_path)
-            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::IoError)
-            .is_err()
-        {
-            return false;
-        }
-        self.export_file_to_host(requested_path, false, false);
-        true
+        self.start_file_export(
+            requested_path,
+            false,
+            false,
+            ExportIntent::ModifiedClick,
+            Some(session_id),
+        )
     }
 
     fn export_path_under_cursor(&self) -> Option<String> {
@@ -109,140 +271,36 @@ impl Multiplexer {
         word_token(row, cursor_col)
     }
 
-    fn export_path_at_mouse_cell(&self, row: u16, col: u16) -> Option<String> {
+    fn export_path_at_mouse_cell(&self, row: u16, col: u16) -> Option<(u64, String)> {
         let candidate = self.detect_selection_start(row, col)?;
         let session = self.session_supervisor.sessions.get(candidate.session_id)?;
         let rows = session.render_content_snapshot(candidate.inner.cols);
         let row = rows.get(candidate.anchor_row)?;
-        word_token(row, candidate.anchor_col)
+        word_token(row, candidate.anchor_col).map(|path| (candidate.session_id, path))
     }
 
-    fn send_file_export_frames(
-        &mut self,
-        requested_path: &str,
-        reveal_after_export: bool,
-        open_after_export: bool,
-    ) -> Result<String> {
-        let candidate = self.resolve_export_candidate(requested_path)?;
-        let source = candidate.source;
-        let metadata = candidate.metadata;
-        let file_name = candidate.file_name;
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "file export is an explicit bounded operator action, not render emission"
-        )]
-        let mut file =
-            File::open(&source).with_context(|| format!("opening {}", source.display()))?;
-        let transfer_id = next_transfer_id();
-        self.send_protocol_frame(ServerFrame::FileExportStart(FileExportStart {
-            transfer_id,
-            source_path: source.display().to_string(),
-            file_name: file_name.clone(),
-            size: metadata.len(),
-            reveal_after_export,
-            open_after_export,
-        }));
-        let mut offset = 0u64;
-        let mut hasher = Sha256::new();
-        let mut buffer = vec![0u8; MAX_FILE_EXPORT_CHUNK_BYTES];
-        loop {
-            let n = file
-                .read(&mut buffer)
-                .with_context(|| format!("reading {}", source.display()))?;
-            if n == 0 {
-                break;
+    #[cfg(test)]
+    pub(super) fn has_pending_file_export_for_test(&self) -> bool {
+        self.file_exports.pending.is_some()
+    }
+
+    #[cfg(test)]
+    pub(super) async fn finish_pending_file_export_for_test(&mut self) -> Result<()> {
+        tokio::time::timeout(EXPORT_PREPARATION_TIMEOUT, async {
+            while self.file_exports.pending.is_some() {
+                self.poll_file_export().await;
+                tokio::task::yield_now().await;
             }
-            let bytes = buffer[..n].to_vec();
-            hasher.update(&bytes);
-            self.send_protocol_frame(ServerFrame::FileExportChunk(FileExportChunk {
-                transfer_id,
-                offset,
-                bytes,
-            }));
-            offset = offset
-                .checked_add(u64::try_from(n).context("export chunk length overflow")?)
-                .ok_or_else(|| anyhow::anyhow!("export offset overflow"))?;
-        }
-        let sha256: [u8; 32] = hasher.finalize().into();
-        self.send_protocol_frame(ServerFrame::FileExportEnd(FileExportEnd {
-            transfer_id,
-            sha256,
-        }));
-        Ok(file_name)
-    }
-
-    fn resolve_export_candidate(&self, requested_path: &str) -> Result<ExportCandidate> {
-        let (source, _) = self.resolve_export_source(requested_path)?;
-        let metadata = source
-            .metadata()
-            .with_context(|| format!("reading metadata for {}", source.display()))?;
-        if !metadata.is_file() {
-            bail!("only regular files can be exported");
-        }
-        if metadata.len() > MAX_EXPORT_FILE_BYTES {
-            bail!(
-                "file is {} bytes; current export cap is {MAX_EXPORT_FILE_BYTES} bytes",
-                metadata.len()
-            );
-        }
-        let file_name = export_file_name(&source)?;
-        if source.display().to_string().len() > MAX_FILE_EXPORT_PATH_BYTES {
-            bail!("resolved path exceeds export protocol cap");
-        }
-        if file_name.len() > MAX_FILE_EXPORT_NAME_BYTES {
-            bail!("file name exceeds export protocol cap");
-        }
-        Ok(ExportCandidate {
-            source,
-            metadata,
-            file_name,
         })
+        .await
+        .context("file export worker did not complete")
     }
-
-    fn resolve_export_source(&self, requested_path: &str) -> Result<(PathBuf, PathBuf)> {
-        let trimmed = requested_path.trim();
-        if trimmed.is_empty() {
-            bail!("path is empty");
-        }
-        let raw = Path::new(trimmed);
-        let candidate = if raw.is_absolute() {
-            raw.to_path_buf()
-        } else {
-            self.launch_env.workdir.join(raw)
-        };
-        let source = candidate
-            .canonicalize()
-            .with_context(|| format!("resolving {}", candidate.display()))?;
-        let workdir =
-            self.launch_env.workdir.canonicalize().with_context(|| {
-                format!("resolving workdir {}", self.launch_env.workdir.display())
-            })?;
-        let jackin_run = Path::new(JACKIN_RUN_DIR);
-        if source.starts_with(&workdir) || source.starts_with(jackin_run) {
-            return Ok((source, workdir));
-        }
-        bail!("path must be inside the workspace or {JACKIN_RUN_DIR}");
-    }
-}
-
-struct ExportCandidate {
-    source: PathBuf,
-    metadata: Metadata,
-    file_name: String,
 }
 
 fn word_token(row: &RowSnapshot, col: u16) -> Option<String> {
     let (start_col, end_col) = word_bounds_in_row(row, col)?;
     let token = row.text_range(start_col, end_col).trim().to_owned();
     (!token.is_empty()).then_some(token)
-}
-
-fn export_file_name(path: &Path) -> Result<String> {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .map(str::to_owned)
-        .ok_or_else(|| anyhow::anyhow!("file has no UTF-8 file name"))
 }
 
 fn next_transfer_id() -> u64 {
@@ -252,3 +310,6 @@ fn next_transfer_id() -> u64 {
             duration.as_nanos().try_into().unwrap_or(duration.as_secs())
         })
 }
+
+#[cfg(test)]
+mod tests;
