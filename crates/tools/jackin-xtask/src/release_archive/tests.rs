@@ -84,3 +84,25 @@ fn build_commands_select_only_the_declared_product_binaries() {
     assert_eq!(capsule[0], "zigbuild");
     assert_eq!(jackin[0], "build");
 }
+
+#[test]
+fn preview_selection_owns_one_pair_and_preserves_each_complete_bin_inventory() {
+    let payloads = preview_payloads();
+    assert_eq!(payloads.len(), 6);
+    for payload in payloads {
+        let (package, target) = preview_selection(payload.package, payload.target).unwrap();
+        assert_eq!(package_name(package), payload.package);
+        assert_eq!(target.rust, payload.target);
+        assert_eq!(binaries(package), payload.binaries);
+        let command = build_arguments(package, target);
+        assert_eq!(command.iter().filter(|arg| **arg == "--target").count(), 1);
+        assert_eq!(
+            command.last().unwrap(),
+            &"--message-format=json-render-diagnostics"
+        );
+        assert_eq!(command[command.len() - 2], target.zigbuild);
+    }
+    preview_selection("jackin-capsule", "aarch64-apple-darwin").unwrap_err();
+    preview_selection("foreign", "x86_64-unknown-linux-gnu").unwrap_err();
+    preview_selection("jackin", "unknown").unwrap_err();
+}

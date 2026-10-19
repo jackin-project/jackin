@@ -1130,7 +1130,7 @@ key = "crates/services/jackin-usage-host-runtime/README.md"
 bound = 1610
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
-bound = 6548
+bound = 6473
 [[family.entry]]
 key = "crates/apps/jackin/README.md"
 bound = 3101

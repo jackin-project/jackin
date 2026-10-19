@@ -4957,6 +4957,7 @@ dependencies = [
  "tempfile",
  "toml",
  "uuid",
+ "velnor-actions-contract",
  "zip",
 ]
 
@@ -8722,12 +8723,13 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.20"
-source = "git+https://github.com/tailrocks/velnor-new?rev=9c238c9d8bb040a784276d7a77b7bdbf3f149067#9c238c9d8bb040a784276d7a77b7bdbf3f149067"
+version = "0.1.23"
+source = "git+https://github.com/tailrocks/velnor-new?rev=91506072795b5f5fd3d0b8de68afebc4c4ed3d4f#91506072795b5f5fd3d0b8de68afebc4c4ed3d4f"
 dependencies = [
  "blake3",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
 ]
 

@@ -73,8 +73,17 @@ fn empty_and_exact_cap_succeed_but_cap_plus_one_is_rejected() {
         .unwrap()
         .set_len(MAX_EXPORT_FILE_BYTES)
         .unwrap();
-    let prepared =
-        prepare_export("file", root.path(), &AtomicBool::new(false), deadline()).unwrap();
+    // This checks the byte boundary, not throughput under concurrent CI work.
+    let byte_boundary_deadline = Instant::now()
+        .checked_add(Duration::from_secs(30))
+        .expect("byte-boundary test deadline");
+    let prepared = prepare_export(
+        "file",
+        root.path(),
+        &AtomicBool::new(false),
+        byte_boundary_deadline,
+    )
+    .unwrap();
     assert_eq!(
         u64::try_from(prepared.bytes.len()).unwrap(),
         MAX_EXPORT_FILE_BYTES
