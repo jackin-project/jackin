@@ -180,7 +180,7 @@ fn sccache_is_absent_from_installer_environment() {
 #[test]
 fn installer_environment_checks_expand_step_and_environment_aliases() {
     let good = jackin_xtask::workflow_yaml::parse(
-        br#"
+        br"
 jobs:
   first:
     steps:
@@ -190,12 +190,12 @@ jobs:
   second:
     steps:
       - *installer
-"#,
+",
     )
     .expect("aliased installer");
     assert_eq!(assert_installer_environments(&good, "fixture"), 2);
     let bad = jackin_xtask::workflow_yaml::parse(
-        br#"
+        br"
 jobs:
   definition:
     steps:
@@ -206,8 +206,9 @@ jobs:
     env: *forbidden
     steps:
       - uses: jdx/mise-action@fixed
-"#,
+",
     )
     .expect("aliased environment");
-    assert!(std::panic::catch_unwind(|| assert_installer_environments(&bad, "fixture")).is_err());
+    std::panic::catch_unwind(|| assert_installer_environments(&bad, "fixture"))
+        .expect_err("aliased forbidden environment must be rejected");
 }
