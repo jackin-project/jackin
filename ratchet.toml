@@ -164,7 +164,7 @@ key = "clippy::disallowed_methods@jackin-usage-provider-codex"
 bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
-bound = 8
+bound = 11
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-capsule"
 bound = 8

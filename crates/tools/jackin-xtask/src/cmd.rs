@@ -1,3 +1,5 @@
+mod build_observer;
+
 use std::ffi::OsStr;
 use std::fs::File;
 use std::path::Path;
@@ -50,6 +52,10 @@ pub(crate) fn run_stdout_file(cmd: &mut Command, path: &Path) -> Result<()> {
     } else {
         Err(anyhow!("{display} failed with {status}"))
     }
+}
+
+pub(crate) fn run_archive_stdout_file(cmd: &mut Command, path: &Path) -> Result<()> {
+    build_observer::run(cmd, path)
 }
 
 pub(crate) fn output(cmd: &mut Command) -> Result<Vec<u8>> {
