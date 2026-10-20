@@ -13,6 +13,7 @@ pub(super) struct Fixture {
     pub(super) raw: Vec<u8>,
     pub(super) bundle: Vec<u8>,
     pub(super) responses: Mutex<BTreeMap<String, Value>>,
+    pub(super) requests: Mutex<Vec<String>>,
 }
 
 impl Fixture {
@@ -34,6 +35,7 @@ impl Fixture {
             raw,
             bundle,
             responses: Mutex::new(responses),
+            requests: Mutex::new(Vec::new()),
         }
     }
 
@@ -172,6 +174,7 @@ impl Transport for Fixture {
 
 impl Fixture {
     fn response(&self, url: &str, limit: usize) -> Result<Vec<u8>> {
+        self.requests.lock().unwrap().push(url.to_owned());
         let base = download_base(&self.receipt);
         let bytes = if url == format!("{base}/release.json") {
             self.raw.clone()

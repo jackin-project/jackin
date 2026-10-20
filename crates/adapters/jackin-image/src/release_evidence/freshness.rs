@@ -3,6 +3,12 @@
 
 //! Public observations supplement already authenticated receipt bytes; they never
 //! replace Sigstore verification or select a different requested helper version.
+//! Historical repository and exact-attempt build evidence is admitted once per
+//! pin. Mutable release, journal, inventory and tag facts remain fresh at every
+//! execution and installation boundary; a new download must admit its own pin.
+//! Repository ownership/privacy/default-branch admission is invocation-local, not
+//! an immutability claim. Rechecks require the initially pinned positive release
+//! ID and complete snapshot; moving a repository does not revoke verified bytes.
 
 mod journal;
 mod runs;
@@ -64,6 +70,8 @@ pub(super) async fn pin(
     receipt_bytes: &[u8],
     bundle_bytes: &[u8],
 ) -> Result<Box<PublicationPin>> {
+    runs::repository(transport).await?;
+    runs::validate(transport, receipt).await?;
     let snapshot = observe(transport, receipt, receipt_bytes, bundle_bytes).await?;
     Ok(Box::new(PublicationPin {
         receipt: receipt.clone(),
@@ -235,8 +243,6 @@ async fn observe(
     raw: &[u8],
     bundle: &[u8],
 ) -> Result<Snapshot> {
-    runs::repository(transport).await?;
-    runs::validate(transport, receipt).await?;
     let release: Release = read(transport, &format!("releases/tags/{}", receipt.tag)).await?;
     ensure!(
         release.id > 0 && release.tag_name == receipt.tag && release.draft == Some(false),
