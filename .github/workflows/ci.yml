@@ -110,11 +110,11 @@ jobs:
         run: &r3 "printf '%s\\n' '::warning::cache_unavailable: optional save failed or timed out'"
   check-dependency-usage:
     name: Check / dependency-usage
-    runs-on: macos-26
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     env: &m8
-      VELNOR_ASSET_SHA256: 7cb74f0a82edbc9545d5d2170387a21dab33c84e8674610fd1e46dad2ca2ad3c
-      VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.30/velnor-actions-0.1.30-aarch64-apple-darwin
+      VELNOR_ASSET_SHA256: e8ae131b13dbb4a7fc5e495f733b0fc8e3545e6fc2128af638734ac5de549b5a
+      VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.30/velnor-actions-0.1.30-x86_64-unknown-linux-gnu
       VELNOR_RELEASE_COMMIT: a6b1d7873151dc62711844158490e8687d191943
       VELNOR_RUN_KEY_ATTEMPT: ${{ needs.plan.outputs.plan_attempt || github.run_attempt }}
     permissions:
@@ -128,24 +128,15 @@ jobs:
         with:
           fetch-depth: "0"
           persist-credentials: "false"
+      - *s3
       - &s9
-        name: Setup Mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde
-        with:
-          cache: "false"
-          cache_save: "false"
-          env: "false"
-          install: "false"
-          sha256: 826c4833fa7437a63f6027b86bc10c8b61b1163dc793c03ecde92f68ad167890
-          version: 2026.10.15
-      - &s10
         name: Acquire Velnor
         timeout-minutes: 6
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; d=\"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.30\"&&mkdir -p \"${d%/*}\"&&s=\"/opt/velnor/seed/generator/${d##*/}\"&&p=\"$VELNOR_ASSET_SHA256  \"&&if [ -f \"$s\" ]&&echo \"$p$s\"|shasum -a 256 -c -;then cp \"$s\" \"$d\";else curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-all-errors --retry-max-time 180 --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$d\"&&echo \"$p$d\"|shasum -a 256 -c -;fi&&chmod +x \"$d\"'"
-      - &s11
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; d=\"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.30\"&&mkdir -p \"${d%/*}\"&&s=\"/opt/velnor/seed/generator/${d##*/}\"&&p=\"$VELNOR_ASSET_SHA256  \"&&if [ -f \"$s\" ]&&echo \"$p$s\"|sha256sum -c -;then cp \"$s\" \"$d\";else curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-all-errors --retry-max-time 180 --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$d\"&&echo \"$p$d\"|sha256sum -c -;fi&&chmod +x \"$d\"'"
+      - &s10
         name: Download plan
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with: &m11
+        with: &m10
           name: velnor-plan-r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
       - name: Execute named check
@@ -169,16 +160,32 @@ jobs:
     name: Check / repository-links
     runs-on: macos-26
     timeout-minutes: 10
-    env: *m8
+    env: &m11
+      VELNOR_ASSET_SHA256: 7cb74f0a82edbc9545d5d2170387a21dab33c84e8674610fd1e46dad2ca2ad3c
+      VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.30/velnor-actions-0.1.30-aarch64-apple-darwin
+      VELNOR_RELEASE_COMMIT: a6b1d7873151dc62711844158490e8687d191943
+      VELNOR_RUN_KEY_ATTEMPT: ${{ needs.plan.outputs.plan_attempt || github.run_attempt }}
     permissions:
       contents: read
     needs:
       - plan
     steps:
       - *s8
-      - *s9
+      - &s11
+        name: Setup Mise
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde
+        with:
+          cache: "false"
+          cache_save: "false"
+          env: "false"
+          install: "false"
+          sha256: 826c4833fa7437a63f6027b86bc10c8b61b1163dc793c03ecde92f68ad167890
+          version: 2026.10.15
+      - &s12
+        name: Acquire Velnor
+        timeout-minutes: 6
+        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; d=\"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.30\"&&mkdir -p \"${d%/*}\"&&s=\"/opt/velnor/seed/generator/${d##*/}\"&&p=\"$VELNOR_ASSET_SHA256  \"&&if [ -f \"$s\" ]&&echo \"$p$s\"|shasum -a 256 -c -;then cp \"$s\" \"$d\";else curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-all-errors --retry-max-time 180 --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$d\"&&echo \"$p$d\"|shasum -a 256 -c -;fi&&chmod +x \"$d\"'"
       - *s10
-      - *s11
       - name: Execute named check
         env:
           VELNOR_CHECK_ID: repository-links
@@ -200,16 +207,16 @@ jobs:
     name: Check / repository-policy
     runs-on: macos-26
     timeout-minutes: 10
-    env: *m8
+    env: *m11
     permissions:
       contents: read
     needs:
       - plan
     steps:
       - *s8
-      - *s9
-      - *s10
       - *s11
+      - *s12
+      - *s10
       - name: Execute named check
         env:
           VELNOR_CHECK_ID: repository-policy
@@ -260,7 +267,7 @@ jobs:
           d: 4c81a827a5ef10e834a4a04138132fd729ced7fff2d69ea087dc28fffb07d511-${{ env.VELNOR_TOOL_ACTIONLINT }}-${{ env.VELNOR_TOOL_ACTIONLINT_LOCK }}-${{ env.VELNOR_TOOL_NEXTEST }}-${{ env.VELNOR_TOOL_NEXTEST_LOCK }}-${{ env.VELNOR_TOOL_RUST }}-${{ env.VELNOR_TOOL_RUST_LOCK }}-${{ env.VELNOR_TOOL_SHELLCHECK }}-${{ env.VELNOR_TOOL_SHELLCHECK_LOCK }}-${{ env.VELNOR_TOOL_ZIZMOR }}-${{ env.VELNOR_TOOL_ZIZMOR_LOCK }}
       - *s4
       - name: Prepare pinned tools
-        env: &m12
+        env: &m13
           MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
           MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
         run: "mise --no-config --no-env --no-hooks install 'rust@'\"${VELNOR_TOOL_RUST}\" 'actionlint@'\"${VELNOR_TOOL_ACTIONLINT}\" 'shellcheck@'\"${VELNOR_TOOL_SHELLCHECK}\" 'zizmor@'\"${VELNOR_TOOL_ZIZMOR}\" 'aqua:nextest-rs/nextest/cargo-nextest@'\"${VELNOR_TOOL_NEXTEST}\""
@@ -280,12 +287,9 @@ jobs:
           restore-keys: ${{steps.cache-keys.outputs.sources_restore_keys}}
       - name: Fetch Cargo sources
         id: sources-fetch
-        env: *m12
-        run: &r6 "sh -c 'mkdir -p \"$RUNNER_TEMP/velnor/cargo-clean\" && cd \"$RUNNER_TEMP/velnor/cargo-clean\" && if mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- cargo metadata --locked --offline --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\" >/dev/null 2>&1; then echo \"velnor: sources hit, skipping fetch\"; echo \"velnor: sources downloaded=0\"; else echo \"velnor: sources miss (source_missing), fetching\"; status=0; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- cargo fetch --locked --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\" 2> \"$RUNNER_TEMP/velnor/cargo-clean/fetch-stderr.log\" || status=$?; cat \"$RUNNER_TEMP/velnor/cargo-clean/fetch-stderr.log\" >&2; grep -Ec '\\''^ *Downloaded [^ ]+ v[0-9]'\\'' \"$RUNNER_TEMP/velnor/cargo-clean/fetch-stderr.log\" > \"$RUNNER_TEMP/velnor/cargo-clean/fetch-downloads\" || true; n=; read -r n < \"$RUNNER_TEMP/velnor/cargo-clean/fetch-downloads\" || true; echo \"velnor: sources downloaded=${n:-0}\"; exit $status; fi'"
-      - &s12
-        name: Acquire Velnor
-        timeout-minutes: 6
-        run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; d=\"$RUNNER_TEMP/velnor/bin/velnor-actions-0.1.30\"&&mkdir -p \"${d%/*}\"&&s=\"/opt/velnor/seed/generator/${d##*/}\"&&p=\"$VELNOR_ASSET_SHA256  \"&&if [ -f \"$s\" ]&&echo \"$p$s\"|sha256sum -c -;then cp \"$s\" \"$d\";else curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-all-errors --retry-max-time 180 --proto '\\''=https'\\'' --tlsv1.2 \"$VELNOR_ASSET_URL\" -o \"$d\"&&echo \"$p$d\"|sha256sum -c -;fi&&chmod +x \"$d\"'"
+        env: *m13
+        run: &r7 "sh -c 'mkdir -p \"$RUNNER_TEMP/velnor/cargo-clean\" && cd \"$RUNNER_TEMP/velnor/cargo-clean\" && if mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- cargo metadata --locked --offline --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\" >/dev/null 2>&1; then echo \"velnor: sources hit, skipping fetch\"; echo \"velnor: sources downloaded=0\"; else echo \"velnor: sources miss (source_missing), fetching\"; status=0; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- cargo fetch --locked --manifest-path \"$GITHUB_WORKSPACE/Cargo.toml\" 2> \"$RUNNER_TEMP/velnor/cargo-clean/fetch-stderr.log\" || status=$?; cat \"$RUNNER_TEMP/velnor/cargo-clean/fetch-stderr.log\" >&2; grep -Ec '\\''^ *Downloaded [^ ]+ v[0-9]'\\'' \"$RUNNER_TEMP/velnor/cargo-clean/fetch-stderr.log\" > \"$RUNNER_TEMP/velnor/cargo-clean/fetch-downloads\" || true; n=; read -r n < \"$RUNNER_TEMP/velnor/cargo-clean/fetch-downloads\" || true; echo \"velnor: sources downloaded=${n:-0}\"; exit $status; fi'"
+      - *s9
       - name: Write request
         env:
           VELNOR_INTERNAL_OP: write-request-v1
@@ -293,7 +297,7 @@ jobs:
           VELNOR_NAMED_CHECK_LANES_JSON: "{\"check-dependency-usage\":[{\"job_id\":\"check-dependency-usage\"}],\"check-repository-links\":[{\"job_id\":\"check-repository-links\"}],\"check-repository-policy\":[{\"job_id\":\"check-repository-policy\"}]}"
         run: &r8 "\"$RUNNER_TEMP\"'/velnor/bin/velnor-actions-0.1.30'"
       - name: Check generated files
-        env: *m12
+        env: *m13
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; $RUNNER_TEMP/velnor/bin/velnor-actions-0.1.30 generate --output-dir \"$RUNNER_TEMP/velnor-actions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\" && diff -r --brief .github \"$RUNNER_TEMP/velnor-actions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/.github\"'"
       - name: Plan
         id: plan
@@ -335,11 +339,7 @@ jobs:
     name: Required verdict
     runs-on: ubuntu-26.04
     timeout-minutes: 5
-    env:
-      VELNOR_ASSET_SHA256: e8ae131b13dbb4a7fc5e495f733b0fc8e3545e6fc2128af638734ac5de549b5a
-      VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.30/velnor-actions-0.1.30-x86_64-unknown-linux-gnu
-      VELNOR_RELEASE_COMMIT: a6b1d7873151dc62711844158490e8687d191943
-      VELNOR_RUN_KEY_ATTEMPT: ${{ needs.plan.outputs.plan_attempt || github.run_attempt }}
+    env: *m8
     permissions:
       contents: read
       actions: read
@@ -381,14 +381,14 @@ jobs:
     if: ${{ !cancelled() }}
     steps:
       - *s3
-      - *s12
+      - *s9
       - name: Prepare pinned tools
-        env: *m12
+        env: *m13
         run: mise --no-config --no-env --no-hooks install gh@2.102.0
       - name: Download plan
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with: *m11
+        with: *m10
       - name: Download every expected matrix artifact
         env:
           GH_REPO: ${{ github.repository }}
@@ -433,7 +433,7 @@ jobs:
     name: Rust / jackin
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: &m13
+    env: &m14
       MBX_BUILD_SCRIPT_EXECUTION: "0"
       MBX_CC: "0"
       MBX_GC_AUTO: "0"
@@ -463,11 +463,11 @@ jobs:
         with:
           d: df453c6860ef71b0f0fd31e8f0fdf2ebfa896a6cf590a616895d654180c71afc-${{ env.VELNOR_TOOL_ACTIONLINT }}-${{ env.VELNOR_TOOL_ACTIONLINT_LOCK }}-${{ env.VELNOR_TOOL_MR_BOXINGTON }}-${{ env.VELNOR_TOOL_MR_BOXINGTON_LOCK }}-${{ env.VELNOR_TOOL_NEXTEST }}-${{ env.VELNOR_TOOL_NEXTEST_LOCK }}-${{ env.VELNOR_TOOL_RUST }}-${{ env.VELNOR_TOOL_RUST_LOCK }}-${{ env.VELNOR_TOOL_SHELLCHECK }}-${{ env.VELNOR_TOOL_SHELLCHECK_LOCK }}-${{ env.VELNOR_TOOL_ZIZMOR }}-${{ env.VELNOR_TOOL_ZIZMOR_LOCK }}
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - &s15
         name: Prepare pinned tools
-        env: *m12
+        env: *m13
         run: "mise --no-config --no-env --no-hooks install 'rust@'\"${VELNOR_TOOL_RUST}\" 'mr-boxington@'\"${VELNOR_TOOL_MR_BOXINGTON}\" 'actionlint@'\"${VELNOR_TOOL_ACTIONLINT}\" 'shellcheck@'\"${VELNOR_TOOL_SHELLCHECK}\" 'zizmor@'\"${VELNOR_TOOL_ZIZMOR}\" 'aqua:nextest-rs/nextest/cargo-nextest@'\"${VELNOR_TOOL_NEXTEST}\""
       - &s16
         name: Prepare Rust components
@@ -487,7 +487,7 @@ jobs:
           restore-keys: ${{needs.plan.outputs.sources_restore_keys}}
       - &s18
         name: Verify Rust before MBX action
-        env: &m17
+        env: &m18
           CARGO_HOME: ${{ runner.temp }}/velnor/cargo
           MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
           MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
@@ -508,7 +508,7 @@ jobs:
           save-on-workflow-dispatch: "false"
           toolchain: ${{ env.VELNOR_TOOL_RUST }}
           version: ${{ env.VELNOR_TOOL_MR_BOXINGTON }}
-        env: &m19
+        env: &m20
           ACTIONS_CACHE_MODE: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && 'write' || 'read' }}
           CARGO_HOME: ${{ runner.temp }}/velnor/cargo
           MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
@@ -518,12 +518,12 @@ jobs:
       - &s20
         name: Verify native MBX version
         id: mbx-ready
-        env: *m19
+        env: *m20
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; check_no_symlink() { path=$1; while [ \"$path\" != / ]; do [ ! -L \"$path\" ] || return 1; path=${path%/*}; [ -n \"$path\" ] || path=/; done; return 0; }; [ -d \"$RUNNER_TEMP\" ] && check_no_symlink \"$RUNNER_TEMP\" || { printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be a real directory'\\'' >&2; exit 1; }; [ \"${MBX_CACHE_DIR:-}\" = \"$RUNNER_TEMP/velnor/mbx\" ] || { printf '\\''%s\\n'\\'' '\\''MBX_CACHE_DIR changed from its stable runner-temp path'\\'' >&2; exit 1; }; [ -d \"$RUNNER_TEMP/velnor\" ] && [ -d \"$MBX_CACHE_DIR\" ] && [ -d \"$MBX_CACHE_DIR/actions\" ] || { printf '\\''%s\\n'\\'' '\\''MBX store directories are missing'\\'' >&2; exit 1; }; check_no_symlink \"$RUNNER_TEMP/velnor\" && check_no_symlink \"$MBX_CACHE_DIR/actions\" || { printf '\\''%s\\n'\\'' '\\''MBX store path contains a symlink'\\'' >&2; exit 1; }; case \"$GITHUB_RUN_ID\" in '\\'''\\''|*[!0-9]*) printf '\\''%s\\n'\\'' '\\''run id must be numeric'\\'' >&2; exit 1 ;; esac; case \"$GITHUB_RUN_ATTEMPT\" in '\\'''\\''|*[!0-9]*) printf '\\''%s\\n'\\'' '\\''run attempt must be numeric'\\'' >&2; exit 1 ;; esac; probe_dir=\"$RUNNER_TEMP/velnor-mbx-verify-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT\"; [ ! -e \"$probe_dir\" ] && [ ! -L \"$probe_dir\" ] || { printf '\\''%s\\n'\\'' '\\''verification scratch already exists'\\'' >&2; exit 1; }; (umask 077 && mkdir -m 700 \"$probe_dir\") || { printf '\\''%s\\n'\\'' '\\''could not reserve verification scratch'\\'' >&2; exit 1; }; cleanup() { rm -f \"$probe_dir/version\" \"$probe_dir/cache-dir\" \"$probe_dir/rustc-path\" \"$probe_dir/rustc-vv\" \"$probe_dir/mbx-rustc-vv\" \"$probe_dir/mbx-rustc\"; rmdir \"$probe_dir\"; }; trap cleanup EXIT; trap '\\''exit 1'\\'' HUP INT TERM; if ! mbx_bin=$(command -v mbx); then printf '\\''%s\\n'\\'' '\\''action-owned MBX is not on PATH'\\'' >&2; exit 1; fi; case \"$mbx_bin\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''action-owned MBX path must be absolute'\\'' >&2; exit 1 ;; esac; if [ ! -f \"$mbx_bin\" ] || [ ! -x \"$mbx_bin\" ]; then printf '\\''%s\\n'\\'' '\\''action-owned MBX path must be an executable file'\\'' >&2; exit 1; fi; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- \"$mbx_bin\" --version > \"$probe_dir/version\"; exec 3< \"$probe_dir/version\"; IFS= read -r version_line <&3 || { printf '\\''%s\\n'\\'' '\\''MBX version output is empty or unterminated'\\'' >&2; exit 1; }; extra=; if IFS= read -r extra <&3 || [ -n \"$extra\" ]; then printf '\\''%s\\n'\\'' '\\''MBX version output has extra data'\\'' >&2; exit 1; fi; exec 3<&-; [ \"$version_line\" = '\\''mbx '\"${VELNOR_TOOL_MR_BOXINGTON}\"''\\'' ] || { printf '\\''%s\\n'\\'' '\\''MBX on PATH does not match the pinned action version'\\'' >&2; exit 1; }; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- \"$mbx_bin\" cache dir > \"$probe_dir/cache-dir\"; exec 3< \"$probe_dir/cache-dir\"; IFS= read -r cache_dir <&3 || { printf '\\''%s\\n'\\'' '\\''MBX cache dir output is empty or unterminated'\\'' >&2; exit 1; }; extra=; if IFS= read -r extra <&3 || [ -n \"$extra\" ]; then printf '\\''%s\\n'\\'' '\\''MBX cache dir output has extra data'\\'' >&2; exit 1; fi; exec 3<&-; [ \"$cache_dir\" = \"$MBX_CACHE_DIR/actions\" ] || { printf '\\''%s\\n'\\'' '\\''MBX reported an unexpected object store path'\\'' >&2; exit 1; }; ln -s \"$mbx_bin\" \"$probe_dir/mbx-rustc\"; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- rustup which --toolchain '\\'''\"${VELNOR_TOOL_RUST}\"''\\'' rustc > \"$probe_dir/rustc-path\"; exec 3< \"$probe_dir/rustc-path\"; IFS= read -r rustc_path <&3 || { printf '\\''%s\\n'\\'' '\\''rustup returned no rustc path'\\'' >&2; exit 1; }; exec 3<&-; case \"$rustc_path\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''rustc path must be absolute'\\'' >&2; exit 1 ;; esac; \"$rustc_path\" -vV > \"$probe_dir/rustc-vv\"; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- \"$probe_dir/mbx-rustc\" \"$rustc_path\" -vV > \"$probe_dir/mbx-rustc-vv\"; cmp -s \"$probe_dir/rustc-vv\" \"$probe_dir/mbx-rustc-vv\" || { printf '\\''%s\\n'\\'' '\\''mbx-rustc -vV differs from rustc -vV'\\'' >&2; exit 1; }; python3 -c '\\''exec(\"import os, pathlib, shutil, subprocess\\nws = os.environ.get(\\\"GITHUB_WORKSPACE\\\", \\\"\\\")\\nif ws and os.path.exists(os.path.join(ws, \\\".git\\\")):\\n    dirty = {p.decode() for p in subprocess.check_output([\\\"git\\\", \\\"-C\\\", ws, \\\"diff\\\", \\\"--name-only\\\", \\\"-z\\\", \\\"HEAD\\\"]).split(b\\\"\\\\0\\\") if p}\\n    cur = {}\\n    for entry in subprocess.check_output([\\\"git\\\", \\\"-C\\\", ws, \\\"ls-files\\\", \\\"-s\\\", \\\"-z\\\"]).split(b\\\"\\\\0\\\"):\\n        if entry:\\n            meta, rel_b = entry.split(b\\\"\\\\t\\\", 1)\\n            cur[rel_b.decode()] = meta.split()[1].decode()\\n    for pattern in (\\\"**/target/debug/.mbx-build-script-shims/.velnor-doc\\\", \\\"**/target/velnor-*/debug/.mbx-build-script-shims/.velnor-doc\\\"):\\n        for vdoc in sorted(pathlib.Path(ws).glob(pattern)):\\n            doc = vdoc.parent.parent.parent / \\\"doc\\\"\\n            if vdoc.is_dir() and not vdoc.is_symlink():\\n                shutil.rmtree(doc, ignore_errors=True)\\n                shutil.move(str(vdoc), str(doc))\\n    for oids_file in pathlib.Path(ws).glob(\\\"**/target/debug/.mbx-build-script-shims/.velnor-source-oids\\\"):\\n        for line in oids_file.read_text().splitlines():\\n            if not line:\\n                continue\\n            oid, ns_s, rel = line.split(\\\"\\\\t\\\", 2)\\n            if rel not in dirty and cur.get(rel) == oid:\\n                full = os.path.join(ws, rel)\\n                if os.path.isfile(full) and not os.path.islink(full):\\n                    ns = int(ns_s)\\n                    os.utime(full, ns=(ns, ns))\\n\")'\\''; mbx_disk_sample() { boundary=$1; case \"${RUNNER_TEMP:-}\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''MBX_DISK_SAMPLE_ERROR runner_temp_not_absolute'\\'' >&2; return 0 ;; esac; if [ -d \"$RUNNER_TEMP\" ] && [ ! -L \"$RUNNER_TEMP\" ]; then printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp blocks_kib\\n'\\'' \"$boundary\"; if df -Pk \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_blocks\\n'\\'' \"$boundary\" >&2; fi; printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp inodes\\n'\\'' \"$boundary\"; if df -Pi \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_inodes\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s runner_temp_not_real_directory\\n'\\'' \"$boundary\" >&2; return 0; fi; store_path=\"$RUNNER_TEMP/velnor/mbx\"; if [ \"${MBX_CACHE_DIR:-}\" = \"$store_path\" ] && [ -d \"$store_path\" ] && [ ! -L \"$store_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=mbx_store\\n'\\'' \"$boundary\"; if du -sk \"$store_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store_unavailable\\n'\\'' \"$boundary\" >&2; fi; target_path=\"${target_dir:-target}\"; if [ ! -d \"$target_path\" ]; then for candidate in */target crates/*/target \"$RUNNER_TEMP/velnor/target\"; do if [ -d \"$candidate\" ]; then target_path=\"$candidate\"; break; fi; done; fi; if [ -L \"$target_path\" ]; then printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target_is_symlink\\n'\\'' \"$boundary\" >&2; elif [ -d \"$target_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target\\n'\\'' \"$boundary\"; if du -sk \"$target_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target state=absent\\n'\\'' \"$boundary\"; fi; }; mbx_disk_sample after-cache-restore'"
       - &s21
         name: Fetch Cargo sources
-        env: *m12
-        run: *r6
+        env: *m13
+        run: *r7
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
         with: {"digest": "b3-f2268fba1102332fbdeae21496f6c91b02e841f447367c2f975817e60c2836c2"}
@@ -572,13 +572,13 @@ jobs:
       - &s22
         name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
-        env: *m17
+        env: *m18
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; check_no_symlink() { path=$1; while [ \"$path\" != / ]; do [ ! -L \"$path\" ] || return 1; path=${path%/*}; [ -n \"$path\" ] || path=/; done; return 0; }; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; [ -d \"$RUNNER_TEMP\" ] && check_no_symlink \"$RUNNER_TEMP\" || { printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be a real directory'\\'' >&2; exit 1; }; [ \"${MBX_CACHE_DIR:-}\" = \"$RUNNER_TEMP/velnor/mbx\" ] && [ -d \"$RUNNER_TEMP/velnor\" ] && [ -d \"$MBX_CACHE_DIR/actions\" ] && check_no_symlink \"$RUNNER_TEMP/velnor\" && check_no_symlink \"$MBX_CACHE_DIR/actions\" || { printf '\\''%s\\n'\\'' '\\''MBX store path changed before cleanup'\\'' >&2; exit 1; }; mbx_disk_sample() { boundary=$1; case \"${RUNNER_TEMP:-}\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''MBX_DISK_SAMPLE_ERROR runner_temp_not_absolute'\\'' >&2; return 0 ;; esac; if [ -d \"$RUNNER_TEMP\" ] && [ ! -L \"$RUNNER_TEMP\" ]; then printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp blocks_kib\\n'\\'' \"$boundary\"; if df -Pk \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_blocks\\n'\\'' \"$boundary\" >&2; fi; printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp inodes\\n'\\'' \"$boundary\"; if df -Pi \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_inodes\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s runner_temp_not_real_directory\\n'\\'' \"$boundary\" >&2; return 0; fi; store_path=\"$RUNNER_TEMP/velnor/mbx\"; if [ \"${MBX_CACHE_DIR:-}\" = \"$store_path\" ] && [ -d \"$store_path\" ] && [ ! -L \"$store_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=mbx_store\\n'\\'' \"$boundary\"; if du -sk \"$store_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store_unavailable\\n'\\'' \"$boundary\" >&2; fi; target_path=\"${target_dir:-target}\"; if [ ! -d \"$target_path\" ]; then for candidate in */target crates/*/target \"$RUNNER_TEMP/velnor/target\"; do if [ -d \"$candidate\" ]; then target_path=\"$candidate\"; break; fi; done; fi; if [ -L \"$target_path\" ]; then printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target_is_symlink\\n'\\'' \"$boundary\" >&2; elif [ -d \"$target_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target\\n'\\'' \"$boundary\"; if du -sk \"$target_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target state=absent\\n'\\'' \"$boundary\"; fi; }; target_dir=\"target\"; mbx_disk_sample before-final-clean; if ! mbx_bin=$(command -v mbx); then printf '\\''%s\\n'\\'' '\\''action-owned MBX is not on PATH'\\'' >&2; exit 1; fi; case \"$mbx_bin\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''action-owned MBX path must be absolute'\\'' >&2; exit 1 ;; esac; if [ ! -f \"$mbx_bin\" ] || [ ! -x \"$mbx_bin\" ]; then printf '\\''%s\\n'\\'' '\\''action-owned MBX path must be an executable file'\\'' >&2; exit 1; fi; clean_status=0; if mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- \"$mbx_bin\" cache dir >/dev/null 2>&1; then clean_status=0; else clean_status=$?; fi; if [ -d \"$target_dir\" ] && [ ! -L \"$target_dir\" ]; then rm -rf \"$target_dir/velnor-cli-nested-cargo\" \"$target_dir/tmp\" \"$target_dir/debug/examples\" \"$target_dir/debug/incremental\"; python3 -c '\\''exec(\"import os, pathlib, shutil, subprocess, sys\\ntd = pathlib.Path(sys.argv[1])\\ndbg = td / \\\"debug\\\"\\nif dbg.is_dir() and not dbg.is_symlink():\\n    shims = dbg / \\\".mbx-build-script-shims\\\"\\n    os.makedirs(shims, exist_ok=True)\\n    for base in [td] + sorted(c for c in td.iterdir() if c.name.startswith(\\\"velnor-\\\") and c.is_dir() and not c.is_symlink()):\\n        bdbg = base / \\\"debug\\\"\\n        if not bdbg.is_dir() or bdbg.is_symlink():\\n            continue\\n        bshims = bdbg / \\\".mbx-build-script-shims\\\"\\n        os.makedirs(bshims, exist_ok=True)\\n        vdoc = bshims / \\\".velnor-doc\\\"\\n        shutil.rmtree(vdoc, ignore_errors=True)\\n        doc = base / \\\"doc\\\"\\n        if doc.is_dir() and not doc.is_symlink():\\n            shutil.move(str(doc), str(vdoc))\\n    ws = os.environ.get(\\\"GITHUB_WORKSPACE\\\", \\\"\\\")\\n    if ws and os.path.exists(os.path.join(ws, \\\".git\\\")):\\n        out = subprocess.check_output([\\\"git\\\", \\\"-C\\\", ws, \\\"ls-files\\\", \\\"-s\\\", \\\"-z\\\"])\\n        lines = []\\n        for entry in out.split(b\\\"\\\\0\\\"):\\n            if not entry:\\n                continue\\n            meta, rel_b = entry.split(b\\\"\\\\t\\\", 1)\\n            oid = meta.split()[1].decode()\\n            rel = rel_b.decode()\\n            full = os.path.join(ws, rel)\\n            if os.path.isfile(full) and not os.path.islink(full):\\n                lines.append(f\\\"{oid}\\\\t{os.stat(full).st_mtime_ns}\\\\t{rel}\\\\n\\\")\\n        (shims / \\\".velnor-source-oids\\\").write_text(\\\"\\\".join(lines))\\n\")'\\'' \"$target_dir\"; fi; mbx_disk_sample after-final-clean; exit \"$clean_status\"'"
   rust-jackin-agent-status:
     name: Rust / jackin-agent-status
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-agent-status,')"
@@ -588,8 +588,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -636,7 +636,7 @@ jobs:
     name: Rust / jackin-capsule
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-capsule,')"
@@ -646,8 +646,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -694,7 +694,7 @@ jobs:
     name: Rust / jackin-config
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-config,')"
@@ -704,8 +704,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -752,7 +752,7 @@ jobs:
     name: Rust / jackin-console
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-console,')"
@@ -762,8 +762,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -810,7 +810,7 @@ jobs:
     name: Rust / jackin-core
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-core,')"
@@ -820,8 +820,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -868,7 +868,7 @@ jobs:
     name: Rust / jackin-dev
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-dev,')"
@@ -878,8 +878,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -922,7 +922,7 @@ jobs:
     name: Rust / jackin-diagnostics
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-diagnostics,')"
@@ -932,8 +932,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -980,7 +980,7 @@ jobs:
     name: Rust / jackin-docker
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-docker,')"
@@ -990,8 +990,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1038,7 +1038,7 @@ jobs:
     name: Rust / jackin-env
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-env,')"
@@ -1048,8 +1048,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1096,7 +1096,7 @@ jobs:
     name: Rust / jackin-host
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-host,')"
@@ -1106,8 +1106,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1154,7 +1154,7 @@ jobs:
     name: Rust / jackin-image
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-image,')"
@@ -1164,8 +1164,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1212,7 +1212,7 @@ jobs:
     name: Rust / jackin-instance
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-instance,')"
@@ -1222,8 +1222,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1270,7 +1270,7 @@ jobs:
     name: Rust / jackin-isolation
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-isolation,')"
@@ -1280,8 +1280,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1328,7 +1328,7 @@ jobs:
     name: Rust / jackin-launch
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-launch,')"
@@ -1338,8 +1338,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1386,7 +1386,7 @@ jobs:
     name: Rust / jackin-manifest
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-manifest,')"
@@ -1396,8 +1396,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1444,7 +1444,7 @@ jobs:
     name: Rust / jackin-otlp-testbed
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-otlp-testbed,')"
@@ -1454,8 +1454,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1502,7 +1502,7 @@ jobs:
     name: Rust / jackin-process
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-process,')"
@@ -1512,8 +1512,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1560,7 +1560,7 @@ jobs:
     name: Rust / jackin-process-directory
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-process-directory,')"
@@ -1570,8 +1570,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1618,7 +1618,7 @@ jobs:
     name: Rust / jackin-protocol
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-protocol,')"
@@ -1628,8 +1628,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1676,7 +1676,7 @@ jobs:
     name: Rust / jackin-runtime
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-runtime,')"
@@ -1686,8 +1686,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1734,7 +1734,7 @@ jobs:
     name: Rust / jackin-telemetry
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-telemetry,')"
@@ -1744,8 +1744,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1792,7 +1792,7 @@ jobs:
     name: Rust / jackin-test-support
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-test-support,')"
@@ -1802,8 +1802,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1850,7 +1850,7 @@ jobs:
     name: Rust / jackin-tui
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-tui,')"
@@ -1860,8 +1860,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1908,7 +1908,7 @@ jobs:
     name: Rust / jackin-usage
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-usage,')"
@@ -1918,8 +1918,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -1966,7 +1966,7 @@ jobs:
     name: Rust / jackin-usage-ffi
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-usage-ffi,')"
@@ -1976,8 +1976,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -2024,7 +2024,7 @@ jobs:
     name: Rust / jackin-workflow
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-workflow,')"
@@ -2034,8 +2034,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -2082,7 +2082,7 @@ jobs:
     name: Rust / jackin-workflow-spec
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-workflow-spec,')"
@@ -2092,8 +2092,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
@@ -2140,7 +2140,7 @@ jobs:
     name: Rust / jackin-xtask
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    env: *m13
+    env: *m14
     needs:
       - plan
     if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-xtask,')"
@@ -2150,8 +2150,8 @@ jobs:
       - *s13
       - *s14
       - *s4
-      - *s12
-      - *s11
+      - *s9
+      - *s10
       - *s15
       - *s16
       - *s17
