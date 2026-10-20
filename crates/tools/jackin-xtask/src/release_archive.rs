@@ -252,7 +252,7 @@ fn build(
         command.env("MACOSX_DEPLOYMENT_TARGET", "12.0");
     }
     fs::create_dir_all(target_dir)?;
-    cmd::run_stdout_file(
+    cmd::run_archive_stdout_file(
         &mut command,
         &target_dir.join("cargo-build-artifacts.jsonl"),
     )
