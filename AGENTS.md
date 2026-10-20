@@ -1,5 +1,6 @@
 # Rules
 
+- Always use a CLI when it can complete the required action. Use computer interaction only when CLI capabilities are insufficient. Use only `op` for 1Password. Back up and verify every new GitHub secret in 1Password before installation, and report its vault and item to the user.
 - No legacy code. Finish every migration: remove old paths completely—no compatibility shims, aliases, or deprecation periods. Breaking changes are preferred.
 - This is a research project. It is unsafe and expected to contain breaking changes; never treat it as production-ready. Break things when needed and deliver new implementations fast.
 - Always apply these principles:
