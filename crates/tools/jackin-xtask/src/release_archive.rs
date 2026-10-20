@@ -240,12 +240,10 @@ fn build(
 ) -> Result<()> {
     let mut command = cmd::command("cargo");
     command.args(build_arguments(package, target));
+    command.env_remove("CARGO_PROFILE_RELEASE_CODEGEN_UNITS");
     command.env("CARGO_BUILD_JOBS", jobs.to_string());
     command.env("CARGO_TARGET_DIR", target_dir);
     command.env("JACKIN_VERSION_OVERRIDE", version);
-    if package == ArchivePackage::Jackin {
-        command.env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1");
-    }
     command.env("ZIG_GLOBAL_CACHE_DIR", &zig_cache.global);
     command.env("ZIG_LOCAL_CACHE_DIR", &zig_cache.local);
     if target.rust.contains("apple") {
