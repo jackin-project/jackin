@@ -11,6 +11,9 @@ use clap::{Args, ValueEnum};
 
 use crate::cmd;
 
+pub(crate) mod layout;
+use layout::{ArchiveLayout, ArchiveProfile};
+
 #[cfg(test)]
 mod tests;
 
@@ -85,6 +88,7 @@ pub(crate) fn build_preview_payload(
             output_dir: output.to_owned(),
         },
         std::slice::from_ref(&target),
+        ArchiveProfile::Preview,
     )
 }
 
@@ -103,10 +107,14 @@ fn preview_selection(product: &str, target: &str) -> Result<(ArchivePackage, Tar
 
 pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
     let selected = targets(args.package);
-    run_targets(args, selected)
+    run_targets(args, selected, ArchiveProfile::Release)
 }
 
-fn run_targets(args: ReleaseArchivesArgs, targets: &[TargetSpec]) -> Result<()> {
+fn run_targets(
+    args: ReleaseArchivesArgs,
+    targets: &[TargetSpec],
+    profile: ArchiveProfile,
+) -> Result<()> {
     fs::create_dir_all(&args.output_dir)
         .with_context(|| format!("creating {}", args.output_dir.display()))?;
     let target_dir =
@@ -120,37 +128,33 @@ fn run_targets(args: ReleaseArchivesArgs, targets: &[TargetSpec]) -> Result<()> 
         .transpose()?;
 
     let jobs_per_target = jobs_per_target(1);
-    for target in targets {
+    let layouts = targets
+        .iter()
+        .map(|target| {
+            ArchiveLayout::new(&build_root.join(target.rust), target.rust, profile)
+                .map(|layout| (*target, layout))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    for (target, layout) in &layouts {
         build(
             args.package,
             *target,
             &args.version,
             jobs_per_target,
-            &build_root.join(target.rust),
+            layout,
             &zig_cache,
             macos_sdk.as_deref(),
         )?;
     }
 
-    for target in targets {
-        let archive = package(
-            args.package,
-            target.rust,
-            &build_root.join(target.rust),
-            &args.output_dir,
-        )?;
+    for (_, layout) in &layouts {
+        let archive = package(args.package, layout, &args.output_dir)?;
         crate::release_sbom::generate(
             &archive,
             &sidecar(&archive, "sbom.json"),
             &crate::release_sbom::BuildEvidence {
                 version: &args.version,
-                release_dir: &build_root
-                    .join(target.rust)
-                    .join(target.rust)
-                    .join("release"),
-                artifacts: &build_root
-                    .join(target.rust)
-                    .join("cargo-build-artifacts.jsonl"),
+                layout,
             },
         )?;
     }
@@ -234,15 +238,17 @@ fn build(
     target: TargetSpec,
     version: &str,
     jobs: usize,
-    target_dir: &Path,
+    layout: &ArchiveLayout,
     zig_cache: &ZigCache,
     macos_sdk: Option<&Path>,
 ) -> Result<()> {
     let mut command = cmd::command("cargo");
-    command.args(build_arguments(package, target));
+    command.args(build_arguments(package, target, layout.profile()));
+    // Neither stable nor preview may inherit the retired whole-graph CGU override.
     command.env_remove("CARGO_PROFILE_RELEASE_CODEGEN_UNITS");
+    command.env_remove("CARGO_PROFILE_PREVIEW_CODEGEN_UNITS");
     command.env("CARGO_BUILD_JOBS", jobs.to_string());
-    command.env("CARGO_TARGET_DIR", target_dir);
+    command.env("CARGO_TARGET_DIR", layout.root());
     command.env("JACKIN_VERSION_OVERRIDE", version);
     command.env("ZIG_GLOBAL_CACHE_DIR", &zig_cache.global);
     command.env("ZIG_LOCAL_CACHE_DIR", &zig_cache.local);
@@ -251,15 +257,16 @@ fn build(
         command.env("SDKROOT", sdk);
         command.env("MACOSX_DEPLOYMENT_TARGET", "12.0");
     }
-    fs::create_dir_all(target_dir)?;
-    cmd::run_archive_stdout_file(
-        &mut command,
-        &target_dir.join("cargo-build-artifacts.jsonl"),
-    )
-    .with_context(|| format!("building {} for {}", package_name(package), target.rust))
+    fs::create_dir_all(layout.root())?;
+    cmd::run_archive_stdout_file(&mut command, &layout.artifacts())
+        .with_context(|| format!("building {} for {}", package_name(package), target.rust))
 }
 
-fn build_arguments(package: ArchivePackage, target: TargetSpec) -> Vec<&'static str> {
+fn build_arguments(
+    package: ArchivePackage,
+    target: TargetSpec,
+    profile: ArchiveProfile,
+) -> Vec<&'static str> {
     let mut args = vec![
         if target.rust.contains("apple") {
             "build"
@@ -267,11 +274,11 @@ fn build_arguments(package: ArchivePackage, target: TargetSpec) -> Vec<&'static 
             "zigbuild"
         },
         "--timings",
-        "--release",
         "--locked",
         "-p",
         package_name(package),
     ];
+    args.splice(2..2, profile.arguments().iter().copied());
     for binary in binaries(package) {
         args.extend(["--bin", *binary]);
     }
@@ -289,13 +296,17 @@ fn build_arguments(package: ArchivePackage, target: TargetSpec) -> Vec<&'static 
 )]
 pub(crate) fn package(
     package: ArchivePackage,
-    target: &str,
-    target_dir: &Path,
+    layout: &ArchiveLayout,
     output_dir: &Path,
 ) -> Result<PathBuf> {
-    let archive = output_dir.join(format!("{}-{target}.tar.gz", package_name(package)));
-    let release_dir = target_dir.join(target).join("release");
+    let archive = output_dir.join(format!(
+        "{}-{}.tar.gz",
+        package_name(package),
+        layout.target()
+    ));
+    let release_dir = layout.target_output();
     for binary in binaries(package) {
+        layout.validate_path(&release_dir.join(binary))?;
         if !release_dir.join(binary).is_file() {
             bail!(
                 "release binary is missing: {}",

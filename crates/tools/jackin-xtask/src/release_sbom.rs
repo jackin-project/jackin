@@ -20,15 +20,14 @@ const MAX_SBOM_BYTES: usize = 32 * 1024 * 1024;
 
 pub(crate) struct BuildEvidence<'a> {
     pub(crate) version: &'a str,
-    pub(crate) release_dir: &'a Path,
-    pub(crate) artifacts: &'a Path,
+    pub(crate) layout: &'a crate::release_archive::layout::ArchiveLayout,
 }
 
 pub(crate) fn generate(archive: &Path, output: &Path, evidence: &BuildEvidence<'_>) -> Result<()> {
     let metadata = cargo::metadata()?;
     let checksums = cargo::checksums(&metadata.workspace_root.join("Cargo.lock"))?;
-    let records =
-        fs::read(evidence.artifacts).context("reading successful Cargo build records for SBOM")?;
+    let records = fs::read(evidence.layout.artifacts())
+        .context("reading successful Cargo build records for SBOM")?;
     write_from_inputs(archive, output, evidence, &metadata, &records, &checksums)
 }
 
@@ -40,19 +39,10 @@ fn write_from_inputs(
     records: &[u8],
     checksums: &cargo::Checksums,
 ) -> Result<()> {
-    let release_dir =
-        std::path::absolute(evidence.release_dir).context("resolving Cargo release directory")?;
-    let evidence = BuildEvidence {
-        version: evidence.version,
-        release_dir: &release_dir,
-        artifacts: evidence.artifacts,
-    };
     let identity = crate::release_archive::payload_identity(archive)?;
     ensure!(
-        evidence
-            .release_dir
-            .ends_with(Path::new(identity.target).join("release")),
-        "Cargo release directory does not match archive target"
+        evidence.layout.target() == identity.target,
+        "Cargo layout does not match archive target"
     );
     ensure!(
         !evidence.version.is_empty(),
@@ -60,7 +50,7 @@ fn write_from_inputs(
     );
     let members = archive::members(archive, &identity)?;
     let components =
-        cargo::components(records, metadata, &identity, &evidence, &members, checksums)?;
+        cargo::components(records, metadata, &identity, evidence, &members, checksums)?;
     let document = document::build(
         archive,
         evidence.version,
@@ -123,6 +113,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 struct Fixture {
     archive: PathBuf,
     release: PathBuf,
+    layout: crate::release_archive::layout::ArchiveLayout,
     records: Vec<u8>,
     metadata: cargo::Metadata,
 }
@@ -134,10 +125,13 @@ fn fixture(dir: &Path, product: &str, target: &str) -> Fixture {
     fs::write(dir.join("Cargo.lock"), "version=4\npackage=[]\n").unwrap();
     let archive = dir.join(format!("{product}-{target}.tar.gz"));
     let identity = crate::release_archive::payload_identity(&archive).unwrap();
-    let release = dir
-        .join(format!("build-{product}"))
-        .join(target)
-        .join("release");
+    let layout = crate::release_archive::layout::ArchiveLayout::new(
+        &dir.join(format!("build-{product}")),
+        identity.target,
+        crate::release_archive::layout::ArchiveProfile::Release,
+    )
+    .unwrap();
+    let release = layout.target_output();
     fs::create_dir_all(&release).unwrap();
     let root_id = format!(
         "path+file://{}#{product}@{}",
@@ -182,6 +176,7 @@ fn fixture(dir: &Path, product: &str, target: &str) -> Fixture {
     Fixture {
         archive,
         release,
+        layout,
         records,
         metadata,
     }
@@ -194,8 +189,7 @@ fn write_fixture(fixture: &Fixture, output: &Path, version: &str) -> Result<()> 
         output,
         &BuildEvidence {
             version,
-            release_dir: &fixture.release,
-            artifacts: Path::new("unused"),
+            layout: &fixture.layout,
         },
         &fixture.metadata,
         &fixture.records,

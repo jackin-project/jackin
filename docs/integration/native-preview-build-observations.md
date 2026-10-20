@@ -1,8 +1,7 @@
 # Native preview build observations
 
 Archive builds report optional numeric host observations on stderr while Cargo
-keeps its existing JSON stdout file, arguments, environment, release profile,
-parallelism and inherited SDK process group. The observer cannot authorize an
+keeps its existing JSON stdout file, arguments, selected profile, parallelism and inherited SDK process group. The observer cannot authorize an
 artifact, change the build result, install tools, retry a task or extend the
 producer deadline. The generic stdout-file helper used by authenticated GitHub
 downloads is not observed.
@@ -51,3 +50,29 @@ The reviewed `clippy::disallowed_methods@jackin-xtask` ratchet bound increases f
 8 to 11 for these sites, as the ratchet policy permits intentional reviewed
 budget changes. Their local reasons and the global runtime/render blocking ban
 remain in place; no alternative sleep spelling or broader suppression is used.
+
+## Preview optimization tradeoff
+
+Native preview leaves explicitly select Cargo's `preview` profile, which inherits
+`release` with `lto = "off"`. Stable `release-archives` always selects `release`,
+even for a preview-looking version, and `desktop-release` is unchanged. This is
+an intentional optimization tradeoff: disabling LTO can reduce build work but
+increase executable size or reduce runtime performance. No speedup, runtime
+performance equivalence or hosted capacity claim follows from the selection.
+Existing size limits and runtime/security admission remain mandatory.
+
+A closed typed layout supplies Cargo's selector, target and host output roots,
+artifact-record path, packaging and SBOM custody. Neither archive names nor
+version strings choose a profile. Cross-profile, mixed host/target, traversal
+and descendant symlink records are rejected; trusted root aliases resolve once.
+Both `CARGO_PROFILE_RELEASE_CODEGEN_UNITS` and
+`CARGO_PROFILE_PREVIEW_CODEGEN_UNITS` are removed from archive build children,
+so neither profile inherits the retired whole-graph override. Other profile
+environment settings retain their existing semantics; native execution supplies
+its qualified, closed environment. Jobs remain three and producer limits twenty
+minutes. Assembly consumes admitted archive/SBOM bytes without compilation.
+
+Acceptance still requires all six actual cold hosted payloads, every declared
+binary, archive/SBOM/native verification and publication gates. If the measured
+candidate does not fit, stop and reassess evidence rather than automatically
+tuning more parameters or extending deadlines.
