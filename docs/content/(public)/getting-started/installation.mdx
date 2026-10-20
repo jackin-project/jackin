@@ -85,7 +85,7 @@ Keep the broker executable beside the CLI: host usage runs in that independent
 process. `cargo install --path crates/apps/jackin` installs all three host executables
 together. The desktop app bundles its own broker beside its app executable.
 
-jackin❯ installs the host CLI plus the matching in-container runtime. Homebrew installs the `jackin-capsule` Linux binary beside the CLI so the first agent load does not need an extra GitHub download. Source installs can still fetch or build that runtime on first use.
+jackin❯ installs the host CLI plus the matching in-container runtime. Homebrew installs the `jackin-capsule` Linux binary beside the CLI so the first agent load does not need an extra GitHub download. Source installs require a matching local capsule, built with `cargo run --bin build-jackin-capsule` and selected through `JACKIN_CAPSULE_BIN` or the local cache. Only builds carrying an admitted native release channel and full source commit may fetch a signed remote capsule; a version override alone does not enable downloading.
 
 When you first load an agent, jackin❯ will:
 
