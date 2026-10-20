@@ -240,6 +240,7 @@ fn build(
 ) -> Result<()> {
     let mut command = cmd::command("cargo");
     command.args(build_arguments(package, target));
+    command.env_remove("CARGO_PROFILE_RELEASE_CODEGEN_UNITS");
     command.env("CARGO_BUILD_JOBS", jobs.to_string());
     command.env("CARGO_TARGET_DIR", target_dir);
     command.env("JACKIN_VERSION_OVERRIDE", version);

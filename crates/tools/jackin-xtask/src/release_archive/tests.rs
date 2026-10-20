@@ -134,7 +134,7 @@ printf '%s\n' "CGU=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS-unset}" "JOBS=$CARGO_BU
         ])
         .env(CHILD, temp.path())
         .env("PATH", temp.path())
-        .env_remove("CARGO_PROFILE_RELEASE_CODEGEN_UNITS")
+        .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1")
         .env_remove("SDKROOT")
         .env_remove("MACOSX_DEPLOYMENT_TARGET")
         .status()
