@@ -39,7 +39,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 | [`profile_matrix.rs`](src/profile_matrix.rs) | feature-profile matrix | — |
 | [`pty_fixture.rs`](src/pty_fixture.rs) | PTY fixture extraction | [`tests.rs`](src/pty_fixture/tests.rs) |
 | [`construct.rs`](src/construct.rs) | construct image helpers | [`tests.rs`](src/construct/tests.rs) |
-| [`preview_package.rs`](src/preview_package.rs) · [`preview_package/`](src/preview_package) | Native preview payload selection, handoff and assembly | [`tests.rs`](src/preview_package/tests.rs) |
+| [`release_package.rs`](src/release_package.rs) · [`release_package/`](src/release_package) | Native channel payload selection, handoff and assembly | [`tests.rs`](src/release_package/tests.rs) |
 | [`release_archive.rs`](src/release_archive.rs) · [`release_sbom.rs`](src/release_sbom.rs) | Unsigned product archives and their build evidence | [`tests.rs`](src/release_archive/tests.rs) |
 | [`health.rs`](src/health.rs) | report-only code-health dashboard (Phase 0) | [`tests.rs`](src/health/tests.rs) |
 | [`fs_util.rs`](src/fs_util.rs) | deterministic `read_dir_sorted` for gate code (plan 027) | [`tests.rs`](src/fs_util/tests.rs) |

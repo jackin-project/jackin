@@ -40,6 +40,7 @@ pub(crate) fn run() -> Result<()> {
                 &pair.product_id,
                 &pair.target,
                 &request.context.version,
+                &request.context.source_sha,
                 output,
             )?;
             inventory::write_leaf(output, request, pair)?;

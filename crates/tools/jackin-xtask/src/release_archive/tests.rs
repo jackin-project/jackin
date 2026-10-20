@@ -131,7 +131,7 @@ fn archive_builds_preserve_declared_release_policy_and_exact_target_commands() {
         &cargo,
         r#"#!/bin/sh
 printf '%s\n' "$@"
-printf '%s\n' "CGU=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS-unset}" "PREVIEW_CGU=${CARGO_PROFILE_PREVIEW_CODEGEN_UNITS-unset}" "JOBS=$CARGO_BUILD_JOBS" "VERSION=$JACKIN_VERSION_OVERRIDE" "TARGET=$CARGO_TARGET_DIR" "SDK=${SDKROOT-unset}" "DEPLOY=${MACOSX_DEPLOYMENT_TARGET-unset}" "ZIG_GLOBAL=$ZIG_GLOBAL_CACHE_DIR" "ZIG_LOCAL=$ZIG_LOCAL_CACHE_DIR"
+printf '%s\n' "CGU=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS-unset}" "PREVIEW_CGU=${CARGO_PROFILE_PREVIEW_CODEGEN_UNITS-unset}" "JOBS=$CARGO_BUILD_JOBS" "VERSION=$JACKIN_VERSION_OVERRIDE" "NATIVE_CHANNEL=${JACKIN_NATIVE_RELEASE_CHANNEL-unset}" "NATIVE_SOURCE=${JACKIN_NATIVE_RELEASE_SOURCE-unset}" "TARGET=$CARGO_TARGET_DIR" "SDK=${SDKROOT-unset}" "DEPLOY=${MACOSX_DEPLOYMENT_TARGET-unset}" "ZIG_GLOBAL=$ZIG_GLOBAL_CACHE_DIR" "ZIG_LOCAL=$ZIG_LOCAL_CACHE_DIR"
 "#,
     )
     .unwrap();
@@ -145,6 +145,8 @@ printf '%s\n' "CGU=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS-unset}" "PREVIEW_CGU=${
         .env("PATH", temp.path())
         .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1")
         .env("CARGO_PROFILE_PREVIEW_CODEGEN_UNITS", "1")
+        .env("JACKIN_NATIVE_RELEASE_CHANNEL", "stable")
+        .env("JACKIN_NATIVE_RELEASE_SOURCE", "hostile ambient source")
         .env_remove("SDKROOT")
         .env_remove("MACOSX_DEPLOYMENT_TARGET")
         .status()
@@ -197,7 +199,10 @@ fn probe_command(
     build(
         package,
         target,
-        "preview-test",
+        BuildVersion {
+            version: "preview-test",
+            origin: None,
+        },
         3,
         &layout,
         cache,
@@ -234,6 +239,8 @@ fn probe_command(
         "PREVIEW_CGU=unset".to_owned(),
         "JOBS=3".to_owned(),
         "VERSION=preview-test".to_owned(),
+        "NATIVE_CHANNEL=unset".to_owned(),
+        "NATIVE_SOURCE=unset".to_owned(),
         format!("TARGET={}", layout.root().display()),
         format!(
             "SDK={}",

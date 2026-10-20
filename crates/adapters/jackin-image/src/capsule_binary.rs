@@ -7,9 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use jackin_core::JackinPaths;
 
-use crate::binary_artifact::{
-    chmod_executable, container_arch, is_executable_file, repair_executable_file,
-};
+use crate::binary_artifact::{chmod_executable, container_arch, is_executable_file};
 
 pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
 
@@ -47,29 +45,11 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
 
 async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
     let arch = container_arch();
+    let native = origin::compiled(REQUIRED_VERSION);
     let channel = release_channel(REQUIRED_VERSION);
-    let cache_version = cache_key_version(REQUIRED_VERSION);
     let cached = resolved_cache_path(&paths.cache_dir);
 
-    if is_executable_file(&cached) && verify_version(&cached, REQUIRED_VERSION).await.is_ok() {
-        crate::telemetry_boundary::cache_decision(
-            jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
-            jackin_telemetry::schema::enums::CacheResult::Hit,
-        );
-        return Ok(cached);
-    }
-    if repair_executable_file(&cached)? && verify_version(&cached, REQUIRED_VERSION).await.is_ok() {
-        crate::telemetry_boundary::cache_decision(
-            jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
-            jackin_telemetry::schema::enums::CacheResult::Reuse,
-        );
-        record(
-            "capsule_binary_cache_repaired",
-            &format!(
-                "{REQUIRED_VERSION} linux/{arch} cache key {cache_version} at {}",
-                cached.display()
-            ),
-        );
+    if let Some(cached) = cache::lookup(&paths.cache_dir, REQUIRED_VERSION, arch, native).await? {
         return Ok(cached);
     }
 
@@ -94,7 +74,8 @@ async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
         jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
         jackin_telemetry::schema::enums::CacheResult::Miss,
     );
-    download_and_cache(REQUIRED_VERSION, arch, channel, &cached).await?;
+    let native = native.context("native release origin is required for a remote capsule")?;
+    download_and_cache(REQUIRED_VERSION, arch, channel, native.source, &cached).await?;
     Ok(cached)
 }
 
@@ -109,10 +90,11 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
 
 #[must_use]
 pub fn resolved_cache_path(cache_dir: &Path) -> PathBuf {
-    cached_binary_path(
+    origin::cache_path(
         cache_dir,
-        &cache_key_version(REQUIRED_VERSION),
+        REQUIRED_VERSION,
         container_arch(),
+        origin::compiled(REQUIRED_VERSION),
     )
 }
 
@@ -208,7 +190,7 @@ fn download_failure_message(version: &str, url: &str) -> String {
     )
 }
 
-fn release_channel(version: &str) -> ReleaseChannel {
+fn version_channel(version: &str) -> ReleaseChannel {
     match crate::release_evidence::release_channel(version) {
         Ok(velnor_actions_contract::package_release::PackageReleaseChannel::Preview) => {
             ReleaseChannel::Preview
@@ -220,9 +202,13 @@ fn release_channel(version: &str) -> ReleaseChannel {
     }
 }
 
+fn release_channel(version: &str) -> ReleaseChannel {
+    origin::compiled(version).map_or(ReleaseChannel::LocalOnly, |value| value.channel)
+}
+
 fn local_capsule_only_message(version: &str) -> String {
     format!(
-        "jackin-capsule version {version:?} is not a canonical stable or preview version. Remote capsule downloads require an exact release version.\n\
+        "jackin-capsule version {version:?} was not built with an exact native release origin. Remote capsule downloads require an admitted native channel, version and source.\n\
          No release download was attempted. Set JACKIN_CAPSULE_BIN to a local executable,\n\
          or build and cache a matching capsule with `cargo run --bin build-jackin-capsule`."
     )
@@ -230,7 +216,7 @@ fn local_capsule_only_message(version: &str) -> String {
 
 fn download_url(version: &str, arch: &str, channel: ReleaseChannel) -> Result<String> {
     anyhow::ensure!(
-        release_channel(version) == channel && channel != ReleaseChannel::LocalOnly,
+        version_channel(version) == channel && channel != ReleaseChannel::LocalOnly,
         "invalid remote capsule channel/version"
     );
     let target = linux_target(arch);
@@ -339,7 +325,9 @@ fn contains_exact_version(haystack: &[u8], version: &[u8]) -> bool {
 }
 
 mod archive;
+mod cache;
 mod download;
+mod origin;
 use download::download_and_cache;
 
 #[cfg(test)]

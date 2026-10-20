@@ -12,6 +12,9 @@ use velnor_actions_contract::package_release::PackageReleaseChannel;
 
 use crate::cmd;
 
+mod build_origin;
+use build_origin::{BuildVersion, NativeBuildOrigin};
+
 pub(crate) mod layout;
 use layout::{ArchiveLayout, ArchiveProfile};
 
@@ -80,6 +83,7 @@ pub(crate) fn build_release_payload(
     product: &str,
     target: &str,
     version: &str,
+    source: &str,
     output: &Path,
 ) -> Result<()> {
     let (package, target) = release_selection(product, target)?;
@@ -91,6 +95,7 @@ pub(crate) fn build_release_payload(
         },
         std::slice::from_ref(&target),
         release_profile(channel),
+        Some(NativeBuildOrigin { channel, source }),
     )
 }
 
@@ -116,13 +121,14 @@ fn release_selection(product: &str, target: &str) -> Result<(ArchivePackage, Tar
 
 pub(crate) fn run(args: ReleaseArchivesArgs) -> Result<()> {
     let selected = targets(args.package);
-    run_targets(args, selected, ArchiveProfile::Release)
+    run_targets(args, selected, ArchiveProfile::Release, None)
 }
 
 fn run_targets(
     args: ReleaseArchivesArgs,
     targets: &[TargetSpec],
     profile: ArchiveProfile,
+    origin: Option<NativeBuildOrigin<'_>>,
 ) -> Result<()> {
     fs::create_dir_all(&args.output_dir)
         .with_context(|| format!("creating {}", args.output_dir.display()))?;
@@ -148,7 +154,10 @@ fn run_targets(
         build(
             args.package,
             *target,
-            &args.version,
+            BuildVersion {
+                version: &args.version,
+                origin,
+            },
             jobs_per_target,
             layout,
             &zig_cache,
@@ -245,7 +254,7 @@ fn prepare_macos_sdk() -> Result<PathBuf> {
 fn build(
     package: ArchivePackage,
     target: TargetSpec,
-    version: &str,
+    version: BuildVersion<'_>,
     jobs: usize,
     layout: &ArchiveLayout,
     zig_cache: &ZigCache,
@@ -258,7 +267,7 @@ fn build(
     command.env_remove("CARGO_PROFILE_PREVIEW_CODEGEN_UNITS");
     command.env("CARGO_BUILD_JOBS", jobs.to_string());
     command.env("CARGO_TARGET_DIR", layout.root());
-    command.env("JACKIN_VERSION_OVERRIDE", version);
+    version.apply(&mut command);
     command.env("ZIG_GLOBAL_CACHE_DIR", &zig_cache.global);
     command.env("ZIG_LOCAL_CACHE_DIR", &zig_cache.local);
     if target.rust.contains("apple") {

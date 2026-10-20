@@ -33,13 +33,17 @@ pub(crate) struct VerifiedCapsule {
     publication: Box<freshness::PublicationPin>,
 }
 
-pub(crate) async fn verify_release(version: &str, target: &str) -> Result<VerifiedCapsule> {
+pub(crate) async fn verify_release(
+    version: &str,
+    target: &str,
+    source: &str,
+) -> Result<VerifiedCapsule> {
     release_channel(version)?;
     let transport = GithubTransport::new()?;
     let root = sigstore_trust_root::TrustedRoot::production().await
         .context("refreshing production Sigstore trust through TUF; refusing unauthenticated capsule download")?;
     let verifier = Verifier::new(&root)?;
-    verify_with_transport(&transport, &verifier, version, target).await
+    verify_with_transport(&transport, &verifier, version, target, Some(source)).await
 }
 
 pub(crate) async fn recheck_release(evidence: &VerifiedCapsule) -> Result<()> {
@@ -120,7 +124,10 @@ async fn verify_with_transport(
     verifier: &Verifier,
     version: &str,
     target: &str,
+    source: Option<&str>,
 ) -> Result<VerifiedCapsule> {
+    let source =
+        source.context("native release origin is required before remote evidence acquisition")?;
     release_channel(version)?;
     ensure!(
         policy::LINUX_TARGETS.contains(&target),
@@ -148,7 +155,7 @@ async fn verify_with_transport(
         .context("authenticating signed release.json")?;
     let receipt = parse_package_release_receipt(&receipt_bytes)
         .context("validating canonical Velnor release receipt")?;
-    policy::validate_receipt(&receipt, version)?;
+    policy::validate_receipt_source(&receipt, version, source)?;
     policy::validate_claims(&result, &receipt)?;
 
     let name = format!("jackin-capsule-{target}.tar.gz");

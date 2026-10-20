@@ -63,7 +63,7 @@ task = "release:package"
 output_directory = "dist/release"
 manifest = "dist/release/package-output.json"
 tools = ["cargo-zigbuild", "rust", "zig"]
-inputs = [".cargo/config.toml", ".velnor/config.toml", "Cargo.lock", "Cargo.toml", "crates/apps/jackin-capsule/Cargo.toml", "crates/apps/jackin-capsule/build.rs", "crates/apps/jackin/Cargo.toml", "crates/apps/jackin/build.rs", "crates/core/jackin-build-meta/Cargo.toml", "crates/core/jackin-build-meta/src/lib.rs", "crates/tools/jackin-xtask/Cargo.toml", "crates/tools/jackin-xtask/src/cmd.rs", "crates/tools/jackin-xtask/src/cmd/build_observer.rs", "crates/tools/jackin-xtask/src/cmd/build_observer/capture.rs", "crates/tools/jackin-xtask/src/cmd/build_observer/snapshot.rs", "crates/tools/jackin-xtask/src/main.rs", "crates/tools/jackin-xtask/src/release_package.rs", "crates/tools/jackin-xtask/src/release_package/assembly.rs", "crates/tools/jackin-xtask/src/release_package/handoff.rs", "crates/tools/jackin-xtask/src/release_package/inventory.rs", "crates/tools/jackin-xtask/src/release_archive.rs", "crates/tools/jackin-xtask/src/release_archive/layout.rs", "crates/tools/jackin-xtask/src/release_sbom.rs", "crates/tools/jackin-xtask/src/release_sbom/archive.rs", "crates/tools/jackin-xtask/src/release_sbom/cargo.rs", "crates/tools/jackin-xtask/src/release_sbom/document.rs", "mise.lock", "mise.toml", "rust-toolchain.toml"]
+inputs = [".cargo/config.toml", ".velnor/config.toml", "Cargo.lock", "Cargo.toml", "crates/adapters/jackin-image/build.rs", "crates/apps/jackin-capsule/Cargo.toml", "crates/apps/jackin-capsule/build.rs", "crates/apps/jackin/Cargo.toml", "crates/apps/jackin/build.rs", "crates/core/jackin-build-meta/Cargo.toml", "crates/core/jackin-build-meta/src/lib.rs", "crates/tools/jackin-xtask/Cargo.toml", "crates/tools/jackin-xtask/src/cmd.rs", "crates/tools/jackin-xtask/src/cmd/build_observer.rs", "crates/tools/jackin-xtask/src/cmd/build_observer/capture.rs", "crates/tools/jackin-xtask/src/cmd/build_observer/snapshot.rs", "crates/tools/jackin-xtask/src/main.rs", "crates/tools/jackin-xtask/src/release_package.rs", "crates/tools/jackin-xtask/src/release_package/assembly.rs", "crates/tools/jackin-xtask/src/release_package/handoff.rs", "crates/tools/jackin-xtask/src/release_package/inventory.rs", "crates/tools/jackin-xtask/src/release_archive.rs", "crates/tools/jackin-xtask/src/release_archive/build_origin.rs", "crates/tools/jackin-xtask/src/release_archive/layout.rs", "crates/tools/jackin-xtask/src/release_sbom.rs", "crates/tools/jackin-xtask/src/release_sbom/archive.rs", "crates/tools/jackin-xtask/src/release_sbom/cargo.rs", "crates/tools/jackin-xtask/src/release_sbom/document.rs", "mise.lock", "mise.toml", "rust-toolchain.toml"]
 runner = "xcode-27-arm64"
 timeout_minutes = 20
 build_jobs = 3
@@ -117,7 +117,7 @@ formula = "Formula/jackin.rb"
 
 [distribution.homebrew_tap.updater]
 task = "package-update"
-inputs = ["Formula/jackin-preview.rb", "Formula/jackin.rb", "lib/jackin_formula_support.rb", "mise.lock", "mise.toml", "scripts/package-update.py", "scripts/package-update.sh"]
+inputs = ["Formula/jackin-preview.rb", "Formula/jackin.rb", "lib/jackin_formula_support.rb", "mise.lock", "mise.toml", "scripts/package-update.py", "scripts/package-update.sh", "scripts/package_update_validation.py"]
 tools = ["python"]
 timeout_minutes = 5
 

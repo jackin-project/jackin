@@ -138,6 +138,19 @@ pub(super) fn validate_receipt(receipt: &PackageReleaseReceipt, version: &str) -
     Ok(())
 }
 
+pub(super) fn validate_receipt_source(
+    receipt: &PackageReleaseReceipt,
+    version: &str,
+    source: &str,
+) -> Result<()> {
+    validate_receipt(receipt, version)?;
+    ensure!(
+        receipt.source.commit_sha == source,
+        "release source differs from the native application build"
+    );
+    Ok(())
+}
+
 pub(super) fn validate_claims(
     result: &VerificationResult,
     receipt: &PackageReleaseReceipt,

@@ -31,12 +31,12 @@ fn preview_url_uses_fixed_rolling_tag_and_canonical_target() {
 }
 
 #[test]
-fn only_canonical_channel_versions_authorize_remote_downloads() {
+fn canonical_version_patterns_identify_channels_without_granting_fetch_authority() {
     assert_eq!(
-        release_channel("0.6.0-preview.411+bf7df07"),
+        version_channel("0.6.0-preview.411+bf7df07"),
         ReleaseChannel::Preview
     );
-    assert_eq!(release_channel("0.6.0"), ReleaseChannel::Stable);
+    assert_eq!(version_channel("0.6.0"), ReleaseChannel::Stable);
     for version in [
         "0.6.0-dev+bf7df07",
         "preview",
@@ -48,7 +48,7 @@ fn only_canonical_channel_versions_authorize_remote_downloads() {
         "00.6.0-preview.411+bf7df07",
     ] {
         assert_eq!(
-            release_channel(version),
+            version_channel(version),
             ReleaseChannel::LocalOnly,
             "{version}"
         );
@@ -181,4 +181,9 @@ fn stable_helpers_use_permanent_tags_and_reject_mixed_channel_arguments() {
     download_url("0.6.4", "arm64", ReleaseChannel::Preview).unwrap_err();
     download_url("0.6.4-preview.1+abcdef0", "arm64", ReleaseChannel::Stable).unwrap_err();
     download_url("dev", "arm64", ReleaseChannel::LocalOnly).unwrap_err();
+}
+
+#[test]
+fn local_bare_versions_do_not_authorize_remote_capsules() {
+    assert_eq!(release_channel("0.6.4"), ReleaseChannel::LocalOnly);
 }

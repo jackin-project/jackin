@@ -13,12 +13,13 @@ pub(super) async fn download_and_cache(
     version: &str,
     arch: &str,
     channel: ReleaseChannel,
+    source: &str,
     dest: &Path,
 ) -> Result<()> {
     let url = download_url(version, arch, channel)?;
     let tmp_archive = dest.with_extension("tar.gz.tmp");
     let tmp = dest.with_extension("tmp");
-    let evidence = crate::release_evidence::verify_release(version, linux_target(arch))
+    let evidence = crate::release_evidence::verify_release(version, linux_target(arch), source)
         .await
         .context("authenticating complete capsule release evidence before installation")?;
     download_verified_archive(version, &url, &tmp_archive, &evidence).await?;

@@ -48,3 +48,21 @@ fn superseded_preview_and_version_tag_aliases_are_not_admitted() {
     stable.tag = "preview".into();
     assert!(policy::validate_receipt(&stable, "0.6.4").is_err());
 }
+
+#[test]
+fn signed_release_source_must_equal_the_native_application_source() {
+    for channel in [
+        PackageReleaseChannel::Preview,
+        PackageReleaseChannel::Stable,
+    ] {
+        let receipt = channel_receipt(channel);
+        policy::validate_receipt_source(
+            &receipt,
+            &receipt.version.value,
+            &receipt.source.commit_sha,
+        )
+        .unwrap();
+        policy::validate_receipt_source(&receipt, &receipt.version.value, &"f".repeat(40))
+            .unwrap_err();
+    }
+}
