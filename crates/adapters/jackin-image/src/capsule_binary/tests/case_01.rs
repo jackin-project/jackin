@@ -15,29 +15,29 @@ fn capsule_resolution_future_stays_within_launch_stack_budget() {
 }
 
 #[test]
-fn preview_url_uses_immutable_tag_and_canonical_target() {
+fn preview_url_uses_fixed_rolling_tag_and_canonical_target() {
     let version = "0.6.0-preview.411+bf7df07";
     for (arch, target) in [
         ("amd64", "x86_64-unknown-linux-gnu"),
         ("arm64", "aarch64-unknown-linux-gnu"),
     ] {
         assert_eq!(
-            download_url(version, arch, ReleaseChannel::Preview),
+            download_url(version, arch, ReleaseChannel::Preview).unwrap(),
             format!(
-                "https://github.com/jackin-project/jackin/releases/download/v{version}/jackin-capsule-{target}.tar.gz"
+                "https://github.com/jackin-project/jackin/releases/download/preview/jackin-capsule-{target}.tar.gz"
             )
         );
     }
 }
 
 #[test]
-fn only_canonical_preview_versions_authorize_remote_downloads() {
+fn only_canonical_channel_versions_authorize_remote_downloads() {
     assert_eq!(
         release_channel("0.6.0-preview.411+bf7df07"),
         ReleaseChannel::Preview
     );
+    assert_eq!(release_channel("0.6.0"), ReleaseChannel::Stable);
     for version in [
-        "0.6.0",
         "0.6.0-dev+bf7df07",
         "preview",
         "0.6.0-preview.0+bf7df07",
@@ -53,11 +53,11 @@ fn only_canonical_preview_versions_authorize_remote_downloads() {
             "{version}"
         );
     }
-    assert!(local_capsule_only_message("0.6.0").contains("No release download was attempted"));
+    assert!(local_capsule_only_message("dev").contains("No release download was attempted"));
 }
 
 #[test]
-fn cache_paths_bind_exact_immutable_version() {
+fn cache_paths_bind_exact_application_version() {
     assert_eq!(
         cache_key_version("0.6.0-preview.411+bf7df07"),
         "0.6.0-preview.411_bf7df07"
@@ -118,9 +118,9 @@ fn cleanup_and_failure_messages_name_actionable_local_recovery() {
     let version = "0.6.0-preview.411+bf7df07";
     let message = download_failure_message(
         version,
-        &download_url(version, "amd64", ReleaseChannel::Preview),
+        &download_url(version, "amd64", ReleaseChannel::Preview).unwrap(),
     );
-    assert!(message.contains(&format!("releases/tag/v{version}")));
+    assert!(message.contains("releases/tag/preview"));
     assert!(message.contains("JACKIN_CAPSULE_BIN"));
 }
 
@@ -170,4 +170,15 @@ fn archive_rejects_noncanonical_members_and_requires_one_executable() {
             "{name} {mode:o} {repeat}"
         );
     }
+}
+
+#[test]
+fn stable_helpers_use_permanent_tags_and_reject_mixed_channel_arguments() {
+    assert_eq!(
+        download_url("0.6.4", "amd64", ReleaseChannel::Stable).unwrap(),
+        "https://github.com/jackin-project/jackin/releases/download/v0.6.4/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"
+    );
+    download_url("0.6.4", "arm64", ReleaseChannel::Preview).unwrap_err();
+    download_url("0.6.4-preview.1+abcdef0", "arm64", ReleaseChannel::Stable).unwrap_err();
+    download_url("dev", "arm64", ReleaseChannel::LocalOnly).unwrap_err();
 }

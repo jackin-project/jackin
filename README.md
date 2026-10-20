@@ -17,7 +17,7 @@ Documentation: <https://jackin.tailrocks.com/>
 
 ```sh
 brew tap jackin-project/tap
-brew install jackin@preview
+brew install jackin-preview
 ```
 
 Or [build from source](https://jackin.tailrocks.com/getting-started/installation/) if you prefer. For source

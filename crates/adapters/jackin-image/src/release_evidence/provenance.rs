@@ -43,7 +43,7 @@ pub(super) async fn verify(
         }
     }
     bail!(
-        "GitHub has no valid production Sigstore SLSA attestation binding the exact eight release subjects and authenticated preview workflow/source/run; refusing capsule installation"
+        "GitHub has no valid production Sigstore SLSA attestation binding the exact eight release subjects and authenticated release workflow/source/run; refusing capsule installation"
     )
 }
 
@@ -60,7 +60,7 @@ fn verify_bundle(
     let result = verifier.verify(
         Artifact::from_digest(Sha256Hash::from_hex(selected_digest)?),
         bundle,
-        &signing_policy(),
+        &signing_policy(receipt.channel),
     )?;
     policy::validate_claims(&result, receipt)?;
     let statement: Value = serde_json::from_slice(envelope.payload.as_bytes())?;
@@ -84,6 +84,69 @@ pub(super) fn validate_statement(
             && value(statement, "/predicateType")? == "https://slsa.dev/provenance/v1",
         "unsupported attestation statement/predicate"
     );
+    validate_subjects(statement, expected_subjects)?;
+    let invocation = format!(
+        "{}/actions/runs/{}/attempts/{}",
+        policy::REPOSITORY,
+        receipt.workflow.run_id,
+        receipt.workflow.run_attempt
+    );
+    let expected = [
+        (
+            "/predicate/buildDefinition/buildType",
+            "https://actions.github.io/buildtypes/workflow/v1",
+        ),
+        (
+            "/predicate/buildDefinition/externalParameters/workflow/ref",
+            "refs/heads/main",
+        ),
+        (
+            "/predicate/buildDefinition/externalParameters/workflow/repository",
+            policy::REPOSITORY,
+        ),
+        (
+            "/predicate/buildDefinition/externalParameters/workflow/path",
+            receipt.channel.workflow_path(),
+        ),
+        (
+            "/predicate/buildDefinition/internalParameters/github/event_name",
+            receipt.channel.event().as_str(),
+        ),
+        (
+            "/predicate/buildDefinition/internalParameters/github/repository_id",
+            "1197700841",
+        ),
+        (
+            "/predicate/buildDefinition/internalParameters/github/repository_owner_id",
+            "273541039",
+        ),
+        (
+            "/predicate/buildDefinition/internalParameters/github/runner_environment",
+            "github-hosted",
+        ),
+        (
+            "/predicate/runDetails/builder/id",
+            policy::identity(receipt.channel),
+        ),
+        (
+            "/predicate/runDetails/metadata/invocationId",
+            invocation.as_str(),
+        ),
+    ];
+    for (pointer, expected) in expected {
+        ensure!(
+            value(statement, pointer)? == expected,
+            "provenance claim mismatch at {pointer}"
+        );
+    }
+    validate_source_dependency(statement, receipt)?;
+    Ok(())
+}
+
+fn validate_subjects(
+    statement: &Value,
+    expected_subjects: &BTreeMap<String, String>,
+) -> Result<()> {
     let subjects = statement
         .get("subject")
         .and_then(Value::as_array)
@@ -109,57 +172,10 @@ pub(super) fn validate_statement(
         &actual == expected_subjects,
         "attestation subject name/digest inventory mismatch"
     );
-    let invocation = format!(
-        "{}/actions/runs/{}/attempts/{}",
-        policy::REPOSITORY,
-        receipt.workflow.run_id,
-        receipt.workflow.run_attempt
-    );
-    let expected = [
-        (
-            "/predicate/buildDefinition/buildType",
-            "https://actions.github.io/buildtypes/workflow/v1",
-        ),
-        (
-            "/predicate/buildDefinition/externalParameters/workflow/ref",
-            "refs/heads/main",
-        ),
-        (
-            "/predicate/buildDefinition/externalParameters/workflow/repository",
-            policy::REPOSITORY,
-        ),
-        (
-            "/predicate/buildDefinition/externalParameters/workflow/path",
-            policy::WORKFLOW,
-        ),
-        (
-            "/predicate/buildDefinition/internalParameters/github/event_name",
-            "workflow_run",
-        ),
-        (
-            "/predicate/buildDefinition/internalParameters/github/repository_id",
-            "1197700841",
-        ),
-        (
-            "/predicate/buildDefinition/internalParameters/github/repository_owner_id",
-            "273541039",
-        ),
-        (
-            "/predicate/buildDefinition/internalParameters/github/runner_environment",
-            "github-hosted",
-        ),
-        ("/predicate/runDetails/builder/id", policy::IDENTITY),
-        (
-            "/predicate/runDetails/metadata/invocationId",
-            invocation.as_str(),
-        ),
-    ];
-    for (pointer, expected) in expected {
-        ensure!(
-            value(statement, pointer)? == expected,
-            "provenance claim mismatch at {pointer}"
-        );
-    }
+    Ok(())
+}
+
+fn validate_source_dependency(statement: &Value, receipt: &PackageReleaseReceipt) -> Result<()> {
     let dependencies = statement
         .pointer("/predicate/buildDefinition/resolvedDependencies")
         .and_then(Value::as_array)

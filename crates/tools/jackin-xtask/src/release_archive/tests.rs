@@ -95,11 +95,11 @@ fn build_commands_select_only_the_declared_product_binaries() {
 }
 
 #[test]
-fn preview_selection_owns_one_pair_and_preserves_each_complete_bin_inventory() {
-    let payloads = preview_payloads();
+fn release_selection_owns_one_pair_and_preserves_each_complete_bin_inventory() {
+    let payloads = release_payloads();
     assert_eq!(payloads.len(), 6);
     for payload in payloads {
-        let (package, target) = preview_selection(payload.package, payload.target).unwrap();
+        let (package, target) = release_selection(payload.package, payload.target).unwrap();
         assert_eq!(package_name(package), payload.package);
         assert_eq!(target.rust, payload.target);
         assert_eq!(binaries(package), payload.binaries);
@@ -111,9 +111,9 @@ fn preview_selection_owns_one_pair_and_preserves_each_complete_bin_inventory() {
         );
         assert_eq!(command[command.len() - 2], target.zigbuild);
     }
-    preview_selection("jackin-capsule", "aarch64-apple-darwin").unwrap_err();
-    preview_selection("foreign", "x86_64-unknown-linux-gnu").unwrap_err();
-    preview_selection("jackin", "unknown").unwrap_err();
+    release_selection("jackin-capsule", "aarch64-apple-darwin").unwrap_err();
+    release_selection("foreign", "x86_64-unknown-linux-gnu").unwrap_err();
+    release_selection("jackin", "unknown").unwrap_err();
 }
 
 #[cfg(unix)]
@@ -296,4 +296,24 @@ fn trusted_target_root_alias_resolves_once_without_admitting_descendant_aliases(
             .to_string()
             .contains("symlink alias")
     );
+}
+
+#[test]
+fn native_channel_selects_the_profile_for_all_six_payloads() {
+    for (channel, expected) in [
+        (PackageReleaseChannel::Preview, ArchiveProfile::Preview),
+        (PackageReleaseChannel::Stable, ArchiveProfile::Release),
+    ] {
+        assert_eq!(release_profile(channel), expected);
+        for payload in release_payloads() {
+            let (package, target) = release_selection(payload.package, payload.target).unwrap();
+            let args = build_arguments(package, target, release_profile(channel));
+            let selector: &[&str] = match channel {
+                PackageReleaseChannel::Preview => &["--profile", "preview"],
+                PackageReleaseChannel::Stable => &["--release"],
+            };
+            assert_eq!(&args[2..2 + selector.len()], selector);
+            assert_eq!(binaries(package), payload.binaries);
+        }
+    }
 }

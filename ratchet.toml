@@ -484,9 +484,6 @@ bound = 2
 key = "clippy::unnecessary_wraps@jackin-runtime"
 bound = 1
 [[family.entry]]
-key = "clippy::unused_async@jackin-image"
-bound = 1
-[[family.entry]]
 key = "clippy::unwrap_used@jackin"
 bound = 13
 [[family.entry]]
@@ -680,10 +677,10 @@ mode = "enforce"
 cap = 0
 [[family.entry]]
 key = "AGENTS.md"
-bound = 2334
+bound = 2326
 [[family.entry]]
 key = "CLAUDE.md"
-bound = 2334
+bound = 2326
 [[family.entry]]
 key = "crates/services/jackin-agent-status/README.md"
 bound = 2129
@@ -1130,7 +1127,7 @@ key = "crates/services/jackin-usage-host-runtime/README.md"
 bound = 1610
 [[family.entry]]
 key = "crates/tools/jackin-xtask/README.md"
-bound = 6473
+bound = 6415
 [[family.entry]]
 key = "crates/apps/jackin/README.md"
 bound = 3101

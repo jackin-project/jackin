@@ -59,7 +59,7 @@ fn append_host_input(fixture: &mut Fixture) {
 
 #[test]
 fn preview_archives_and_sboms_use_selected_bytes_and_host_profile_for_all_pairs() {
-    for pair in crate::release_archive::preview_payloads() {
+    for pair in crate::release_archive::release_payloads() {
         let dir = tempfile::tempdir().unwrap();
         let mut fixture = fixture(dir.path(), pair.package, pair.target);
         let stable_bytes = fs::read(fixture.release.join(pair.binaries[0])).unwrap();

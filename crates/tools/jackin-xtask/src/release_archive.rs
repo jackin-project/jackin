@@ -8,6 +8,7 @@ use std::thread;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
+use velnor_actions_contract::package_release::PackageReleaseChannel;
 
 use crate::cmd;
 
@@ -74,13 +75,14 @@ const CAPSULE_TARGETS: [TargetSpec; 2] = [
     },
 ];
 
-pub(crate) fn build_preview_payload(
+pub(crate) fn build_release_payload(
+    channel: PackageReleaseChannel,
     product: &str,
     target: &str,
     version: &str,
     output: &Path,
 ) -> Result<()> {
-    let (package, target) = preview_selection(product, target)?;
+    let (package, target) = release_selection(product, target)?;
     run_targets(
         ReleaseArchivesArgs {
             package,
@@ -88,20 +90,27 @@ pub(crate) fn build_preview_payload(
             output_dir: output.to_owned(),
         },
         std::slice::from_ref(&target),
-        ArchiveProfile::Preview,
+        release_profile(channel),
     )
 }
 
-fn preview_selection(product: &str, target: &str) -> Result<(ArchivePackage, TargetSpec)> {
+fn release_profile(channel: PackageReleaseChannel) -> ArchiveProfile {
+    match channel {
+        PackageReleaseChannel::Preview => ArchiveProfile::Preview,
+        PackageReleaseChannel::Stable => ArchiveProfile::Release,
+    }
+}
+
+fn release_selection(product: &str, target: &str) -> Result<(ArchivePackage, TargetSpec)> {
     let package = [ArchivePackage::Jackin, ArchivePackage::JackinCapsule]
         .into_iter()
         .find(|package| package_name(*package) == product)
-        .context("unknown preview product")?;
+        .context("unknown release product")?;
     let target = targets(package)
         .iter()
         .copied()
         .find(|candidate| candidate.rust == target)
-        .context("preview target is not declared for this product")?;
+        .context("release target is not declared for this product")?;
     Ok((package, target))
 }
 
@@ -342,7 +351,7 @@ pub(crate) struct PayloadIdentity {
     pub(crate) binaries: &'static [&'static str],
 }
 
-pub(crate) fn preview_payloads() -> Vec<PayloadIdentity> {
+pub(crate) fn release_payloads() -> Vec<PayloadIdentity> {
     [ArchivePackage::Jackin, ArchivePackage::JackinCapsule]
         .into_iter()
         .flat_map(|package| {

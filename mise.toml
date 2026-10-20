@@ -42,9 +42,9 @@ lockfile = true
 description = "Verify the pinned mise release publishes both construct installer architectures"
 run = "bash docker/construct/check-upstream-assets.sh"
 
-[tasks."release:preview-package"]
-description = "Build unsigned preview payloads and the native Velnor handoff"
-run = "cargo run --locked -p jackin-xtask -- release-preview-package"
+[tasks."release:package"]
+description = "Build unsigned release payloads and the native Velnor handoff"
+run = "cargo run --locked -p jackin-xtask -- release-package"
 
 
 

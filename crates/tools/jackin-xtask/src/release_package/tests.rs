@@ -8,17 +8,17 @@ use std::{fs, path::Path};
 use velnor_actions_contract::{
     PACKAGE_RELEASE_PLAN_SCHEMA_V1, PackageReleasePlan, PackageReleasePlanProduct,
     canonical_json_bytes,
-    config::RustBinaryPreviewCompanion,
+    config::RustBinaryReleaseCompanion,
     package_release::{PackageReleaseChannel, PackageReleasePayloadFormat},
     preview_production::{
-        PREVIEW_PRODUCTION_SCHEMA_V1, PayloadArtifactRef, PreviewProductionContext,
-        PreviewProductionRequest, expected_preview_payload_pairs, preview_plan_sha256,
+        PayloadArtifactRef, RELEASE_PRODUCTION_SCHEMA_V1, ReleaseProductionContext,
+        ReleaseProductionRequest, expected_release_payload_pairs, release_plan_sha256,
     },
 };
 
 fn request(assemble: bool) -> TaskRequest {
     let mut products = std::collections::BTreeMap::<String, PackageReleasePlanProduct>::new();
-    for payload in crate::release_archive::preview_payloads() {
+    for payload in crate::release_archive::release_payloads() {
         products
             .entry(payload.package.to_owned())
             .or_insert_with(|| PackageReleasePlanProduct {
@@ -45,15 +45,15 @@ fn request(assemble: bool) -> TaskRequest {
         default_branch: "main".to_owned(),
         base_version: env!("CARGO_PKG_VERSION").to_owned(),
         products: products.into_values().collect(),
-        companions: vec![RustBinaryPreviewCompanion {
+        companions: vec![RustBinaryReleaseCompanion {
             id: "capsule-manifest".to_owned(),
             path: "capsule-manifest.json".to_owned(),
             asset_name: "capsule-manifest.json".to_owned(),
         }],
     };
-    let pairs = expected_preview_payload_pairs(&plan).unwrap();
+    let pairs = expected_release_payload_pairs(&plan).unwrap();
     let stage = if assemble {
-        PreviewProductionStage::Assemble {
+        ReleaseProductionStage::Assemble {
             inputs: pairs
                 .iter()
                 .enumerate()
@@ -65,17 +65,18 @@ fn request(assemble: bool) -> TaskRequest {
                 .collect(),
         }
     } else {
-        PreviewProductionStage::Payload {
+        ReleaseProductionStage::Payload {
             pair: pairs[0].clone(),
         }
     };
     TaskRequest {
-        schema: "velnor.preview-task.v1".to_owned(),
-        request: PreviewProductionRequest {
-            schema: PREVIEW_PRODUCTION_SCHEMA_V1.to_owned(),
-            plan_sha256: preview_plan_sha256(&plan).unwrap(),
+        schema: "velnor.release-task.v1".to_owned(),
+        request: ReleaseProductionRequest {
+            schema: RELEASE_PRODUCTION_SCHEMA_V1.to_owned(),
+            policy_sha256: "c".repeat(64),
+            plan_sha256: release_plan_sha256(&plan).unwrap(),
             plan,
-            context: PreviewProductionContext {
+            context: ReleaseProductionContext {
                 repository_id: 1,
                 head_repository_id: 1,
                 source_sha: "a".repeat(40),
@@ -95,7 +96,7 @@ fn request(assemble: bool) -> TaskRequest {
 }
 
 fn populate(handoff: &mut TaskRequest, source: &Path) {
-    for pair in expected_preview_payload_pairs(&handoff.request.plan).unwrap() {
+    for pair in expected_release_payload_pairs(&handoff.request.plan).unwrap() {
         let staging = tempfile::tempdir().unwrap();
         let archive = crate::release_sbom::write_payload_fixture(
             staging.path(),
@@ -195,15 +196,15 @@ fn rejects_identity_conflicts_before_any_build() {
     let baseline = request(false);
     handoff::parse(&canonical_json_bytes(&baseline).unwrap()).unwrap();
     for mutate in [
-        |request: &mut PreviewProductionRequest| request.context.source_sha = "bad".to_owned(),
-        |request: &mut PreviewProductionRequest| {
+        |request: &mut ReleaseProductionRequest| request.context.source_sha = "bad".to_owned(),
+        |request: &mut ReleaseProductionRequest| {
             request.context.source_ref = "refs/heads/other".to_owned();
         },
-        |request: &mut PreviewProductionRequest| request.context.commit_count += 1,
-        |request: &mut PreviewProductionRequest| {
+        |request: &mut ReleaseProductionRequest| request.context.commit_count += 1,
+        |request: &mut ReleaseProductionRequest| {
             request.context.version = "0.0.0-preview.42+aaaaaaa".to_owned();
         },
-        |request: &mut PreviewProductionRequest| {
+        |request: &mut ReleaseProductionRequest| {
             request.plan.products.pop().unwrap().targets.clear();
         },
     ] {
@@ -217,7 +218,7 @@ fn rejects_identity_conflicts_before_any_build() {
 fn source_policy_rejects_a_self_consistent_reduced_plan() {
     let mut handoff = request(false);
     handoff.request.plan.products.pop();
-    handoff.request.plan_sha256 = preview_plan_sha256(&handoff.request.plan).unwrap();
+    handoff.request.plan_sha256 = release_plan_sha256(&handoff.request.plan).unwrap();
     handoff.request.validate().unwrap();
     handoff::parse(&canonical_json_bytes(&handoff).unwrap()).unwrap_err();
 }
@@ -228,7 +229,7 @@ fn payload_inventory_contains_only_selected_pair_and_no_companions() {
     let source = tempfile::tempdir().unwrap();
     let mut handoff = request(true);
     populate(&mut handoff, source.path());
-    let pair = expected_preview_payload_pairs(&handoff.request.plan)
+    let pair = expected_release_payload_pairs(&handoff.request.plan)
         .unwrap()
         .remove(0);
     for input in handoff.inputs.iter().filter(|input| input.pair == pair) {
@@ -318,7 +319,7 @@ fn assembly_refuses_linked_inputs_and_existing_output_without_overwrite() {
 fn native_request_path(root: &Path) -> std::path::PathBuf {
     let directory = root.canonicalize().unwrap().join("velnor");
     fs::create_dir(&directory).unwrap();
-    let path = directory.join("preview-task-request.json");
+    let path = directory.join("release-task-request.json");
     fs::write(&path, canonical_json_bytes(&request(false)).unwrap()).unwrap();
     path
 }
@@ -328,8 +329,8 @@ fn native_request_rejects_wrong_paths_links_fifo_and_oversize() {
     let root = tempfile::tempdir().unwrap();
     let path = native_request_path(root.path());
     handoff::load_path(&path).unwrap();
-    handoff::load_path(Path::new("velnor/preview-task-request.json")).unwrap_err();
-    handoff::load_path(&path.parent().unwrap().join("./preview-task-request.json")).unwrap_err();
+    handoff::load_path(Path::new("velnor/release-task-request.json")).unwrap_err();
+    handoff::load_path(&path.parent().unwrap().join("./release-task-request.json")).unwrap_err();
     let wrong = path.with_file_name("wrong.json");
     fs::copy(&path, &wrong).unwrap();
     handoff::load_path(&wrong).unwrap_err();
@@ -354,7 +355,7 @@ fn native_request_rejects_wrong_paths_links_fifo_and_oversize() {
     let alias_root = tempfile::tempdir().unwrap();
     let alias = alias_root.path().canonicalize().unwrap().join("velnor");
     std::os::unix::fs::symlink(path.parent().unwrap(), &alias).unwrap();
-    handoff::load_path(&alias.join("preview-task-request.json")).unwrap_err();
+    handoff::load_path(&alias.join("release-task-request.json")).unwrap_err();
 }
 
 #[test]
@@ -373,3 +374,5 @@ fn native_request_detects_replacement_and_held_file_mutation() {
         handoff::read_request(&path, file, &metadata).unwrap_err();
     }
 }
+
+mod channels;

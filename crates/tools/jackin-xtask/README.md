@@ -6,7 +6,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 
 - CI orchestration (`ci`) and the lint gates (`lint` — file-size budget, and the lanes planned under it).
 - Docs checks (`docs` — repo-links, brand prose, spec↔test citations), schema checks (`schema`), profile/feature matrix (`profile_matrix`), and the agent-file symlink gate (`agent_files`, including per-crate README presence).
-- Architecture/structure tooling (`arch`), test-layout gate (`layout_lint`), PTY fixture extraction (`pty_fixture`), construct helpers (`construct`), unsigned preview packaging (`preview_package`, `release_archive`, `release_sbom`), and PR tooling (`pr`).
+- Architecture/structure tooling (`arch`), test-layout gate (`layout_lint`), PTY fixture extraction (`pty_fixture`), construct helpers (`construct`), unsigned release packaging (`release_package`, `release_archive`, `release_sbom`), and PR tooling (`pr`).
 
 ## Architecture tier and allowed dependencies
 
@@ -55,9 +55,9 @@ unrelated families or launch nested build work. Artifact-backed families skip
 when their artifact is absent; the job that produces an artifact must run the
 matching scoped ratchet after generation.
 
-## Native preview packaging
+## Native release packaging
 
-`mise run release:preview-package` consumes the request and payload context supplied by the generated Velnor workflow. Each production job builds one declared product/target pair: four Jackin payloads and two Linux capsule payloads. Assembly validates and copies the captured archives and SBOMs without rebuilding product binaries. Signing and immutable publication belong to separate generated jobs.
+`mise run release:package` consumes Velnor's `velnor.release-task.v1` handoff. Leaves build four CLI and two Linux capsule payloads; assembly validates captured archives, SBOMs, and the capsule manifest without rebuilding. Separate jobs sign and publish rolling previews or immutable stable versions. Builds receive no publishing credentials.
 
 ## How to verify
 
