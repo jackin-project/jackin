@@ -167,6 +167,7 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
     assert_eq!(
         task_ids,
         [
+            "check:custom-lints",
             "check:dependency-usage",
             "check:repository-links",
             "check:repository-policy",

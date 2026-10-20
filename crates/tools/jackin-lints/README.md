@@ -13,41 +13,15 @@ jackin❯-specific invariants that Clippy cannot express structurally.
 
 - **Not a workspace member.** Listed under the workspace root exclude list and has
   its own `[workspace]` table.
-- **Pinned nightly** via `rust-toolchain` (dylint compiles against rustc-private).
+- **Pinned nightly** via `scripts/custom-lints.py` (Dylint compiles against rustc-private).
+  No nested Rust toolchain file or directory override changes the root compiler.
 - Main-workspace `cargo check --workspace` must never compile this crate.
 
 ## How to run
 
-```sh
-cd crates/tools/jackin-lints
-# Dylint's nested driver build must resolve Cargo through rustup's shims.
-export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
-rustup run nightly-2026-10-18 cargo build --locked
-rustup run nightly-2026-10-18 cargo nextest run --locked
-```
-
-Against the main workspace, from the repository root (requires cargo-dylint):
-
-```sh
-cargo dylint --all -- --workspace
-```
-
-The qualified compiler is `nightly-2026-10-18` (`rustc 1.101.0-nightly`,
-commit `8006091eb`, 2026-10-17). The date names the published nightly manifest;
-the compiler commit date is one day earlier. `rustup run` makes the lint's
-nightly take precedence over a parent workspace's Mise-selected stable Cargo.
-The shim-first PATH also lets Dylint's isolated driver build select its own
-written toolchain file after Dylint removes inherited compiler environment
-variables. Direct compiler-toolchain binaries or a Mise Cargo wrapper ahead of
-the shims would bypass that selection.
-
-The UI test runs Dylint 6.2.0's supported compiletest harness inside Nextest and
-checks the positive, clean, and closure-boundary fixtures.
-
-The current generated CI does not run this lint on a schedule or as a required
-job. The pinned tools and UI corpus support local qualification; they do not
-provide hosted enforcement. Wire an explicit generated task and required lane
-before describing Dylint as a CI gate.
+Run `mise run check:custom-lints`. [Running and qualification](RUNNING.md)
+documents the explicit nightly, isolated prebuilt-library discovery, and current
+upstream workspace-check blocker.
 
 ## Pilot closure (plan 012, 2026-07-14)
 
@@ -56,7 +30,7 @@ before describing Dylint as a CI gate.
 | Lint | `render_thread_purity` (Warn) |
 | UI corpus | `ui/render_blocks.rs` (positive), `ui/render_clean.rs` (negative), `ui/render_spawn_boundary.rs` (boundary) |
 | UI false-positive rate | **0** against the committed corpus (UI tests document intended positives only) |
-| Workspace FP rate | **0% (0 false positives / 0 findings)** from `cargo dylint --all -- --workspace`, 2026-07-15; the committed positive UI fixture supplies the non-zero signal check |
+| Workspace FP rate | **0% (0 false positives / 0 findings)** from the former metadata-autobuild command, 2026-07-15; the committed positive UI fixture supplies the non-zero signal check |
 | Decision | **Pilot only**. The earlier promotion proposal was not wired into the current generated workflow; no scheduled or required Dylint lane is active. |
 
 ## Architecture tier

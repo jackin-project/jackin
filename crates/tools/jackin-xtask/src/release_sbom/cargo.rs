@@ -56,13 +56,12 @@ struct Profile {
 pub(super) type Checksums = BTreeMap<(String, String, String), String>;
 
 pub(super) fn metadata() -> Result<Metadata> {
-    let bytes = cmd::output(cmd::command("cargo").args([
-        "metadata",
-        "--format-version",
-        "1",
-        "--locked",
-        "--offline",
-    ]))?;
+    // A fresh qualified Cargo home need not contain every workspace source.
+    // Full metadata can need other members' dependency manifests: retrieve
+    // their locked sources here. Compiler records still own SBOM coverage;
+    // this identity lookup never broadens the compiled component inventory.
+    let bytes =
+        cmd::output(cmd::command("cargo").args(["metadata", "--format-version", "1", "--locked"]))?;
     serde_json::from_slice(&bytes).context("parsing Cargo package identities")
 }
 
