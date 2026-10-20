@@ -106,3 +106,111 @@ fn preview_selection_owns_one_pair_and_preserves_each_complete_bin_inventory() {
     preview_selection("foreign", "x86_64-unknown-linux-gnu").unwrap_err();
     preview_selection("jackin", "unknown").unwrap_err();
 }
+
+#[cfg(unix)]
+#[test]
+fn archive_builds_preserve_declared_release_policy_and_exact_target_commands() {
+    const CHILD: &str = "JACKIN_ARCHIVE_COMMAND_TEST";
+    if let Ok(root) = env::var(CHILD) {
+        run_archive_command_probe(Path::new(&root));
+        return;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let cargo = temp.path().join("cargo");
+    fs::write(
+        &cargo,
+        r#"#!/bin/sh
+printf '%s\n' "$@"
+printf '%s\n' "CGU=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS-unset}" "JOBS=$CARGO_BUILD_JOBS" "VERSION=$JACKIN_VERSION_OVERRIDE" "TARGET=$CARGO_TARGET_DIR" "SDK=${SDKROOT-unset}" "DEPLOY=${MACOSX_DEPLOYMENT_TARGET-unset}" "ZIG_GLOBAL=$ZIG_GLOBAL_CACHE_DIR" "ZIG_LOCAL=$ZIG_LOCAL_CACHE_DIR"
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&cargo, fs::Permissions::from_mode(0o755)).unwrap();
+    let status = std::process::Command::new(env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "release_archive::tests::archive_builds_preserve_declared_release_policy_and_exact_target_commands",
+        ])
+        .env(CHILD, temp.path())
+        .env("PATH", temp.path())
+        .env_remove("CARGO_PROFILE_RELEASE_CODEGEN_UNITS")
+        .env_remove("SDKROOT")
+        .env_remove("MACOSX_DEPLOYMENT_TARGET")
+        .status()
+        .unwrap();
+    assert!(status.success());
+    for package in [ArchivePackage::Jackin, ArchivePackage::JackinCapsule] {
+        for target in targets(package) {
+            assert!(
+                temp.path()
+                    .join(package_name(package))
+                    .join(target.rust)
+                    .join("cargo-build-artifacts.jsonl")
+                    .is_file()
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
+fn run_archive_command_probe(root: &Path) {
+    let cache = ZigCache {
+        global: root.join("zig global"),
+        local: root.join("zig local"),
+    };
+    for package in [ArchivePackage::Jackin, ArchivePackage::JackinCapsule] {
+        for target in targets(package) {
+            let target_dir = root.join(package_name(package)).join(target.rust);
+            let sdk = root.join("qualified SDK");
+            build(
+                package,
+                *target,
+                "preview-test",
+                2,
+                &target_dir,
+                &cache,
+                Some(&sdk),
+            )
+            .unwrap();
+            let output =
+                fs::read_to_string(target_dir.join("cargo-build-artifacts.jsonl")).unwrap();
+            let actual: Vec<_> = output.lines().map(str::to_owned).collect();
+            let mut expected: Vec<_> = build_arguments(package, *target)
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
+            expected.extend([
+                "CGU=unset".to_owned(),
+                "JOBS=2".to_owned(),
+                "VERSION=preview-test".to_owned(),
+                format!("TARGET={}", target_dir.display()),
+                format!(
+                    "SDK={}",
+                    if target.rust.contains("apple") {
+                        sdk.to_str().unwrap()
+                    } else {
+                        "unset"
+                    }
+                ),
+                format!(
+                    "DEPLOY={}",
+                    if target.rust.contains("apple") {
+                        "12.0"
+                    } else {
+                        "unset"
+                    }
+                ),
+                format!("ZIG_GLOBAL={}", cache.global.display()),
+                format!("ZIG_LOCAL={}", cache.local.display()),
+            ]);
+            assert_eq!(
+                actual,
+                expected,
+                "{} / {}",
+                package_name(package),
+                target.rust
+            );
+        }
+    }
+}
