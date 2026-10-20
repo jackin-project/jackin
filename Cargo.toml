@@ -526,6 +526,10 @@ debug = 0
 lto = "thin"
 strip = "symbols"
 
+[profile.preview]
+inherits = "release"
+lto = "off"
+
 [profile.capsule-debug]
 inherits = "release"
 strip = false

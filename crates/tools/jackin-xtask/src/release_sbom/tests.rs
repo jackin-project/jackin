@@ -5,6 +5,8 @@
 
 use super::*;
 
+mod profile;
+
 #[test]
 fn cached_compiler_records_generate_bound_target_and_member_inventory() {
     let dir = tempfile::tempdir().unwrap();
@@ -141,8 +143,7 @@ fn normalized_workspace_refs_do_not_depend_on_checkout_directory() {
             &identity,
             &BuildEvidence {
                 version: "0.6.4",
-                release_dir: &f.release,
-                artifacts: Path::new("unused"),
+                layout: &f.layout,
             },
             &archive::members(&f.archive, &identity).unwrap(),
             &BTreeMap::new(),
@@ -156,8 +157,7 @@ fn normalized_workspace_refs_do_not_depend_on_checkout_directory() {
 #[ignore = "requires actual producer archive, successful Cargo JSON records, and matching release binaries"]
 fn real_archive_cargo_evidence_proof() {
     let archive = PathBuf::from(std::env::var("JACKIN_REAL_SBOM_ARCHIVE").unwrap());
-    let artifacts = PathBuf::from(std::env::var("JACKIN_REAL_SBOM_ARTIFACTS").unwrap());
-    let release = PathBuf::from(std::env::var("JACKIN_REAL_SBOM_RELEASE_DIR").unwrap());
+    let target_dir = PathBuf::from(std::env::var("JACKIN_REAL_SBOM_TARGET_DIR").unwrap());
     let version = std::env::var("JACKIN_REAL_SBOM_VERSION").unwrap();
     let output = PathBuf::from(std::env::var("JACKIN_REAL_SBOM_OUTPUT").unwrap());
     assert!(
@@ -165,33 +165,31 @@ fn real_archive_cargo_evidence_proof() {
         "qualification must not overwrite an existing SBOM"
     );
     let identity = crate::release_archive::payload_identity(&archive).unwrap();
+    let layout = crate::release_archive::layout::ArchiveLayout::new(
+        &target_dir,
+        identity.target,
+        crate::release_archive::layout::ArchiveProfile::Release,
+    )
+    .unwrap();
     if std::env::var("JACKIN_REAL_SBOM_REPACKAGE").as_deref() == Ok("1") {
         assert!(
             !archive.exists(),
             "qualification must not overwrite an existing archive"
         );
         fs::create_dir_all(archive.parent().unwrap()).unwrap();
-        let build_root = release.parent().and_then(Path::parent).unwrap();
         let package = match identity.package {
             "jackin" => crate::release_archive::ArchivePackage::Jackin,
             "jackin-capsule" => crate::release_archive::ArchivePackage::JackinCapsule,
             _ => unreachable!("payload_identity admits only the two declared products"),
         };
-        crate::release_archive::package(
-            package,
-            identity.target,
-            build_root,
-            archive.parent().unwrap(),
-        )
-        .unwrap();
+        crate::release_archive::package(package, &layout, archive.parent().unwrap()).unwrap();
     }
     generate(
         &archive,
         &output,
         &BuildEvidence {
             version: &version,
-            release_dir: &release,
-            artifacts: &artifacts,
+            layout: &layout,
         },
     )
     .unwrap();

@@ -133,28 +133,7 @@ pub(super) fn components(
                 );
                 // Both fresh and newly compiled records describe actual build units.
                 let _fresh = artifact.fresh;
-                let host_release = evidence
-                    .release_dir
-                    .parent()
-                    .and_then(Path::parent)
-                    .context("Cargo target release directory has no build root")?
-                    .join("release");
-                let role = if artifact
-                    .filenames
-                    .iter()
-                    .all(|p| p.starts_with(evidence.release_dir))
-                {
-                    "target"
-                } else {
-                    ensure!(
-                        artifact
-                            .filenames
-                            .iter()
-                            .all(|p| p.starts_with(&host_release)),
-                        "compiler artifact has wrong target or host-build path"
-                    );
-                    "host-build"
-                };
+                let role = artifact_role(&artifact, evidence)?;
                 if artifact.target.kind.iter().any(|kind| kind == "bin") {
                     ensure!(
                         artifact.package_id == root_id
@@ -166,9 +145,9 @@ pub(super) fn components(
                         .as_ref()
                         .context("root binary artifact has no executable")?;
                     ensure!(
-                        executable == &evidence.release_dir.join(&artifact.target.name)
+                        executable == &evidence.layout.target_output().join(&artifact.target.name)
                             && artifact.filenames.contains(executable),
-                        "root binary artifact has wrong target/release path"
+                        "root binary artifact has wrong target/profile path"
                     );
                     let expected = members
                         .get(&artifact.target.name)
@@ -228,6 +207,41 @@ pub(super) fn components(
     }
     result.sort_by(|a, b| a["bom-ref"].as_str().cmp(&b["bom-ref"].as_str()));
     Ok(result)
+}
+
+fn artifact_role(artifact: &Artifact, evidence: &BuildEvidence<'_>) -> Result<&'static str> {
+    let layout = evidence.layout;
+    for path in artifact.filenames.iter().chain(artifact.executable.iter()) {
+        layout.validate_path(path)?;
+    }
+    let role = if artifact
+        .filenames
+        .iter()
+        .all(|p| p.starts_with(layout.target_output()))
+    {
+        "target"
+    } else {
+        ensure!(
+            artifact
+                .filenames
+                .iter()
+                .all(|p| p.starts_with(layout.host_output())),
+            "compiler artifact has wrong target or host-build path"
+        );
+        "host-build"
+    };
+    if let Some(executable) = &artifact.executable {
+        let root = if role == "target" {
+            layout.target_output()
+        } else {
+            layout.host_output()
+        };
+        ensure!(
+            executable.starts_with(root),
+            "compiler executable has mixed target/profile custody"
+        );
+    }
+    Ok(role)
 }
 
 // Cargo 1.99.1's BuildStarted/RunId grammar, emitted by --timings:
