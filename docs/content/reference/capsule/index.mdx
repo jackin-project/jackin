@@ -356,19 +356,31 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 ## Distribution and versioning
 
-`jackin-capsule` is versioned identically to the `jackin` CLI — both use the same <RepoFile path="crates/apps/jackin/build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
+`jackin-capsule` and the `jackin` CLI share the version selected by
+<RepoFile path="crates/core/jackin-build-meta/src/lib.rs" />. Native preview
+builds use `X.Y.Z-preview.N+sha7`; native stable builds use `X.Y.Z`. The validated
+release producer embeds the same full source commit and channel into the host
+application. Ordinary local builds have no remote release authority, even if a
+version override resembles a published release.
 
 ### How jackin❯ acquires the binary
 
 `ensure_available` in <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs" /> resolves the binary in priority order:
 
-1. **`JACKIN_CAPSULE_BIN=/path/to/binary` (env var set)** — jackin❯ uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin❯ validates only that the file exists and is executable.
+1. **`JACKIN_CAPSULE_BIN=/path/to/binary`** — explicitly selects a local executable. The path must exist and be executable and pass the platform-specific version check described below. This bypasses remote release verification.
 
-2. **Cache hit** — if `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule` exists and is executable, it is used immediately.
+2. **Matching cache** — validates or repairs the cached file before reuse. Native builds use `~/.jackin/cache/jackin-capsule/native/<channel>/<full-source-sha>/<cache-version>/linux-<arch>/jackin-capsule`; local builds use the separate `<cache-version>/linux-<arch>/jackin-capsule` namespace. Cache versions replace `+` with `_`. Native acquisition never falls back to a local or other-source cache.
 
-3. **Packaged binary** — Homebrew formulae install the matching Linux `jackin-capsule` resource under the formula's `libexec/jackin-capsule/linux-<arch>/jackin-capsule` path. If that binary exists and passes the same version check, jackin❯ uses it directly.
+3. **Packaged binary** — Homebrew installs the matching capsule at `libexec/jackin-capsule/linux-<arch>/jackin-capsule` inside the formula keg. If executable and accepted by the platform's version check, it is used without downloading.
 
-4. **Download** — on a cache and package miss, a `jackin-capsule-*.tar.gz` archive and its `.sha256` companion are downloaded from GitHub Releases: the rolling `preview` tag for `-dev` and `-preview.*` versions, or the versioned `v<version>` tag for stable releases. The archive hash must match before jackin❯ extracts the top-level `jackin-capsule` binary into the cache. On Linux the extracted binary is also verified by executing `jackin-capsule --version` and asserting the output matches the expected version string.
+4. **Authenticated download for native builds** — preview uses the single rolling `preview` release; stable uses the permanent `v<version>` release. The downloader authenticates the signed canonical receipt, selected capsule, capsule manifest, Sigstore transparency evidence, and exact-source GitHub provenance. Receipt sizes and SHA-256 values bind downloaded bytes. Original exact-attempt CI and producer/signing evidence are admitted once per download; current release, complete asset inventory, tag, and preview publication journal are rechecked before execution and cache installation. A local build stops with local-build instructions instead of making a remote request.
+
+The selected capsule's version is checked by execution on Linux. On macOS, the
+verifier reads the Linux ELF bytes and requires the capsule identity marker and
+the exact version with version-token boundaries; it cannot execute that binary.
+These checks apply to overrides, cache entries, packaged capsules, and downloads.
+Remote downloads additionally require the authenticated release evidence. See
+[Verifying Releases](/getting-started/verifying-releases/) for the trust policy.
 
 jackin❯ itself has no knowledge of how to build `jackin-capsule` from source. Build logic lives exclusively in the developer tool described below.
 
@@ -420,7 +432,7 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 | Component | Relationship |
 |---|---|
-| <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
+| <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs" /> | Resolves the binary path: local override → matching isolated cache → packaged capsule → authenticated native-release download; local builds stop before remote acquisition |
 | <RepoFile path="crates/apps/jackin/src/bin/build_jackin_capsule/main.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
 | <RepoFile path="crates/adapters/jackin-image/src/derived_image.rs" /> | Copies binary into derived image build context |
 | <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |

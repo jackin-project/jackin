@@ -7,8 +7,8 @@ use std::{env, fs, io::Read, os::unix::fs::MetadataExt, path::Path};
 use velnor_actions_contract::{
     canonical_json_bytes, parse_strict_json,
     preview_production::{
-        PreviewPayloadPair, PreviewProductionRequest, PreviewProductionStage,
-        expected_preview_payload_pairs,
+        ReleasePayloadPair, ReleaseProductionRequest, ReleaseProductionStage,
+        expected_release_payload_pairs,
     },
 };
 
@@ -17,7 +17,7 @@ const MAX_REQUEST_BYTES: u64 = 32 * 1024 * 1024;
 #[derive(Debug, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct TaskInput {
-    pub pair: PreviewPayloadPair,
+    pub pair: ReleasePayloadPair,
     pub name: String,
     pub sha256: String,
     pub size: u64,
@@ -28,12 +28,12 @@ pub(super) struct TaskInput {
 #[serde(deny_unknown_fields)]
 pub(super) struct TaskRequest {
     pub schema: String,
-    pub request: PreviewProductionRequest,
+    pub request: ReleaseProductionRequest,
     pub inputs: Vec<TaskInput>,
 }
 
 pub(super) fn load() -> Result<TaskRequest> {
-    load_path(Path::new(&native_env("VELNOR_PREVIEW_REQUEST_FILE")?))
+    load_path(Path::new(&native_env("VELNOR_RELEASE_TASK_REQUEST_FILE")?))
 }
 
 fn native_env(key: &str) -> Result<String> {
@@ -50,7 +50,7 @@ fn validate_path(path: &Path) -> Result<()> {
         path.is_absolute()
             && path
                 .file_name()
-                .is_some_and(|name| name == "preview-task-request.json")
+                .is_some_and(|name| name == "release-task-request.json")
             && path
                 .parent()
                 .and_then(Path::file_name)
@@ -145,7 +145,7 @@ pub(super) fn parse(bytes: &[u8]) -> Result<TaskRequest> {
         "native request must be canonical JSON"
     );
     ensure!(
-        handoff.schema == "velnor.preview-task.v1",
+        handoff.schema == "velnor.release-task.v1",
         "unknown native task schema"
     );
     handoff.request.validate()?;
@@ -154,7 +154,7 @@ pub(super) fn parse(bytes: &[u8]) -> Result<TaskRequest> {
     Ok(handoff)
 }
 
-pub(super) fn validate_environment(request: &PreviewProductionRequest) -> Result<()> {
+pub(super) fn validate_environment(request: &ReleaseProductionRequest) -> Result<()> {
     let context = &request.context;
     ensure!(
         native_env("VELNOR_RELEASE_SOURCE_COMMIT")? == context.source_sha,
@@ -175,15 +175,15 @@ pub(super) fn validate_environment(request: &PreviewProductionRequest) -> Result
     Ok(())
 }
 
-fn validate_policy(request: &PreviewProductionRequest) -> Result<()> {
+fn validate_policy(request: &ReleaseProductionRequest) -> Result<()> {
     ensure!(
         request.plan.repository == "jackin-project/jackin"
             && request.plan.base_version == env!("CARGO_PKG_VERSION"),
         "unexpected source package policy"
     );
-    let actual = expected_preview_payload_pairs(&request.plan)?;
+    let actual = expected_release_payload_pairs(&request.plan)?;
     let mut expected = Vec::new();
-    for payload in crate::release_archive::preview_payloads() {
+    for payload in crate::release_archive::release_payloads() {
         let product = request
             .plan
             .products
@@ -199,7 +199,7 @@ fn validate_policy(request: &PreviewProductionRequest) -> Result<()> {
                     .eq(payload.binaries.iter().copied()),
             "product package/bin inventory differs from source"
         );
-        expected.push(PreviewPayloadPair {
+        expected.push(ReleasePayloadPair {
             product_id: payload.package.to_owned(),
             target: payload.target.to_owned(),
         });
@@ -222,7 +222,7 @@ fn validate_policy(request: &PreviewProductionRequest) -> Result<()> {
 fn validate_inputs(handoff: &TaskRequest) -> Result<()> {
     if matches!(
         handoff.request.stage,
-        PreviewProductionStage::Payload { .. }
+        ReleaseProductionStage::Payload { .. }
     ) {
         ensure!(
             handoff.inputs.is_empty(),
@@ -231,7 +231,7 @@ fn validate_inputs(handoff: &TaskRequest) -> Result<()> {
         return Ok(());
     }
     let mut expected = Vec::new();
-    for pair in expected_preview_payload_pairs(&handoff.request.plan)? {
+    for pair in expected_release_payload_pairs(&handoff.request.plan)? {
         let archive = format!("{}-{}.tar.gz", pair.product_id, pair.target);
         expected.push((archive.clone(), pair.clone()));
         expected.push((format!("{archive}.sbom.json"), pair));

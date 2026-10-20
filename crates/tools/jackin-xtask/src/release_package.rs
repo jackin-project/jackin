@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Source task for one native preview leaf or the complete admitted union.
+//! Source task for one native channel leaf or the complete admitted union.
 
 use anyhow::{Result, ensure};
 use std::{env, path::Path};
-use velnor_actions_contract::preview_production::PreviewProductionStage;
+use velnor_actions_contract::preview_production::ReleaseProductionStage;
 
 mod assembly;
 mod handoff;
@@ -34,16 +34,18 @@ pub(crate) fn run() -> Result<()> {
         "producer output must be empty"
     );
     match &request.stage {
-        PreviewProductionStage::Payload { pair } => {
-            crate::release_archive::build_preview_payload(
+        ReleaseProductionStage::Payload { pair } => {
+            crate::release_archive::build_release_payload(
+                request.plan.channel,
                 &pair.product_id,
                 &pair.target,
                 &request.context.version,
+                &request.context.source_sha,
                 output,
             )?;
             inventory::write_leaf(output, request, pair)?;
         }
-        PreviewProductionStage::Assemble { .. } => {
+        ReleaseProductionStage::Assemble { .. } => {
             assembly::assemble(output, &handoff)?;
             inventory::write_complete(output, request)?;
         }

@@ -3,6 +3,11 @@
 
 use super::*;
 use serde_json::{Value, json};
+use support::verifier;
+use velnor_actions_contract::package_release::PackageReleaseChannel;
+
+// Synthetic policy bytes use b"test" digests. Separate immutable upstream
+// fixtures below provide real cryptographic positive/negative controls.
 
 const RECEIPT: &[u8] = include_bytes!("fixtures/jackin-policy-receipt.json");
 const COSIGN_BYTES: &[u8] = include_bytes!("fixtures/cosign-3.1.3-checksums.txt");
@@ -10,18 +15,8 @@ const COSIGN_BUNDLE: &[u8] = include_bytes!("fixtures/cosign-3.1.3-checksums.bun
 const DSSE_BYTES: &[u8] = include_bytes!("fixtures/velnor-0.1.13-release-manifest.json");
 const DSSE_BUNDLE: &[u8] = include_bytes!("fixtures/velnor-0.1.13-provenance.bundle.json");
 
-fn verifier() -> Verifier {
-    Verifier::new(
-        &sigstore_trust_root::TrustedRoot::from_embedded(
-            sigstore_trust_root::SigstoreInstance::PublicGood,
-        )
-        .unwrap(),
-    )
-    .unwrap()
-}
-
 fn receipt() -> PackageReleaseReceipt {
-    parse_package_release_receipt(RECEIPT).unwrap()
+    channel_receipt(PackageReleaseChannel::Preview)
 }
 
 fn cosign_policy() -> VerificationPolicy {
@@ -56,7 +51,11 @@ fn real_cosign_message_signature_verifies_certificate_sct_inclusion_set_and_time
         .verify(b"tampered".as_slice(), &bundle, &cosign_policy())
         .expect_err("invalid evidence must be rejected");
     verifier()
-        .verify(COSIGN_BYTES, &bundle, &signing_policy())
+        .verify(
+            COSIGN_BYTES,
+            &bundle,
+            &signing_policy(PackageReleaseChannel::Preview),
+        )
         .expect_err("invalid evidence must be rejected");
 }
 
@@ -98,51 +97,16 @@ fn real_dsse_verifies_with_digest_only_and_rejects_transplants() {
         )
         .expect_err("invalid evidence must be rejected");
     verifier()
-        .verify(DSSE_BYTES, &bundle, &signing_policy())
+        .verify(
+            DSSE_BYTES,
+            &bundle,
+            &signing_policy(PackageReleaseChannel::Preview),
+        )
         .expect_err("invalid evidence must be rejected");
 }
 
 #[test]
-fn real_crypto_evidence_mutations_fail_closed() {
-    let paths = [
-        "/verificationMaterial/certificate/rawBytes",
-        "/verificationMaterial/tlogEntries/0/canonicalizedBody",
-        "/verificationMaterial/tlogEntries/0/inclusionPromise/signedEntryTimestamp",
-        "/verificationMaterial/tlogEntries/0/inclusionProof/checkpoint/envelope",
-        "/verificationMaterial/tlogEntries/0/inclusionProof/rootHash",
-        "/messageSignature/signature",
-        "/verificationMaterial/timestampVerificationData/rfc3161Timestamps/0/signedTimestamp",
-    ];
-    let verifier = verifier();
-    for path in paths {
-        let mut value: Value = serde_json::from_slice(COSIGN_BUNDLE).unwrap();
-        let field = value
-            .pointer_mut(path)
-            .unwrap_or_else(|| panic!("missing fixture field {path}"));
-        let original = field.as_str().unwrap();
-        let mut changed = original.as_bytes().to_vec();
-        changed[0] = if changed[0] == b'A' { b'B' } else { b'A' };
-        *field = Value::String(String::from_utf8(changed).unwrap());
-        let bytes = serde_json::to_vec(&value).unwrap();
-        assert!(
-            parse_bundle(&bytes)
-                .and_then(|bundle| verifier
-                    .verify(COSIGN_BYTES, &bundle, &cosign_policy())
-                    .map_err(Into::into))
-                .is_err(),
-            "{path}"
-        );
-    }
-    let mut value: Value = serde_json::from_slice(DSSE_BUNDLE).unwrap();
-    value["dsseEnvelope"]["payload"] = json!("e30=");
-    let bundle = parse_bundle(&serde_json::to_vec(&value).unwrap()).unwrap();
-    verifier
-        .verify(DSSE_BYTES, &bundle, &dsse_policy())
-        .expect_err("invalid evidence must be rejected");
-}
-
-#[test]
-fn official_receipt_authority_validates_fixed_jackin_inventory() {
+fn canonical_receipt_policy_validates_fixed_jackin_inventory() {
     let original = receipt();
     policy::validate_receipt(&original, &original.version.value).unwrap();
     policy::validate_receipt(&original, "0.6.4-preview.2+abcdef0")
@@ -189,11 +153,11 @@ fn claims(receipt: &PackageReleaseReceipt) -> sigstore_crypto::FulcioCiClaims {
     claims.source_repository_digest = Some(receipt.source.commit_sha.clone());
     claims.source_repository_owner_uri = Some("https://github.com/jackin-project".into());
     claims.source_repository_owner_identifier = Some("273541039".into());
-    claims.build_signer_uri = Some(policy::IDENTITY.into());
+    claims.build_signer_uri = Some(policy::identity(receipt.channel).into());
     claims.build_signer_digest = Some(receipt.workflow.authority_sha.clone());
-    claims.build_config_uri = Some(policy::IDENTITY.into());
+    claims.build_config_uri = Some(policy::identity(receipt.channel).into());
     claims.build_config_digest = Some(receipt.workflow.authority_sha.clone());
-    claims.build_trigger = Some("workflow_run".into());
+    claims.build_trigger = Some(receipt.channel.event().as_str().into());
     claims.runner_environment = Some("github-hosted".into());
     claims.run_invocation_uri = Some(format!(
         "{}/actions/runs/{}/attempts/{}",
@@ -287,62 +251,6 @@ fn companion_and_asset_bytes_bind_exact_size_digest_and_version() {
     .expect_err("invalid evidence must be rejected");
 }
 
-struct MockTransport {
-    requests: std::sync::Mutex<Vec<String>>,
-    receipt: Vec<u8>,
-}
-impl Transport for MockTransport {
-    #[expect(
-        clippy::unused_async_trait_impl,
-        reason = "in-memory HTTP mock implements async transport without I/O"
-    )]
-    async fn get(&self, url: &str, _limit: usize) -> Result<Vec<u8>> {
-        self.requests.lock().unwrap().push(url.into());
-        if url.ends_with("/release.json") {
-            Ok(self.receipt.clone())
-        } else if url.ends_with("/release.json.bundle") {
-            Ok(COSIGN_BUNDLE.to_vec())
-        } else {
-            anyhow::bail!("unverified receipt must block all downstream downloads")
-        }
-    }
-}
-
-#[tokio::test]
-async fn mocked_http_authenticates_receipt_before_payload_download() {
-    let mock = MockTransport {
-        requests: std::sync::Mutex::new(Vec::new()),
-        receipt: RECEIPT.to_vec(),
-    };
-    verify_with_transport(
-        &mock,
-        &verifier(),
-        &receipt().version.value,
-        "x86_64-unknown-linux-gnu",
-    )
-    .await
-    .expect_err("invalid evidence must be rejected");
-    let requests = mock.requests.lock().unwrap();
-    assert_eq!(requests.len(), 2);
-    assert!(
-        requests[0].ends_with("/release.json") && requests[1].ends_with("/release.json.bundle")
-    );
-}
-
-#[tokio::test]
-async fn unsupported_remote_versions_never_request_http() {
-    let mock = MockTransport {
-        requests: std::sync::Mutex::new(Vec::new()),
-        receipt: Vec::new(),
-    };
-    for version in ["0.6.4", "dev", "preview", "0.6.4-dev+abcdef0"] {
-        verify_with_transport(&mock, &verifier(), version, "x86_64-unknown-linux-gnu")
-            .await
-            .expect_err("invalid evidence must be rejected");
-    }
-    assert!(mock.requests.lock().unwrap().is_empty());
-}
-
 fn statement(receipt: &PackageReleaseReceipt) -> (Value, BTreeMap<String, String>) {
     let subjects: BTreeMap<_, _> = receipt
         .evidence
@@ -356,11 +264,11 @@ fn statement(receipt: &PackageReleaseReceipt) -> (Value, BTreeMap<String, String
         "predicate":{
             "buildDefinition":{
                 "buildType":"https://actions.github.io/buildtypes/workflow/v1",
-                "externalParameters":{"workflow":{"ref":"refs/heads/main","repository":policy::REPOSITORY,"path":policy::WORKFLOW}},
-                "internalParameters":{"github":{"event_name":"workflow_run","repository_id":"1197700841","repository_owner_id":"273541039","runner_environment":"github-hosted"}},
+                "externalParameters":{"workflow":{"ref":"refs/heads/main","repository":policy::REPOSITORY,"path":receipt.channel.workflow_path()}},
+                "internalParameters":{"github":{"event_name":receipt.channel.event().as_str(),"repository_id":"1197700841","repository_owner_id":"273541039","runner_environment":"github-hosted"}},
                 "resolvedDependencies":[{"uri":format!("git+{}@refs/heads/main",policy::REPOSITORY),"digest":{"gitCommit":receipt.source.commit_sha}}]
             },
-            "runDetails":{"builder":{"id":policy::IDENTITY},"metadata":{"invocationId":format!("{}/actions/runs/{}/attempts/{}",policy::REPOSITORY,receipt.workflow.run_id,receipt.workflow.run_attempt)}}
+            "runDetails":{"builder":{"id":policy::identity(receipt.channel)},"metadata":{"invocationId":format!("{}/actions/runs/{}/attempts/{}",policy::REPOSITORY,receipt.workflow.run_id,receipt.workflow.run_attempt)}}
         }
     });
     (statement, subjects)
@@ -421,52 +329,13 @@ fn provenance_requires_exact_complete_eight_subject_inventory() {
         .expect_err("invalid evidence must be rejected");
 }
 
-#[test]
-fn official_rekor_v2_message_dsse_and_tsa_verify_without_skips() {
-    // These are immutable upstream staging conformance fixtures, not production
-    // Jackin release evidence. Production always fetches the public-good TUF root.
-    let root = sigstore_trust_root::TrustedRoot::from_json(include_str!(
-        "fixtures/sigstore-rust-staging-root.json"
-    ))
-    .unwrap();
-    let verifier = Verifier::new(&root).unwrap();
-    let fixtures: [(&[u8], &str, &str, &str); 2] = [
-        (
-            include_bytes!("fixtures/sigstore-python-rekor2.bundle.json"),
-            "jku@goto.fi",
-            "https://github.com/login/oauth",
-            &digest(include_bytes!("fixtures/sigstore-python-rekor2.txt")),
-        ),
-        (
-            include_bytes!("fixtures/sigstore-python-rekor2-dsse.bundle.json"),
-            "https://github.com/sigstore-conformance/extremely-dangerous-public-oidc-beacon/.github/workflows/extremely-dangerous-oidc-beacon.yml@refs/heads/main",
-            policy::ISSUER,
-            "a0cfc71271d6e278e57cd332ff957c3f7043fdda354c4cbb190a30d56efa01bf",
-        ),
-    ];
-    for (bundle_bytes, identity, issuer, hash) in fixtures {
-        let artifact = || Artifact::from_digest(Sha256Hash::from_hex(hash).unwrap());
-        let policy = VerificationPolicy::new(identity, issuer);
-        let bundle = parse_bundle(bundle_bytes).unwrap();
-        let result = verifier.verify(artifact(), &bundle, &policy).unwrap();
-        assert!(
-            result.certificate_verified()
-                && result.sct_verified()
-                && result.tlog_verified()
-                && result.identity_policy_checked()
-        );
-        assert!(result.integrated_time().is_none());
-        assert!(!result.verified_timestamps().is_empty());
-        verifier
-            .verify(b"wrong".as_slice(), &bundle, &policy)
-            .expect_err("v2 evidence must bind exact artifact");
-        let mut mutated: Value = serde_json::from_slice(bundle_bytes).unwrap();
-        mutated["verificationMaterial"]["timestampVerificationData"] = json!({});
-        let result = parse_bundle(&serde_json::to_vec(&mutated).unwrap()).and_then(|bundle| {
-            verifier
-                .verify(artifact(), &bundle, &policy)
-                .map_err(Into::into)
-        });
-        result.expect_err("Rekor v2 without authenticated timestamp must fail");
-    }
+mod channels;
+mod crypto;
+
+mod support;
+
+pub(super) fn channel_receipt(channel: PackageReleaseChannel) -> PackageReleaseReceipt {
+    support::receipt(channel)
 }
+
+mod http;

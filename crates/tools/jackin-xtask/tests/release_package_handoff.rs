@@ -7,11 +7,11 @@ use std::{fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
 use velnor_actions_contract::{
     PACKAGE_RELEASE_PLAN_SCHEMA_V1, PackageReleasePlan, PackageReleasePlanProduct,
     canonical_json_bytes,
-    config::RustBinaryPreviewCompanion,
+    config::RustBinaryReleaseCompanion,
     package_release::{PackageReleaseChannel, PackageReleasePayloadFormat},
     preview_production::{
-        PREVIEW_PRODUCTION_SCHEMA_V1, PreviewProductionContext, PreviewProductionRequest,
-        PreviewProductionStage, expected_preview_payload_pairs, preview_plan_sha256,
+        RELEASE_PRODUCTION_SCHEMA_V1, ReleaseProductionContext, ReleaseProductionRequest,
+        ReleaseProductionStage, expected_release_payload_pairs, release_plan_sha256,
     },
 };
 
@@ -25,11 +25,11 @@ fn product(id: &str, bins: &[&str], targets: &[&str]) -> PackageReleasePlanProdu
     }
 }
 
-fn request() -> Result<PreviewProductionRequest> {
+fn request(channel: PackageReleaseChannel) -> Result<ReleaseProductionRequest> {
     let linux = ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"];
     let plan = PackageReleasePlan {
         schema: PACKAGE_RELEASE_PLAN_SCHEMA_V1.to_owned(),
-        channel: PackageReleaseChannel::Preview,
+        channel,
         repository: "jackin-project/jackin".to_owned(),
         default_branch: "main".to_owned(),
         base_version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -46,23 +46,24 @@ fn request() -> Result<PreviewProductionRequest> {
             ),
             product("jackin-capsule", &["jackin-capsule"], &linux),
         ],
-        companions: vec![RustBinaryPreviewCompanion {
+        companions: vec![RustBinaryReleaseCompanion {
             id: "capsule-manifest".to_owned(),
             path: "capsule-manifest.json".to_owned(),
             asset_name: "capsule-manifest.json".to_owned(),
         }],
     };
-    let pair = expected_preview_payload_pairs(&plan)
+    let pair = expected_release_payload_pairs(&plan)
         .context("fixture plan must derive the full payload inventory")?
         .into_iter()
         .next()
         .context("fixture plan must contain a payload pair")?;
-    Ok(PreviewProductionRequest {
-        schema: PREVIEW_PRODUCTION_SCHEMA_V1.to_owned(),
-        plan_sha256: preview_plan_sha256(&plan)
+    Ok(ReleaseProductionRequest {
+        schema: RELEASE_PRODUCTION_SCHEMA_V1.to_owned(),
+        policy_sha256: "c".repeat(64),
+        plan_sha256: release_plan_sha256(&plan)
             .context("fixture plan must have a canonical digest")?,
         plan,
-        context: PreviewProductionContext {
+        context: ReleaseProductionContext {
             repository_id: 1,
             head_repository_id: 1,
             source_sha: "a".repeat(40),
@@ -72,10 +73,18 @@ fn request() -> Result<PreviewProductionRequest> {
             run_attempt: 1,
             ci_run_id: 1,
             ci_run_attempt: 1,
-            commit_count: 42,
-            version: format!("{}-preview.42+aaaaaaa", env!("CARGO_PKG_VERSION")),
+            commit_count: if channel == PackageReleaseChannel::Stable {
+                0
+            } else {
+                42
+            },
+            version: if channel == PackageReleaseChannel::Stable {
+                env!("CARGO_PKG_VERSION").to_owned()
+            } else {
+                format!("{}-preview.42+aaaaaaa", env!("CARGO_PKG_VERSION"))
+            },
         },
-        stage: PreviewProductionStage::Payload { pair },
+        stage: ReleaseProductionStage::Payload { pair },
     })
 }
 
@@ -106,25 +115,25 @@ fn tool_traps(root: &Path) -> Result<std::path::PathBuf> {
     Ok(tools)
 }
 
-fn invocation(root: &Path, request: &PreviewProductionRequest) -> Result<ExecRequest> {
+fn invocation(root: &Path, request: &ReleaseProductionRequest) -> Result<ExecRequest> {
     let native = root.join("velnor");
     let output = root.join("output");
     fs::create_dir(&native).context("create native handoff fixture directory")?;
     fs::create_dir(&output).context("create producer output fixture directory")?;
     fs::write(output.join("sentinel"), b"preserve")
         .context("make producer output deliberately nonempty")?;
-    let path = native.join("preview-task-request.json");
+    let path = native.join("release-task-request.json");
     fs::write(
         &path,
         canonical_json_bytes(&serde_json::json!({
-            "schema": "velnor.preview-task.v1", "request": request, "inputs": [],
+            "schema": "velnor.release-task.v1", "request": request, "inputs": [],
         }))
         .context("serialize the canonical full native request")?,
     )
     .context("write the explicit native request file")?;
     let bindings = vec![
         ("PATH", tool_traps(root)?.into_os_string()),
-        ("VELNOR_PREVIEW_REQUEST_FILE", path.into_os_string()),
+        ("VELNOR_RELEASE_TASK_REQUEST_FILE", path.into_os_string()),
         (
             "VELNOR_RELEASE_OUTPUT_MANIFEST",
             output.join("package-output.json").into_os_string(),
@@ -147,29 +156,33 @@ fn invocation(root: &Path, request: &PreviewProductionRequest) -> Result<ExecReq
             request.context.commit_count.to_string().into(),
         ),
     ];
-    Ok(ExecRequest::new(
-        env!("CARGO_BIN_EXE_jackin-xtask"),
-        ["release-preview-package"],
+    Ok(
+        ExecRequest::new(env!("CARGO_BIN_EXE_jackin-xtask"), ["release-package"])
+            .cwd(root)
+            .env_clear()
+            .envs(bindings)
+            .timeout(Duration::from_secs(5))
+            .output_limits(64 * 1024, 64 * 1024),
     )
-    .cwd(root)
-    .env_clear()
-    .envs(bindings)
-    .timeout(Duration::from_secs(5))
-    .output_limits(64 * 1024, 64 * 1024))
 }
 
 #[test]
 fn explicit_native_request_reaches_output_guard_without_runner_temp_or_build_tools() {
-    let temp = tempfile::tempdir().unwrap();
-    let root = temp.path().canonicalize().unwrap();
-    let request = request().unwrap();
-    request.validate().unwrap();
-    let output = exec_sync(&invocation(&root, &request).unwrap()).unwrap();
-    assert!(!output.success && !output.timed_out);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("producer output must be empty"), "{stderr}");
-    assert_eq!(fs::read(root.join("output/sentinel")).unwrap(), b"preserve");
-    assert!(!root.join("tool-called").exists());
+    for channel in [
+        PackageReleaseChannel::Preview,
+        PackageReleaseChannel::Stable,
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let request = request(channel).unwrap();
+        request.validate().unwrap();
+        let output = exec_sync(&invocation(&root, &request).unwrap()).unwrap();
+        assert!(!output.success && !output.timed_out);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("producer output must be empty"), "{stderr}");
+        assert_eq!(fs::read(root.join("output/sentinel")).unwrap(), b"preserve");
+        assert!(!root.join("tool-called").exists());
+    }
 }
 
 #[test]
@@ -177,7 +190,8 @@ fn explicit_native_request_reports_missing_binding_and_rejects_conflicting_sourc
     for missing in [false, true] {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().canonicalize().unwrap();
-        let mut command = invocation(&root, &request().unwrap()).unwrap();
+        let mut command =
+            invocation(&root, &request(PackageReleaseChannel::Preview).unwrap()).unwrap();
         let key = "VELNOR_RELEASE_SOURCE_COMMIT";
         command.env.retain(|(name, _)| name != key);
         if !missing {
@@ -194,4 +208,43 @@ fn explicit_native_request_reports_missing_binding_and_rejects_conflicting_sourc
         assert!(stderr.contains(expected), "{stderr}");
         assert!(!root.join("tool-called").exists());
     }
+}
+
+#[test]
+fn legacy_request_environment_is_not_a_fallback() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    let mut command = invocation(&root, &request(PackageReleaseChannel::Preview).unwrap()).unwrap();
+    let path = command
+        .env
+        .iter()
+        .find(|(key, _)| key == "VELNOR_RELEASE_TASK_REQUEST_FILE")
+        .unwrap()
+        .1
+        .clone();
+    command
+        .env
+        .retain(|(key, _)| key != "VELNOR_RELEASE_TASK_REQUEST_FILE");
+    command = command.envs([("VELNOR_PREVIEW_REQUEST_FILE", path)]);
+    let output = exec_sync(&command).unwrap();
+    assert!(!output.success && !output.timed_out);
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("missing native environment variable VELNOR_RELEASE_TASK_REQUEST_FILE")
+    );
+    assert!(!root.join("tool-called").exists());
+}
+
+#[test]
+fn legacy_preview_command_is_not_an_alias() {
+    let command = ExecRequest::new(
+        env!("CARGO_BIN_EXE_jackin-xtask"),
+        ["release-preview-package"],
+    )
+    .env_clear()
+    .timeout(Duration::from_secs(5))
+    .output_limits(64 * 1024, 64 * 1024);
+    let output = exec_sync(&command).unwrap();
+    assert!(!output.success && !output.timed_out);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unrecognized subcommand"));
 }

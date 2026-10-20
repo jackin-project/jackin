@@ -4,7 +4,7 @@ title: "Security Threat Model & Signed Releases"
 
 **Status**: Partially implemented
 
-**Current state**: historical dev releases shipped signing artifacts, and the retired operator verifier passed against `jackin-dev-v0.1.13` on 2026-07-04. The repository now contains a strict immutable-preview receipt and capsule verification path, but the checked-in Velnor configuration does not yet enable publication. Live release and clean-cache download proof remain outstanding.
+**Current state**: historical dev releases shipped signing artifacts, and the retired operator verifier passed against `jackin-dev-v0.1.13` on 2026-07-04. The repository now configures native Velnor rolling-preview and manual stable publication, with signed receipts and exact-source capsule verification. Live release and clean-cache download proof remain outstanding; initial Homebrew promotion is disabled until its structural bootstrap and review gates are qualified.
 
 ## Problem
 
@@ -15,27 +15,19 @@ jackin❯ closed two credibility gaps with this work:
 
 ## Shipped
 
-The verification implementation and historical signed-release evidence remain available. Current generated CI has no signed archive or capsule-manifest publication jobs; restoring publication through the generator remains required. Operator and contributor detail lives in canonical docs:
+The generated `binary-preview.yml` and `binary-release.yml` workflows separate unsigned payload builds, assembly, signing, and publication. Preview updates the single rolling `preview` tag and release after exact-commit main CI; stable starts through manual dispatch and creates immutable version releases. The verification implementation and historical signed-release evidence remain available. Operator and contributor detail lives in canonical docs:
 
 - **Security implementation** — threat model, the six `auth.rs` security functions, `shellfirm`/`tirith` rationale, and the YOLO-flag contract for all six launch branches → [/reference/security-implementation/](/reference/security-implementation/).
 - **Release verification** — cosign keyless verification, SLSA provenance, SBOM inspection, and capsule-manifest auditing → [/getting-started/verifying-releases/](/getting-started/verifying-releases/).
 - **Historical CI signing** — the former `release.yml` account in source snapshot `81a26f7e8511b2f19c9ba5a59a85b3ef0bbc804a` described cosign bundles, GitHub build attestations, CycloneDX SBOMs, and signed capsule manifests. Those records describe the historical workflow only.
 - **Historical operator verification** — the retired `cargo xtask release-verify` gate checked the published `.sha256`, cosign bundle, GitHub attestation, and SBOM. It passed against `jackin-dev-v0.1.13` on 2026-07-04; that result does not validate current Velnor receipts.
-- **Preview capsule verification code** — <RepoFile path="crates/adapters/jackin-image/src/release_evidence.rs">release_evidence.rs</RepoFile> verifies an immutable `v<version>` release receipt, exact payload/companion digests, Sigstore bundles using the production TUF trust root, and provenance for the fixed `binary-preview.yml` identity. A verifier implementation does not establish that a current publisher exists or that a live download has succeeded. `JACKIN_CAPSULE_BIN` and test builds bypass remote download verification.
+- **Native capsule verification code** — <RepoFile path="crates/adapters/jackin-image/src/release_evidence.rs">release_evidence.rs</RepoFile> authenticates rolling-preview or immutable-stable receipts, the selected payload and companion, production Sigstore TUF trust, and exact-source provenance for the channel-specific workflow. Native channel and full-source build metadata authorize remote acquisition; ordinary local builds cannot acquire remote authority from version text. Publication state is rechecked before execution and cache installation. Native caches cannot reuse local or other-source entries. A verifier implementation does not establish a successful live download; explicit local overrides, packaged capsules, and test fixtures do not prove the remote path.
 
 ## Remaining
 
-- **Enable signed publication.** The current <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> selects Rust validation without a release publisher. Enable generated archive signing, attestations, SBOMs, and capsule manifests only after repository credentials, required checks, and the exact-head feedback completion provider are qualified. Do not restore former workflow YAML by hand.
+- **Prove signed publication and promotion.** The current <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> enables preview and stable release policies and preserves stable environment approval. Verify actual signed assets, attestations, SBOMs, and capsule manifests from the generated workflows. Complete the tap structural bootstrap, qualify repository credentials and exact-head review completion, then enable native PR promotion. Failed CI, invalid artifacts, and unaddressed feedback must block promotion. Do not hand-edit generated workflow YAML.
 
-- **Clean-cache capsule download gate.** Historical evidence used `jackin-dev-v0.1.13` (2026-07-02). Verify a live immutable preview only after publication is enabled and an eligible release exists. Unit and integration tests may bypass the remote path; do not treat them as live download proof:
-
-  ```bash
-  rm -rf ~/.jackin/cache/jackin-capsule/
-  unset JACKIN_CAPSULE_BIN
-  cargo run --bin jackin -- console --debug
-  ```
-
-  `JACKIN_CAPSULE_BIN=/path/to/jackin-capsule` selects a local binary and bypasses remote release verification.
+- **Clean-cache capsule download gate.** Historical evidence used `jackin-dev-v0.1.13` (2026-07-02). After a native release exists, run its prebuilt CLI from outside a Homebrew keg with a fresh private `JACKIN_HOME_DIR`, unset `JACKIN_CAPSULE_BIN`, and load a configured role with `jackin load agent-smith`. Retain the exact source/version, publication, verification, cache, and capsule-loading evidence. Running `cargo run` builds a local CLI without native release authority, and a Homebrew packaged capsule can bypass the download; neither proves remote verification. Do not remove an operator's existing cache to conduct this test.
 - **Trust-root maintenance.** The verifier refreshes production Sigstore trust through TUF; monitor and test trust-root updates as part of the release verification maintenance.
 
 This item retires once signed publication is enabled and proven, the capsule download path has been clean-cache verified end to end, and remaining verification residuals are either fixed or explicitly accepted.
@@ -59,8 +51,7 @@ This item retires once signed publication is enabled and proven, the capsule dow
 
 ## Related files
 
-- <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs">crates/adapters/jackin-image/src/capsule_binary.rs</RepoFile> — `fetch_and_verify_manifest`, embedded Rekor key, SAN identity check
-- <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile> and <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> — current generator selection and CI graph; signed-release publication is absent.
-- Rolling-preview signing + capsule manifest — planned workflow absent from current source; existing verifier identity contract is recorded above
+- <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs">crates/adapters/jackin-image/src/capsule_binary.rs</RepoFile> and <RepoFile path="crates/adapters/jackin-image/src/release_evidence.rs">release_evidence.rs</RepoFile> — native-origin acquisition, signed receipt and provenance verification, production TUF trust, and publication rechecks
+- <RepoFile path=".velnor/config.toml">.velnor/config.toml</RepoFile>, <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>, <RepoFile path=".github/workflows/binary-preview.yml">binary-preview.yml</RepoFile>, and <RepoFile path=".github/workflows/binary-release.yml">binary-release.yml</RepoFile> — native generator policies, exact-commit CI, and isolated channel publication
 - [/reference/security-implementation/](/reference/security-implementation/) — contributor-facing security internals
 - [/getting-started/verifying-releases/](/getting-started/verifying-releases/) — operator-facing verification guide

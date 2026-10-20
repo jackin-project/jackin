@@ -3,7 +3,7 @@ title: Workspace Automation (xtasks)
 description: Every MBX xtask subcommand, what it does, and when a contributor reaches for it
 ---
 
-jackin❯ keeps repository automation in a single Rust binary, <RepoFile path="crates/tools/jackin-xtask/src/main.rs">crates/tools/jackin-xtask/src/main.rs</RepoFile>, following the cargo-xtask pattern: command logic lives in Rust and subprocesses (`docker`, `git`) are driven through `std::process::Command`. The `xtask` alias in <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile> is invoked through pinned MBX as `mise exec -- mbx +1.99.1 xtask <command>`. The source-bound preview package producer is a standalone shell script because it coordinates packaging tools and handoff files.
+jackin❯ keeps repository automation in a single Rust binary, <RepoFile path="crates/tools/jackin-xtask/src/main.rs">crates/tools/jackin-xtask/src/main.rs</RepoFile>, following the cargo-xtask pattern: command logic lives in Rust and subprocesses (`docker`, `git`) are driven through `std::process::Command`. The `xtask` alias in <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile> is invoked through pinned MBX as `mise exec -- mbx +1.99.1 xtask <command>`. The source-bound release package producer is the Rust `release-package` xtask, shared by preview and stable releases through typed Velnor production requests.
 
 <Aside type="note">
 **This page is the canonical inventory of xtask commands.** A PR that adds, removes, or reshapes a subcommand updates this page in the same PR. The declarative image build graph stays in <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile> — the xtask invokes it rather than reimplementing it in flag assembly.
@@ -75,11 +75,17 @@ The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates
 
 Repo-internal command logic belongs in this binary, not in one-off shell commands: add a module under <RepoFile path="crates/tools/jackin-xtask/src/main.rs">crates/tools/jackin-xtask/src/main.rs</RepoFile> and register its subcommand in the `Command` enum. Add a Mise task only when it meaningfully shortens a repeated multi-step workflow; simple MBX commands should stay direct. Host-side developer workflows that must be available before a checkout exists belong in `jackin-dev` instead. Update this page in the same PR.
 
-## Preview package build
+## Release package build
 
-`mise run release:preview-package` builds the six Jackin and capsule payloads
-for the Velnor preview producer and writes its closed `package-output.json`
+`mise run release:package` builds the six Jackin and capsule payloads
+for the Velnor preview or stable producer and writes its closed `package-output.json`
 inventory, including CycloneDX SBOMs and the capsule manifest. It is a package
-build task; signing, immutable publication, and Homebrew promotion are separate
-workflow responsibilities. The checked-in Velnor configuration does not yet
-enable those publication jobs, so this task alone does not publish a release.
+build task; signing, publication, and Homebrew promotion are separate workflow
+responsibilities. Generated preview publication requires successful exact-commit
+main CI. Stable release preparation and publication start only through manual
+dispatch and preserve the protected release environment's approval gate.
+Preview publication replaces the rolling `preview` generation; stable publication
+creates a permanent immutable version tag. Neither channel implicitly publishes
+crates to crates.io. Homebrew promotion remains disabled during the initial tap
+bootstrap; enabling it requires the captured tap updater and exact-head review
+completion gates to be qualified first. Running this task alone does not publish.

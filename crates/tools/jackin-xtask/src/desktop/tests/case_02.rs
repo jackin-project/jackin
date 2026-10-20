@@ -171,7 +171,7 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
             "check:dependency-usage",
             "check:repository-links",
             "check:repository-policy",
-            "release:preview-package",
+            "release:package",
             "renovate-upstream-sources",
         ],
         "root Mise tasks must match the native checks, producer, and upstream check"
@@ -194,7 +194,7 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         );
     }
     assert!(mise.contains("[tasks.renovate-upstream-sources]"));
-    assert!(mise.contains("[tasks.\"release:preview-package\"]"));
+    assert!(mise.contains("[tasks.\"release:package\"]"));
 
     let native_mise = repo_text("native/mise.toml");
     let desktop_ci = task_block(&native_mise, "ci");

@@ -6,7 +6,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 
 - CI orchestration (`ci`) and the lint gates (`lint` — file-size budget, and the lanes planned under it).
 - Docs checks (`docs` — repo-links, brand prose, spec↔test citations), schema checks (`schema`), profile/feature matrix (`profile_matrix`), and the agent-file symlink gate (`agent_files`, including per-crate README presence).
-- Architecture/structure tooling (`arch`), test-layout gate (`layout_lint`), PTY fixture extraction (`pty_fixture`), construct helpers (`construct`), unsigned preview packaging (`preview_package`, `release_archive`, `release_sbom`), and PR tooling (`pr`).
+- Architecture/structure tooling (`arch`), test-layout gate (`layout_lint`), PTY fixture extraction (`pty_fixture`), construct helpers (`construct`), unsigned release packaging (`release_package`, `release_archive`, `release_sbom`), and PR tooling (`pr`).
 
 ## Architecture tier and allowed dependencies
 
@@ -39,7 +39,7 @@ Workspace automation for CI, lints, docs, releases, schemas, and PRs. Merge-read
 | [`profile_matrix.rs`](src/profile_matrix.rs) | feature-profile matrix | — |
 | [`pty_fixture.rs`](src/pty_fixture.rs) | PTY fixture extraction | [`tests.rs`](src/pty_fixture/tests.rs) |
 | [`construct.rs`](src/construct.rs) | construct image helpers | [`tests.rs`](src/construct/tests.rs) |
-| [`preview_package.rs`](src/preview_package.rs) · [`preview_package/`](src/preview_package) | Native preview payload selection, handoff and assembly | [`tests.rs`](src/preview_package/tests.rs) |
+| [`release_package.rs`](src/release_package.rs) · [`release_package/`](src/release_package) | Native channel payload selection, handoff and assembly | [`tests.rs`](src/release_package/tests.rs) |
 | [`release_archive.rs`](src/release_archive.rs) · [`release_sbom.rs`](src/release_sbom.rs) | Unsigned product archives and their build evidence | [`tests.rs`](src/release_archive/tests.rs) |
 | [`health.rs`](src/health.rs) | report-only code-health dashboard (Phase 0) | [`tests.rs`](src/health/tests.rs) |
 | [`fs_util.rs`](src/fs_util.rs) | deterministic `read_dir_sorted` for gate code (plan 027) | [`tests.rs`](src/fs_util/tests.rs) |
@@ -55,9 +55,9 @@ unrelated families or launch nested build work. Artifact-backed families skip
 when their artifact is absent; the job that produces an artifact must run the
 matching scoped ratchet after generation.
 
-## Native preview packaging
+## Native release packaging
 
-`mise run release:preview-package` consumes the request and payload context supplied by the generated Velnor workflow. Each production job builds one declared product/target pair: four Jackin payloads and two Linux capsule payloads. Assembly validates and copies the captured archives and SBOMs without rebuilding product binaries. Signing and immutable publication belong to separate generated jobs.
+`mise run release:package` consumes Velnor's `velnor.release-task.v1` handoff. Leaves build four CLI and two Linux capsule payloads; assembly validates captured archives, SBOMs, and the capsule manifest without rebuilding. Separate jobs sign and publish rolling previews or immutable stable versions. Builds receive no publishing credentials.
 
 ## How to verify
 

@@ -6,13 +6,13 @@ use anyhow::Result;
 use serde_json::{Value, json};
 use std::{fs, path::Path};
 use velnor_actions_contract::preview_production::{
-    PreviewPayloadPair, PreviewProductionRequest, expected_preview_payload_pairs,
+    ReleasePayloadPair, ReleaseProductionRequest, expected_release_payload_pairs,
 };
 
 pub(super) fn write_leaf(
     output: &Path,
-    request: &PreviewProductionRequest,
-    pair: &PreviewPayloadPair,
+    request: &ReleaseProductionRequest,
+    pair: &ReleasePayloadPair,
 ) -> Result<()> {
     let (payloads, sboms) = rows(output, std::slice::from_ref(pair))?;
     write_manifest(
@@ -25,8 +25,8 @@ pub(super) fn write_leaf(
     )
 }
 
-pub(super) fn write_complete(output: &Path, request: &PreviewProductionRequest) -> Result<()> {
-    let pairs = expected_preview_payload_pairs(&request.plan)?;
+pub(super) fn write_complete(output: &Path, request: &ReleaseProductionRequest) -> Result<()> {
+    let pairs = expected_release_payload_pairs(&request.plan)?;
     let (payloads, sboms) = rows(output, &pairs)?;
     let mut capsule_targets = serde_json::Map::new();
     for pair in pairs
@@ -58,7 +58,7 @@ pub(super) fn write_complete(output: &Path, request: &PreviewProductionRequest) 
     )
 }
 
-fn rows(output: &Path, pairs: &[PreviewPayloadPair]) -> Result<(Vec<Value>, Vec<Value>)> {
+fn rows(output: &Path, pairs: &[ReleasePayloadPair]) -> Result<(Vec<Value>, Vec<Value>)> {
     let mut payloads = Vec::new();
     let mut sboms = Vec::new();
     for pair in pairs {
@@ -76,7 +76,7 @@ fn rows(output: &Path, pairs: &[PreviewPayloadPair]) -> Result<(Vec<Value>, Vec<
 
 fn write_manifest(
     output: &Path,
-    request: &PreviewProductionRequest,
+    request: &ReleaseProductionRequest,
     schema: &str,
     payloads: Vec<Value>,
     sboms: Vec<Value>,

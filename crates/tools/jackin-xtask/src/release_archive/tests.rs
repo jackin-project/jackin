@@ -95,11 +95,11 @@ fn build_commands_select_only_the_declared_product_binaries() {
 }
 
 #[test]
-fn preview_selection_owns_one_pair_and_preserves_each_complete_bin_inventory() {
-    let payloads = preview_payloads();
+fn release_selection_owns_one_pair_and_preserves_each_complete_bin_inventory() {
+    let payloads = release_payloads();
     assert_eq!(payloads.len(), 6);
     for payload in payloads {
-        let (package, target) = preview_selection(payload.package, payload.target).unwrap();
+        let (package, target) = release_selection(payload.package, payload.target).unwrap();
         assert_eq!(package_name(package), payload.package);
         assert_eq!(target.rust, payload.target);
         assert_eq!(binaries(package), payload.binaries);
@@ -111,9 +111,9 @@ fn preview_selection_owns_one_pair_and_preserves_each_complete_bin_inventory() {
         );
         assert_eq!(command[command.len() - 2], target.zigbuild);
     }
-    preview_selection("jackin-capsule", "aarch64-apple-darwin").unwrap_err();
-    preview_selection("foreign", "x86_64-unknown-linux-gnu").unwrap_err();
-    preview_selection("jackin", "unknown").unwrap_err();
+    release_selection("jackin-capsule", "aarch64-apple-darwin").unwrap_err();
+    release_selection("foreign", "x86_64-unknown-linux-gnu").unwrap_err();
+    release_selection("jackin", "unknown").unwrap_err();
 }
 
 #[cfg(unix)]
@@ -131,7 +131,7 @@ fn archive_builds_preserve_declared_release_policy_and_exact_target_commands() {
         &cargo,
         r#"#!/bin/sh
 printf '%s\n' "$@"
-printf '%s\n' "CGU=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS-unset}" "PREVIEW_CGU=${CARGO_PROFILE_PREVIEW_CODEGEN_UNITS-unset}" "JOBS=$CARGO_BUILD_JOBS" "VERSION=$JACKIN_VERSION_OVERRIDE" "TARGET=$CARGO_TARGET_DIR" "SDK=${SDKROOT-unset}" "DEPLOY=${MACOSX_DEPLOYMENT_TARGET-unset}" "ZIG_GLOBAL=$ZIG_GLOBAL_CACHE_DIR" "ZIG_LOCAL=$ZIG_LOCAL_CACHE_DIR"
+printf '%s\n' "CGU=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS-unset}" "PREVIEW_CGU=${CARGO_PROFILE_PREVIEW_CODEGEN_UNITS-unset}" "JOBS=$CARGO_BUILD_JOBS" "VERSION=$JACKIN_VERSION_OVERRIDE" "NATIVE_CHANNEL=${JACKIN_NATIVE_RELEASE_CHANNEL-unset}" "NATIVE_SOURCE=${JACKIN_NATIVE_RELEASE_SOURCE-unset}" "TARGET=$CARGO_TARGET_DIR" "SDK=${SDKROOT-unset}" "DEPLOY=${MACOSX_DEPLOYMENT_TARGET-unset}" "ZIG_GLOBAL=$ZIG_GLOBAL_CACHE_DIR" "ZIG_LOCAL=$ZIG_LOCAL_CACHE_DIR"
 "#,
     )
     .unwrap();
@@ -145,6 +145,8 @@ printf '%s\n' "CGU=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS-unset}" "PREVIEW_CGU=${
         .env("PATH", temp.path())
         .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1")
         .env("CARGO_PROFILE_PREVIEW_CODEGEN_UNITS", "1")
+        .env("JACKIN_NATIVE_RELEASE_CHANNEL", "stable")
+        .env("JACKIN_NATIVE_RELEASE_SOURCE", "hostile ambient source")
         .env_remove("SDKROOT")
         .env_remove("MACOSX_DEPLOYMENT_TARGET")
         .status()
@@ -197,7 +199,10 @@ fn probe_command(
     build(
         package,
         target,
-        "preview-test",
+        BuildVersion {
+            version: "preview-test",
+            origin: None,
+        },
         3,
         &layout,
         cache,
@@ -234,6 +239,8 @@ fn probe_command(
         "PREVIEW_CGU=unset".to_owned(),
         "JOBS=3".to_owned(),
         "VERSION=preview-test".to_owned(),
+        "NATIVE_CHANNEL=unset".to_owned(),
+        "NATIVE_SOURCE=unset".to_owned(),
         format!("TARGET={}", layout.root().display()),
         format!(
             "SDK={}",
@@ -296,4 +303,24 @@ fn trusted_target_root_alias_resolves_once_without_admitting_descendant_aliases(
             .to_string()
             .contains("symlink alias")
     );
+}
+
+#[test]
+fn native_channel_selects_the_profile_for_all_six_payloads() {
+    for (channel, expected) in [
+        (PackageReleaseChannel::Preview, ArchiveProfile::Preview),
+        (PackageReleaseChannel::Stable, ArchiveProfile::Release),
+    ] {
+        assert_eq!(release_profile(channel), expected);
+        for payload in release_payloads() {
+            let (package, target) = release_selection(payload.package, payload.target).unwrap();
+            let args = build_arguments(package, target, release_profile(channel));
+            let selector: &[&str] = match channel {
+                PackageReleaseChannel::Preview => &["--profile", "preview"],
+                PackageReleaseChannel::Stable => &["--release"],
+            };
+            assert_eq!(&args[2..2 + selector.len()], selector);
+            assert_eq!(binaries(package), payload.binaries);
+        }
+    }
 }

@@ -12,7 +12,7 @@ This document describes jackin❯ security implementation from a contributor per
 | Credential theft via symlink | Yes | Directory-relative admission in <RepoFile path="crates/services/jackin-instance-credentials/src/auth_directory/files.rs" /> | Explicitly shared credential state remains sensitive |
 | Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/research/platform/isolation/smolvm-backend/) | Shared kernel; future microVM work addresses this |
 | Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/roadmap/network-egress-policy/) | Open egress by default today |
-| Supply chain (capsule binary) | SHA256 + signed manifest | <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs">crates/adapters/jackin-image/src/capsule_binary.rs</RepoFile> | See [signed releases](/roadmap/security-threat-model-and-signed-releases/) |
+| Supply chain (capsule binary) | Signed release receipt and capsule manifest, exact-source provenance, SHA-256, and publication rechecks | <RepoFile path="crates/adapters/jackin-image/src/capsule_binary.rs">crates/adapters/jackin-image/src/capsule_binary.rs</RepoFile> | See [signed releases](/roadmap/security-threat-model-and-signed-releases/) |
 
 ## Security functions
 

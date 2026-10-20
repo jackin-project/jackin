@@ -29,12 +29,12 @@ mod health;
 mod layout_lint;
 mod lint;
 mod pr;
-mod preview_package;
 mod profile_matrix;
 mod pty_fixture;
 mod ratchet;
 mod readme_freshness;
 mod release_archive;
+mod release_package;
 mod release_sbom;
 mod report;
 mod schema;
@@ -117,8 +117,8 @@ enum Command {
     ProfileMatrix(profile_matrix::ProfileMatrixArgs),
     #[command(name = "release-archives")]
     ReleaseArchives(release_archive::ReleaseArchivesArgs),
-    #[command(name = "release-preview-package")]
-    ReleasePreviewPackage,
+    #[command(name = "release-package")]
+    ReleasePackage,
     Health(health::HealthArgs),
 }
 
@@ -225,7 +225,7 @@ fn main() -> ExitCode {
         Command::TelemetryBench(args) => telemetry_bench::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::ReleaseArchives(args) => release_archive::run(args),
-        Command::ReleasePreviewPackage => preview_package::run(),
+        Command::ReleasePackage => release_package::run(),
         Command::Health(args) => health::run(args),
         Command::Lint { command, strict } => run_lint(command, strict),
     };

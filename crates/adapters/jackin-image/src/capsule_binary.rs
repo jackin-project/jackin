@@ -7,9 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use jackin_core::JackinPaths;
 
-use crate::binary_artifact::{
-    chmod_executable, container_arch, hash_file_sha256, is_executable_file, repair_executable_file,
-};
+use crate::binary_artifact::{chmod_executable, container_arch, is_executable_file};
 
 pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
 
@@ -18,6 +16,7 @@ const ASSET_PREFIX: &str = "jackin-capsule";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ReleaseChannel {
     Preview,
+    Stable,
     LocalOnly,
 }
 
@@ -46,29 +45,11 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
 
 async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
     let arch = container_arch();
+    let native = origin::compiled(REQUIRED_VERSION);
     let channel = release_channel(REQUIRED_VERSION);
-    let cache_version = cache_key_version(REQUIRED_VERSION);
     let cached = resolved_cache_path(&paths.cache_dir);
 
-    if is_executable_file(&cached) && verify_version(&cached, REQUIRED_VERSION).await.is_ok() {
-        crate::telemetry_boundary::cache_decision(
-            jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
-            jackin_telemetry::schema::enums::CacheResult::Hit,
-        );
-        return Ok(cached);
-    }
-    if repair_executable_file(&cached)? && verify_version(&cached, REQUIRED_VERSION).await.is_ok() {
-        crate::telemetry_boundary::cache_decision(
-            jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
-            jackin_telemetry::schema::enums::CacheResult::Reuse,
-        );
-        record(
-            "capsule_binary_cache_repaired",
-            &format!(
-                "{REQUIRED_VERSION} linux/{arch} cache key {cache_version} at {}",
-                cached.display()
-            ),
-        );
+    if let Some(cached) = cache::lookup(&paths.cache_dir, REQUIRED_VERSION, arch, native).await? {
         return Ok(cached);
     }
 
@@ -93,7 +74,8 @@ async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
         jackin_telemetry::schema::enums::CacheName::CapsuleBinary,
         jackin_telemetry::schema::enums::CacheResult::Miss,
     );
-    download_and_cache(REQUIRED_VERSION, arch, channel, &cached).await?;
+    let native = native.context("native release origin is required for a remote capsule")?;
+    download_and_cache(REQUIRED_VERSION, arch, channel, native.source, &cached).await?;
     Ok(cached)
 }
 
@@ -108,10 +90,11 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
 
 #[must_use]
 pub fn resolved_cache_path(cache_dir: &Path) -> PathBuf {
-    cached_binary_path(
+    origin::cache_path(
         cache_dir,
-        &cache_key_version(REQUIRED_VERSION),
+        REQUIRED_VERSION,
         container_arch(),
+        origin::compiled(REQUIRED_VERSION),
     )
 }
 
@@ -189,14 +172,16 @@ fn remove_with_debug_log(path: &Path) {
 }
 
 fn download_failure_message(version: &str, url: &str) -> String {
+    let tag =
+        crate::release_evidence::release_tag(version).unwrap_or_else(|_| "unavailable".into());
     format!(
         "jackin-capsule {version} download failed.\n\
              \n\
              Attempted URL: {url}\n\
              \n\
-             The immutable release asset for jackin-capsule {version} may not\n\
+             The matching published asset for jackin-capsule {version} may not\n\
              be published yet. Check the release tag:\n\
-               https://github.com/jackin-project/jackin/releases/tag/v{version}\n\
+               https://github.com/jackin-project/jackin/releases/tag/{tag}\n\
              \n\
              Developing locally? Build and cache it first:\n\
                cargo run --bin build-jackin-capsule\n\
@@ -205,146 +190,45 @@ fn download_failure_message(version: &str, url: &str) -> String {
     )
 }
 
-async fn download_and_cache(
-    version: &str,
-    arch: &str,
-    channel: ReleaseChannel,
-    dest: &Path,
-) -> Result<()> {
-    let url = download_url(version, arch, channel);
-    let tmp_archive = dest.with_extension("tar.gz.tmp");
-    let tmp = dest.with_extension("tmp");
-
-    let evidence = crate::release_evidence::verify_release(version, linux_target(arch))
-        .await
-        .context("authenticating complete capsule release evidence before installation")?;
-    let expected_sha = evidence.sha256;
-    let download_result = crate::telemetry_boundary::download_request(
-        crate::telemetry_boundary::DownloadRoute::CapsuleArtifact,
-        &url,
-        jackin_docker::net::download_parallel(&url, &tmp_archive, Some(evidence.size)),
-    )
-    .await;
-    if let Err(e) = download_result {
-        remove_with_debug_log(&tmp_archive);
-        return Err(e).context(download_failure_message(version, &url));
-    }
-    if std::fs::metadata(&tmp_archive)?.len() != evidence.size {
-        remove_with_debug_log(&tmp_archive);
-        anyhow::bail!("downloaded capsule archive size differs from authenticated release receipt");
-    }
-
-    let archive_for_hash = tmp_archive.clone();
-    let hash_result =
-        jackin_telemetry::spawn::joined_blocking(move || hash_file_sha256(&archive_for_hash)).await;
-    let actual_sha = match hash_result {
-        Err(e) => {
-            remove_with_debug_log(&tmp_archive);
-            return Err(e).with_context(|| {
-                format!(
-                    "SHA-256 hash worker panicked or was cancelled for {}; \
-                     delete the partial archive and retry",
-                    tmp_archive.display()
-                )
-            });
+fn version_channel(version: &str) -> ReleaseChannel {
+    match crate::release_evidence::release_channel(version) {
+        Ok(velnor_actions_contract::package_release::PackageReleaseChannel::Preview) => {
+            ReleaseChannel::Preview
         }
-        Ok(Err(e)) => {
-            remove_with_debug_log(&tmp_archive);
-            return Err(e).with_context(|| {
-                format!(
-                    "hashing downloaded jackin-capsule archive at {}",
-                    tmp_archive.display()
-                )
-            });
+        Ok(velnor_actions_contract::package_release::PackageReleaseChannel::Stable) => {
+            ReleaseChannel::Stable
         }
-        Ok(Ok(sha)) => sha,
-    };
-    if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
-        remove_with_debug_log(&tmp_archive);
-        return Err(ImageError::msg(format!(
-            "jackin-capsule SHA-256 mismatch for {url}\n  expected {expected_sha}\n  actual   {actual_sha}\n\
-             refusing to cache the binary; investigate network tampering and retry."
-        ))
-        .into());
+        Err(_) => ReleaseChannel::LocalOnly,
     }
-
-    if let Err(e) = archive::extract_capsule(&tmp_archive, &tmp) {
-        remove_with_debug_log(&tmp_archive);
-        remove_with_debug_log(&tmp);
-        return Err(e).with_context(|| {
-            format!(
-                "extracting jackin-capsule from {} (archive passed SHA-256 check — \
-                 if retrying fails, the release asset may be malformed; \
-                 check https://github.com/jackin-project/jackin/releases)",
-                tmp_archive.display()
-            )
-        });
-    }
-    remove_with_debug_log(&tmp_archive);
-
-    if let Err(e) = chmod_executable(&tmp) {
-        remove_with_debug_log(&tmp);
-        return Err(e).with_context(|| {
-            format!(
-                "setting executable bit on cached jackin-capsule at {}; \
-                 ensure {} is not mounted noexec",
-                tmp.display(),
-                tmp.parent().unwrap_or(&tmp).display()
-            )
-        });
-    }
-
-    if let Err(e) = verify_version(&tmp, version).await {
-        remove_with_debug_log(&tmp);
-        return Err(e).with_context(|| {
-            format!(
-                "version verification failed for downloaded jackin-capsule {version} at {}",
-                tmp.display()
-            )
-        });
-    }
-    if let Err(e) = std::fs::rename(&tmp, dest) {
-        remove_with_debug_log(&tmp);
-        return Err(e).with_context(|| {
-            format!(
-                "failed to move jackin-capsule to {}; \
-                 if {} and {} are on different filesystems, \
-                 ensure the cache directory is on the same volume as the download temp directory",
-                dest.display(),
-                tmp.display(),
-                dest.display()
-            )
-        });
-    }
-
-    Ok(())
 }
 
 fn release_channel(version: &str) -> ReleaseChannel {
-    if is_preview_version(version) {
-        ReleaseChannel::Preview
-    } else {
-        ReleaseChannel::LocalOnly
-    }
-}
-
-fn is_preview_version(version: &str) -> bool {
-    crate::release_evidence::preview_base(version).is_ok()
+    origin::compiled(version).map_or(ReleaseChannel::LocalOnly, |value| value.channel)
 }
 
 fn local_capsule_only_message(version: &str) -> String {
     format!(
-        "jackin-capsule version {version:?} is not an immutable preview version. Remote capsule downloads support previews only.\n\
+        "jackin-capsule version {version:?} was not built with an exact native release origin. Remote capsule downloads require an admitted native channel, version and source.\n\
          No release download was attempted. Set JACKIN_CAPSULE_BIN to a local executable,\n\
          or build and cache a matching capsule with `cargo run --bin build-jackin-capsule`."
     )
 }
 
-fn download_url(version: &str, arch: &str, channel: ReleaseChannel) -> String {
-    debug_assert_eq!(channel, ReleaseChannel::Preview);
+fn download_url(version: &str, arch: &str, channel: ReleaseChannel) -> Result<String> {
+    anyhow::ensure!(
+        version_channel(version) == channel && channel != ReleaseChannel::LocalOnly,
+        "invalid remote capsule channel/version"
+    );
     let target = linux_target(arch);
     let asset = format!("{ASSET_PREFIX}-{target}.tar.gz");
-    format!("https://github.com/jackin-project/jackin/releases/download/v{version}/{asset}")
+    let tag = match channel {
+        ReleaseChannel::Preview => "preview".to_owned(),
+        ReleaseChannel::Stable => format!("v{version}"),
+        ReleaseChannel::LocalOnly => anyhow::bail!(local_capsule_only_message(version)),
+    };
+    Ok(format!(
+        "https://github.com/jackin-project/jackin/releases/download/{tag}/{asset}"
+    ))
 }
 
 fn linux_target(arch: &str) -> &'static str {
@@ -370,13 +254,7 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(
-    not(target_os = "linux"),
-    expect(
-        clippy::unused_async,
-        reason = "async retained for caller symmetry with the Linux exec path"
-    )
-)]
+// async retained for caller symmetry with the Linux exec path
 async fn verify_version(binary: &Path, expected: &str) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
@@ -447,6 +325,10 @@ fn contains_exact_version(haystack: &[u8], version: &[u8]) -> bool {
 }
 
 mod archive;
+mod cache;
+mod download;
+mod origin;
+use download::download_and_cache;
 
 #[cfg(test)]
 mod tests;

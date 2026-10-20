@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! Preview capsule evidence. Trust starts at production Sigstore TUF and the
+//! Native channel capsule evidence. Trust starts at production Sigstore TUF and the
 //! fixed Jackin release policy; neither receipt fields nor downloaded bundles
 //! select trust roots or authorize a workflow.
 
+mod freshness;
 mod policy;
 mod provenance;
 mod transport;
@@ -19,7 +20,7 @@ use velnor_actions_contract::package_release::{
     PackageReleaseAsset, PackageReleaseReceipt, parse_package_release_receipt,
 };
 
-pub(crate) use policy::preview_base;
+pub(crate) use policy::{release_channel, release_tag};
 use transport::{GithubTransport, Transport};
 
 const RECEIPT_LIMIT: usize = 1024 * 1024;
@@ -29,20 +30,31 @@ const EVIDENCE_LIMIT: usize = 16 * 1024 * 1024;
 pub(crate) struct VerifiedCapsule {
     pub(crate) sha256: String,
     pub(crate) size: u64,
+    publication: Box<freshness::PublicationPin>,
 }
 
-pub(crate) async fn verify_release(version: &str, target: &str) -> Result<VerifiedCapsule> {
-    preview_base(version)?;
+pub(crate) async fn verify_release(
+    version: &str,
+    target: &str,
+    source: &str,
+) -> Result<VerifiedCapsule> {
+    release_channel(version)?;
     let transport = GithubTransport::new()?;
     let root = sigstore_trust_root::TrustedRoot::production().await
         .context("refreshing production Sigstore trust through TUF; refusing unauthenticated capsule download")?;
     let verifier = Verifier::new(&root)?;
-    verify_with_transport(&transport, &verifier, version, target).await
+    verify_with_transport(&transport, &verifier, version, target, Some(source)).await
 }
 
-fn signing_policy() -> VerificationPolicy {
+pub(crate) async fn recheck_release(evidence: &VerifiedCapsule) -> Result<()> {
+    evidence.publication.recheck(&GithubTransport::new()?).await
+}
+
+fn signing_policy(
+    channel: velnor_actions_contract::package_release::PackageReleaseChannel,
+) -> VerificationPolicy {
     VerificationPolicy::new(
-        IdentityMatcher::Uri(policy::IDENTITY.into()),
+        IdentityMatcher::Uri(policy::identity(channel).into()),
         policy::ISSUER,
     )
 }
@@ -98,7 +110,11 @@ async fn signed_asset(
     );
     let hash = Sha256Hash::from_hex(&asset(receipt, name)?.sha256)?;
     let result = verifier
-        .verify(Artifact::from_digest(hash), &bundle, &signing_policy())
+        .verify(
+            Artifact::from_digest(hash),
+            &bundle,
+            &signing_policy(receipt.channel),
+        )
         .with_context(|| format!("verifying detached signature for {name}"))?;
     policy::validate_claims(&result, receipt)
 }
@@ -108,13 +124,20 @@ async fn verify_with_transport(
     verifier: &Verifier,
     version: &str,
     target: &str,
+    source: Option<&str>,
 ) -> Result<VerifiedCapsule> {
-    preview_base(version)?;
+    let source =
+        source.context("native release origin is required before remote evidence acquisition")?;
+    release_channel(version)?;
     ensure!(
         policy::LINUX_TARGETS.contains(&target),
         "unsupported capsule target"
     );
-    let base = format!("https://github.com/jackin-project/jackin/releases/download/v{version}");
+    let channel = release_channel(version)?;
+    let base = format!(
+        "https://github.com/jackin-project/jackin/releases/download/{}",
+        release_tag(version)?
+    );
     let receipt_bytes = transport
         .get(&format!("{base}/release.json"), RECEIPT_LIMIT)
         .await?;
@@ -128,11 +151,11 @@ async fn verify_with_transport(
     );
     // Authenticate the bytes before consuming any receipt identity or inventory.
     let result = verifier
-        .verify(receipt_bytes.as_slice(), &bundle, &signing_policy())
-        .context("authenticating immutable release.json")?;
+        .verify(receipt_bytes.as_slice(), &bundle, &signing_policy(channel))
+        .context("authenticating signed release.json")?;
     let receipt = parse_package_release_receipt(&receipt_bytes)
         .context("validating canonical Velnor release receipt")?;
-    policy::validate_receipt(&receipt, version)?;
+    policy::validate_receipt_source(&receipt, version, source)?;
     policy::validate_claims(&result, &receipt)?;
 
     let name = format!("jackin-capsule-{target}.tar.gz");
@@ -167,7 +190,9 @@ async fn verify_with_transport(
     );
     subjects.insert("release.json".into(), digest(&receipt_bytes));
     provenance::verify(transport, verifier, &receipt, &selected.sha256, &subjects).await?;
+    let publication = freshness::pin(transport, &receipt, &receipt_bytes, &bundle_bytes).await?;
     Ok(VerifiedCapsule {
+        publication,
         sha256: selected.sha256.clone(),
         size: selected.size,
     })
