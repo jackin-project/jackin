@@ -139,7 +139,7 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         "Mise's Rust integration must route Cargo through MBX natively"
     );
     assert!(
-        mise.contains("mr-boxington = \"1.25.0\""),
+        mise.contains("mr-boxington = \"1.26.0\""),
         "the native integration must resolve the current pinned MBX tool"
     );
     assert!(
