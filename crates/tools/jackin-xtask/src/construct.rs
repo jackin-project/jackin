@@ -6,7 +6,7 @@ use clap::{Subcommand, ValueEnum};
 
 const CANONICAL_REGISTRY_IMAGE: &str = "projectjackin/construct";
 const VERSION_FILE: &str = "docker/construct/VERSION";
-const VERSIONS_ENV_FILE: &str = "docker/construct/versions.env";
+mod versions;
 const BAKE_FILE: &str = "docker-bake.hcl";
 
 #[derive(Subcommand)]
@@ -89,11 +89,13 @@ impl Config {
             Some(platform) => platform,
             None => host_platform()?,
         };
-        let tirith_version = env_or("TIRITH_VERSION", versions_env_value("TIRITH_VERSION"));
-        let shellfirm_version =
-            env_or("SHELLFIRM_VERSION", versions_env_value("SHELLFIRM_VERSION"));
-        let mise_version = env_or("MISE_VERSION", versions_env_value("MISE_VERSION"));
-        let starship_version = env_or("STARSHIP_VERSION", versions_env_value("STARSHIP_VERSION"));
+        let tirith_version = env_or("TIRITH_VERSION", versions::env_value("TIRITH_VERSION"));
+        let shellfirm_version = env_or(
+            "SHELLFIRM_VERSION",
+            versions::env_value("SHELLFIRM_VERSION"),
+        );
+        let mise_version = versions::mise_minimum()?;
+        let starship_version = env_or("STARSHIP_VERSION", versions::env_value("STARSHIP_VERSION"));
         let buildx_builder = env_or("BUILDX_BUILDER", "jackin-construct");
         let digest_dir = env_or("DIGEST_DIR", "/tmp/jackin-construct-digests");
         Ok(Self {
@@ -489,18 +491,6 @@ fn read_version_file() -> Option<String> {
     let raw = fs::read_to_string(VERSION_FILE).ok()?;
     let trimmed: String = raw.split_whitespace().collect();
     (!trimmed.is_empty()).then_some(trimmed)
-}
-
-fn versions_env_value(key: &str) -> String {
-    parse_versions_env(key).unwrap_or_default()
-}
-
-fn parse_versions_env(key: &str) -> Option<String> {
-    let content = fs::read_to_string(VERSIONS_ENV_FILE).ok()?;
-    content.lines().find_map(|line| {
-        let (name, value) = line.split_once('=')?;
-        (name.trim() == key).then(|| value.trim().to_owned())
-    })
 }
 
 fn host_platform() -> Result<String> {
