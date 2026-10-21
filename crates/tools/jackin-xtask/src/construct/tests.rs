@@ -55,3 +55,126 @@ fn find_digest_ignores_empty_and_missing() {
     );
     assert_eq!(find_digest(&serde_json::json!({"t": {"other": "x"}})), None);
 }
+
+#[test]
+fn construct_build_argument_uses_the_root_mise_minimum() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    if std::env::var_os("JACKIN_TEST_CONSTRUCT_ROOT").is_none() {
+        for override_version in ["", "1900.1.1"] {
+            let mut child = Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    "construct::tests::construct_build_argument_uses_the_root_mise_minimum",
+                    "--nocapture",
+                ])
+                .current_dir(&root)
+                .env("JACKIN_TEST_CONSTRUCT_ROOT", "1");
+            if !override_version.is_empty() {
+                child.env("MISE_VERSION", override_version);
+            }
+            crate::cmd::run(&mut child).unwrap();
+        }
+        return;
+    }
+    let source = fs::read_to_string(root.join("mise.toml")).unwrap();
+    let config: toml::Value = toml::from_str(&source).unwrap();
+    let minimum = config["min_version"].as_str().unwrap();
+    let resolved = Config::resolve().unwrap();
+    assert_eq!(resolved.mise_version, minimum);
+    let mut command = Command::new("docker");
+    resolved.apply_bake_env(&mut command);
+    let selected = command
+        .get_envs()
+        .find(|(name, _)| *name == "MISE_VERSION")
+        .and_then(|(_, value)| value)
+        .unwrap();
+    assert_eq!(selected, minimum);
+}
+
+#[test]
+fn construct_mise_minimum_is_required_and_exact() {
+    assert_eq!(
+        versions::parse_mise_minimum("min_version = \"2026.10.17\"").unwrap(),
+        "2026.10.17"
+    );
+    for invalid in [
+        "",
+        "min_version = 17",
+        "min_version = \"\"",
+        "min_version = \"latest\"",
+        "min_version = \"2026.10\"",
+        "min_version = \"2026.10.17/other\"",
+    ] {
+        assert!(versions::parse_mise_minimum(invalid).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn construct_has_no_duplicate_mise_pin_or_docker_default() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let versions = fs::read_to_string(root.join("docker/construct/versions.env")).unwrap();
+    assert!(
+        !versions
+            .lines()
+            .any(|line| line.starts_with("MISE_VERSION="))
+    );
+    let dockerfile = fs::read_to_string(root.join("docker/construct/Dockerfile")).unwrap();
+    assert!(
+        !dockerfile
+            .lines()
+            .any(|line| line.starts_with("ARG MISE_VERSION="))
+    );
+    assert!(dockerfile.lines().any(|line| line == "ARG MISE_VERSION"));
+    assert!(dockerfile.contains("MISE_VERSION build arg is required"));
+}
+
+#[test]
+fn upstream_asset_check_uses_the_same_root_mise_minimum_without_network() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let fixture = tempfile::tempdir().unwrap();
+    let construct = fixture.path().join("docker/construct");
+    fs::create_dir_all(&construct).unwrap();
+    for name in ["check-upstream-assets.sh", "versions.env"] {
+        fs::copy(
+            root.join("docker/construct").join(name),
+            construct.join(name),
+        )
+        .unwrap();
+    }
+    fs::write(
+        fixture.path().join("mise.toml"),
+        "min_version = \"2027.1.2\"\n",
+    )
+    .unwrap();
+    let bin = fixture.path().join("bin");
+    fs::create_dir(&bin).unwrap();
+    let curl = bin.join("curl");
+    fs::write(
+        &curl,
+        r#"#!/bin/sh
+case "$*" in
+  *github.com/jdx/mise/*) printf '%s\n' "$*" > "$JACKIN_TEST_URL"; exit 76 ;;
+esac
+exit 0
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&curl, fs::Permissions::from_mode(0o755)).unwrap();
+    let captured = fixture.path().join("mise-url");
+    let mut command = Command::new("bash");
+    command
+        .arg(construct.join("check-upstream-assets.sh"))
+        .env("JACKIN_TEST_URL", &captured)
+        .env("MISE_VERSION", "1900.1.1")
+        .env(
+            "PATH",
+            format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+        );
+    crate::cmd::output_timeout(&mut command, std::time::Duration::from_secs(10)).unwrap_err();
+    let url = fs::read_to_string(captured).unwrap();
+    assert!(url.contains("https://github.com/jdx/mise/releases/download/v2027.1.2/SHASUMS256.txt"));
+    assert!(!url.contains("1900.1.1"));
+}

@@ -21,7 +21,7 @@ The `construct` family (source: <RepoFile path="crates/tools/jackin-xtask/src/co
 | `mise exec -- mbx +1.99.1 xtask construct build-local` | Build the construct image for the host platform and load it into the local Docker daemon. |
 | `mise exec -- mbx +1.99.1 xtask construct build-platform <amd64\|arm64>` | Build for one specific platform and load it locally. |
 | `mise exec -- mbx +1.99.1 xtask construct push-platform <amd64\|arm64>` | Push a single-platform image by digest. CI-only for the canonical registry. |
-| `mise exec -- mbx +1.99.1 xtask construct assert-version-unpublished` | Fail when the version in <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile> already exists in the registry — the publish-gate guard. |
+| `mise exec -- mbx +1.99.1 xtask construct assert-version-unpublished` | Fail when the version in <RepoFile path="docker/construct/VERSION">docker/construct/VERSION</RepoFile> already exists in the registry — the publish-gate guard. |
 | `mise exec -- mbx +1.99.1 xtask construct publish-manifest` | Combine per-platform digest pushes into one multi-platform manifest. The current generated CI does not invoke this publication command. |
 | `mise exec -- mbx +1.99.1 xtask construct inspect` | Print the resolved Bake configuration without building — dry-run inspection. |
 

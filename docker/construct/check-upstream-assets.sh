@@ -5,6 +5,16 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=versions.env
 . "${script_dir}/versions.env"
+# The construct must support the same minimum as the root project.
+MISE_VERSION="$(python3 - "${script_dir}/../../mise.toml" <<'PYTHON'
+import pathlib, re, sys, tomllib
+config = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
+version = config.get("min_version")
+if not isinstance(version, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+    sys.exit("construct requires an exact numeric Mise min_version")
+print(version)
+PYTHON
+)"
 for version_name in TIRITH_VERSION SHELLFIRM_VERSION MISE_VERSION STARSHIP_VERSION; do
   if [ -z "${!version_name:-}" ]; then
     echo "::error::${version_name} is empty" >&2
