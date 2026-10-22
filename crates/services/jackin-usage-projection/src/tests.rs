@@ -3,7 +3,9 @@
 
 use std::collections::BTreeSet;
 
-use jackin_protocol::control::{FocusedAccountHeader, FocusedUsageView, UsageSource};
+use jackin_protocol::control::{
+    FocusedAccountHeader, FocusedUsageView, PercentObservationOrigin, UsageSource,
+};
 
 use jackin_usage_host_accounts::{
     AccountCatalogEntry, AccountLifecycle, AccountProvenance, CanonicalAccountIdentity,
@@ -29,7 +31,7 @@ use jackin_usage_provider_core::{
 };
 
 use jackin_console::tui::screens::usage::{
-    UsageScreenState, UsageWindow, freshness_age_label, group_freshness_label,
+    UsageScreenState, freshness_age_label, group_freshness_label,
 };
 
 mod support_01;

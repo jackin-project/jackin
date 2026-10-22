@@ -1,8 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
-use jackin_usage_provider_core::{bucket, humanize_plan_label, quota_pace_label, timed_bucket};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, QuotaBucketView, StatusSlot,
+    UsageSnapshotStatus,
+};
+use jackin_usage_provider_core::{
+    bucket, humanize_plan_label, quota_pace_label, reset_label, timed_bucket, with_used_percent,
+};
 
 use super::{AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityWindow};
 
@@ -86,16 +91,49 @@ fn antigravity_pool_bucket(pool: &AntigravityPool, now: i64) -> QuotaBucketView 
         (None, Some(source)) => format!("Quota · {source}"),
         (None, None) => "Quota".to_owned(),
     };
-    let remaining = pool.remaining_percent;
-    let used_label = remaining.map(|left| format!("{}% used", 100u8.saturating_sub(left)));
+    let remaining = pool.remaining_percent.and_then(|points| {
+        let percent = CanonicalRemainingPercent::new(points).ok()?;
+        Some((percent, pool.remaining_percent_origin?))
+    });
+    let used = pool.used_percent.and_then(|points| {
+        let percent = CanonicalUsedPercent::new(points).ok()?;
+        Some((percent, pool.used_percent_origin?))
+    });
+    let used_label = used.map(|(percent, _)| percent.label());
     let window_seconds = match pool.window {
         Some(AntigravityWindow::Session) => Some(ANTIGRAVITY_SESSION_WINDOW_SECONDS),
         Some(AntigravityWindow::Weekly) => Some(ANTIGRAVITY_WEEKLY_WINDOW_SECONDS),
         None => None,
     };
-    let pace = quota_pace_label(remaining, pool.reset_at, window_seconds, now);
+    let pace_remaining = remaining.map(|(percent, _)| percent).or_else(|| {
+        used.and_then(|(percent, _)| {
+            CanonicalRemainingPercent::new(percent.remaining_points()).ok()
+        })
+    });
+    let pace = quota_pace_label(pace_remaining, pool.reset_at, window_seconds, now);
     let pace = pace.or_else(|| remaining.is_none().then(|| "No data".to_owned()));
-    let mut view = timed_bucket(
+    let utilization_note = (!pool.unclassified_utilizations.is_empty()).then(|| {
+        pool.unclassified_utilizations
+            .iter()
+            .map(|observation| {
+                let reset = observation
+                    .reset_at
+                    .map(|reset_at| format!("; {}", reset_label(reset_at, now)))
+                    .unwrap_or_default();
+                format!(
+                    "{} utilization {} (unit unknown; not ranked as a percentage{reset})",
+                    observation.source, observation.value
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" · ")
+    });
+    let pace = match (pace, utilization_note) {
+        (Some(pace), Some(note)) => Some(format!("{pace} · {note}")),
+        (None, Some(note)) => Some(note),
+        (pace, None) => pace,
+    };
+    let view = timed_bucket(
         &label,
         used_label,
         Some("100%".to_owned()),
@@ -105,6 +143,7 @@ fn antigravity_pool_bucket(pool: &AntigravityPool, now: i64) -> QuotaBucketView 
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     );
+    let mut view = with_used_percent(view, used);
     view.status_slot = match (pool.family, pool.window) {
         (AntigravityFamily::Gemini, Some(AntigravityWindow::Session)) => Some(StatusSlot::Session),
         (AntigravityFamily::Gemini, Some(AntigravityWindow::Weekly)) => Some(StatusSlot::Weekly),

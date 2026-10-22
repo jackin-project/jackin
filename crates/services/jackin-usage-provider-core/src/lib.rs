@@ -11,6 +11,7 @@ mod labels;
 mod omp;
 mod outcome;
 mod process_telemetry;
+mod quota;
 mod refresh;
 mod surface;
 mod transport;
@@ -35,12 +36,12 @@ use serde::Serialize;
 
 pub use self::format::{
     PROCESS_OUTPUT_MAX, codex_account_from_value, codex_limit_label, collect_cli_output,
-    compact_count, dollar_amounts, env_value, expiry_label, first_string_key,
-    format_amount_with_unit, format_cents, format_currency, home_path, humanize_plan_label,
-    humanize_words_with, json_epoch_seconds, json_number, local_timestamp_label, oauth_origin,
-    parse_iso_epoch, quota_pace_label, read_process_pipe, remaining_from_fraction, reset_label,
-    run_cli_with_timeout, titlecase_ascii, used_percent_from_fraction, used_percent_label,
-    window_minutes_label,
+    compact_count, derived_remaining_from_used_fraction, dollar_amounts, env_value, expiry_label,
+    first_string_key, format_amount_with_unit, format_cents, format_currency,
+    format_percent_points, home_path, humanize_plan_label, humanize_words_with, json_epoch_seconds,
+    json_number, local_timestamp_label, oauth_origin, parse_iso_epoch, quota_pace_label,
+    read_process_pipe, reset_label, run_cli_with_timeout, titlecase_ascii,
+    used_percent_from_fraction, window_minutes_label,
 };
 
 pub use self::format::{CliOutput, percent_before_used, run_cli_with_timeout_full};
@@ -64,11 +65,16 @@ pub use self::view::{UsageViewInput, usage_view};
 pub use self::view::{
     account_snapshot_views_from_cache, account_tab_label_for_parts, amp_status_bar_headline,
     bucket, cached_refreshing_view, cached_unavailable_view, compact_account_identity,
-    decorate_surface_view, enrich_provider_tabs, mark_active_tab,
+    count_summary_label, decorate_surface_view, enrich_provider_tabs, mark_active_tab,
     preserve_cached_quota_on_failed_refresh, provider_tabs, quota_amounts_for_account_snapshot,
     spend_headline_label, status_bar_fresh_or_stale, status_bar_headline_for_surface,
     status_bar_label, status_bar_quota_labels, summary_bucket, timed_bucket, usage_account_tab_id,
-    usage_tab_source_label, usage_tab_status_label, with_status_slot,
+    usage_tab_source_label, usage_tab_status_label, with_status_slot, with_used_percent,
+};
+pub use quota::{
+    money_used_percent, provider_quota_state_label, provider_quota_state_summary,
+    quota_bucket_has_observation, quota_bucket_remaining_rank_points,
+    quota_source_remaining_rank_points, select_quota_meter,
 };
 
 pub use cache::CachedUsage;

@@ -1,9 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::antigravity_remaining_from_entry;
-use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
-use jackin_usage_provider_core::{bucket, json_number};
+use super::{
+    antigravity_percentages_from_entry, antigravity_remaining_from_entry,
+    antigravity_unclassified_utilization_from_entry,
+};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, Money, PercentObservationOrigin,
+    QuotaBucketView, StatusSlot, UsageSnapshotStatus,
+};
+use jackin_usage_provider_core::{bucket, json_number, with_used_percent};
 
 #[derive(Debug, Clone, Default)]
 pub struct AntigravityCredits {
@@ -11,7 +17,9 @@ pub struct AntigravityCredits {
     pub(crate) limit_money: Option<Money>,
     pub(crate) balance_label: Option<String>,
     pub(crate) limit_label: Option<String>,
-    pub(crate) remaining_percent: Option<u8>,
+    pub(crate) used_percent: Option<(CanonicalUsedPercent, PercentObservationOrigin)>,
+    pub(crate) remaining_percent: Option<(CanonicalRemainingPercent, PercentObservationOrigin)>,
+    pub(crate) unclassified_utilization: Option<serde_json::Number>,
 }
 
 pub fn parse_antigravity_credits_output(text: &str) -> Result<AntigravityCredits, String> {
@@ -57,18 +65,27 @@ pub fn parse_antigravity_credits_output(text: &str) -> Result<AntigravityCredits
     };
     let balance = major(&["balance", "remaining", "available"]);
     let limit = major(&["limit", "total", "allowance"]);
-    let remaining_percent = match (balance, limit) {
-        (Some(left), Some(total)) if total > 0.0 => {
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "filtered non-negative; clamped 0..=100"
-            )]
-            {
-                Some((left.clamp(0.0, total) / total * 100.0).round() as u8)
-            }
-        }
-        _ => antigravity_remaining_from_entry(node),
-    };
+    let (reported_used, reported_remaining) = antigravity_percentages_from_entry(node);
+    let used_percent = reported_used.and_then(|points| {
+        CanonicalUsedPercent::new(points)
+            .ok()
+            .map(|percent| (percent, PercentObservationOrigin::ProviderReported))
+    });
+    let remaining_percent = reported_remaining
+        .or_else(|| match (balance, limit) {
+            (Some(left), Some(total)) if total > 0.0 => Some(left / total * 100.0),
+            _ => antigravity_remaining_from_entry(node),
+        })
+        .and_then(|points| {
+            CanonicalRemainingPercent::new(points).ok().map(|percent| {
+                let origin = if reported_remaining.is_some() {
+                    PercentObservationOrigin::ProviderReported
+                } else {
+                    PercentObservationOrigin::Derived
+                };
+                (percent, origin)
+            })
+        });
     let money_label = |money: Option<&Money>| money.map(Money::to_string);
     Ok(AntigravityCredits {
         balance_label: money_label(used_money.as_ref())
@@ -77,7 +94,9 @@ pub fn parse_antigravity_credits_output(text: &str) -> Result<AntigravityCredits
             .or_else(|| limit.map(|value| format!("{value} {currency}"))),
         used_money,
         limit_money,
+        used_percent,
         remaining_percent,
+        unclassified_utilization: antigravity_unclassified_utilization_from_entry(node),
     })
 }
 
@@ -86,10 +105,13 @@ pub fn antigravity_credits_bucket(credits: &AntigravityCredits) -> Option<QuotaB
         && credits.limit_money.is_none()
         && credits.balance_label.is_none()
         && credits.limit_label.is_none()
+        && credits.used_percent.is_none()
+        && credits.remaining_percent.is_none()
+        && credits.unclassified_utilization.is_none()
     {
         return None;
     }
-    let mut view = bucket(
+    let view = bucket(
         "Credits",
         credits.balance_label.clone(),
         credits.limit_label.clone(),
@@ -98,10 +120,16 @@ pub fn antigravity_credits_bucket(credits: &AntigravityCredits) -> Option<QuotaB
         None,
         UsageSnapshotStatus::Fresh,
     );
+    let mut view = with_used_percent(view, credits.used_percent);
     if credits.used_money.is_some() {
         view.status_slot = Some(StatusSlot::Spend);
         view.used_money = credits.used_money.clone();
         view.limit_money = credits.limit_money.clone();
+    }
+    if let Some(utilization) = &credits.unclassified_utilization {
+        view.pace_label = Some(format!(
+            "utilization {utilization} (unit unknown; not ranked as a percentage)"
+        ));
     }
     Some(view)
 }

@@ -6,6 +6,12 @@ use serde::{Deserialize, Serialize};
 use crate::TelemetryContext;
 use crate::agent_status::AgentStatusReport;
 
+pub use crate::quota::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, CountQuotaPeriod,
+    CountQuotaProvenance, CountQuotaUnit, MeterPercentPoints, PercentObservationOrigin,
+    ProviderQuotaState, RawPercentPoints, UsageMeterSide,
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControlRequest {
     pub ctx: TelemetryContext,
@@ -328,6 +334,7 @@ pub struct AccountUsageSnapshotView {
     pub expires_at: Option<i64>,
     pub status: String,
     pub last_error: Option<String>,
+    pub quota_bucket: Option<QuotaBucketView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -515,7 +522,13 @@ pub struct QuotaBucketView {
     pub label: String,
     pub used_label: Option<String>,
     pub limit_label: Option<String>,
-    pub remaining_percent: Option<u8>,
+    pub used_percent: Option<CanonicalUsedPercent>,
+    pub used_percent_origin: Option<PercentObservationOrigin>,
+    pub remaining_percent: Option<CanonicalRemainingPercent>,
+    pub remaining_percent_origin: Option<PercentObservationOrigin>,
+    pub count_quota: Option<CountQuota>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_quota_state: Option<ProviderQuotaState>,
     pub reset_label: Option<String>,
     #[serde(default)]
     pub resets_at: Option<i64>,
@@ -529,6 +542,39 @@ pub struct QuotaBucketView {
     pub limit_money: Option<Money>,
     #[serde(default)]
     pub severity: UsageSeverity,
+}
+
+impl QuotaBucketView {
+    /// Validate source metadata and prevent mixed count and money quantities.
+    pub fn validate(&self) -> Result<(), String> {
+        validate_percent_origin(
+            "used",
+            self.used_percent.is_some(),
+            self.used_percent_origin,
+        )?;
+        validate_percent_origin(
+            "remaining",
+            self.remaining_percent.is_some(),
+            self.remaining_percent_origin,
+        )?;
+        if self.count_quota.is_some() && (self.used_money.is_some() || self.limit_money.is_some()) {
+            return Err("quota bucket mixes count and money representations".to_owned());
+        }
+        Ok(())
+    }
+}
+
+fn validate_percent_origin(
+    side: &str,
+    has_value: bool,
+    origin: Option<PercentObservationOrigin>,
+) -> Result<(), String> {
+    if has_value != origin.is_some() {
+        return Err(format!(
+            "quota bucket {side} percent and observation origin must be present together"
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -552,8 +598,19 @@ pub struct UsageDetailRow {
     pub label: String,
     pub layout_lines: Vec<UsagePresentationLine>,
     pub display_label: String,
-    pub meter_percent: Option<u8>,
+    pub meter_percent: Option<MeterPercentPoints>,
+    pub meter_side: Option<UsageMeterSide>,
     pub severity: UsageSeverity,
+}
+
+impl UsageDetailRow {
+    /// Validate the selected meter value and its orientation as a pair.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.meter_percent.is_some() != self.meter_side.is_some() {
+            return Err("usage detail meter percent and side must be present together".to_owned());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]

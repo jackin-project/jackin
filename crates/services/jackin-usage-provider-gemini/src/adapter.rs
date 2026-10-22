@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_protocol::control::{
-    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+    CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit, FocusedUsageView,
+    QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 use std::path::PathBuf;
 
@@ -129,9 +130,11 @@ pub fn gemini_migration_action(entitlement: Option<&GeminiEntitlement>) -> Optio
 pub struct GeminiProjectQuota {
     pub model: Option<String>,
     pub kind: String,
-    pub limit: Option<f64>,
-    pub used: Option<f64>,
+    pub limit: Option<u64>,
+    pub used: Option<u64>,
+    pub remaining: Option<u64>,
     pub reset_at: Option<i64>,
+    pub diagnostic: Option<String>,
 }
 
 pub fn parse_gemini_project_quotas(value: &serde_json::Value) -> Vec<GeminiProjectQuota> {
@@ -150,16 +153,13 @@ pub fn parse_gemini_project_quotas(value: &serde_json::Value) -> Vec<GeminiProje
                 .map(str::trim)
                 .find(|kind| !kind.is_empty())?
                 .to_owned();
-            let non_negative = |keys: &[&str]| {
-                keys.iter()
-                    .filter_map(|key| entry.get(*key).and_then(json_number))
-                    .find(|value| value.is_finite() && *value >= 0.0)
-            };
-            let limit = non_negative(&["limit", "max", "quota", "allowance"]);
-            let used = non_negative(&["usage", "used", "consumed", "current"]).or_else(|| {
-                let remaining = non_negative(&["remaining", "left"])?;
-                limit.map(|limit| (limit - remaining).max(0.0))
-            });
+            let (limit, mut invalid_fields) =
+                gemini_count_fields(entry, &["limit", "max", "quota", "allowance"]);
+            let (used, invalid_used) =
+                gemini_count_fields(entry, &["usage", "used", "consumed", "current"]);
+            let (remaining, invalid_remaining) = gemini_count_fields(entry, &["remaining", "left"]);
+            invalid_fields.extend(invalid_used);
+            invalid_fields.extend(invalid_remaining);
             let reset_at = ["resetTime", "reset_time", "resetsAt", "reset_at", "reset"]
                 .into_iter()
                 .filter_map(|key| entry.get(key))
@@ -181,7 +181,14 @@ pub fn parse_gemini_project_quotas(value: &serde_json::Value) -> Vec<GeminiProje
                 kind,
                 limit,
                 used,
+                remaining,
                 reset_at,
+                diagnostic: (!invalid_fields.is_empty()).then(|| {
+                    format!(
+                        "Invalid quota count field(s): {}",
+                        invalid_fields.join(", ")
+                    )
+                }),
             })
         })
         .collect()
@@ -200,33 +207,70 @@ fn gemini_quota_bucket(quota: &GeminiProjectQuota, now: i64) -> QuotaBucketView 
         .model
         .as_deref()
         .map_or_else(|| kind.clone(), |model| format!("{model} · {kind}"));
-    let count_label = |value: f64| {
-        if value.fract() == 0.0 && value >= 0.0 && value <= u64::MAX as f64 {
-            #[expect(clippy::cast_sign_loss, reason = "filtered non-negative above")]
-            compact_count(value as u64)
-        } else {
-            format!("{value}")
-        }
-    };
-    let remaining = match (quota.limit, quota.used) {
-        (Some(limit), Some(used)) if limit > 0.0 => {
-            #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
-            {
-                Some(((limit - used).clamp(0.0, limit) / limit * 100.0).round() as u8)
+    let has_count = quota.used.is_some() || quota.limit.is_some() || quota.remaining.is_some();
+    let diagnostic = quota.diagnostic.clone().or_else(|| {
+        (!has_count).then(|| {
+            if quota.reset_at.is_some() {
+                "Reset time present without usable quota quantity".to_owned()
+            } else {
+                "No usable quota quantity reported".to_owned()
             }
-        }
-        _ => None,
+        })
+    });
+    let status = if has_count {
+        UsageSnapshotStatus::Fresh
+    } else {
+        UsageSnapshotStatus::Unavailable
     };
-    timed_bucket(
+    let mut view = timed_bucket(
         &label,
-        quota.used.map(count_label),
-        quota.limit.map(count_label),
-        remaining,
+        quota.used.map(compact_count),
+        quota.limit.map(compact_count),
+        None,
         quota.reset_at,
         now,
-        None,
-        UsageSnapshotStatus::Fresh,
-    )
+        diagnostic.as_deref(),
+        status,
+    );
+    let unit = if quota.kind.to_ascii_lowercase().contains("request") {
+        CountQuotaUnit::Requests
+    } else {
+        CountQuotaUnit::Unknown
+    };
+    if quota.used.is_some() || quota.limit.is_some() || quota.remaining.is_some() {
+        view.count_quota = Some(CountQuota::new(
+            quota.used,
+            quota.limit,
+            quota.remaining,
+            unit,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        ));
+    }
+    view
+}
+
+fn gemini_count(value: &serde_json::Value) -> Option<u64> {
+    value.as_u64().or_else(|| {
+        value
+            .as_str()
+            .and_then(|text| text.trim().parse::<u64>().ok())
+    })
+}
+
+fn gemini_count_fields(entry: &serde_json::Value, keys: &[&str]) -> (Option<u64>, Vec<String>) {
+    let mut value = None;
+    let mut invalid_fields = Vec::new();
+    for key in keys {
+        if let Some(node) = entry.get(*key) {
+            match gemini_count(node) {
+                Some(count) if value.is_none() => value = Some(count),
+                Some(_) => {}
+                None => invalid_fields.push((*key).to_owned()),
+            }
+        }
+    }
+    (value, invalid_fields)
 }
 
 pub fn gemini_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {

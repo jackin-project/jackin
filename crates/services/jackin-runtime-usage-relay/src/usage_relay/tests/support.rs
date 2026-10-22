@@ -47,7 +47,17 @@ pub(super) fn quota_view() -> FocusedUsageView {
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
-        remaining_percent: Some(55),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(
+            jackin_protocol::control::CanonicalRemainingPercent::new(55.0)
+                .expect("valid historical remaining percent"),
+        ),
+        remaining_percent_origin: Some(
+            jackin_protocol::control::PercentObservationOrigin::HistoricalUnknown,
+        ),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: None,

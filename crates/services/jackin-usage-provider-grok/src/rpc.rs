@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_protocol::control::CanonicalUsedPercent;
 use jackin_usage_provider_core::{
     Fixed32Field, ProtobufScan, VarintField, complete_external_rpc, external_rpc_operation,
     home_path, looks_like_protobuf_payload, parse_iso_epoch, read_varint, write_json_line,
@@ -86,10 +87,7 @@ pub fn parse_grok_web_billing_response(
         .fixed32_fields
         .iter()
         .filter(|field| {
-            field.path.last() == Some(&1)
-                && field.value.is_finite()
-                && field.value >= 0.0
-                && field.value <= 100.0
+            field.path.last() == Some(&1) && field.value.is_finite() && field.value >= 0.0
         })
         .min_by(|left, right| {
             left.path
@@ -98,6 +96,7 @@ pub fn parse_grok_web_billing_response(
                 .then_with(|| left.order.cmp(&right.order))
         })
         .map(|field| f64::from(field.value))
+        .and_then(|percent| CanonicalUsedPercent::new(percent).ok())
         .ok_or_else(|| "usage percent not found in Grok billing protobuf".to_owned())?;
     let reset_at_epoch = scan
         .varint_fields

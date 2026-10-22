@@ -40,11 +40,11 @@ bound = 2
 key = "clippy::cast_precision_loss@jackin-usage-provider-openrouter"
 bound = 2
 [[family.entry]]
-key = "clippy::cast_precision_loss@jackin-usage-provider-grok"
+key = "clippy::cast_precision_loss@jackin-usage-provider-amp"
 bound = 1
 [[family.entry]]
-key = "clippy::cast_precision_loss@jackin-usage-provider-kimi"
-bound = 2
+key = "clippy::cast_precision_loss@jackin-usage-provider-grok"
+bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
 bound = 2
@@ -55,47 +55,8 @@ bound = 1
 key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-cursor"
-bound = 6
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-codex"
-bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-gemini"
-bound = 2
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-muse"
-bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-opencode"
-bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-claude"
-bound = 1
-[[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-antigravity"
-bound = 4
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-grok"
-bound = 2
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-openrouter"
-bound = 2
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-minimax"
 bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-amp"
-bound = 4
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-kimi"
-bound = 3
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-core"
-bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-zai"
-bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
 bound = 19
@@ -156,6 +117,9 @@ bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage-provider-core"
 bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-usage-store-backend"
+bound = 6
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage-provider-openrouter"
 bound = 1
@@ -1234,7 +1198,7 @@ key = "jackin-manifest"
 bound = 5
 [[family.entry]]
 key = "jackin-protocol"
-bound = 9
+bound = 10
 [[family.entry]]
 key = "jackin-runtime"
 bound = 7
@@ -1622,10 +1586,10 @@ key = "jackin-telemetry"
 bound = 30
 [[family.entry]]
 key = "jackin-usage-snapshot-store"
-bound = 29
+bound = 27
 [[family.entry]]
 key = "jackin-usage-provider-core"
-bound = 23
+bound = 22
 [[family.entry]]
 key = "jackin-usage-broker"
 bound = 60
@@ -1634,13 +1598,13 @@ key = "jackin-xtask"
 bound = 78
 [[family.entry]]
 key = "jackin-usage-coordinator"
-bound = 40
+bound = 23
 [[family.entry]]
 key = "jackin-omp-store"
 bound = 45
 [[family.entry]]
 key = "jackin-usage-ffi"
-bound = 23
+bound = 22
 [[family.entry]]
 key = "jackin-runtime-host-daemon"
 bound = 21

@@ -7,14 +7,16 @@ use icu_collator::{Collator, options::CollatorOptions, options::Strength};
 use icu_locale::Locale;
 #[cfg(test)]
 use jackin_protocol::control::{
-    Money, QuotaBucketView, StatusSlot, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
+    CanonicalRemainingPercent, CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    MeterPercentPoints, Money, QuotaBucketView, RawPercentPoints, StatusSlot, UsageConfidence,
+    UsageMeterSide, UsageSeverity, UsageSnapshotStatus,
 };
 #[cfg(test)]
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageLifecycleV1,
     UsageMembershipStateV1, UsageMetricGroupKindV1, UsageMetricGroupV1, UsageMetricScopeV1,
-    UsageMetricValueV1, UsagePercent, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
-    UsageProjectionV1, UsageProviderV1, UsageQuotaStateV1, UsageUnresolvedV1,
+    UsageMetricValueV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageProjectionV1,
+    UsageProviderV1, UsageQuotaStateV1, UsageUnresolvedV1,
 };
 
 pub(crate) use account::{apply_generation_metadata, discovery_issue, project_account};

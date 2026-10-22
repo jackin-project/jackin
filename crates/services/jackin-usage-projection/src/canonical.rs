@@ -8,7 +8,7 @@ use icu_locale::Locale;
 
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageGenerationView, UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1,
-    UsageMembershipStateV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
+    UsageMembershipStateV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV2,
     UsageProjectionV1, UsageProviderV1, UsageUnresolvedV1,
 };
 
@@ -121,7 +121,7 @@ pub fn build_canonical_projection(
 
     let unresolved = project_unresolved_capabilities(discovery, broker_generations);
     let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: metadata.projection_id.to_owned(),
         generated_at_epoch: metadata.generated_at_epoch,
         discovery_revision: discovery

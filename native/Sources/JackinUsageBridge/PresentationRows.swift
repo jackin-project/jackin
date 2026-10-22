@@ -71,12 +71,36 @@ public struct SurfaceRow: Identifiable, Sendable, Equatable {
     }
 }
 
+public struct CountQuotaModel: Sendable, Equatable {
+    public let used: UInt64?
+    public let limit: UInt64?
+    public let remaining: UInt64?
+    public let unit: String
+    public let period: String
+    public let provenance: String
+
+    public init(dto: CountQuotaDto) {
+        used = dto.used
+        limit = dto.limit
+        remaining = dto.remaining
+        unit = dto.unit
+        period = dto.period
+        provenance = dto.provenance
+    }
+}
+
 public struct BucketRow: Identifiable, Sendable, Equatable {
     public var id: String { label }
     public let label: String
     public let usedLabel: String?
     public let limitLabel: String?
-    public let remainingPercent: UInt8?
+    public let usedPercent: Double?
+    public let usedPercentOrigin: String?
+    public let remainingPercent: Double?
+    public let remainingPercentOrigin: String?
+    public let countQuota: CountQuotaModel?
+    public let providerQuotaState: String?
+    public let resetsAt: Int64?
     public let resetLabel: String?
     public let paceLabel: String?
     public let statusSlot: String?
@@ -87,7 +111,8 @@ public struct BucketRow: Identifiable, Sendable, Equatable {
     public let remainingLabel: String?
     public let displaySegments: [String]
     public let displayLabel: String
-    public let meterPercent: UInt8?
+    public let meterPercent: Double?
+    public let meterSide: String?
 }
 
 public struct GlanceProviderRow: Identifiable, Sendable, Equatable {
@@ -99,7 +124,15 @@ public struct GlanceProviderRow: Identifiable, Sendable, Equatable {
     public let displayLabel: String
     public let accountLabel: String
     public let planLabel: String?
-    public let glanceRemainingPercent: UInt8?
+    public let glanceUsedPercent: Double?
+    public let glanceUsedPercentOrigin: String?
+    public let glanceRemainingPercent: Double?
+    public let glanceRemainingPercentOrigin: String?
+    public let glanceCountQuota: CountQuotaModel?
+    public let glanceProviderQuotaState: String?
+    public let glanceResetsAt: Int64?
+    public let glanceMeterPercent: Double?
+    public let glanceMeterSide: String?
     public let barLabel: String
     public let headline: String
     public let resetLabel: String?
@@ -124,7 +157,7 @@ public struct GlanceProviderRow: Identifiable, Sendable, Equatable {
         displayLabel: String,
         accountLabel: String,
         planLabel: String?,
-        glanceRemainingPercent: UInt8?,
+        glanceRemainingPercent: Double?,
         barLabel: String,
         headline: String,
         resetLabel: String?,
@@ -139,7 +172,15 @@ public struct GlanceProviderRow: Identifiable, Sendable, Equatable {
         activityKind: String,
         accessibilityLabel: String,
         lastError: String?,
-        dimmed: Bool
+        dimmed: Bool,
+        glanceUsedPercent: Double? = nil,
+        glanceUsedPercentOrigin: String? = nil,
+        glanceRemainingPercentOrigin: String? = nil,
+        glanceCountQuota: CountQuotaModel? = nil,
+        glanceProviderQuotaState: String? = nil,
+        glanceResetsAt: Int64? = nil,
+        glanceMeterPercent: Double? = nil,
+        glanceMeterSide: String? = nil
     ) {
         self.surfaceId = surfaceId
         self.iconKey = iconKey
@@ -148,7 +189,15 @@ public struct GlanceProviderRow: Identifiable, Sendable, Equatable {
         self.displayLabel = displayLabel
         self.accountLabel = accountLabel
         self.planLabel = planLabel
+        self.glanceUsedPercent = glanceUsedPercent
+        self.glanceUsedPercentOrigin = glanceUsedPercentOrigin
         self.glanceRemainingPercent = glanceRemainingPercent
+        self.glanceRemainingPercentOrigin = glanceRemainingPercentOrigin
+        self.glanceCountQuota = glanceCountQuota
+        self.glanceProviderQuotaState = glanceProviderQuotaState
+        self.glanceResetsAt = glanceResetsAt
+        self.glanceMeterPercent = glanceMeterPercent
+        self.glanceMeterSide = glanceMeterSide
         self.barLabel = barLabel
         self.headline = headline
         self.resetLabel = resetLabel
@@ -269,7 +318,15 @@ public struct AccountRow: Identifiable, Sendable, Equatable {
     public let lifecycleLabel: String
     public let provenanceLabel: String
     public let planOrStatusLabel: String
-    public let remainingPercent: UInt8?
+    public let usedPercent: Double?
+    public let usedPercentOrigin: String?
+    public let remainingPercent: Double?
+    public let remainingPercentOrigin: String?
+    public let countQuota: CountQuotaModel?
+    public let providerQuotaState: String?
+    public let resetsAt: Int64?
+    public let meterPercent: Double?
+    public let meterSide: String?
     public let remainingLabel: String
     public let headline: String
     public let resetDisplayLabel: String
@@ -292,7 +349,15 @@ public struct AccountRow: Identifiable, Sendable, Equatable {
         lifecycleLabel: String,
         provenanceLabel: String,
         planOrStatusLabel: String,
-        remainingPercent: UInt8?,
+        usedPercent: Double? = nil,
+        usedPercentOrigin: String? = nil,
+        remainingPercent: Double?,
+        remainingPercentOrigin: String? = nil,
+        countQuota: CountQuotaModel? = nil,
+        providerQuotaState: String? = nil,
+        resetsAt: Int64? = nil,
+        meterPercent: Double? = nil,
+        meterSide: String? = nil,
         remainingLabel: String,
         headline: String,
         resetDisplayLabel: String,
@@ -314,7 +379,15 @@ public struct AccountRow: Identifiable, Sendable, Equatable {
         self.lifecycleLabel = lifecycleLabel
         self.provenanceLabel = provenanceLabel
         self.planOrStatusLabel = planOrStatusLabel
+        self.usedPercent = usedPercent
+        self.usedPercentOrigin = usedPercentOrigin
         self.remainingPercent = remainingPercent
+        self.remainingPercentOrigin = remainingPercentOrigin
+        self.countQuota = countQuota
+        self.providerQuotaState = providerQuotaState
+        self.resetsAt = resetsAt
+        self.meterPercent = meterPercent
+        self.meterSide = meterSide
         self.remainingLabel = remainingLabel
         self.headline = headline
         self.resetDisplayLabel = resetDisplayLabel

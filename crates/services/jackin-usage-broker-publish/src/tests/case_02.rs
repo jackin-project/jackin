@@ -251,7 +251,8 @@ fn account_for_view_preserves_canonical_access_lifecycles() {
             },
             0,
             None,
-        );
+        )
+        .expect("valid view projects");
         assert_eq!(account.lifecycle, expected);
         assert_eq!(account.identity_kind, UsageIdentityKindV1::UnverifiedHandle);
     }
@@ -283,7 +284,8 @@ fn account_for_view_preserves_canonical_access_lifecycles() {
             },
             0,
             None,
-        );
+        )
+        .expect("valid view projects");
         assert_eq!(account.lifecycle, expected);
     }
 }

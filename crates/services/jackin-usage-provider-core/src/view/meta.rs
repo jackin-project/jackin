@@ -1,11 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, PercentObservationOrigin,
+};
+
 use super::super::{
     FocusedUsageView, QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus, UsageSource,
     reset_label,
 };
-use super::summary_bucket;
+use super::{count_summary_label, summary_bucket};
 
 pub(crate) fn broker_account_id_from_cache_key(key: &str) -> Option<String> {
     let (_, rest) = key.split_once(":account-id-v1:")?;
@@ -36,14 +40,43 @@ pub fn usage_tab_source_label(view: &FocusedUsageView) -> String {
 pub fn usage_tab_status_label(view: &FocusedUsageView) -> String {
     if view.status == UsageSnapshotStatus::Fresh
         && let Some(bucket) = summary_bucket(&view.buckets)
-        && let Some(remaining) = bucket.remaining_percent
+        && super::super::quota_bucket_has_observation(bucket)
     {
+        if let Some(summary) = super::super::provider_quota_state_summary(bucket) {
+            return summary;
+        }
         let mut label = String::new();
         if bucket.status_slot.is_none() && !bucket.label.is_empty() {
             label.push_str(&bucket.label);
             label.push(' ');
         }
-        label.push_str(&format!("{remaining}% left"));
+        let mut values = Vec::new();
+        if let Some(used) = bucket.used_percent {
+            values.push(used.label());
+        }
+        if let Some(remaining) = bucket.remaining_percent {
+            values.push(remaining.label());
+        }
+        if let Some(count) = count_summary_label(bucket) {
+            values.push(count);
+        }
+        if values.is_empty() {
+            match (&bucket.used_label, &bucket.limit_label) {
+                (Some(used), Some(limit)) => values.push(format!("{used} of {limit}")),
+                (Some(used), None) | (None, Some(used)) => values.push(used.clone()),
+                (None, None) => match (&bucket.used_money, &bucket.limit_money) {
+                    (Some(used), Some(limit)) => values.push(format!(
+                        "{} of {}",
+                        used.format_compact(),
+                        limit.format_compact()
+                    )),
+                    (Some(used), None) => values.push(used.format_compact()),
+                    (None, Some(limit)) => values.push(limit.format_compact()),
+                    (None, None) => {}
+                },
+            }
+        }
+        label.push_str(&values.join(" · "));
         if let Some(reset) = &bucket.reset_label {
             label.push_str(" · ");
             label.push_str(reset);
@@ -65,16 +98,25 @@ pub fn bucket(
     label: &str,
     used_label: Option<String>,
     limit_label: Option<String>,
-    remaining_percent: Option<u8>,
+    remaining_percent: Option<(CanonicalRemainingPercent, PercentObservationOrigin)>,
     reset_label: Option<String>,
     pace_label: Option<&str>,
     status: UsageSnapshotStatus,
 ) -> QuotaBucketView {
+    let (remaining_percent, remaining_percent_origin) = remaining_percent
+        .map_or((None, None), |(percent, origin)| {
+            (Some(percent), Some(origin))
+        });
     QuotaBucketView {
         label: label.to_owned(),
         used_label,
         limit_label,
+        used_percent: None,
+        used_percent_origin: None,
         remaining_percent,
+        remaining_percent_origin,
+        count_quota: None,
+        provider_quota_state: None,
         reset_label,
         resets_at: None,
         status_slot: None,
@@ -84,6 +126,19 @@ pub fn bucket(
         limit_money: None,
         severity: UsageSeverity::default(),
     }
+}
+
+/// Attach an explicitly classified used-percent observation to a bucket.
+#[must_use]
+pub fn with_used_percent(
+    mut view: QuotaBucketView,
+    used_percent: Option<(CanonicalUsedPercent, PercentObservationOrigin)>,
+) -> QuotaBucketView {
+    (view.used_percent, view.used_percent_origin) = used_percent
+        .map_or((None, None), |(percent, origin)| {
+            (Some(percent), Some(origin))
+        });
+    view
 }
 
 pub fn with_status_slot(mut view: QuotaBucketView, slot: Option<StatusSlot>) -> QuotaBucketView {
@@ -99,7 +154,7 @@ pub fn timed_bucket(
     label: &str,
     used_label: Option<String>,
     limit_label: Option<String>,
-    remaining_percent: Option<u8>,
+    remaining_percent: Option<(CanonicalRemainingPercent, PercentObservationOrigin)>,
     reset_at: Option<i64>,
     now: i64,
     pace_label: Option<&str>,

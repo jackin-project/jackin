@@ -35,10 +35,10 @@ pub struct ZaiLimitRaw {
     pub limit_type: String,
     pub unit: Option<i64>,
     pub number: Option<i64>,
-    pub usage: Option<i64>,
+    pub usage: Option<serde_json::Value>,
     #[serde(rename = "currentValue")]
-    pub current_value: Option<i64>,
-    pub remaining: Option<i64>,
+    pub current_value: Option<serde_json::Value>,
+    pub remaining: Option<serde_json::Value>,
     pub percentage: Option<f64>,
     #[serde(rename = "nextResetTime")]
     pub next_reset_time: Option<i64>,
@@ -50,7 +50,7 @@ pub struct ZaiLimitRaw {
 pub struct ZaiUsageDetail {
     #[serde(rename = "modelCode", alias = "model_code", alias = "model")]
     pub model_code: Option<String>,
-    pub usage: Option<i64>,
+    pub usage: Option<serde_json::Value>,
 }
 
 impl ZaiQuotaResponse {
@@ -95,27 +95,9 @@ impl ZaiQuotaResponse {
 }
 
 impl ZaiLimitRaw {
-    pub fn used_percent(&self) -> Option<u8> {
-        if let Some(limit) = self.usage.filter(|limit| *limit > 0) {
-            let used = if let Some(remaining) = self.remaining {
-                let from_remaining = limit.saturating_sub(remaining);
-                self.current_value
-                    .map_or(from_remaining, |current| from_remaining.max(current))
-            } else {
-                self.current_value?
-            };
-            #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 above")]
-            let percent = ((used.clamp(0, limit) as f64 / limit as f64) * 100.0)
-                .round()
-                .clamp(0.0, 100.0) as u8;
-            return Some(percent);
-        }
-        self.percentage.map(|percent| {
-            #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 above")]
-            {
-                percent.round().clamp(0.0, 100.0) as u8
-            }
-        })
+    pub fn used_percent(&self) -> Option<f64> {
+        self.percentage
+            .filter(|percent| percent.is_finite() && *percent >= 0.0)
     }
 
     pub fn window_minutes(&self) -> Option<i64> {

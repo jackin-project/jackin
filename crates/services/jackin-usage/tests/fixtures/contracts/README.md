@@ -1,14 +1,20 @@
-# Unified usage contract fixtures
+# Canonical usage contract fixtures
 
-These secret-free fixtures freeze Plan 001 vocabulary before production V1 types and
-surfaces land.
+These secret-free fixtures freeze the current public usage projection schema and its
+lossless quota observations.
 
-- `usage-projection-v1-current.json`: valid canonical V1 shape.
-- `usage-projection-v1-invalid.json`: unknown-major, missing-field, and percent-
-  invariant failures.
+- `usage-projection-v2-current.json`: valid current schema 2 projection. It retains
+  both raw percentage observations with origins, independent meter geometry, full-width
+  counts, explicit provider state, and separate money values.
+- `usage-projection-v2-invalid.json`: unsupported versions, missing required arrays,
+  and an unpaired raw percentage observation.
+- `usage-projection-v1-current.json` and `usage-projection-v1-invalid.json`: historical
+  schema 1 inputs retained for the private migration oracle and historical validator.
+  They do not describe the current public projection contract.
 - `provider-call-allowlist.json`: every currently classified production provider call.
   `legacy_bypass` is debt for its owning migration plan, not approval to add another.
-- `surface-matrix.json`: required state/dimension families for later golden suites.
+- `surface-matrix.json`: independent schema 1 inventory of required state/dimension
+  families for cross-surface golden suites.
 
 ## Executable baseline
 

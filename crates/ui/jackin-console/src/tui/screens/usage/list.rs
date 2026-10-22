@@ -134,7 +134,7 @@ pub(crate) fn render_account_list(
             Style::default().fg(Color::DarkGray),
         )));
         if let Some(window) = account.summary_window()
-            && let Some(bar) = meter_line(meter_width, window.meter_percent())
+            && let Some(bar) = meter_line(meter_width, window.meter_geometry())
         {
             lines.push(Line::from(Span::styled(
                 bar,

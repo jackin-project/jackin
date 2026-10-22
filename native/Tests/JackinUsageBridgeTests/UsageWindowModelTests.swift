@@ -56,7 +56,8 @@ final class UsageWindowModelTests: XCTestCase {
             layoutLines: lines,
             displayLabel: display,
             meterPercent: kind == .bucket ? 40 : nil,
-            severity: "normal"
+            severity: "normal",
+            meterSide: kind == .bucket ? "remaining" : nil
         )
     }
 

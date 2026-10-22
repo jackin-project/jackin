@@ -1,11 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_usage_provider_core::{epoch_seconds_from_maybe_ms, json_number, parse_iso_epoch};
+use jackin_protocol::control::{PercentObservationOrigin, RawPercentPoints};
+use jackin_usage_provider_core::{
+    epoch_seconds_from_maybe_ms, json_number, parse_iso_epoch, quota_source_remaining_rank_points,
+};
 
 use super::{
-    AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityWindow,
-    antigravity_identity_from_value, antigravity_plan_from_value,
+    AntigravityFamily, AntigravityPool, AntigravityUsage, AntigravityUtilizationObservation,
+    AntigravityWindow, antigravity_identity_from_value, antigravity_plan_from_value,
 };
 
 pub fn parse_antigravity_usage_output(text: &str) -> Result<AntigravityUsage, String> {
@@ -68,7 +71,7 @@ fn antigravity_pool_from_summary_entry(entry: &serde_json::Value) -> Option<Anti
         .filter_map(|key| entry.get(key).and_then(serde_json::Value::as_str))
         .map(str::trim)
         .find(|id| !id.is_empty())?;
-    let remaining_percent = antigravity_remaining_from_entry(entry);
+    let (used_percent, remaining_percent) = antigravity_percentages_from_entry(entry);
     let reset_at = antigravity_reset_from_entry(entry);
     let (family, window) = match id {
         "gemini-5h" => (AntigravityFamily::Gemini, Some(AntigravityWindow::Session)),
@@ -99,51 +102,73 @@ fn antigravity_pool_from_summary_entry(entry: &serde_json::Value) -> Option<Anti
     Some(AntigravityPool {
         family,
         window,
+        used_percent,
         remaining_percent,
+        used_percent_origin: used_percent.map(|_| PercentObservationOrigin::ProviderReported),
+        remaining_percent_origin: remaining_percent
+            .map(|_| PercentObservationOrigin::ProviderReported),
         reset_at,
         source_label: Some(id.to_owned()),
+        unclassified_utilizations: antigravity_unclassified_utilization_from_entry(entry)
+            .map(|value| {
+                vec![AntigravityUtilizationObservation {
+                    source: id.to_owned(),
+                    value,
+                    reset_at,
+                }]
+            })
+            .unwrap_or_default(),
     })
 }
 
-pub fn antigravity_remaining_from_entry(entry: &serde_json::Value) -> Option<u8> {
+pub fn antigravity_remaining_from_entry(entry: &serde_json::Value) -> Option<f64> {
     let quota = entry.get("quotaInfo").unwrap_or(entry);
     for (key, is_fraction) in [
         ("remainingFraction", true),
         ("remaining_fraction", true),
         ("remainingPercent", false),
         ("remaining_percent", false),
-        ("remaining", false),
     ] {
         if let Some(raw) = quota.get(key).and_then(json_number)
             && raw.is_finite()
             && raw >= 0.0
         {
-            let percent = if is_fraction { raw * 100.0 } else { raw };
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "filtered non-negative; clamped 0..=100"
-            )]
-            {
-                return Some(percent.round().clamp(0.0, 100.0) as u8);
-            }
+            let points = if is_fraction { raw * 100.0 } else { raw };
+            return points.is_finite().then_some(points);
         }
     }
-    for key in ["usedPercent", "used_percent", "utilization", "used"] {
+    None
+}
+
+fn antigravity_used_from_entry(entry: &serde_json::Value) -> Option<f64> {
+    let quota = entry.get("quotaInfo").unwrap_or(entry);
+    for key in ["usedPercent", "used_percent"] {
         if let Some(raw) = quota.get(key).and_then(json_number)
             && raw.is_finite()
             && raw >= 0.0
         {
-            let used = if raw <= 1.0 { raw * 100.0 } else { raw };
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "filtered non-negative; clamped 0..=100"
-            )]
-            {
-                return Some(100u8.saturating_sub(used.round().clamp(0.0, 100.0) as u8));
-            }
+            return Some(raw);
         }
     }
     None
+}
+
+pub(super) fn antigravity_unclassified_utilization_from_entry(
+    entry: &serde_json::Value,
+) -> Option<serde_json::Number> {
+    let quota = entry.get("quotaInfo").unwrap_or(entry);
+    let value = quota.get("utilization")?;
+    value.as_f64().filter(|value| value.is_finite())?;
+    value.as_number().cloned()
+}
+
+pub(super) fn antigravity_percentages_from_entry(
+    entry: &serde_json::Value,
+) -> (Option<f64>, Option<f64>) {
+    (
+        antigravity_used_from_entry(entry),
+        antigravity_remaining_from_entry(entry),
+    )
 }
 
 fn antigravity_reset_from_entry(entry: &serde_json::Value) -> Option<i64> {
@@ -174,8 +199,12 @@ fn antigravity_pools_from_legacy_models(value: &serde_json::Value) -> Vec<Antigr
     let Some(models) = value.get("models").and_then(serde_json::Value::as_object) else {
         return Vec::new();
     };
-    let mut worst: [Option<(u8, Option<i64>)>; 2] = [None, None];
-    for (id, model) in models {
+    let mut worst: [Option<LegacyPoolChoice>; 2] = [None, None];
+    let mut unclassified_utilizations: [Vec<AntigravityUtilizationObservation>; 2] =
+        [Vec::new(), Vec::new()];
+    let mut entries = models.iter().collect::<Vec<_>>();
+    entries.sort_by_key(|(left, _)| *left);
+    for (id, model) in entries {
         if model.get("isInternal").and_then(serde_json::Value::as_bool) == Some(true) {
             continue;
         }
@@ -184,34 +213,82 @@ fn antigravity_pools_from_legacy_models(value: &serde_json::Value) -> Vec<Antigr
             .filter_map(|key| model.get(key).and_then(serde_json::Value::as_str))
             .map(str::trim)
             .find(|label| !label.is_empty());
+        let name = format!("{id} {}", label.unwrap_or_default()).to_ascii_lowercase();
+        let slot = usize::from(!name.contains("gemini"));
+        if let Some(utilization) = antigravity_unclassified_utilization_from_entry(model) {
+            unclassified_utilizations[slot].push(AntigravityUtilizationObservation {
+                source: id.to_owned(),
+                value: utilization,
+                reset_at: antigravity_reset_from_entry(model),
+            });
+        }
         if label.is_none() {
             continue;
         }
-        let Some(remaining) = antigravity_remaining_from_entry(model) else {
+        let (used, remaining) = antigravity_percentages_from_entry(model);
+        let raw_used = used.and_then(|value| RawPercentPoints::new(value).ok());
+        let raw_remaining = remaining.and_then(|value| RawPercentPoints::new(value).ok());
+        let Some(score) = quota_source_remaining_rank_points(
+            None,
+            raw_used,
+            used.map(|_| PercentObservationOrigin::ProviderReported),
+            raw_remaining,
+            remaining.map(|_| PercentObservationOrigin::ProviderReported),
+            None,
+            None,
+        ) else {
             continue;
         };
-        let name = format!("{id} {}", label.unwrap_or_default()).to_ascii_lowercase();
-        let slot = usize::from(!name.contains("gemini"));
         let reset_at = antigravity_reset_from_entry(model);
-        let replace = worst[slot].is_none_or(|(current, _)| remaining < current);
+        let replace = worst[slot].as_ref().is_none_or(|current| {
+            score < current.score
+                || (score.partial_cmp(&current.score) == Some(std::cmp::Ordering::Equal)
+                    && id.as_str() < current.id.as_str())
+        });
         if replace {
-            worst[slot] = Some((remaining, reset_at));
+            worst[slot] = Some(LegacyPoolChoice {
+                id: id.to_owned(),
+                score,
+                used,
+                remaining,
+                reset_at,
+            });
         }
     }
     [
-        (AntigravityFamily::Gemini, worst[0]),
-        (AntigravityFamily::Other, worst[1]),
+        (AntigravityFamily::Gemini, worst[0].take()),
+        (AntigravityFamily::Other, worst[1].take()),
     ]
     .into_iter()
-    .filter_map(|(family, entry)| {
-        let (remaining, reset_at) = entry?;
+    .enumerate()
+    .filter_map(|(slot, (family, entry))| {
+        let choice = entry;
+        let unclassified_utilizations = unclassified_utilizations[slot].clone();
+        if choice.is_none() && unclassified_utilizations.is_empty() {
+            return None;
+        }
+        let (used, remaining, reset_at) = choice.map_or((None, None, None), |choice| {
+            (choice.used, choice.remaining, choice.reset_at)
+        });
         Some(AntigravityPool {
             family,
             window: Some(AntigravityWindow::Session),
-            remaining_percent: Some(remaining),
+            used_percent: used,
+            remaining_percent: remaining,
+            used_percent_origin: used.map(|_| PercentObservationOrigin::ProviderReported),
+            remaining_percent_origin: remaining.map(|_| PercentObservationOrigin::ProviderReported),
             reset_at,
             source_label: None,
+            unclassified_utilizations,
         })
     })
     .collect()
+}
+
+struct LegacyPoolChoice {
+    id: String,
+    score: f64,
+    used: Option<f64>,
+    remaining: Option<f64>,
+    reset_at: Option<i64>,
 }

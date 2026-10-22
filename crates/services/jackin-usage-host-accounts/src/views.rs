@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_protocol::control::FocusedUsageView;
+use jackin_protocol::control::{
+    FocusedUsageView, MeterPercentPoints, QuotaBucketView, UsageMeterSide,
+};
 
 use super::CanonicalAccountIdentity;
 use jackin_usage_host_presentation::HostSurfaceId;
+use jackin_usage_provider_core::{quota_bucket_remaining_rank_points, select_quota_meter};
 
 #[must_use]
 pub fn account_key_for_view(view: &FocusedUsageView) -> Option<String> {
@@ -49,14 +52,33 @@ pub(crate) fn stable_account_label(account_label: &str) -> Option<&str> {
 }
 
 #[must_use]
-pub fn min_remaining(view: &FocusedUsageView) -> Option<u8> {
+pub fn min_meter_fill(view: &FocusedUsageView) -> Option<MeterPercentPoints> {
     view.buckets
         .iter()
-        .filter_map(|bucket| bucket.remaining_percent)
-        .min()
+        .filter_map(|bucket| {
+            let rank_points = quota_bucket_remaining_rank_points(bucket)?;
+            let (meter, side) = select_quota_meter(bucket);
+            meter.map(|meter| {
+                let remaining = match side {
+                    Some(UsageMeterSide::Used) => meter.complement(),
+                    Some(UsageMeterSide::Remaining) | None => meter,
+                };
+                (rank_points, remaining)
+            })
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .map(|(_, meter)| meter)
+}
+
+#[must_use]
+pub fn summary_bucket(view: &FocusedUsageView) -> Option<&QuotaBucketView> {
+    jackin_usage_provider_core::summary_bucket(&view.buckets)
 }
 
 #[must_use]
 pub(crate) fn surface_for_view(view: &FocusedUsageView) -> Option<HostSurfaceId> {
     HostSurfaceId::from_provider_alias(&view.account.provider_label)
 }
+
+#[cfg(test)]
+mod tests;

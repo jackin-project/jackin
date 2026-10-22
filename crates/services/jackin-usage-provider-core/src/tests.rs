@@ -8,8 +8,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use jackin_protocol::control::{
-    FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
-    UsageProviderTab, UsageSeverity, UsageSnapshotStatus, UsageSource,
+    CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, CountQuotaPeriod,
+    CountQuotaProvenance, CountQuotaUnit, FocusedAccountHeader, FocusedUsageView, Money,
+    PercentObservationOrigin, QuotaBucketView, StatusSlot, UsageConfidence, UsageProviderTab,
+    UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
 
 use super::*;

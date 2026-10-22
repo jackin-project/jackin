@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use jackin_protocol::control::Money;
+use jackin_protocol::control::{
+    CanonicalUsedPercent, CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    Money, PercentObservationOrigin, ProviderQuotaState, QuotaBucketView, UsageSeverity,
+    UsageSnapshotStatus,
+};
 use jackin_protocol::usage_monitor::SpendRecordSource;
 
 #[test]
@@ -31,9 +35,98 @@ fn formats_account_usage_with_shared_unit() {
         expires_at: None,
         status: "fresh".to_owned(),
         last_error: None,
+        quota_bucket: None,
     };
 
     assert_eq!(usage_amount_label(&account), "37/100 percent");
+}
+
+#[test]
+fn typed_percent_payload_keeps_fractional_points_and_source() {
+    let mut row = account("Codex", "fresh", "provider_api", "authoritative");
+    row.quota_bucket.as_mut().unwrap().used_percent =
+        Some(CanonicalUsedPercent::new(37.375).unwrap());
+
+    assert_eq!(usage_amount_label(&row), "37.38% used (reported)");
+}
+
+#[test]
+fn usage_verify_requires_fresh_valid_quantity_or_explicit_provider_state() {
+    let mut row = account("Cursor", "fresh", "provider_api", "authoritative");
+    let bucket = row.quota_bucket.as_mut().unwrap();
+    bucket.used_percent = None;
+    bucket.used_percent_origin = None;
+    bucket.count_quota = Some(CountQuota::new(
+        Some(0),
+        Some(u64::MAX),
+        Some(0),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    assert!(verify::usage_row_proves_live_quota(&row));
+
+    let mut empty = row.clone();
+    empty.quota_bucket.as_mut().unwrap().count_quota = Some(CountQuota::new(
+        None,
+        None,
+        None,
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    assert!(!verify::usage_row_proves_live_quota(&empty));
+
+    let mut reset_only = empty.clone();
+    let bucket = reset_only.quota_bucket.as_mut().unwrap();
+    bucket.count_quota = None;
+    bucket.status = UsageSnapshotStatus::Fresh;
+    bucket.resets_at = Some(1_800_000_000);
+    bucket.reset_label = Some("resets in 5m".to_owned());
+    assert!(!verify::usage_row_proves_live_quota(&reset_only));
+
+    reset_only.quota_bucket.as_mut().unwrap().status = UsageSnapshotStatus::Unavailable;
+    assert!(!verify::usage_row_proves_live_quota(&reset_only));
+
+    let mut missing_bucket = reset_only.clone();
+    missing_bucket.quota_bucket = None;
+    assert!(!verify::usage_row_proves_live_quota(&missing_bucket));
+
+    let mut state_only = reset_only.clone();
+    let bucket = state_only.quota_bucket.as_mut().unwrap();
+    bucket.status = UsageSnapshotStatus::Fresh;
+    bucket.provider_quota_state = Some(ProviderQuotaState::Exhausted);
+    assert!(verify::usage_row_proves_live_quota(&state_only));
+    state_only.quota_bucket.as_mut().unwrap().status = UsageSnapshotStatus::Stale;
+    assert!(!verify::usage_row_proves_live_quota(&state_only));
+    state_only.quota_bucket.as_mut().unwrap().status = UsageSnapshotStatus::Fresh;
+    state_only.status = "stale".to_owned();
+    assert!(!verify::usage_row_proves_live_quota(&state_only));
+
+    let mut money = reset_only.clone();
+    money.status = "fresh".to_owned();
+    let bucket = money.quota_bucket.as_mut().unwrap();
+    bucket.status = UsageSnapshotStatus::Fresh;
+    bucket.used_money = Some(Money::new(1_200, "USD", 2));
+    bucket.limit_money = Some(Money::new(5_000, "USD", 2));
+    assert!(verify::usage_row_proves_live_quota(&money));
+
+    let mut incomplete_money = money.clone();
+    incomplete_money.quota_bucket.as_mut().unwrap().limit_money = None;
+    assert!(!verify::usage_row_proves_live_quota(&incomplete_money));
+
+    let mut mixed = row.clone();
+    let bucket = mixed.quota_bucket.as_mut().unwrap();
+    bucket.used_money = Some(Money::new(1, "USD", 2));
+    bucket.limit_money = Some(Money::new(2, "USD", 2));
+    assert!(!verify::usage_row_proves_live_quota(&mixed));
+
+    let mut invalid_percent = row;
+    let bucket = invalid_percent.quota_bucket.as_mut().unwrap();
+    bucket.count_quota = None;
+    bucket.used_percent = Some(CanonicalUsedPercent::new(1.0).unwrap());
+    bucket.used_percent_origin = None;
+    assert!(!verify::usage_row_proves_live_quota(&invalid_percent));
 }
 
 fn account(
@@ -57,7 +150,104 @@ fn account(
         expires_at: None,
         status: status.to_owned(),
         last_error: None,
+        quota_bucket: Some(QuotaBucketView {
+            label: "Session".to_owned(),
+            used_label: None,
+            limit_label: None,
+            used_percent: Some(CanonicalUsedPercent::new(37.0).unwrap()),
+            used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+            remaining_percent: None,
+            remaining_percent_origin: None,
+            count_quota: None,
+            provider_quota_state: None,
+            reset_label: None,
+            resets_at: None,
+            status_slot: None,
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::Normal,
+        }),
     }
+}
+
+#[test]
+fn typed_request_count_payload_wins_and_keeps_full_width() {
+    let mut row = account("Cursor", "fresh", "provider_api", "authoritative");
+    row.quota_bucket.as_mut().unwrap().count_quota = Some(CountQuota::new(
+        Some(u64::MAX),
+        Some(0),
+        Some(7),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    assert_eq!(
+        usage_amount_label(&row),
+        format!(
+            "{} used · 0 limit · 7 remaining requests · 37% used (reported)",
+            u64::MAX
+        )
+    );
+}
+
+#[test]
+fn explicit_provider_state_label_keeps_independent_count_and_percent_detail() {
+    let mut row = account("MiniMax", "fresh", "provider_api", "authoritative");
+    {
+        let bucket = row.quota_bucket.as_mut().unwrap();
+        bucket.used_percent = None;
+        bucket.used_percent_origin = None;
+        bucket.provider_quota_state = Some(ProviderQuotaState::Unlimited);
+        bucket.count_quota = Some(CountQuota::new(
+            Some(1),
+            None,
+            Some(0),
+            CountQuotaUnit::Unknown,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        ));
+        bucket.remaining_percent =
+            Some(jackin_protocol::control::CanonicalRemainingPercent::new(99.0).unwrap());
+        bucket.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    }
+
+    assert_eq!(
+        usage_amount_label(&row),
+        "Unlimited · 1 used · 0 remaining count · 99% remaining (reported)"
+    );
+
+    {
+        let bucket = row.quota_bucket.as_mut().unwrap();
+        bucket.count_quota = None;
+        bucket.remaining_percent = None;
+        bucket.remaining_percent_origin = None;
+    }
+    assert_eq!(usage_amount_label(&row), "Unlimited");
+}
+
+#[test]
+fn incomplete_typed_count_does_not_fall_back_to_legacy_amounts() {
+    let mut row = account("Cursor", "fresh", "provider_api", "authoritative");
+    row.quota_bucket.as_mut().unwrap().count_quota = Some(CountQuota::new(
+        None,
+        None,
+        None,
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+
+    assert_eq!(
+        usage_amount_label(&row),
+        "37% used (reported) · requests unavailable"
+    );
+
+    let bucket = row.quota_bucket.as_mut().unwrap();
+    bucket.used_percent = None;
+    bucket.used_percent_origin = None;
+    assert_eq!(usage_amount_label(&row), "requests unavailable");
 }
 
 #[test]

@@ -303,11 +303,13 @@ fn claude_limits_inactive_flag_does_not_gate_rendering() {
         .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
         .expect("session bucket despite is_active false");
     assert_eq!(session.label, "Session");
-    assert_eq!(session.remaining_percent, Some(90));
+    assert_eq!(session.remaining_percent, None);
+    assert_eq!(used_points(session), Some(10.0));
     let weekly = buckets
         .iter()
         .find(|bucket| bucket.status_slot == Some(StatusSlot::Weekly))
         .expect("weekly bucket despite is_active false");
     assert_eq!(weekly.label, "All models");
-    assert_eq!(weekly.remaining_percent, Some(58));
+    assert_eq!(weekly.remaining_percent, None);
+    assert_eq!(used_points(weekly), Some(42.0));
 }

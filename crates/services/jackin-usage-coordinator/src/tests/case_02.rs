@@ -3,6 +3,7 @@
 
 use super::state::LEGACY_ACCOUNT_STATE_SCHEMA_VERSION;
 use super::*;
+use jackin_protocol::control::{CanonicalRemainingPercent, PercentObservationOrigin};
 
 #[test]
 fn system_clock_samples_real_wall_and_monotonic_domains() {
@@ -416,9 +417,10 @@ fn account_state_v1_migration_preserves_results_and_enforces_fresh_attempt_floor
     legacy.schema_version = LEGACY_ACCOUNT_STATE_SCHEMA_VERSION;
     legacy.generation = 1;
     legacy.phase = UsageRefreshPhase::Completed;
-    let last_good = quota_view(1_000, 80);
+    let mut last_good = quota_view(1_000, 80);
+    last_good.buckets[0].limit_label = Some("Unlimited".to_owned());
     legacy.terminal_result = Some(last_good.clone());
-    legacy.last_good = Some(last_good);
+    legacy.last_good = Some(last_good.clone());
     legacy.started_at_epoch = Some(1_000);
     legacy.completed_at_epoch = Some(1_001);
     legacy.success_deadline_epoch = Some(1_002);
@@ -434,6 +436,33 @@ fn account_state_v1_migration_preserves_results_and_enforces_fresh_attempt_floor
         .as_object_mut()
         .unwrap()
         .remove("reload_fence_required");
+    for result_name in ["terminal_result", "last_good"] {
+        let result = bytes[result_name].as_object_mut().unwrap();
+        let buckets = result["buckets"].as_array_mut().unwrap();
+        for bucket in buckets {
+            let bucket = bucket.as_object_mut().unwrap();
+            for field in [
+                "used_percent",
+                "used_percent_origin",
+                "remaining_percent_origin",
+                "count_quota",
+            ] {
+                bucket.remove(field);
+            }
+            if let Some(remaining) = bucket
+                .get("remaining_percent")
+                .and_then(serde_json::Value::as_f64)
+            {
+                let integer = (0_u8..=u8::MAX)
+                    .find(|value| {
+                        remaining.partial_cmp(&f64::from(*value)) == Some(std::cmp::Ordering::Equal)
+                    })
+                    .expect("legacy fixture remaining percent must be an exact u8");
+                assert_eq!(remaining, f64::from(integer));
+                bucket.insert("remaining_percent".to_owned(), serde_json::json!(integer));
+            }
+        }
+    }
     std::fs::write(&path, serde_json::to_vec(&bytes).unwrap()).unwrap();
 
     let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
@@ -447,22 +476,34 @@ fn account_state_v1_migration_preserves_results_and_enforces_fresh_attempt_floor
     );
     let restored = coordinator.current(&account, 2_000).unwrap();
     assert_eq!(restored.generation, 1);
-    assert!(restored.snapshot.is_some());
+    let restored_view = restored.snapshot.as_ref().unwrap();
     assert_eq!(
-        store
-            .load(&account, 2_000)
-            .unwrap()
-            .unwrap()
-            .provider_invoked_at_epoch,
-        None
+        restored_view.buckets[0].remaining_percent,
+        Some(CanonicalRemainingPercent::new(80.0).unwrap())
     );
-    assert!(
-        store
-            .load(&account, 2_000)
-            .unwrap()
-            .unwrap()
-            .reload_fence_required
+    assert_eq!(
+        restored_view.buckets[0].remaining_percent_origin,
+        Some(PercentObservationOrigin::HistoricalUnknown)
     );
+    assert_eq!(restored_view.buckets[0].provider_quota_state, None);
+    assert_eq!(
+        restored_view.account.account_label,
+        last_good.account.account_label
+    );
+    let persisted = store.load(&account, 2_000).unwrap().unwrap();
+    assert_eq!(persisted.provider_invoked_at_epoch, None);
+    assert!(persisted.reload_fence_required);
+    let mut expected_view = last_good;
+    for bucket in &mut expected_view.buckets {
+        bucket.used_percent = None;
+        bucket.used_percent_origin = None;
+        bucket.remaining_percent_origin = Some(PercentObservationOrigin::HistoricalUnknown);
+        bucket.count_quota = None;
+        bucket.provider_quota_state = None;
+    }
+    for result in [persisted.terminal_result, persisted.last_good] {
+        assert_eq!(result.unwrap(), expected_view);
+    }
 
     let forced_early = coordinator
         .request_refresh(&account, 1, true, 2_299)

@@ -181,7 +181,14 @@ impl UsageProviderExecutor for GateProvider {
                 wait_until(Duration::from_secs(30), || {
                     self.root.join("release").exists()
                 });
-                ProviderProbeOutcome::success(quota_view())
+                match quota_view() {
+                    Ok(view) => ProviderProbeOutcome::success(view),
+                    Err(error) => ProviderProbeOutcome::Failure {
+                        kind: UsageCoordinationErrorKind::ProviderUnavailable,
+                        message: format!("invalid test quota fixture: {error}"),
+                        retry_at_epoch: None,
+                    },
+                }
             },
         )
     }
@@ -359,7 +366,7 @@ fn usage_broker_failure_and_rate_deadline_are_identical_for_all_waiters() -> Res
     let mut seeded = AccountStateEnvelope::idle(capability());
     seeded.generation = 1;
     seeded.phase = UsageRefreshPhase::Completed;
-    seeded.terminal_result = Some(quota_view());
+    seeded.terminal_result = Some(quota_view()?);
     seeded.last_good = seeded.terminal_result.clone();
     seeded.completed_at_epoch = Some(now);
     store.store(&seeded, now)?;

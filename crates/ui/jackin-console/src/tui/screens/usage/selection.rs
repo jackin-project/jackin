@@ -12,7 +12,12 @@ impl UsageScreenState {
         match self.sort {
             UsageSort::Provider => {}
             UsageSort::Remaining => {
-                order.sort_by_key(|&index| self.accounts[index].min_remaining().unwrap_or(u8::MAX));
+                order.sort_by(|&left, &right| {
+                    self.accounts[left]
+                        .min_remaining()
+                        .unwrap_or(f64::MAX)
+                        .total_cmp(&self.accounts[right].min_remaining().unwrap_or(f64::MAX))
+                });
             }
             UsageSort::Name => order.sort_by_key(|&index| {
                 let account = &self.accounts[index];
@@ -46,12 +51,17 @@ impl UsageScreenState {
             .iter()
             .enumerate()
             .filter(|&(_, &index)| self.accounts[index].min_remaining().is_some())
-            .min_by_key(|&(_, &index)| {
-                let account = &self.accounts[index];
-                (
-                    account.min_remaining().unwrap_or(u8::MAX),
-                    account.soonest_reset_epoch().unwrap_or(i64::MAX),
-                )
+            .min_by(|(_, left_index), (_, right_index)| {
+                let left = &self.accounts[**left_index];
+                let right = &self.accounts[**right_index];
+                left.min_remaining()
+                    .unwrap_or(f64::MAX)
+                    .total_cmp(&right.min_remaining().unwrap_or(f64::MAX))
+                    .then_with(|| {
+                        left.soonest_reset_epoch()
+                            .unwrap_or(i64::MAX)
+                            .cmp(&right.soonest_reset_epoch().unwrap_or(i64::MAX))
+                    })
             })
             .map(|(pos, _)| pos.saturating_add(1))
     }

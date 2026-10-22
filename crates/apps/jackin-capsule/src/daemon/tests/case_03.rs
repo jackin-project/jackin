@@ -291,7 +291,16 @@ fn broker_client_capsule_deduplicates_each_account_and_adopts_terminal_generatio
                         label: "Weekly".to_owned(),
                         used_label: None,
                         limit_label: None,
-                        remaining_percent: Some(71),
+                        used_percent: None,
+                        used_percent_origin: None,
+                        remaining_percent: Some(
+                            jackin_protocol::control::CanonicalRemainingPercent::new(71.0).unwrap(),
+                        ),
+                        remaining_percent_origin: Some(
+                            jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+                        ),
+                        count_quota: None,
+                        provider_quota_state: None,
                         reset_label: None,
                         resets_at: None,
                         status_slot: Some(StatusSlot::Weekly),

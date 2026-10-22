@@ -4,6 +4,39 @@
 use super::*;
 
 #[test]
+fn usage_meter_keeps_fractional_points_until_cell_selection() {
+    use jackin_protocol::control::{CanonicalRemainingPercent, PercentObservationOrigin};
+
+    let usage_row_value = |percent| {
+        let mut view = usage_view_fixture();
+        view.buckets[0].remaining_percent =
+            Some(CanonicalRemainingPercent::new(percent).expect("valid remaining percentage"));
+        view.buckets[0].remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+        let dialog = Dialog::new_usage(view);
+        let state = dialog.usage_state().expect("usage dialog state");
+        state
+            .rows()
+            .iter()
+            .find(|row| row.label() == "Session")
+            .expect("session row")
+            .value()
+            .to_owned()
+    };
+
+    let below = usage_row_value(3.1249);
+    let at = usage_row_value(3.125);
+
+    assert_eq!(
+        below.split_whitespace().next(),
+        Some("································")
+    );
+    assert_eq!(
+        at.split_whitespace().next(),
+        Some("█·······························")
+    );
+}
+
+#[test]
 fn usage_dialog_provider_tabs_are_clickable() {
     let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
     let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Anthropic");
@@ -68,7 +101,16 @@ fn usage_dialog_renders_deficit_and_runout_quota_labels() {
             label: "Weekly".to_owned(),
             used_label: Some("40% used".to_owned()),
             limit_label: Some("100%".to_owned()),
-            remaining_percent: Some(60),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(
+                jackin_protocol::control::CanonicalRemainingPercent::new(60.0).unwrap(),
+            ),
+            remaining_percent_origin: Some(
+                jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+            ),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: Some("Resets Jun 17 at 23:15".to_owned()),
             resets_at: None,
             status_slot: None,
@@ -124,7 +166,16 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             label: "Tokens".to_owned(),
             used_label: Some("400M".to_owned()),
             limit_label: Some("1B".to_owned()),
-            remaining_percent: Some(60),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(
+                jackin_protocol::control::CanonicalRemainingPercent::new(60.0).unwrap(),
+            ),
+            remaining_percent_origin: Some(
+                jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+            ),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: Some("Resets Jun 17 at 23:15".to_owned()),
             resets_at: None,
             status_slot: None,
@@ -138,7 +189,16 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             label: "MCP".to_owned(),
             used_label: Some("2h".to_owned()),
             limit_label: Some("5h".to_owned()),
-            remaining_percent: Some(60),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(
+                jackin_protocol::control::CanonicalRemainingPercent::new(60.0).unwrap(),
+            ),
+            remaining_percent_origin: Some(
+                jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+            ),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: Some("Resets 18:00".to_owned()),
             resets_at: None,
             status_slot: None,
@@ -152,7 +212,16 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             label: "Amp Free".to_owned(),
             used_label: Some("$12.00".to_owned()),
             limit_label: Some("$25.00".to_owned()),
-            remaining_percent: Some(52),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(
+                jackin_protocol::control::CanonicalRemainingPercent::new(52.0).unwrap(),
+            ),
+            remaining_percent_origin: Some(
+                jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+            ),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: None,
             resets_at: None,
             status_slot: None,
@@ -166,7 +235,16 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             label: "MiniMax M1 Coding plan".to_owned(),
             used_label: Some("12K".to_owned()),
             limit_label: Some("100K".to_owned()),
-            remaining_percent: Some(88),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(
+                jackin_protocol::control::CanonicalRemainingPercent::new(88.0).unwrap(),
+            ),
+            remaining_percent_origin: Some(
+                jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+            ),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: Some("Resets tomorrow, 02:00".to_owned()),
             resets_at: None,
             status_slot: None,
@@ -222,7 +300,16 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
             label: "Extra usage".to_owned(),
             used_label: Some("SGD 78.49".to_owned()),
             limit_label: Some("SGD 260.00".to_owned()),
-            remaining_percent: Some(70),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(
+                jackin_protocol::control::CanonicalRemainingPercent::new(70.0).unwrap(),
+            ),
+            remaining_percent_origin: Some(
+                jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+            ),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: None,
             resets_at: None,
             status_slot: Some(jackin_protocol::control::StatusSlot::Spend),
@@ -238,8 +325,9 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
         .collect();
 
     assert!(values.iter().any(|value| {
-        value.contains("30% used") && value.contains("Monthly cap: SGD 78.49 / SGD 260.00")
+        value.contains("70% left") && value.contains("Monthly cap: SGD 78.49 / SGD 260.00")
     }));
+    assert!(values.iter().all(|value| !value.contains("30% used")));
 
     let snapshot = d.to_ratatui_snapshot(None);
     let rect = d.box_rect(40, 100);
@@ -259,7 +347,8 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
         .join("\n");
 
     assert!(rendered.contains("Extra usage"), "{rendered}");
-    assert!(rendered.contains("30% used"), "{rendered}");
+    assert!(rendered.contains("70% left"), "{rendered}");
+    assert!(!rendered.contains("30% used"), "{rendered}");
     assert!(
         rendered.contains("Monthly cap: SGD 78.49 / SGD 260.00"),
         "{rendered}"
@@ -267,8 +356,10 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
     let monthly = rendered
         .find("Monthly cap: SGD 78.49 / SGD 260.00")
         .expect("monthly cap");
-    let used = rendered.find("30% used").expect("used percent");
-    assert!(used < monthly, "{rendered}");
+    let remaining = rendered
+        .find("70% left")
+        .expect("reported remaining percent");
+    assert!(remaining < monthly, "{rendered}");
 }
 
 #[test]
@@ -282,7 +373,16 @@ fn usage_dialog_renders_dollar_budget_window() {
             label: "Amber Ladder".to_owned(),
             used_label: Some("$0.00 spent".to_owned()),
             limit_label: Some("$25,000.00".to_owned()),
-            remaining_percent: Some(100),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(
+                jackin_protocol::control::CanonicalRemainingPercent::new(100.0).unwrap(),
+            ),
+            remaining_percent_origin: Some(
+                jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+            ),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: Some("Resets in 66d".to_owned()),
             resets_at: Some(1_788_000_000),
             status_slot: None,

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::{MeterPercentPoints, PercentObservationOrigin, UsageMeterSide};
 
 #[test]
 fn summary_window_selects_first_ranked_metered_limit() {
@@ -51,9 +52,23 @@ fn summary_window_selects_first_ranked_metered_limit() {
 
 #[test]
 fn usage_meter_scales_to_remaining_percentage() {
-    assert_eq!(meter_line(10, Some(50)), Some("  █████░░░░░".to_owned()));
-    assert_eq!(meter_line(10, Some(0)), Some("  ░░░░░░░░░░".to_owned()));
-    assert_eq!(meter_line(10, Some(100)), Some("  ██████████".to_owned()));
+    let geometry = |percent, side| Some((MeterPercentPoints::new(percent).unwrap(), side));
+    assert_eq!(
+        meter_line(10, geometry(50.0, UsageMeterSide::Remaining)),
+        Some("  █████░░░░░".to_owned())
+    );
+    assert_eq!(
+        meter_line(10, geometry(0.0, UsageMeterSide::Remaining)),
+        Some("  ░░░░░░░░░░".to_owned())
+    );
+    assert_eq!(
+        meter_line(10, geometry(100.0, UsageMeterSide::Remaining)),
+        Some("  ██████████".to_owned())
+    );
+    assert_eq!(
+        meter_line(10, geometry(43.375, UsageMeterSide::Used)),
+        Some("  ████░░░░░░".to_owned())
+    );
 }
 
 #[test]
@@ -62,15 +77,118 @@ fn usage_meter_renders_no_bar_for_unknown_percent() {
 }
 
 #[test]
-fn usage_window_mirrors_used_percent_to_meter() {
+fn usage_window_keeps_continuous_used_geometry_and_origin() {
     let window = UsageWindow {
         remaining_percent: None,
-        used_percent: Some(30),
-        ..test_window("weekly", None)
+        used_percent: Some(jackin_protocol::control::RawPercentPoints::new(43.375).unwrap()),
+        used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        meter_percent: Some(MeterPercentPoints::new(43.375).unwrap()),
+        meter_side: Some(UsageMeterSide::Used),
+        ..test_window_points("weekly", None)
     };
-    assert_eq!(window.meter_percent(), Some(70));
+    assert_eq!(
+        window.meter_percent().map(MeterPercentPoints::get),
+        Some(43.375)
+    );
+    assert_eq!(
+        window
+            .used_percent
+            .map(jackin_protocol::control::RawPercentPoints::get),
+        Some(43.375)
+    );
+    assert_eq!(
+        window.used_percent_origin,
+        Some(PercentObservationOrigin::ProviderReported)
+    );
+    let mut account = test_account("openai", "a", "work");
+    account.windows = vec![window];
+    assert_eq!(account.min_remaining(), Some(56.625));
     let unknown = test_window("weekly", None);
     assert_eq!(unknown.meter_percent(), None);
+
+    let overage = UsageWindow {
+        used_percent: Some(jackin_protocol::control::RawPercentPoints::new(120.25).unwrap()),
+        used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        meter_percent: Some(MeterPercentPoints::new(100.0).unwrap()),
+        meter_side: Some(UsageMeterSide::Used),
+        ..test_window_points("overage", None)
+    };
+    let mut overage_account = test_account("openai", "overage", "overage");
+    overage_account.windows = vec![overage];
+    assert_eq!(overage_account.min_remaining(), Some(-20.25));
+}
+
+#[test]
+fn remaining_sort_uses_raw_overage_when_meter_geometry_ties() {
+    use super::UsageSort;
+
+    let mut less_over = test_account("provider", "less", "less over");
+    less_over.windows = vec![UsageWindow {
+        used_percent: Some(jackin_protocol::control::RawPercentPoints::new(120.25).unwrap()),
+        used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        meter_percent: Some(MeterPercentPoints::new(100.0).unwrap()),
+        meter_side: Some(UsageMeterSide::Used),
+        ..test_window_points("Session", None)
+    }];
+    let mut more_over = test_account("provider", "more", "more over");
+    more_over.windows = vec![UsageWindow {
+        used_percent: Some(jackin_protocol::control::RawPercentPoints::new(120.5).unwrap()),
+        used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        meter_percent: Some(MeterPercentPoints::new(100.0).unwrap()),
+        meter_side: Some(UsageMeterSide::Used),
+        ..test_window_points("Session", None)
+    }];
+    assert_eq!(
+        less_over.windows[0].meter_geometry(),
+        more_over.windows[0].meter_geometry()
+    );
+
+    let state = UsageScreenState {
+        accounts: vec![less_over, more_over],
+        sort: UsageSort::Remaining,
+        ..UsageScreenState::default()
+    };
+    assert_eq!(state.visible_order(), vec![1, 0]);
+}
+
+#[test]
+fn remaining_sort_uses_raw_request_count_ratio_when_meter_geometry_ties() {
+    use super::UsageSort;
+    use jackin_protocol::control::{
+        CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    };
+
+    let request_window = |label: &str, remaining: u64| UsageWindow {
+        count_quota: Some(CountQuota::new(
+            None,
+            Some(1_000),
+            Some(remaining),
+            CountQuotaUnit::Requests,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        )),
+        meter_percent: Some(MeterPercentPoints::new(100.0).expect("bounded meter")),
+        meter_side: Some(UsageMeterSide::Remaining),
+        remaining_percent: None,
+        remaining_percent_origin: None,
+        ..test_window_points(label, None)
+    };
+
+    let mut less_over = test_account("provider", "less", "less over");
+    less_over.windows = vec![request_window("Requests", 1_001)];
+    let mut more_over = test_account("provider", "more", "more over");
+    more_over.windows = vec![request_window("Requests", 1_002)];
+    assert_eq!(
+        less_over.windows[0].meter_geometry(),
+        more_over.windows[0].meter_geometry()
+    );
+
+    let state = UsageScreenState {
+        accounts: vec![less_over, more_over],
+        sort: UsageSort::Remaining,
+        ..UsageScreenState::default()
+    };
+    assert_eq!(state.visible_order(), vec![0, 1]);
 }
 
 #[test]

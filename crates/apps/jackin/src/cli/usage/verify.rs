@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{AccountUsageSnapshotView, BANNER, JackinPaths, Result, UsageTarget, snapshot};
+use jackin_protocol::control::{
+    CountQuota, ProviderQuotaState, QuotaBucketView, UsageSnapshotStatus,
+};
 
 pub(super) fn run_verify(
     paths: &JackinPaths,
@@ -105,13 +108,43 @@ fn verify_usage_provider(
     }
 }
 
-fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
+pub(super) fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
     row.status == "fresh"
         && row.confidence == "authoritative"
         && matches!(row.source.as_str(), "provider_api" | "cli")
         && !row.window_kind.trim().is_empty()
         && !row.account_label.trim().is_empty()
         && !row.account_label.to_ascii_lowercase().contains("needs")
+        && row
+            .quota_bucket
+            .as_ref()
+            .is_some_and(quota_bucket_proves_live_quantity)
+}
+
+fn quota_bucket_proves_live_quantity(bucket: &QuotaBucketView) -> bool {
+    if bucket.status != UsageSnapshotStatus::Fresh || bucket.validate().is_err() {
+        return false;
+    }
+    let has_count = bucket.count_quota.is_some_and(count_quota_has_observation);
+    let has_percent = bucket.used_percent.is_some() || bucket.remaining_percent.is_some();
+    let has_money = bucket
+        .used_money
+        .as_ref()
+        .zip(bucket.limit_money.as_ref())
+        .is_some_and(|(used, limit)| {
+            limit.amount_minor > 0
+                && used.currency == limit.currency
+                && used.exponent == limit.exponent
+        });
+    let has_provider_state = matches!(
+        bucket.provider_quota_state,
+        Some(ProviderQuotaState::Exhausted | ProviderQuotaState::Unlimited)
+    );
+    has_count || has_percent || has_money || has_provider_state
+}
+
+fn count_quota_has_observation(count: CountQuota) -> bool {
+    count.used.is_some() || count.limit.is_some() || count.remaining.is_some()
 }
 
 fn usage_provider_matches(needle: &str, provider: &str) -> bool {

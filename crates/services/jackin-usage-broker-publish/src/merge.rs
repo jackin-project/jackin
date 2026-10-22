@@ -15,7 +15,7 @@ pub fn merge_views(
     projection: &mut UsageProjectionV1,
     views: &[UsageGenerationView],
     identity_metadata: &BTreeMap<UsageAccountCapability, AccountIdentityMetadata>,
-) {
+) -> Result<(), String> {
     let previous_providers = std::mem::take(&mut projection.providers);
     let mut provider_issues = previous_providers
         .iter()
@@ -62,7 +62,7 @@ pub fn merge_views(
             view,
             provider.accounts.len(),
             identity_metadata.get(&view.capability),
-        );
+        )?;
         if let Some(snapshot) = &view.snapshot
             && !snapshot.account.provider_label.is_empty()
         {
@@ -100,6 +100,7 @@ pub fn merge_views(
         provider.rank = u32::try_from(rank).unwrap_or(u32::MAX);
     }
     projection.providers = providers;
+    Ok(())
 }
 
 pub fn aggregate_freshness(any_active: bool, accounts: &[UsageAccountV1]) -> UsageFreshnessV1 {

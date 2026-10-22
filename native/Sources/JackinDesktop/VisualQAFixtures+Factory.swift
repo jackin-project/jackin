@@ -15,7 +15,7 @@ private struct CustomProviderFixture {
     let iconKey: String
     let displayLabel: String
     let accounts: [AccountRow]
-    let remaining: UInt8?
+    let remaining: Double?
     let status: String
     let updated: String
     let error: String?
@@ -280,7 +280,7 @@ extension VisualQAFixtures {
         id: VisualQAFixtureID,
         provider: Provider,
         accounts: [AccountRow],
-        glanceRemaining: UInt8? = nil,
+        glanceRemaining: Double? = nil,
         status: String = "fresh",
         updated: String = "Updated now",
         error: String? = nil,

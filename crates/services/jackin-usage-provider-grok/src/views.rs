@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_protocol::control::{
-    Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus, UsageSource,
+    CanonicalRemainingPercent, CanonicalUsedPercent, Money, PercentObservationOrigin,
+    QuotaBucketView, StatusSlot, UsageSnapshotStatus, UsageSource,
 };
 use jackin_usage_provider_core::{
-    bucket, format_cents, parse_iso_epoch, quota_pace_label, timed_bucket,
+    bucket, format_cents, parse_iso_epoch, quota_pace_label, timed_bucket, with_used_percent,
 };
 
 use super::{
@@ -42,23 +43,22 @@ impl GrokWebBillingSnapshot {
         let label = self.reset_at_epoch.map_or("Credits", |reset_at| {
             grok_cycle_label_from_reset(reset_at, now)
         });
-        let mut view = timed_bucket(
+        let view = timed_bucket(
             label,
+            Some(self.used_percent.label()),
+            Some("100%".to_owned()),
             None,
-            None,
-            {
-                #[expect(
-                    clippy::cast_sign_loss,
-                    reason = "provider used_percent rounded; saturating_sub bounds u8"
-                )]
-                {
-                    Some(100u8.saturating_sub(self.used_percent.round() as u8))
-                }
-            },
             self.reset_at_epoch,
             now,
             None,
             UsageSnapshotStatus::Fresh,
+        );
+        let mut view = with_used_percent(
+            view,
+            Some((
+                self.used_percent,
+                PercentObservationOrigin::ProviderReported,
+            )),
         );
         view.status_slot = Some(StatusSlot::Weekly);
         vec![view]
@@ -129,6 +129,31 @@ impl GrokBillingResponse {
 
 impl GrokBillingConfig {
     pub(crate) fn headline_bucket(&self, now: i64) -> Option<QuotaBucketView> {
+        let explicit_used_percent = self.credit_usage_percent_value();
+        if explicit_used_percent.is_err() {
+            let period = self.current_period.as_ref();
+            let reset_at = period
+                .and_then(|period| period.end.as_deref())
+                .and_then(parse_iso_epoch)
+                .or_else(|| {
+                    self.billing_period_end
+                        .as_deref()
+                        .or(self.period_end.as_deref())
+                        .and_then(parse_iso_epoch)
+                });
+            let label = period.map_or("Usage", |period| {
+                let seconds = period
+                    .start
+                    .as_deref()
+                    .and_then(parse_iso_epoch)
+                    .zip(reset_at)
+                    .map(|(start, end)| end.saturating_sub(start));
+                seconds.map_or("Usage", |seconds| {
+                    grok_period_label(period.period_type.as_deref(), seconds)
+                })
+            });
+            return Some(invalid_billing_headline(label, reset_at, now));
+        }
         if let Some(period) = self.current_period.as_ref()
             && !period
                 .period_type
@@ -140,15 +165,17 @@ impl GrokBillingConfig {
         {
             let window_seconds = end - start;
             let label = grok_period_label(period.period_type.as_deref(), window_seconds);
-            let Some(percent) = self
-                .credit_usage_percent
-                .filter(|value| value.is_finite() && *value >= 0.0)
-            else {
+            let Some(used_percent) = explicit_used_percent.ok().flatten() else {
                 return Some(unknown_billing_headline(label, end, now));
             };
-            let remaining = remaining_from_used_percent(percent);
-            let pace = quota_pace_label(Some(remaining), Some(end), Some(window_seconds), now);
-            return Some(weekly_billing_headline(label, remaining, end, now, pace));
+            return Some(used_percent_billing_headline(
+                label,
+                used_percent,
+                PercentObservationOrigin::ProviderReported,
+                end,
+                window_seconds,
+                now,
+            ));
         }
         if let Some(limit) = self
             .monthly_limit
@@ -176,21 +203,35 @@ impl GrokBillingConfig {
             else {
                 return Some(unknown_billing_headline(label, end, now));
             };
-            #[expect(clippy::cast_precision_loss, reason = "cents magnitudes fit f64")]
-            let percent = ((used_cents as f64 / limit as f64) * 100.0).clamp(0.0, 100.0);
-            let remaining = remaining_from_used_percent(percent);
-            let pace = quota_pace_label(Some(remaining), Some(end), Some(window_seconds), now);
-            return Some(weekly_billing_headline(label, remaining, end, now, pace));
+            let mut view =
+                money_billing_headline(label, used_cents, limit, end, window_seconds, now);
+            view.used_money = Some(Money::new(used_cents, "USD", 2));
+            view.limit_money = Some(Money::new(limit, "USD", 2));
+            return Some(view);
         }
         None
     }
 }
 
-pub(crate) fn remaining_from_used_percent(used_percent: f64) -> u8 {
-    #[expect(clippy::cast_sign_loss, reason = "clamped 0.0..=100.0 before cast")]
-    {
-        100u8.saturating_sub(used_percent.clamp(0.0, 100.0).round() as u8)
+pub(crate) fn invalid_billing_headline(
+    label: &str,
+    reset_at: Option<i64>,
+    now: i64,
+) -> QuotaBucketView {
+    let mut view = timed_bucket(
+        label,
+        None,
+        Some("100%".to_owned()),
+        None,
+        reset_at,
+        now,
+        Some("Grok used percent is invalid"),
+        UsageSnapshotStatus::Unavailable,
+    );
+    if label == "Weekly" {
+        view.status_slot = Some(StatusSlot::Weekly);
     }
+    view
 }
 
 pub(crate) fn unknown_billing_headline(label: &str, reset_at: i64, now: i64) -> QuotaBucketView {
@@ -202,22 +243,52 @@ pub(crate) fn unknown_billing_headline(label: &str, reset_at: i64, now: i64) -> 
         Some(reset_at),
         now,
         Some("No data"),
-        UsageSnapshotStatus::Fresh,
+        UsageSnapshotStatus::Unavailable,
     )
 }
 
-pub(crate) fn weekly_billing_headline(
+pub(crate) fn used_percent_billing_headline(
     label: &str,
-    remaining: u8,
+    used_percent: CanonicalUsedPercent,
+    origin: PercentObservationOrigin,
     reset_at: i64,
+    window_seconds: i64,
     now: i64,
-    pace: Option<String>,
 ) -> QuotaBucketView {
+    let remaining = CanonicalRemainingPercent::new(used_percent.remaining_points()).ok();
+    let pace = quota_pace_label(remaining, Some(reset_at), Some(window_seconds), now);
+    let view = timed_bucket(
+        label,
+        Some(used_percent.label()),
+        Some("100%".to_owned()),
+        None,
+        Some(reset_at),
+        now,
+        pace.as_deref(),
+        UsageSnapshotStatus::Fresh,
+    );
+    let mut view = with_used_percent(view, Some((used_percent, origin)));
+    view.status_slot = Some(StatusSlot::Weekly);
+    view
+}
+
+fn money_billing_headline(
+    label: &str,
+    used_cents: i64,
+    limit_cents: i64,
+    reset_at: i64,
+    window_seconds: i64,
+    now: i64,
+) -> QuotaBucketView {
+    #[expect(clippy::cast_precision_loss, reason = "cents magnitudes fit f64")]
+    let raw_used = (used_cents as f64 / limit_cents as f64) * 100.0;
+    let remaining = CanonicalRemainingPercent::new((100.0 - raw_used).max(0.0)).ok();
+    let pace = quota_pace_label(remaining, Some(reset_at), Some(window_seconds), now);
     let mut view = timed_bucket(
         label,
+        Some(format_cents(used_cents)),
+        Some(format_cents(limit_cents)),
         None,
-        None,
-        Some(remaining),
         Some(reset_at),
         now,
         pace.as_deref(),
