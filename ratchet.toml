@@ -671,7 +671,7 @@ key = "crates/core/jackin-core/README.md"
 bound = 5624
 [[family.entry]]
 key = "crates/tools/jackin-dev/README.md"
-bound = 1199
+bound = 1198
 [[family.entry]]
 key = "crates/services/jackin-diagnostics/README.md"
 bound = 2137
@@ -680,7 +680,7 @@ key = "crates/adapters/jackin-docker/README.md"
 bound = 1864
 [[family.entry]]
 key = "crates/core/jackin-env/README.md"
-bound = 3051
+bound = 2873
 [[family.entry]]
 key = "crates/services/jackin-host/README.md"
 bound = 1999
@@ -695,10 +695,10 @@ key = "crates/services/jackin-instance-credentials/README.md"
 bound = 1713
 [[family.entry]]
 key = "crates/services/jackin-instance-roles/README.md"
-bound = 1266
+bound = 1245
 [[family.entry]]
 key = "crates/services/jackin-instance/README.md"
-bound = 2072
+bound = 2056
 [[family.entry]]
 key = "crates/services/jackin-isolation/README.md"
 bound = 2723
@@ -710,7 +710,7 @@ key = "crates/tools/jackin-lints/README.md"
 bound = 1781
 [[family.entry]]
 key = "crates/core/jackin-manifest/README.md"
-bound = 1797
+bound = 1796
 [[family.entry]]
 key = "crates/tools/jackin-pr-trailers/README.md"
 bound = 1882
@@ -725,7 +725,7 @@ key = "crates/core/jackin-protocol/README.md"
 bound = 2507
 [[family.entry]]
 key = "crates/services/jackin-runtime/README.md"
-bound = 3559
+bound = 3209
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-activate-entry/README.md"
 bound = 819
@@ -980,7 +980,7 @@ key = "crates/ui/jackin-tui/README.md"
 bound = 2804
 [[family.entry]]
 key = "crates/services/jackin-usage/README.md"
-bound = 6435
+bound = 6076
 [[family.entry]]
 key = "crates/adapters/jackin-usage-ffi/README.md"
 bound = 3137

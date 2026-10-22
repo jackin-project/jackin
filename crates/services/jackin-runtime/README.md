@@ -24,13 +24,13 @@ and build-metadata crates. Launch TUI presentation stays in `jackin-launch` /
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
 | [`runtime.rs`](src/runtime.rs) · [`runtime/`](src/runtime) | launch pipeline + phases with governed telemetry; no local log-artifact subsystem | — |
-| [`apple_container_client.rs`](src/apple_container_client.rs) · [`apple_container_client/`](src/apple_container_client) | Apple container backend | [`tests.rs`](src/apple_container_client/tests.rs) |
-| [`host_daemon.rs`](src/host_daemon.rs) · [`host_daemon/`](src/host_daemon) | host daemon backend | [`tests.rs`](src/host_daemon/tests.rs) |
-| [`exec_host.rs`](src/exec_host.rs) · [`exec_host/`](src/exec_host) | host-side command exec | [`tests.rs`](src/exec_host/tests.rs) |
-| [`isolation.rs`](src/isolation.rs) · [`isolation/`](src/isolation) | mount isolation integration | [`tests.rs`](src/isolation/tests.rs) |
-| [`reactive_daemon.rs`](src/reactive_daemon.rs) · [`reactive_daemon/`](src/reactive_daemon) | reactive daemon | [`tests.rs`](src/reactive_daemon/tests.rs) |
-| [`spin_wait.rs`](src/spin_wait.rs) · [`spin_wait/`](src/spin_wait) | wait-for-state | [`tests.rs`](src/spin_wait/tests.rs) |
-| [`usage_relay.rs`](src/usage_relay.rs) | capability-scoped relay between a container and the host-owned usage broker | [`tests.rs`](src/usage_relay/tests.rs) |
+| [`apple_container_client.rs`](src/apple_container_client.rs) · `apple_container_client/` | Apple container backend | `tests.rs` |
+| [`host_daemon.rs`](src/host_daemon.rs) · `host_daemon/` | host daemon backend | `tests.rs` |
+| [`exec_host.rs`](src/exec_host.rs) · `exec_host/` | host-side command exec | `tests.rs` |
+| [`isolation.rs`](src/isolation.rs) · `isolation/` | mount isolation integration | `tests.rs` |
+| [`reactive_daemon.rs`](src/reactive_daemon.rs) · `reactive_daemon/` | reactive daemon | `tests.rs` |
+| [`spin_wait.rs`](src/spin_wait.rs) · `spin_wait/` | wait-for-state | `tests.rs` |
+| `usage_relay.rs` | capability-scoped relay between a container and the host-owned usage broker | `tests.rs` |
 
 ## Public API
 

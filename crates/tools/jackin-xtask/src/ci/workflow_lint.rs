@@ -1,43 +1,36 @@
-//! The verified native generator's exact actionlint syntax bridge.
+//! The generated CI's workflow linter (jactionlint, velnor hard decision 10), run locally with the same flags.
 
 use std::{ffi::OsString, path::Path};
 
 use anyhow::{Result, bail};
 
-// Match Velnor's workflow_lint_args; keep expression and ShellCheck validation active.
-const COMPATIBILITY_ARGS: [&str; 5] = [
-    "-color",
-    "-ignore",
-    r#"^unexpected key "background" for step to (run shell command|execute action)\. "#,
-    "-ignore",
-    r#"^step must run script with "run" section or run action with "uses" section$"#,
+// Velnor's generated jactionlint job: fail on every finding, hermetic (no online checks), the pinned ShellCheck,
+// no pyflakes. No file arguments: jactionlint then checks the workflows, the composite actions, dependabot.yml and
+// the Actions lock file, and reads the generated .github/jactionlint.yaml for its profile.
+const ARGS: [&str; 4] = [
+    "--strict-exit",
+    "--no-online",
+    "--shellcheck=shellcheck",
+    "--pyflakes=",
 ];
 
-pub(super) fn actionlint_args(root: &Path) -> Result<Vec<OsString>> {
+pub(super) fn jactionlint_args(root: &Path) -> Result<Vec<OsString>> {
     let workflows = root.join(".github/workflows");
     if !workflows.is_dir() {
         bail!("{} does not exist", workflows.display());
     }
-    let mut files = Vec::new();
-    for entry in crate::fs_util::read_dir_sorted(&workflows)? {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "yml") {
-            files.push(
-                path.strip_prefix(root)
-                    .unwrap_or(&path)
-                    .as_os_str()
-                    .to_owned(),
-            );
-        }
-    }
-    if files.is_empty() {
+    let has_workflow = crate::fs_util::read_dir_sorted(&workflows)?
+        .iter()
+        .any(|entry| entry.path().extension().is_some_and(|ext| ext == "yml"));
+    if !has_workflow {
         bail!("no workflow files found under {}", workflows.display());
     }
-    files.sort();
-    let mut args = COMPATIBILITY_ARGS
-        .iter()
-        .map(OsString::from)
-        .collect::<Vec<_>>();
-    args.extend(files);
-    Ok(args)
+    let config = root.join(".github/jactionlint.yaml");
+    if !config.is_file() {
+        bail!(
+            "{} does not exist; regenerate .github with velnor-actions",
+            config.display()
+        );
+    }
+    Ok(ARGS.iter().map(OsString::from).collect())
 }

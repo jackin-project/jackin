@@ -23,13 +23,13 @@ Operator-environment resolution and 1Password (`op`) CLI integration. Turns decl
 | [`op_cli.rs`](src/op_cli.rs) · [`op_cli/`](src/op_cli) | `op` CLI bridge | [`tests.rs`](src/op_cli/tests.rs) |
 | [`op_runner.rs`](src/op_runner.rs) | `op` runner | — |
 | [`op_struct.rs`](src/op_struct.rs) | `op` struct types | — |
-| [`token_setup.rs`](src/token_setup.rs) · [`token_setup/`](src/token_setup) | `op` token setup | [`tests.rs`](src/token_setup/tests.rs) |
+| `token_setup.rs` · `token_setup/` | `op` token setup | `tests.rs` |
 | [`picker.rs`](src/picker.rs) | secret picker model (pure half in `jackin-oppicker`) | — |
-| [`host_claude.rs`](src/host_claude.rs) *(internal)* · [`host_claude/`](src/host_claude) | host-side Claude env wiring | [`tests.rs`](src/host_claude/tests.rs) |
-| [`output.rs`](src/output.rs) | output helpers | — |
+| `host_claude.rs` *(internal)* · `host_claude/` | host-side Claude env wiring | `tests.rs` |
+| `output.rs` | output helpers | — |
 | [`parse_helpers.rs`](src/parse_helpers.rs) | parse helpers | — |
 | [`process_telemetry.rs`](src/process_telemetry.rs) · [`process_telemetry/`](src/process_telemetry) | bounded subprocess telemetry ownership | [`tests.rs`](src/process_telemetry/tests.rs) |
-| [`test_support.rs`](src/test_support.rs) | test fixtures | — |
+| `test_support.rs` | test fixtures | — |
 
 ## Public API
 

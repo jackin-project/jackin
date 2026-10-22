@@ -69,7 +69,6 @@ Exact next action: provide the role, then coordinator re-runs K1-Codex + K5-revi
 
 Accepted checkpoint: candidate round-1 @ `e88fe8c2` (tree `43dbd6d0`, one-line `a-b`→`a+b`), run `run-9db3cc2a`, plan `3c37c8c9`, accepted v15. Original sessions: implementer `xaa772dc` (agent-smith, default-claude, Haiku 5.5/low), reviewer `jbs9dg84` (the-architect, default-codex, gpt-6-luna/low). Independent review: PASS, zero findings, commit/tree re-derived. Trusted test: exit 0 `PASS: required arithmetic cases` (round-1; round-0 exit 1 recorded). Host restarts: daemon interruptions proven safe repeatedly (K6, K7-partial, fresh run mid Codex turn epoch 9→10, crash test with SIGKILL); accepted state intact across all. Operator control: observe both workers, exclusive takeover with refusal text, return via release. Backup: exact ref `refs/jackin/k7-accept-fresh` == candidate, idempotent repeat; acceptance separate from preservation. Auth: Claude subscription (Max, OAuth, manual renewal — refresh unsupported in practice) and Codex ChatGPT login, each proven in workers; API-key modes unverified. Remote transport not verified (temporary bare remotes only). Hard limits: no disk quota (monitor only), IPv6 deny-all, IP-level enforcement. Deferred scope: none built. MVP PASS.
 
-
 ## CI and merge hardening — 2026-10-16
 
 Independent pre-merge review found that C6's original exact-argv runner

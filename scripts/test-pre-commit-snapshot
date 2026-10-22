@@ -95,7 +95,7 @@ case "$1" in
     which)
         case "$2" in
             rustup) printf "%s\n" "$TOOLCHAIN_FIXTURE/rustup" ;;
-            hk|actionlint|swiftlint) printf "%s\n" "${TOOLCHAIN_FIXTURE%/pinned}/$2" ;;
+            hk|jactionlint|shellcheck|rumdl|gitleaks|kingfisher|cargo-deny|swiftlint) printf "%s\n" "${TOOLCHAIN_FIXTURE%/pinned}/$2" ;;
             *) exit 71 ;;
         esac ;;
     *) exit 72 ;;
@@ -132,7 +132,7 @@ for name in cargo rustc rustdoc clippy-driver rustfmt; do
     printf "%s\n" '#!/bin/sh' 'exit 73' > "$fake_bin/$name"
     chmod +x "$fake_bin/$name"
 done
-for name in actionlint swiftlint; do
+for name in jactionlint shellcheck rumdl gitleaks kingfisher cargo-deny swiftlint; do
     printf "%s\n" '#!/bin/sh' 'exit 0' > "$fake_bin/$name"
     chmod +x "$fake_bin/$name"
 done
@@ -420,6 +420,10 @@ EOF
     grep -Fx "$(printf 'global\tdisabled\thk-pre-commit')" "$fake_bin/effective-hooks"
     grep -Fx "$(printf 'global\tother-project')" "$fake_bin/effective-hooks"
     grep -Fx "$(printf 'local\tjackin-pre-commit')" "$fake_bin/effective-hooks"
+    test "$(git -C "$install_fixture" config --local --get hook.jackin-pre-push.command)" = 'mise exec -- hk run pre-push'
+    test "$(git -C "$install_fixture" config --local --get hook.jackin-pre-push.enabled)" = true
+    git -C "$install_fixture" hook list --show-scope pre-push > "$fake_bin/effective-push-hooks"
+    grep -Fx "$(printf 'local\tjackin-pre-push')" "$fake_bin/effective-push-hooks"
     git -C "$install_fixture" hook run pre-commit
     printf 'unrelated\nsnapshot\n' > "$fake_bin/expected-events"
     cmp "$install_fixture/hook-events" "$fake_bin/expected-events"

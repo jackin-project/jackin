@@ -250,3 +250,28 @@ c7263d8d4a190091897c05e7386dc4ec2fc05c79:plans/jackin-desktop/spec/providers.md:
 # Reason: velnor generated manifest: matrix_key digests (m-<hex>) from commit 2c0f1c2e2 (#1164), merged after the #1165 baseline; not credentials
 # 1 finding(s); rules: generic-api-key; files: .github/velnor/task-execution-manifest-v1.json (1)
 2c0f1c2e28c5bc7a6e1b569826db3a15517d6e9c:.github/velnor/task-execution-manifest-v1.json:generic-api-key:2
+
+# Working-tree fingerprints (file:rule:line) for the hk `gitleaks` builtin, which runs `gitleaks dir` on the checkout.
+# Each was reviewed on 2026-10-22; none is a credential.
+# Reason: PEM BEGIN/END marker lines (no key body) in redaction and build-log snapshot tests
+crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs:private-key:130
+crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs:private-key:143
+crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs:private-key:155
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:106
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:125
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:136
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:244
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:257
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:267
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:358
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:69
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:80
+crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:97
+crates/services/jackin-diagnostics/src/redact/tests/case_02.rs:private-key:114
+# Reason: sequential fake token shapes (ghp_1234567890abcdef, sk-ant-api03-1234567890abcdef) in secret-scrub tests
+crates/services/jackin-diagnostics/src/secret_scrub/tests.rs:generic-api-key:39
+crates/services/jackin-diagnostics/src/secret_scrub/tests.rs:generic-api-key:9
+# Reason: test JWT whose payload is {"sub":"auth0|user_123"} and whose signature segment is base64("signature")
+crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:8
+# Reason: prose in Markdown documentation matched by a keyword rule, no literal credential
+crates/services/jackin-usage-provider-kimi/README.md:generic-api-key:3
