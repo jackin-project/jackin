@@ -53,6 +53,7 @@ pub fn arbitrate(
         summary.notes.extend(authority.notes.clone());
     }
 
+    // Resolve a definitive process return before same-tick authority or weak debounce can delay Done.
     if snapshot.process.process_exited || snapshot.process.foreground_returned_to_shell {
         if snapshot.process.process_exited {
             summary.notes.push(EvidenceNote::ProcessExited);
@@ -107,6 +108,7 @@ pub fn arbitrate(
         );
     }
 
+    // Current strong screen evidence must beat stale Working or Idle authority.
     if snapshot.screen.strong && snapshot.screen.state == Some(RawAgentState::Blocked) {
         return finish(
             RawAgentState::Blocked,
@@ -146,6 +148,8 @@ pub fn arbitrate(
             summary,
         );
     }
+
+    // A cleared progress event is only a weak hint; debounce it before publishing Idle.
     if snapshot.process.foreground_is_agent && snapshot.osc.progress_cleared_at.is_some() {
         return finish(
             RawAgentState::Idle,
