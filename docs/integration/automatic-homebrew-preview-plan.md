@@ -36,11 +36,11 @@ The canonical formula is `Formula/jackin-preview.rb`, and the tap also contains 
 
 - `.velnor/config.toml` currently configures generated CI under `consumer-v1`.
 - `.velnor/release-manifest.json` pins official Velnor 0.1.8 assets and checksums.
-- `.github/AGENTS.md` reserves the entire `.github/workflows/` namespace for Velnor and prohibits local workflow workarounds.
-- `crates/tools/jackin-xtask/src/release_archive.rs` builds four CLI payloads and two Linux capsule payloads. Its version argument sets `JACKIN_VERSION_OVERRIDE`.
+- [`.github/AGENTS.md`](../../.github/AGENTS.md) reserves the entire `.github/workflows/` namespace for Velnor and prohibits local workflow workarounds.
+- [`crates/tools/jackin-xtask/src/release_archive.rs`](../../crates/tools/jackin-xtask/src/release_archive.rs) builds four CLI payloads and two Linux capsule payloads. Its version argument sets `JACKIN_VERSION_OVERRIDE`.
 - Preview payload names can remain unversioned within distinct immutable release tags; omitting `--archive-version` preserves the current verifier/updater naming contract.
 - `crates/tools/jackin-xtask/src/release_verify/package.rs` verifies source identity, exact payload/supporting asset inventories, archive contents, and versions. Release verification also covers checksums, signatures, attestations, and SBOMs.
-- `crates/adapters/jackin-image/src/capsule_binary.rs` currently routes preview capsule, manifest, and sidecar downloads through the mutable `preview` release. This must migrate with publishing.
+- [`crates/adapters/jackin-image/src/capsule_binary.rs`](../../crates/adapters/jackin-image/src/capsule_binary.rs) currently routes preview capsule, manifest, and sidecar downloads through the mutable `preview` release. This must migrate with publishing.
 - Existing cross-build tooling uses `cargo zigbuild`; macOS cross-compilation downloads an SDK whose acquisition is not checksum-pinned in the inspected code. Pin and verify that SDK, or use a qualified macOS runner/SDK path before relying on these builds.
 
 ### Homebrew tap
@@ -81,7 +81,7 @@ The initial analysis understated existing extensibility. Distinguish supported g
 | Runner routing | Schema 1 is hosted-only; schema 2 adds hosted/Scale Set routing and qualification. This is separate from named test-suite multi-workflow support. |
 | Preserved handwritten workflows | `[workflow] preserve_workflows` preserves exact allowlisted `.github/workflows/<slug>.yml` files through in-place and preview generation. Reserved generator filenames and suite filename collisions are rejected. This is preservation, not generation. |
 
-The generated-file contract and preservation implementation explicitly support the last row, while generated `.github/AGENTS.md` still uses blanket namespace-reservation wording. That documentation inconsistency must not be presented as absence of the feature. The requested fully generated implementation remains the selected approach; using preservation would require handwritten publishing logic and would not meet that request.
+The generated-file contract and preservation implementation explicitly support the last row, while generated [`.github/AGENTS.md`](../../.github/AGENTS.md) still uses blanket namespace-reservation wording. That documentation inconsistency must not be presented as absence of the feature. The requested fully generated implementation remains the selected approach; using preservation would require handwritten publishing logic and would not meet that request.
 
 For generated workflow IR, the audited event allowlist is `pull_request`, `push`, `merge_group`, `schedule`, and `workflow_dispatch`. `workflow_run` and review/comment triggers are explicitly restricted; `repository_dispatch` is unsupported. This policy is not evidence that preserved workflow bytes are parsed through the same IR: preservation copies repository-owned files.
 

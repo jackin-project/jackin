@@ -132,15 +132,51 @@ fn mise_project_exec(root: &std::path::Path, args: &[&str], missing: &str) -> st
 
 #[test]
 fn mise_native_rust_option_routes_cargo_through_mbx() {
-    let mise = repo_text("mise.toml");
+    let mise: toml::Value =
+        toml::from_str(&repo_text("mise.toml")).expect("Mise configuration must parse as TOML");
     let rust_toolchain = repo_text("rust-toolchain.toml");
+    let tools = mise
+        .get("tools")
+        .and_then(toml::Value::as_table)
+        .expect("Mise tools table");
+    let rust = tools
+        .get("rust")
+        .and_then(toml::Value::as_table)
+        .expect("Rust tool configuration");
     assert!(
-        mise.contains("rust = { version = \"1.99.1\", components = [\"clippy\", \"rustfmt\"], targets = [\"aarch64-unknown-linux-gnu\", \"x86_64-unknown-linux-gnu\"], mr_boxington = true }"),
+        rust.get("version").and_then(toml::Value::as_str) == Some("1.99.1")
+            && rust
+                .get("components")
+                .and_then(toml::Value::as_array)
+                .is_some_and(|components| {
+                    components
+                        .iter()
+                        .filter_map(toml::Value::as_str)
+                        .collect::<Vec<_>>()
+                        == ["clippy", "rustfmt"]
+                })
+            && rust
+                .get("targets")
+                .and_then(toml::Value::as_array)
+                .is_some_and(|targets| {
+                    targets
+                        .iter()
+                        .filter_map(toml::Value::as_str)
+                        .collect::<Vec<_>>()
+                        == ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+                })
+            && rust.get("mr_boxington").and_then(toml::Value::as_bool) == Some(true),
         "Mise's Rust integration must route Cargo through MBX natively"
     );
+    let mbx = tools
+        .get("mr-boxington")
+        .and_then(toml::Value::as_table)
+        .expect("MBX tool configuration");
     assert!(
-        mise.contains("mr-boxington = \"1.26.0\""),
-        "the native integration must resolve the current pinned MBX tool"
+        mbx.get("version").and_then(toml::Value::as_str) == Some("1.26.0")
+            && mbx.get("workflow").and_then(toml::Value::as_str)
+                == Some("release.yml@refs/heads/main"),
+        "the native integration must pin the current MBX version and signer workflow"
     );
     assert!(
         rust_toolchain.contains("channel = \"1.99.1\""),
