@@ -343,8 +343,7 @@ fi
 pub(super) fn seed_agent_stub(home: &Path, slug: &str, body: &str) {
     if slug == "codex" {
         let paths = jackin_core::JackinPaths::resolve_with_env(home, None, None);
-        jackin_image::agent_binary::install_test_stub(&paths, jackin_core::Agent::Codex)
-            .expect("install Codex test bundle");
+        jackin_image::agent_binary::install_test_stub(&paths, jackin_core::Agent::Codex).unwrap();
     }
     let stub = home
         .join(".jackin")
