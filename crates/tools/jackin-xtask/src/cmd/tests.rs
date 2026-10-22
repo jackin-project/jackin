@@ -2,7 +2,10 @@ use std::ffi::OsStr;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use super::{display_command, output, output_string, output_timeout, run, shell_quote};
+use super::{
+    display_command, output, output_string, output_timeout, output_timeout_bounded, run,
+    run_streaming_timeout, shell_quote,
+};
 
 #[test]
 fn shell_quote_leaves_plain_paths_bare() {
@@ -57,4 +60,42 @@ fn run_nonzero_status_errors() {
     let err = run(&mut cmd).expect_err("should fail");
     let msg = format!("{err:#}");
     assert!(msg.contains("failed"), "msg={msg}");
+}
+
+#[test]
+fn bounded_output_accepts_exact_limit_and_rejects_stdout_or_stderr_overflow() {
+    let mut exact = Command::new("sh");
+    exact.args(["-c", "printf 1234"]);
+    assert_eq!(
+        output_timeout_bounded(&mut exact, Duration::from_secs(1), 4, 8).unwrap(),
+        b"1234"
+    );
+
+    let mut stdout = Command::new("sh");
+    stdout.args(["-c", "printf 12345"]);
+    assert!(
+        output_timeout_bounded(&mut stdout, Duration::from_secs(1), 4, 8)
+            .unwrap_err()
+            .to_string()
+            .contains("bounded output capture")
+    );
+
+    let mut stderr = Command::new("sh");
+    stderr.args(["-c", "printf 12345 >&2"]);
+    assert!(
+        output_timeout_bounded(&mut stderr, Duration::from_secs(1), 8, 4)
+            .unwrap_err()
+            .to_string()
+            .contains("bounded output capture")
+    );
+}
+
+#[test]
+fn streaming_commands_have_a_hard_timeout() {
+    let mut command = Command::new("sleep");
+    command.arg("2");
+    let started = Instant::now();
+    let error = run_streaming_timeout(&mut command, Duration::from_millis(20)).unwrap_err();
+    assert!(format!("{error:#}").contains("timed out"));
+    assert!(started.elapsed() < Duration::from_secs(1));
 }
