@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::collections::VecDeque;
 pub(super) const BASE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 pub(super) fn block_on<F: Future>(fut: F) -> F::Output {
@@ -19,6 +20,9 @@ pub(super) fn block_on<F: Future>(fut: F) -> F::Output {
 pub(super) struct MockGit {
     pub(super) porcelain: String,
     pub(super) for_each_ref: String,
+    pub(super) remote_refs_containing_tip: VecDeque<String>,
+    pub(super) remote_contains_calls: usize,
+    pub(super) fail_remote_contains: bool,
     pub(super) rev_list: String,
     pub(super) symbolic_ref_ok: bool,
     pub(super) rev_parse_head: String,
@@ -51,6 +55,16 @@ impl CommandRunner for MockGit {
         }
         match sub {
             "status" => Ok(self.porcelain.clone()),
+            "for-each-ref" if args.iter().any(|arg| arg.starts_with("--contains=")) => {
+                self.remote_contains_calls += 1;
+                if self.fail_remote_contains {
+                    anyhow::bail!("mock remote reachability query failed");
+                }
+                Ok(self
+                    .remote_refs_containing_tip
+                    .pop_front()
+                    .unwrap_or_default())
+            }
             "for-each-ref" => Ok(self.for_each_ref.clone()),
             "rev-list" => Ok(self.rev_list.clone()),
             "symbolic-ref" => {
