@@ -4,8 +4,9 @@
 
 ---
 
-# Jackin Workflows
-## Final Product Specification — Version 1.0
+## Jackin Workflows
+
+### Final Product Specification — Version 1.0
 
 **Status:** Proposed final architecture  
 **Implementation:** Rust, integrated into Jackin  
@@ -15,7 +16,7 @@
 
 ---
 
-## 1. Product vision
+### 1. Product vision
 
 Jackin Workflows is a Rust-native, durable workflow orchestration system that uses real AI coding-agent CLI applications as isolated, reusable execution blocks.
 
@@ -29,7 +30,7 @@ Jackin is responsible for controlling what agents can access, when they execute,
 
 The system must not recreate Claude Code, Codex, Muse Code, OpenCode, or other coding-agent applications. It must use their existing runtimes.
 
-## 2. Fundamental architecture
+### 2. Fundamental architecture
 
 The system has six principal layers.
 
@@ -50,7 +51,7 @@ Jackin Capsule owns the real CLI process, PTY, session state, terminal rendering
 
 The workflow engine never needs to recreate an agent's terminal interface.
 
-## 3. Workflow definitions
+### 3. Workflow definitions
 
 Workflows must be declared using Apple Pkl.
 
@@ -74,7 +75,7 @@ Supported final block categories:
 
 Each block must declare its identity, input data, output contract, permissions, dependencies, execution limits, and completion criteria.
 
-### Configuration requirements
+#### Configuration requirements
 
 Pkl must support reusable templates, inheritance, parameterization, shared sandbox profiles, typed constraints, and versioned imports.
 
@@ -86,7 +87,7 @@ Changes to a Pkl file during an active run must not silently change that run.
 
 Existing Jackin role manifests and workspace configuration remain compatible. Workflow definitions reference these existing resources rather than replace them.
 
-## 4. Agent execution model
+### 4. Agent execution model
 
 Every agent block must use an actual coding-agent CLI.
 
@@ -94,7 +95,7 @@ Jackin's existing supported runtimes form the initial foundation. Additional run
 
 The architecture must also support arbitrary compatible CLI applications through a generic PTY adapter.
 
-### Session requirements
+#### Session requirements
 
 Every agent execution must support, where the application permits:
 
@@ -111,7 +112,7 @@ Agent adapters must explicitly report unsupported capabilities. The system must 
 
 The workflow engine must not use terminal readiness or an agent's self-reported completion as proof of successful implementation.
 
-### Relationship to Jackin roles
+#### Relationship to Jackin roles
 
 A Jackin role is a reusable execution environment, **not a workflow block**.
 
@@ -121,7 +122,7 @@ Each concurrently writable agent block must normally receive its own isolated Ja
 
 Multiple agents in the same Capsule instance share the same filesystem and namespaces; that arrangement must be explicit rather than treated as independent isolation.
 
-## 5. Sandbox and security requirements
+### 5. Sandbox and security requirements
 
 Each worker must execute inside a restricted Jackin-managed environment.
 
@@ -147,7 +148,7 @@ Private Git clones should be the default for isolated parallel execution. Git wo
 
 No agent may expand its own permissions by editing its prompt, role configuration, or workflow definition.
 
-## 6. Deterministic execution and verification
+### 6. Deterministic execution and verification
 
 The orchestrator must execute a defined state machine.
 
@@ -166,7 +167,7 @@ The standard implementation workflow is:
 
 The main workflow graph must be acyclic. Repair and feedback relationships are explicitly bounded loops, not uncontrolled graph cycles.
 
-### Independent verification
+#### Independent verification
 
 Test workers and review agents must execute independently of the implementer.
 
@@ -178,7 +179,7 @@ Findings must be structured, traceable, and actionable.
 
 A finding against an outdated revision cannot be blindly applied to a newer one.
 
-### Feedback loop
+#### Feedback loop
 
 When verification fails, the orchestrator sends a follow-up prompt to the implementation agent's existing session.
 
@@ -190,7 +191,7 @@ The orchestrator must coordinate feedback with the agent's active turn and any o
 
 An agent cannot decide to skip verification or declare its own work accepted.
 
-## 7. Live TUI access and debugging
+### 7. Live TUI access and debugging
 
 **Every interactive coding-agent workflow block must remain inspectable through Jackin Capsule.**
 
@@ -212,7 +213,7 @@ Debug artifacts must be retained according to a configured security and retentio
 
 A failed sandbox should be preservable for investigation without preventing durable workflow failure reporting.
 
-## 8. Durable workflow execution
+### 8. Durable workflow execution
 
 Workflow state belongs to the Jackin host, not to an agent's conversation.
 
@@ -232,7 +233,7 @@ A daemon crash must not result in silent duplicate prompts, lost work, or false 
 
 SQLite is suitable for the initial local persistence layer. A PostgreSQL backend may support future distributed scheduling.
 
-## 9. Git and publication safety
+### 9. Git and publication safety
 
 Each implementation attempt must have an isolated repository state and traceable Git revision.
 
@@ -248,7 +249,7 @@ GitHub credentials used for publication should normally remain in the host contr
 
 No implicit force-push, destructive cleanup, or merge into `main` is permitted.
 
-## 10. Visual workflow editor
+### 10. Visual workflow editor
 
 Jackin must provide a workflow graph representation.
 
@@ -262,7 +263,7 @@ Pkl remains the authoritative source. The editor must preserve supported hand-au
 
 Jackin Console provides terminal-native workflow inspection and execution control. A richer visual editor may use React Flow or an equivalent graph-editing framework while consuming the same host workflow API.
 
-## 11. Host API and command surface
+### 11. Host API and command surface
 
 The host daemon must expose a versioned workflow control API.
 
@@ -276,7 +277,7 @@ These are **new target commands**, not commands claimed to be present today.
 
 The CLI, console, and visual interface must consume one authoritative workflow service.
 
-## 12. Jackin implementation boundaries
+### 12. Jackin implementation boundaries
 
 The preferred crate organization is:
 
@@ -296,7 +297,7 @@ The implementation must respect Jackin's existing crate boundaries and avoid dup
 
 Rig and Nanocode are optional future integrations, not required architectural dependencies.
 
-## 13. Final acceptance criteria
+### 13. Final acceptance criteria
 
 The system is complete when:
 
@@ -317,7 +318,7 @@ The system is complete when:
 
 ---
 
-## Final architectural decision
+### Final architectural decision
 
 **Build the workflow orchestrator as a native subsystem of Jackin's host execution model.**
 

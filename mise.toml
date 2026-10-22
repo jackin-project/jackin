@@ -5,9 +5,8 @@ min_version = "2026.10.17"
 
 [tools]
 "github:open-telemetry/weaver" = "0.28.0"
-actionlint = "1.7.12"
 "aqua:betterleaks/betterleaks" = "1.9.0"
-bun = "1.4.3"
+bun = "1.4.4"
 cargo-binstall = "1.26.0"
 "cargo:cargo-audit" = "0.22.2"
 cargo-deny = "0.20.2"
@@ -16,19 +15,29 @@ cargo-deny = "0.20.2"
 "cargo:cargo-hack" = "0.6.45"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.149"
 "cargo:cargo-shear" = "1.14.0"
-"github:boltffi/boltffi" = { version = "0.31.1", os = ["macos"], matching_regex = "^boltffi-(darwin-aarch64|darwin-x86_64|linux-aarch64(-musl)?|linux-x86_64(-musl)?|windows-arm64|windows-x86_64)\\.(tar\\.gz|zip)$" }
-"aqua:rust-cross/cargo-zigbuild" = "0.23.4"
+"github:boltffi/boltffi" = { version = "0.31.1", os = [
+  "macos",
+], matching_regex = "^boltffi-(darwin-aarch64|darwin-x86_64|linux-aarch64(-musl)?|linux-x86_64(-musl)?|windows-arm64|windows-x86_64)\\.(tar\\.gz|zip)$" }
+"aqua:rust-cross/cargo-zigbuild" = "0.24.0"
 "cargo:dylint-link" = "6.2.0"
 cosign = "3.1.4"
-gh = "2.102.1"
+gh = "2.103.0"
 "aqua:gitleaks/gitleaks" = "8.30.1"
-hk = "2.7.0"
+hk = "2.8.0"
 "github:mongodb/kingfisher" = { version = "2.14.0", matching_regex = "^kingfisher-(darwin|linux)-(arm64|x64)\\.tgz$|^kingfisher-windows-x64\\.zip$" }
 mr-boxington = { version = "1.26.0", workflow = "release.yml@refs/heads/main" }
-rust = { version = "1.99.1", components = ["clippy", "rustfmt"], targets = ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"], mr_boxington = true }
+rust = { version = "1.99.1", profile = "minimal", components = [
+  "clippy",
+  "rustfmt",
+], targets = [
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-gnu",
+], mr_boxington = true }
 shellcheck = "0.11.0"
-node = "26.12.0"
-python = "3.15.0"
+jactionlint = "2.3.0"
+rumdl = "0.3.0"
+node = "26.12.1"
+python = "3.15.1"
 periphery = { version = "3.8.0", os = ["macos"] }
 swiftlint = { version = "0.65.1", os = ["macos"] }
 xcodegen = { version = "2.46.0", os = ["macos"] }
@@ -41,6 +50,10 @@ cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
 lockfile = true
 
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+
 [tasks.renovate-upstream-sources]
 description = "Verify the pinned mise release publishes both construct installer architectures"
 run = "bash docker/construct/check-upstream-assets.sh"
@@ -48,11 +61,6 @@ run = "bash docker/construct/check-upstream-assets.sh"
 [tasks."release:package"]
 description = "Build unsigned release payloads and the native Velnor handoff"
 run = "cargo run --locked -p jackin-xtask -- release-package"
-
-
-
-
-
 
 
 [tasks."check:repository-policy"]
