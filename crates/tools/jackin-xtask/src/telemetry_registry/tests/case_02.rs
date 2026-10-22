@@ -25,6 +25,18 @@ fn namespace_scan_handles_rust_literal_forms_and_macro_construction() {
     ));
     assert!(contains_legacy_telemetry_name(
         path,
+        r#"use jackin_telemetry::Attr; let _ = Attr { key: "jackin.\u{72}aw.field", value: () };"#
+    ));
+    assert!(contains_legacy_telemetry_name(
+        path,
+        r#"use jackin_telemetry::Attr; let _ = Attr { key: b"parallax.byte.field", value: () };"#
+    ));
+    assert!(contains_legacy_telemetry_name(
+        path,
+        "use jackin_telemetry::Attr; let _ = Attr { key: \"jackin.multiline\\\n.field\", value: () };"
+    ));
+    assert!(contains_legacy_telemetry_name(
+        path,
         "use jackin_telemetry::Attr; let _ = Attr { key: concat!(\"jackin.\", \"concat.field\"), value: () };"
     ));
     assert!(contains_legacy_telemetry_name(
