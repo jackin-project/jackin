@@ -1,14 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{MonitorStore, SpendState, spend_snapshot_preserves_history};
-use jackin_protocol::control::Money;
+use super::{
+    MonitorStore, SpendState, monitor_basis_points, monitor_source_used_points,
+    monitor_window_used_points, spend_snapshot_preserves_history,
+};
+use jackin_protocol::control::{
+    MeterPercentPoints, Money, PercentObservationOrigin, ProviderQuotaState, RawPercentPoints,
+    UsageMeterSide,
+};
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageFreshnessV1,
     UsageIdentityKindV1, UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1,
     UsageMetricGroupKindV1, UsageMetricGroupV1, UsageMetricPeriodV1, UsageMetricScopeV1,
-    UsageMetricValueV1, UsagePercent, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
-    UsageProjectionV1, UsageProviderV1, UsageQuotaStateV1, UsageWindowCategoryV1,
+    UsageMetricValueV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageProjectionV1,
+    UsageProviderV1, UsageQuotaStateV1, UsageWindowCategoryV1,
 };
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorAccountBindingInput, MonitorAction, MonitorConfig,
@@ -20,6 +26,96 @@ use jackin_protocol::usage_monitor::{
 };
 
 const NOW: i64 = 1_800_000_000;
+
+#[test]
+fn generic_points_convert_to_monitor_basis_points_only_at_boundary() {
+    let raw = |points| RawPercentPoints::new(points).expect("finite percentage points");
+    assert_eq!(monitor_basis_points(raw(12.34)), Some(1_234));
+    assert_eq!(monitor_basis_points(raw(12.345)), Some(1_235));
+    assert_eq!(monitor_basis_points(raw(-10.0)), None);
+    assert_eq!(monitor_basis_points(raw(150.0)), Some(10_000));
+}
+
+#[test]
+fn exhausted_state_geometry_does_not_create_monitor_basis_point_evidence() {
+    let window = UsageLimitWindowV1 {
+        window_id: "exhausted-state-only".to_owned(),
+        rank: 0,
+        category: UsageWindowCategoryV1::Session,
+        label: "session".to_owned(),
+        value_label: "Exhausted".to_owned(),
+        reset_label: String::new(),
+        remaining_percent: None,
+        remaining_percent_origin: None,
+        used_percent: None,
+        used_percent_origin: None,
+        meter_percent: Some(MeterPercentPoints::new(0.0).expect("exhausted geometry")),
+        meter_side: Some(UsageMeterSide::Remaining),
+        count_quota: None,
+        provider_quota_state: Some(ProviderQuotaState::Exhausted),
+        money_used_percent: None,
+        reset_at_epoch: None,
+        quota_state: UsageQuotaStateV1::Exhausted,
+        pace_label: None,
+        runs_out_label: None,
+    };
+
+    assert_eq!(monitor_window_used_points(&window), None);
+}
+
+#[test]
+fn monitor_source_precedence_respects_origins_and_preserves_reported_remaining() {
+    let raw = |points| RawPercentPoints::new(points).expect("finite percentage points");
+
+    let money_one = raw(1.0);
+    assert_eq!(
+        monitor_source_used_points(
+            None,
+            None,
+            Some(raw(0.0)),
+            Some(PercentObservationOrigin::HistoricalUnknown),
+            Some(money_one),
+        ),
+        Some(money_one),
+        "historical remaining=0 must not hide exact Money usage",
+    );
+
+    assert_eq!(
+        monitor_source_used_points(
+            None,
+            None,
+            Some(raw(0.0)),
+            Some(PercentObservationOrigin::ProviderReported),
+            Some(money_one),
+        ),
+        Some(raw(100.0)),
+        "a provider-reported remaining side keeps the monitor's legacy complement",
+    );
+
+    assert_eq!(
+        monitor_source_used_points(
+            Some(raw(43.375)),
+            Some(PercentObservationOrigin::ProviderReported),
+            Some(raw(12.625)),
+            Some(PercentObservationOrigin::ProviderReported),
+            Some(raw(1.0)),
+        ),
+        Some(raw(43.375)),
+        "explicit provider used value retains precedence even when sides disagree",
+    );
+
+    assert_eq!(
+        monitor_source_used_points(
+            None,
+            None,
+            Some(raw(0.0)),
+            Some(PercentObservationOrigin::ProviderReported),
+            Some(raw(120.0)),
+        ),
+        Some(raw(120.0)),
+        "Money overage keeps the established monitor full-usage behavior",
+    );
+}
 
 fn open_store() -> (tempfile::TempDir, MonitorStore) {
     let directory = tempfile::tempdir().expect("temporary data directory");
@@ -1965,10 +2061,15 @@ fn used_only_zero_from_remaining_keeps_stored_reset() {
                 label: "session".to_owned(),
                 value_label: "session value".to_owned(),
                 reset_label: "session reset".to_owned(),
-                remaining_percent: None,
-                remaining_raw_percent: Some(100),
+                remaining_percent: Some(RawPercentPoints::new(100.0).expect("raw remainder")),
+                remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
                 used_percent: None,
-                used_raw_percent: None,
+                used_percent_origin: None,
+                meter_percent: Some(MeterPercentPoints::new(100.0).expect("meter geometry")),
+                meter_side: Some(UsageMeterSide::Remaining),
+                count_quota: None,
+                provider_quota_state: None,
+                money_used_percent: None,
                 reset_at_epoch: None,
                 quota_state: UsageQuotaStateV1::Available,
                 pace_label: None,
@@ -1982,9 +2083,14 @@ fn used_only_zero_from_remaining_keeps_stored_reset() {
                 value_label: "long-range value".to_owned(),
                 reset_label: "long-range reset".to_owned(),
                 remaining_percent: None,
-                remaining_raw_percent: None,
-                used_percent: None,
-                used_raw_percent: Some(42),
+                remaining_percent_origin: None,
+                used_percent: Some(RawPercentPoints::new(42.0).expect("raw used")),
+                used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+                meter_percent: Some(MeterPercentPoints::new(42.0).expect("meter geometry")),
+                meter_side: Some(UsageMeterSide::Used),
+                count_quota: None,
+                provider_quota_state: None,
+                money_used_percent: None,
                 reset_at_epoch: None,
                 quota_state: UsageQuotaStateV1::Available,
                 pace_label: None,
@@ -2187,9 +2293,20 @@ fn principal_window_group(spec: PrincipalWindowGroupSpec<'_>) -> UsageMetricGrou
         quota_state: UsageQuotaStateV1::Available,
         value: UsageMetricValueV1::Window {
             remaining_percent: None,
-            remaining_raw_percent: None,
-            used_percent: Some(UsagePercent::clamp_raw(used_raw_percent)),
-            used_raw_percent: Some(used_raw_percent),
+            remaining_percent_origin: None,
+            used_percent: Some(
+                RawPercentPoints::new(f64::from(used_raw_percent)).expect("raw used percent"),
+            ),
+            used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+            meter_percent: Some(
+                RawPercentPoints::new(f64::from(used_raw_percent))
+                    .expect("raw used percent")
+                    .meter_geometry(),
+            ),
+            meter_side: Some(UsageMeterSide::Used),
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             period: UsageMetricPeriodV1::Calendar {
                 granularity: UsageCalendarPeriodV1::Weekly,
             },
@@ -2221,7 +2338,7 @@ fn long_range_projection(
         is_stale: false,
     };
     UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: format!("principal-window-{generation}"),
         generated_at_epoch: last_good_at_epoch,
         discovery_revision: "fixture-discovery".to_owned(),
@@ -2252,9 +2369,21 @@ fn long_range_projection(
                     value_label: format!("{used_raw_percent}% used"),
                     reset_label: "reset time".to_owned(),
                     remaining_percent: None,
-                    remaining_raw_percent: None,
-                    used_percent: Some(UsagePercent::clamp_raw(used_raw_percent)),
-                    used_raw_percent: Some(used_raw_percent),
+                    remaining_percent_origin: None,
+                    used_percent: Some(
+                        RawPercentPoints::new(f64::from(used_raw_percent))
+                            .expect("raw used percent"),
+                    ),
+                    used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+                    meter_percent: Some(
+                        RawPercentPoints::new(f64::from(used_raw_percent))
+                            .expect("raw used percent")
+                            .meter_geometry(),
+                    ),
+                    meter_side: Some(UsageMeterSide::Used),
+                    count_quota: None,
+                    provider_quota_state: None,
+                    money_used_percent: None,
                     reset_at_epoch,
                     quota_state: UsageQuotaStateV1::Available,
                     pace_label: None,

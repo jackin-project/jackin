@@ -6,7 +6,7 @@ use std::time::Duration;
 use super::*;
 use jackin_protocol::usage_broker::{
     USAGE_BROKER_PROTOCOL_VERSION, UsageCatalogEntry, UsageProjectionRefreshStateV1,
-    UsageProjectionSchemaV1, UsageProjectionV1,
+    UsageProjectionSchemaV2, UsageProjectionV1,
 };
 use jackin_usage::coordinator::{
     AccountStateStore, FileAccountStateStore, FileProjectionStateStore, ProjectionStateEnvelope,
@@ -76,7 +76,7 @@ fn seed_authoritative_catalog(root: &Path) -> Result<()> {
     let broker_instance_id = "e2e-recovery-fixture".to_owned();
     let catalog_revision = format!("e2e-catalog-{USAGE_BROKER_PROTOCOL_VERSION}");
     let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: format!("{broker_instance_id}:empty"),
         generated_at_epoch: epoch_now(),
         discovery_revision: catalog_revision.clone(),

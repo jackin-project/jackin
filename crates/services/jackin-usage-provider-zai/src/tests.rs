@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::UsageSnapshotStatus;
 
 #[test]
 fn zai_credit_limit_carries_rate_note_and_model_breakdown() {
@@ -30,7 +31,23 @@ fn zai_credit_limit_carries_rate_note_and_model_breakdown() {
 
     let peak = quota.buckets(1_781_510_400);
     assert_eq!(peak[0].label, "Weekly");
-    assert_eq!(peak[0].remaining_percent, Some(75));
+    assert_eq!(peak[0].remaining_percent, None);
+    assert_eq!(
+        peak[0]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(25.0)
+    );
+    assert_eq!(
+        peak[0].used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
+    assert_eq!(
+        peak[0]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((Some(2_500), Some(10_000), Some(7_500)))
+    );
     assert_eq!(peak[0].resets_at, Some(1_781_798_400));
     assert_eq!(
         peak[0].pace_label.as_deref(),
@@ -84,13 +101,26 @@ fn zai_time_limit_splits_mcp_and_web_search() {
     let buckets = quota.buckets(1_781_185_560);
     assert_eq!(buckets[0].label, "MCP");
     assert_eq!(buckets[0].status_slot, None);
+    assert_eq!(buckets[0].remaining_percent, None);
     assert_eq!(
         buckets[0].pace_label.as_deref(),
-        Some("30 / 120 (90 remaining)")
+        Some("30 used · 120 limit · 90 remaining")
+    );
+    assert_eq!(
+        buckets[0]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((Some(30), Some(120), Some(90)))
     );
     assert_eq!(buckets[1].label, "Web search");
     assert_eq!(buckets[1].status_slot, None);
-    assert_eq!(buckets[1].remaining_percent, Some(80));
+    assert_eq!(buckets[1].remaining_percent, None);
+    assert_eq!(
+        buckets[1]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((Some(100), Some(500), Some(400)))
+    );
 }
 
 #[test]
@@ -126,4 +156,78 @@ fn zai_model_note_skips_empty_breakdown() {
     }))
     .expect("blank breakdown");
     assert_eq!(zai_model_note(&blank), None);
+}
+
+#[test]
+fn zai_count_fields_preserve_full_width_and_parse_decimal_strings_independently() {
+    let quota: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "data": { "limits": [{
+            "type": "TOKENS_LIMIT",
+            "unit": 5,
+            "number": 300,
+            "currentValue": 9007199254740993_u64,
+            "usage": "18446744073709551615",
+            "remaining": 0
+        }] }
+    }))
+    .expect("wide Z.AI count values");
+
+    let bucket = quota.buckets(1_781_185_560).remove(0);
+    assert_eq!(bucket.status, UsageSnapshotStatus::Fresh);
+    assert_eq!(
+        bucket
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((Some(9_007_199_254_740_993), Some(u64::MAX), Some(0)))
+    );
+}
+
+#[test]
+fn zai_malformed_count_does_not_discard_valid_siblings_or_create_fresh_empty_quota() {
+    let quota: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+        "data": { "limits": [
+            {
+                "type": "TOKENS_LIMIT",
+                "unit": 5,
+                "number": 300,
+                "currentValue": "bad",
+                "usage": 9007199254740993_u64,
+                "remaining": "0"
+            },
+            {
+                "type": "TOKENS_LIMIT",
+                "unit": 5,
+                "number": 300,
+                "currentValue": -1,
+                "usage": 1.5,
+                "remaining": "18446744073709551616",
+                "percentage": -1
+            }
+        ] }
+    }))
+    .expect("malformed counts are isolated at field boundaries");
+
+    let buckets = quota.buckets(1_781_185_560);
+    assert_eq!(buckets.len(), 2);
+    assert_eq!(buckets[0].status, UsageSnapshotStatus::Fresh);
+    assert_eq!(
+        buckets[0]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((None, Some(9_007_199_254_740_993), Some(0)))
+    );
+    assert!(
+        buckets[0]
+            .pace_label
+            .as_deref()
+            .is_some_and(|note| note.contains("invalid count field: currentValue"))
+    );
+    assert_eq!(buckets[1].status, UsageSnapshotStatus::Unavailable);
+    assert!(buckets[1].count_quota.is_none());
+    assert!(
+        buckets[1]
+            .pace_label
+            .as_deref()
+            .is_some_and(|note| note.contains("invalid count fields"))
+    );
 }

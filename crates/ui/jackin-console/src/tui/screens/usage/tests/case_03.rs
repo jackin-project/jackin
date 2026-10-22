@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::{
+    MeterPercentPoints, PercentObservationOrigin, RawPercentPoints, UsageMeterSide,
+};
 
 #[test]
 fn render_detail_overview_renders_all_windows_and_scrolling() {
@@ -22,10 +25,15 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
             label: "5h session".to_owned(),
             value: "10% left".to_owned(),
             reset: "resets in 2h".to_owned(),
-            remaining_percent: Some(10),
-            remaining_raw_percent: Some(10),
+            remaining_percent: Some(RawPercentPoints::new(10.0).unwrap()),
+            remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
             used_percent: None,
-            used_raw_percent: None,
+            used_percent_origin: None,
+            meter_percent: Some(MeterPercentPoints::new(10.0).unwrap()),
+            meter_side: Some(UsageMeterSide::Remaining),
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             reset_at_epoch: None,
             quota_state: UsageQuotaStateV1::Available,
             pace_label: None,
@@ -37,10 +45,15 @@ fn render_detail_overview_renders_all_windows_and_scrolling() {
             label: "weekly".to_owned(),
             value: "80% left".to_owned(),
             reset: "resets in 5d".to_owned(),
-            remaining_percent: Some(80),
-            remaining_raw_percent: Some(80),
+            remaining_percent: Some(RawPercentPoints::new(80.0).unwrap()),
+            remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
             used_percent: None,
-            used_raw_percent: None,
+            used_percent_origin: None,
+            meter_percent: Some(MeterPercentPoints::new(80.0).unwrap()),
+            meter_side: Some(UsageMeterSide::Remaining),
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             reset_at_epoch: None,
             quota_state: UsageQuotaStateV1::Available,
             pace_label: None,
@@ -177,9 +190,14 @@ fn render_unknown_window_shows_value_without_fabricated_bar() {
         value: "provider did not report".to_owned(),
         reset: String::new(),
         remaining_percent: None,
-        remaining_raw_percent: None,
+        remaining_percent_origin: None,
         used_percent: None,
-        used_raw_percent: None,
+        used_percent_origin: None,
+        meter_percent: None,
+        meter_side: None,
+        count_quota: None,
+        provider_quota_state: None,
+        money_used_percent: None,
         reset_at_epoch: None,
         quota_state: UsageQuotaStateV1::Unknown,
         pace_label: None,
@@ -234,8 +252,16 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
     assert_eq!(state.projection_issues.len(), 1);
 
     let window = &account.windows[0];
-    assert_eq!(window.used_percent, Some(100));
-    assert_eq!(window.used_raw_percent, Some(120));
+    assert_eq!(window.used_percent.map(RawPercentPoints::get), Some(120.0));
+    assert_eq!(
+        window.used_percent_origin,
+        Some(PercentObservationOrigin::ProviderReported)
+    );
+    assert_eq!(
+        window.meter_percent().map(MeterPercentPoints::get),
+        Some(100.0)
+    );
+    assert_eq!(window.meter_side, Some(UsageMeterSide::Used));
     assert_eq!(window.quota_state, UsageQuotaStateV1::Warning);
     assert_eq!(window.pace_label, Some("on pace".to_owned()));
 
@@ -315,9 +341,9 @@ fn projection_round_trips_balance_spendcap_plan_groups_without_invented_values()
 #[test]
 fn metric_group_meter_only_for_window_kind() {
     use super::UsageMetricGroup;
+    use jackin_protocol::control::RawPercentPoints;
     use jackin_protocol::usage_broker::{
         UsageMetricGroupKindV1, UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1,
-        UsagePercent,
     };
 
     let group = |kind, value| UsageMetricGroup {
@@ -342,22 +368,35 @@ fn metric_group_meter_only_for_window_kind() {
         UsageMetricGroupKindV1::Window,
         UsageMetricValueV1::Window {
             remaining_percent: None,
-            remaining_raw_percent: None,
-            used_percent: Some(UsagePercent::new(30).expect("valid percent")),
-            used_raw_percent: Some(30),
+            remaining_percent_origin: None,
+            used_percent: Some(RawPercentPoints::new(30.0).expect("valid percent")),
+            used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+            meter_percent: Some(MeterPercentPoints::new(30.0).unwrap()),
+            meter_side: Some(UsageMeterSide::Used),
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             period: UsageMetricPeriodV1::Unknown,
             unit: None,
         },
     );
-    assert_eq!(window.meter_percent(), Some(70));
+    assert_eq!(
+        window.meter_percent().map(MeterPercentPoints::get),
+        Some(30.0)
+    );
 
     let unknown = group(
         UsageMetricGroupKindV1::Window,
         UsageMetricValueV1::Window {
             remaining_percent: None,
-            remaining_raw_percent: None,
+            remaining_percent_origin: None,
             used_percent: None,
-            used_raw_percent: None,
+            used_percent_origin: None,
+            meter_percent: None,
+            meter_side: None,
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             period: UsageMetricPeriodV1::Unknown,
             unit: None,
         },

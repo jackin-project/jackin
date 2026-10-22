@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::CanonicalRemainingPercent;
 
 #[test]
 fn coordinator_winner_joiner_and_force_join_share_one_generation() {
@@ -188,7 +189,7 @@ fn coordinator_empty_result_is_failure_and_preserves_last_good() {
     assert_eq!(terminal.phase, UsageRefreshPhase::Failed);
     assert_eq!(
         terminal.snapshot.unwrap().buckets[0].remaining_percent,
-        Some(80)
+        Some(CanonicalRemainingPercent::new(80.0).unwrap())
     );
 }
 
@@ -232,7 +233,7 @@ fn coordinator_stale_and_error_success_results_schedule_retry() {
                 .as_ref()
                 .and_then(|view| view.buckets.first())
                 .and_then(|bucket| bucket.remaining_percent),
-            Some(80)
+            Some(CanonicalRemainingPercent::new(80.0).unwrap())
         );
     }
 }

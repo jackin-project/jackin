@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    UsageAccount, UsageMetricGroup, UsageWindow, credential_expiry_label, freshness_age_label,
-    group_freshness_label, issue_text, metric_group_kind_label, metric_group_value_summary,
-    metric_scope_summary, non_empty_label, quota_state_label, raw_percent_note,
-    relative_time_label,
+    UsageAccount, UsageMetricGroup, UsageWindow, count_quota_summary, credential_expiry_label,
+    freshness_age_label, group_freshness_label, issue_text, metric_group_kind_label,
+    metric_group_value_summary, metric_scope_summary, non_empty_label, quota_state_label,
+    raw_percent_note, relative_time_label,
 };
 
+use jackin_protocol::control::{MeterPercentPoints, UsageMeterSide};
 use jackin_protocol::usage_broker::{UsageMetricValueV1, UsageQuotaStateV1};
+use jackin_usage_provider_core::provider_quota_state_label;
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -28,18 +30,13 @@ pub(crate) fn append_account_full_body(
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         )));
-        if let Some(bar) = meter_line(width, window.meter_percent()) {
+        if let Some(bar) = meter_line(width, window.meter_geometry()) {
             lines.push(Line::from(Span::styled(
                 bar,
                 meter_style(window.quota_state),
             )));
         }
-        let detail = if window.reset.is_empty() {
-            format!("  {}", window.value)
-        } else {
-            format!("  {} · {}", window.value, window.reset)
-        };
-        lines.push(Line::from(detail));
+        lines.push(Line::from(window_detail_value(window)));
         append_window_extra(lines, window);
         lines.push(Line::from(""));
     }
@@ -102,11 +99,18 @@ pub(crate) fn append_window_extra(lines: &mut Vec<Line<'static>>, window: &Usage
             quota_state_label(window.quota_state)
         )));
     }
+    append_window_quantity_extra(lines, window);
+    if let Some(pace) = non_empty_label(window.pace_label.as_ref()) {
+        lines.push(Line::from(format!("  pace: {pace}")));
+    }
+}
+
+fn append_window_quantity_extra(lines: &mut Vec<Line<'static>>, window: &UsageWindow) {
     if let Some(note) = raw_percent_note(window) {
         lines.push(Line::from(format!("  {note}")));
     }
-    if let Some(pace) = non_empty_label(window.pace_label.as_ref()) {
-        lines.push(Line::from(format!("  pace: {pace}")));
+    if let Some(counts) = window.count_quota.and_then(count_quota_summary) {
+        lines.push(Line::from(format!("  counts: {counts}")));
     }
 }
 
@@ -140,18 +144,36 @@ pub(crate) fn append_summary_window(
             Style::default().fg(Color::DarkGray),
         )));
     }
-    if let Some(bar) = meter_line(width, window.meter_percent()) {
+    if let Some(bar) = meter_line(width, window.meter_geometry()) {
         lines.push(Line::from(Span::styled(
             bar,
             meter_style(window.quota_state),
         )));
     }
-    let detail = if window.reset.is_empty() {
-        format!("  {}", window.value)
-    } else {
-        format!("  {} · {}", window.value, window.reset)
-    };
-    lines.push(Line::from(detail));
+    lines.push(Line::from(window_detail_value(window)));
+    append_window_quantity_extra(lines, window);
+}
+
+fn window_detail_value(window: &UsageWindow) -> String {
+    let mut parts = Vec::new();
+    let value = window.value.trim();
+    if let Some(state) = window.provider_quota_state {
+        let label = provider_quota_state_label(state);
+        let already_prefixed = value == label
+            || value
+                .strip_prefix(label)
+                .is_some_and(|suffix| suffix.starts_with(" · "));
+        if !already_prefixed {
+            parts.push(label.to_owned());
+        }
+    }
+    if !value.is_empty() {
+        parts.push(value.to_owned());
+    }
+    if !window.reset.trim().is_empty() {
+        parts.push(window.reset.clone());
+    }
+    format!("  {}", parts.join(" · "))
 }
 
 pub(crate) fn append_overview_window(
@@ -165,18 +187,13 @@ pub(crate) fn append_overview_window(
             Style::default().fg(Color::DarkGray),
         )));
     }
-    if let Some(bar) = meter_line(width, window.meter_percent()) {
+    if let Some(bar) = meter_line(width, window.meter_geometry()) {
         lines.push(Line::from(Span::styled(
             bar,
             meter_style(window.quota_state),
         )));
     }
-    let detail = if window.reset.is_empty() {
-        format!("  {}", window.value)
-    } else {
-        format!("  {} · {}", window.value, window.reset)
-    };
-    lines.push(Line::from(detail));
+    lines.push(Line::from(window_detail_value(window)));
     append_window_extra(lines, window);
 }
 
@@ -256,7 +273,7 @@ pub(crate) fn append_metric_group(
             Style::default().fg(Color::DarkGray),
         )));
     }
-    if let Some(bar) = meter_line(width, group.meter_percent()) {
+    if let Some(bar) = meter_line(width, group.meter_geometry()) {
         lines.push(Line::from(Span::styled(
             bar,
             meter_style(group.quota_state),
@@ -343,9 +360,20 @@ pub(crate) fn row_style(selected: bool) -> Style {
     }
 }
 
-pub(crate) fn meter_line(width: usize, percent: Option<u8>) -> Option<String> {
-    let percent = usize::from(percent?.min(100));
-    let filled = width.saturating_mul(percent) / 100;
+pub(crate) fn meter_line(
+    width: usize,
+    geometry: Option<(MeterPercentPoints, UsageMeterSide)>,
+) -> Option<String> {
+    let (percent, side) = geometry?;
+    let fill_points = match side {
+        UsageMeterSide::Used => percent.get(),
+        UsageMeterSide::Remaining => percent.get(),
+    };
+    let fill_cells = width as f64 * fill_points / 100.0;
+    // Quantize continuous meter geometry to whole terminal cells only here.
+    let filled = (0..width)
+        .take_while(|cell| fill_cells >= (*cell + 1) as f64)
+        .count();
     Some(format!(
         "  {}{}",
         "█".repeat(filled),

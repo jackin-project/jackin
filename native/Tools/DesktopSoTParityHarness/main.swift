@@ -109,7 +109,7 @@ struct DesktopSoTParityHarness {
             lifecycleLabel: "Current account",
             provenanceLabel: "Live host",
             planOrStatusLabel: "Plan",
-            remainingPercent: pct,
+            remainingPercent: Double(pct),
             remainingLabel: "\(pct)%",
             headline: "\(pct)% left",
             resetDisplayLabel: "Resets in 3d",

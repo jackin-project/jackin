@@ -56,8 +56,11 @@ fn parity_antigravity_capsule_tabs_and_detail() {
         .filter(|row| row.kind == UsageDetailRowKind::Bucket)
         .collect::<Vec<_>>();
     assert_eq!(bucket_rows.len(), 4);
-    for (row, percent) in bucket_rows.iter().zip([73_u8, 41, 12, 88]) {
-        assert_eq!(row.meter_percent, Some(percent));
+    for (row, percent) in bucket_rows.iter().zip([73.0_f64, 41.0, 12.0, 88.0]) {
+        assert_eq!(
+            row.meter_percent.map(MeterPercentPoints::get),
+            Some(percent)
+        );
         assert!(
             row.display_label.starts_with(&format!("{percent}% left")),
             "bucket display must lead with the percent: {}",
@@ -178,9 +181,19 @@ fn parity_cursor_groups_money_and_units() {
     let meters = account
         .windows
         .iter()
-        .map(UsageWindow::meter_percent)
+        .map(|window| window.meter_percent().map(MeterPercentPoints::get))
         .collect::<Vec<_>>();
-    assert_eq!(meters, [Some(62), Some(55), None, Some(76)]);
+    assert_eq!(meters, [Some(62.0), Some(45.2), None, Some(76.0)]);
+    let spend_window = &account.windows[1];
+    assert_eq!(spend_window.meter_side, Some(UsageMeterSide::Used));
+    assert_eq!(
+        spend_window.remaining_percent.map(RawPercentPoints::get),
+        Some(55.0)
+    );
+    assert_eq!(
+        spend_window.remaining_percent_origin,
+        Some(PercentObservationOrigin::Derived)
+    );
     assert_eq!(account.windows[0].quota_state, UsageQuotaStateV1::Warning);
     assert_eq!(
         account.windows[0].reset_at_epoch,
@@ -261,6 +274,8 @@ fn parity_cursor_groups_money_and_units() {
     let enriched = parity_tabs(&views);
     let view = &enriched[0];
     let spend = usage_bucket_presentation(&view.buckets[1]);
+    assert_eq!(spend.meter_percent.map(MeterPercentPoints::get), Some(45.2));
+    assert_eq!(spend.meter_side, Some(UsageMeterSide::Used));
     assert!(
         spend.display_label.contains("$45.20"),
         "{}",
@@ -271,6 +286,8 @@ fn parity_cursor_groups_money_and_units() {
         "{}",
         spend.display_label
     );
+    assert!(spend.display_label.contains("45.2% used"));
+    assert!(spend.display_label.contains("55% left"));
     let credits = usage_bucket_presentation(&view.buckets[2]);
     assert_eq!(credits.meter_percent, None);
     assert!(
@@ -279,7 +296,10 @@ fn parity_cursor_groups_money_and_units() {
         credits.display_label
     );
     let requests = usage_bucket_presentation(&view.buckets[3]);
-    assert_eq!(requests.meter_percent, Some(76));
+    assert_eq!(
+        requests.meter_percent.map(MeterPercentPoints::get),
+        Some(76.0)
+    );
     assert!(
         requests.display_label.starts_with("76% left"),
         "{}",
@@ -305,7 +325,12 @@ fn parity_exhausted_zero_is_not_unknown() {
     let account = &screen.accounts[0];
     assert_eq!(account.status, "Available");
     assert_eq!(account.windows.len(), 1);
-    assert_eq!(account.windows[0].meter_percent(), Some(0));
+    assert_eq!(
+        account.windows[0]
+            .meter_percent()
+            .map(MeterPercentPoints::get),
+        Some(0.0)
+    );
     assert_eq!(account.windows[0].value, "0% left");
     assert_eq!(account.windows[0].quota_state, UsageQuotaStateV1::Exhausted);
     assert_ne!(account.windows[0].quota_state, UsageQuotaStateV1::Unknown);
@@ -315,7 +340,7 @@ fn parity_exhausted_zero_is_not_unknown() {
     let enriched = parity_tabs(&views);
     let view = &enriched[0];
     let bucket = usage_bucket_presentation(&view.buckets[0]);
-    assert_eq!(bucket.meter_percent, Some(0));
+    assert_eq!(bucket.meter_percent.map(MeterPercentPoints::get), Some(0.0));
     assert!(
         bucket.display_label.starts_with("0% left"),
         "{}",

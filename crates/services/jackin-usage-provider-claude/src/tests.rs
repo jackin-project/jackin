@@ -10,6 +10,12 @@ use jackin_usage_provider_core::{
 
 use super::*;
 
+fn used_points(bucket: &jackin_protocol::control::QuotaBucketView) -> Option<f64> {
+    bucket
+        .used_percent
+        .map(jackin_protocol::control::CanonicalUsedPercent::get)
+}
+
 mod case_01;
 mod case_02;
 mod case_03;

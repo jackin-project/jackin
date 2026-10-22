@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::{
+    CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit, Money,
+    PercentObservationOrigin,
+};
 
 #[test]
 fn all_provider_snapshots_round_trip_from_turso_to_usage_overlay_rows() {
@@ -77,7 +81,10 @@ fn all_provider_snapshots_round_trip_from_turso_to_usage_overlay_rows() {
         assert_eq!(view.account.plan_label.as_deref(), plan);
         assert_eq!(view.buckets.len(), 1);
         assert_eq!(view.buckets[0].label, bucket);
-        assert_eq!(view.buckets[0].remaining_percent, Some(remaining));
+        assert_eq!(
+            view.buckets[0].remaining_percent.unwrap().get(),
+            f64::from(remaining)
+        );
         assert_eq!(view.updated_label, "Updated 2m ago");
         assert_eq!(view.tabs.len(), 7);
         let mut ids: Vec<&str> = view.tabs.iter().map(|tab| tab.id.as_str()).collect();
@@ -176,6 +183,107 @@ fn same_provider_accounts_keep_distinct_store_tabs() {
 }
 
 #[test]
+fn sqlite_typed_bucket_round_trips_exact_count_money_and_fractional_evidence() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("snapshots.db");
+    let mut view = usage_view();
+    let requests = &mut view.buckets[0];
+    requests.used_percent = None;
+    requests.used_percent_origin = None;
+    requests.remaining_percent = None;
+    requests.remaining_percent_origin = None;
+    requests.count_quota = Some(CountQuota::new(
+        Some(u64::MAX),
+        Some(u64::MAX),
+        Some(0),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    requests.provider_quota_state = Some(jackin_protocol::control::ProviderQuotaState::Exhausted);
+
+    let money = &mut view.buckets[1];
+    let adjacent_used = f64::from_bits(43.375_f64.to_bits() + 1);
+    let adjacent_remaining = f64::from_bits(57.125_f64.to_bits() + 1);
+    money.used_percent =
+        Some(jackin_protocol::control::CanonicalUsedPercent::new(adjacent_used).unwrap());
+    money.used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    money.remaining_percent =
+        Some(jackin_protocol::control::CanonicalRemainingPercent::new(adjacent_remaining).unwrap());
+    money.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    money.used_money = Some(Money::new(i64::MIN, "USD", 4));
+    money.limit_money = Some(Money::new(i64::MAX, "USD", 7));
+
+    let mut unlimited = view.buckets[0].clone();
+    unlimited.label = "Unlimited".to_owned();
+    unlimited.used_label = None;
+    unlimited.limit_label = None;
+    unlimited.used_percent = None;
+    unlimited.used_percent_origin = None;
+    unlimited.remaining_percent = None;
+    unlimited.remaining_percent_origin = None;
+    unlimited.count_quota = None;
+    unlimited.provider_quota_state = Some(jackin_protocol::control::ProviderQuotaState::Unlimited);
+    unlimited.used_money = None;
+    unlimited.limit_money = None;
+    view.buckets.push(unlimited);
+
+    store_usage_snapshot(&db, &view).expect("store exact typed buckets");
+    block_on_store(close_cached_store(&db)).expect("close store before durable reopen");
+    let rows = stored_account_snapshots(&db).expect("read exact typed buckets");
+    let requests = rows
+        .iter()
+        .find(|row| row.window_kind == "Session")
+        .unwrap();
+    assert_eq!(
+        requests.quota_bucket.count_quota.unwrap().used,
+        Some(u64::MAX)
+    );
+    assert_eq!(
+        requests.quota_bucket.provider_quota_state,
+        Some(jackin_protocol::control::ProviderQuotaState::Exhausted)
+    );
+    let money = rows
+        .iter()
+        .find(|row| row.window_kind == "Credits")
+        .unwrap();
+    assert_eq!(
+        money.quota_bucket.used_percent.unwrap().get().to_bits(),
+        adjacent_used.to_bits()
+    );
+    assert_eq!(
+        money
+            .quota_bucket
+            .remaining_percent
+            .unwrap()
+            .get()
+            .to_bits(),
+        adjacent_remaining.to_bits()
+    );
+    assert_eq!(
+        money.quota_bucket.used_money.as_ref().unwrap().amount_minor,
+        i64::MIN
+    );
+    assert_eq!(
+        money
+            .quota_bucket
+            .limit_money
+            .as_ref()
+            .unwrap()
+            .amount_minor,
+        i64::MAX
+    );
+    let unlimited = rows
+        .iter()
+        .find(|row| row.window_kind == "Unlimited")
+        .unwrap();
+    assert_eq!(
+        unlimited.quota_bucket.provider_quota_state,
+        Some(jackin_protocol::control::ProviderQuotaState::Unlimited)
+    );
+}
+
+#[test]
 fn usage_snapshot_store_records_schema_version() {
     let dir = tempfile::tempdir().expect("tempdir");
     let db = dir.path().join("snapshots.db");
@@ -184,6 +292,6 @@ fn usage_snapshot_store_records_schema_version() {
 
     assert_eq!(
         schema_version(&db).expect("schema version").as_deref(),
-        Some("4")
+        Some("5")
     );
 }

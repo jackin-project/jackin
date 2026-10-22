@@ -69,14 +69,28 @@ fn kimi_usage_response_maps_weekly_and_rate_limit() {
 
     assert_eq!(buckets[0].label, "Rate Limit");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
-    assert_eq!(buckets[0].used_label.as_deref(), Some("50"));
-    assert_eq!(buckets[0].remaining_percent, Some(75));
-    assert_eq!(buckets[0].pace_label.as_deref(), Some("30% in reserve"));
+    assert_eq!(buckets[0].used_label, None);
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(buckets[0].used_percent, None);
+    assert_eq!(
+        buckets[0]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((None, Some(200), Some(150)))
+    );
+    assert_eq!(buckets[0].pace_label, None);
     assert_eq!(buckets[1].label, "Weekly");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
     assert_eq!(buckets[1].used_label.as_deref(), Some("220"));
     assert_eq!(buckets[1].limit_label.as_deref(), Some("1.0K"));
-    assert_eq!(buckets[1].remaining_percent, Some(78));
+    assert_eq!(buckets[1].remaining_percent, None);
+    assert_eq!(buckets[1].used_percent, None);
+    assert_eq!(
+        buckets[1]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((Some(220), Some(1_000), Some(780)))
+    );
     assert_eq!(buckets[1].pace_label, None);
 }
 
@@ -147,7 +161,13 @@ fn minimax_usage_response_maps_model_remains() {
     assert_eq!(buckets[0].status_slot, None);
     assert_eq!(buckets[0].used_label.as_deref(), Some("60"));
     assert_eq!(buckets[0].limit_label.as_deref(), Some("100"));
-    assert_eq!(buckets[0].remaining_percent, Some(40));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(
+        buckets[0]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((Some(60), Some(100), None))
+    );
     assert_eq!(buckets[0].pace_label.as_deref(), Some("Usage: 60 / 100"));
     assert_eq!(buckets.len(), 1);
 }
@@ -196,15 +216,71 @@ fn minimax_usage_response_maps_live_root_model_remains() {
             .map(|bucket| {
                 (
                     bucket.label.as_str(),
-                    bucket.remaining_percent,
+                    bucket
+                        .remaining_percent
+                        .map(jackin_protocol::control::CanonicalRemainingPercent::get),
                     bucket.pace_label.as_deref(),
                 )
             })
             .collect::<Vec<_>>(),
         vec![
-            ("General · 5h", Some(100), Some("Usage: 0 / 100")),
-            ("General · Weekly", Some(99), Some("Usage: 1 / 100")),
-            ("Video", Some(100), Some("Usage: 0 / 5")),
+            ("General · 5h", Some(100.0), None),
+            ("General · Weekly", Some(99.0), None),
+            ("Video", Some(100.0), Some("Usage: 0 / 5")),
+        ]
+    );
+    assert_eq!(
+        buckets
+            .iter()
+            .map(|bucket| {
+                bucket.count_quota.map(|count| {
+                    (
+                        bucket.label.as_str(),
+                        count.used,
+                        count.limit,
+                        count.remaining,
+                        count.unit,
+                        count.provenance,
+                    )
+                })
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            Some((
+                "General · 5h",
+                Some(0),
+                Some(0),
+                None,
+                jackin_protocol::control::CountQuotaUnit::Unknown,
+                jackin_protocol::control::CountQuotaProvenance::ProviderReported,
+            )),
+            Some((
+                "General · Weekly",
+                Some(1),
+                Some(0),
+                None,
+                jackin_protocol::control::CountQuotaUnit::Unknown,
+                jackin_protocol::control::CountQuotaProvenance::ProviderReported,
+            )),
+            Some((
+                "Video",
+                Some(0),
+                Some(5),
+                None,
+                jackin_protocol::control::CountQuotaUnit::Unknown,
+                jackin_protocol::control::CountQuotaProvenance::ProviderReported,
+            )),
+        ]
+    );
+    assert_eq!(
+        buckets
+            .iter()
+            .take(2)
+            .map(|bucket| bucket.remaining_percent_origin)
+            .collect::<Vec<_>>(),
+        vec![
+            Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported),
+            Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported),
         ]
     );
     assert_eq!(

@@ -3,6 +3,12 @@
 
 use super::*;
 
+fn used_points(bucket: &jackin_protocol::control::QuotaBucketView) -> Option<f64> {
+    bucket
+        .used_percent
+        .map(jackin_protocol::control::CanonicalUsedPercent::get)
+}
+
 #[test]
 fn jwt_user_id_derives_after_pipe() {
     let token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhdXRoMHx1c2VyXzEyMyJ9.c2lnbmF0dXJl";
@@ -48,7 +54,8 @@ fn period_parses_with_team_inference() {
     assert_eq!(buckets.len(), 2);
     assert_eq!(buckets[0].label, "Billing cycle");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
-    assert_eq!(buckets[0].remaining_percent, Some(66));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(used_points(&buckets[0]), Some(34.0));
     assert_eq!(buckets[1].label, "Spend (actual)");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Spend));
     assert!(buckets[1].used_money.is_none());
@@ -85,7 +92,8 @@ fn period_parses_top_level_live_shape() {
     assert_eq!(usage.limit, Some(40000.0));
     assert_eq!(usage.total_spend, Some(35950.0));
     let buckets = cursor_period_buckets(&usage, None, 1_781_728_000);
-    assert_eq!(buckets[0].remaining_percent, Some(88));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(used_points(&buckets[0]), Some(11.597));
 }
 
 #[test]
@@ -195,7 +203,8 @@ fn grok_bot_pooled_or_zero_yields_no_meter() {
     .expect("meter parses");
     let bucket = cursor_sand_bucket(&sand, 1_781_728_000);
     assert_eq!(bucket.label, "Grok Bot");
-    assert_eq!(bucket.remaining_percent, Some(75));
+    assert_eq!(bucket.remaining_percent, None);
+    assert_eq!(used_points(&bucket), Some(25.0));
 }
 
 #[test]
@@ -217,7 +226,8 @@ fn summary_preserves_every_pool_without_invention() {
             "Team · Pooled"
         ]
     );
-    assert_eq!(buckets[0].remaining_percent, Some(59));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(used_points(&buckets[0]), Some(41.0));
     assert!(buckets[0].resets_at.is_some());
     assert_eq!(buckets[4].used_label.as_deref(), Some("77"));
     assert!(buckets[4].used_money.is_none());
@@ -233,7 +243,13 @@ fn requests_bucket_from_model_keyed_shape() {
     let bucket = cursor_request_bucket(&usage);
     assert_eq!(bucket.used_label.as_deref(), Some("125"));
     assert_eq!(bucket.limit_label.as_deref(), Some("500"));
-    assert_eq!(bucket.remaining_percent, Some(75));
+    assert_eq!(bucket.remaining_percent, None);
+    assert_eq!(
+        bucket
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((Some(125), Some(500), None))
+    );
 }
 
 #[test]
@@ -249,8 +265,87 @@ fn requests_multi_model_pick_is_pinned_not_arbitrary() {
         }),
     ] {
         let usage = parse_cursor_request_usage(&value).expect("requests parse");
-        assert_eq!((usage.used, usage.limit), (125, 500));
+        assert_eq!((usage.used, usage.limit), (Some(125), Some(500)));
     }
+}
+
+#[test]
+fn requests_count_preserves_exact_unsigned_fields_without_inference() {
+    let usage = parse_cursor_request_usage(&serde_json::json!({
+        "alpha": {
+            "maxRequestUsage": 9007199254740993_u64,
+            "numRequestsTotal": "18446744073709551615",
+            "remainingRequests": "7"
+        }
+    }))
+    .expect("large exact count parses");
+    assert_eq!(usage.limit, Some(9_007_199_254_740_993));
+    assert_eq!(usage.used, Some(u64::MAX));
+    assert_eq!(usage.remaining, Some(7));
+
+    for invalid_limit in [
+        serde_json::json!(500.5),
+        serde_json::json!("500.5"),
+        serde_json::json!(18446744073709551616_u128.to_string()),
+        serde_json::json!(-1),
+    ] {
+        let usage = parse_cursor_request_usage(&serde_json::json!({
+            "alpha": {
+                "maxRequestUsage": invalid_limit,
+                "numRequestsTotal": "2",
+                "remainingRequests": "0"
+            }
+        }))
+        .expect("valid sibling counts survive invalid limit");
+        assert_eq!(
+            (usage.limit, usage.used, usage.remaining),
+            (None, Some(2), Some(0))
+        );
+        assert!(usage.diagnostic.as_deref().unwrap().contains("limit"));
+        let bucket = cursor_request_bucket(&usage);
+        assert_eq!(bucket.status, UsageSnapshotStatus::Fresh);
+        assert_eq!(
+            bucket
+                .count_quota
+                .map(|count| (count.used, count.limit, count.remaining)),
+            Some((Some(2), None, Some(0)))
+        );
+    }
+}
+
+#[test]
+fn requests_accept_zero_and_one_limits_and_mark_all_invalid_counts_unavailable() {
+    for limit in [0_u64, 1] {
+        let usage = parse_cursor_request_usage(&serde_json::json!({
+            "alpha": { "maxRequestUsage": limit, "numRequestsTotal": "0" }
+        }))
+        .expect("zero and one are observations");
+        let bucket = cursor_request_bucket(&usage);
+        assert_eq!(bucket.status, UsageSnapshotStatus::Fresh);
+        assert_eq!(
+            bucket.count_quota.map(|count| (count.used, count.limit)),
+            Some((Some(0), Some(limit)))
+        );
+    }
+
+    let usage = parse_cursor_request_usage(&serde_json::json!({
+        "alpha": {
+            "maxRequestUsage": "overflow",
+            "numRequestsTotal": -1,
+            "remainingRequests": 1.5
+        }
+    }))
+    .expect("recognized malformed fields are retained for diagnostics");
+    let bucket = cursor_request_bucket(&usage);
+    assert_eq!(bucket.status, UsageSnapshotStatus::Unavailable);
+    assert!(bucket.count_quota.is_none());
+    assert!(
+        bucket
+            .pace_label
+            .as_deref()
+            .unwrap()
+            .contains("limit, used, remaining")
+    );
 }
 
 #[test]

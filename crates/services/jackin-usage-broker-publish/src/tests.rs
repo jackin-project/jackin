@@ -11,11 +11,15 @@ use std::sync::{Arc, Mutex};
 
 use std::time::Duration;
 
-use jackin_protocol::control::{Money, UsageConfidence, UsageSeverity, UsageSource};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, CountQuotaPeriod,
+    CountQuotaProvenance, CountQuotaUnit, Money, PercentObservationOrigin, RawPercentPoints,
+    UsageConfidence, UsageMeterSide, UsageSeverity, UsageSnapshotStatus, UsageSource,
+};
 
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageLifecycleV1,
-    UsageMetricValueV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageQuotaStateV1,
+    UsageMetricValueV1, UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageQuotaStateV1,
 };
 
 use super::*;

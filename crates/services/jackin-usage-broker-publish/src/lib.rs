@@ -28,18 +28,16 @@ pub use groups::{
 };
 pub use merge::{aggregate_freshness, merge_views};
 pub use publisher::{AccountIdentityMetadata, ProjectionPublisher};
-pub use quota::{issue_code, money_used_raw_percent, quota_state_for_bucket};
+pub use quota::{issue_code, quota_state_for_bucket};
 pub use revoke::{catalog_entries, retain_revoked_accounts};
 pub use windows::{account_for_view, window_for_bucket, windows_for_snapshot};
 
 #[cfg(test)]
-use jackin_protocol::control::{
-    FocusedUsageView, QuotaBucketView, StatusSlot, UsageSnapshotStatus,
-};
+use jackin_protocol::control::{FocusedUsageView, QuotaBucketView, StatusSlot};
 #[cfg(test)]
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageCatalogEntry, UsageCoordinationError, UsageCoordinationErrorKind,
-    UsageFreshnessV1, UsageGenerationView, UsagePercent, UsageProjectionV1, UsageRefreshPhase,
+    UsageFreshnessV1, UsageGenerationView, UsageProjectionV1, UsageRefreshPhase,
 };
 #[cfg(test)]
 use jackin_usage_coordinator::{FileProjectionStateStore, UsageCoordinator};

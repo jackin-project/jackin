@@ -4,7 +4,7 @@
 use super::{
     CodexAdditionalRateLimit, CodexResetCredits, CodexRpcCredits, CodexRpcRateLimitWindow,
 };
-use jackin_protocol::control::StatusSlot;
+use jackin_protocol::control::{CanonicalUsedPercent, StatusSlot};
 use jackin_usage_provider_core::{json_number, window_minutes_label};
 use serde::Deserialize;
 
@@ -36,7 +36,7 @@ pub struct CodexIndividualLimit {
     pub(crate) limit: Option<serde_json::Value>,
     pub(crate) used: Option<serde_json::Value>,
     #[serde(rename = "remaining_percent")]
-    pub(crate) remaining_percent: Option<u8>,
+    pub(crate) remaining_percent: Option<f64>,
     #[serde(rename = "resets_at")]
     pub(crate) resets_at: Option<i64>,
 }
@@ -66,10 +66,7 @@ pub struct CodexWindowSnapshot {
 impl CodexWindowSnapshot {
     pub fn from_rpc(window: CodexRpcRateLimitWindow) -> Self {
         Self {
-            used_percent: window.used_percent.map(|used| {
-                let bounded = used.round().clamp(0.0, 100.0);
-                serde_json::Value::from(bounded.to_string().parse::<u8>().unwrap_or(0))
-            }),
+            used_percent: window.used_percent.map(serde_json::Value::from),
             reset_at: window.resets_at,
             reset_after_seconds: None,
             limit_window_seconds: None,
@@ -78,14 +75,12 @@ impl CodexWindowSnapshot {
     }
 
     pub(crate) fn used_percent_raw(&self) -> Option<f64> {
-        let used = json_number(self.used_percent.as_ref()?)?.round();
-        used.is_finite().then_some(used)
+        let used = json_number(self.used_percent.as_ref()?)?;
+        (used.is_finite() && used >= 0.0).then_some(used)
     }
 
-    pub fn used_percent_clamped(&self) -> Option<u8> {
-        let used = self.used_percent_raw()?;
-        #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
-        Some(used.clamp(0.0, 100.0) as u8)
+    pub fn used_percent_points(&self) -> Option<CanonicalUsedPercent> {
+        CanonicalUsedPercent::new(self.used_percent_raw()?).ok()
     }
 
     pub(crate) fn resets_at(&self, now: i64) -> Option<i64> {

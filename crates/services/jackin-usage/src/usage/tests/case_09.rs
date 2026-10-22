@@ -132,7 +132,7 @@ fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
 
     assert_eq!(api.account_label.as_deref(), Some("user@example.com"));
     assert_eq!(api.account_label, cli.account_label);
-    assert_eq!(api.daily_remaining_percent, Some(61));
+    assert_eq!(api.daily_remaining_percent, Some(61.0));
     assert_eq!(api.daily_remaining_percent, cli.daily_remaining_percent);
     assert_eq!(api.individual_credits, cli.individual_credits);
     assert_eq!(api.workspace_balances, cli.workspace_balances);
@@ -140,7 +140,16 @@ fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
     let buckets = api.buckets(1_781_185_560);
     assert_eq!(buckets[0].label, "Amp Free");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Daily));
-    assert_eq!(buckets[0].remaining_percent, Some(61));
+    assert_eq!(
+        buckets[0]
+            .remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(61.0)
+    );
+    assert_eq!(
+        buckets[0].remaining_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
     assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets daily"));
     assert_eq!(buckets[0].resets_at, None);
 }
@@ -149,11 +158,44 @@ fn amp_daily_display_text_maps_daily_slot_and_reset_description() {
 fn amp_daily_percentage_clamps_to_protocol_range() {
     let high = parse_amp_usage_output("Amp Free: 140% remaining today (resets daily)")
         .expect("high daily");
-    assert_eq!(high.daily_remaining_percent, Some(100));
-    let low =
-        parse_amp_usage_output("Amp Free: -5% remaining today (resets daily)").expect("low daily");
-    assert_eq!(low.daily_remaining_percent, Some(0));
+    assert_eq!(high.daily_remaining_percent, Some(140.0));
+    let high_bucket = high
+        .buckets(1_781_185_560)
+        .into_iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Daily))
+        .expect("high daily bucket");
+    assert_eq!(
+        high_bucket
+            .remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(140.0)
+    );
+    assert_eq!(
+        high_bucket.remaining_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
+    let (meter_percent, meter_side) = select_quota_meter(&high_bucket);
+    assert_eq!(
+        meter_percent.map(jackin_protocol::control::MeterPercentPoints::get),
+        Some(100.0)
+    );
+    assert_eq!(
+        meter_side,
+        Some(jackin_protocol::control::UsageMeterSide::Remaining)
+    );
+
+    assert!(
+        parse_amp_usage_output("Amp Free: -5% remaining today (resets daily)").is_none(),
+        "negative source percentage is not an exhausted quota"
+    );
+    let zero = parse_amp_usage_output("Amp Free: 0% remaining today (resets daily)")
+        .expect("zero daily remaining");
+    assert_eq!(zero.daily_remaining_percent, Some(0.0));
+    let fractional = parse_amp_usage_output("Amp Free: 57.125% remaining today (resets daily)")
+        .expect("fractional daily remaining");
+    assert_eq!(fractional.daily_remaining_percent, Some(57.125));
     assert!(parse_amp_usage_output("Amp Free: abc% remaining today (resets daily)").is_none());
+    assert!(parse_amp_usage_output("Amp Free: NaN% remaining today (resets daily)").is_none());
 }
 
 #[test]

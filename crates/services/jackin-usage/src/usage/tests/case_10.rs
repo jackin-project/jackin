@@ -49,7 +49,7 @@ fn amp_paid_only_balances_do_not_infer_daily_or_plan() {
     }
 
     let mut with_daily = usage.clone();
-    with_daily.daily_remaining_percent = Some(61);
+    with_daily.daily_remaining_percent = Some(61.0);
     assert_eq!(
         status_bar_headline_for_surface(UsageSurface::Amp, &with_daily.buckets(1_781_185_560))
             .as_deref(),
@@ -141,18 +141,55 @@ fn zai_quota_response_maps_token_session_and_time_limits() {
     assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
     assert_eq!(buckets[0].label, "Session");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
-    assert_eq!(buckets[0].remaining_percent, Some(75));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(
+        buckets[0]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(25.0)
+    );
+    assert_eq!(
+        buckets[0].used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
     assert_eq!(buckets[0].pace_label, None);
     assert_eq!(buckets[1].label, "Weekly");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
-    assert_eq!(buckets[1].remaining_percent, Some(10));
+    assert_eq!(buckets[1].remaining_percent, None);
+    assert_eq!(
+        buckets[1]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(90.0)
+    );
     assert_eq!(buckets[1].pace_label, None);
     assert_eq!(buckets[2].label, "MCP");
     assert_eq!(buckets[2].status_slot, None);
-    assert_eq!(buckets[2].remaining_percent, Some(75));
+    assert_eq!(buckets[2].remaining_percent, None);
+    assert_eq!(
+        buckets[2]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(25.0)
+    );
     assert_eq!(
         buckets[2].pace_label.as_deref(),
-        Some("30 / 120 (90 remaining)")
+        Some("30 used · 120 limit · 90 remaining")
+    );
+    let mcp_count = buckets[2]
+        .count_quota
+        .expect("independent MCP count observations");
+    assert_eq!(
+        (mcp_count.used, mcp_count.limit, mcp_count.remaining),
+        (Some(30), Some(120), Some(90))
+    );
+    assert_eq!(
+        mcp_count.provenance,
+        jackin_protocol::control::CountQuotaProvenance::ProviderReported
+    );
+    assert_eq!(
+        mcp_count.unit,
+        jackin_protocol::control::CountQuotaUnit::Unknown
     );
 }
 
@@ -233,7 +270,15 @@ fn codex_duration_classifier_and_individual_limit_are_provider_evidenced() {
         .iter()
         .find(|bucket| bucket.label == "Individual limit")
         .expect("individual cap");
-    assert_eq!(cap.remaining_percent, Some(82));
+    assert_eq!(
+        cap.remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(82.0)
+    );
+    assert_eq!(
+        cap.remaining_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
     assert_eq!(
         cap.limit_money.as_ref().map(|money| money.amount_minor),
         Some(30_000)

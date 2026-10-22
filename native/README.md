@@ -27,7 +27,7 @@ Product scope is limits only: remaining/used percentages, resets, plan/status, m
 ## Shipping baseline
 
 - Deployment target and release floor: **macOS 27.0**.
-- Shipping lane: **Xcode 27.0 (`27A266a`), macOS 27 SDK, Swift 6.4**, Swift 6 language mode with complete strict concurrency and warnings as errors. The `Package.swift` tools version tracks the shipping Swift.
+- Shipping lane: **Xcode 27.1 (`27A9275`), macOS 27 SDK, Swift 6.4**, Swift 6 language mode with complete strict concurrency and warnings as errors. The `Package.swift` tools version tracks the shipping Swift.
 - Forward-validation lane: **next major Xcode / next macOS SDK**, nonblocking and scheduled; never the shipping lane.
 - Architecture: Apple Silicon (`arm64`) static XCFramework assembly.
 - No compatibility branch, custom material, explicit `glassEffect`, or `GlassEffectContainer` exists in production UI.
@@ -148,7 +148,7 @@ The checked-in GitHub Actions workflow does not currently build or publish the m
 
 | Surface | Contract |
 |---|---|
-| Local validation | macOS 27.0, Xcode 27.0, arm64 static app, tests and bundle verification |
+| Local validation | macOS 27.0, Xcode 27.1, arm64 static app, tests and bundle verification |
 | Manual release validation | fixture version, ad-hoc rejection by release verifier, read-only reconciliation |
 | Publication | Not automated by a checked-in workflow |
 | Artifact | `jackin-desktop-<VERSION>-aarch64-apple-darwin.zip` plus SHA-256, Sigstore bundle, SBOM, attestation |
@@ -186,7 +186,7 @@ See the [public macOS guide](<../docs/content/(public)/guides/macos-usage-menu-b
 
 Manual host-only integration; never part of CI. Setup on the shipping Xcode:
 
-1. In Xcode 27.0, open Settings → Intelligence and enable external agent access.
+1. In Xcode 27.1 (`27A9275`), open Settings → Intelligence and enable external agent access.
 2. Run `xcodegen generate --spec native/project.yml`, then open `native/JackinDesktop.xcodeproj`
    in the running Xcode instance.
 3. From the external agent, enumerate the bridge's actually exposed tools
@@ -204,7 +204,7 @@ changes):
 
 - expected project: `native/JackinDesktop.xcodeproj` (generated, never committed)
 - expected scheme: `JackinDesktop`
-- expected Xcode build: 27.0 (`27A266a`)
+- expected Xcode build: 27.1 (`27A9275`)
 - observed tool list: enumerate and record in the session log before use
 
 ## Agent responsibility ownership
@@ -224,7 +224,7 @@ overlapping aesthetic skills.
 ### Apple agent skills export — recorded blocker
 
 `native/Vendor/AppleAgentSkills` is intentionally absent. Re-probed Xcode 27.0
-(build `27A266a`, the shipping lane) on 2026-10-14: the bundle ships agent
+(build `27A266a`, the shipping lane at that time) on 2026-10-14: the bundle ships agent
 intelligence only as compiled frameworks
 (`Contents/PlugIns/IDEIntelligence*.framework`,
 `Contents/SharedFrameworks/*Intelligence*.framework`) — a full-bundle scan
@@ -233,6 +233,8 @@ finds no exportable skill documents (`SKILL.md` or equivalent) anywhere in
 unsupported-export caveat is therefore the standing state: project-local
 agent knowledge comes exclusively from the pinned `tailrocks-*` skills above
 and this repository's own docs. Refresh rule: re-probe on every shipping
-Xcode change; if a future Xcode exposes a documented skills export, vendor it
-read-only with build, export date, and file hashes before use, and never
+Xcode change. The current Xcode 27.1 lane has not been re-probed for skills
+export; the 2026-10-14 result does not establish its behavior. If a future
+Xcode exposes a documented skills export, vendor it read-only with build,
+export date, and file hashes before use, and never
 execute unreviewed bundled scripts or network steps.

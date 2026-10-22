@@ -4,19 +4,25 @@
 use super::*;
 
 #[tokio::test]
-async fn connection_owner_exports_outcome_without_database_path() {
-    let directory = tempfile::tempdir().unwrap();
+async fn connection_owner_exports_outcome_without_database_path() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
     let success_path = directory.path().join("sqlite-secret-success.db");
     let failure_path = directory.path().join("sqlite-secret-directory");
-    std::fs::create_dir(&failure_path).unwrap();
+    std::fs::create_dir(&failure_path)?;
     let success_path = success_path.to_string_lossy();
     let failure_path = failure_path.to_string_lossy();
 
     let (export, subscriber) = jackin_diagnostics::observability::test_capsule_layers(false);
     let _subscriber = tracing::subscriber::set_default(subscriber);
 
-    connect_local(&success_path).await.unwrap();
-    connect_local(&failure_path).await.unwrap_err();
+    let connection = connect_local(&success_path)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    drop(connection);
+    if let Ok(connection) = connect_local(&failure_path).await {
+        drop(connection);
+        anyhow::bail!("opening a directory as a local database unexpectedly succeeded");
+    }
 
     export.force_flush();
     assert_eq!(export.finished_spans().len(), 2);
@@ -30,6 +36,7 @@ async fn connection_owner_exports_outcome_without_database_path() {
     ] {
         assert!(!export.contains_span_text(prohibited));
     }
+    Ok(())
 }
 
 #[test]

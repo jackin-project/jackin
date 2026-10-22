@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::control::{CountQuotaProvenance, CountQuotaUnit};
 
 #[test]
 fn request_round_trip_preserves_generation_and_force_semantics() {
@@ -46,7 +47,7 @@ fn broker_conflict_has_a_stable_sanitized_wire_name() {
     let value = serde_json::to_value(UsageCoordinationErrorKind::BrokerConflict)
         .expect("broker conflict should encode");
     assert_eq!(value, "broker_conflict");
-    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v8");
+    assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v9");
 }
 
 #[test]
@@ -99,10 +100,7 @@ fn projection_operations_and_publication_response_round_trip() {
             request
         );
     }
-    let projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
-    ))
-    .unwrap();
+    let projection = projection_fixture();
     let response = UsageBrokerResponse::Projection {
         projection: Box::new(projection),
     };
@@ -206,85 +204,240 @@ fn stdio_tunnel_envelope_round_trips_without_account_metadata() {
 }
 
 #[test]
-fn canonical_projection_v1_round_trips_frozen_fixture() {
-    let fixture = include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
-    );
-    let projection: UsageProjectionV1 = serde_json::from_str(fixture).unwrap();
+fn canonical_projection_v2_round_trips_historical_fixture_conversion() {
+    let fixture = historical_projection_fixture_value();
+    let projection: UsageProjectionV1 = serde_json::from_value(fixture.clone()).unwrap();
     projection.validate().unwrap();
+    let migrated_window = &projection.providers[0].accounts[0].windows[0];
+    assert_eq!(migrated_window.remaining_percent, None);
+    assert_eq!(migrated_window.remaining_percent_origin, None);
+    assert_eq!(migrated_window.meter_percent.unwrap().get(), 57.0);
+    assert_eq!(migrated_window.meter_side, Some(UsageMeterSide::Remaining));
     let encoded = serde_json::to_value(&projection).unwrap();
-    let original: serde_json::Value = serde_json::from_str(fixture).unwrap();
-    assert_eq!(encoded, original);
+    assert_eq!(encoded, fixture);
 }
 
 #[test]
-fn canonical_projection_v1_rejects_unknown_major() {
-    let error = serde_json::from_str::<UsageProjectionV1>(
-        r#"{"schema_version":2,"projection_id":"p","generated_at_epoch":0,"discovery_revision":"d","broker_instance_id":"b","broker_generation":0,"refresh_state":"idle","providers":[],"unresolved":[],"issues":[]}"#,
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("unsupported usage projection schema")
-    );
+fn public_projection_accepts_only_schema_two() {
+    for version in [1, 3] {
+        let error = serde_json::from_value::<UsageProjectionV1>(serde_json::json!({
+            "schema_version": version,
+            "projection_id": "p",
+            "generated_at_epoch": 0,
+            "discovery_revision": "d",
+            "broker_instance_id": "b",
+            "broker_generation": 0,
+            "refresh_state": "idle",
+            "providers": [],
+            "unresolved": [],
+            "issues": []
+        }))
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported usage projection schema")
+        );
+    }
 }
 
 #[test]
-fn canonical_projection_v1_rejects_invalid_percent_and_cross_field_shape() {
-    serde_json::from_str::<UsagePercent>("101").unwrap_err();
-    let mut projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
-    ))
-    .unwrap();
+fn projection_requires_origin_pairs_but_allows_independent_percent_sides() {
+    let mut projection = projection_fixture();
     let window = &mut projection.providers[0].accounts[0].windows[0];
-    window.used_percent = window.remaining_percent;
+    window.used_percent_origin = None;
+    window.used_percent = Some(RawPercentPoints::new(43.375).unwrap());
     projection.validate().unwrap_err();
+    projection.providers[0].accounts[0].windows[0].used_percent_origin =
+        Some(PercentObservationOrigin::Derived);
+    projection.validate().unwrap();
 }
 
 #[test]
-fn usage_percent_clamp_never_wraps_or_underflows() {
-    assert_eq!(UsagePercent::clamp_raw(-5).get(), 0);
-    assert_eq!(UsagePercent::clamp_raw(i32::MIN).get(), 0);
-    assert_eq!(UsagePercent::clamp_raw(0).get(), 0);
-    assert_eq!(UsagePercent::clamp_raw(57).get(), 57);
-    assert_eq!(UsagePercent::clamp_raw(100).get(), 100);
-    assert_eq!(UsagePercent::clamp_raw(120).get(), 100);
-    assert_eq!(UsagePercent::clamp_raw(i32::MAX).get(), 100);
-    let (raw, clamped) = UsagePercent::split_raw(120);
-    assert_eq!((raw, clamped.get()), (120, 100));
-    assert_eq!(UsagePercent::new(100).unwrap().meter_fill(), 100);
-}
-
-#[test]
-fn window_preserves_overage_raw_beside_clamped_geometry() {
-    let mut projection: UsageProjectionV1 = serde_json::from_str(include_str!(
-        "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
-    ))
-    .unwrap();
+fn window_keeps_source_percent_and_count_selected_geometry_separate() {
+    let mut projection = projection_fixture();
     {
         let window = &mut projection.providers[0].accounts[0].windows[0];
-        window.remaining_percent = None;
-        window.remaining_raw_percent = None;
-        window.used_percent = Some(UsagePercent::clamp_raw(120));
-        window.used_raw_percent = Some(120);
-        assert_eq!(window.used_percent.unwrap().meter_fill(), 100);
-        assert_eq!(window.used_raw_percent, Some(120));
+        window.remaining_percent = Some(RawPercentPoints::new(57.125).unwrap());
+        window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+        window.used_percent = Some(RawPercentPoints::new(43.375).unwrap());
+        window.used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+        window.count_quota = Some(CountQuota::new(
+            Some(9),
+            Some(10),
+            Some(1),
+            CountQuotaUnit::Requests,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        ));
+        window.meter_percent = Some(MeterPercentPoints::new(10.0).unwrap());
+        window.meter_side = Some(UsageMeterSide::Remaining);
     }
     projection.validate().unwrap();
+    let window = &projection.providers[0].accounts[0].windows[0];
+    assert_eq!(window.remaining_percent.unwrap().get(), 57.125);
+    assert_eq!(window.used_percent.unwrap().get(), 43.375);
+    assert_eq!(window.meter_percent.unwrap().get(), 10.0);
 
-    projection.providers[0].accounts[0].windows[0].used_percent =
-        Some(UsagePercent::new(57).unwrap());
-    projection.validate().unwrap_err();
+    let encoded = serde_json::to_value(&projection).unwrap();
+    let json_window = &encoded["providers"][0]["accounts"][0]["windows"][0];
+    assert_eq!(json_window["remaining_percent"].as_f64(), Some(57.125));
+    assert_eq!(json_window["used_percent"].as_f64(), Some(43.375));
+    assert_eq!(json_window["count_quota"]["used"].as_u64(), Some(9));
+    let decoded: UsageProjectionV1 = serde_json::from_value(encoded).unwrap();
+    assert_eq!(decoded, projection);
 
-    projection.providers[0].accounts[0].windows[0].used_percent = None;
+    projection.providers[0].accounts[0].windows[0].meter_side = None;
     projection.validate().unwrap_err();
+}
 
-    projection.providers[0].accounts[0].windows[0].used_percent =
-        Some(UsagePercent::clamp_raw(120));
-    projection.providers[0].accounts[0].windows[0].remaining_percent =
-        Some(UsagePercent::new(10).unwrap());
-    projection.validate().unwrap_err();
+#[test]
+fn window_metric_preserves_percent_origins_signed_money_ratio_and_count_period() {
+    let mut group = window_group("g-window", 0);
+    let UsageMetricValueV1::Window {
+        remaining_percent,
+        remaining_percent_origin,
+        used_percent,
+        used_percent_origin,
+        meter_percent,
+        meter_side,
+        count_quota,
+        provider_quota_state: _,
+        money_used_percent,
+        period,
+        unit,
+    } = &mut group.value
+    else {
+        unreachable!("test helper builds window group")
+    };
+    *remaining_percent = Some(RawPercentPoints::new(57.0).unwrap());
+    *remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    *used_percent = Some(RawPercentPoints::new(43.375).unwrap());
+    *used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    *meter_percent = Some(MeterPercentPoints::new(10.0).unwrap());
+    *meter_side = Some(UsageMeterSide::Remaining);
+    *count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    *money_used_percent = Some(RawPercentPoints::new(-10.375).unwrap());
+    *period = UsageMetricPeriodV1::Calendar {
+        granularity: UsageCalendarPeriodV1::Daily,
+    };
+    *unit = Some("requests".to_owned());
+
+    group.validate(0).unwrap();
+    let encoded = serde_json::to_value(&group).unwrap();
+    assert_eq!(encoded["value"]["remaining_percent"].as_f64(), Some(57.0));
+    assert_eq!(encoded["value"]["used_percent"].as_f64(), Some(43.375));
+    assert_eq!(
+        encoded["value"]["money_used_percent"].as_f64(),
+        Some(-10.375)
+    );
+    let decoded: UsageMetricGroupV1 = serde_json::from_value(encoded).unwrap();
+    assert_eq!(decoded, group);
+
+    if let UsageMetricValueV1::Window { period, .. } = &mut group.value {
+        *period = UsageMetricPeriodV1::Calendar {
+            granularity: UsageCalendarPeriodV1::Weekly,
+        };
+    }
+    assert!(group.validate(0).unwrap_err().contains("count period"));
+
+    let mut unknown = window_group("g-unknown", 0);
+    if let UsageMetricValueV1::Window {
+        count_quota,
+        period,
+        unit,
+        ..
+    } = &mut unknown.value
+    {
+        *count_quota = Some(CountQuota::new(
+            Some(1),
+            None,
+            None,
+            CountQuotaUnit::Unknown,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        ));
+        *period = UsageMetricPeriodV1::Unknown;
+        *unit = None;
+    }
+    unknown.validate(0).unwrap();
+}
+
+#[test]
+fn explicit_provider_quota_state_requires_matching_geometry_and_effective_state() {
+    let mut projection = projection_fixture();
+    let window = &mut projection.providers[0].accounts[0].windows[0];
+    window.provider_quota_state = Some(ProviderQuotaState::Exhausted);
+    window.quota_state = UsageQuotaStateV1::Exhausted;
+    window.meter_percent = Some(MeterPercentPoints::new(0.0).unwrap());
+    window.meter_side = Some(UsageMeterSide::Remaining);
+    window.count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    window.remaining_percent = Some(RawPercentPoints::new(57.125).unwrap());
+    window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    projection.validate().unwrap();
+
+    let mut invalid = projection.clone();
+    invalid.providers[0].accounts[0].windows[0].meter_percent = None;
+    invalid.providers[0].accounts[0].windows[0].meter_side = None;
+    assert!(
+        invalid
+            .validate()
+            .unwrap_err()
+            .contains("zero remaining meter")
+    );
+
+    let mut invalid = projection.clone();
+    invalid.providers[0].accounts[0].windows[0].quota_state = UsageQuotaStateV1::Available;
+    assert!(invalid.validate().unwrap_err().contains("inconsistent"));
+
+    // Lifecycle failures remain authoritative while preserving the explicit
+    // claim and its selected display geometry.
+    let mut unavailable = projection.clone();
+    unavailable.providers[0].accounts[0].windows[0].quota_state = UsageQuotaStateV1::Unavailable;
+    unavailable.validate().unwrap();
+
+    let mut group = window_group("g-unlimited", 0);
+    group.quota_state = UsageQuotaStateV1::NotApplicable;
+    if let UsageMetricValueV1::Window {
+        provider_quota_state,
+        meter_percent,
+        meter_side,
+        ..
+    } = &mut group.value
+    {
+        *provider_quota_state = Some(ProviderQuotaState::Unlimited);
+        *meter_percent = None;
+        *meter_side = None;
+    }
+    group.validate(0).unwrap();
+
+    let mut invalid = group.clone();
+    if let UsageMetricValueV1::Window { meter_percent, .. } = &mut invalid.value {
+        *meter_percent = Some(MeterPercentPoints::new(99.0).unwrap());
+    }
+    assert!(invalid.validate(0).unwrap_err().contains("meter geometry"));
+
+    let mut invalid = group.clone();
+    invalid.quota_state = UsageQuotaStateV1::Exhausted;
+    assert!(invalid.validate(0).unwrap_err().contains("inconsistent"));
+
+    let mut lifecycle_override = group;
+    lifecycle_override.quota_state = UsageQuotaStateV1::Error;
+    lifecycle_override.validate(0).unwrap();
 }
 
 #[test]

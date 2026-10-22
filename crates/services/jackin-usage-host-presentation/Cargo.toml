@@ -20,6 +20,7 @@ path = "src/lib.rs"
 
 [dependencies]
 jackin-core = { workspace = true }
+jackin-protocol = { workspace = true }
 
 [lints]
 workspace = true

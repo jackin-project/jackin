@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use jackin_protocol::usage_broker::{
     UsageCoordinationError, UsageCoordinationErrorKind, UsageProjectionRefreshStateV1,
-    UsageProjectionSchemaV1, UsageProjectionV1,
+    UsageProjectionSchemaV2, UsageProjectionV1,
 };
 use jackin_usage::host::{
     HostSurfaceId, HostUsageProjectionConfig, HostUsageProjectionRuntime, UsageBrokerClient,
@@ -482,21 +482,13 @@ impl UsageMenuBarBridge {
             let _lifecycle = self.lifecycle_lock()?;
             self.poll_latest_projection();
             self.with_state(|state| {
-                let mut rows = crate::presentation::provider_glance_rows(
+                crate::presentation::status_bar_provider_glance_rows(
                     &state.runtime,
                     &state.enabled_surface_ids,
                     state.format_prefs,
+                    max,
                 )
-                .map_err(map_runtime_err)?
-                .into_iter()
-                .filter(|row| {
-                    row.glance_remaining_percent
-                        .is_some_and(|percent| percent > 0)
-                })
-                .collect::<Vec<_>>();
-                rows.sort_by_key(|row| std::cmp::Reverse(severity_rank(&row.severity)));
-                rows.truncate(max.clamp(1, 3) as usize);
-                Ok(rows)
+                .map_err(map_runtime_err)
             })
         })
     }
@@ -709,7 +701,7 @@ fn severity_rank(severity: &str) -> u8 {
 
 fn empty_projection(build_id: &str) -> UsageProjectionV1 {
     UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: format!("offline-{build_id}"),
         generated_at_epoch: 0,
         discovery_revision: "offline".to_owned(),

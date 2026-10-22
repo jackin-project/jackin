@@ -135,26 +135,13 @@ pub(crate) fn kimi_extra_usage_bucket(extra: &KimiExtraUsage) -> Option<QuotaBuc
     }
     let used = Money::new(used_minor, currency, 2);
     let limit = limit_minor.map(|limit| Money::new(limit, currency, 2));
-    let used_percent = limit_minor.and_then(|limit| {
-        if limit <= 0 {
-            return None;
-        }
-        #[expect(
-            clippy::cast_sign_loss,
-            reason = "used/limit checked non-negative; percent is rounded f64→u8"
-        )]
-        {
-            Some(((used_minor.clamp(0, limit) as f64 / limit as f64) * 100.0).round() as u8)
-        }
-    });
-    let remaining_percent = used_percent.map(|used| 100u8.saturating_sub(used));
     let mut view = bucket(
         "Extra usage",
         Some(format!("{used} spent")),
         limit.as_ref().map(ToString::to_string),
-        remaining_percent,
         None,
-        used_percent.map(|used| format!("{used}% used")).as_deref(),
+        None,
+        None,
         UsageSnapshotStatus::Fresh,
     );
     view.status_slot = Some(StatusSlot::Spend);

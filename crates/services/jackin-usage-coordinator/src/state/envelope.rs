@@ -10,14 +10,16 @@ use jackin_protocol::usage_broker::{
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 3;
-pub(crate) const PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION: u32 = 2;
+pub(crate) const ACCOUNT_STATE_SCHEMA_VERSION: u32 = 4;
+pub(crate) const PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION: u32 = 3;
+pub(crate) const OLDER_ACCOUNT_STATE_SCHEMA_VERSION: u32 = 2;
 pub(crate) const LEGACY_ACCOUNT_STATE_SCHEMA_VERSION: u32 = 1;
 pub(crate) const MAX_ACCOUNT_STATE_BYTES: u64 = 512 * 1024;
 pub(crate) const MAX_CLOCK_SKEW_SECS: i64 = 300;
 pub(crate) const MAX_DISPLAY_CHARS: usize = 256;
-pub(crate) const PROJECTION_STATE_SCHEMA_VERSION: u32 = 3;
-pub(crate) const PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION: u32 = 2;
+pub(crate) const PROJECTION_STATE_SCHEMA_VERSION: u32 = 4;
+pub(crate) const PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION: u32 = 3;
+pub(crate) const LEGACY_PROJECTION_STATE_SCHEMA_VERSION: u32 = 2;
 pub(crate) static STATE_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub(crate) static STATE_QUARANTINE_COUNTER: AtomicU64 = AtomicU64::new(0);
 

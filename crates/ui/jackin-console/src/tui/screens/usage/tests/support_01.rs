@@ -5,6 +5,16 @@ use super::*;
 pub(super) const TEST_NOW_EPOCH: i64 = 1_800_000_000;
 
 pub(super) fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
+    test_window_points(label, remaining.map(f64::from))
+}
+
+pub(super) fn test_window_points(label: &str, remaining: Option<f64>) -> UsageWindow {
+    let remaining = remaining.map(|percent| {
+        jackin_protocol::control::RawPercentPoints::new(percent).expect("finite raw")
+    });
+    let meter_percent = remaining.and_then(|percent| {
+        jackin_protocol::control::MeterPercentPoints::new(percent.meter_geometry().get()).ok()
+    });
     UsageWindow {
         window_id: format!("{label}-id"),
         rank: 0,
@@ -13,9 +23,15 @@ pub(super) fn test_window(label: &str, remaining: Option<u8>) -> UsageWindow {
         value: format!("{label} value"),
         reset: "resets soon".to_owned(),
         remaining_percent: remaining,
-        remaining_raw_percent: remaining.map(i32::from),
+        remaining_percent_origin: remaining
+            .map(|_| jackin_protocol::control::PercentObservationOrigin::ProviderReported),
         used_percent: None,
-        used_raw_percent: None,
+        used_percent_origin: None,
+        meter_percent,
+        meter_side: meter_percent.map(|_| jackin_protocol::control::UsageMeterSide::Remaining),
+        count_quota: None,
+        provider_quota_state: None,
+        money_used_percent: None,
         reset_at_epoch: Some(1_800_000_000),
         quota_state: UsageQuotaStateV1::Available,
         pace_label: None,
@@ -82,6 +98,15 @@ pub(super) struct MetricGroupEpochs {
     pub(super) renews_at: i64,
 }
 
+fn metric_group_epochs(now: i64) -> MetricGroupEpochs {
+    MetricGroupEpochs {
+        retry_at: now + 120,
+        credential_expires_at: now + 30 * 86_400,
+        reset_at: now + 86_400,
+        renews_at: now + 5 * 86_400,
+    }
+}
+
 pub(super) fn metric_group_projection_fixture() -> (
     jackin_protocol::usage_broker::UsageProjectionV1,
     MetricGroupEpochs,
@@ -91,17 +116,12 @@ pub(super) fn metric_group_projection_fixture() -> (
         UsageAccountV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIdentityKindV1,
         UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1,
         UsageLimitWindowV1, UsageMembershipStateV1, UsageMetricGroupKindV1, UsageMetricValueV1,
-        UsagePercent, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1,
-        UsageProviderV1, UsageQuotaStateV1, UsageWindowCategoryV1,
+        UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageProjectionV1, UsageProviderV1,
+        UsageQuotaStateV1, UsageWindowCategoryV1,
     };
 
     let now = TEST_NOW_EPOCH;
-    let epochs = MetricGroupEpochs {
-        retry_at: now + 120,
-        credential_expires_at: now + 30 * 86_400,
-        reset_at: now + 86_400,
-        renews_at: now + 5 * 86_400,
-    };
+    let epochs = metric_group_epochs(now);
 
     let issue = |code: &str, scope, message: &str| UsageIssueV1 {
         code: code.to_owned(),
@@ -164,7 +184,7 @@ pub(super) fn metric_group_projection_fixture() -> (
     plan.renews_at_epoch = Some(epochs.renews_at);
 
     let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "p".to_owned(),
         generated_at_epoch: now,
         discovery_revision: "d".to_owned(),
@@ -198,9 +218,22 @@ pub(super) fn metric_group_projection_fixture() -> (
                     value_label: "120% used".to_owned(),
                     reset_label: "resets at midnight".to_owned(),
                     remaining_percent: None,
-                    remaining_raw_percent: None,
-                    used_percent: Some(UsagePercent::new(100).expect("valid percent")),
-                    used_raw_percent: Some(120),
+                    remaining_percent_origin: None,
+                    used_percent: Some(
+                        jackin_protocol::control::RawPercentPoints::new(120.0)
+                            .expect("valid raw percent"),
+                    ),
+                    used_percent_origin: Some(
+                        jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+                    ),
+                    meter_percent: Some(
+                        jackin_protocol::control::MeterPercentPoints::new(100.0)
+                            .expect("valid meter"),
+                    ),
+                    meter_side: Some(jackin_protocol::control::UsageMeterSide::Used),
+                    count_quota: None,
+                    provider_quota_state: None,
+                    money_used_percent: None,
                     reset_at_epoch: None,
                     quota_state: UsageQuotaStateV1::Warning,
                     pace_label: Some("on pace".to_owned()),
@@ -261,7 +294,7 @@ pub(super) fn assert_detail_group_rows(detail: &str) {
             "Pro",
             "renews in 5d",
             "quota: warning",
-            "raw used 120%",
+            "120% used (reported)",
             "pace: on pace",
             "Issues",
             "quota degraded (quota_degraded)",

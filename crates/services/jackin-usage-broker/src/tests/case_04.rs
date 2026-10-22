@@ -48,7 +48,7 @@ fn broker_catalog_match_requires_full_revision_and_entry_revisions() {
 #[test]
 fn publisher_rejects_stale_catalog_lease_without_overwriting_winner() {
     use jackin_protocol::usage_broker::{
-        UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1,
+        UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageProjectionV1,
     };
     use jackin_usage_coordinator::{
         FileAccountStateStore, FileProjectionStateStore, UsageCoordinator, UsageCoordinatorConfig,
@@ -64,7 +64,7 @@ fn publisher_rejects_stale_catalog_lease_without_overwriting_winner() {
         UsageCoordinatorConfig::default(),
     ));
     let projection = Arc::new(Mutex::new(UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "test:0".to_owned(),
         generated_at_epoch: 1_000,
         discovery_revision: "catalog-initial".to_owned(),

@@ -32,7 +32,12 @@ pub(super) fn codex_cached_usage_view() -> FocusedUsageView {
             label: "Session".to_owned(),
             used_label: Some("63% used".to_owned()),
             limit_label: Some("100%".to_owned()),
-            remaining_percent: Some(37),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(reported_remaining(37.0)),
+            remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: Some("Resets in 2h".to_owned()),
             resets_at: None,
             status_slot: None,
@@ -56,7 +61,12 @@ pub(super) fn presentation_bucket(
         label: label.to_owned(),
         used_label: None,
         limit_label: None,
-        remaining_percent: remaining,
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: remaining.map(|value| reported_remaining(f64::from(value))),
+        remaining_percent_origin: remaining.map(|_| PercentObservationOrigin::ProviderReported),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: slot,
@@ -66,6 +76,10 @@ pub(super) fn presentation_bucket(
         limit_money: None,
         severity: UsageSeverity::Normal,
     }
+}
+
+pub(super) fn reported_remaining(value: f64) -> CanonicalRemainingPercent {
+    CanonicalRemainingPercent::new(value).expect("test remaining percentage is valid")
 }
 
 pub(super) fn detail_view(

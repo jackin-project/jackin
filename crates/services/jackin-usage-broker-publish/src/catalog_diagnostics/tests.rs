@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use jackin_protocol::usage_broker::{UsageProjectionRefreshStateV1, UsageProjectionSchemaV1};
+use jackin_protocol::usage_broker::{UsageProjectionRefreshStateV1, UsageProjectionSchemaV2};
 
 #[test]
 fn cleared_diagnostic_removes_empty_provider_row() {
     let mut projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "fixture:0".to_owned(),
         generated_at_epoch: 0,
         discovery_revision: "fixture".to_owned(),

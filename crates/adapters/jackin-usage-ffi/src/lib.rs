@@ -8,11 +8,11 @@ mod presentation;
 
 pub use bridge::UsageMenuBarBridge;
 pub use dto::{
-    AccountDescriptorDto, DesktopInventoryDto, DesktopProjectionDto, DesktopProviderGroupDto,
-    DesktopProviderProjectionDto, DesktopProviderStateDto, DiscoveryDiagnosticDto, MoneyDto,
-    OpenConfig, OverviewRowDto, ProviderGlanceRowDto, QuotaBucketDto, SelectedAccountRouteDto,
-    SurfaceDescriptorDto, UsageDetailPresentationDto, UsageDetailRowDto, UsageEventBatchDto,
-    UsageEventDto, UsageFormatPrefsDto, UsageIdentityPresentationDto, UsagePresentationLineDto,
-    UsageViewDto,
+    AccountDescriptorDto, CountQuotaDto, DesktopInventoryDto, DesktopProjectionDto,
+    DesktopProviderGroupDto, DesktopProviderProjectionDto, DesktopProviderStateDto,
+    DiscoveryDiagnosticDto, MoneyDto, OpenConfig, OverviewRowDto, ProviderGlanceRowDto,
+    QuotaBucketDto, SelectedAccountRouteDto, SurfaceDescriptorDto, UsageDetailPresentationDto,
+    UsageDetailRowDto, UsageEventBatchDto, UsageEventDto, UsageFormatPrefsDto,
+    UsageIdentityPresentationDto, UsagePresentationLineDto, UsageViewDto,
 };
 pub use error::UsageBridgeError;

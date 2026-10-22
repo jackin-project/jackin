@@ -142,8 +142,9 @@ pub(crate) fn tab_status_label(
         })
         .find_map(|candidate| {
             candidate
+                .quota_bucket
                 .remaining_percent
-                .map(|remaining| format!("{} {remaining}% left", candidate.window_kind))
+                .map(|remaining| format!("{} {}% left", candidate.window_kind, remaining.get()))
         })
         .unwrap_or_else(|| row.view_status.clone())
 }

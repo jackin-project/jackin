@@ -3,11 +3,15 @@
 
 use std::path::Path;
 
+use jackin_protocol::control::{
+    MeterPercentPoints, PercentObservationOrigin, ProviderQuotaState, RawPercentPoints,
+    UsageMeterSide,
+};
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageFreshnessV1,
     UsageIdentityKindV1, UsageLifecycleV1, UsageMembershipStateV1, UsageMetricGroupKindV1,
-    UsageMetricGroupV1, UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1, UsagePercent,
-    UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageProviderV1,
+    UsageMetricGroupV1, UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1,
+    UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageProjectionV1, UsageProviderV1,
     UsageQuotaStateV1, UsageUnresolvedV1,
 };
 
@@ -21,7 +25,7 @@ fn projection(
     providers: Vec<UsageProviderV1>,
 ) -> UsageProjectionV1 {
     UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: format!("{instance}:{generation}"),
         generated_at_epoch: i64::try_from(generation).unwrap_or(i64::MAX),
         discovery_revision: format!("discovery-{generation}"),
@@ -101,10 +105,15 @@ fn window_group(group_id: &str, rank: u32, period: UsageCalendarPeriodV1) -> Usa
         is_stale: false,
         quota_state: UsageQuotaStateV1::Available,
         value: UsageMetricValueV1::Window {
-            remaining_percent: Some(UsagePercent::new(64).expect("valid percent")),
-            remaining_raw_percent: Some(64),
+            remaining_percent: Some(RawPercentPoints::new(64.0).expect("valid percent")),
+            remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
             used_percent: None,
-            used_raw_percent: None,
+            used_percent_origin: None,
+            meter_percent: Some(MeterPercentPoints::new(64.0).expect("valid meter")),
+            meter_side: Some(UsageMeterSide::Remaining),
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             period: UsageMetricPeriodV1::Calendar {
                 granularity: period,
             },
@@ -205,6 +214,57 @@ fn amp_glance_uses_typed_daily_period_and_not_provider_label_text() {
             .group_id,
         "amp-day"
     );
+}
+
+#[test]
+fn selected_glance_group_preserves_unlimited_state_and_raw_conflict() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut weekly = window_group("weekly-unlimited", 0, UsageCalendarPeriodV1::Weekly);
+    weekly.quota_state = UsageQuotaStateV1::NotApplicable;
+    let UsageMetricValueV1::Window {
+        remaining_percent,
+        provider_quota_state,
+        meter_percent,
+        meter_side,
+        ..
+    } = &mut weekly.value
+    else {
+        panic!("fixture is a window group")
+    };
+    *remaining_percent = Some(RawPercentPoints::new(99.0).expect("raw source"));
+    *provider_quota_state = Some(ProviderQuotaState::Unlimited);
+    *meter_percent = None;
+    *meter_side = None;
+
+    let runtime = open_runtime(
+        dir.path(),
+        projection(
+            "broker-a",
+            1,
+            vec![provider(
+                "openai",
+                0,
+                vec![account("account-unlimited", 0, vec![weekly])],
+            )],
+        ),
+    );
+    let presented = runtime
+        .provider_presentation("codex")
+        .expect("provider presentation");
+    let UsageMetricValueV1::Window {
+        remaining_percent,
+        provider_quota_state,
+        meter_percent,
+        meter_side,
+        ..
+    } = &presented.glance_metric_group.expect("weekly group").value
+    else {
+        panic!("selected glance is a window group")
+    };
+    assert_eq!(remaining_percent.map(RawPercentPoints::get), Some(99.0));
+    assert_eq!(*provider_quota_state, Some(ProviderQuotaState::Unlimited));
+    assert_eq!(*meter_percent, None);
+    assert_eq!(*meter_side, None);
 }
 
 #[test]

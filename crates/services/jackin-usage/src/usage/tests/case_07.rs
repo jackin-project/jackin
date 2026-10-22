@@ -19,7 +19,17 @@ fn summary_bucket_selects_first_ranked_limit_over_tighter_spend() {
     let buckets = usage.into_buckets(1_781_185_560);
     let chosen = summary_bucket(&buckets).expect("a ranked bucket");
     assert_eq!(chosen.status_slot, Some(StatusSlot::Weekly));
-    assert_eq!(chosen.remaining_percent, Some(73));
+    assert_eq!(chosen.remaining_percent, None);
+    assert_eq!(
+        chosen
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(27.0)
+    );
+    assert_eq!(
+        chosen.used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
 }
 
 #[test]
@@ -42,7 +52,7 @@ fn usage_tab_status_label_selects_ranked_limit_and_names_unslotted_winner() {
     view.buckets = ranked_wins.into_buckets(1_781_300_000);
     let label = usage_tab_status_label(&view);
     assert!(
-        label.starts_with("60% left"),
+        label.starts_with("40% used"),
         "ranked weekly must win over tighter fable: got {label:?}"
     );
 
@@ -57,7 +67,7 @@ fn usage_tab_status_label_selects_ranked_limit_and_names_unslotted_winner() {
     view.buckets = fable_wins.into_buckets(1_781_300_000);
     let label = usage_tab_status_label(&view);
     assert!(
-        label.starts_with("Fable 10% left"),
+        label.starts_with("Fable 90% used"),
         "unslotted winner must be named: got {label:?}"
     );
 }
@@ -121,14 +131,35 @@ fn codex_oauth_response_maps_primary_weekly_spark_and_credits() {
     let buckets = usage.buckets(1_781_185_560);
 
     assert_eq!(buckets[0].label, "Session");
-    assert_eq!(buckets[0].remaining_percent, Some(37));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(
+        buckets[0]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(63.0)
+    );
+    assert_eq!(
+        buckets[0].used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
     assert_eq!(buckets[1].label, "Weekly");
-    assert_eq!(buckets[1].remaining_percent, Some(10));
+    assert_eq!(buckets[1].remaining_percent, None);
+    assert_eq!(
+        buckets[1]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(90.0)
+    );
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
-    assert!(buckets.iter().any(
-        |bucket| bucket.label == "Codex Spark 5-hour" && bucket.remaining_percent == Some(100)
-    ));
+    assert!(buckets.iter().any(|bucket| {
+        bucket.label == "Codex Spark 5-hour"
+            && bucket.remaining_percent.is_none()
+            && bucket
+                .used_percent
+                .map(jackin_protocol::control::CanonicalUsedPercent::get)
+                == Some(0.0)
+    }));
     assert!(buckets.iter().all(|bucket| {
         !bucket.label.starts_with("Codex Spark") || bucket.status_slot.is_none()
     }));
@@ -195,11 +226,23 @@ fn codex_rpc_response_maps_account_windows_and_credits() {
     assert_eq!(usage.response.plan_type.as_deref(), Some("pro"));
     assert_eq!(buckets[0].label, "Session");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
-    assert_eq!(buckets[0].remaining_percent, Some(37));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(
+        buckets[0]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(63.0)
+    );
     assert_eq!(buckets[0].pace_label.as_deref(), Some("15% in reserve"));
     assert_eq!(buckets[1].label, "Weekly");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
-    assert_eq!(buckets[1].remaining_percent, Some(10));
+    assert_eq!(buckets[1].remaining_percent, None);
+    assert_eq!(
+        buckets[1]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(90.0)
+    );
     assert_eq!(buckets[1].pace_label.as_deref(), Some("1 week window"));
     let credits = buckets
         .iter()
