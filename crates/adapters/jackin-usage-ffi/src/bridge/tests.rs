@@ -27,6 +27,37 @@ fn broker_conflict_has_a_specific_sanitized_bridge_error_code() {
 }
 
 #[test]
+fn missing_broker_executable_keeps_the_runtime_closed() {
+    use jackin_usage::host::UsageBrokerConfig;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = UsageMenuBarBridge::create();
+    let host_config = to_projection_config(OpenConfig {
+        data_dir_override: Some(dir.path().display().to_string()),
+        config_root_override: Some(dir.path().join("config").display().to_string()),
+        refresh_floor_secs: 120,
+        enabled_surface_ids: vec!["claude".to_owned()],
+        allow_live_probes: true,
+    })
+    .expect("host config");
+    let mut broker_config = UsageBrokerConfig::for_data_dir(dir.path().to_owned());
+    broker_config.service_executable = None;
+
+    let error = bridge
+        .open_runtime_with_config(host_config, broker_config)
+        .expect_err("activation without an executable must fail");
+    assert!(matches!(
+        error,
+        UsageBridgeError::Rejected { ref code, .. } if code == "coordination_unavailable"
+    ));
+    assert!(matches!(
+        bridge.list_surfaces(),
+        Err(UsageBridgeError::RuntimeUnavailable)
+    ));
+    assert!(bridge.inner.lock().expect("bridge lock").is_none());
+}
+
+#[test]
 fn local_source_identity_kind_round_trips_in_projection_json() {
     let mut projection = fixture_projection();
     projection.providers[0].accounts[0].identity_kind = UsageIdentityKindV1::LocalSourceHandle;
