@@ -204,6 +204,121 @@ async fn channel_lifecycle_and_tag_are_not_interchangeable() {
 }
 
 #[tokio::test]
+async fn preview_requires_its_immutable_source_release_and_annotated_tag() {
+    for mutation in 0..7 {
+        let fixture = Fixture::new(PackageReleaseChannel::Preview);
+        fixture.fail_or_remove_job("Publish authenticated channel release", false);
+        match mutation {
+            0 => fixture.change(&release_route(&fixture.receipt), |release| {
+                release["immutable"] = json!(false);
+            }),
+            1 => fixture.change(&release_route(&fixture.receipt), |release| {
+                release["prerelease"] = json!(false);
+            }),
+            2 => fixture.change(&release_route(&fixture.receipt), |release| {
+                release["body"] = json!(format!("{}\n", release["body"].as_str().unwrap()));
+            }),
+            3 => fixture.change(&annotated_tag_route(), |tag| {
+                tag["message"] = json!("velnor-package-release-recovery-v1\n");
+            }),
+            4 => fixture.change(&tag_route(&fixture.receipt), |tag| {
+                // A lightweight tag at the right commit is not the published generation.
+                tag["object"] = json!({"sha":fixture.receipt.source.commit_sha,"type":"commit"});
+            }),
+            5 => fixture.change(&annotated_tag_route(), |tag| {
+                tag["object"]["sha"] = json!(fixture.receipt.workflow.authority_sha);
+            }),
+            _ => fixture.change(&annotated_tag_route(), |tag| {
+                tag["tag"] = json!("preview");
+            }),
+        }
+        assert!(fixture.pin().await.is_err(), "mutation {mutation}");
+    }
+}
+
+#[tokio::test]
+async fn preview_source_and_workflow_authority_are_distinct_identities() {
+    let fixture = Fixture::new(PackageReleaseChannel::Preview);
+    let (source, authority) = (
+        fixture.receipt.source.commit_sha.clone(),
+        fixture.receipt.workflow.authority_sha.clone(),
+    );
+    assert_ne!(source, authority);
+    fixture.pin().await.unwrap();
+    for (route, sha) in [
+        (
+            route(&format!(
+                "actions/runs/{}/attempts/{}",
+                fixture.receipt.workflow.run_id, fixture.receipt.workflow.run_attempt
+            )),
+            &source,
+        ),
+        (
+            route(&format!(
+                "actions/runs/{}/attempts/{}",
+                fixture.receipt.source.ci_run_id, fixture.receipt.source.ci_run_attempt
+            )),
+            &authority,
+        ),
+    ] {
+        let fixture = Fixture::new(PackageReleaseChannel::Preview);
+        fixture.change(&route, |run| run["head_sha"] = json!(sha));
+        assert!(fixture.pin().await.is_err(), "{route}");
+    }
+    let fixture = Fixture::new(PackageReleaseChannel::Preview);
+    fixture.change(&jobs_route(&fixture.receipt), |rows| {
+        rows["jobs"][0]["head_sha"] = json!(source);
+    });
+    fixture.pin().await.unwrap_err();
+}
+
+#[tokio::test]
+async fn preview_source_must_precede_its_authority_on_protected_main() {
+    for (base_is_source, mutation) in [true, false]
+        .into_iter()
+        .flat_map(|first| (0..5).map(move |mutation| (first, mutation)))
+    {
+        let fixture = Fixture::new(PackageReleaseChannel::Preview);
+        let receipt = &fixture.receipt;
+        let route = if base_is_source {
+            compare_route(&receipt.source.commit_sha, &receipt.workflow.authority_sha)
+        } else {
+            compare_route(&receipt.workflow.authority_sha, "main")
+        };
+        fixture.change(&route, |comparison| match mutation {
+            0 => comparison["status"] = json!("diverged"),
+            1 => comparison["status"] = json!("behind"),
+            2 => comparison["behind_by"] = json!(1),
+            3 => comparison["merge_base_commit"]["sha"] = json!("f".repeat(40)),
+            _ => comparison["status"] = json!("identical"),
+        });
+        let error = fixture.pin().await.unwrap_err().to_string();
+        assert!(
+            error.contains("not an ancestor"),
+            "{base_is_source}/{mutation}: {error}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn stable_needs_no_source_to_authority_comparison() {
+    let fixture = Fixture::new(PackageReleaseChannel::Stable);
+    fixture.pin().await.unwrap();
+    let requests = fixture.requests.lock().unwrap();
+    let compares: Vec<_> = requests
+        .iter()
+        .filter(|url| url.contains("/compare/"))
+        .collect();
+    assert_eq!(
+        compares,
+        [&compare_route(
+            &fixture.receipt.workflow.authority_sha,
+            "main"
+        )]
+    );
+}
+
+#[tokio::test]
 async fn preview_requires_exact_signed_receipt_recovery_envelope_in_annotated_tag() {
     let fixture = Fixture::new(PackageReleaseChannel::Preview);
     fixture.change(&annotated_tag_route(), |tag| {

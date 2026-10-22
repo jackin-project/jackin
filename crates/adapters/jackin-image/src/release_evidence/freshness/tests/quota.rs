@@ -6,8 +6,9 @@ use super::*;
 #[tokio::test]
 async fn historical_admission_is_once_per_pin_with_mutable_checks_at_both_boundaries() {
     for (channel, expected) in [
-        (PackageReleaseChannel::Preview, 25),
-        (PackageReleaseChannel::Stable, 25),
+        // Preview admits A <= B <= main once; stable has A == B and checks B <= main.
+        (PackageReleaseChannel::Preview, 27),
+        (PackageReleaseChannel::Stable, 26),
     ] {
         let fixture = Fixture::new(channel);
         let pin = fixture.pin().await.unwrap();

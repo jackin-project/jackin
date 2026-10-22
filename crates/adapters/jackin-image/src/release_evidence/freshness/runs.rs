@@ -64,6 +64,19 @@ pub(super) async fn repository(transport: &impl Transport) -> Result<()> {
     Ok(())
 }
 
+#[derive(Deserialize)]
+struct Commit {
+    sha: String,
+}
+#[derive(Deserialize)]
+struct Comparison {
+    status: String,
+    ahead_by: u64,
+    behind_by: u64,
+    base_commit: Commit,
+    merge_base_commit: Commit,
+}
+
 fn identity(
     run: &Run,
     id: u64,
@@ -190,6 +203,39 @@ pub(super) async fn validate(
     ensure!(
         ci.status == "completed" && ci.conclusion.as_deref() == Some("success"),
         "signed source CI is not successful"
+    );
+    // Source ancestry is immutable signing context and is admitted once per pin.
+    // Rechecks observe mutable publication state without repeating this history query.
+    ancestry(
+        transport,
+        &receipt.source.commit_sha,
+        &receipt.workflow.authority_sha,
+    )
+    .await?;
+    ancestry(transport, &receipt.workflow.authority_sha, "main").await
+}
+
+/// Require `base` to be `head` or one of its ancestors (`A <= B <= main`).
+async fn ancestry(transport: &impl Transport, base: &str, head: &str) -> Result<()> {
+    if base == head {
+        return Ok(());
+    }
+    // Page 2 keeps comparison metadata without the potentially large file list.
+    let comparison: Comparison = read(
+        transport,
+        &format!("compare/{base}...{head}?per_page=1&page=2"),
+    )
+    .await?;
+    ensure!(
+        comparison.base_commit.sha == base
+            && comparison.merge_base_commit.sha == base
+            && comparison.behind_by == 0
+            && match comparison.status.as_str() {
+                "identical" => comparison.ahead_by == 0,
+                "ahead" => comparison.ahead_by > 0,
+                _ => false,
+            },
+        "release source is not an ancestor of its workflow authority on protected main"
     );
     Ok(())
 }

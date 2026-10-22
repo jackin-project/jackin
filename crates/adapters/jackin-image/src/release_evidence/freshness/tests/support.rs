@@ -18,10 +18,7 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new(channel: PackageReleaseChannel) -> Self {
-        let mut receipt = crate::release_evidence::tests::channel_receipt(channel);
-        if channel == PackageReleaseChannel::Preview {
-            receipt.workflow.authority_sha = "b".repeat(40);
-        }
+        let receipt = crate::release_evidence::tests::channel_receipt(channel);
         let raw = canonical_json_bytes(&receipt).unwrap();
         let bundle = b"API model signature bundle".to_vec();
         let expected = expected_assets(&receipt, &raw, &bundle);
@@ -120,6 +117,26 @@ fn workflow_observations(receipt: &PackageReleaseReceipt, responses: &mut BTreeM
         jobs_route(receipt),
         json!({"total_count":jobs.len(),"jobs":jobs}),
     );
+    let (source, authority) = (&receipt.source.commit_sha, &receipt.workflow.authority_sha);
+    if source != authority {
+        responses.insert(
+            compare_route(source, authority),
+            comparison(source, "ahead", 3),
+        );
+    }
+    responses.insert(
+        compare_route(authority, "main"),
+        comparison(authority, "ahead", 2),
+    );
+}
+
+pub(super) fn compare_route(base: &str, head: &str) -> String {
+    route(&format!("compare/{base}...{head}?per_page=1&page=2"))
+}
+
+fn comparison(base: &str, status: &str, ahead_by: u64) -> Value {
+    json!({"status":status,"ahead_by":ahead_by,"behind_by":0,"total_commits":ahead_by,
+        "base_commit":{"sha":base},"merge_base_commit":{"sha":base}})
 }
 
 fn publication_observations(

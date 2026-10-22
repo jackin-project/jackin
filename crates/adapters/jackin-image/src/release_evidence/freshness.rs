@@ -3,9 +3,12 @@
 
 //! Public observations supplement already authenticated receipt bytes; they never
 //! replace Sigstore verification or select a different requested helper version.
-//! Historical repository and exact-attempt build evidence is admitted once per
-//! pin. Mutable release lifecycle, inventory and source-bound tag facts remain fresh at every
-//! execution and installation boundary; a new download must admit its own pin.
+//! Historical repository, exact-attempt build evidence and source ancestry are
+//! admitted once per pin. Release lifecycle, recovery envelope, inventory and
+//! source-bound tag facts remain fresh at every execution and installation
+//! boundary; a new download must admit its own pin. Each preview source has its
+//! own immutable `preview-<source>` release, so no release ID or publication
+//! journal is pinned.
 //! Repository ownership/privacy/default-branch admission is invocation-local, not
 //! an immutability claim. Rechecks require the initially pinned positive release
 //! ID and complete snapshot; moving a repository does not revoke verified bytes.
