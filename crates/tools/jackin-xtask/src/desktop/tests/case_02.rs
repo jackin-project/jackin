@@ -132,8 +132,9 @@ fn mise_project_exec(root: &std::path::Path, args: &[&str], missing: &str) -> st
 
 #[test]
 fn mise_native_rust_option_routes_cargo_through_mbx() {
+    let mise_text = repo_text("mise.toml");
     let mise: toml::Value =
-        toml::from_str(&repo_text("mise.toml")).expect("Mise configuration must parse as TOML");
+        toml::from_str(&mise_text).expect("Mise configuration must parse as TOML");
     let rust_toolchain = repo_text("rust-toolchain.toml");
     let tools = mise
         .get("tools")
@@ -183,18 +184,18 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         "the Mise and rustup Rust pins must stay aligned"
     );
     assert!(
-        mise.contains("idiomatic_version_file_enable_tools = [\"rust\"]"),
+        mise_text.contains("idiomatic_version_file_enable_tools = [\"rust\"]"),
         "Mise must keep rust-toolchain.toml in its Rust version selection"
     );
     assert!(
-        !mise.contains("[wrappers.cargo]"),
+        !mise_text.contains("[wrappers.cargo]"),
         "legacy Cargo wrapper removed"
     );
     assert!(
-        mise.contains("[tasks.renovate-upstream-sources]"),
+        mise_text.contains("[tasks.renovate-upstream-sources]"),
         "the upstream asset check stays a root mise task"
     );
-    let config: toml::Value = toml::from_str(&mise).expect("root Mise config must parse");
+    let config: toml::Value = toml::from_str(&mise_text).expect("root Mise config must parse");
     let tasks = config["tasks"]
         .as_table()
         .expect("root Mise tasks must be a table");
@@ -229,8 +230,8 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
             "native check task {id}"
         );
     }
-    assert!(mise.contains("[tasks.renovate-upstream-sources]"));
-    assert!(mise.contains("[tasks.\"release:package\"]"));
+    assert!(mise_text.contains("[tasks.renovate-upstream-sources]"));
+    assert!(mise_text.contains("[tasks.\"release:package\"]"));
 
     let native_mise = repo_text("native/mise.toml");
     let desktop_ci = task_block(&native_mise, "ci");
