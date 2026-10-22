@@ -83,6 +83,51 @@ pub async fn unpushed_commit_count(worktree_path: &str, runner: &mut impl Comman
     }
 }
 
+async fn gone_upstream_has_remote_witness(
+    worktree_path: &str,
+    name: &str,
+    tip: &str,
+    upstream: &str,
+    runner: &mut impl CommandRunner,
+    log: &mut impl FnMut(&str),
+) -> bool {
+    let contains_arg = format!("--contains={tip}");
+    let remote_refs = match runner
+        .capture(
+            "git",
+            &[
+                "-C",
+                worktree_path,
+                "for-each-ref",
+                &contains_arg,
+                "--count=1",
+                "--format=%(refname)",
+                "refs/remotes/",
+            ],
+            None,
+        )
+        .await
+    {
+        Ok(refs) => refs,
+        Err(e) => {
+            log(&format!(
+                "assess: remote reachability query for branch {name} in {worktree_path} failed: {e}; preserving as unpushed (cannot verify the tip is retained remotely)"
+            ));
+            return false;
+        }
+    };
+    if !is_remote_tracking_ref_row(&remote_refs) {
+        log(&format!(
+            "assess: branch {name} in {worktree_path} has upstream={upstream} marked gone, but no remote-tracking ref proves its tip is retained; preserving as unpushed"
+        ));
+        return false;
+    }
+    log(&format!(
+        "assess: branch {name} in {worktree_path} has upstream={upstream} marked gone and a remote-tracking ref contains its tip; treating as pushed and pruned"
+    ));
+    true
+}
+
 pub async fn assess_worktree(
     worktree_path: &str,
     base_commit: &str,
@@ -164,40 +209,18 @@ pub async fn assess_worktree(
         }
 
         if track == "[gone]" || track == "gone" {
-            let contains_arg = format!("--contains={tip}");
-            let remote_refs = match runner
-                .capture(
-                    "git",
-                    &[
-                        "-C",
-                        worktree_path,
-                        "for-each-ref",
-                        &contains_arg,
-                        "--count=1",
-                        "--format=%(refname)",
-                        "refs/remotes/",
-                    ],
-                    None,
-                )
-                .await
+            if !gone_upstream_has_remote_witness(
+                worktree_path,
+                name,
+                tip,
+                upstream,
+                runner,
+                &mut log,
+            )
+            .await
             {
-                Ok(refs) => refs,
-                Err(e) => {
-                    log(&format!(
-                        "assess: remote reachability query for branch {name} in {worktree_path} failed: {e}; preserving as unpushed (cannot verify the tip is retained remotely)"
-                    ));
-                    return Ok(WorktreeState::Unpushed);
-                }
-            };
-            if !is_remote_tracking_ref_row(&remote_refs) {
-                log(&format!(
-                    "assess: branch {name} in {worktree_path} has upstream={upstream} marked gone, but no remote-tracking ref proves its tip is retained; preserving as unpushed"
-                ));
                 return Ok(WorktreeState::Unpushed);
             }
-            log(&format!(
-                "assess: branch {name} in {worktree_path} has upstream={upstream} marked gone and a remote-tracking ref contains its tip; treating as pushed and pruned"
-            ));
             continue;
         }
 
