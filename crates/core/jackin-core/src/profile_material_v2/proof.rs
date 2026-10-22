@@ -4,12 +4,13 @@
 use std::path::Path;
 use std::{fmt, fmt::Debug};
 
-use serde::de::Error as DeError;
+use serde::de::value::MapAccessDeserializer;
+use serde::de::{Error as DeError, MapAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
-use crate::Agent;
+use crate::{Agent, ProfileCredentialSourceMaterial};
 
 use super::digest::ProfileCredentialFingerprintV2;
 use super::error::ProfileCredentialV2Error;
@@ -21,10 +22,104 @@ const MATERIAL_DOMAIN_V2: &[u8] = b"jackin.profile-credential-material.v2";
 const AMP_CANONICAL_KEY: &str = "apiKey@https://ampcode.com/";
 const AMP_ALIAS_KEY: &str = "apiKey@https://ampcode.com";
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Eq, PartialEq, Serialize)]
 enum SourceIdentitySchemeV2 {
     #[serde(rename = "jackin.profile-credential-source.v2")]
     V2,
+}
+
+impl<'de> Deserialize<'de> for SourceIdentitySchemeV2 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct SchemeVisitor;
+
+        impl<'de> Visitor<'de> for SchemeVisitor {
+            type Value = SourceIdentitySchemeV2;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("the exact source identity scheme string")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: DeError,
+            {
+                if value == "jackin.profile-credential-source.v2" {
+                    Ok(SourceIdentitySchemeV2::V2)
+                } else {
+                    Err(E::custom("invalid profile credential source scheme"))
+                }
+            }
+
+            fn visit_borrowed_str<E>(self, value: &'de str) -> Result<Self::Value, E>
+            where
+                E: DeError,
+            {
+                self.visit_str(value)
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: DeError,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_str(SchemeVisitor)
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Serialize)]
+enum SourceMaterialSchemeV2 {
+    #[serde(rename = "jackin.profile-credential-material.v2")]
+    V2,
+}
+
+impl<'de> Deserialize<'de> for SourceMaterialSchemeV2 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct SchemeVisitor;
+
+        impl<'de> Visitor<'de> for SchemeVisitor {
+            type Value = SourceMaterialSchemeV2;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("the exact source material scheme string")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: DeError,
+            {
+                if value == "jackin.profile-credential-material.v2" {
+                    Ok(SourceMaterialSchemeV2::V2)
+                } else {
+                    Err(E::custom("invalid profile credential material scheme"))
+                }
+            }
+
+            fn visit_borrowed_str<E>(self, value: &'de str) -> Result<Self::Value, E>
+            where
+                E: DeError,
+            {
+                self.visit_str(value)
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: DeError,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_str(SchemeVisitor)
+    }
 }
 
 pub struct ProfileCredentialSourceIdentityV2 {
@@ -53,12 +148,50 @@ impl ProfileCredentialSourceIdentityV2 {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct SourceIdentityWire {
     scheme: SourceIdentitySchemeV2,
     agent: Agent,
     descriptor_fingerprint: ProfileCredentialFingerprintV2,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceIdentityWireFields {
+    scheme: SourceIdentitySchemeV2,
+    agent: Agent,
+    descriptor_fingerprint: ProfileCredentialFingerprintV2,
+}
+
+impl<'de> Deserialize<'de> for SourceIdentityWire {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct WireVisitor;
+
+        impl<'de> Visitor<'de> for WireVisitor {
+            type Value = SourceIdentityWire;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a tagged source identity object")
+            }
+
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let fields =
+                    SourceIdentityWireFields::deserialize(MapAccessDeserializer::new(map))?;
+                Ok(SourceIdentityWire {
+                    scheme: fields.scheme,
+                    agent: fields.agent,
+                    descriptor_fingerprint: fields.descriptor_fingerprint,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(WireVisitor)
+    }
 }
 
 impl Serialize for ProfileCredentialSourceIdentityV2 {
@@ -87,6 +220,208 @@ impl<'de> Deserialize<'de> for ProfileCredentialSourceIdentityV2 {
             scheme: wire.scheme,
         })
     }
+}
+
+pub struct ProfileCredentialSourceMaterialV2 {
+    source: ProfileCredentialSourceIdentityV2,
+    material_revision: ProfileCredentialFingerprintV2,
+    scheme: SourceMaterialSchemeV2,
+}
+
+impl Debug for ProfileCredentialSourceMaterialV2 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProfileCredentialSourceMaterialV2")
+            .field("source", &self.source)
+            .field("material_revision", &self.material_revision)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ProfileCredentialSourceMaterialV2 {
+    pub fn source(&self) -> &ProfileCredentialSourceIdentityV2 {
+        &self.source
+    }
+
+    pub fn material_revision(&self) -> &ProfileCredentialFingerprintV2 {
+        &self.material_revision
+    }
+}
+
+struct SourceMaterialWireV2 {
+    scheme: SourceMaterialSchemeV2,
+    source: ProfileCredentialSourceIdentityV2,
+    material_revision: ProfileCredentialFingerprintV2,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceMaterialWireFieldsV2 {
+    scheme: SourceMaterialSchemeV2,
+    source: ProfileCredentialSourceIdentityV2,
+    material_revision: ProfileCredentialFingerprintV2,
+}
+
+impl<'de> Deserialize<'de> for SourceMaterialWireV2 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct WireVisitor;
+
+        impl<'de> Visitor<'de> for WireVisitor {
+            type Value = SourceMaterialWireV2;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a tagged source material object")
+            }
+
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let fields =
+                    SourceMaterialWireFieldsV2::deserialize(MapAccessDeserializer::new(map))?;
+                Ok(SourceMaterialWireV2 {
+                    scheme: fields.scheme,
+                    source: fields.source,
+                    material_revision: fields.material_revision,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(WireVisitor)
+    }
+}
+
+impl Serialize for ProfileCredentialSourceMaterialV2 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("ProfileCredentialSourceMaterialV2", 3)?;
+        state.serialize_field("scheme", &self.scheme)?;
+        state.serialize_field("source", &self.source)?;
+        state.serialize_field("material_revision", &self.material_revision)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ProfileCredentialSourceMaterialV2 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = SourceMaterialWireV2::deserialize(deserializer)
+            .map_err(|_| D::Error::custom("invalid profile credential source material"))?;
+        Ok(Self {
+            source: wire.source,
+            material_revision: wire.material_revision,
+            scheme: wire.scheme,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum ProfileCredentialMaterialProofRef<'a> {
+    V1(&'a ProfileCredentialSourceMaterial),
+    V2(&'a ProfileCredentialSourceMaterialV2),
+}
+
+impl Debug for ProfileCredentialMaterialProofRef<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::V1(_) => formatter
+                .debug_tuple("ProfileCredentialMaterialProofRef::V1")
+                .field(&"[REDACTED]")
+                .finish_non_exhaustive(),
+            Self::V2(_) => formatter
+                .debug_tuple("ProfileCredentialMaterialProofRef::V2")
+                .field(&"[REDACTED]")
+                .finish_non_exhaustive(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProfileCredentialProofComparison {
+    Equal,
+    Different,
+    RevalidationRequired,
+}
+
+pub fn profile_credential_source_material_v2(
+    source: ProfileCredentialSourceIdentityV2,
+    raw: &[u8],
+) -> Result<ProfileCredentialSourceMaterialV2, ProfileCredentialV2Error> {
+    let material_revision = profile_credential_material_revision_v2(source.agent(), raw)?;
+    Ok(ProfileCredentialSourceMaterialV2 {
+        source,
+        material_revision,
+        scheme: SourceMaterialSchemeV2::V2,
+    })
+}
+
+pub fn compare_profile_credential_material_proofs(
+    left: ProfileCredentialMaterialProofRef<'_>,
+    right: ProfileCredentialMaterialProofRef<'_>,
+) -> Result<ProfileCredentialProofComparison, ProfileCredentialV2Error> {
+    if let ProfileCredentialMaterialProofRef::V1(proof) = left {
+        validate_v1_proof(proof)?;
+    }
+    if let ProfileCredentialMaterialProofRef::V1(proof) = right {
+        validate_v1_proof(proof)?;
+    }
+
+    match (left, right) {
+        (
+            ProfileCredentialMaterialProofRef::V1(left),
+            ProfileCredentialMaterialProofRef::V1(right),
+        ) => Ok(if left == right {
+            ProfileCredentialProofComparison::Equal
+        } else {
+            ProfileCredentialProofComparison::Different
+        }),
+        (
+            ProfileCredentialMaterialProofRef::V2(left),
+            ProfileCredentialMaterialProofRef::V2(right),
+        ) => Ok(if same_v2_proof(left, right) {
+            ProfileCredentialProofComparison::Equal
+        } else {
+            ProfileCredentialProofComparison::Different
+        }),
+        _ => Ok(ProfileCredentialProofComparison::RevalidationRequired),
+    }
+}
+
+fn validate_v1_proof(
+    proof: &ProfileCredentialSourceMaterial,
+) -> Result<(), ProfileCredentialV2Error> {
+    if is_sha256_fingerprint(&proof.source.descriptor_fingerprint)
+        && is_sha256_fingerprint(&proof.material_revision)
+    {
+        Ok(())
+    } else {
+        Err(ProfileCredentialV2Error::InvalidFingerprint)
+    }
+}
+
+fn is_sha256_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn same_v2_proof(
+    left: &ProfileCredentialSourceMaterialV2,
+    right: &ProfileCredentialSourceMaterialV2,
+) -> bool {
+    left.scheme == right.scheme
+        && left.material_revision == right.material_revision
+        && left.source.scheme == right.source.scheme
+        && left.source.agent == right.source.agent
+        && left.source.descriptor_fingerprint == right.source.descriptor_fingerprint
 }
 
 pub fn profile_credential_source_identity_v2(

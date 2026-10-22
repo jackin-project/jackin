@@ -91,8 +91,11 @@ pub use profile_material::{
     profile_credential_source_identity,
 };
 pub use profile_material_v2::{
-    ProfileCredentialFingerprintV2, ProfileCredentialSourceIdentityV2, ProfileCredentialV2Error,
-    profile_credential_material_revision_v2, profile_credential_source_identity_v2,
+    ProfileCredentialFingerprintV2, ProfileCredentialMaterialProofRef,
+    ProfileCredentialProofComparison, ProfileCredentialSourceIdentityV2,
+    ProfileCredentialSourceMaterialV2, ProfileCredentialV2Error,
+    compare_profile_credential_material_proofs, profile_credential_material_revision_v2,
+    profile_credential_source_identity_v2, profile_credential_source_material_v2,
 };
 pub use prompt_result::*;
 pub use reasoning_effort::{ParseReasoningEffortError, ReasoningEffort};
