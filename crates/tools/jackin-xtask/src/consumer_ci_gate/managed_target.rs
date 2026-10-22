@@ -34,6 +34,7 @@ pub(super) struct TargetDirectory {
 pub(super) struct RunDirectory {
     file: File,
     path: PathBuf,
+    name: OsString,
 }
 
 impl TargetDirectory {
@@ -118,7 +119,7 @@ impl TargetDirectory {
     }
 
     pub(super) fn preflight_report(&self, name: &OsStr) -> Result<()> {
-        ensure_owned_directory(&self.reports, "target/consumer-ci")?;
+        self.verify_link()?;
         validate_report_name(name)?;
         ensure!(
             entry_kind_at(&self.reports, name)? == EntryKind::Missing,
@@ -133,7 +134,8 @@ impl TargetDirectory {
             "consumer report exceeds 16 MiB bound"
         );
         self.preflight_report(name)?;
-        write_new_file_at(&self.reports, name, bytes)
+        write_new_file_at(&self.reports, name, bytes)?;
+        self.verify_link()
     }
 
     pub(super) fn create_run_directory(&self) -> Result<RunDirectory> {
@@ -144,10 +146,13 @@ impl TargetDirectory {
             .context("creating fresh consumer lane directory")?;
         let file = open_directory_at(&self.reports, OsStr::new(&name))?;
         ensure_owned_directory(&file, "consumer lane directory")?;
-        Ok(RunDirectory {
+        let run = RunDirectory {
             file,
-            path: self.reports_path.join(name),
-        })
+            path: self.reports_path.join(&name),
+            name: OsString::from(name),
+        };
+        self.verify_run_directory(&run)?;
+        Ok(run)
     }
 
     pub(super) fn open_artifact(&self, relative: &Path) -> Result<File> {
@@ -180,7 +185,21 @@ impl TargetDirectory {
         let current =
             open_relative_directory(&managed_root, &Path::new("v1").join(&self.target_id))?;
         ensure_same_directory(&current, &self.target)?;
+        let current_reports = open_directory_at(&current, OsStr::new(REPORT_DIR))
+            .context("reopening visible target/consumer-ci without following symlinks")?;
+        ensure_same_directory(&current_reports, &self.reports)
+            .context("target/consumer-ci directory identity changed")?;
+        ensure_owned_directory(&current_reports, "target/consumer-ci")?;
         Ok(())
+    }
+
+    pub(super) fn verify_run_directory(&self, run: &RunDirectory) -> Result<()> {
+        self.verify_link()?;
+        let current = open_directory_at(&self.reports, &run.name)
+            .context("reopening visible consumer run directory without following symlinks")?;
+        ensure_same_directory(&current, &run.file)
+            .context("consumer run directory identity changed")?;
+        ensure_owned_directory(&current, "consumer lane directory")
     }
 }
 
@@ -190,17 +209,28 @@ impl RunDirectory {
     }
 
     pub(super) fn id(&self) -> Result<&OsStr> {
-        self.path
-            .file_name()
-            .context("run path has no final component")
+        Ok(&self.name)
     }
 
-    pub(super) fn write_file(&self, name: &str, bytes: &[u8]) -> Result<()> {
+    pub(super) fn write_file(
+        &self,
+        target: &TargetDirectory,
+        name: &str,
+        bytes: &[u8],
+    ) -> Result<()> {
+        target.verify_run_directory(self)?;
         validate_simple_name(OsStr::new(name), "lane evidence filename")?;
-        write_new_file_at(&self.file, OsStr::new(name), bytes)
+        write_new_file_at(&self.file, OsStr::new(name), bytes)?;
+        target.verify_run_directory(self)
     }
 
-    pub(super) fn read_relative_file(&self, relative: &Path, max_bytes: u64) -> Result<Vec<u8>> {
+    pub(super) fn read_relative_file(
+        &self,
+        target: &TargetDirectory,
+        relative: &Path,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>> {
+        target.verify_run_directory(self)?;
         ensure!(
             !relative.as_os_str().is_empty()
                 && relative
@@ -209,15 +239,25 @@ impl RunDirectory {
             "lane evidence path must remain below its anchored directory"
         );
         let mut file = open_regular_at(&self.file, relative, "lane evidence")?;
-        read_bounded_file(&mut file, max_bytes, true)
+        let bytes = read_bounded_file(&mut file, max_bytes, true)?;
+        target.verify_run_directory(self)?;
+        Ok(bytes)
     }
 
-    pub(super) fn create_child_directory(&self, name: &str) -> Result<PathBuf> {
+    pub(super) fn create_child_directory(
+        &self,
+        target: &TargetDirectory,
+        name: &str,
+    ) -> Result<PathBuf> {
+        target.verify_run_directory(self)?;
         validate_simple_name(OsStr::new(name), "lane directory name")?;
         create_directory_at(&self.file, OsStr::new(name))
             .context("creating private lane subdirectory")?;
         let directory = open_directory_at(&self.file, OsStr::new(name))?;
         ensure_owned_directory(&directory, "lane subdirectory")?;
+        let visible = open_directory_at(&self.file, OsStr::new(name))?;
+        ensure_same_directory(&visible, &directory)?;
+        target.verify_run_directory(self)?;
         Ok(self.path.join(name))
     }
 }

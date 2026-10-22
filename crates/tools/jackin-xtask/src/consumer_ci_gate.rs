@@ -84,6 +84,7 @@ pub(super) struct LaneResult {
     pub(super) executed_tests: Vec<String>,
     pub(super) artifacts: Vec<Artifact>,
     native_toolchain: Option<native::Toolchain>,
+    native_report_custody: Option<native::ReportCustody>,
 }
 
 pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
@@ -131,6 +132,7 @@ pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
                 executed_tests: result.executed,
                 artifacts: result.artifacts,
                 native_toolchain: None,
+                native_report_custody: None,
             }
         }
         Lane::ProductionCapsule => {
@@ -162,6 +164,7 @@ pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
                 executed_tests: result.executed,
                 artifacts,
                 native_toolchain: None,
+                native_report_custody: None,
             }
         }
     };
@@ -190,7 +193,9 @@ pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
     if let Some(ref identity) = lane.native_toolchain {
         native::verify_identity(identity)?;
     }
+    verify_native_report_custody(&lane, target.repository())?;
     verify_artifacts(&target, &lane.artifacts)?;
+    verify_native_report_custody(&lane, target.repository())?;
     let inventory = Inventory {
         schema: 1,
         head: &head,
@@ -212,7 +217,9 @@ pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
     if let Some(ref identity) = lane.native_toolchain {
         native::verify_identity(identity)?;
     }
+    verify_native_report_custody(&lane, target.repository())?;
     verify_artifacts(&target, &lane.artifacts)?;
+    verify_native_report_custody(&lane, target.repository())?;
     let evidence = Evidence {
         schema: 1,
         source: "mise-task-v1",
@@ -221,7 +228,8 @@ pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
         platform: &platform,
         scenarios: lane
             .scenarios
-            .into_iter()
+            .iter()
+            .cloned()
             .map(|id| Scenario {
                 id,
                 executed: true,
@@ -229,7 +237,18 @@ pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
             })
             .collect(),
     };
-    target.write_report(&report_name, &serde_json::to_vec_pretty(&evidence)?)
+    target.write_report(&report_name, &serde_json::to_vec_pretty(&evidence)?)?;
+    verify_native_report_custody(&lane, target.repository())
+}
+
+fn verify_native_report_custody(
+    lane: &LaneResult,
+    repository: &anchored_fs::RepositoryDirectory,
+) -> Result<()> {
+    if let Some(custody) = &lane.native_report_custody {
+        native::verify_report_custody(custody, repository)?;
+    }
+    Ok(())
 }
 
 fn verify_artifacts(target: &TargetDirectory, expected: &[Artifact]) -> Result<()> {

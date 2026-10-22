@@ -28,9 +28,9 @@ fn managed_target_requires_exact_v1_target_and_owns_fresh_reports() -> Result<()
     let report = OsStr::new("broker.json");
     target.preflight_report(report)?;
     let run = target.create_run_directory()?;
-    run.write_file("junit.xml", b"<testsuites/>")?;
+    run.write_file(&target, "junit.xml", b"<testsuites/>")?;
     assert_eq!(
-        run.read_relative_file(Path::new("junit.xml"), 1024)?,
+        run.read_relative_file(&target, Path::new("junit.xml"), 1024)?,
         b"<testsuites/>"
     );
     target.write_report(report, b"first")?;
@@ -51,6 +51,143 @@ fn managed_target_requires_exact_v1_target_and_owns_fresh_reports() -> Result<()
     target
         .artifact_path(Path::new("/tmp/outside-capsule"))
         .unwrap_err();
+    Ok(())
+}
+
+#[test]
+fn replacing_visible_report_directory_with_real_directory_rejects_receipts() -> Result<()> {
+    let (_temp, repository, managed) = fixture()?;
+    let target = TargetDirectory::open_with_target_root(repository, &managed)?;
+    let run = target.create_run_directory()?;
+    let reports = target.report_directory().to_path_buf();
+    let detached = reports.with_file_name("consumer-ci-detached");
+    fs::rename(&reports, &detached)?;
+    fs::create_dir(&reports)?;
+    fs::set_permissions(&reports, fs::Permissions::from_mode(0o700))?;
+
+    assert!(target.verify_link().is_err());
+    assert!(
+        target
+            .write_report(OsStr::new("receipt.json"), b"passed")
+            .is_err()
+    );
+    assert!(
+        run.write_file(&target, "junit.xml", b"<testsuites/>")
+            .is_err()
+    );
+    assert!(!reports.join("receipt.json").exists());
+    assert!(!detached.join("receipt.json").exists());
+    Ok(())
+}
+
+#[test]
+fn replacing_visible_report_directory_with_symlink_is_rejected() -> Result<()> {
+    let (_temp, repository, managed) = fixture()?;
+    let target = TargetDirectory::open_with_target_root(repository, &managed)?;
+    let reports = target.report_directory().to_path_buf();
+    let detached = reports.with_file_name("consumer-ci-detached");
+    let outside = reports.with_file_name("outside");
+    fs::create_dir(&outside)?;
+    fs::rename(&reports, &detached)?;
+    symlink(&outside, &reports)?;
+
+    assert!(target.verify_link().is_err());
+    assert!(
+        target
+            .write_report(OsStr::new("receipt.json"), b"passed")
+            .is_err()
+    );
+    assert!(!outside.join("receipt.json").exists());
+    Ok(())
+}
+
+#[test]
+fn replacing_visible_run_directory_with_stale_real_directory_is_rejected() -> Result<()> {
+    let (_temp, repository, managed) = fixture()?;
+    let target = TargetDirectory::open_with_target_root(repository, &managed)?;
+    let run = target.create_run_directory()?;
+    let visible = run.path().to_path_buf();
+    let detached = visible.with_file_name("run-detached");
+    fs::rename(&visible, &detached)?;
+    fs::create_dir(&visible)?;
+    fs::set_permissions(&visible, fs::Permissions::from_mode(0o700))?;
+    fs::write(visible.join("junit.xml"), b"<testsuites/>")?;
+
+    assert!(target.verify_run_directory(&run).is_err());
+    run.read_relative_file(&target, Path::new("junit.xml"), 1024)
+        .unwrap_err();
+    assert!(
+        run.write_file(&target, "unexpected.xml", b"passed")
+            .is_err()
+    );
+    assert!(!detached.join("unexpected.xml").exists());
+    Ok(())
+}
+
+#[test]
+fn replacing_visible_run_directory_with_symlink_is_rejected() -> Result<()> {
+    let (temp, repository, managed) = fixture()?;
+    let target = TargetDirectory::open_with_target_root(repository, &managed)?;
+    let run = target.create_run_directory()?;
+    let visible = run.path().to_path_buf();
+    let detached = visible.with_file_name("run-detached");
+    let outside = temp.path().join("outside-run");
+    fs::create_dir(&outside)?;
+    fs::write(outside.join("junit.xml"), b"<testsuites/>")?;
+    fs::rename(&visible, &detached)?;
+    symlink(&outside, &visible)?;
+
+    assert!(target.verify_run_directory(&run).is_err());
+    run.read_relative_file(&target, Path::new("junit.xml"), 1024)
+        .unwrap_err();
+    Ok(())
+}
+
+#[test]
+fn replacing_managed_target_inode_after_open_is_rejected() -> Result<()> {
+    let (temp, repository, managed) = fixture()?;
+    let target = TargetDirectory::open_with_target_root(repository, &managed)?;
+    let target_path = managed.join("v1/checkout-id");
+    let detached = temp.path().join("detached-target");
+    fs::rename(&target_path, &detached)?;
+    fs::create_dir(&target_path)?;
+    fs::create_dir(target_path.join("consumer-ci"))?;
+    fs::set_permissions(
+        target_path.join("consumer-ci"),
+        fs::Permissions::from_mode(0o700),
+    )?;
+
+    assert!(target.verify_link().is_err());
+    assert!(
+        target
+            .write_report(OsStr::new("receipt.json"), b"passed")
+            .is_err()
+    );
+    assert!(!target_path.join("consumer-ci/receipt.json").exists());
+    Ok(())
+}
+
+#[test]
+fn replacing_checkout_target_link_after_open_is_rejected() -> Result<()> {
+    let (temp, repository, managed) = fixture()?;
+    let target = TargetDirectory::open_with_target_root(repository, &managed)?;
+    let replacement = temp.path().join("replacement/v1/checkout-id");
+    fs::create_dir_all(&replacement)?;
+    fs::create_dir(replacement.join("consumer-ci"))?;
+    fs::set_permissions(
+        replacement.join("consumer-ci"),
+        fs::Permissions::from_mode(0o700),
+    )?;
+    let checkout_link = temp.path().join("repo/target");
+    fs::remove_file(&checkout_link)?;
+    symlink(&replacement, checkout_link)?;
+
+    assert!(target.verify_link().is_err());
+    assert!(
+        target
+            .write_report(OsStr::new("receipt.json"), b"passed")
+            .is_err()
+    );
     Ok(())
 }
 

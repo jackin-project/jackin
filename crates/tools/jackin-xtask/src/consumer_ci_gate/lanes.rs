@@ -56,8 +56,8 @@ pub(super) fn build_capsule(
     run: &RunDirectory,
 ) -> Result<(PathBuf, Artifact)> {
     const CAPSULE_BUILD_TIMEOUT: Duration = Duration::from_mins(30);
-    let home = run.create_child_directory("capsule-home")?;
-    let config = run.create_child_directory("capsule-config")?;
+    let home = run.create_child_directory(target, "capsule-home")?;
+    let config = run.create_child_directory(target, "capsule-config")?;
     let mut build = crate::cmd::command("cargo");
     build
         .current_dir(root)
@@ -71,12 +71,14 @@ pub(super) fn build_capsule(
             "--",
             "--export",
         ]);
+    target.verify_run_directory(run)?;
     let output = crate::cmd::output_timeout_bounded(
         &mut build,
         CAPSULE_BUILD_TIMEOUT,
         32 * 1024,
         1024 * 1024,
     )?;
+    target.verify_run_directory(run)?;
     let export = String::from_utf8(output)?;
     let path = PathBuf::from(parse_capsule_export(&export)?);
     ensure!(

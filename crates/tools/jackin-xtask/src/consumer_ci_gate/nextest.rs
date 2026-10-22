@@ -41,6 +41,7 @@ pub(super) fn run(
         "consumer gate must require at least one test"
     );
     let config_path = nextest_config(target, run)?;
+    target.verify_run_directory(run)?;
     let mut list = nextest_command(root, "list", binary, filter, capsule, &config_path);
     list.args(["--message-format", "json"]);
     let inventory = cmd::output_timeout_bounded(
@@ -49,6 +50,7 @@ pub(super) fn run(
         MAX_EVIDENCE_BYTES,
         1024 * 1024,
     )?;
+    target.verify_run_directory(run)?;
     let selected = parse_inventory(&inventory, binary)?;
     require_exact("nextest selection", &selected, expected)?;
 
@@ -61,10 +63,12 @@ pub(super) fn run(
         "--no-tests",
         "fail",
     ]);
+    target.verify_run_directory(run)?;
     cmd::run_streaming_timeout(&mut execute, Duration::from_hours(1))?;
+    target.verify_run_directory(run)?;
     let junit_relative = Path::new("nextest-store/docker-e2e/junit.xml");
     let report = run
-        .read_relative_file(junit_relative, MAX_EVIDENCE_BYTES as u64)
+        .read_relative_file(target, junit_relative, MAX_EVIDENCE_BYTES as u64)
         .context("nextest produced no fresh JUnit report")?;
     let executed = parse_junit(&report)?;
     require_exact("executed JUnit tests", &executed, expected)?;
@@ -127,7 +131,7 @@ fn nextest_config(target: &TargetDirectory, run: &RunDirectory) -> Result<PathBu
         .context("docker-e2e JUnit config is not a table")?;
     junit.insert("path".to_owned(), TomlValue::String("junit.xml".to_owned()));
     let encoded = toml::to_string(&config).context("serializing isolated nextest configuration")?;
-    run.write_file("nextest.toml", encoded.as_bytes())?;
+    run.write_file(target, "nextest.toml", encoded.as_bytes())?;
     Ok(run.path().join("nextest.toml"))
 }
 

@@ -2,9 +2,103 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use anyhow::Result;
+use std::{ffi::OsStr, fs, os::unix::fs::PermissionsExt};
 
 fn names(values: &[&str]) -> Names {
     values.iter().map(|value| (*value).to_owned()).collect()
+}
+
+fn report_repository() -> Result<(tempfile::TempDir, RepositoryDirectory)> {
+    let temp = tempfile::tempdir()?;
+    fs::create_dir_all(temp.path().join("native"))?;
+    let repository = RepositoryDirectory::open(temp.path())?;
+    Ok((temp, repository))
+}
+
+#[test]
+fn native_unit_report_parent_replacement_rejects_stale_valid_xml() -> Result<()> {
+    let (temp, repository) = report_repository()?;
+    let relative = Path::new("native/.build");
+    let reports = repository.open_or_create_directory(relative)?;
+    let stale_xml = r#"<testsuite tests="1" failures="0" errors="0"><testcase classname="Bridge" name="real()"/></testsuite>"#;
+    fs::rename(
+        temp.path().join("native/.build"),
+        temp.path().join("native/.build-detached"),
+    )?;
+    fs::create_dir(temp.path().join("native/.build"))?;
+    fs::write(
+        temp.path().join("native/.build/swift-unit-tests.xml"),
+        stale_xml,
+    )?;
+
+    reports
+        .read_file(
+            &repository,
+            OsStr::new("swift-unit-tests.xml"),
+            MAX_REPORT_BYTES,
+            true,
+            "native report",
+        )
+        .unwrap_err();
+    Ok(())
+}
+
+#[test]
+fn native_ui_report_ancestor_replacement_rejects_stale_valid_xml() -> Result<()> {
+    let (temp, repository) = report_repository()?;
+    let reports = repository.open_or_create_directory(Path::new("native/.build/test-results"))?;
+    let report_directory =
+        repository.open_or_create_directory(Path::new("native/.build/test-results/ui-run"))?;
+    let relative_report = report_directory.relative().join("testReal.xml");
+    let stale_xml = r#"<testsuite tests="1" failures="0" errors="0"><testcase classname="UIExample" name="testReal()"/></testsuite>"#;
+    fs::write(temp.path().join(&relative_report), stale_xml)?;
+    let expected = names(&["UIExample.testReal"]);
+    verify_ui_reports(&repository, &report_directory, &expected)?;
+
+    fs::rename(
+        temp.path().join("native/.build/test-results"),
+        temp.path().join("native/.build/test-results-detached"),
+    )?;
+    fs::create_dir(temp.path().join("native/.build/test-results"))?;
+    fs::set_permissions(
+        temp.path().join("native/.build/test-results"),
+        fs::Permissions::from_mode(0o700),
+    )?;
+    fs::create_dir(temp.path().join("native/.build/test-results/ui-run"))?;
+    fs::write(
+        temp.path()
+            .join("native/.build/test-results/ui-run/testReal.xml"),
+        stale_xml,
+    )?;
+
+    assert!(reports.verify(&repository).is_err());
+    verify_ui_reports(&repository, &report_directory, &expected).unwrap_err();
+    Ok(())
+}
+
+#[test]
+fn native_ui_report_directory_replacement_rejects_stale_valid_xml() -> Result<()> {
+    let (temp, repository) = report_repository()?;
+    let report_root =
+        repository.open_or_create_directory(Path::new("native/.build/test-results"))?;
+    let report_directory =
+        repository.open_or_create_directory(Path::new("native/.build/test-results/ui-run"))?;
+    let relative_report = report_directory.relative().join("testReal.xml");
+    let stale_xml = r#"<testsuite tests="1" failures="0" errors="0"><testcase classname="UIExample" name="testReal()"/></testsuite>"#;
+    fs::write(temp.path().join(&relative_report), stale_xml)?;
+    let expected = names(&["UIExample.testReal"]);
+    verify_ui_reports(&repository, &report_directory, &expected)?;
+
+    let visible = temp.path().join(report_directory.relative());
+    fs::rename(&visible, visible.with_file_name("ui-run-detached"))?;
+    fs::create_dir(&visible)?;
+    fs::set_permissions(&visible, fs::Permissions::from_mode(0o700))?;
+    fs::write(visible.join("testReal.xml"), stale_xml)?;
+
+    report_root.verify(&repository)?;
+    verify_ui_reports(&repository, &report_directory, &expected).unwrap_err();
+    Ok(())
 }
 
 #[test]

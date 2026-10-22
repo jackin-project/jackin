@@ -7,7 +7,10 @@ use std::{
 };
 
 #[cfg(unix)]
-use std::{fs::File, os::unix::ffi::OsStrExt};
+use std::{
+    fs::File,
+    os::unix::{ffi::OsStrExt, fs::MetadataExt},
+};
 
 #[cfg(unix)]
 use nix::{
@@ -29,6 +32,12 @@ pub(super) struct RepositoryDirectory {
     root: PathBuf,
     #[cfg(unix)]
     directory: File,
+}
+
+#[cfg(unix)]
+pub(super) struct BoundDirectory {
+    relative: PathBuf,
+    file: File,
 }
 
 impl RepositoryDirectory {
@@ -74,6 +83,39 @@ impl RepositoryDirectory {
     }
 
     #[cfg(unix)]
+    pub(super) fn open_or_create_directory(&self, relative: &Path) -> Result<BoundDirectory> {
+        validate_relative(relative, "bound directory")?;
+        let mut directory = self.directory.try_clone()?;
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                unreachable!("relative path was validated");
+            };
+            match entry_kind_at(&directory, name)? {
+                EntryKind::Missing => {
+                    create_directory_at(&directory, name)
+                        .with_context(|| format!("creating bound directory {relative:?}"))?;
+                }
+                EntryKind::Directory => {}
+                _ => bail!("bound directory contains a symlink or non-directory: {name:?}"),
+            }
+            directory = open_directory_at(&directory, name)?;
+            ensure_safe_directory(&directory, relative)?;
+        }
+        Ok(BoundDirectory {
+            relative: relative.to_path_buf(),
+            file: directory,
+        })
+    }
+
+    #[cfg(unix)]
+    pub(super) fn verify_directory(&self, relative: &Path, expected: &File) -> Result<()> {
+        validate_relative(relative, "bound directory")?;
+        let current = open_relative_directory(&self.directory, relative)
+            .with_context(|| format!("reopening bound directory {relative:?}"))?;
+        ensure_same_directory(&current, expected, "bound directory")
+    }
+
+    #[cfg(unix)]
     pub(super) fn read_symlink(&self, relative: &Path) -> Result<OsString> {
         validate_relative(relative, "symlink")?;
         let parent = relative.parent().context("symlink has no parent")?;
@@ -103,6 +145,74 @@ impl RepositoryDirectory {
             let mut file = fs::File::open(path)?;
             read_bounded_file(&mut file, max_bytes, false)
         }
+    }
+}
+
+#[cfg(unix)]
+impl BoundDirectory {
+    pub(super) fn relative(&self) -> &Path {
+        &self.relative
+    }
+
+    pub(super) fn verify(&self, repository: &RepositoryDirectory) -> Result<()> {
+        repository.verify_directory(&self.relative, &self.file)
+    }
+
+    pub(super) fn entry_kind(
+        &self,
+        repository: &RepositoryDirectory,
+        name: &OsStr,
+    ) -> Result<EntryKind> {
+        self.verify(repository)?;
+        let kind = entry_kind_at(&self.file, name)?;
+        self.verify(repository)?;
+        Ok(kind)
+    }
+
+    pub(super) fn list_children(
+        &self,
+        repository: &RepositoryDirectory,
+        max_entries: usize,
+    ) -> Result<Vec<(OsString, EntryKind)>> {
+        self.verify(repository)?;
+        let entries = source::list_children_at(&self.file, max_entries)?;
+        self.verify(repository)?;
+        Ok(entries)
+    }
+
+    pub(super) fn open_child_directory(
+        &self,
+        repository: &RepositoryDirectory,
+        name: &OsStr,
+    ) -> Result<Self> {
+        self.verify(repository)?;
+        ensure!(
+            entry_kind_at(&self.file, name)? == EntryKind::Directory,
+            "bound child is not a real directory: {name:?}"
+        );
+        let directory = open_directory_at(&self.file, name)?;
+        let child = Self {
+            relative: self.relative.join(name),
+            file: directory,
+        };
+        ensure_safe_directory(&child.file, &child.relative)?;
+        child.verify(repository)?;
+        Ok(child)
+    }
+
+    pub(super) fn read_file(
+        &self,
+        repository: &RepositoryDirectory,
+        name: &OsStr,
+        max_bytes: u64,
+        require_single_link: bool,
+        label: &str,
+    ) -> Result<Vec<u8>> {
+        self.verify(repository)?;
+        let mut file = open_regular_at(&self.file, Path::new(name), label)?;
+        let bytes = read_bounded_file(&mut file, max_bytes, require_single_link)?;
+        self.verify(repository)?;
+        Ok(bytes)
     }
 }
 
@@ -324,6 +434,37 @@ fn validate_relative(path: &Path, label: &str) -> Result<()> {
                 .components()
                 .all(|component| matches!(component, Component::Normal(_))),
         "{label} path must stay below its anchored root"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+fn ensure_same_directory(left: &File, right: &File, label: &str) -> Result<()> {
+    let left = left.metadata()?;
+    let right = right.metadata()?;
+    ensure!(
+        left.is_dir() && right.is_dir() && left.dev() == right.dev() && left.ino() == right.ino(),
+        "{label} identity changed"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+fn ensure_safe_directory(directory: &File, relative: &Path) -> Result<()> {
+    let metadata = directory
+        .metadata()
+        .with_context(|| format!("checking bound directory {relative:?}"))?;
+    ensure!(
+        metadata.is_dir(),
+        "bound path is not a directory: {relative:?}"
+    );
+    ensure!(
+        metadata.uid() == nix::unistd::geteuid().as_raw(),
+        "bound directory has the wrong owner: {relative:?}"
+    );
+    ensure!(
+        metadata.mode() & 0o022 == 0,
+        "bound directory is group or world writable: {relative:?}"
     );
     Ok(())
 }

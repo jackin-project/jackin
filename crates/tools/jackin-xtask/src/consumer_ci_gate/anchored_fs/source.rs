@@ -25,7 +25,7 @@ impl RepositoryDirectory {
         #[cfg(unix)]
         {
             let directory = super::open_relative_directory(&self.directory, relative)?;
-            list_children(&directory, max_entries)
+            list_children_at(&directory, max_entries)
         }
         #[cfg(not(unix))]
         {
@@ -107,7 +107,10 @@ impl RepositoryDirectory {
 }
 
 #[cfg(unix)]
-fn list_children(directory: &File, max_entries: usize) -> Result<Vec<(OsString, EntryKind)>> {
+pub(super) fn list_children_at(
+    directory: &File,
+    max_entries: usize,
+) -> Result<Vec<(OsString, EntryKind)>> {
     let mut dir =
         Dir::from_fd(directory.try_clone()?.into()).context("opening directory stream")?;
     let mut children = Vec::new();

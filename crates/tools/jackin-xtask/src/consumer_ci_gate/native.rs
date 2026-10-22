@@ -12,11 +12,12 @@ use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
+    ffi::OsString,
     path::{Path, PathBuf},
     time::Duration,
 };
 
-use super::anchored_fs::read_bounded_file;
+use super::anchored_fs::{BoundDirectory, EntryKind, RepositoryDirectory};
 use super::{Artifact, LaneResult, TargetDirectory, artifact};
 use crate::cmd;
 use reports::{parse_junit, verify_xctest};
@@ -35,9 +36,35 @@ type Names = BTreeSet<String>;
 use toolchain::validate_identity;
 pub(super) use toolchain::{Toolchain, verify_identity};
 
+pub(super) struct ReportCustody {
+    unit_root: BoundDirectory,
+    ui_root: Option<BoundDirectory>,
+    ui_directory: Option<BoundDirectory>,
+}
+
+pub(super) fn verify_report_custody(
+    custody: &ReportCustody,
+    repository: &RepositoryDirectory,
+) -> Result<()> {
+    custody.unit_root.verify(repository)?;
+    if let Some(root) = &custody.ui_root {
+        root.verify(repository)?;
+    }
+    if let Some(directory) = &custody.ui_directory {
+        directory.verify(repository)?;
+    }
+    Ok(())
+}
+
 pub(super) fn run(root: &Path, target: &TargetDirectory, ui: bool) -> Result<LaneResult> {
     let toolchain = preflight()?;
     let repository = target.repository();
+    let unit_report_root = repository.open_or_create_directory(Path::new("native/.build"))?;
+    let ui_report_root = if ui {
+        Some(repository.open_or_create_directory(Path::new("native/.build/test-results"))?)
+    } else {
+        None
+    };
     let unit = inventory(repository, Path::new("native/Tests/JackinUsageBridgeTests"))?;
     let ui_inventory = inventory(repository, Path::new("native/UITests"))?;
     required::verify_source(&unit, &ui_inventory)?;
@@ -55,23 +82,38 @@ pub(super) fn run(root: &Path, target: &TargetDirectory, ui: bool) -> Result<Lan
         "native/.build/swift-unit-tests-swift-testing.xml",
     ];
     for relative in unit_reports {
+        let name = Path::new(relative)
+            .file_name()
+            .context("native report path has no filename")?;
         ensure!(
-            repository.entry_kind(Path::new(relative))? == super::anchored_fs::EntryKind::Missing,
+            unit_report_root.entry_kind(repository, name)? == EntryKind::Missing,
             "preexisting native unit report rejected: {relative}"
         );
     }
-    let prior_ui = ui_directories(repository)?;
+    let prior_ui = ui_report_root
+        .as_ref()
+        .map(|report_root| ui_directories(repository, report_root))
+        .transpose()?
+        .unwrap_or_default();
     run_native_task(root, &toolchain, ui)?;
+    unit_report_root.verify(repository)?;
+    if let Some(report_root) = &ui_report_root {
+        report_root.verify(repository)?;
+    }
 
-    let xctest_log = read_report(repository, unit_reports[0])?;
+    let xctest_log = read_report(&unit_report_root, repository, "swift-unit-tests.log")?;
     verify_xctest(&xctest_log, &unit.xctest)?;
-    let xctest_xml = read_report(repository, unit_reports[1])?;
+    let xctest_xml = read_report(&unit_report_root, repository, "swift-unit-tests.xml")?;
     verify_names(
         &parse_junit(&xctest_xml)?,
         &unit.xctest,
         "native XCTest JUnit",
     )?;
-    let swift_testing_xml = read_report(repository, unit_reports[2])?;
+    let swift_testing_xml = read_report(
+        &unit_report_root,
+        repository,
+        "swift-unit-tests-swift-testing.xml",
+    )?;
     verify_names(
         &parse_junit(&swift_testing_xml)?,
         &unit.testing,
@@ -94,6 +136,7 @@ pub(super) fn run(root: &Path, target: &TargetDirectory, ui: bool) -> Result<Lan
         .zip([&xctest_log, &xctest_xml, &swift_testing_xml])
         .map(|(path, contents)| report_artifact(path, contents.as_bytes()))
         .collect::<Vec<_>>();
+    let mut ui_report_directory = None;
     for binary in [
         "native/dist/JackinDesktop.app/Contents/MacOS/JackinDesktop",
         "native/dist/JackinDesktop.app/Contents/MacOS/jackin-usage-broker",
@@ -101,7 +144,10 @@ pub(super) fn run(root: &Path, target: &TargetDirectory, ui: bool) -> Result<Lan
         artifacts.push(artifact(repository, target, Path::new(binary))?);
     }
     if ui {
-        let new_ui = ui_directories(repository)?
+        let ui_report_root = ui_report_root
+            .as_ref()
+            .context("native UI report root was not bound")?;
+        let new_ui = ui_directories(repository, ui_report_root)?
             .difference(&prior_ui)
             .cloned()
             .collect::<Vec<_>>();
@@ -110,7 +156,9 @@ pub(super) fn run(root: &Path, target: &TargetDirectory, ui: bool) -> Result<Lan
             "expected exactly one fresh UI report directory, found {}",
             new_ui.len()
         );
-        let reports = verify_ui_reports(repository, &new_ui[0], &ui_inventory.xctest)?;
+        let ui_directory = ui_report_root.open_child_directory(repository, &new_ui[0])?;
+        let reports = verify_ui_reports(repository, &ui_directory, &ui_inventory.xctest)?;
+        ui_report_directory = Some(ui_directory);
         for (path, bytes) in reports {
             artifacts.push(report_artifact(&path.to_string_lossy(), &bytes));
         }
@@ -125,6 +173,16 @@ pub(super) fn run(root: &Path, target: &TargetDirectory, ui: bool) -> Result<Lan
         tests.extend(ui_inventory.xctest.iter().map(|name| format!("ui:{name}")));
     }
     tests.sort();
+    unit_report_root.verify(repository)?;
+    if let Some(report_root) = &ui_report_root {
+        report_root.verify(repository)?;
+    }
+    let report_custody = ReportCustody {
+        unit_root: unit_report_root,
+        ui_root: ui_report_root,
+        ui_directory: ui_report_directory,
+    };
+    verify_report_custody(&report_custody, repository)?;
     ensure!(
         preflight()? == toolchain,
         "native toolchain identity changed during acceptance"
@@ -140,6 +198,7 @@ pub(super) fn run(root: &Path, target: &TargetDirectory, ui: bool) -> Result<Lan
         executed_tests: tests,
         artifacts,
         native_toolchain: Some(toolchain),
+        native_report_custody: Some(report_custody),
     })
 }
 
@@ -158,14 +217,20 @@ fn run_native_task(root: &Path, toolchain: &Toolchain, ui: bool) -> Result<()> {
 }
 
 fn read_report(
-    repository: &super::anchored_fs::RepositoryDirectory,
-    relative: &str,
+    report_root: &BoundDirectory,
+    repository: &RepositoryDirectory,
+    name: &str,
 ) -> Result<String> {
-    let mut file = repository
-        .open_regular(Path::new(relative), "native report")
-        .with_context(|| format!("opening bounded native report {relative}"))?;
-    let bytes = read_bounded_file(&mut file, MAX_REPORT_BYTES, true)?;
-    ensure!(!bytes.is_empty(), "native report is empty: {relative}");
+    let bytes = report_root
+        .read_file(
+            repository,
+            std::ffi::OsStr::new(name),
+            MAX_REPORT_BYTES,
+            true,
+            "native report",
+        )
+        .with_context(|| format!("opening bounded native report {name}"))?;
+    ensure!(!bytes.is_empty(), "native report is empty: {name}");
     String::from_utf8(bytes).context("native report is not UTF-8")
 }
 
@@ -177,39 +242,34 @@ fn report_artifact(path: &str, bytes: &[u8]) -> Artifact {
 }
 
 fn ui_directories(
-    repository: &super::anchored_fs::RepositoryDirectory,
-) -> Result<BTreeSet<PathBuf>> {
-    let root = Path::new("native/.build/test-results");
-    match repository.entry_kind(root)? {
-        super::anchored_fs::EntryKind::Missing => return Ok(BTreeSet::new()),
-        super::anchored_fs::EntryKind::Directory => {}
-        _ => anyhow::bail!("native UI report root must be a real directory"),
-    }
+    repository: &RepositoryDirectory,
+    root: &BoundDirectory,
+) -> Result<BTreeSet<OsString>> {
     let mut directories = BTreeSet::new();
-    for (name, kind) in repository.list_children(root, 1024)? {
+    for (name, kind) in root.list_children(repository, 1024)? {
         let Some(name_text) = name.to_str() else {
             continue;
         };
         if name_text.starts_with("ui-") {
             ensure!(
-                kind == super::anchored_fs::EntryKind::Directory,
+                kind == EntryKind::Directory,
                 "native UI report entry is not a real directory"
             );
-            directories.insert(root.join(name));
+            directories.insert(name);
         }
     }
     Ok(directories)
 }
 
 fn verify_ui_reports(
-    repository: &super::anchored_fs::RepositoryDirectory,
-    directory: &Path,
+    repository: &RepositoryDirectory,
+    directory: &BoundDirectory,
     expected: &Names,
 ) -> Result<Vec<(PathBuf, Vec<u8>)>> {
     let mut report_files = Vec::new();
-    for (name, kind) in repository.list_children(directory, 1024)? {
+    for (name, kind) in directory.list_children(repository, 1024)? {
         ensure!(
-            kind == super::anchored_fs::EntryKind::File,
+            kind == EntryKind::File,
             "UI report directory contains an unsafe entry"
         );
         ensure!(
@@ -219,7 +279,7 @@ fn verify_ui_reports(
             }),
             "UI report filename is not XML"
         );
-        report_files.push(directory.join(name));
+        report_files.push(name);
     }
     report_files.sort();
     let expected_files: Names = expected
@@ -228,18 +288,19 @@ fn verify_ui_reports(
         .collect();
     let actual_files: Names = report_files
         .iter()
-        .map(|path| {
-            path.file_name()
-                .context("UI report path has no filename")
-                .map(|name| name.to_string_lossy().into_owned())
-        })
+        .map(|name| Ok(name.to_string_lossy().into_owned()))
         .collect::<Result<_>>()?;
     verify_names(&actual_files, &expected_files, "UI report filenames")?;
     let mut executed = Names::new();
     let mut reports = Vec::new();
-    for path in report_files {
-        let mut file = repository.open_regular(&path, "UI JUnit report")?;
-        let bytes = read_bounded_file(&mut file, MAX_REPORT_BYTES, true)?;
+    for report_name in report_files {
+        let bytes = directory.read_file(
+            repository,
+            &report_name,
+            MAX_REPORT_BYTES,
+            true,
+            "UI JUnit report",
+        )?;
         let text = String::from_utf8(bytes.clone()).context("UI JUnit report is not UTF-8")?;
         let names = parse_junit(&text)?;
         ensure!(
@@ -248,16 +309,20 @@ fn verify_ui_reports(
         );
         let name = names.iter().next().context("UI report has no testcase")?;
         ensure!(
-            path.file_stem().and_then(|stem| stem.to_str()) == name.rsplit('.').next(),
+            Path::new(&report_name)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                == name.rsplit('.').next(),
             "UI testcase does not match report filename"
         );
         ensure!(
             executed.insert(name.clone()),
             "duplicate UI testcase {name}"
         );
-        reports.push((path, bytes));
+        reports.push((directory.relative().join(report_name), bytes));
     }
     verify_names(&executed, expected, "UI executed tests")?;
+    directory.verify(repository)?;
     Ok(reports)
 }
 
