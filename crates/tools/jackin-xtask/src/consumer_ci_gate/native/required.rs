@@ -43,6 +43,7 @@ pub(super) const XCTEST: &[&str] = &[
     "CountQuotaPresentationTests.testGeneratedProviderQuotaStateCodecAndBucketMappingPreserveUnlimitedRawPercentWithoutMeter",
     "CountQuotaPresentationTests.testGeneratedProviderQuotaStateCodecAndAccountMappingPreserveExhaustedCountAndRawPercent",
     "CountQuotaPresentationTests.testAbsentProviderQuotaStateStaysNilForBucketAndAccount",
+    "CountQuotaPresentationTests.testGeneratedGlanceProviderQuotaStateCodecAndMappingCopySelectedStateOrAbsence",
     "CountQuotaPresentationTests.testNativeAccountSummaryPreservesCountsAndIndependentResetEpoch",
     "CountQuotaPresentationTests.testNativeBucketCopiesTypedCountWithoutParsingDisplayLabels",
     "CountQuotaPresentationTests.testUnknownZeroAndAbsentQuotaRemainDistinct",

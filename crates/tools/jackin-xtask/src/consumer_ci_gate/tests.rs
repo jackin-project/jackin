@@ -3,7 +3,7 @@
 
 use super::*;
 use anyhow::Result;
-use std::fs;
+use std::{fs, os::unix::fs::PermissionsExt};
 
 fn target_fixture() -> Result<(tempfile::TempDir, TargetDirectory)> {
     let temp = tempfile::tempdir()?;
@@ -78,6 +78,33 @@ fn report_requires_frozen_repository_relative_path_and_fresh_owned_file() -> Res
     target.write_report(&name, b"replacement").unwrap_err();
     assert_eq!(fs::read(target.report_directory().join(name))?, b"first");
     assert!(!temp.path().join("outside/result.json").exists());
+    Ok(())
+}
+
+#[test]
+fn replacing_completed_lane_directory_with_same_bytes_blocks_public_receipt() -> Result<()> {
+    let (_temp, target) = target_fixture()?;
+    let lane = target.create_run_directory()?;
+    let lane_bytes = b"<testsuite tests=\"1\" failures=\"0\" errors=\"0\"><testcase classname=\"Bridge\" name=\"real()\"/></testsuite>";
+    lane.write_file(&target, "swift-tests.xml", lane_bytes)?;
+
+    let (report_name, detail_name) = report_names(Path::new("target/consumer-ci/result.json"))?;
+    publish_report(&target, &lane, &detail_name, b"completed lane inventory")?;
+
+    let visible_lane = target.report_directory().join(lane.id()?);
+    let detached_lane = visible_lane.with_file_name("run-detached");
+    fs::rename(&visible_lane, &detached_lane)?;
+    fs::create_dir(&visible_lane)?;
+    fs::set_permissions(&visible_lane, fs::Permissions::from_mode(0o700))?;
+    fs::write(visible_lane.join("swift-tests.xml"), lane_bytes)?;
+    assert_eq!(
+        fs::read(detached_lane.join("swift-tests.xml"))?,
+        fs::read(visible_lane.join("swift-tests.xml"))?
+    );
+
+    publish_report(&target, &lane, &report_name, b"passed receipt").unwrap_err();
+    assert!(target.report_directory().join(detail_name).is_file());
+    assert!(!target.report_directory().join(report_name).exists());
     Ok(())
 }
 

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The jackin❯ Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use super::toolchain::path_with_selected_xcodebuild;
 use super::*;
 use anyhow::Result;
 use std::{ffi::OsStr, fs, os::unix::fs::PermissionsExt};
@@ -294,6 +295,31 @@ fn selected_toolchain() -> Toolchain {
         sdk_build: "26G90".into(),
         toolchains_override: None,
     }
+}
+
+#[test]
+fn selected_xcodebuild_precedes_inherited_path_shadow() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let selected_directory = temp.path().join("selected/usr/bin");
+    let shadow_directory = temp.path().join("shadow");
+    fs::create_dir_all(&selected_directory)?;
+    fs::create_dir_all(&shadow_directory)?;
+    for (path, output) in [
+        (selected_directory.join("xcodebuild"), "selected"),
+        (shadow_directory.join("xcodebuild"), "shadow"),
+    ] {
+        fs::write(&path, format!("#!/bin/sh\nprintf '%s\\n' {output}\n"))?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
+    }
+
+    let inherited_path = std::env::join_paths([shadow_directory.as_os_str()])?;
+    let task_path =
+        path_with_selected_xcodebuild(&selected_directory.join("xcodebuild"), &inherited_path)?;
+    let mut command = cmd::command("xcodebuild");
+    command.env("PATH", task_path);
+    let output = cmd::output_timeout_bounded(&mut command, Duration::from_secs(5), 1024, 1024)?;
+    assert_eq!(String::from_utf8(output)?.trim(), "selected");
+    Ok(())
 }
 
 #[test]

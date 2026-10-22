@@ -24,7 +24,7 @@ use reports::{parse_junit, verify_xctest};
 use source::inventory;
 #[cfg(test)]
 use source::{source_inventory, sources_inventory};
-use toolchain::preflight;
+use toolchain::{path_with_selected_xcodebuild, preflight, verify_task_xcodebuild_path};
 
 const MAX_REPORT_BYTES: u64 = 16 * 1024 * 1024;
 const UNIT_GATE_TIMEOUT: Duration = Duration::from_hours(1);
@@ -203,17 +203,26 @@ pub(super) fn run(root: &Path, target: &TargetDirectory, ui: bool) -> Result<Lan
 }
 
 fn run_native_task(root: &Path, toolchain: &Toolchain, ui: bool) -> Result<()> {
+    let task_path = path_with_selected_xcodebuild(
+        &toolchain.xcodebuild_path,
+        &std::env::var_os("PATH").unwrap_or_default(),
+    )?;
+    verify_task_xcodebuild_path(root, toolchain, &task_path)?;
     let mut command = cmd::command("mise");
     command
         .current_dir(root)
+        .env("PATH", &task_path)
         .env("DEVELOPER_DIR", &toolchain.developer)
         .env("SDKROOT", &toolchain.sdk_path)
         .args(["-C", "native", "run", if ui { "merge" } else { "ci" }]);
-    cmd::run_streaming_timeout(
+    let task_result = cmd::run_streaming_timeout(
         &mut command,
         if ui { UI_GATE_TIMEOUT } else { UNIT_GATE_TIMEOUT },
     )
-    .context("current native/mise.toml gate failed; UI mode requires a working GUI session and automation permissions")
+    .context("current native/mise.toml gate failed; UI mode requires a working GUI session and automation permissions");
+    let path_result = verify_task_xcodebuild_path(root, toolchain, &task_path);
+    task_result?;
+    path_result
 }
 
 fn read_report(

@@ -5,6 +5,7 @@ use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
+    ffi::{OsStr, OsString},
     io::Read,
     path::{Path, PathBuf},
     time::Duration,
@@ -156,6 +157,50 @@ pub(in crate::consumer_ci_gate) fn verify_identity(expected: &Toolchain) -> Resu
     ensure!(
         &preflight()? == expected,
         "native Apple toolchain identity changed during acceptance"
+    );
+    Ok(())
+}
+
+pub(super) fn path_with_selected_xcodebuild(
+    selected_xcodebuild: &Path,
+    inherited_path: &OsStr,
+) -> Result<OsString> {
+    let selected_directory = selected_xcodebuild
+        .parent()
+        .context("selected xcodebuild path has no parent directory")?;
+    let paths = std::iter::once(selected_directory.to_path_buf())
+        .chain(std::env::split_paths(inherited_path))
+        .collect::<Vec<_>>();
+    std::env::join_paths(paths).context("constructing PATH for selected Xcode")
+}
+
+pub(super) fn verify_task_xcodebuild_path(
+    root: &Path,
+    toolchain: &Toolchain,
+    task_path: &OsStr,
+) -> Result<()> {
+    let mut command = cmd::command("mise");
+    command
+        .current_dir(root)
+        .env("PATH", task_path)
+        .env("DEVELOPER_DIR", &toolchain.developer)
+        .env("SDKROOT", &toolchain.sdk_path)
+        .args(["-C", "native", "exec", "--", "/usr/bin/which", "xcodebuild"]);
+    let bytes = cmd::output_timeout_bounded(
+        &mut command,
+        PROBE_TIMEOUT,
+        MAX_PROBE_BYTES,
+        MAX_PROBE_BYTES,
+    )?;
+    let resolved = String::from_utf8(bytes).context("resolved xcodebuild path is not UTF-8")?;
+    let resolved = PathBuf::from(resolved.trim())
+        .canonicalize()
+        .context("canonicalizing task-resolved xcodebuild path")?;
+    ensure!(
+        resolved == toolchain.xcodebuild_path,
+        "native task PATH resolves xcodebuild to {}, expected selected Xcode binary {}",
+        resolved.display(),
+        toolchain.xcodebuild_path.display()
     );
     Ok(())
 }

@@ -189,13 +189,7 @@ pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
         "source HEAD changed during acceptance"
     );
     require_clean_source(&root)?;
-    target.verify_link()?;
-    if let Some(ref identity) = lane.native_toolchain {
-        native::verify_identity(identity)?;
-    }
-    verify_native_report_custody(&lane, target.repository())?;
-    verify_artifacts(&target, &lane.artifacts)?;
-    verify_native_report_custody(&lane, target.repository())?;
+    verify_lane_evidence(&target, &lane_directory, &lane)?;
     let inventory = Inventory {
         schema: 1,
         head: &head,
@@ -207,19 +201,13 @@ pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
         native_toolchain: lane.native_toolchain.clone(),
     };
     let detail_bytes = serde_json::to_vec_pretty(&inventory)?;
-    target.write_report(&detail_name, &detail_bytes)?;
+    publish_report(&target, &lane_directory, &detail_name, &detail_bytes)?;
     ensure!(
         source_head(&root)? == head,
         "source HEAD changed before receipt publication"
     );
     require_clean_source(&root)?;
-    target.verify_link()?;
-    if let Some(ref identity) = lane.native_toolchain {
-        native::verify_identity(identity)?;
-    }
-    verify_native_report_custody(&lane, target.repository())?;
-    verify_artifacts(&target, &lane.artifacts)?;
-    verify_native_report_custody(&lane, target.repository())?;
+    verify_lane_evidence(&target, &lane_directory, &lane)?;
     let evidence = Evidence {
         schema: 1,
         source: "mise-task-v1",
@@ -237,8 +225,42 @@ pub(crate) fn run(args: ConsumerCiGateArgs) -> Result<()> {
             })
             .collect(),
     };
-    target.write_report(&report_name, &serde_json::to_vec_pretty(&evidence)?)?;
-    verify_native_report_custody(&lane, target.repository())
+    publish_report(
+        &target,
+        &lane_directory,
+        &report_name,
+        &serde_json::to_vec_pretty(&evidence)?,
+    )?;
+    verify_native_report_custody(&lane, target.repository())?;
+    target.verify_run_directory(&lane_directory)
+}
+
+fn publish_report(
+    target: &TargetDirectory,
+    lane_directory: &RunDirectory,
+    name: &std::ffi::OsStr,
+    bytes: &[u8],
+) -> Result<()> {
+    target.verify_run_directory(lane_directory)?;
+    target.write_report(name, bytes)?;
+    target.verify_run_directory(lane_directory)
+}
+
+fn verify_lane_evidence(
+    target: &TargetDirectory,
+    lane_directory: &RunDirectory,
+    lane: &LaneResult,
+) -> Result<()> {
+    target.verify_link()?;
+    target.verify_run_directory(lane_directory)?;
+    if let Some(ref identity) = lane.native_toolchain {
+        native::verify_identity(identity)?;
+    }
+    verify_native_report_custody(lane, target.repository())?;
+    verify_artifacts(target, &lane.artifacts)?;
+    target.verify_run_directory(lane_directory)?;
+    verify_native_report_custody(lane, target.repository())?;
+    target.verify_run_directory(lane_directory)
 }
 
 fn verify_native_report_custody(
