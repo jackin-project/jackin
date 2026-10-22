@@ -187,9 +187,24 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         mise_text.contains("idiomatic_version_file_enable_tools = [\"rust\"]"),
         "Mise must keep rust-toolchain.toml in its Rust version selection"
     );
+    let wrapper = mise
+        .get("wrappers")
+        .and_then(|wrappers| wrappers.get("cargo"))
+        .and_then(toml::Value::as_table)
+        .expect("owner standard: [wrappers.cargo] routes every cargo through MBX");
     assert!(
-        !mise_text.contains("[wrappers.cargo]"),
-        "legacy Cargo wrapper removed"
+        wrapper.get("command").and_then(toml::Value::as_str) == Some("mbx")
+            && wrapper
+                .get("env")
+                .and_then(|env| env.get("MBX_CARGO_SHIM_MODE"))
+                .and_then(toml::Value::as_str)
+                == Some("1"),
+        "the owner-standard Cargo wrapper must run mbx in Cargo shim mode"
+    );
+    assert!(
+        rust.get("profile").and_then(toml::Value::as_str) == Some("minimal")
+            && rust_toolchain.contains("profile = \"minimal\""),
+        "mise.toml and rust-toolchain.toml must agree on the minimal profile"
     );
     assert!(
         mise_text.contains("[tasks.renovate-upstream-sources]"),
