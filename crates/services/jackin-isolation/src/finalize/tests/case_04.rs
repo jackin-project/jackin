@@ -76,7 +76,12 @@ async fn bare_gone_track_with_remote_reachability_is_safe_to_delete() {
     ]
     .join("\n")
         + "\n";
-    let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
+    let mut runner = fake_with_outputs(&[
+        "",
+        &branches,
+        "refs/remotes/origin/retained\n",
+        "refs/heads/feature/x",
+    ]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -95,9 +100,10 @@ async fn bare_gone_track_with_remote_reachability_is_safe_to_delete() {
     assert_eq!(dec, FinalizeDecision::Cleaned);
     assert!(read_records(dir.path()).unwrap().is_empty());
     assert!(
-        !runner.recorded.iter().any(|c| c.contains("rev-list")),
-        "bare gone must not issue reachability queries; recorded={:?}",
-        runner.recorded,
+        runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("--contains=newhead"))
     );
 }
 
