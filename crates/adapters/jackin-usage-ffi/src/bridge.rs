@@ -482,21 +482,13 @@ impl UsageMenuBarBridge {
             let _lifecycle = self.lifecycle_lock()?;
             self.poll_latest_projection();
             self.with_state(|state| {
-                let mut rows = crate::presentation::provider_glance_rows(
+                crate::presentation::status_bar_provider_glance_rows(
                     &state.runtime,
                     &state.enabled_surface_ids,
                     state.format_prefs,
+                    max,
                 )
-                .map_err(map_runtime_err)?
-                .into_iter()
-                .filter(|row| {
-                    row.glance_remaining_percent
-                        .is_some_and(|percent| percent > 0.0)
-                })
-                .collect::<Vec<_>>();
-                rows.sort_by_key(|row| std::cmp::Reverse(severity_rank(&row.severity)));
-                rows.truncate(max.clamp(1, 3) as usize);
-                Ok(rows)
+                .map_err(map_runtime_err)
             })
         })
     }

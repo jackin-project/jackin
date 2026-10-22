@@ -99,6 +99,88 @@ fn open_bridge_with_surfaces(
     bridge
 }
 
+fn assert_status_bar_export_matches_desktop(bridge: &UsageMenuBarBridge, max: u32) -> Vec<String> {
+    let desktop = bridge
+        .desktop_projection(max)
+        .expect("desktop projection")
+        .status_bar_glance_rows;
+    let exported = bridge
+        .status_bar_provider_glance_rows(max)
+        .expect("standalone status-bar rows");
+    assert_eq!(exported.len(), desktop.len());
+    for (exported, desktop) in exported.iter().zip(&desktop) {
+        assert_eq!(exported.surface_id, desktop.surface_id);
+        assert_eq!(exported.icon_key, desktop.icon_key);
+        assert_eq!(exported.fallback_glyph, desktop.fallback_glyph);
+        assert_eq!(exported.usage_url, desktop.usage_url);
+        assert_eq!(exported.display_label, desktop.display_label);
+        assert_eq!(exported.account_label, desktop.account_label);
+        assert_eq!(exported.plan_label, desktop.plan_label);
+        assert_eq!(exported.glance_used_percent, desktop.glance_used_percent);
+        assert_eq!(
+            exported.glance_used_percent_origin,
+            desktop.glance_used_percent_origin
+        );
+        assert_eq!(
+            exported.glance_remaining_percent,
+            desktop.glance_remaining_percent
+        );
+        assert_eq!(
+            exported.glance_remaining_percent_origin,
+            desktop.glance_remaining_percent_origin
+        );
+        let exported_count = exported.glance_count_quota.as_ref();
+        let desktop_count = desktop.glance_count_quota.as_ref();
+        assert_eq!(
+            exported_count.map(|count| count.used),
+            desktop_count.map(|count| count.used)
+        );
+        assert_eq!(
+            exported_count.map(|count| count.limit),
+            desktop_count.map(|count| count.limit)
+        );
+        assert_eq!(
+            exported_count.map(|count| count.remaining),
+            desktop_count.map(|count| count.remaining)
+        );
+        assert_eq!(
+            exported_count.map(|count| count.unit.as_str()),
+            desktop_count.map(|count| count.unit.as_str())
+        );
+        assert_eq!(
+            exported_count.map(|count| count.period.as_str()),
+            desktop_count.map(|count| count.period.as_str())
+        );
+        assert_eq!(
+            exported_count.map(|count| count.provenance.as_str()),
+            desktop_count.map(|count| count.provenance.as_str())
+        );
+        assert_eq!(
+            exported.glance_provider_quota_state,
+            desktop.glance_provider_quota_state
+        );
+        assert_eq!(exported.glance_resets_at, desktop.glance_resets_at);
+        assert_eq!(exported.glance_meter_percent, desktop.glance_meter_percent);
+        assert_eq!(exported.glance_meter_side, desktop.glance_meter_side);
+        assert_eq!(exported.bar_label, desktop.bar_label);
+        assert_eq!(exported.headline, desktop.headline);
+        assert_eq!(exported.reset_label, desktop.reset_label);
+        assert_eq!(exported.compact_reset_label, desktop.compact_reset_label);
+        assert_eq!(exported.exact_reset, desktop.exact_reset);
+        assert_eq!(exported.status_word, desktop.status_word);
+        assert_eq!(exported.is_refreshing, desktop.is_refreshing);
+        assert_eq!(exported.status_label, desktop.status_label);
+        assert_eq!(exported.severity, desktop.severity);
+        assert_eq!(exported.updated_label, desktop.updated_label);
+        assert_eq!(exported.activity_label, desktop.activity_label);
+        assert_eq!(exported.activity_kind, desktop.activity_kind);
+        assert_eq!(exported.accessibility_label, desktop.accessibility_label);
+        assert_eq!(exported.last_error, desktop.last_error);
+        assert_eq!(exported.dimmed, desktop.dimmed);
+    }
+    desktop.into_iter().map(|row| row.surface_id).collect()
+}
+
 fn fixture_projection() -> UsageProjectionV1 {
     let fresh = UsageFreshnessV1 {
         generation: 1,
@@ -278,6 +360,7 @@ fn desktop_projection_copies_exact_count_and_raw_quota_fields() {
         .expect("publish quota fixture");
 
     let projected = bridge.desktop_projection(3).expect("desktop projection");
+    assert_status_bar_export_matches_desktop(&bridge, 3);
     let account = &projected.providers[0].group.accounts[0];
     assert_eq!(account.used_percent, Some(43.375));
     assert_eq!(account.used_percent_origin.as_deref(), Some("derived"));
@@ -434,6 +517,7 @@ fn assert_group_and_state_only_unlimited(
         .apply_publication(state_only_projection)
         .expect("publish state-only unlimited quota");
     let state_only = bridge.desktop_projection(3).expect("state-only projection");
+    assert_status_bar_export_matches_desktop(bridge, 3);
     let account = &state_only.providers[0].group.accounts[0];
     assert_eq!(account.headline, "Unlimited");
     assert_eq!(account.provider_quota_state.as_deref(), Some("unlimited"));
@@ -512,6 +596,7 @@ fn publish_exhausted_projection(bridge: &UsageMenuBarBridge, projection: UsagePr
 
 fn assert_exhausted_projection(bridge: &UsageMenuBarBridge) {
     let exhausted = bridge.desktop_projection(3).expect("exhausted projection");
+    assert_status_bar_export_matches_desktop(bridge, 3);
     let account = &exhausted.providers[0].group.accounts[0];
     assert_eq!(account.provider_quota_state.as_deref(), Some("exhausted"));
     assert_eq!(account.remaining_percent, Some(57.125));
@@ -645,6 +730,7 @@ fn desktop_projection_preserves_explicit_provider_state_and_independent_quota_va
         .apply_publication(projection.clone())
         .expect("publish unlimited quota state");
     let unlimited = bridge.desktop_projection(3).expect("unlimited projection");
+    assert_status_bar_export_matches_desktop(&bridge, 3);
     let account = &unlimited.providers[0].group.accounts[0];
     assert_eq!(account.provider_quota_state.as_deref(), Some("unlimited"));
     assert_eq!(account.remaining_percent, Some(99.0));
@@ -760,6 +846,7 @@ fn desktop_projection_preserves_raw_remaining_with_complete_and_incomplete_reque
         .apply_publication(projection.clone())
         .expect("complete count fixture");
     let projected = bridge.desktop_projection(3).expect("complete projection");
+    assert_status_bar_export_matches_desktop(&bridge, 3);
     let account = &projected.providers[0].group.accounts[0];
     assert_eq!(account.remaining_percent, Some(57.125));
     assert_eq!(
@@ -824,6 +911,7 @@ fn desktop_projection_preserves_raw_remaining_with_complete_and_incomplete_reque
         .apply_publication(incomplete)
         .expect("incomplete count fixture");
     let projected = bridge.desktop_projection(3).expect("incomplete projection");
+    assert!(assert_status_bar_export_matches_desktop(&bridge, 3).is_empty());
     let account = &projected.providers[0].group.accounts[0];
     assert_eq!(account.remaining_percent, Some(57.125));
     assert_eq!(account.meter_percent, None);
@@ -837,6 +925,69 @@ fn desktop_projection_preserves_raw_remaining_with_complete_and_incomplete_reque
     assert_eq!(glance.glance_remaining_percent, Some(57.125));
     assert_eq!(glance.glance_meter_percent, None);
     assert_eq!(glance.glance_meter_side, None);
+    bridge.shutdown().expect("shutdown");
+}
+
+#[test]
+fn status_bar_excludes_unknown_quota_without_numeric_observations() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge(dir.path());
+    let mut projection = fixture_projection();
+    let account = &mut projection.providers[0].accounts[0];
+    let window = &mut account.windows[0];
+    window.used_percent = None;
+    window.used_percent_origin = None;
+    window.remaining_percent = None;
+    window.remaining_percent_origin = None;
+    window.count_quota = None;
+    window.provider_quota_state = None;
+    window.money_used_percent = None;
+    window.meter_percent = None;
+    window.meter_side = None;
+
+    let group = &mut account.metric_groups[0];
+    group.quota_state = UsageQuotaStateV1::Unknown;
+    if let UsageMetricValueV1::Window {
+        used_percent,
+        used_percent_origin,
+        remaining_percent,
+        remaining_percent_origin,
+        count_quota,
+        provider_quota_state,
+        money_used_percent,
+        meter_percent,
+        meter_side,
+        ..
+    } = &mut group.value
+    {
+        *used_percent = None;
+        *used_percent_origin = None;
+        *remaining_percent = None;
+        *remaining_percent_origin = None;
+        *count_quota = None;
+        *provider_quota_state = None;
+        *money_used_percent = None;
+        *meter_percent = None;
+        *meter_side = None;
+    }
+    bridge
+        .apply_publication(projection)
+        .expect("publish unknown quota state");
+
+    let desktop = bridge.desktop_projection(3).expect("desktop projection");
+    let row = desktop
+        .glance_rows
+        .iter()
+        .find(|row| row.surface_id == "codex")
+        .expect("Codex detail row remains visible");
+    assert_eq!(row.glance_provider_quota_state, None);
+    assert_eq!(row.glance_used_percent, None);
+    assert_eq!(row.glance_remaining_percent, None);
+    assert!(row.glance_count_quota.is_none());
+    assert_eq!(row.glance_meter_percent, None);
+    assert_eq!(row.glance_meter_side, None);
+    assert!(desktop.status_bar_glance_rows.is_empty());
+    assert!(assert_status_bar_export_matches_desktop(&bridge, 3).is_empty());
     bridge.shutdown().expect("shutdown");
 }
 
@@ -1189,6 +1340,7 @@ fn desktop_glance_uses_runtime_selected_metric_group_as_an_atomic_source() {
 
     let projected = bridge.desktop_projection(3).expect("desktop projection");
     assert_runtime_selected_metric_glances(&projected);
+    assert_status_bar_export_matches_desktop(&bridge, 3);
 
     publish_absent_selected_values(&bridge, projection);
 
@@ -1196,6 +1348,7 @@ fn desktop_glance_uses_runtime_selected_metric_group_as_an_atomic_source() {
         .desktop_projection(3)
         .expect("selected groups without quota observations");
     assert_absent_selected_glances(&absent);
+    assert!(assert_status_bar_export_matches_desktop(&bridge, 3).is_empty());
     bridge.shutdown().expect("shutdown");
 }
 
@@ -1602,6 +1755,7 @@ fn desktop_projection_sorts_used_side_by_remaining_capacity() {
         .expect("fixture publication");
 
     let projection = bridge.desktop_projection(3).expect("desktop projection");
+    assert_status_bar_export_matches_desktop(&bridge, 3);
     assert_eq!(
         projection
             .status_bar_glance_rows
@@ -1632,6 +1786,7 @@ fn desktop_projection_ranks_unrounded_remaining_overages_independent_of_input_or
         .expect("same-reset overage fixture");
 
     let projection = bridge.desktop_projection(3).expect("desktop projection");
+    assert_status_bar_export_matches_desktop(&bridge, 3);
     assert_eq!(
         projection
             .status_bar_glance_rows
@@ -1681,6 +1836,11 @@ fn desktop_projection_ranks_status_rows_before_cap_and_preserves_full_provider_o
         .expect("fixture publication");
 
     let projection = bridge.desktop_projection(3).expect("desktop projection");
+    assert_status_bar_export_matches_desktop(&bridge, 3);
+    assert_eq!(
+        assert_status_bar_export_matches_desktop(&bridge, 2).len(),
+        2
+    );
     assert_eq!(
         projection
             .providers
@@ -1724,6 +1884,7 @@ fn desktop_projection_ranks_unknown_status_reset_after_known_resets() {
         .expect("fixture publication");
 
     let projection = bridge.desktop_projection(3).expect("desktop projection");
+    assert_status_bar_export_matches_desktop(&bridge, 3);
     assert_eq!(
         projection
             .status_bar_glance_rows

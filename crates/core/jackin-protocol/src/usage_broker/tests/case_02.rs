@@ -6,12 +6,10 @@ use super::*;
 #[test]
 fn account_rejects_duplicate_group_ids_and_bad_group_rank() {
     let mut projection = projection_fixture();
-    projection.providers[0].accounts[0]
-        .metric_groups
-        .push(window_group("g", 0));
-    projection.providers[0].accounts[0]
-        .metric_groups
-        .push(window_group("g", 1));
+    let account = &mut projection.providers[0].accounts[0];
+    account.metric_groups.clear();
+    account.metric_groups.push(window_group("g", 0));
+    account.metric_groups.push(window_group("g", 1));
     projection.validate().unwrap_err();
     projection.providers[0].accounts[0].metric_groups[1].group_id = "h".into();
     projection.providers[0].accounts[0].metric_groups[1].rank = 7;
@@ -22,7 +20,11 @@ fn account_rejects_duplicate_group_ids_and_bad_group_rank() {
 
 #[test]
 fn account_without_metric_groups_stays_wire_compatible() {
-    let fixture = projection_fixture_value();
+    let mut fixture = projection_fixture_value();
+    fixture["providers"][0]["accounts"][0]
+        .as_object_mut()
+        .expect("fixture account is an object")
+        .remove("metric_groups");
     let projection: UsageProjectionV1 = serde_json::from_value(fixture.clone()).unwrap();
     assert!(projection.providers[0].accounts[0].metric_groups.is_empty());
     assert_eq!(
@@ -65,7 +67,7 @@ fn reset_credential_expiry_and_renewal_are_independent_fields() {
     let account = &mut projection.providers[0].accounts[0];
     account.windows[0].reset_at_epoch = Some(1_800_100_000);
     account.credential_expires_at_epoch = Some(1_800_200_000);
-    let mut plan = window_group("g-plan", 0);
+    let mut plan = window_group("g-plan", 3);
     plan.kind = UsageMetricGroupKindV1::Plan;
     plan.value = UsageMetricValueV1::Plan {
         plan_label: Some("Pro".into()),
@@ -82,10 +84,10 @@ fn reset_credential_expiry_and_renewal_are_independent_fields() {
     assert_eq!(account.windows[0].reset_at_epoch, Some(1_800_100_000));
     assert_eq!(account.credential_expires_at_epoch, Some(1_800_200_000));
     assert_eq!(
-        account.metric_groups[0].renews_at_epoch,
+        account.metric_groups[3].renews_at_epoch,
         Some(1_800_300_000)
     );
-    assert_eq!(account.metric_groups[0].reset_at_epoch, None);
+    assert_eq!(account.metric_groups[3].reset_at_epoch, None);
 }
 
 #[test]

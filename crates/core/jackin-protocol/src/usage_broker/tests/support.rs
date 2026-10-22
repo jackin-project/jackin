@@ -4,18 +4,25 @@
 use super::*;
 
 const CURRENT_PROJECTION_FIXTURE: &str = include_str!(
+    "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v2-current.json"
+);
+const HISTORICAL_V1_PROJECTION_FIXTURE: &str = include_str!(
     "../../../../../services/jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
 );
 
 pub(super) fn projection_fixture_value() -> serde_json::Value {
-    let mut value: serde_json::Value =
-        serde_json::from_str(CURRENT_PROJECTION_FIXTURE).expect("projection fixture is JSON");
+    serde_json::from_str(CURRENT_PROJECTION_FIXTURE).expect("current V2 projection fixture is JSON")
+}
+
+pub(super) fn historical_projection_fixture_value() -> serde_json::Value {
+    let mut value: serde_json::Value = serde_json::from_str(HISTORICAL_V1_PROJECTION_FIXTURE)
+        .expect("historical V1 projection fixture is JSON");
 
     if value["schema_version"] == 1 {
         value["schema_version"] = serde_json::json!(2);
         for window in value["providers"]
             .as_array_mut()
-            .expect("providers are an array")
+            .expect("historical providers are an array")
             .iter_mut()
             .flat_map(|provider| provider["accounts"].as_array_mut().into_iter().flatten())
             .flat_map(|account| account["windows"].as_array_mut().into_iter().flatten())
@@ -37,7 +44,8 @@ pub(super) fn projection_fixture_value() -> serde_json::Value {
 }
 
 pub(super) fn projection_fixture() -> UsageProjectionV1 {
-    serde_json::from_value(projection_fixture_value()).expect("projection fixture decodes")
+    serde_json::from_value(projection_fixture_value())
+        .expect("current V2 projection fixture decodes")
 }
 
 pub(super) fn capability() -> UsageAccountCapability {

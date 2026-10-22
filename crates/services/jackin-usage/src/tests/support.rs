@@ -58,6 +58,43 @@ pub(super) fn validate_projection_v1(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+pub(super) fn validate_projection_v2(value: &Value) -> Result<(), String> {
+    let projection: jackin_protocol::usage_broker::UsageProjectionV1 =
+        serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
+    projection.validate()?;
+    for (label, value) in [
+        ("projection_id", projection.projection_id.as_str()),
+        ("discovery_revision", projection.discovery_revision.as_str()),
+        ("broker_instance_id", projection.broker_instance_id.as_str()),
+    ] {
+        if value.is_empty() {
+            return Err(format!("{label} must be a non-empty string"));
+        }
+    }
+    for provider in &projection.providers {
+        if provider.provider_id.is_empty() || provider.display_name.is_empty() {
+            return Err("provider id and display name must be non-empty strings".to_owned());
+        }
+        for account in &provider.accounts {
+            if account.canonical_account_id.is_empty() || account.display_label.is_empty() {
+                return Err("account id and display label must be non-empty strings".to_owned());
+            }
+            for window in &account.windows {
+                if window.window_id.is_empty()
+                    || window.label.is_empty()
+                    || window.value_label.is_empty()
+                    || window.reset_label.is_empty()
+                {
+                    return Err(
+                        "window identifiers and labels must be non-empty strings".to_owned()
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn validate_provider(provider: &Value) -> Result<(), String> {
     required_string(provider, "provider_id")?;
     required_string(provider, "display_name")?;

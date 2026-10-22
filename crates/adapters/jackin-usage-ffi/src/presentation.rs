@@ -399,35 +399,7 @@ pub(crate) fn desktop_projection(
         .iter()
         .map(|(row, _, _, _)| row.clone())
         .collect::<Vec<_>>();
-    let mut status_rows = ranked_glance_rows
-        .into_iter()
-        .filter(|(row, _, _, provider_state)| {
-            provider_state.is_some() || glance_row_has_remaining_capacity(row)
-        })
-        .collect::<Vec<_>>();
-    status_rows.sort_by(
-        |(_, left_reset, left_rank, _), (_, right_reset, right_rank, _)| {
-            left_reset
-                .is_none()
-                .cmp(&right_reset.is_none())
-                .then_with(|| {
-                    left_reset
-                        .unwrap_or(i64::MAX)
-                        .cmp(&right_reset.unwrap_or(i64::MAX))
-                })
-                .then_with(|| match (left_rank, right_rank) {
-                    (Some(left), Some(right)) => left.total_cmp(right),
-                    (Some(_), None) => std::cmp::Ordering::Less,
-                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (None, None) => std::cmp::Ordering::Equal,
-                })
-        },
-    );
-    status_rows.truncate(status_bar_max.clamp(1, 3) as usize);
-    let status_rows = status_rows
-        .into_iter()
-        .map(|(row, _, _, _)| row)
-        .collect::<Vec<_>>();
+    let status_rows = select_status_bar_provider_glance_rows(ranked_glance_rows, status_bar_max);
     let projection = runtime.projection();
     let error_message = projection.issues.first().map(|issue| issue.message.clone());
     Ok(DesktopProjectionDto {
@@ -466,6 +438,48 @@ pub(crate) fn provider_glance_rows(
             .map(|(row, _, _, _)| row)
             .collect(),
     )
+}
+
+pub(crate) fn status_bar_provider_glance_rows(
+    runtime: &HostUsageProjectionRuntime,
+    enabled: &[String],
+    format_prefs: UsageFormatPrefs,
+    status_bar_max: u32,
+) -> Result<Vec<ProviderGlanceRowDto>, String> {
+    let rows = provider_glance_rows_with_reset_rank(runtime, enabled, format_prefs)?;
+    Ok(select_status_bar_provider_glance_rows(rows, status_bar_max))
+}
+
+fn select_status_bar_provider_glance_rows(
+    rows: Vec<ProviderGlanceRowWithResetRank>,
+    status_bar_max: u32,
+) -> Vec<ProviderGlanceRowDto> {
+    let mut status_rows = rows
+        .into_iter()
+        .filter(|(row, _, _, provider_state)| {
+            provider_state.is_some() || glance_row_has_remaining_capacity(row)
+        })
+        .collect::<Vec<_>>();
+    status_rows.sort_by(
+        |(_, left_reset, left_rank, _), (_, right_reset, right_rank, _)| {
+            left_reset
+                .is_none()
+                .cmp(&right_reset.is_none())
+                .then_with(|| {
+                    left_reset
+                        .unwrap_or(i64::MAX)
+                        .cmp(&right_reset.unwrap_or(i64::MAX))
+                })
+                .then_with(|| match (left_rank, right_rank) {
+                    (Some(left), Some(right)) => left.total_cmp(right),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                })
+        },
+    );
+    status_rows.truncate(status_bar_max.clamp(1, 3) as usize);
+    status_rows.into_iter().map(|(row, _, _, _)| row).collect()
 }
 
 type ProviderGlanceRowWithResetRank = (

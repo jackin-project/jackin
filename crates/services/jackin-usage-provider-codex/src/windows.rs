@@ -4,7 +4,7 @@
 use super::{CodexIndividualLimit, CodexUsageResponse, CodexWindowSnapshot};
 use jackin_protocol::control::{
     CanonicalRemainingPercent, CanonicalUsedPercent, Money, PercentObservationOrigin,
-    QuotaBucketView, StatusSlot, UsageSnapshotStatus,
+    ProviderQuotaState, QuotaBucketView, StatusSlot, UsageSnapshotStatus,
 };
 use jackin_usage_provider_core::{
     bucket, codex_limit_label, expiry_label, format_amount_with_unit, json_number, parse_iso_epoch,
@@ -82,7 +82,7 @@ impl CodexUsageResponse {
             && credits.has_credits.unwrap_or(false)
         {
             let balance = credits.balance.as_ref().and_then(json_number);
-            buckets.push(bucket(
+            let mut credits_bucket = bucket(
                 "Credits",
                 None,
                 balance.map(|value| format_amount_with_unit(value, "credits")),
@@ -90,7 +90,12 @@ impl CodexUsageResponse {
                 None,
                 credits.unlimited.unwrap_or(false).then_some("unlimited"),
                 UsageSnapshotStatus::Fresh,
-            ));
+            );
+            credits_bucket.provider_quota_state = credits
+                .unlimited
+                .filter(|unlimited| *unlimited)
+                .map(|_| ProviderQuotaState::Unlimited);
+            buckets.push(credits_bucket);
         }
         if let Some(limit) = self.individual_limit() {
             let limit_money = limit.limit.as_ref().and_then(codex_money_value);

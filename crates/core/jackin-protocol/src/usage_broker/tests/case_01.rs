@@ -205,7 +205,7 @@ fn stdio_tunnel_envelope_round_trips_without_account_metadata() {
 
 #[test]
 fn canonical_projection_v2_round_trips_historical_fixture_conversion() {
-    let fixture = projection_fixture_value();
+    let fixture = historical_projection_fixture_value();
     let projection: UsageProjectionV1 = serde_json::from_value(fixture.clone()).unwrap();
     projection.validate().unwrap();
     let migrated_window = &projection.providers[0].accounts[0].windows[0];
@@ -245,6 +245,7 @@ fn public_projection_accepts_only_schema_two() {
 fn projection_requires_origin_pairs_but_allows_independent_percent_sides() {
     let mut projection = projection_fixture();
     let window = &mut projection.providers[0].accounts[0].windows[0];
+    window.used_percent_origin = None;
     window.used_percent = Some(RawPercentPoints::new(43.375).unwrap());
     projection.validate().unwrap_err();
     projection.providers[0].accounts[0].windows[0].used_percent_origin =

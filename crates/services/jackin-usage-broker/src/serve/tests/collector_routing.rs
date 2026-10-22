@@ -15,23 +15,10 @@ fn local_source_projection(
     remaining_percent: i32,
     now_epoch: i64,
 ) -> UsageProjectionV1 {
-    let mut fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../jackin-usage/tests/fixtures/contracts/usage-projection-v2-current.json"
     ))
-    .expect("valid shared usage projection fixture");
-    fixture["schema_version"] = serde_json::json!(2);
-    let windows = fixture["providers"][0]["accounts"][0]["windows"]
-        .as_array_mut()
-        .expect("fixture account windows");
-    for window in windows {
-        let remaining = window["remaining_percent"]
-            .as_f64()
-            .expect("legacy fixture remaining percentage");
-        window["remaining_percent"] = serde_json::json!(remaining);
-        window["remaining_percent_origin"] = serde_json::json!("provider_reported");
-        window["meter_percent"] = serde_json::json!(remaining.clamp(0.0, 100.0));
-        window["meter_side"] = serde_json::json!("remaining");
-    }
+    .expect("valid shared current V2 usage projection fixture");
     let mut projection: UsageProjectionV1 =
         serde_json::from_value(fixture).expect("valid typed usage projection fixture");
     projection.generated_at_epoch = now_epoch;
@@ -43,6 +30,11 @@ fn local_source_projection(
     account.canonical_account_id = capability.account_id.clone();
     account.identity_kind = UsageIdentityKindV1::LocalSourceHandle;
     account.freshness.last_good_at_epoch = Some(now_epoch);
+    account.metric_groups.clear();
+    account.windows.truncate(1);
+    account.windows[0].window_id = "weekly".to_owned();
+    account.windows[0].label = "Weekly".to_owned();
+    account.windows[0].value_label = format!("{remaining_percent}% left");
     for window in &mut account.windows {
         let raw_remaining = RawPercentPoints::new(f64::from(remaining_percent))
             .expect("fixture remaining percentage is finite");
@@ -53,8 +45,10 @@ fn local_source_projection(
         window.meter_percent = Some(raw_remaining.meter_geometry());
         window.meter_side = Some(UsageMeterSide::Remaining);
         window.count_quota = None;
+        window.provider_quota_state = None;
         window.money_used_percent = None;
         window.reset_at_epoch = Some(now_epoch + 24 * 60 * 60);
+        window.reset_label = format!("Resets at {}", now_epoch + 24 * 60 * 60);
     }
     projection
 }
