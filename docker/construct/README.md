@@ -21,7 +21,7 @@ The runtime entrypoint source that launches the selected agent is at [`docker/ru
 
 ## Image Layer Architecture
 
-```
+```text
 ┌─────────────────────────────────┐
 │  Derived Layer (jackin-managed) │  Claude Code, entrypoint, user mapping
 ├─────────────────────────────────┤

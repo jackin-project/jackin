@@ -146,7 +146,6 @@ After an XCFramework rename or FFI module change, delete `native/DerivedData` be
 
 The checked-in GitHub Actions workflow does not currently build or publish the macOS app. The release details below describe the intended artifact and manual credential requirements; local validation is available through `mise -C native run ci`.
 
-
 | Surface | Contract |
 |---|---|
 | Local validation | macOS 27.0, Xcode 27.0, arm64 static app, tests and bundle verification |

@@ -29,4 +29,3 @@ cargo nextest run -p jackin-dev
 cargo clippy -p jackin-dev --all-targets -- -D warnings
 jackin-dev --version
 ```
-

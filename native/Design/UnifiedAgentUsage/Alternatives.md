@@ -22,7 +22,7 @@ prototype review.
 
 ## A — Grouped Overview, Provider Detail
 
-```
+```text
 ┌──────────────┬─────────────────────────────────────────────────────┐
 │ Overview     │ Provider       Account       Plan   Left  Reset     │
 │              │ ▾ OpenAI                                         │
@@ -51,7 +51,7 @@ secondary plan/reset text contracts before account and state.
 
 ## B — Hierarchical Navigation Sidebar
 
-```
+```text
 ┌────────────────────┬───────────────────────────────────────────────┐
 │ Overview           │ OpenAI · team@example.test                    │
 │ ▾ OpenAI           │ Plus                                          │
@@ -80,7 +80,7 @@ with complete accessibility values; selection persists when hidden.
 
 Eligibility: ineligible counter-direction for this design round.
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────┐
 │ [Overview] [Provider: All ▾]                         Refresh       │
 │ Provider     Account             Plan      Left    Reset    State  │
@@ -114,7 +114,7 @@ part of the selection ballot.
 
 Eligibility: ineligible counter-direction for this design round.
 
-```
+```text
 ┌───────────┬──────────────────┬─────────────────────────────────────┐
 │ Providers │ Accounts         │ Quota windows                       │
 │ OpenAI    │ personal@…       │ Weekly      57% left   3d           │
@@ -143,7 +143,7 @@ automatic system collapse.
 
 Eligibility: ineligible counter-direction for this design round.
 
-```
+```text
 ┌──────────────────────────────────────┬─────────────────────────────┐
 │ Provider / canonical account table   │ Account inspector           │
 │ ▾ OpenAI                             │ team@example.test           │
@@ -173,7 +173,7 @@ automatic collapse.
 
 Eligibility: ineligible counter-direction for this design round.
 
-```
+```text
 ┌──────────────┬─────────────────────────────────────────────────────┐
 │ Overview     │ OpenAI                                              │
 │ OpenAI       │ Accounts                 Selected quota windows     │
@@ -201,7 +201,7 @@ layouts require separate evidence and stable focus/selection restoration.
 
 ## G — Attention Queue plus Complete Inventory
 
-```
+```text
 ┌──────────────┬─────────────────────────────────────────────────────┐
 │ Attention    │ Needs attention                                    │
 │ Overview     │ Anthropic · personal@… · 12% left · resets in 1h   │
@@ -227,7 +227,7 @@ becomes cards or banners.
 
 ## H — Compact Focused Popover, Deep Window Handoff
 
-```
+```text
 Popover                             Usage window
 ┌─────────────────────────┐         ┌────────┬──────────────────────┐
 │ OpenAI · team@…      ▾  │         │Overview│ OpenAI · team@…      │
