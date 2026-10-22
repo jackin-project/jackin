@@ -21,7 +21,12 @@ fn parity_stale_partial_windows_issues_and_retry() {
         "stale · updated 25m ago"
     );
     assert_eq!(account.windows.len(), 3);
-    assert_eq!(account.windows[0].meter_percent(), Some(54));
+    assert_eq!(
+        account.windows[0]
+            .meter_percent()
+            .map(MeterPercentPoints::get),
+        Some(54.0)
+    );
     assert_eq!(account.windows[0].reset_at_epoch, Some(PARITY_NOW + 70_000));
     assert_eq!(account.windows[1].quota_state, UsageQuotaStateV1::Available);
     assert_eq!(account.windows[1].meter_percent(), None);
@@ -46,7 +51,10 @@ fn parity_stale_partial_windows_issues_and_retry() {
         Some("stale · provider")
     );
     let weekly = usage_bucket_presentation(&view.buckets[0]);
-    assert_eq!(weekly.meter_percent, Some(54));
+    assert_eq!(
+        weekly.meter_percent.map(MeterPercentPoints::get),
+        Some(54.0)
+    );
     assert!(
         weekly.display_label.contains("54% left"),
         "{}",
@@ -230,7 +238,23 @@ fn parity_legit_zero_spend_and_missing_fields() {
     assert_eq!(account.account, "");
     assert_eq!(account.plan_label, None);
     assert_eq!(account.windows.len(), 1);
-    assert_eq!(account.windows[0].meter_percent(), Some(100));
+    assert_eq!(
+        account.windows[0]
+            .meter_percent()
+            .map(MeterPercentPoints::get),
+        Some(0.0)
+    );
+    assert_eq!(account.windows[0].meter_side, Some(UsageMeterSide::Used));
+    assert_eq!(
+        account.windows[0]
+            .remaining_percent
+            .map(RawPercentPoints::get),
+        Some(100.0)
+    );
+    assert_eq!(
+        account.windows[0].remaining_percent_origin,
+        Some(PercentObservationOrigin::Derived)
+    );
     assert_eq!(account.windows[0].value, "100% left");
     assert_eq!(account.metric_groups.len(), 2);
     match &account.metric_groups[1].value {
@@ -257,6 +281,8 @@ fn parity_legit_zero_spend_and_missing_fields() {
     );
     let spend = usage_bucket_presentation(&view.buckets[0]);
     assert_eq!(spend.remaining_label.as_deref(), Some("0% used"));
+    assert_eq!(spend.meter_side, Some(UsageMeterSide::Used));
+    assert!(spend.display_label.contains("100% left"));
     assert!(
         spend.display_label.contains("$0.00"),
         "{}",

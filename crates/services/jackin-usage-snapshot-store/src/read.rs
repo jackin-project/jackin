@@ -4,14 +4,14 @@
 #[cfg(test)]
 use std::path::Path;
 
+use super::StoredAccountUsageSnapshot;
+use jackin_protocol::control::QuotaBucketView;
 use jackin_usage_store_backend::Row;
 #[cfg(test)]
 use jackin_usage_store_backend::{self, DbOperation};
 
 #[cfg(test)]
-use jackin_protocol::control::{
-    FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageSnapshotStatus,
-};
+use jackin_protocol::control::{FocusedAccountHeader, FocusedUsageView, UsageSnapshotStatus};
 
 #[cfg(test)]
 use super::*;
@@ -42,22 +42,7 @@ pub fn focused_usage_view(
     let fetched_at = rows.iter().map(|row| row.fetched_at).max().unwrap_or(0);
     let mut buckets = rows
         .iter()
-        .map(|row| QuotaBucketView {
-            used_money: None,
-            limit_money: None,
-            severity: jackin_protocol::control::UsageSeverity::default(),
-            label: row.window_kind.clone(),
-            used_label: row.used_label.clone(),
-            limit_label: row.limit_label.clone(),
-            remaining_percent: row
-                .remaining_percent
-                .and_then(|value| u8::try_from(value.clamp(0, 100)).ok()),
-            reset_label: row.reset_label.clone(),
-            resets_at: row.resets_at,
-            status_slot: None,
-            pace_label: row.pace_label.clone(),
-            status: usage_status_from_label(&row.status),
-        })
+        .map(|row| row.quota_bucket.clone())
         .collect::<Vec<_>>();
     buckets.sort_by_key(|bucket| usage_bucket_order(&provider, &bucket.label));
     Ok(Some(FocusedUsageView {
@@ -127,7 +112,7 @@ pub(crate) fn stored_account_snapshots(
                     last_error,
                     focused_provider,
                     plan_label,
-                    remaining_percent,
+                    quota_bucket_json,
                     used_label,
                     limit_label,
                     reset_label,
@@ -149,35 +134,60 @@ pub(crate) fn stored_account_snapshots(
             .await
             .map_err(|err| format!("read telemetry snapshot row failed: {err}"))?
         {
-            snapshots.push(StoredAccountUsageSnapshot {
-                provider: row_string(&row, 0, "provider")?,
-                account_key_hash: row_string(&row, 1, "account_key_hash")?,
-                account_label: row_string(&row, 2, "account_label")?,
-                source: row_string(&row, 3, "source")?,
-                confidence: row_string(&row, 4, "confidence")?,
-                window_kind: row_string(&row, 5, "window_kind")?,
-                used_amount: row_opt_i64(&row, 6, "used_amount")?,
-                used_unit: row_opt_string(&row, 7, "used_unit")?,
-                limit_amount: row_opt_i64(&row, 8, "limit_amount")?,
-                limit_unit: row_opt_string(&row, 9, "limit_unit")?,
-                resets_at: row_opt_i64(&row, 10, "resets_at")?,
-                fetched_at: row_i64(&row, 11, "fetched_at")?,
-                expires_at: row_opt_i64(&row, 12, "expires_at")?,
-                status: row_string(&row, 13, "status")?,
-                last_error: row_opt_string(&row, 14, "last_error")?,
-                focused_provider: row_opt_string(&row, 15, "focused_provider")?,
-                plan_label: row_opt_string(&row, 16, "plan_label")?,
-                remaining_percent: row_opt_i64(&row, 17, "remaining_percent")?,
-                used_label: row_opt_string(&row, 18, "used_label")?,
-                limit_label: row_opt_string(&row, 19, "limit_label")?,
-                reset_label: row_opt_string(&row, 20, "reset_label")?,
-                pace_label: row_opt_string(&row, 21, "pace_label")?,
-                view_status: row_string(&row, 22, "view_status")?,
-                updated_label: row_string(&row, 23, "updated_label")?,
-                status_bar_label: row_string(&row, 24, "status_bar_label")?,
-            });
+            snapshots.push(decode_stored_account_snapshot(&row)?);
         }
         Ok(snapshots)
+    })
+}
+
+pub(crate) fn decode_quota_bucket(
+    encoded: Option<String>,
+    window_kind: &str,
+) -> Result<QuotaBucketView, String> {
+    let encoded = encoded.ok_or_else(|| {
+        format!("telemetry snapshot {window_kind:?} is missing quota_bucket_json")
+    })?;
+    let bucket: QuotaBucketView = serde_json::from_str(&encoded).map_err(|err| {
+        format!("decode telemetry quota_bucket_json for {window_kind:?} failed: {err}")
+    })?;
+    bucket.validate().map_err(|err| {
+        format!("validate telemetry quota_bucket_json for {window_kind:?} failed: {err}")
+    })?;
+    Ok(bucket)
+}
+
+pub(super) fn decode_stored_account_snapshot(
+    row: &Row,
+) -> Result<StoredAccountUsageSnapshot, String> {
+    Ok(StoredAccountUsageSnapshot {
+        provider: row_string(row, 0, "provider")?,
+        account_key_hash: row_string(row, 1, "account_key_hash")?,
+        account_label: row_string(row, 2, "account_label")?,
+        source: row_string(row, 3, "source")?,
+        confidence: row_string(row, 4, "confidence")?,
+        window_kind: row_string(row, 5, "window_kind")?,
+        used_amount: row_opt_i64(row, 6, "used_amount")?,
+        used_unit: row_opt_string(row, 7, "used_unit")?,
+        limit_amount: row_opt_i64(row, 8, "limit_amount")?,
+        limit_unit: row_opt_string(row, 9, "limit_unit")?,
+        resets_at: row_opt_i64(row, 10, "resets_at")?,
+        fetched_at: row_i64(row, 11, "fetched_at")?,
+        expires_at: row_opt_i64(row, 12, "expires_at")?,
+        status: row_string(row, 13, "status")?,
+        last_error: row_opt_string(row, 14, "last_error")?,
+        focused_provider: row_opt_string(row, 15, "focused_provider")?,
+        plan_label: row_opt_string(row, 16, "plan_label")?,
+        quota_bucket: decode_quota_bucket(
+            row_opt_string(row, 17, "quota_bucket_json")?,
+            &row_string(row, 5, "window_kind")?,
+        )?,
+        used_label: row_opt_string(row, 18, "used_label")?,
+        limit_label: row_opt_string(row, 19, "limit_label")?,
+        reset_label: row_opt_string(row, 20, "reset_label")?,
+        pace_label: row_opt_string(row, 21, "pace_label")?,
+        view_status: row_string(row, 22, "view_status")?,
+        updated_label: row_string(row, 23, "updated_label")?,
+        status_bar_label: row_string(row, 24, "status_bar_label")?,
     })
 }
 

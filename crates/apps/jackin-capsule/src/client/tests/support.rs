@@ -23,6 +23,7 @@ pub(super) fn account(
         expires_at: None,
         status: status.to_owned(),
         last_error: None,
+        quota_bucket: None,
     }
 }
 

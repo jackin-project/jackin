@@ -19,8 +19,9 @@ pub use labels::{
 };
 pub use numbers::PROCESS_OUTPUT_MAX;
 pub use numbers::{
-    env_value, format_amount_with_unit, json_epoch_seconds, json_number, parse_iso_epoch,
-    remaining_from_fraction, used_percent_from_fraction, used_percent_label,
+    derived_remaining_from_used_fraction, env_value, format_amount_with_unit,
+    format_percent_points, json_epoch_seconds, json_number, parse_iso_epoch,
+    used_percent_from_fraction,
 };
 pub use presentation::{
     UsageBucketPresentation, usage_bucket_presentation, usage_detail_presentation,

@@ -86,7 +86,12 @@ fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
         label: "Weekly".to_owned(),
         used_label: Some("90% used".to_owned()),
         limit_label: Some("100%".to_owned()),
-        remaining_percent: Some(10),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(reported_remaining(10.0)),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: Some("Resets in 3h 52m".to_owned()),
         resets_at: None,
         status_slot: Some(StatusSlot::Weekly),
@@ -148,7 +153,12 @@ fn broker_client_failure_preserves_last_good_quota() {
         label: "Weekly".to_owned(),
         used_label: Some("36% used".to_owned()),
         limit_label: Some("100%".to_owned()),
-        remaining_percent: Some(64),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(reported_remaining(64.0)),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: Some(StatusSlot::Weekly),
@@ -177,7 +187,12 @@ fn broker_client_failure_preserves_last_good_quota() {
         Some(&target.capability),
     );
     assert_eq!(adopted.status, UsageSnapshotStatus::Stale);
-    assert_eq!(adopted.buckets[0].remaining_percent, Some(64));
+    assert_eq!(
+        adopted.buckets[0]
+            .remaining_percent
+            .map(CanonicalRemainingPercent::get),
+        Some(64.0)
+    );
     assert_eq!(adopted.buckets[0].status, UsageSnapshotStatus::Stale);
     assert_eq!(
         cache
@@ -383,26 +398,72 @@ fn provider_error_keeps_timeout_transport_and_decode_distinct_from_status_text()
 }
 
 #[test]
-fn fraction_helpers_reject_absent_and_clamp_present() {
-    assert_eq!(used_percent_from_fraction(0.0), Some(0));
-    assert_eq!(used_percent_from_fraction(1.0), Some(100));
-    assert_eq!(used_percent_from_fraction(0.84), Some(84));
-    assert_eq!(used_percent_from_fraction(42.0), Some(42));
-    assert_eq!(used_percent_from_fraction(150.0), Some(100));
+fn fraction_helpers_reject_absent_and_preserve_source_values() {
+    assert_eq!(
+        used_percent_from_fraction(0.0).map(CanonicalUsedPercent::get),
+        Some(0.0)
+    );
+    assert_eq!(
+        used_percent_from_fraction(1.0).map(CanonicalUsedPercent::get),
+        Some(100.0)
+    );
+    assert_eq!(
+        used_percent_from_fraction(0.84).map(CanonicalUsedPercent::get),
+        Some(84.0)
+    );
+    assert_eq!(
+        used_percent_from_fraction(42.0).map(CanonicalUsedPercent::get),
+        Some(4200.0)
+    );
+    let fractional_overage = used_percent_from_fraction(1.001).map(CanonicalUsedPercent::get);
+    assert!(fractional_overage.is_some_and(|value| (value - 100.1).abs() < 1e-12));
+    assert_eq!(
+        used_percent_from_fraction(1.5).map(CanonicalUsedPercent::get),
+        Some(150.0)
+    );
+    assert_eq!(
+        used_percent_from_fraction(150.0).map(CanonicalUsedPercent::get),
+        Some(15_000.0)
+    );
 
     assert_eq!(used_percent_from_fraction(-0.5), None);
     assert_eq!(used_percent_from_fraction(f64::NAN), None);
     assert_eq!(used_percent_from_fraction(f64::INFINITY), None);
     assert_eq!(used_percent_from_fraction(f64::NEG_INFINITY), None);
+    assert_eq!(used_percent_from_fraction(f64::MAX), None);
 
-    assert_eq!(remaining_from_fraction(0.84), Some(16));
-    assert_eq!(remaining_from_fraction(1.0), Some(0));
-    assert_eq!(remaining_from_fraction(-0.5), None);
-    assert_eq!(remaining_from_fraction(f64::NAN), None);
+    assert_eq!(
+        derived_remaining_from_used_fraction(0.84).map(CanonicalRemainingPercent::get),
+        Some(16.0)
+    );
+    assert_eq!(
+        derived_remaining_from_used_fraction(1.0).map(CanonicalRemainingPercent::get),
+        Some(0.0)
+    );
+    assert_eq!(
+        derived_remaining_from_used_fraction(1.5).map(CanonicalRemainingPercent::get),
+        Some(0.0)
+    );
+    assert_eq!(derived_remaining_from_used_fraction(-0.5), None);
+    assert_eq!(derived_remaining_from_used_fraction(f64::NAN), None);
 
-    assert_eq!(used_percent_label(0.84).as_deref(), Some("84% used"));
-    assert_eq!(used_percent_label(-0.5), None);
-    assert_eq!(used_percent_label(f64::NAN), None);
+    assert_eq!(
+        used_percent_from_fraction(0.84)
+            .map(CanonicalUsedPercent::label)
+            .as_deref(),
+        Some("84% used")
+    );
+    assert_eq!(
+        CanonicalUsedPercent::new(84.0)
+            .ok()
+            .map(CanonicalUsedPercent::label)
+            .as_deref(),
+        Some("84% used")
+    );
+    assert_eq!(
+        CanonicalUsedPercent::new(-0.5).expect_err("negative source percentage must be rejected"),
+        "used percentage points must be finite and non-negative"
+    );
 }
 
 #[test]
@@ -424,13 +485,16 @@ fn managed_cli_launch_gate_cools_down_after_launch_failure() {
 
 #[test]
 fn quota_pace_label_uses_codexbar_reserve_deficit_onpace() {
-    let deficit = quota_pace_label(Some(60), Some(900), Some(1_000), 0).expect("pace label");
+    let deficit = quota_pace_label(Some(reported_remaining(60.0)), Some(900), Some(1_000), 0)
+        .expect("pace label");
     assert_eq!(deficit, "30% in deficit · Runs out in 2m");
 
-    let reserve = quota_pace_label(Some(90), Some(600), Some(1_000), 0).expect("pace label");
+    let reserve = quota_pace_label(Some(reported_remaining(90.0)), Some(600), Some(1_000), 0)
+        .expect("pace label");
     assert_eq!(reserve, "30% in reserve");
 
-    let on_pace = quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace label");
+    let on_pace = quota_pace_label(Some(reported_remaining(50.0)), Some(500), Some(1_000), 0)
+        .expect("pace label");
     assert_eq!(on_pace, "On pace");
 }
 

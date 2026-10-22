@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_protocol::control::{
-    FocusedUsageView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 use jackin_usage_provider_core::{
     GROK_HANDOFF_AUTH_PATH, ManagedCliLaunchGate, UsageSurface, UsageViewInput, bucket, env_value,
@@ -84,7 +84,7 @@ pub fn grok_snapshot_from_rpc_result_with_rate_limit<E>(
 where
     E: Into<ProviderError>,
 {
-    let has_credentials = has_auth || has_xai_api_key || has_deployment_key;
+    let has_credentials = grok_has_credentials(has_auth, has_xai_api_key, has_deployment_key);
     let (billing_usage, billing_error, rate_limit) = match billing_result {
         Ok(usage) => (Some(usage), None, None),
         Err(error) => {
@@ -108,28 +108,62 @@ where
     };
     let account =
         grok_account_label_or_presence(auth, has_auth, has_xai_api_key, has_deployment_key);
+    let mut buckets = billing_usage
+        .as_ref()
+        .map(|usage| usage.buckets(now))
+        .unwrap_or_default();
+    let has_observation = buckets.iter().any(grok_bucket_has_quantitative_observation);
     let status = if billing_usage.is_some() {
-        UsageSnapshotStatus::Fresh
+        if has_observation {
+            UsageSnapshotStatus::Fresh
+        } else {
+            UsageSnapshotStatus::Unavailable
+        }
     } else if has_credentials {
         UsageSnapshotStatus::Error
     } else {
         UsageSnapshotStatus::NeedsLogin
     };
-    let buckets = billing_usage
-        .as_ref()
-        .map(|usage| usage.buckets(now))
-        .filter(|buckets| !buckets.is_empty())
-        .unwrap_or_else(|| {
-            vec![bucket(
-                "Credits",
-                None,
-                None,
-                None,
-                None,
-                Some("ACP billing unavailable"),
-                status,
-            )]
-        });
+    let mut diagnostics = buckets
+        .iter()
+        .filter(|bucket| bucket.status != UsageSnapshotStatus::Fresh)
+        .filter_map(|bucket| bucket.pace_label.as_deref())
+        .filter(|message| !message.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if billing_usage.is_some() && !has_observation && diagnostics.is_empty() {
+        diagnostics.push("Grok billing response contained no quantitative observation".to_owned());
+    }
+    if buckets.is_empty() {
+        let diagnostic = if billing_usage.is_some() {
+            "Grok billing response contained no quantitative observation"
+        } else {
+            "ACP billing unavailable"
+        };
+        buckets.push(bucket(
+            "Credits",
+            None,
+            None,
+            None,
+            None,
+            Some(diagnostic),
+            status,
+        ));
+    }
+    let source = if has_observation {
+        billing_usage
+            .as_ref()
+            .map_or(UsageSource::None, GrokBillingSnapshot::source)
+    } else {
+        UsageSource::None
+    };
+    let confidence = if has_observation {
+        UsageConfidence::Authoritative
+    } else if billing_usage.is_none() && has_credentials {
+        UsageConfidence::PresenceOnly
+    } else {
+        UsageConfidence::None
+    };
     let view = usage_view(UsageViewInput {
         agent,
         provider: None,
@@ -142,28 +176,40 @@ where
         credential_origin,
         buckets,
         status,
-        source: billing_usage
-            .as_ref()
-            .map_or(UsageSource::None, GrokBillingSnapshot::source),
-        confidence: if billing_usage.is_some() {
-            UsageConfidence::Authoritative
-        } else if has_credentials {
-            UsageConfidence::PresenceOnly
-        } else {
-            UsageConfidence::None
-        },
+        source,
+        confidence,
         now,
-        last_error: match status {
-            UsageSnapshotStatus::NeedsLogin => Some(
-                billing_error.unwrap_or_else(|| "Grok auth not available to Capsule".to_owned()),
-            ),
-            UsageSnapshotStatus::Error => {
-                billing_error.or_else(|| Some("Grok billing unavailable to Capsule".to_owned()))
+        last_error: if billing_usage.is_some() {
+            (!diagnostics.is_empty()).then(|| diagnostics.join("; "))
+        } else {
+            match status {
+                UsageSnapshotStatus::NeedsLogin => Some(
+                    billing_error
+                        .unwrap_or_else(|| "Grok auth not available to Capsule".to_owned()),
+                ),
+                UsageSnapshotStatus::Error => {
+                    billing_error.or_else(|| Some("Grok billing unavailable to Capsule".to_owned()))
+                }
+                _ => None,
             }
-            _ => None,
         },
     });
     (view, rate_limit)
+}
+
+fn grok_bucket_has_quantitative_observation(bucket: &QuotaBucketView) -> bool {
+    bucket.status == UsageSnapshotStatus::Fresh
+        && (bucket.used_percent.is_some()
+            || bucket.remaining_percent.is_some()
+            || bucket.used_money.is_some()
+            || bucket.limit_money.is_some()
+            || bucket.count_quota.is_some_and(|quota| {
+                quota.used.is_some() || quota.limit.is_some() || quota.remaining.is_some()
+            }))
+}
+
+fn grok_has_credentials(has_auth: bool, has_xai_api_key: bool, has_deployment_key: bool) -> bool {
+    has_auth || has_xai_api_key || has_deployment_key
 }
 
 pub fn grok_account_label(path: &Path) -> Option<String> {

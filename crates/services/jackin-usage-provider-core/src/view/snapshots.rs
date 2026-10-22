@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::{
-    AccountUsageSnapshotView, CachedUsage, HashMap, QuotaBucketView, StatusSlot,
-    UsageSnapshotStatus, usage_confidence_storage_label, usage_source_storage_label,
-    usage_status_storage_label,
+    AccountUsageSnapshotView, CachedUsage, HashMap, QuotaBucketView, UsageSnapshotStatus,
+    usage_confidence_storage_label, usage_source_storage_label, usage_status_storage_label,
 };
 
 pub fn account_snapshot_views_from_cache(
@@ -38,6 +37,7 @@ pub fn account_snapshot_views_from_cache(
                     expires_at: None,
                     status: usage_status_storage_label(status).to_owned(),
                     last_error: view.last_error.clone(),
+                    quota_bucket: Some(bucket.clone()),
                 }
             })
         })
@@ -50,6 +50,8 @@ pub fn account_snapshot_views_from_cache(
     accounts
 }
 
+/// Preserve the legacy CLI scalar summary; `quota_bucket` is authoritative for
+/// new consumers and retains the exact typed observations.
 pub fn quota_amounts_for_account_snapshot(
     bucket: &QuotaBucketView,
 ) -> (Option<i64>, Option<String>, Option<i64>, Option<String>) {
@@ -67,18 +69,10 @@ pub fn quota_amounts_for_account_snapshot(
                 .map(|money| money.currency.clone()),
         );
     }
-    if bucket.status_slot == Some(StatusSlot::Spend) {
-        return (None, None, None, None);
-    }
-    let Some(remaining) = bucket.remaining_percent else {
-        return (None, None, None, None);
-    };
-    (
-        Some(i64::from(100_u8.saturating_sub(remaining.min(100)))),
-        Some("percent".to_owned()),
-        Some(100),
-        Some("percent".to_owned()),
-    )
+    // Percentages and counts belong to the exact typed bucket payload. The
+    // legacy signed scalar columns are reserved for the independent Money
+    // record path and must not quantize new quota observations.
+    (None, None, None, None)
 }
 
 pub(crate) const fn snapshot_status_rank(status: UsageSnapshotStatus) -> u8 {

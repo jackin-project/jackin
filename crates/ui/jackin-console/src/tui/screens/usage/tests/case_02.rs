@@ -77,15 +77,18 @@ fn render_at_shares_one_epoch_between_list_and_detail() {
 
 #[test]
 fn projection_keeps_canonical_ids_and_freshness() {
+    use jackin_protocol::control::{
+        MeterPercentPoints, PercentObservationOrigin, RawPercentPoints, UsageMeterSide,
+    };
     use jackin_protocol::usage_broker::{
         UsageAccountV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIdentityKindV1,
-        UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1, UsagePercent,
-        UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageProviderV1,
+        UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1,
+        UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageProjectionV1, UsageProviderV1,
         UsageQuotaStateV1, UsageWindowCategoryV1,
     };
 
     let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "p".to_owned(),
         generated_at_epoch: 1_800_000_000,
         discovery_revision: "d".to_owned(),
@@ -128,13 +131,18 @@ fn projection_keeps_canonical_ids_and_freshness() {
                     value_label: "73% left".to_owned(),
                     reset_label: "resets tomorrow".to_owned(),
                     remaining_percent: None,
-                    used_percent: Some(UsagePercent::new(27).expect("valid percent")),
+                    remaining_percent_origin: None,
+                    used_percent: Some(RawPercentPoints::new(27.0).expect("valid percent")),
+                    used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+                    meter_percent: Some(MeterPercentPoints::new(27.0).expect("valid meter")),
+                    meter_side: Some(UsageMeterSide::Used),
+                    count_quota: None,
+                    provider_quota_state: None,
+                    money_used_percent: None,
                     reset_at_epoch: Some(1_800_100_000),
                     quota_state: UsageQuotaStateV1::Available,
                     pace_label: None,
                     runs_out_label: None,
-                    remaining_raw_percent: None,
-                    used_raw_percent: Some(27),
                 }],
                 issues: Vec::new(),
                 metric_groups: Vec::new(),
@@ -160,23 +168,35 @@ fn projection_keeps_canonical_ids_and_freshness() {
     assert_eq!(account.status, "stale");
     assert_eq!(account.windows[0].window_id, "weekly");
     assert_eq!(account.windows[0].remaining_percent, None);
-    assert_eq!(account.windows[0].used_percent, Some(27));
-    assert_eq!(account.windows[0].meter_percent(), Some(73));
+    assert_eq!(
+        account.windows[0].used_percent.map(RawPercentPoints::get),
+        Some(27.0)
+    );
+    assert_eq!(
+        account.windows[0]
+            .meter_percent()
+            .map(MeterPercentPoints::get),
+        Some(27.0)
+    );
+    assert_eq!(account.windows[0].meter_side, Some(UsageMeterSide::Used));
     assert_eq!(account.windows[0].reset_at_epoch, Some(1_800_100_000));
     assert_eq!(state.generated_at_epoch, Some(1_800_000_000));
 }
 
 #[test]
 fn projection_keeps_provider_accounts_once_and_preserves_window_order() {
+    use jackin_protocol::control::{
+        MeterPercentPoints, PercentObservationOrigin, RawPercentPoints, UsageMeterSide,
+    };
     use jackin_protocol::usage_broker::{
         UsageAccountV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageIdentityKindV1,
-        UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1, UsagePercent,
-        UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageProviderV1,
+        UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1,
+        UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageProjectionV1, UsageProviderV1,
         UsageQuotaStateV1, UsageWindowCategoryV1,
     };
 
     let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "p".to_owned(),
         generated_at_epoch: 0,
         discovery_revision: "d".to_owned(),
@@ -218,14 +238,19 @@ fn projection_keeps_provider_accounts_once_and_preserves_window_order() {
                     label: "weekly".to_owned(),
                     value_label: "73% left".to_owned(),
                     reset_label: "resets tomorrow".to_owned(),
-                    remaining_percent: Some(UsagePercent::new(73).expect("valid percent")),
+                    remaining_percent: Some(RawPercentPoints::new(73.0).expect("valid percent")),
+                    remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
                     used_percent: None,
+                    used_percent_origin: None,
+                    meter_percent: Some(MeterPercentPoints::new(73.0).expect("valid meter")),
+                    meter_side: Some(UsageMeterSide::Remaining),
+                    count_quota: None,
+                    provider_quota_state: None,
+                    money_used_percent: None,
                     reset_at_epoch: None,
                     quota_state: UsageQuotaStateV1::Available,
                     pace_label: None,
                     runs_out_label: None,
-                    remaining_raw_percent: Some(73),
-                    used_raw_percent: None,
                 }],
                 issues: Vec::new(),
                 metric_groups: Vec::new(),
@@ -241,7 +266,22 @@ fn projection_keeps_provider_accounts_once_and_preserves_window_order() {
     assert_eq!(state.accounts.len(), 1);
     assert_eq!(state.accounts[0].provider, "OpenAI");
     assert_eq!(state.accounts[0].windows[0].label, "weekly");
-    assert_eq!(state.accounts[0].windows[0].remaining_percent, Some(73));
+    assert_eq!(
+        state.accounts[0].windows[0]
+            .remaining_percent
+            .map(RawPercentPoints::get),
+        Some(73.0)
+    );
+    assert_eq!(
+        state.accounts[0].windows[0]
+            .meter_percent()
+            .map(MeterPercentPoints::get),
+        Some(73.0)
+    );
+    assert_eq!(
+        state.accounts[0].windows[0].meter_side,
+        Some(UsageMeterSide::Remaining)
+    );
 }
 
 #[test]
@@ -249,12 +289,12 @@ fn projection_includes_unresolved_accounts_and_groups_by_provider() {
     use jackin_protocol::usage_broker::{
         UsageAccountV1, UsageFreshnessV1, UsageIdentityKindV1, UsageIssueRecoverabilityV1,
         UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1, UsageMembershipStateV1,
-        UsageProjectionRefreshStateV1, UsageProjectionSchemaV1, UsageProjectionV1, UsageProviderV1,
+        UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageProjectionV1, UsageProviderV1,
         UsageUnresolvedV1,
     };
 
     let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "p".to_owned(),
         generated_at_epoch: 0,
         discovery_revision: "d".to_owned(),

@@ -11,7 +11,7 @@ use jackin_protocol::control::{
 };
 
 use jackin_protocol::usage_broker::{
-    UsageAccountCapability, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
+    UsageAccountCapability, UsageProjectionRefreshStateV1, UsageProjectionSchemaV2,
     UsageProjectionV1, UsageRefreshPhase,
 };
 

@@ -55,3 +55,43 @@ fn refresh_reply_without_a_usable_token_stops_safely() {
         );
     }
 }
+
+#[test]
+fn codex_credit_unlimited_state_requires_an_explicit_true_flag() {
+    let expected = [
+        (
+            Some(true),
+            Some(jackin_protocol::control::ProviderQuotaState::Unlimited),
+        ),
+        (Some(false), None),
+        (None, None),
+    ];
+
+    for (unlimited, expected_state) in expected {
+        let mut credits = serde_json::json!({
+            "has_credits": true,
+            "balance": "12.5"
+        });
+        if let Some(unlimited) = unlimited {
+            credits["unlimited"] = serde_json::json!(unlimited);
+        }
+        let usage: CodexUsageResponse =
+            serde_json::from_value(serde_json::json!({ "credits": credits }))
+                .expect("valid Codex credits response");
+
+        let buckets = usage.buckets(1_781_185_560);
+        let credit = buckets
+            .iter()
+            .find(|bucket| bucket.label == "Credits")
+            .expect("credits bucket remains visible");
+        assert_eq!(credit.provider_quota_state, expected_state);
+        assert_eq!(credit.limit_label.as_deref(), Some("12.50 credits"));
+        assert_eq!(credit.used_percent, None);
+        assert_eq!(credit.remaining_percent, None);
+        assert_eq!(credit.used_percent_origin, None);
+        assert_eq!(credit.remaining_percent_origin, None);
+        assert!(credit.count_quota.is_none());
+        assert!(credit.used_money.is_none());
+        assert!(credit.limit_money.is_none());
+    }
+}

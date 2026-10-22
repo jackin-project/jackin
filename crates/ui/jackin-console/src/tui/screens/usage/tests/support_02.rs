@@ -7,10 +7,12 @@ pub(super) fn window_metric_group(
     remaining: Option<u8>,
     now: i64,
 ) -> UsageMetricGroup {
+    use jackin_protocol::control::RawPercentPoints;
     use jackin_protocol::usage_broker::{
         UsageMetricGroupKindV1, UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1,
-        UsagePercent, UsageQuotaStateV1,
+        UsageQuotaStateV1,
     };
+    let remaining = remaining.map(f64::from);
     UsageMetricGroup {
         group_id: format!("{label}-id"),
         rank: 0,
@@ -24,10 +26,18 @@ pub(super) fn window_metric_group(
         is_stale: false,
         quota_state: UsageQuotaStateV1::Available,
         value: UsageMetricValueV1::Window {
-            remaining_percent: remaining.map(|p| UsagePercent::new(p).expect("valid percent")),
-            remaining_raw_percent: remaining.map(i32::from),
+            remaining_percent: remaining.and_then(|p| RawPercentPoints::new(p).ok()),
+            remaining_percent_origin: remaining
+                .map(|_| jackin_protocol::control::PercentObservationOrigin::ProviderReported),
             used_percent: None,
-            used_raw_percent: None,
+            used_percent_origin: None,
+            meter_percent: remaining.and_then(|p| {
+                jackin_protocol::control::MeterPercentPoints::new(p.clamp(0.0, 100.0)).ok()
+            }),
+            meter_side: remaining.map(|_| jackin_protocol::control::UsageMeterSide::Remaining),
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             period: UsageMetricPeriodV1::Unknown,
             unit: None,
         },

@@ -41,10 +41,10 @@ impl TestFrameContext<'_> {
 pub(super) fn canonical_usage_publication() -> jackin_console::tui::state::UsageScreenState {
     use jackin_protocol::usage_broker::{
         UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1, UsageProjectionRefreshStateV1,
-        UsageProjectionSchemaV1, UsageProjectionV1,
+        UsageProjectionSchemaV2, UsageProjectionV1,
     };
     jackin_console::tui::state::UsageScreenState::from_projection(&UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "independent-console-publication".to_owned(),
         generated_at_epoch: 1_800_000_123,
         discovery_revision: "independent-discovery".to_owned(),

@@ -22,13 +22,17 @@ final class PlatformLaneTests: XCTestCase {
         let project = try text("project.yml")
         let readme = try text("README.md")
         for (name, content) in [("project.yml", project), ("README.md", readme)] {
+            let shippingLaneRecord =
+                name == "project.yml"
+                ? "shipping lane Xcode 27.1"
+                : "Shipping lane: **Xcode 27.1"
             XCTAssertTrue(
                 content.contains("27.0"),
                 "\(name) must record the macOS 27.0 minimum deployment target"
             )
             XCTAssertTrue(
-                content.contains("Xcode 27.0"),
-                "\(name) must record the shipping lane (Xcode 27.0)"
+                content.contains(shippingLaneRecord),
+                "\(name) must record the shipping lane (Xcode 27.1)"
             )
             XCTAssertTrue(
                 content.contains("macOS 27 SDK"),

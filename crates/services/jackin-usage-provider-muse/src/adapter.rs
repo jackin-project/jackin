@@ -2,23 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_protocol::control::{
-    FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
-    UsageSnapshotStatus, UsageSource,
+    CanonicalUsedPercent, FocusedAccountHeader, FocusedUsageView, PercentObservationOrigin,
+    QuotaBucketView, StatusSlot, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 use jackin_usage_provider_core::{
     status_bar_quota_labels, timed_bucket, window_minutes_label, with_status_slot,
+    with_used_percent,
 };
 use serde::Deserialize;
-
-#[derive(Debug, Clone, Deserialize)]
-struct MuseWindowRaw {
-    #[serde(rename = "usedPercent")]
-    used_percent: f64,
-    #[serde(rename = "resetsAtMs", default)]
-    resets_at_ms: Option<i64>,
-    #[serde(rename = "windowDurationMins", default)]
-    window_duration_mins: Option<i64>,
-}
 
 #[derive(Debug, Clone, Deserialize)]
 struct MuseUsageRaw {
@@ -27,9 +18,9 @@ struct MuseUsageRaw {
     #[serde(default)]
     tier: Option<String>,
     #[serde(default)]
-    window: Option<MuseWindowRaw>,
+    window: Option<serde_json::Value>,
     #[serde(default)]
-    weekly: Option<MuseWindowRaw>,
+    weekly: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -40,7 +31,7 @@ struct MuseUsageReadRaw {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MuseWindow {
-    pub used_percent: f64,
+    pub used_percent: CanonicalUsedPercent,
     pub resets_at: Option<i64>,
     pub window_duration_mins: Option<i64>,
 }
@@ -50,7 +41,13 @@ pub struct MuseObservation {
     pub observed_at_ms: i64,
     pub tier: Option<String>,
     pub window: Option<MuseWindow>,
+    pub invalid_window: bool,
+    pub invalid_window_resets_at: Option<i64>,
+    pub invalid_window_duration_mins: Option<i64>,
     pub weekly: Option<MuseWindow>,
+    pub invalid_weekly: bool,
+    pub invalid_weekly_resets_at: Option<i64>,
+    pub invalid_weekly_duration_mins: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,51 +83,65 @@ fn parse_muse_usage(raw: MuseUsageRaw) -> Result<MuseObservation, String> {
     if raw.observed_at_ms < 0 {
         return Err("Muse observedAtMs is invalid".to_owned());
     }
+    let (window, invalid_window, invalid_window_resets_at, invalid_window_duration_mins) =
+        parse_optional_muse_window(raw.window);
+    let (weekly, invalid_weekly, invalid_weekly_resets_at, invalid_weekly_duration_mins) =
+        parse_optional_muse_window(raw.weekly);
     Ok(MuseObservation {
         observed_at_ms: raw.observed_at_ms,
         tier: raw
             .tier
             .map(|tier| tier.trim().to_owned())
             .filter(|tier| !tier.is_empty()),
-        window: raw
-            .window
-            .map(|window| parse_muse_window(window, "window"))
-            .transpose()?,
-        weekly: raw
-            .weekly
-            .map(|window| parse_muse_window(window, "weekly"))
-            .transpose()?,
+        window,
+        invalid_window,
+        invalid_window_resets_at,
+        invalid_window_duration_mins,
+        weekly,
+        invalid_weekly,
+        invalid_weekly_resets_at,
+        invalid_weekly_duration_mins,
     })
 }
 
-fn parse_muse_window(raw: MuseWindowRaw, label: &str) -> Result<MuseWindow, String> {
-    if !raw.used_percent.is_finite() || raw.used_percent < 0.0 {
-        return Err(format!("Muse {label} usedPercent is invalid"));
+fn parse_optional_muse_window(
+    raw: Option<serde_json::Value>,
+) -> (Option<MuseWindow>, bool, Option<i64>, Option<i64>) {
+    let Some(raw) = raw else {
+        return (None, false, None, None);
+    };
+    let resets_at = muse_window_resets_at(&raw);
+    let duration_mins = muse_window_duration_mins(&raw);
+    match parse_muse_window(raw) {
+        Ok(window) => (Some(window), false, None, None),
+        Err(()) => (None, true, resets_at, duration_mins),
     }
-    if raw.resets_at_ms.is_some_and(|ms| ms < 0) {
-        return Err(format!("Muse {label} resetsAtMs is invalid"));
-    }
+}
+
+fn parse_muse_window(raw: serde_json::Value) -> Result<MuseWindow, ()> {
+    let used_percent = raw
+        .get("usedPercent")
+        .and_then(serde_json::Value::as_f64)
+        .and_then(|percent| CanonicalUsedPercent::new(percent).ok())
+        .ok_or(())?;
     Ok(MuseWindow {
-        used_percent: raw.used_percent,
-        resets_at: raw.resets_at_ms.map(|ms| ms.div_euclid(1000)),
-        window_duration_mins: raw.window_duration_mins.filter(|mins| *mins > 0),
+        used_percent,
+        resets_at: muse_window_resets_at(&raw),
+        window_duration_mins: muse_window_duration_mins(&raw),
     })
 }
 
-fn muse_used_label(used_percent: f64) -> String {
-    if used_percent.fract() == 0.0 {
-        format!("{used_percent:.0}% used")
-    } else {
-        format!("{used_percent:.1}% used")
-    }
+fn muse_window_resets_at(raw: &serde_json::Value) -> Option<i64> {
+    raw.get("resetsAtMs")
+        .and_then(serde_json::Value::as_i64)
+        .filter(|ms| *ms >= 0)
+        .map(|ms| ms.div_euclid(1000))
 }
 
-fn muse_remaining_percent(used_percent: f64) -> Option<u8> {
-    if used_percent > 100.0 {
-        return Some(0);
-    }
-    #[expect(clippy::cast_sign_loss, reason = "used is 0.0..=100.0; clamped below")]
-    Some((100.0 - used_percent).round().clamp(0.0, 100.0) as u8)
+fn muse_window_duration_mins(raw: &serde_json::Value) -> Option<i64> {
+    raw.get("windowDurationMins")
+        .and_then(serde_json::Value::as_i64)
+        .filter(|mins| *mins > 0)
 }
 
 fn muse_window_bucket(
@@ -139,18 +150,25 @@ fn muse_window_bucket(
     window: &MuseWindow,
     now: i64,
 ) -> QuotaBucketView {
-    with_status_slot(
+    let bucket = with_status_slot(
         timed_bucket(
             label,
-            Some(muse_used_label(window.used_percent)),
+            Some(window.used_percent.label()),
+            Some("100%".to_owned()),
             None,
-            muse_remaining_percent(window.used_percent),
             window.resets_at,
             now,
             None,
             UsageSnapshotStatus::Fresh,
         ),
         Some(slot),
+    );
+    with_used_percent(
+        bucket,
+        Some((
+            window.used_percent,
+            PercentObservationOrigin::ProviderReported,
+        )),
     )
 }
 
@@ -169,6 +187,40 @@ pub fn muse_buckets(observation: &MuseObservation, now: i64) -> Vec<QuotaBucketV
             StatusSlot::Weekly,
             weekly,
             now,
+        ));
+    }
+    if observation.invalid_window {
+        let label = observation
+            .invalid_window_duration_mins
+            .and_then(window_minutes_label)
+            .unwrap_or_else(|| "Window".to_owned());
+        buckets.push(with_status_slot(
+            timed_bucket(
+                &label,
+                None,
+                Some("100%".to_owned()),
+                None,
+                observation.invalid_window_resets_at,
+                now,
+                Some("Muse window usedPercent is invalid"),
+                UsageSnapshotStatus::Unavailable,
+            ),
+            Some(StatusSlot::Session),
+        ));
+    }
+    if observation.invalid_weekly {
+        buckets.push(with_status_slot(
+            timed_bucket(
+                "Weekly",
+                None,
+                Some("100%".to_owned()),
+                None,
+                observation.invalid_weekly_resets_at,
+                now,
+                Some("Muse weekly usedPercent is invalid"),
+                UsageSnapshotStatus::Unavailable,
+            ),
+            Some(StatusSlot::Weekly),
         ));
     }
     buckets
@@ -196,7 +248,7 @@ pub fn muse_view(
     let buckets = observation
         .map(|observation| muse_buckets(observation, fetched_at_epoch))
         .unwrap_or_default();
-    let has_observation = observation.is_some();
+    let has_observation = buckets.iter().any(muse_bucket_has_quantitative_observation);
     let status = if has_observation {
         UsageSnapshotStatus::Fresh
     } else {
@@ -212,6 +264,7 @@ pub fn muse_view(
     } else {
         labels.join(" · ")
     };
+    let last_error = muse_view_diagnostics(observation, &buckets, has_observation);
     FocusedUsageView {
         focused_agent: Some(agent.to_owned()),
         focused_provider: Some("Muse".to_owned()),
@@ -243,12 +296,40 @@ pub fn muse_view(
         .to_owned(),
         status_bar_label,
         tabs: Vec::new(),
-        last_error: if has_observation {
-            None
-        } else {
-            Some("Muse usage has no cached observation".to_owned())
-        },
+        last_error,
     }
+}
+
+fn muse_bucket_has_quantitative_observation(bucket: &QuotaBucketView) -> bool {
+    bucket.status == UsageSnapshotStatus::Fresh
+        && (bucket.used_percent.is_some()
+            || bucket.remaining_percent.is_some()
+            || bucket.used_money.is_some()
+            || bucket.limit_money.is_some()
+            || bucket.count_quota.is_some_and(|quota| {
+                quota.used.is_some() || quota.limit.is_some() || quota.remaining.is_some()
+            }))
+}
+
+fn muse_view_diagnostics(
+    observation: Option<&MuseObservation>,
+    buckets: &[QuotaBucketView],
+    has_observation: bool,
+) -> Option<String> {
+    let mut diagnostics = buckets
+        .iter()
+        .filter_map(|bucket| bucket.pace_label.as_deref())
+        .filter(|message| !message.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if !has_observation && diagnostics.is_empty() {
+        diagnostics.push(if observation.is_some() {
+            "Muse usage response contained no quantitative observation".to_owned()
+        } else {
+            "Muse usage has no cached observation".to_owned()
+        });
+    }
+    (!diagnostics.is_empty()).then(|| diagnostics.join("; "))
 }
 
 #[derive(Debug, Clone, Copy)]

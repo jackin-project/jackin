@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, PercentObservationOrigin, QuotaBucketView,
+    StatusSlot, UsageSeverity, UsageSnapshotStatus,
+};
 use jackin_usage_provider_core::{
-    json_number, parse_iso_epoch, quota_pace_label, remaining_from_fraction, severity_from_label,
-    timed_bucket, used_percent_label,
+    json_number, parse_iso_epoch, quota_pace_label, severity_from_label, timed_bucket,
+    with_used_percent,
 };
 
 use super::{
@@ -27,17 +30,26 @@ pub struct ClaudeQuotaWindow {
 
 impl ClaudeQuotaWindow {
     pub fn into_bucket(self, now: i64) -> QuotaBucketView {
-        let remaining = self.used.and_then(remaining_from_fraction);
-        let pace = quota_pace_label(remaining, self.reset_at, self.window_seconds, now);
-        let mut view = timed_bucket(
+        let used = self
+            .used
+            .and_then(|points| CanonicalUsedPercent::new(points).ok());
+        let pace_remaining = used.and_then(|percent| {
+            CanonicalRemainingPercent::new((100.0 - percent.get()).max(0.0)).ok()
+        });
+        let pace = quota_pace_label(pace_remaining, self.reset_at, self.window_seconds, now);
+        let view = timed_bucket(
             &self.label,
-            self.used.and_then(used_percent_label),
+            used.map(CanonicalUsedPercent::label),
             Some("100%".to_owned()),
-            remaining,
+            None,
             self.reset_at,
             now,
             pace.as_deref(),
             UsageSnapshotStatus::Fresh,
+        );
+        let mut view = with_used_percent(
+            view,
+            used.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
         );
         view.status_slot = self.slot;
         view.severity = self.severity;
@@ -122,6 +134,11 @@ impl ClaudeOAuthUsageResponse {
             .iter()
             .filter_map(ClaudeOAuthLimit::as_quota)
             .collect();
+        let mut buckets = windows
+            .iter()
+            .cloned()
+            .map(|window| window.into_bucket(now))
+            .collect::<Vec<_>>();
         for window in legacy_claude_quota_windows(
             five_hour,
             seven_day,
@@ -130,11 +147,10 @@ impl ClaudeOAuthUsageResponse {
             seven_day_routines,
         ) {
             if !has_equivalent_claude_window(&windows, &window) {
-                windows.push(window);
+                windows.push(window.clone());
+                buckets.push(window.into_bucket(now));
             }
         }
-        let mut buckets: Vec<QuotaBucketView> =
-            windows.into_iter().map(|w| w.into_bucket(now)).collect();
         if let Some(spend) = claude_spend_bucket(spend, extra_usage) {
             buckets.push(spend);
         }

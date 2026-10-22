@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use chrono::{Local, TimeZone};
+use jackin_protocol::control::CanonicalRemainingPercent;
 
-use super::titlecase_ascii;
+use super::{format_percent_points, titlecase_ascii};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PercentStyle {
@@ -54,13 +55,10 @@ pub fn exact_reset_parenthetical(reset_at: i64) -> String {
     format!("({})", local_timestamp_label(reset_at))
 }
 
-pub fn percent_headline(remaining: u8, prefs: UsageFormatPrefs) -> String {
+pub fn percent_headline(remaining: CanonicalRemainingPercent, prefs: UsageFormatPrefs) -> String {
     match prefs.percent_style {
-        PercentStyle::Left => format!("{remaining}% left"),
-        PercentStyle::Used => {
-            let used = 100u8.saturating_sub(remaining);
-            format!("{used}% used")
-        }
+        PercentStyle::Left => remaining.label(),
+        PercentStyle::Used => format!("{}% used", format_percent_points(remaining.used_points())),
     }
 }
 
@@ -83,13 +81,12 @@ pub fn local_timestamp_label(epoch: i64) -> String {
 }
 
 pub fn quota_pace_label(
-    remaining_percent: Option<u8>,
+    remaining_percent: Option<CanonicalRemainingPercent>,
     reset_at: Option<i64>,
     window_seconds: Option<i64>,
     now: i64,
 ) -> Option<String> {
-    let remaining_percent_raw = remaining_percent?;
-    let remaining_percent = f64::from(remaining_percent_raw);
+    let remaining_percent = remaining_percent?.get();
     let reset_in = reset_at?.saturating_sub(now).max(0);
     let window_seconds = window_seconds?.max(1);
     if reset_in > window_seconds {
@@ -100,22 +97,21 @@ pub fn quota_pace_label(
     let pace = if delta.abs() <= 2.0 {
         "On pace".to_owned()
     } else if delta > 0.0 {
-        format!("{}% in reserve", delta.round() as i64)
+        format!("{}% in reserve", format_percent_points(delta))
     } else {
-        format!("{}% in deficit", (-delta).round() as i64)
+        format!("{}% in deficit", format_percent_points(-delta))
     };
-    let used = 100_i128 - i128::from(remaining_percent_raw);
-    let elapsed = window_seconds - reset_in;
-    let behind_clock = i128::from(remaining_percent_raw) * i128::from(window_seconds)
-        < i128::from(reset_in) * 100_i128;
-    if used > 0 && elapsed > 0 && behind_clock {
-        let numerator = i128::from(remaining_percent_raw) * i128::from(elapsed);
-        let display_seconds = (numerator + used / 2) / used;
-        let display_seconds = i64::try_from(display_seconds).ok()?;
-        return Some(format!(
-            "{pace} · Runs out in {}",
-            compact_duration_label(display_seconds)
-        ));
+    let used = 100.0 - remaining_percent;
+    let elapsed = (window_seconds - reset_in) as f64;
+    let behind_clock = (remaining_percent * window_seconds as f64) < reset_in as f64 * 100.0;
+    if used > 0.0 && elapsed > 0.0 && behind_clock {
+        let display_seconds = remaining_percent * elapsed / used;
+        if display_seconds.is_finite() && display_seconds <= i64::MAX as f64 {
+            return Some(format!(
+                "{pace} · Runs out in {}",
+                compact_duration_label(display_seconds.round() as i64)
+            ));
+        }
     }
     Some(pace)
 }

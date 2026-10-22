@@ -49,11 +49,20 @@ fn window_group_summary_uses_left_like_windows_and_capsule() {
         quota_state: UsageQuotaStateV1::Available,
         value: jackin_protocol::usage_broker::UsageMetricValueV1::Window {
             remaining_percent: Some(
-                jackin_protocol::usage_broker::UsagePercent::new(73).expect("valid percent"),
+                jackin_protocol::control::RawPercentPoints::new(73.0).expect("valid percent"),
             ),
-            remaining_raw_percent: Some(73),
+            remaining_percent_origin: Some(
+                jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+            ),
             used_percent: None,
-            used_raw_percent: None,
+            used_percent_origin: None,
+            meter_percent: Some(
+                jackin_protocol::control::MeterPercentPoints::new(73.0).expect("valid meter"),
+            ),
+            meter_side: Some(jackin_protocol::control::UsageMeterSide::Remaining),
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             period: jackin_protocol::usage_broker::UsageMetricPeriodV1::Calendar {
                 granularity: jackin_protocol::usage_broker::UsageCalendarPeriodV1::Weekly,
             },
@@ -65,7 +74,207 @@ fn window_group_summary_uses_left_like_windows_and_capsule() {
     };
     assert_eq!(
         metric_group_value_summary(&group).as_deref(),
-        Some("73% left · weekly")
+        Some("73% left (reported) · weekly")
+    );
+}
+
+#[test]
+fn window_detail_preserves_both_reported_sides_and_signed_money_ratio() {
+    use jackin_protocol::control::PercentObservationOrigin;
+
+    let window = UsageWindow {
+        remaining_percent: Some(
+            jackin_protocol::control::RawPercentPoints::new(57.125).expect("valid raw percent"),
+        ),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        used_percent: Some(
+            jackin_protocol::control::RawPercentPoints::new(43.375).expect("valid raw percent"),
+        ),
+        used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        money_used_percent: Some(
+            jackin_protocol::control::RawPercentPoints::new(-10.25).expect("valid signed ratio"),
+        ),
+        ..test_window("weekly", Some(57))
+    };
+
+    assert_eq!(
+        super::super::raw_percent_note(&window).as_deref(),
+        Some("57.13% remaining (reported) · 43.38% used (reported) · money ratio -10.25% used")
+    );
+}
+
+#[test]
+fn window_group_summary_keeps_full_width_typed_request_counts() {
+    use jackin_protocol::control::{
+        CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    };
+    use jackin_protocol::usage_broker::{UsageMetricPeriodV1, UsageMetricValueV1};
+
+    let count = CountQuota::new(
+        Some(u64::MAX),
+        Some(u64::MAX),
+        Some(u64::MAX - 1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    );
+    let group = UsageMetricGroup {
+        group_id: "requests".to_owned(),
+        rank: 0,
+        kind: jackin_protocol::usage_broker::UsageMetricGroupKindV1::Window,
+        label: "Request quota".to_owned(),
+        scope: jackin_protocol::usage_broker::UsageMetricScopeV1::default(),
+        observed_at_epoch: None,
+        fetched_at_epoch: 1_800_000_000,
+        last_success_at_epoch: Some(1_800_000_000),
+        phase: UsageFreshnessPhaseV1::Current,
+        is_stale: false,
+        quota_state: UsageQuotaStateV1::Available,
+        value: UsageMetricValueV1::Window {
+            remaining_percent: None,
+            remaining_percent_origin: None,
+            used_percent: None,
+            used_percent_origin: None,
+            meter_percent: None,
+            meter_side: None,
+            count_quota: Some(count),
+            provider_quota_state: None,
+            money_used_percent: None,
+            period: UsageMetricPeriodV1::Unknown,
+            unit: Some("requests".to_owned()),
+        },
+        reset_at_epoch: None,
+        renews_at_epoch: None,
+        issues: Vec::new(),
+    };
+
+    let summary = metric_group_value_summary(&group).expect("typed count is visible");
+    assert_eq!(
+        summary,
+        format!(
+            "{} used · {} limit · {} remaining · requests",
+            u64::MAX,
+            u64::MAX,
+            u64::MAX - 1
+        )
+    );
+}
+
+#[test]
+fn count_only_window_summary_shows_every_count_and_explicit_quota_state() {
+    use jackin_protocol::control::{
+        CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+        PercentObservationOrigin, ProviderQuotaState, RawPercentPoints,
+    };
+
+    let mut account = test_account("minimax", "a", "plan");
+    account.windows = vec![UsageWindow {
+        label: "General · Weekly".to_owned(),
+        value: "Unlimited".to_owned(),
+        reset: String::new(),
+        remaining_percent: Some(RawPercentPoints::new(0.0).unwrap()),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        used_percent: None,
+        used_percent_origin: None,
+        meter_percent: None,
+        meter_side: None,
+        count_quota: Some(CountQuota::new(
+            Some(1),
+            Some(2),
+            Some(0),
+            CountQuotaUnit::Requests,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        )),
+        provider_quota_state: Some(ProviderQuotaState::Unlimited),
+        money_used_percent: None,
+        reset_at_epoch: None,
+        quota_state: UsageQuotaStateV1::NotApplicable,
+        ..test_window("weekly", None)
+    }];
+    assert!(account.summary_window().is_some());
+    assert_eq!(
+        account.min_remaining(),
+        None,
+        "Unlimited has no bounded rank key"
+    );
+    let text = render_detail_text(UsageScreenState {
+        accounts: vec![account],
+        selected: 1,
+        detail: false,
+        ..UsageScreenState::default()
+    });
+    for expected in ["Unlimited", "1 used", "2 limit", "0 remaining"] {
+        assert!(text.contains(expected), "missing {expected:?}:\n{text}");
+    }
+    assert_eq!(
+        text.matches("Unlimited").count(),
+        1,
+        "state label must not duplicate:\n{text}"
+    );
+    assert!(
+        text.contains("0% remaining (reported)"),
+        "raw source percent stays visible:\n{text}"
+    );
+}
+
+#[test]
+fn count_only_unknown_window_summary_keeps_partial_exact_values_without_meter() {
+    use jackin_protocol::control::{
+        CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+        PercentObservationOrigin, RawPercentPoints,
+    };
+
+    let mut account = test_account("cursor", "a", "plan");
+    account.windows = vec![UsageWindow {
+        value: String::new(),
+        reset: String::new(),
+        remaining_percent: Some(RawPercentPoints::new(150.0).unwrap()),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        count_quota: Some(CountQuota::new(
+            Some(u64::MAX),
+            Some(0),
+            None,
+            CountQuotaUnit::Unknown,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        )),
+        ..test_window("Requests", None)
+    }];
+    assert_eq!(account.windows[0].meter_geometry(), None);
+    assert!(account.summary_window().is_some());
+
+    let text = render_detail_text(UsageScreenState {
+        accounts: vec![account],
+        selected: 1,
+        detail: false,
+        ..UsageScreenState::default()
+    });
+    for expected in [
+        "18446744073709551615 used",
+        "0 limit",
+        "150% remaining (reported)",
+    ] {
+        assert!(text.contains(expected), "missing {expected:?}:\n{text}");
+    }
+}
+
+#[test]
+fn metric_group_state_only_summary_is_visible() {
+    use jackin_protocol::control::ProviderQuotaState;
+    use jackin_protocol::usage_broker::UsageMetricValueV1;
+
+    let mut group = window_metric_group("Unlimited window", None, 1_800_000_000);
+    if let UsageMetricValueV1::Window {
+        provider_quota_state,
+        ..
+    } = &mut group.value
+    {
+        *provider_quota_state = Some(ProviderQuotaState::Unlimited);
+    }
+    assert_eq!(
+        metric_group_value_summary(&group).as_deref(),
+        Some("Unlimited")
     );
 }
 
@@ -235,7 +444,7 @@ fn min_remaining_spans_windows_and_groups_with_unknown_last() {
     let mut mixed = test_account("openai", "a", "mixed");
     mixed.windows = vec![test_window("w", None)];
     mixed.metric_groups = vec![window_metric_group("Session", Some(5), 1_800_000_000)];
-    assert_eq!(mixed.min_remaining(), Some(5));
+    assert_eq!(mixed.min_remaining(), Some(5.0));
 
     let mut unknown = test_account("zai", "b", "unknown");
     unknown.windows = vec![test_window("w", None)];

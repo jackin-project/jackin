@@ -1,25 +1,49 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_protocol::control::{QuotaBucketView, UsageSeverity, UsageSnapshotStatus};
+use jackin_protocol::control::{
+    PercentObservationOrigin, ProviderQuotaState, QuotaBucketView, UsageSeverity,
+    UsageSnapshotStatus,
+};
 use jackin_protocol::usage_broker::{UsageCoordinationErrorKind, UsageQuotaStateV1};
-
-pub fn money_used_raw_percent(bucket: &QuotaBucketView) -> Option<i32> {
-    let used = bucket.used_money.as_ref()?;
-    let limit = bucket.limit_money.as_ref()?;
-    if used.currency != limit.currency || used.exponent != limit.exponent || limit.amount_minor <= 0
-    {
-        return None;
-    }
-    let scaled = used.amount_minor.saturating_mul(100);
-    let raw = scaled.checked_div(limit.amount_minor)?;
-    Some(i32::try_from(raw).unwrap_or(if raw < 0 { i32::MIN } else { i32::MAX }))
-}
+use jackin_usage_provider_core::{money_used_percent, quota_bucket_has_observation};
 
 pub fn quota_state_for_bucket(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
     match bucket.status {
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => {
-            if bucket.remaining_percent == Some(0) || money_is_exhausted(bucket) {
+            match bucket.provider_quota_state {
+                Some(ProviderQuotaState::Exhausted) => return UsageQuotaStateV1::Exhausted,
+                Some(ProviderQuotaState::Unlimited) => return UsageQuotaStateV1::NotApplicable,
+                None => {}
+            }
+
+            // Exact count is the authority for a count quota, including when
+            // independently reported percentage data conflicts with it.
+            if let Some(count) = bucket.count_quota {
+                return match count.remaining {
+                    Some(0) => UsageQuotaStateV1::Exhausted,
+                    Some(_) if bucket.severity == UsageSeverity::Warn => UsageQuotaStateV1::Warning,
+                    Some(_) => UsageQuotaStateV1::Available,
+                    None => UsageQuotaStateV1::Unknown,
+                };
+            }
+
+            let has_valid_money = money_used_percent(bucket).is_some();
+            let provider_reported_exhaustion = bucket
+                .remaining_percent
+                .is_some_and(|remaining| remaining.get() == 0.0)
+                && bucket.remaining_percent_origin
+                    == Some(PercentObservationOrigin::ProviderReported);
+            let unverified_zero_without_money = bucket
+                .remaining_percent
+                .is_some_and(|remaining| remaining.get() == 0.0)
+                && bucket.remaining_percent_origin
+                    != Some(PercentObservationOrigin::ProviderReported)
+                && !has_valid_money;
+            if money_is_exhausted(bucket)
+                || provider_reported_exhaustion
+                || unverified_zero_without_money
+            {
                 UsageQuotaStateV1::Exhausted
             } else {
                 match bucket.severity {
@@ -44,7 +68,7 @@ pub fn quota_state_for_bucket(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
     }
 }
 
-pub(crate) fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
+pub fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
     match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
         (Some(used), Some(limit)) => {
             used.currency == limit.currency
@@ -56,12 +80,8 @@ pub(crate) fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
     }
 }
 
-pub(crate) fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
-    bucket.remaining_percent.is_some()
-        || bucket.used_money.is_some()
-        || bucket.limit_money.is_some()
-        || bucket.used_label.is_some()
-        || bucket.limit_label.is_some()
+pub fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
+    quota_bucket_has_observation(bucket)
 }
 
 pub fn issue_code(kind: UsageCoordinationErrorKind) -> String {
@@ -82,3 +102,6 @@ pub fn issue_code(kind: UsageCoordinationErrorKind) -> String {
     }
     .to_owned()
 }
+
+#[cfg(test)]
+mod tests;

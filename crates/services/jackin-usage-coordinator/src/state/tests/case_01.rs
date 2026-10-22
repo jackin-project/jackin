@@ -3,6 +3,11 @@
 
 use super::*;
 
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    Money, PercentObservationOrigin,
+};
+
 #[test]
 fn atomic_state_round_trip_uses_private_permissions_and_old_or_new_envelopes() {
     let temp = tempfile::tempdir().unwrap();
@@ -25,6 +30,130 @@ fn atomic_state_round_trip_uses_private_permissions_and_old_or_new_envelopes() {
 }
 
 #[test]
+fn account_state_round_trips_exact_percentages_in_both_result_slots() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileAccountStateStore::at(temp.path().join("accounts"));
+    let adjacent = f64::from_bits(1.0_f64.to_bits() + 1);
+    let mut state = completed(1_000, "precision@example.test");
+    let terminal = state.terminal_result.as_mut().unwrap();
+    terminal.buckets[0].remaining_percent = Some(CanonicalRemainingPercent::new(adjacent).unwrap());
+    terminal.buckets[0].remaining_percent_origin = Some(PercentObservationOrigin::Derived);
+    let last_good = state.last_good.as_mut().unwrap();
+    last_good.buckets[0].remaining_percent =
+        Some(CanonicalRemainingPercent::new(57.125_000_000_000_01).unwrap());
+    last_good.buckets[0].remaining_percent_origin =
+        Some(PercentObservationOrigin::ProviderReported);
+
+    store.store(&state, 1_000).unwrap();
+    let loaded = store.load(&capability(), 1_000).unwrap().unwrap();
+    let terminal = &loaded.terminal_result.unwrap().buckets[0];
+    assert_eq!(terminal.remaining_percent.unwrap().get(), adjacent);
+    assert_eq!(
+        terminal.remaining_percent_origin,
+        Some(PercentObservationOrigin::Derived)
+    );
+    let last_good = &loaded.last_good.unwrap().buckets[0];
+    assert_eq!(
+        last_good.remaining_percent.unwrap().get(),
+        57.125_000_000_000_01
+    );
+    assert_eq!(
+        last_good.remaining_percent_origin,
+        Some(PercentObservationOrigin::ProviderReported)
+    );
+}
+
+#[derive(Clone, Copy)]
+enum InvalidQuotaPayload {
+    MissingOrigin,
+    MissingValue,
+    CountAndMoney,
+}
+
+fn corrupt_quota_bucket(
+    value: &mut serde_json::Value,
+    result_name: &str,
+    corruption: InvalidQuotaPayload,
+) {
+    let bucket = &mut value[result_name]["buckets"][0];
+    match corruption {
+        InvalidQuotaPayload::MissingOrigin => {
+            bucket
+                .as_object_mut()
+                .unwrap()
+                .remove("remaining_percent_origin");
+        }
+        InvalidQuotaPayload::MissingValue => {
+            bucket.as_object_mut().unwrap().remove("remaining_percent");
+        }
+        InvalidQuotaPayload::CountAndMoney => {
+            bucket["count_quota"] = serde_json::to_value(CountQuota::new(
+                Some(1),
+                Some(2),
+                Some(1),
+                CountQuotaUnit::Requests,
+                CountQuotaPeriod::UtcDaily,
+                CountQuotaProvenance::ProviderReported,
+            ))
+            .unwrap();
+            bucket["used_money"] = serde_json::to_value(Money::new(1, "USD", 2)).unwrap();
+        }
+    }
+}
+
+#[test]
+fn account_state_rejects_invalid_quota_authority_on_load_and_store_without_rewriting() {
+    let cases = [
+        ("terminal_result", InvalidQuotaPayload::MissingOrigin),
+        ("terminal_result", InvalidQuotaPayload::MissingValue),
+        ("terminal_result", InvalidQuotaPayload::CountAndMoney),
+        ("last_good", InvalidQuotaPayload::MissingOrigin),
+        ("last_good", InvalidQuotaPayload::MissingValue),
+        ("last_good", InvalidQuotaPayload::CountAndMoney),
+    ];
+
+    for (result_name, corruption) in cases {
+        let temp = tempfile::tempdir().unwrap();
+        let store = FileAccountStateStore::at(temp.path().join("accounts"));
+        let valid = completed(1_000, "preserved@example.test");
+        store.store(&valid, 1_000).unwrap();
+        let path = temp.path().join("accounts/claude-account-123.json");
+        let valid_bytes = fs::read(&path).unwrap();
+
+        let mut invalid_value = serde_json::to_value(&valid).unwrap();
+        corrupt_quota_bucket(&mut invalid_value, result_name, corruption);
+        let invalid: AccountStateEnvelope = serde_json::from_value(invalid_value.clone()).unwrap();
+        assert_eq!(store.store(&invalid, 1_000), Err(StateStoreError::Corrupt));
+        assert_eq!(fs::read(&path).unwrap(), valid_bytes);
+
+        let invalid_bytes = serde_json::to_vec(&invalid_value).unwrap();
+        fs::write(&path, &invalid_bytes).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(
+            store.load(&capability(), 1_000),
+            Err(StateStoreError::Corrupt)
+        );
+        assert_eq!(fs::read(&path).unwrap(), invalid_bytes);
+
+        let restarted_store = FileAccountStateStore::at(temp.path().join("accounts"));
+        assert_eq!(
+            restarted_store.load(&capability(), 1_000),
+            Err(StateStoreError::Corrupt),
+            "corrupt authority must fail closed after reopening the store"
+        );
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            invalid_bytes,
+            "failed loads must retain the live corrupt preimage"
+        );
+        assert!(
+            path.exists(),
+            "corruption must not become a missing-state success"
+        );
+    }
+}
+
+#[test]
 fn account_state_v1_migration_retains_account_and_starts_conservative_attempt_floor() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileAccountStateStore::at(temp.path().join("accounts"));
@@ -33,8 +162,10 @@ fn account_state_v1_migration_retains_account_and_starts_conservative_attempt_fl
         .store(&completed(1_000, "existing@example.test"), 1_000)
         .unwrap();
 
-    let mut legacy = serde_json::to_value(completed(1_000, "existing@example.test")).unwrap();
-    legacy["schema_version"] = serde_json::json!(LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
+    let mut legacy = legacy_account_state(
+        &completed(1_000, "existing@example.test"),
+        LEGACY_ACCOUNT_STATE_SCHEMA_VERSION,
+    );
     legacy
         .as_object_mut()
         .unwrap()
@@ -43,7 +174,8 @@ fn account_state_v1_migration_retains_account_and_starts_conservative_attempt_fl
         .as_object_mut()
         .unwrap()
         .remove("reload_fence_required");
-    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    let legacy_bytes = serde_json::to_vec(&legacy).unwrap();
+    fs::write(&path, &legacy_bytes).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
 
     let migrated = store.load(&capability(), 2_000).unwrap().unwrap();
@@ -58,6 +190,10 @@ fn account_state_v1_migration_retains_account_and_starts_conservative_attempt_fl
     let durable: AccountStateEnvelope = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     assert_eq!(durable.provider_invoked_at_epoch, None);
     assert!(durable.reload_fence_required);
+    let backup = temp
+        .path()
+        .join("accounts/.claude-account-123.json.pre-quota-v4.backup");
+    assert_eq!(fs::read(backup).unwrap(), legacy_bytes);
 }
 
 #[test]
@@ -72,8 +208,7 @@ fn account_state_v1_migration_distinguishes_fresh_queue_from_ambiguous_attempts(
     queued.phase = UsageRefreshPhase::Queued;
     queued.started_at_epoch = Some(1_000);
     store.store(&queued, 1_000).unwrap();
-    let mut legacy = serde_json::to_value(&queued).unwrap();
-    legacy["schema_version"] = serde_json::json!(LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
+    let mut legacy = legacy_account_state(&queued, LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
     legacy
         .as_object_mut()
         .unwrap()
@@ -101,8 +236,8 @@ fn account_state_v1_migration_distinguishes_fresh_queue_from_ambiguous_attempts(
     contradictory_queued.phase = UsageRefreshPhase::Queued;
     contradictory_queued.started_at_epoch = Some(1_000);
     contradictory_queued.retry_deadline_epoch = Some(1_300);
-    let mut legacy = serde_json::to_value(&contradictory_queued).unwrap();
-    legacy["schema_version"] = serde_json::json!(LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
+    let mut legacy =
+        legacy_account_state(&contradictory_queued, LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
     legacy
         .as_object_mut()
         .unwrap()
@@ -124,8 +259,7 @@ fn account_state_v1_migration_distinguishes_fresh_queue_from_ambiguous_attempts(
     let mut unresolved = AccountStateEnvelope::idle(account.clone());
     unresolved.generation = 0;
     unresolved.phase = UsageRefreshPhase::Updating;
-    let mut legacy = serde_json::to_value(&unresolved).unwrap();
-    legacy["schema_version"] = serde_json::json!(LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
+    let mut legacy = legacy_account_state(&unresolved, LEGACY_ACCOUNT_STATE_SCHEMA_VERSION);
     legacy
         .as_object_mut()
         .unwrap()
@@ -152,14 +286,13 @@ fn account_state_v2_migration_persists_unresolved_attempt_provenance_atomically(
     let account = capability();
     let path = temp.path().join("accounts/claude-account-123.json");
     let mut updating = AccountStateEnvelope::idle(account.clone());
-    updating.schema_version = PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION;
+    updating.schema_version = OLDER_ACCOUNT_STATE_SCHEMA_VERSION;
     updating.generation = 4;
     updating.phase = UsageRefreshPhase::Updating;
     updating.started_at_epoch = Some(1_000);
     store.store(&updating, 1_000).unwrap();
 
-    let mut legacy = serde_json::to_value(&updating).unwrap();
-    legacy["schema_version"] = serde_json::json!(PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION);
+    let mut legacy = legacy_account_state(&updating, OLDER_ACCOUNT_STATE_SCHEMA_VERSION);
     legacy
         .as_object_mut()
         .unwrap()
@@ -177,6 +310,114 @@ fn account_state_v2_migration_persists_unresolved_attempt_provenance_atomically(
     assert_eq!(durable.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
     assert!(durable.reload_fence_required);
     assert_eq!(durable.provider_invoked_at_epoch, None);
+}
+
+#[test]
+fn account_state_v3_migration_preserves_all_view_fields_and_backups_exact_preimage() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileAccountStateStore::at(temp.path().join("accounts"));
+    let path = temp.path().join("accounts/claude-account-123.json");
+    let mut previous = completed(1_000, "precision@example.test");
+    for result in [&mut previous.terminal_result, &mut previous.last_good]
+        .into_iter()
+        .flatten()
+    {
+        result.buckets[0].limit_label = Some("Unlimited".to_owned());
+        result.buckets[0].provider_quota_state = None;
+    }
+    let legacy = legacy_account_state(&previous, PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION);
+    let bytes = serde_json::to_vec(&legacy).unwrap();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let existing_backup = temp
+        .path()
+        .join("accounts/.claude-account-123.json.pre-quota-v4.backup");
+    let preserved_backup = b"previous durable backup";
+    fs::write(&existing_backup, preserved_backup).unwrap();
+    fs::set_permissions(&existing_backup, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let migrated = store.load(&capability(), 2_000).unwrap().unwrap();
+    assert_eq!(migrated.schema_version, ACCOUNT_STATE_SCHEMA_VERSION);
+    assert_eq!(migrated.generation, previous.generation);
+    assert_eq!(migrated.retry_deadline_epoch, previous.retry_deadline_epoch);
+    for result in [&migrated.terminal_result, &migrated.last_good]
+        .into_iter()
+        .flatten()
+    {
+        let bucket = &result.buckets[0];
+        assert_eq!(bucket.remaining_percent.unwrap().get(), 72.0);
+        assert_eq!(
+            bucket.remaining_percent_origin,
+            Some(PercentObservationOrigin::HistoricalUnknown)
+        );
+        assert!(bucket.used_percent.is_none());
+        assert!(bucket.count_quota.is_none());
+        assert_eq!(bucket.limit_label.as_deref(), Some("Unlimited"));
+        assert!(bucket.provider_quota_state.is_none());
+    }
+    let mut expected = previous.clone();
+    expected.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
+    for result in [&mut expected.terminal_result, &mut expected.last_good]
+        .into_iter()
+        .flatten()
+    {
+        for bucket in &mut result.buckets {
+            bucket.used_percent = None;
+            bucket.used_percent_origin = None;
+            bucket.remaining_percent_origin = bucket
+                .remaining_percent
+                .map(|_| PercentObservationOrigin::HistoricalUnknown);
+            bucket.count_quota = None;
+        }
+    }
+    assert_eq!(migrated, expected);
+    assert_eq!(fs::read(&existing_backup).unwrap(), preserved_backup);
+    let migration_backup = fs::read_dir(existing_backup.parent().unwrap())
+        .unwrap()
+        .flatten()
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".claude-account-123.json.pre-quota-v4.")
+                && entry.file_name().to_string_lossy()
+                    != ".claude-account-123.json.pre-quota-v4.backup"
+        })
+        .expect("migration writes a separate backup when the stable name already exists");
+    assert_eq!(fs::read(migration_backup.path()).unwrap(), bytes);
+}
+
+#[test]
+fn account_state_v3_migration_rejects_i64_max_percent_without_rewriting() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileAccountStateStore::at(temp.path().join("accounts"));
+    let path = temp.path().join("accounts/claude-account-123.json");
+    let mut legacy = legacy_account_state(
+        &completed(1_000, "precision@example.test"),
+        PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION,
+    );
+    for result_name in ["terminal_result", "last_good"] {
+        legacy[result_name]["buckets"][0]["remaining_percent"] = serde_json::json!(i64::MAX);
+    }
+    let bytes = serde_json::to_vec(&legacy).unwrap();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    assert_eq!(
+        store.load(&capability(), 1_000),
+        Err(StateStoreError::Corrupt)
+    );
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+
+    let restarted_store = FileAccountStateStore::at(temp.path().join("accounts"));
+    assert_eq!(
+        restarted_store.load(&capability(), 1_000),
+        Err(StateStoreError::Corrupt),
+        "an out-of-domain legacy integer remains corrupt on a fresh store open"
+    );
+    assert_eq!(fs::read(&path).unwrap(), bytes);
 }
 
 #[test]
@@ -268,7 +509,7 @@ fn atomic_state_sanitizes_control_characters_and_clamps_display_fields() {
 }
 
 #[test]
-fn projection_state_is_one_atomic_envelope_and_quarantines_corruption() {
+fn projection_state_is_one_atomic_envelope_and_keeps_corruption_fail_closed() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileProjectionStateStore::under_data_dir(temp.path());
     let envelope = ProjectionStateEnvelope {
@@ -287,24 +528,21 @@ fn projection_state_is_one_atomic_envelope_and_quarantines_corruption() {
     store.store(&envelope).unwrap();
     assert_eq!(store.load().unwrap(), Some(envelope));
     let path = temp.path().join("usage-broker/projection.json");
-    fs::write(&path, b"not-json").unwrap();
+    let corrupt = b"not-json";
+    fs::write(&path, corrupt).unwrap();
     assert_eq!(store.load(), Err(StateStoreError::Corrupt));
-    assert!(!path.exists());
-    assert!(
-        fs::read_dir(path.parent().unwrap())
-            .unwrap()
-            .flatten()
-            .any(|entry| entry.file_name().to_string_lossy().contains("corrupt"))
-    );
+    assert_eq!(fs::read(&path).unwrap(), corrupt);
+    assert_eq!(store.load(), Err(StateStoreError::Corrupt));
+    assert_eq!(fs::read(&path).unwrap(), corrupt);
 }
 
 #[test]
-fn projection_v2_is_visible_only_to_the_broker_migration_loader() {
+fn projection_v3_is_raw_only_for_broker_migration_and_keeps_exact_backup() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileProjectionStateStore::under_data_dir(temp.path());
     let path = temp.path().join("usage-broker/projection.json");
-    let legacy = ProjectionStateEnvelope {
-        schema_version: ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION,
+    let current = ProjectionStateEnvelope {
+        schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
         projection: empty_projection(),
         aliases: Vec::new(),
         catalog_revision: "catalog-1".into(),
@@ -313,14 +551,18 @@ fn projection_v2_is_visible_only_to_the_broker_migration_loader() {
         success_deadline_epoch: Some(1_300),
         broker_instance_id: "instance-1".into(),
     };
+    let mut legacy = serde_json::to_value(&current).unwrap();
+    legacy["schema_version"] =
+        serde_json::json!(ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION);
+    legacy["projection"]["schema_version"] = serde_json::json!(1);
+    let bytes = serde_json::to_vec(&legacy).unwrap();
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    fs::write(&path, &bytes).unwrap();
 
-    assert_eq!(
-        store.load_for_broker_migration().unwrap(),
-        Some(legacy.clone())
-    );
-    assert_eq!(store.store(&legacy), Err(StateStoreError::Corrupt));
+    assert_eq!(store.load_for_broker_migration().unwrap(), Some(legacy));
+    let mut wrong_schema = current.clone();
+    wrong_schema.schema_version = ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION;
+    assert_eq!(store.store(&wrong_schema), Err(StateStoreError::Corrupt));
     assert_eq!(
         store.load(),
         Err(StateStoreError::SchemaMigrationRequired {
@@ -333,10 +575,16 @@ fn projection_v2_is_visible_only_to_the_broker_migration_loader() {
         "ordinary reads must leave migration input intact"
     );
 
-    let mut migrated = legacy;
-    migrated.schema_version = ProjectionStateEnvelope::SCHEMA_VERSION;
-    store.store(&migrated).unwrap();
-    assert_eq!(store.load().unwrap(), Some(migrated));
+    store.store_migrated(&current).unwrap();
+    assert_eq!(store.load().unwrap(), Some(current));
+    assert_eq!(
+        fs::read(
+            temp.path()
+                .join("usage-broker/.projection.json.pre-quota-v4.backup")
+        )
+        .unwrap(),
+        bytes
+    );
 }
 
 #[test]
@@ -346,7 +594,7 @@ fn projection_store_preserves_valid_future_schema_for_a_newer_broker() {
     let path = temp.path().join("usage-broker/projection.json");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let future = serde_json::to_vec(&serde_json::json!({
-        "schema_version": 4,
+        "schema_version": 5,
         "future_projection_payload": { "opaque": true }
     }))
     .unwrap();
@@ -355,7 +603,7 @@ fn projection_store_preserves_valid_future_schema_for_a_newer_broker() {
     assert_eq!(
         store.load(),
         Err(StateStoreError::SchemaMigrationRequired {
-            found: 4,
+            found: 5,
             current: ProjectionStateEnvelope::SCHEMA_VERSION,
         })
     );
@@ -363,12 +611,12 @@ fn projection_store_preserves_valid_future_schema_for_a_newer_broker() {
 }
 
 #[test]
-fn projection_store_still_quarantines_corrupt_v2_contents() {
+fn projection_store_keeps_corrupt_current_contents_without_sanitizing_them() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileProjectionStateStore::under_data_dir(temp.path());
     let path = temp.path().join("usage-broker/projection.json");
     let mut legacy = serde_json::to_value(ProjectionStateEnvelope {
-        schema_version: ProjectionStateEnvelope::MIGRATABLE_SCHEMA_VERSION,
+        schema_version: ProjectionStateEnvelope::SCHEMA_VERSION,
         projection: empty_projection(),
         aliases: Vec::new(),
         catalog_revision: "catalog-1".into(),
@@ -380,17 +628,23 @@ fn projection_store_still_quarantines_corrupt_v2_contents() {
     .unwrap();
     legacy["projection"]["broker_generation"] = serde_json::json!(-1);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    let bytes = serde_json::to_vec(&legacy).unwrap();
+    fs::write(&path, &bytes).unwrap();
 
     assert_eq!(
         store.load_for_broker_migration(),
         Err(StateStoreError::Corrupt)
     );
-    assert!(!path.exists());
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert_eq!(
+        store.load_for_broker_migration(),
+        Err(StateStoreError::Corrupt)
+    );
+    assert_eq!(fs::read(&path).unwrap(), bytes);
 }
 
 #[test]
-fn projection_state_v1_is_quarantined_without_catalog_migration() {
+fn projection_state_v1_is_retained_without_catalog_migration() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileProjectionStateStore::under_data_dir(temp.path());
     let path = temp.path().join("usage-broker/projection.json");
@@ -404,14 +658,11 @@ fn projection_state_v1_is_quarantined_without_catalog_migration() {
         "success_deadline_epoch": null,
         "broker_instance_id": "instance-1"
     });
-    fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    let bytes = serde_json::to_vec(&legacy).unwrap();
+    fs::write(&path, &bytes).unwrap();
 
     assert_eq!(store.load(), Err(StateStoreError::Corrupt));
-    assert!(!path.exists());
-    assert!(
-        fs::read_dir(path.parent().unwrap())
-            .unwrap()
-            .flatten()
-            .any(|entry| entry.file_name().to_string_lossy().contains("corrupt"))
-    );
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert_eq!(store.load(), Err(StateStoreError::Corrupt));
+    assert_eq!(fs::read(&path).unwrap(), bytes);
 }

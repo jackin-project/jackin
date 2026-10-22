@@ -1,0 +1,163 @@
+{
+  "schema_version": 2,
+  "projection_id": "projection-42",
+  "generated_at_epoch": 1787259600,
+  "discovery_revision": "catalog-7",
+  "broker_instance_id": "broker-incarnation-3",
+  "broker_generation": 42,
+  "refresh_state": "idle",
+  "providers": [
+    {
+      "provider_id": "openai",
+      "display_name": "OpenAI",
+      "rank": 0,
+      "membership_state": "current",
+      "freshness": { "generation": 42, "phase": "current", "is_stale": false },
+      "accounts": [
+        {
+          "canonical_account_id": "openai-account-01",
+          "identity_kind": "provider_account_id",
+          "rank": 0,
+          "display_label": "personal@example.test",
+          "plan_label": "Pro",
+          "status_label": "Available",
+          "lifecycle": "available",
+          "freshness": { "generation": 42, "phase": "current", "last_good_at_epoch": 1787259600, "is_stale": false },
+          "provenance_count": 2,
+          "windows": [
+            {
+              "window_id": "daily-requests",
+              "rank": 0,
+              "category": "long_range",
+              "label": "Daily requests",
+              "value_label": "57.125% left · 4611686018427387903 requests remaining",
+              "reset_label": "Resets at 1787346000",
+              "remaining_percent": 57.125,
+              "remaining_percent_origin": "provider_reported",
+              "used_percent": 42.875,
+              "used_percent_origin": "derived",
+              "meter_percent": 25.0,
+              "meter_side": "remaining",
+              "count_quota": {
+                "used": 9007199254740993,
+                "limit": 18446744073709551615,
+                "remaining": 4611686018427387903,
+                "unit": "requests",
+                "period": "utc_daily",
+                "provenance": "provider_reported"
+              },
+              "money_used_percent": 132.875,
+              "reset_at_epoch": 1787346000,
+              "quota_state": "warning"
+            },
+            {
+              "window_id": "unlimited",
+              "rank": 1,
+              "category": "other",
+              "label": "Unlimited quota",
+              "value_label": "Unlimited",
+              "reset_label": "No reset",
+              "provider_quota_state": "unlimited",
+              "quota_state": "not_applicable"
+            },
+            {
+              "window_id": "incomplete-requests",
+              "rank": 2,
+              "category": "other",
+              "label": "Unbounded request count",
+              "value_label": "9007199254740993 requests used",
+              "reset_label": "Reset unknown",
+              "count_quota": {
+                "used": 9007199254740993,
+                "limit": null,
+                "remaining": null,
+                "unit": "requests",
+                "period": "utc_daily",
+                "provenance": "provider_reported"
+              },
+              "quota_state": "available"
+            }
+          ],
+          "metric_groups": [
+            {
+              "group_id": "daily-requests",
+              "rank": 0,
+              "kind": "window",
+              "label": "Daily requests",
+              "scope": {},
+              "observed_at_epoch": 1787259600,
+              "fetched_at_epoch": 1787259601,
+              "last_success_at_epoch": 1787259600,
+              "phase": "current",
+              "is_stale": false,
+              "quota_state": "warning",
+              "value": {
+                "type": "window",
+                "remaining_percent": 57.125,
+                "remaining_percent_origin": "provider_reported",
+                "used_percent": 42.875,
+                "used_percent_origin": "derived",
+                "meter_percent": 25.0,
+                "meter_side": "remaining",
+                "count_quota": {
+                  "used": 9007199254740993,
+                  "limit": 18446744073709551615,
+                  "remaining": 4611686018427387903,
+                  "unit": "requests",
+                  "period": "utc_daily",
+                  "provenance": "provider_reported"
+                },
+                "money_used_percent": 132.875,
+                "period": { "period": "calendar", "granularity": "daily" },
+                "unit": "requests"
+              },
+              "reset_at_epoch": 1787346000,
+              "issues": []
+            },
+            {
+              "group_id": "unlimited",
+              "rank": 1,
+              "kind": "window",
+              "label": "Unlimited quota",
+              "scope": {},
+              "observed_at_epoch": 1787259600,
+              "fetched_at_epoch": 1787259601,
+              "last_success_at_epoch": 1787259600,
+              "phase": "current",
+              "is_stale": false,
+              "quota_state": "not_applicable",
+              "value": {
+                "type": "window",
+                "provider_quota_state": "unlimited",
+                "period": { "period": "provider_defined" }
+              },
+              "issues": []
+            },
+            {
+              "group_id": "account-spend",
+              "rank": 2,
+              "kind": "spend_cap",
+              "label": "Account spend",
+              "scope": {},
+              "fetched_at_epoch": 1787259601,
+              "phase": "current",
+              "is_stale": false,
+              "quota_state": "available",
+              "value": {
+                "type": "spend_cap",
+                "cap": { "amount_minor": 10000, "currency": "USD", "exponent": 2 },
+                "spent": { "amount_minor": 132875, "currency": "USD", "exponent": 2 },
+                "remaining": { "amount_minor": -122875, "currency": "USD", "exponent": 2 }
+              },
+              "issues": []
+            }
+          ],
+          "issues": []
+        }
+      ],
+      "issues": []
+    }
+  ],
+  "unresolved": [],
+  "issues": []
+}

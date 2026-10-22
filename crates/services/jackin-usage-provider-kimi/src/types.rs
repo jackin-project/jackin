@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_protocol::control::CanonicalUsedPercent;
 use jackin_usage_provider_core::{epoch_seconds_from_maybe_ms, parse_iso_epoch};
-use serde::Deserialize;
+use serde::{Deserialize, de::Error as _};
 
 #[derive(Debug, Deserialize)]
 pub struct KimiUsageResponse {
@@ -15,18 +16,38 @@ pub struct KimiUsageResponse {
     pub(crate) version: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug)]
 pub enum KimiUsages {
     Pools(Box<KimiPools>),
     List(Vec<KimiUsageItem>),
 }
 
+impl<'de> Deserialize<'de> for KimiUsages {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::Array(_) => serde_json::from_value::<Vec<KimiUsageItem>>(value)
+                .map(Self::List)
+                .map_err(D::Error::custom),
+            serde_json::Value::Object(_) => serde_json::from_value::<KimiPools>(value)
+                .map(|pools| Self::Pools(Box::new(pools)))
+                .map_err(D::Error::custom),
+            _ => Err(D::Error::custom("Kimi usages must be an array or object")),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct KimiPools {
-    pub(crate) limit_5h: Option<KimiPool>,
-    pub(crate) limit_7d: Option<KimiPool>,
-    pub(crate) limit_month_total: Option<KimiPool>,
+    #[serde(default, deserialize_with = "deserialize_present_json_value")]
+    pub(crate) limit_5h: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "deserialize_present_json_value")]
+    pub(crate) limit_7d: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "deserialize_present_json_value")]
+    pub(crate) limit_month_total: Option<serde_json::Value>,
 }
 
 impl KimiPools {
@@ -37,10 +58,14 @@ impl KimiPools {
 
 #[derive(Debug, Deserialize)]
 pub struct KimiPool {
+    #[serde(default, deserialize_with = "deserialize_present_kimi_count")]
     pub(crate) limit: Option<KimiCount>,
+    #[serde(default, deserialize_with = "deserialize_present_kimi_count")]
     pub(crate) used: Option<KimiCount>,
+    #[serde(default, deserialize_with = "deserialize_present_kimi_count")]
     pub(crate) remaining: Option<KimiCount>,
-    pub(crate) used_ratio: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_present_json_value")]
+    pub(crate) used_ratio: Option<serde_json::Value>,
     #[serde(
         default,
         rename = "resetTime",
@@ -54,40 +79,8 @@ pub struct KimiPool {
 }
 
 impl KimiPool {
-    pub(crate) fn used_percent_raw(&self) -> Option<f64> {
-        if let Some(limit) = self
-            .limit
-            .as_ref()
-            .and_then(KimiCount::value)
-            .filter(|limit| *limit > 0)
-        {
-            let used = self.used.as_ref().and_then(KimiCount::value).or_else(|| {
-                self.remaining
-                    .as_ref()
-                    .and_then(KimiCount::value)
-                    .map(|remaining| limit.saturating_sub(remaining))
-            })?;
-            #[expect(clippy::cast_precision_loss, reason = "count magnitudes fit f64")]
-            return Some(used.max(0) as f64 / limit as f64 * 100.0);
-        }
-        self.used_ratio.and_then(|ratio| {
-            if !ratio.is_finite() || ratio < 0.0 {
-                return None;
-            }
-            Some(if ratio <= 1.0 { ratio * 100.0 } else { ratio })
-        })
-    }
-
-    pub(crate) fn used_percent(&self) -> Option<u8> {
-        self.used_percent_raw().map(|raw| {
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "raw percent clamped non-negative; clamp bounds the f64→u8 cast"
-            )]
-            {
-                raw.round().clamp(0.0, 100.0) as u8
-            }
-        })
+    pub(crate) fn used_percent(&self) -> Result<Option<CanonicalUsedPercent>, ()> {
+        kimi_reported_used_percent(self.used_ratio.as_ref())
     }
 
     pub(crate) fn label(&self, fallback: &str) -> String {
@@ -101,20 +94,89 @@ impl KimiPool {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum KimiCount {
-    Num(i64),
+    Num(serde_json::Number),
     Text(String),
+    Invalid(serde_json::Value),
 }
 
 impl KimiCount {
-    pub(crate) fn value(&self) -> Option<i64> {
+    pub(crate) fn value(&self) -> Option<u64> {
         match self {
-            Self::Num(value) => Some(*value),
+            Self::Num(value) => value.as_u64(),
             Self::Text(value) => value.trim().parse().ok(),
+            Self::Invalid(_) => None,
         }
     }
+
+    pub(crate) fn observation(&self) -> Result<u64, &'static str> {
+        match self {
+            Self::Num(value) => value.as_u64().ok_or_else(|| {
+                if value.to_string().starts_with('-') {
+                    "negative count has an unverified unsigned domain"
+                } else {
+                    "fractional or out-of-range count is invalid"
+                }
+            }),
+            Self::Text(value) => {
+                let value = value.trim();
+                value.parse::<u64>().map_err(|_| {
+                    if value.starts_with('-') {
+                        "negative count has an unverified unsigned domain"
+                    } else {
+                        "nonnumeric, fractional or out-of-range count is invalid"
+                    }
+                })
+            }
+            Self::Invalid(_) => Err("count has an unsupported JSON type"),
+        }
+    }
+}
+
+fn deserialize_present_kimi_count<'de, D>(deserializer: D) -> Result<Option<KimiCount>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(Some(match value {
+        serde_json::Value::Number(value) => KimiCount::Num(value),
+        serde_json::Value::String(value) => KimiCount::Text(value),
+        value => KimiCount::Invalid(value),
+    }))
+}
+
+fn deserialize_present_json_value<'de, D>(
+    deserializer: D,
+) -> Result<Option<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    serde_json::Value::deserialize(deserializer).map(Some)
+}
+
+pub(crate) fn kimi_reported_used_percent(
+    ratio: Option<&serde_json::Value>,
+) -> Result<Option<CanonicalUsedPercent>, ()> {
+    let Some(ratio) = ratio else {
+        return Ok(None);
+    };
+    let reported_ratio = match ratio {
+        serde_json::Value::Number(value) => value.as_f64(),
+        serde_json::Value::String(value) => value.trim().parse::<f64>().ok(),
+        _ => None,
+    };
+    let Some(reported_ratio) = reported_ratio else {
+        return Err(());
+    };
+    if !reported_ratio.is_finite() || reported_ratio < 0.0 {
+        return Err(());
+    }
+    // Kimi Code's managed `/coding/v1/usages` contract reports `used_ratio` as
+    // a fraction. Keep this source-path conversion uniform, including values
+    // above one that represent overage; magnitude never changes the unit.
+    let points = reported_ratio * 100.0;
+    CanonicalUsedPercent::new(points).map(Some).map_err(|_| ())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -149,8 +211,11 @@ pub struct KimiUsageItem {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct KimiUsageDetail {
+    #[serde(default, deserialize_with = "deserialize_present_kimi_count")]
     pub(crate) limit: Option<KimiCount>,
+    #[serde(default, deserialize_with = "deserialize_present_kimi_count")]
     pub(crate) used: Option<KimiCount>,
+    #[serde(default, deserialize_with = "deserialize_present_kimi_count")]
     pub(crate) remaining: Option<KimiCount>,
     #[serde(
         default,

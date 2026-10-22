@@ -6,4 +6,7 @@ pub use adapter::{
 };
 
 #[cfg(test)]
+pub(crate) use adapter::opencode_profile_view;
+
+#[cfg(test)]
 mod tests;

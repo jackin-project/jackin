@@ -215,3 +215,62 @@ fn assert_interaction_issue(projection: &UsageProjectionV1) {
     );
     assert_eq!(issue.message, "Credential access requires interaction");
 }
+
+#[test]
+fn publication_preserves_unlimited_state_without_inventing_quota_values() {
+    let mut view = fresh_view();
+    let mut credit = view.buckets.remove(0);
+    credit.label = "Credits".to_owned();
+    credit.used_label = None;
+    credit.limit_label = None;
+    credit.used_percent = None;
+    credit.used_percent_origin = None;
+    credit.remaining_percent = None;
+    credit.remaining_percent_origin = None;
+    credit.count_quota = None;
+    credit.provider_quota_state = Some(jackin_protocol::control::ProviderQuotaState::Unlimited);
+    view.buckets = vec![credit];
+
+    let generation = UsageGenerationView {
+        capability: capability(),
+        generation: 1,
+        phase: UsageRefreshPhase::Completed,
+        snapshot: Some(view),
+        error: None,
+        retry_at_epoch: None,
+    };
+    let mut projection = empty_projection();
+    merge_views(&mut projection, &[generation], &BTreeMap::new())
+        .expect("unlimited provider state publishes");
+
+    let account = &projection.providers[0].accounts[0];
+    let window = &account.windows[0];
+    assert_eq!(
+        window.provider_quota_state,
+        Some(jackin_protocol::control::ProviderQuotaState::Unlimited)
+    );
+    assert_eq!(window.used_percent, None);
+    assert_eq!(window.remaining_percent, None);
+    assert!(window.count_quota.is_none());
+    assert!(window.meter_percent.is_none());
+    assert!(window.meter_side.is_none());
+    assert_eq!(window.quota_state, UsageQuotaStateV1::NotApplicable);
+
+    let group = account
+        .metric_groups
+        .iter()
+        .find(|group| group.label == "Credits")
+        .expect("published Credits metric group");
+    assert!(matches!(
+        &group.value,
+        UsageMetricValueV1::Window {
+            used_percent: None,
+            remaining_percent: None,
+            meter_percent: None,
+            meter_side: None,
+            count_quota: None,
+            provider_quota_state: Some(jackin_protocol::control::ProviderQuotaState::Unlimited),
+            ..
+        }
+    ));
+}

@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use chrono::{Datelike, Timelike};
-use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
-use jackin_usage_provider_core::{compact_count, epoch_seconds_from_maybe_ms, timed_bucket};
+use jackin_protocol::control::{
+    CanonicalUsedPercent, CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    PercentObservationOrigin, QuotaBucketView, UsageSnapshotStatus,
+};
+use jackin_usage_provider_core::{
+    compact_count, epoch_seconds_from_maybe_ms, timed_bucket, with_used_percent,
+};
 
 use super::ZaiLimitRaw;
 
@@ -33,31 +38,31 @@ pub(crate) fn zai_credit_rate_note(now: i64) -> &'static str {
 }
 
 pub(crate) fn zai_model_note(limit: &ZaiLimitRaw) -> Option<String> {
-    let mut details = limit.usage_details.clone();
-    details.retain(|detail| {
-        detail.usage.is_some_and(|usage| usage > 0)
-            && detail
+    let mut details = limit
+        .usage_details
+        .iter()
+        .filter_map(|detail| {
+            let usage = zai_count(detail.usage.as_ref())?;
+            let code = detail
                 .model_code
                 .as_deref()
-                .is_some_and(|code| !code.trim().is_empty())
-    });
+                .filter(|code| !code.trim().is_empty())?;
+            (usage > 0).then_some((detail, usage, code.trim()))
+        })
+        .collect::<Vec<_>>();
     if details.is_empty() {
         return None;
     }
-    details.sort_by_key(|detail| std::cmp::Reverse(detail.usage.unwrap_or(0)));
-    let total: i64 = details.iter().filter_map(|detail| detail.usage).sum();
+    details.sort_by_key(|(_, usage, _)| std::cmp::Reverse(*usage));
+    let total: u128 = details.iter().map(|(_, usage, _)| u128::from(*usage)).sum();
     let parts = details
         .iter()
         .take(2)
-        .map(|detail| {
-            let code = detail.model_code.as_deref().unwrap_or_default().trim();
-            if total > 0 {
-                let used = detail.usage.unwrap_or(0).max(0);
-                let share = (i128::from(used) * 100 / i128::from(total)).clamp(0, 100) as i64;
-                format!("{code} {share}%")
-            } else {
-                code.to_owned()
-            }
+        .map(|(_, usage, code)| {
+            let Some(share) = (u128::from(*usage) * 100).checked_div(total) else {
+                return code.to_string();
+            };
+            format!("{code} {}%", share.min(100))
         })
         .collect::<Vec<_>>();
     Some(format!("top {}", parts.join(" · ")))
@@ -65,7 +70,10 @@ pub(crate) fn zai_model_note(limit: &ZaiLimitRaw) -> Option<String> {
 
 pub fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView {
     let used_percent = limit.used_percent();
-    let remaining = used_percent.map(|used| 100u8.saturating_sub(used));
+    let used_percent = used_percent.and_then(|points| CanonicalUsedPercent::new(points).ok());
+    let used_count = zai_count(limit.current_value.as_ref());
+    let limit_count = zai_count(limit.usage.as_ref());
+    let remaining_count = zai_count(limit.remaining.as_ref());
     let reset_at = limit.next_reset_time.map(epoch_seconds_from_maybe_ms);
     let mut parts = Vec::new();
     if matches!(label, "MCP" | "Web search") {
@@ -74,39 +82,83 @@ pub fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView
         parts.push(zai_credit_rate_note(now).to_owned());
     }
     parts.extend(zai_model_note(limit));
+    let invalid_count_fields = zai_invalid_count_fields(limit);
+    if !invalid_count_fields.is_empty() {
+        parts.push(format!(
+            "invalid count field{}: {}",
+            if invalid_count_fields.len() == 1 {
+                ""
+            } else {
+                "s"
+            },
+            invalid_count_fields.join(", ")
+        ));
+    }
     let detail = (!parts.is_empty()).then(|| parts.join(" · "));
-    timed_bucket(
+    let mut view = timed_bucket(
         label,
-        limit
-            .current_value
-            .map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
-        limit
-            .usage
-            .map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
-        remaining,
+        used_count.map(compact_count),
+        limit_count.map(compact_count),
+        None,
         reset_at,
         now,
         detail.as_deref(),
-        UsageSnapshotStatus::Fresh,
+        if used_count.is_some()
+            || limit_count.is_some()
+            || remaining_count.is_some()
+            || used_percent.is_some()
+        {
+            UsageSnapshotStatus::Fresh
+        } else {
+            UsageSnapshotStatus::Unavailable
+        },
+    );
+    if used_count.is_some() || limit_count.is_some() || remaining_count.is_some() {
+        view.count_quota = Some(CountQuota::new(
+            used_count,
+            limit_count,
+            remaining_count,
+            CountQuotaUnit::Unknown,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        ));
+    }
+    with_used_percent(
+        view,
+        used_percent.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
     )
 }
 
 pub fn zai_count_line(limit: &ZaiLimitRaw) -> Option<String> {
-    let total = limit.usage.filter(|value| *value > 0)?;
-    let used = if let Some(remaining) = limit.remaining {
-        let from_remaining = total.saturating_sub(remaining);
-        limit
-            .current_value
-            .map_or(from_remaining, |current| from_remaining.max(current))
-    } else {
-        limit.current_value?
+    let mut parts = Vec::new();
+    if let Some(used) = zai_count(limit.current_value.as_ref()) {
+        parts.push(format!("{} used", compact_count(used)));
     }
-    .clamp(0, total);
-    let remaining = total.saturating_sub(used);
-    Some(format!(
-        "{} / {} ({} remaining)",
-        compact_count(u64::try_from(used).unwrap_or(0)),
-        compact_count(u64::try_from(total).unwrap_or(0)),
-        compact_count(u64::try_from(remaining).unwrap_or(0))
-    ))
+    if let Some(total) = zai_count(limit.usage.as_ref()) {
+        parts.push(format!("{} limit", compact_count(total)));
+    }
+    if let Some(remaining) = zai_count(limit.remaining.as_ref()) {
+        parts.push(format!("{} remaining", compact_count(remaining)));
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+fn zai_count(value: Option<&serde_json::Value>) -> Option<u64> {
+    let value = value?;
+    value.as_u64().or_else(|| {
+        value
+            .as_str()
+            .and_then(|text| text.trim().parse::<u64>().ok())
+    })
+}
+
+fn zai_invalid_count_fields(limit: &ZaiLimitRaw) -> Vec<&'static str> {
+    [
+        ("currentValue", limit.current_value.as_ref()),
+        ("usage", limit.usage.as_ref()),
+        ("remaining", limit.remaining.as_ref()),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| (value.is_some() && zai_count(value).is_none()).then_some(name))
+    .collect()
 }

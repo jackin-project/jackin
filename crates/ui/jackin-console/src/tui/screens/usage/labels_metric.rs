@@ -4,10 +4,14 @@
 use super::{UsageAccount, UsageMetricGroup, UsageWindow, relative_time_label, updated_age_label};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use jackin_protocol::control::{
+    CountQuota, CountQuotaUnit, PercentObservationOrigin, RawPercentPoints,
+};
 use jackin_protocol::usage_broker::{
     UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageIssueV1, UsageMetricPeriodV1,
-    UsageMetricScopeV1, UsageMetricValueV1, UsagePercent,
+    UsageMetricScopeV1, UsageMetricValueV1,
 };
+use jackin_usage_provider_core::provider_quota_state_label;
 
 pub(crate) fn duration_label(secs: u64) -> String {
     if secs < 60 {
@@ -39,69 +43,97 @@ pub(crate) fn metric_period_label(period: &UsageMetricPeriodV1) -> Option<String
     }
 }
 
-pub(crate) fn percent_side_summary(
-    clamped: Option<u8>,
-    raw: Option<i32>,
-    word: &str,
-) -> Option<String> {
-    match (clamped, raw) {
-        (Some(percent), Some(raw)) if i32::from(percent) != raw => {
-            Some(format!("{percent}% {word} (raw {raw}%)"))
-        }
-        (Some(percent), _) => Some(format!("{percent}% {word}")),
-        (None, Some(raw)) => Some(format!("raw {raw}% {word}")),
-        (None, None) => None,
+fn percent_origin_label(origin: PercentObservationOrigin) -> &'static str {
+    match origin {
+        PercentObservationOrigin::ProviderReported => "reported",
+        PercentObservationOrigin::Derived => "derived",
+        PercentObservationOrigin::HistoricalUnknown => "historical",
     }
 }
 
-pub(crate) fn window_percent_summary(
-    remaining: Option<u8>,
-    remaining_raw: Option<i32>,
-    used: Option<u8>,
-    used_raw: Option<i32>,
+fn percent_side_summary(
+    value: Option<RawPercentPoints>,
+    origin: Option<PercentObservationOrigin>,
+    word: &str,
 ) -> Option<String> {
-    percent_side_summary(remaining, remaining_raw, "left")
-        .or_else(|| percent_side_summary(used, used_raw, "used"))
+    let value = value?.display_value();
+    Some(format!(
+        "{value}% {word} ({})",
+        percent_origin_label(origin?)
+    ))
 }
 
 pub(crate) fn raw_percent_note(window: &UsageWindow) -> Option<String> {
-    for (clamped, raw, word) in [
-        (
+    let parts = [
+        percent_side_summary(
             window.remaining_percent,
-            window.remaining_raw_percent,
+            window.remaining_percent_origin,
             "remaining",
         ),
-        (window.used_percent, window.used_raw_percent, "used"),
-    ] {
-        if let Some(raw) = raw
-            && clamped.is_none_or(|percent| i32::from(percent) != raw)
-        {
-            return Some(format!("raw {word} {raw}%"));
-        }
+        percent_side_summary(window.used_percent, window.used_percent_origin, "used"),
+        window
+            .money_used_percent
+            .map(|percent| format!("money ratio {}% used", percent.display_value())),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+pub(super) fn count_quota_summary(count: CountQuota) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(used) = count.used {
+        parts.push(format!("{used} used"));
     }
-    None
+    if let Some(limit) = count.limit {
+        parts.push(format!("{limit} limit"));
+    }
+    if let Some(remaining) = count.remaining {
+        parts.push(format!("{remaining} remaining"));
+    }
+    if count.unit == CountQuotaUnit::Requests && !parts.is_empty() {
+        parts.push("requests".to_owned());
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
 pub(crate) fn metric_group_value_summary(group: &UsageMetricGroup) -> Option<String> {
     match &group.value {
         UsageMetricValueV1::Window {
             remaining_percent,
-            remaining_raw_percent,
+            remaining_percent_origin,
             used_percent,
-            used_raw_percent,
+            used_percent_origin,
+            count_quota,
+            money_used_percent,
+            provider_quota_state,
             period,
             unit,
+            ..
         } => {
             let mut parts = Vec::new();
-            if let Some(percent) = window_percent_summary(
-                remaining_percent.map(UsagePercent::get),
-                *remaining_raw_percent,
-                used_percent.map(UsagePercent::get),
-                *used_raw_percent,
-            ) {
+            if let Some(state) = provider_quota_state {
+                parts.push(provider_quota_state_label(*state).to_owned());
+            }
+            if let Some(percent) =
+                percent_side_summary(*remaining_percent, *remaining_percent_origin, "left")
+            {
                 parts.push(percent);
             }
-            if let Some(unit) = unit.as_deref().filter(|unit| !unit.trim().is_empty()) {
+            if let Some(percent) = percent_side_summary(*used_percent, *used_percent_origin, "used")
+            {
+                parts.push(percent);
+            }
+            if let Some(ratio) = money_used_percent {
+                parts.push(format!("money ratio {}% used", ratio.display_value()));
+            }
+            if let Some(count) = count_quota.and_then(count_quota_summary) {
+                parts.push(count);
+            }
+            if count_quota.is_none()
+                && let Some(unit) = unit.as_deref().filter(|unit| !unit.trim().is_empty())
+            {
                 parts.push((*unit).to_owned());
             }
             if let Some(period) = metric_period_label(period) {
