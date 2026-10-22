@@ -136,7 +136,7 @@ async fn verify_with_transport(
     let channel = release_channel(version)?;
     let base = format!(
         "https://github.com/jackin-project/jackin/releases/download/{}",
-        release_tag(version)?
+        release_tag(version, source)?
     );
     let receipt_bytes = transport
         .get(&format!("{base}/release.json"), RECEIPT_LIMIT)

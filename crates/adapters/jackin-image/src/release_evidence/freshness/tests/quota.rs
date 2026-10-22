@@ -6,8 +6,9 @@ use super::*;
 #[tokio::test]
 async fn historical_admission_is_once_per_pin_with_mutable_checks_at_both_boundaries() {
     for (channel, expected) in [
-        (PackageReleaseChannel::Preview, 19),
-        (PackageReleaseChannel::Stable, 25),
+        // Preview admits A <= B <= main once; stable has A == B and checks B <= main.
+        (PackageReleaseChannel::Preview, 27),
+        (PackageReleaseChannel::Stable, 26),
     ] {
         let fixture = Fixture::new(channel);
         let pin = fixture.pin().await.unwrap();
@@ -101,17 +102,7 @@ async fn reject_mutated_publication(
         0 => fixture.change(&release_route(&fixture.receipt), |r| {
             r["draft"] = json!(true);
         }),
-        1 => fixture.change(
-            &route(&format!(
-                "releases/{}/assets?per_page=100&page=1",
-                if channel == PackageReleaseChannel::Preview {
-                    policy::PREVIEW_RELEASE_ID
-                } else {
-                    900
-                }
-            )),
-            |rows| rows[0]["id"] = json!(999),
-        ),
+        1 => fixture.change(&assets_route(), |rows| rows[0]["id"] = json!(999)),
         _ => fixture.change(&tag_route(&fixture.receipt), |r| {
             r["object"]["sha"] = json!("f".repeat(40));
         }),
@@ -140,7 +131,7 @@ async fn successful_pin_is_private_and_a_new_pin_readmits_repository_and_history
 }
 
 #[tokio::test]
-async fn committed_journal_and_signed_bytes_are_fresh_at_each_boundary() {
+async fn recovery_envelope_and_signed_bytes_are_fresh_at_each_boundary() {
     for boundary in 0..2 {
         for mutation in 0..3 {
             let mut fixture = Fixture::new(PackageReleaseChannel::Preview);
