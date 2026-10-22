@@ -463,6 +463,15 @@ fn registry_generation_is_deterministic_and_covers_dotted_commands() {
     assert!(events.contains("name: \"app.crash.id\","));
     assert!(events.contains("name: \"exception.stacktrace\","));
     assert!(events.contains("name: \"app.jank.frame_count\","));
+    assert!(events.contains(
+        "name: \"app.crash.id\",\n            value_type: super::ValueType::String,\n            requirement: super::RequirementLevel::Recommended,"
+    ));
+    assert!(events.contains(
+        "name: \"exception.stacktrace\",\n            value_type: super::ValueType::String,\n            requirement: super::RequirementLevel::Recommended,"
+    ));
+    assert!(events.contains(
+        "name: \"app.jank.frame_count\",\n            value_type: super::ValueType::Integer,\n            requirement: super::RequirementLevel::Recommended,"
+    ));
     assert!(events.contains("severity: super::EventSeverity::Warn"));
     for path in ["event_defs.rs", "operation_defs.rs", "metric_defs.rs"] {
         let facade = first

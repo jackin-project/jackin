@@ -277,7 +277,9 @@ fn record_agent_history_uses_injected_clock() {
         "started_at must reflect injected wall clock"
     );
 
-    clock.advance(Duration::from_secs(30));
+    clock
+        .advance(Duration::from_secs(30))
+        .expect("agent history clock advance is representable");
     mux.mark_agent_session_exited(1);
     let exited = mux.session_supervisor.agent_history[0].exited_at.unwrap();
     assert_eq!(

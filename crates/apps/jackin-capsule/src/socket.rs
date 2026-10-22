@@ -135,8 +135,10 @@ pub async fn read_control_msg(
     stream: &mut UnixStream,
     first_byte: u8,
 ) -> Result<jackin_protocol::control::ControlRequest> {
+    // The first byte is already supplied; suffix and body share one frame-read remainder budget.
+    let deadline = tokio::time::Instant::now() + CONTROL_READ_TIMEOUT;
     let mut rest = [0u8; 3];
-    tokio::time::timeout(CONTROL_READ_TIMEOUT, stream.read_exact(&mut rest))
+    tokio::time::timeout_at(deadline, stream.read_exact(&mut rest))
         .await
         .context("control msg: timed out reading length suffix")?
         .context("control msg: reading length suffix")?;
@@ -146,7 +148,7 @@ pub async fn read_control_msg(
     if len > MAX_CONTROL_MSG {
         anyhow::bail!("control msg length {len} exceeds limit {MAX_CONTROL_MSG}");
     }
-    let body = read_payload_lazy(stream, len, CONTROL_READ_TIMEOUT)
+    let body = read_payload_lazy(stream, len, deadline)
         .await
         .context("control msg: reading body")?;
     serde_json::from_slice(&body).context("control msg: parsing JSON body")
@@ -155,14 +157,14 @@ pub async fn read_control_msg(
 async fn read_payload_lazy(
     stream: &mut UnixStream,
     len: usize,
-    total_timeout: Duration,
+    deadline: tokio::time::Instant,
 ) -> Result<Vec<u8>> {
     let mut buf: Vec<u8> = Vec::with_capacity(len.min(64 * 1024));
     let mut remaining = len;
     let mut chunk = [0u8; 16 * 1024];
     while remaining > 0 {
         let n = chunk.len().min(remaining);
-        tokio::time::timeout(total_timeout, stream.read_exact(&mut chunk[..n]))
+        tokio::time::timeout_at(deadline, stream.read_exact(&mut chunk[..n]))
             .await
             .context("read timed out")?
             .context("short read")?;
