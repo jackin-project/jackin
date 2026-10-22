@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 use crate::TelemetryContext;
 use crate::agent_status::AgentStatusReport;
 
+pub use crate::quota::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, CountQuotaPeriod,
+    CountQuotaProvenance, CountQuotaUnit, MeterPercentPoints, RawPercentPoints,
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControlRequest {
     pub ctx: TelemetryContext,
