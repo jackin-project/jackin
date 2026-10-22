@@ -68,6 +68,104 @@ fn usage_cache_adopts_broker_generations_by_account_capability() {
 }
 
 #[test]
+fn broker_adoption_stamps_target_and_rebuilds_untrusted_tabs() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
+
+    let target_capability = UsageAccountCapability {
+        account_id: "account-target".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let forged_capability = UsageAccountCapability {
+        account_id: "provider-forged".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("OpenAI".to_owned()),
+        capability: target_capability.clone(),
+    };
+    let mut provider_view = codex_cached_usage_view();
+    provider_view.account.account_capability = Some(forged_capability.clone());
+    provider_view.tabs = vec![UsageProviderTab {
+        id: forged_capability.opaque_identity_key(),
+        account_capability: Some(forged_capability.clone()),
+        label: "provider-forged tab".to_owned(),
+        status_label: "fresh".to_owned(),
+        account_label: "forged@example.test".to_owned(),
+        plan_label: Some("forged plan".to_owned()),
+        source_label: Some("provider source".to_owned()),
+        active: true,
+    }];
+    let expected_bucket = provider_view.buckets.clone();
+    let state = jackin_protocol::usage_broker::UsageGenerationView {
+        capability: target_capability.clone(),
+        generation: 3,
+        phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+        snapshot: Some(provider_view),
+        error: None,
+        retry_at_epoch: None,
+    };
+    let mut cache = UsageCache::default();
+
+    cache.adopt_broker_generation(&target, &state);
+
+    let cached = cache.snapshots.values().next().expect("adopted view");
+    assert_eq!(
+        cached.view.account.account_capability.as_ref(),
+        Some(&target_capability)
+    );
+    assert!(cached.view.tabs.is_empty(), "provider tabs are untrusted");
+    assert_eq!(
+        cached.view.buckets, expected_bucket,
+        "quota evidence is retained"
+    );
+    let selected = cache
+        .focused_snapshot_for_account_id(&target_capability.opaque_identity_key())
+        .expect("host tab is reconstructed from trusted cache state");
+    assert_eq!(
+        selected.account.account_capability.as_ref(),
+        Some(&target_capability)
+    );
+    assert_eq!(selected.tabs.len(), 1);
+    assert_eq!(
+        selected.tabs[0].account_capability.as_ref(),
+        Some(&target_capability)
+    );
+    assert!(selected.tabs[0].active);
+    assert_ne!(selected.tabs[0].label, "provider-forged tab");
+}
+
+#[test]
+fn broker_adoption_rejects_generation_for_another_full_selector() {
+    let target_capability = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "same-account-id".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let state_capability = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "same-account-id".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let target = UsageRefreshTarget {
+        agent: "codex".to_owned(),
+        provider: Some("OpenAI".to_owned()),
+        capability: target_capability,
+    };
+    let state = jackin_protocol::usage_broker::UsageGenerationView {
+        capability: state_capability,
+        generation: 1,
+        phase: jackin_protocol::usage_broker::UsageRefreshPhase::Completed,
+        snapshot: Some(codex_cached_usage_view()),
+        error: None,
+        retry_at_epoch: None,
+    };
+    let mut cache = UsageCache::default();
+
+    cache.adopt_broker_generation(&target, &state);
+
+    assert!(cache.snapshots.is_empty());
+}
+
+#[test]
 fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
     let mut cached = FocusedUsageView::unavailable("seed", 123);
     cached.status = UsageSnapshotStatus::Fresh;

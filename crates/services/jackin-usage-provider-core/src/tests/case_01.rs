@@ -224,6 +224,50 @@ fn provider_tabs_emit_one_tab_per_account_keyed_by_stable_id() {
 }
 
 #[test]
+fn provider_tabs_deduplicate_bound_accounts_by_full_tuple_not_label() {
+    use jackin_protocol::usage_broker::UsageAccountCapability;
+
+    let personal = UsageAccountCapability {
+        account_id: "account-personal".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let work = UsageAccountCapability {
+        account_id: "account-work".to_owned(),
+        surface_id: "claude".to_owned(),
+    };
+    let mut renamed_personal =
+        account_snapshot_view("Anthropic", "renamed@example.com", Some("Max 20x"), 200);
+    renamed_personal.account.account_capability = Some(personal.clone());
+    let mut old_personal = account_snapshot_view("Anthropic", "same@example.com", Some("Max"), 100);
+    old_personal.account.account_capability = Some(personal.clone());
+    let mut work_view = account_snapshot_view("Anthropic", "same@example.com", Some("Team"), 150);
+    work_view.account.account_capability = Some(work.clone());
+
+    let tabs = provider_tabs(&[&old_personal, &renamed_personal, &work_view]);
+
+    assert_eq!(
+        tabs.len(),
+        2,
+        "renaming one tuple must not create a third tab"
+    );
+    let personal_tab = tabs
+        .iter()
+        .find(|tab| tab.account_capability.as_ref() == Some(&personal))
+        .expect("personal capability tab");
+    let work_tab = tabs
+        .iter()
+        .find(|tab| tab.account_capability.as_ref() == Some(&work))
+        .expect("work capability tab");
+    assert_eq!(personal_tab.id, personal.opaque_identity_key());
+    assert_eq!(personal_tab.account_label, "renamed@example.com");
+    assert_eq!(personal_tab.plan_label.as_deref(), Some("Max 20x"));
+    assert_eq!(work_tab.id, work.opaque_identity_key());
+    assert_eq!(work_tab.account_label, "same@example.com");
+    assert_eq!(work_tab.plan_label.as_deref(), Some("Team"));
+    assert_ne!(personal_tab.id, work_tab.id);
+}
+
+#[test]
 fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
     let mut view = account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 123);
     view.tabs = vec![UsageProviderTab {

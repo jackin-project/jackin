@@ -440,6 +440,49 @@ fn focused_usage_cache_selects_the_exact_account_capability() {
 }
 
 #[test]
+fn focused_capability_reads_reject_unbound_or_conflicting_cached_headers() {
+    let expected = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-codex".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let conflicting = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-other".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+
+    for header_capability in [None, Some(conflicting)] {
+        let mut forged = codex_cached_usage_view();
+        forged.status_bar_label = "must not leak forged quota status".to_owned();
+        forged.account.account_capability = header_capability.clone();
+        let mut cache = UsageCache::default();
+        cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &expected, forged);
+        cache
+            .snapshots
+            .values_mut()
+            .next()
+            .expect("target cache entry")
+            .view
+            .account
+            .account_capability = header_capability;
+
+        let view =
+            cache.focused_snapshot_for_capability(Some("codex"), Some("OpenAI"), Some(&expected));
+        assert_eq!(view.status, UsageSnapshotStatus::Unavailable);
+        assert!(view.buckets.is_empty());
+        assert_eq!(view.status_bar_label, "refreshing");
+        assert_eq!(
+            cache.focused_status_bar_label_for_capability(
+                Some("codex"),
+                Some("OpenAI"),
+                Some(&expected),
+            ),
+            Some("refreshing".to_owned())
+        );
+        assert_ne!(view.status_bar_label, "must not leak forged quota status");
+    }
+}
+
+#[test]
 fn usage_cache_isolates_provider_targets_that_share_one_agent_slug() {
     let mut zai = codex_cached_usage_view();
     zai.status_bar_label = "zai".to_owned();

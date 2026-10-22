@@ -4,7 +4,7 @@
 use super::super::{
     FocusedUsageView, UsageSnapshotStatus, UsageSource, UsageSurface, resolve_surface,
 };
-use super::{compact_account_identity, provider_tabs, status_bar_label, usage_account_tab_id};
+use super::{compact_account_identity, provider_tabs, status_bar_label, usage_tab_id_for_view};
 
 pub(crate) fn refresh_failed_view_presentation(view: &mut FocusedUsageView) {
     if view.status != UsageSnapshotStatus::Fresh {
@@ -71,7 +71,7 @@ pub fn cached_refreshing_view(
 }
 
 pub fn mark_active_tab(view: &mut FocusedUsageView) {
-    let focused = usage_account_tab_id(&view.account.provider_label, &view.account.account_label);
+    let focused = usage_tab_id_for_view(view);
     for tab in &mut view.tabs {
         tab.active = tab.id == focused;
     }
