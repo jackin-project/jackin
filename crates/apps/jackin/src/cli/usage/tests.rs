@@ -36,6 +36,7 @@ fn formats_account_usage_with_shared_unit() {
         status: "fresh".to_owned(),
         last_error: None,
         quota_bucket: None,
+        account_capability: None,
     };
 
     assert_eq!(usage_amount_label(&account), "37/100 percent");
@@ -169,6 +170,7 @@ fn account(
             limit_money: None,
             severity: UsageSeverity::Normal,
         }),
+        account_capability: None,
     }
 }
 

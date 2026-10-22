@@ -53,6 +53,7 @@ pub(crate) fn account_tab(id: String, view: &FocusedUsageView) -> UsageProviderT
         plan_label: view.account.plan_label.clone(),
         source_label: Some(usage_tab_source_label(view)),
         active: false,
+        account_capability: None,
     }
 }
 

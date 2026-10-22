@@ -189,6 +189,7 @@ pub(super) fn usage_view() -> FocusedUsageView {
             username: None,
             plan_label: Some("Pro 20x".to_owned()),
             credential_origin: None,
+            account_capability: None,
         },
         buckets: vec![
             QuotaBucketView {
@@ -258,6 +259,7 @@ pub(super) fn provider_usage_view(
             username: None,
             plan_label: plan.map(str::to_owned),
             credential_origin: None,
+            account_capability: None,
         },
         buckets: vec![QuotaBucketView {
             used_money: None,

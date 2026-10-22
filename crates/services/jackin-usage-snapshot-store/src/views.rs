@@ -141,6 +141,7 @@ pub(crate) fn account_usage_view_from_rows(
             username: None,
             plan_label: first.plan_label.clone(),
             credential_origin: None,
+            account_capability: None,
         },
         buckets,
         status,

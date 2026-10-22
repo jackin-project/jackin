@@ -75,6 +75,7 @@ fn account(window: &str, used: i64) -> AccountUsageSnapshotView {
             limit_money: None,
             severity: UsageSeverity::default(),
         }),
+        account_capability: None,
     }
 }
 

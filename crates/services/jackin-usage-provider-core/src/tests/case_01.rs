@@ -234,6 +234,7 @@ fn enrich_provider_tabs_rebuilds_strip_from_snapshots() {
         plan_label: None,
         source_label: None,
         active: true,
+        account_capability: None,
     }];
     let claude = account_snapshot_view("Anthropic", "claude@example.com", Some("Max"), 120);
 

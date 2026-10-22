@@ -58,6 +58,7 @@ pub fn focused_usage_view(
             username: None,
             plan_label: first.plan_label.clone(),
             credential_origin: None,
+            account_capability: None,
         },
         buckets,
         status,

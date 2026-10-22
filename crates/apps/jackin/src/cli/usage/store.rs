@@ -660,6 +660,7 @@ async fn read_account_rows(conn: &Connection) -> Result<Vec<AccountUsageSnapshot
                 status: row_string(&row, 12)?,
                 last_error: row_opt_string(&row, 13)?,
                 quota_bucket,
+                account_capability: None,
             });
         }
         Ok(accounts)

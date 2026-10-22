@@ -78,6 +78,7 @@ fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
         username: None,
         plan_label: Some("Pro 20x".to_owned()),
         credential_origin: None,
+        account_capability: None,
     };
     cached.buckets = vec![QuotaBucketView {
         used_money: None,
@@ -114,6 +115,7 @@ fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
             username: None,
             plan_label: None,
             credential_origin: None,
+            account_capability: None,
         };
         view.last_error = Some("Codex provider usage unavailable".to_owned());
 

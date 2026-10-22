@@ -18,6 +18,7 @@ fn apply_dialog_action_switch_usage_provider_resolves_exact_account_id() {
             username: None,
             plan_label: None,
             credential_origin: None,
+            account_capability: None,
         };
         view.status = UsageSnapshotStatus::Fresh;
         view.source = UsageSource::ProviderApi;
@@ -170,6 +171,7 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
             username: None,
             plan_label: Some("Pro 20x".to_owned()),
             credential_origin: None,
+            account_capability: None,
         },
         buckets: vec![jackin_protocol::control::QuotaBucketView {
             used_money: None,
