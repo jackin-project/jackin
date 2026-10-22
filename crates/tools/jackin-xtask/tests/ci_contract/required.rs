@@ -118,7 +118,7 @@ mod tests {
         assert_inventory(&workflow, &needs)?;
         for id in [
             "plan",
-            "actionlint",
+            "jactionlint",
             "check-repository-policy",
             "rust-jackin-image",
         ] {

@@ -188,10 +188,6 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         "Mise must keep rust-toolchain.toml in its Rust version selection"
     );
     assert!(
-        !mise_text.contains("[wrappers.cargo]"),
-        "legacy Cargo wrapper removed"
-    );
-    assert!(
         mise_text.contains("[tasks.renovate-upstream-sources]"),
         "the upstream asset check stays a root mise task"
     );
@@ -280,5 +276,36 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
     assert!(
         String::from_utf8_lossy(&native_output.stdout).starts_with("cargo "),
         "MBX must delegate native Cargo's version query to the selected Rust toolchain"
+    );
+}
+
+#[test]
+fn owner_mise_layout_wraps_cargo_with_mbx_and_a_minimal_profile() {
+    let mise: toml::Value =
+        toml::from_str(&repo_text("mise.toml")).expect("Mise configuration must parse as TOML");
+    let rust_toolchain = repo_text("rust-toolchain.toml");
+    let rust = mise
+        .get("tools")
+        .and_then(|tools| tools.get("rust"))
+        .and_then(toml::Value::as_table)
+        .expect("Rust tool configuration");
+    let wrapper = mise
+        .get("wrappers")
+        .and_then(|wrappers| wrappers.get("cargo"))
+        .and_then(toml::Value::as_table)
+        .expect("owner standard: [wrappers.cargo] routes every cargo through MBX");
+    assert!(
+        wrapper.get("command").and_then(toml::Value::as_str) == Some("mbx")
+            && wrapper
+                .get("env")
+                .and_then(|env| env.get("MBX_CARGO_SHIM_MODE"))
+                .and_then(toml::Value::as_str)
+                == Some("1"),
+        "the owner-standard Cargo wrapper must run mbx in Cargo shim mode"
+    );
+    assert!(
+        rust.get("profile").and_then(toml::Value::as_str) == Some("minimal")
+            && rust_toolchain.contains("profile = \"minimal\""),
+        "mise.toml and rust-toolchain.toml must agree on the minimal profile"
     );
 }

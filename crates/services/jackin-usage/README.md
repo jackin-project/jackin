@@ -41,16 +41,16 @@ boltffi lives in sibling crate `jackin-usage-ffi`.
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
-| [`host.rs`](src/host.rs) · [`host/`](src/host) | broker and projection consumer facade | — |
-| [`coordinator.rs`](src/coordinator.rs) · [`coordinator/`](src/coordinator) | Broker-owned single-flight generations and host-only atomic account state | [`tests.rs`](src/coordinator/tests.rs) |
-| [`token_monitor.rs`](src/token_monitor.rs) · [`token_monitor/`](src/token_monitor) | token spend monitoring | [`tests.rs`](src/token_monitor/tests.rs) |
+| [`host.rs`](src/host.rs) · `host/` | broker and projection consumer facade | — |
+| `coordinator.rs` · `coordinator/` | Broker-owned single-flight generations and host-only atomic account state | `tests.rs` |
+| `token_monitor.rs` · `token_monitor/` | token spend monitoring | `tests.rs` |
 | [`usage.rs`](src/usage.rs) · [`usage/`](src/usage) | usage/pricing accounting | [`tests.rs`](src/usage/tests.rs) |
-| [`telemetry.rs`](src/telemetry.rs) | telemetry emission | — |
-| [`process_telemetry.rs`](src/process_telemetry.rs) | child-process telemetry ownership and redaction | — |
-| [`logging.rs`](src/logging.rs) | telemetry-level state and Capsule panic handling | — |
-| [`usage_snapshot_store.rs`](src/usage_snapshot_store.rs) · [`usage_snapshot_store/`](src/usage_snapshot_store) | persistent usage snapshot store | [`tests.rs`](src/usage_snapshot_store/tests.rs) |
-| [`store_backend.rs`](src/store_backend.rs) | turso SQLite import chokepoint | — |
-| [`output.rs`](src/output.rs) | usage output shaping | — |
+| `telemetry.rs` | telemetry emission | — |
+| `process_telemetry.rs` | child-process telemetry ownership and redaction | — |
+| `logging.rs` | telemetry-level state and Capsule panic handling | — |
+| `usage_snapshot_store.rs` · `usage_snapshot_store/` | persistent usage snapshot store | `tests.rs` |
+| `store_backend.rs` | turso SQLite import chokepoint | — |
+| `output.rs` | usage output shaping | — |
 
 ## Public API
 

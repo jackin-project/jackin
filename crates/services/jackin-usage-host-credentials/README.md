@@ -11,7 +11,7 @@ credential cache. Secrets never cross this boundary.
   `ForwardedUsageAccount`): non-secret
   adapter-owned identifiers.
 - Resolution (`ProviderCredentialEnvResolver`
-  + outcomes): the env resolution seam and
+  - outcomes): the env resolution seam and
   its result types.
 - Governed names
   (`governed_name_for_account_alias`):

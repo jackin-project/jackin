@@ -57,12 +57,13 @@ is only useful because the diff already shows it. For large roadmap items,
 phase headings are fine when they help the reader understand the shipped shape.
 
 Good:
+
 - Operators can select `hardened` to drop Docker capabilities and run with a
   read-only root filesystem.
 
 Too low-level:
-- Added `capability_flags()` and `readonly_root_flags()`.>
 
+- Added `capability_flags()` and `readonly_root_flags()`.>
 - <Capability or behavior that now exists>
 - <Configuration, documentation, or workflow change operators can rely on>
 - <Regression coverage or validation added, stated as an outcome rather than a
@@ -250,12 +251,12 @@ export JACKIN_PREFIX=C-b
 
 Vite serves at `http://localhost:3000/`. Pages to walk:
 
-**http://localhost:3000/<path>/**  
+**<http://localhost:3000/><path>/**  
 <NEW page | UPDATED ...>. <One-sentence description of what to look at on this
 page. Include the sidebar group and surrounding entries when adding or moving
 sidebar items.>
 
-**http://localhost:3000/<path>/**  
+**<http://localhost:3000/><path>/**  
 <Same shape — bold URL line, soft-break, description on next line, blank line
 between blocks.>
 

@@ -1,0 +1,121 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/jackin-pre-push-fixture.XXXXXX")
+fake_bin=$(mktemp -d "${TMPDIR:-/tmp}/jackin-pre-push-bin.XXXXXX")
+trap 'rm -rf "$fixture" "$fake_bin"' EXIT
+
+hk_version=$(mise exec --locked -- hk --version)
+test "$hk_version" = 'hk 2.8.0'
+hk_bin=$(mise which hk)
+test -x "$hk_bin"
+
+mkdir -p "$fixture/scripts"
+git -C "$fixture" init -q
+git -C "$fixture" config user.name 'Jackin pre-push fixture'
+git -C "$fixture" config user.email jackin-pre-push-fixture@example.invalid
+cp "$repo_root/scripts/hooks-install" "$fixture/scripts/hooks-install"
+cp "$repo_root/scripts/pre-push-security" "$fixture/scripts/pre-push-security"
+cat > "$fixture/scripts/pre-commit-snapshot" <<'EOF'
+#!/bin/sh
+set -eu
+printf '%s\n' snapshot >> "$HOOK_EVENTS"
+EOF
+cat > "$fixture/scripts/pre-push-probe" <<'EOF'
+#!/bin/sh
+set -eu
+printf '%s\n' "$1" > "$FIXTURE_ROOT/observed-args"
+printf '%s' "$2" > "$FIXTURE_ROOT/observed-stdin"
+printf '%s\n' scan >> "$HOOK_EVENTS"
+exit "${PUSH_SCAN_STATUS:-0}"
+EOF
+cat > "$fixture/scripts/unrelated-push" <<'EOF'
+#!/bin/sh
+set -eu
+printf '%s\n' unrelated-push >> "$HOOK_EVENTS"
+EOF
+cat > "$fixture/scripts/unsafe-hk" <<'EOF'
+#!/bin/sh
+set -eu
+printf '%s\n' unsafe-hk >> "$HOOK_EVENTS"
+EOF
+cat > "$fixture/hk.pkl" <<'EOF'
+amends "package://github.com/jdx/hk/releases/download/v2.8.0/hk@2.8.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.8.0/hk@2.8.0#/Builtins.pkl"
+
+hooks {
+  ["pre-push"] {
+    fix = false
+    steps {
+      ["synthetic-scan"] {
+        check = "sh scripts/pre-push-probe '{{hook_args}}' '{{hook_stdin}}'"
+      }
+    }
+  }
+}
+EOF
+git -C "$fixture" add scripts hk.pkl
+git -C "$fixture" commit -q -m fixture
+git -C "$fixture" remote add origin https://example.invalid/jackin
+git -C "$fixture" update-ref refs/remotes/origin/main HEAD
+git -C "$fixture" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+
+export GIT_CONFIG_GLOBAL="$fake_bin/isolated-global.gitconfig"
+export GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1
+unset GIT_CONFIG GIT_CONFIG_COUNT
+git config --global hook.hk-pre-push.command 'sh scripts/unsafe-hk'
+git config --global hook.hk-pre-push.event pre-push
+git config --global hook.other-project-push.command 'sh scripts/unrelated-push'
+git config --global hook.other-project-push.event pre-push
+cp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-before"
+
+(cd "$fixture" && sh scripts/hooks-install)
+cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-before"
+test "$(git -C "$fixture" config --local --get hook.jackin-pre-push.command)" = 'sh scripts/pre-push-security'
+test "$(git -C "$fixture" config --local --get hook.jackin-pre-push.event)" = pre-push
+test "$(git -C "$fixture" config --local --get hook.jackin-pre-push.enabled)" = true
+test "$(git -C "$fixture" config --local --get hook.hk-pre-push.enabled)" = false
+if git -C "$fixture" config --local --get hook.hk-pre-push.command; then exit 1; fi
+if git -C "$fixture" config --local --get hook.hk-pre-push.event; then exit 1; fi
+git -C "$fixture" hook list --show-scope pre-push > "$fake_bin/effective-hooks"
+grep -Fx "$(printf 'global\tdisabled\thk-pre-push')" "$fake_bin/effective-hooks"
+grep -Fx "$(printf 'global\tother-project-push')" "$fake_bin/effective-hooks"
+grep -Fx "$(printf 'local\tjackin-pre-push')" "$fake_bin/effective-hooks"
+
+cp "$fixture/.git/config" "$fake_bin/local-before"
+(cd "$fixture" && sh scripts/hooks-install)
+cmp "$fixture/.git/config" "$fake_bin/local-before"
+cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-before"
+
+events="$fixture/events"
+head=$(git -C "$fixture" rev-parse HEAD)
+printf 'refs/heads/main %s refs/heads/main %s\n' "$head" "$head" > "$fixture/push-input"
+if (cd "$fixture" && HOOK_EVENTS="$events" FIXTURE_ROOT="$fixture" \
+    git hook run --to-stdin="$fixture/push-input" pre-push -- origin https://example.invalid/jackin) \
+    > "$fake_bin/push-success.log" 2>&1; then
+    :
+else
+    cat "$fake_bin/push-success.log" >&2
+    printf '%s\n' 'error: synthetic pre-push unexpectedly failed' >&2
+    exit 1
+fi
+test "$(grep -c '^scan$' "$events")" -eq 1
+test "$(grep -c '^unrelated-push$' "$events")" -eq 1
+test "$(wc -l < "$events" | tr -d ' ')" -eq 2
+test "$(cat "$fixture/observed-args")" = 'origin https://example.invalid/jackin'
+cmp "$fixture/push-input" "$fixture/observed-stdin"
+
+if (cd "$fixture" && HOOK_EVENTS="$events" FIXTURE_ROOT="$fixture" PUSH_SCAN_STATUS=23 \
+    git hook run --to-stdin="$fixture/push-input" pre-push -- origin https://example.invalid/jackin) \
+    > "$fake_bin/push-failure.log" 2>&1; then
+    cat "$fake_bin/push-failure.log" >&2
+    printf '%s\n' 'error: synthetic pre-push failure was not propagated' >&2
+    exit 1
+fi
+test "$(grep -c '^scan$' "$events")" -eq 2
+test "$(grep -c '^unrelated-push$' "$events")" -eq 2
+test "$(wc -l < "$events" | tr -d ' ')" -eq 4
+if grep -F 'unsafe-hk' "$events" >/dev/null; then exit 1; fi
+
+printf '%s\n' 'pre-push pinned launcher fixture passed'
