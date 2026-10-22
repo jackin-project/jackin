@@ -64,6 +64,7 @@ mod auth_case_09;
 mod auth_case_10;
 mod auth_case_11;
 mod auth_case_12;
+mod auth_case_13;
 mod case_01;
 mod case_02;
 mod case_03;
