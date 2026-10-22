@@ -6,6 +6,7 @@ min_version = "2026.10.17"
 [tools]
 "github:open-telemetry/weaver" = "0.28.0"
 actionlint = "1.7.12"
+"aqua:betterleaks/betterleaks" = "1.9.0"
 bun = "1.4.3"
 cargo-binstall = "1.26.0"
 "cargo:cargo-audit" = "0.22.2"
@@ -20,7 +21,9 @@ cargo-deny = "0.20.2"
 "cargo:dylint-link" = "6.2.0"
 cosign = "3.1.4"
 gh = "2.102.1"
+"aqua:gitleaks/gitleaks" = "8.30.1"
 hk = "2.7.0"
+"github:mongodb/kingfisher" = { version = "2.14.0", matching_regex = "^kingfisher-(darwin|linux)-(arm64|x64)\\.tgz$|^kingfisher-windows-x64\\.zip$" }
 mr-boxington = { version = "1.26.0", workflow = "release.yml@refs/heads/main" }
 rust = { version = "1.99.1", components = ["clippy", "rustfmt"], targets = ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"], mr_boxington = true }
 shellcheck = "0.11.0"
