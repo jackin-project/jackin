@@ -6,7 +6,11 @@ policy = "consumer-v1"
 default_branch = "main"
 generator_validation = "bootstrap"
 max_parallel_jobs = 4
-crate_timeout_minutes = 10
+# velnor-actions 0.1.39 gives the dependency seed job this crate budget; its documentation lane needs ~12 minutes, so 10
+# cancelled every protected-push CI run. velnor-actions 0.1.40 (#350) adds a separate
+# `dependency_seed_timeout_minutes` (default 30); restore 10 here when jackin adopts it (that release also needs the
+# immutable-preview migration: preview `release_id`/`bootstrap_snapshot_sha256` are removed).
+crate_timeout_minutes = 20
 mise_quiet = false
 pull_request_cache_policy = "read-only"
 runner_label = "ubuntu-26.04"

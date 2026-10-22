@@ -174,7 +174,7 @@ jobs:
   dependency-seed:
     name: Dependency seed
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     continue-on-error: true
     env:
       MBX_BUILD_SCRIPT_EXECUTION: "0"
@@ -192,7 +192,7 @@ jobs:
         id: velnor-cache-clock
         run: &r4 "set -eu\nunavailable() { printf '%s\\n' '::warning::cache_unavailable: invalid first-step clock or output'; }\noutput=${GITHUB_OUTPUT-}\nseconds=${VELNOR_CACHE_JOB_SECONDS-}\nnow=$(date +%s) || now=\nfor value in \"$now\" \"$seconds\"; do\n  case \"$value\" in ''|*[!0-9]*) unavailable; exit 0 ;; esac\n  case \"$value\" in 0|[1-9]*) ;; *) unavailable; exit 0 ;; esac\n  [ \"${#value}\" -le 10 ] || { unavailable; exit 0; }\ndone\nif [ -z \"$output\" ] || ! printf 'started=%s\\ndeadline=%s\\n' \"$now\" \"$((now + seconds))\" 2>/dev/null >> \"$output\"; then\n  unavailable\nfi\n"
         env:
-          VELNOR_CACHE_JOB_SECONDS: "600"
+          VELNOR_CACHE_JOB_SECONDS: "1200"
       - &s8
         name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -313,7 +313,7 @@ jobs:
         if: success() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true && steps.v2.outputs.enabled == 'true' && steps.tools-restore.outputs.cache-hit != 'true'
         run: &r13 "set -eu\noutput=${GITHUB_OUTPUT-}\nemit() { [ -n \"$output\" ] && printf '%s\\n' \"$1\" 2>/dev/null >> \"$output\"; }\nrefuse() {\n  emit 'admitted=false' || :\n  printf '%s\\n' '::warning::cache_unavailable: optional save has no safe remaining job budget or output'\n}\nstarted=${VELNOR_CACHE_STARTED-}\ndeadline=${VELNOR_CACHE_DEADLINE-}\nseconds=${VELNOR_CACHE_JOB_SECONDS-}\nrequired=${VELNOR_CACHE_REQUIRED_SECONDS-}\nnow=$(date +%s) || now=\nfor value in \"$started\" \"$deadline\" \"$now\" \"$seconds\" \"$required\"; do\n  case \"$value\" in ''|*[!0-9]*) refuse; exit 0 ;; esac\n  case \"$value\" in 0|[1-9]*) ;; *) refuse; exit 0 ;; esac\n  [ \"${#value}\" -le 10 ] || { refuse; exit 0; }\ndone\nif [ \"$now\" -lt \"$started\" ] || [ \"$deadline\" -lt \"$started\" ] ||\n   [ \"$((deadline - started))\" -ne \"$seconds\" ] ||\n   [ \"$((deadline - now))\" -lt \"$required\" ]; then\n  refuse\nelif ! emit 'admitted=true'; then\n  refuse\nfi\n"
         env:
-          VELNOR_CACHE_JOB_SECONDS: "600"
+          VELNOR_CACHE_JOB_SECONDS: "1200"
           VELNOR_CACHE_STARTED: ${{ steps.velnor-cache-clock.outputs.started }}
           VELNOR_CACHE_DEADLINE: ${{ steps.velnor-cache-clock.outputs.deadline }}
           VELNOR_CACHE_REQUIRED_SECONDS: "90"
@@ -341,7 +341,7 @@ jobs:
         if: always() && !cancelled() && steps.mbx-bundle-export.outputs.exported == 'true'
         run: *r13
         env:
-          VELNOR_CACHE_JOB_SECONDS: "600"
+          VELNOR_CACHE_JOB_SECONDS: "1200"
           VELNOR_CACHE_STARTED: ${{ steps.velnor-cache-clock.outputs.started }}
           VELNOR_CACHE_DEADLINE: ${{ steps.velnor-cache-clock.outputs.deadline }}
           VELNOR_CACHE_REQUIRED_SECONDS: "210"
@@ -603,7 +603,7 @@ jobs:
   rust-jackin:
     name: Rust / jackin
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: &m23
       MBX_BUILD_SCRIPT_EXECUTION: "0"
       MBX_CACHE_EXPORT_GROUP: velnor
@@ -690,7 +690,7 @@ jobs:
   rust-jackin-agent-status:
     name: Rust / jackin-agent-status
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -754,7 +754,7 @@ jobs:
   rust-jackin-capsule:
     name: Rust / jackin-capsule
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -818,7 +818,7 @@ jobs:
   rust-jackin-config:
     name: Rust / jackin-config
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -882,7 +882,7 @@ jobs:
   rust-jackin-console:
     name: Rust / jackin-console
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -946,7 +946,7 @@ jobs:
   rust-jackin-core:
     name: Rust / jackin-core
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1010,7 +1010,7 @@ jobs:
   rust-jackin-dev:
     name: Rust / jackin-dev
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1070,7 +1070,7 @@ jobs:
   rust-jackin-diagnostics:
     name: Rust / jackin-diagnostics
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1134,7 +1134,7 @@ jobs:
   rust-jackin-docker:
     name: Rust / jackin-docker
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1198,7 +1198,7 @@ jobs:
   rust-jackin-env:
     name: Rust / jackin-env
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1262,7 +1262,7 @@ jobs:
   rust-jackin-host:
     name: Rust / jackin-host
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1326,7 +1326,7 @@ jobs:
   rust-jackin-image:
     name: Rust / jackin-image
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1390,7 +1390,7 @@ jobs:
   rust-jackin-instance:
     name: Rust / jackin-instance
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1454,7 +1454,7 @@ jobs:
   rust-jackin-isolation:
     name: Rust / jackin-isolation
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1518,7 +1518,7 @@ jobs:
   rust-jackin-launch:
     name: Rust / jackin-launch
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1582,7 +1582,7 @@ jobs:
   rust-jackin-manifest:
     name: Rust / jackin-manifest
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1646,7 +1646,7 @@ jobs:
   rust-jackin-otlp-testbed:
     name: Rust / jackin-otlp-testbed
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1710,7 +1710,7 @@ jobs:
   rust-jackin-process:
     name: Rust / jackin-process
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1774,7 +1774,7 @@ jobs:
   rust-jackin-process-directory:
     name: Rust / jackin-process-directory
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1838,7 +1838,7 @@ jobs:
   rust-jackin-protocol:
     name: Rust / jackin-protocol
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1902,7 +1902,7 @@ jobs:
   rust-jackin-runtime:
     name: Rust / jackin-runtime
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -1966,7 +1966,7 @@ jobs:
   rust-jackin-telemetry:
     name: Rust / jackin-telemetry
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -2030,7 +2030,7 @@ jobs:
   rust-jackin-test-support:
     name: Rust / jackin-test-support
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -2094,7 +2094,7 @@ jobs:
   rust-jackin-tui:
     name: Rust / jackin-tui
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -2158,7 +2158,7 @@ jobs:
   rust-jackin-usage:
     name: Rust / jackin-usage
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -2222,7 +2222,7 @@ jobs:
   rust-jackin-usage-ffi:
     name: Rust / jackin-usage-ffi
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -2286,7 +2286,7 @@ jobs:
   rust-jackin-workflow:
     name: Rust / jackin-workflow
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -2350,7 +2350,7 @@ jobs:
   rust-jackin-workflow-spec:
     name: Rust / jackin-workflow-spec
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
@@ -2414,7 +2414,7 @@ jobs:
   rust-jackin-xtask:
     name: Rust / jackin-xtask
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env: *m23
     needs:
       - plan
