@@ -16,6 +16,7 @@ pub(super) fn assert_inventory(workflow: &Value, needs: &BTreeSet<String>) -> Re
         seed["name"] == "Dependency seed"
             && seed["runs-on"] == "ubuntu-26.04"
             && seed["env"].get("VELNOR_INTERNAL_OP").is_none()
+            && seed["env"].get("VELNOR_TASK_EXECUTION_DIGEST").is_none()
             && seed["if"] == SEED_CONDITION
             && seed["timeout-minutes"] == 10
             && job_needs(seed)? == BTreeSet::from(["plan".to_owned()])
@@ -29,9 +30,11 @@ pub(super) fn assert_inventory(workflow: &Value, needs: &BTreeSet<String>) -> Re
     ensure!(
         !steps.iter().any(|step| {
             step["env"].get("VELNOR_INTERNAL_OP").is_some()
+                || step["env"].get("VELNOR_TASK_EXECUTION_DIGEST").is_some()
                 || step["with"].get("digest").is_some()
                 || step["run"].as_str().is_some_and(|run| {
-                    run.contains("velnor-actions") || run.contains("task-report")
+                    run.contains("VELNOR_INTERNAL_OP")
+                        || run.contains("VELNOR_TASK_EXECUTION_DIGEST")
                 })
                 || step["uses"].as_str().is_some_and(|uses| {
                     uses.contains("declared-task-") || uses.contains("upload-artifact")
@@ -214,12 +217,84 @@ mod tests {
                 "report step {uses}"
             );
         }
-        let mut operation = workflow.clone();
-        operation["jobs"][SEED]["steps"]
+        let mut digest = workflow.clone();
+        digest["jobs"][SEED]["steps"]
             .as_array_mut()
             .context("steps")?
-            .push(json!({"run": "velnor-actions execute-task --digest forged"}));
-        ensure!(assert_inventory(&operation, &needs).is_err());
+            .push(json!({"with": {"digest": "b3-0000000000000000000000000000000000000000000000000000000000000000"}}));
+        ensure!(
+            assert_inventory(&digest, &needs).is_err(),
+            "declared task digest input"
+        );
+
+        for (operation, command) in [
+            (
+                "resolve-task-execution-v1",
+                "env VELNOR_INTERNAL_OP=resolve-task-execution-v1 VELNOR_TASK_EXECUTION_DIGEST=b3-0000000000000000000000000000000000000000000000000000000000000000 /tmp/velnor-actions-0.1.38",
+            ),
+            (
+                "write-task-report-v1",
+                "sh -c 'env VELNOR_INTERNAL_OP=write-task-report-v1 VELNOR_EXIT_CODE=0 VELNOR_START_MS=1 /tmp/velnor-actions-0.1.38'",
+            ),
+        ] {
+            let mut changed = workflow.clone();
+            let steps = changed["jobs"][SEED]["steps"]
+                .as_array_mut()
+                .context("steps")?;
+            let manifest = steps
+                .iter_mut()
+                .find(|step| step["name"] == "Verify Rust channel manifest")
+                .context("benign manifest-verification step")?;
+            let run = manifest["run"].as_str().context("manifest run")?;
+            manifest["run"] = json!(format!("{run}; {command}"));
+            ensure!(
+                assert_inventory(&changed, &needs).is_err(),
+                "reject actual task/report protocol in benign step: {operation}"
+            );
+        }
+
+        let mut digest_only_run = workflow.clone();
+        let steps = digest_only_run["jobs"][SEED]["steps"]
+            .as_array_mut()
+            .context("steps")?;
+        let manifest = steps
+            .iter_mut()
+            .find(|step| step["name"] == "Verify Rust channel manifest")
+            .context("benign manifest-verification step")?;
+        let run = manifest["run"].as_str().context("manifest run")?;
+        manifest["run"] = json!(format!(
+            "{run}; VELNOR_TASK_EXECUTION_DIGEST=b3-0000000000000000000000000000000000000000000000000000000000000000 true"
+        ));
+        ensure!(
+            assert_inventory(&digest_only_run, &needs).is_err(),
+            "run-level task digest is rejected without an operation marker"
+        );
+
+        for key in ["VELNOR_INTERNAL_OP", "VELNOR_TASK_EXECUTION_DIGEST"] {
+            let mut job_env = workflow.clone();
+            job_env["jobs"][SEED]["env"][key] = json!("forged");
+            ensure!(assert_inventory(&job_env, &needs).is_err(), "job env {key}");
+            let mut step_env = workflow.clone();
+            step_env["jobs"][SEED]["steps"]
+                .as_array_mut()
+                .context("steps")?
+                .push(json!({"env": {key: "forged"}, "run": "true"}));
+            ensure!(
+                assert_inventory(&step_env, &needs).is_err(),
+                "step env {key}"
+            );
+        }
+
+        let mut benign_message = workflow.clone();
+        let steps = benign_message["jobs"][SEED]["steps"]
+            .as_array_mut()
+            .context("steps")?;
+        let manifest = steps
+            .iter_mut()
+            .find(|step| step["name"] == "Verify Rust channel manifest")
+            .context("benign manifest-verification step")?;
+        manifest["run"] = json!("printf '%s\n' 'upgrade velnor-actions or pin a catalogued Rust'");
+        assert_inventory(&benign_message, &needs)?;
         let mut dependent = workflow;
         dependent["jobs"]["rust-jackin-image"]["needs"]
             .as_array_mut()
@@ -252,12 +327,20 @@ mod tests {
                 "missing {name}"
             );
         }
-        let mut hidden = workflow;
+        let mut hidden = workflow.clone();
         hidden["jobs"][SEED]["steps"]
             .as_array_mut()
             .context("steps")?
-            .push(json!({"env": {"VELNOR_INTERNAL_OP": "execute-v1"}, "run": "$SDK"}));
+            .push(
+                json!({"env": {"VELNOR_INTERNAL_OP": "resolve-task-execution-v1"}, "run": "$SDK"}),
+            );
         ensure!(assert_inventory(&hidden, &needs).is_err());
+        let mut hidden_digest = workflow;
+        hidden_digest["jobs"][SEED]["steps"]
+            .as_array_mut()
+            .context("steps")?
+            .push(json!({"env": {"VELNOR_TASK_EXECUTION_DIGEST": "forged"}, "run": "$SDK"}));
+        ensure!(assert_inventory(&hidden_digest, &needs).is_err());
         Ok(())
     }
 }
