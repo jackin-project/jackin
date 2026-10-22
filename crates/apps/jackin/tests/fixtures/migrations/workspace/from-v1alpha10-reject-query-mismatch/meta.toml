@@ -1,0 +1,5 @@
+from_version = "v1alpha10"
+target_version = "v1alpha11"
+target_version_shipped = "2026-10-05"
+summary = "Reject an unmatched legacy breadcrumb query instead of preserving inconsistent display metadata."
+expected_error = "OpRef legacy `path` is ambiguous or does not match the 3/4-segment path or query suffix in its `op` URI"
