@@ -95,7 +95,7 @@ case "$1" in
     which)
         case "$2" in
             rustup) printf "%s\n" "$TOOLCHAIN_FIXTURE/rustup" ;;
-            hk|actionlint|swiftlint) printf "%s\n" "${TOOLCHAIN_FIXTURE%/pinned}/$2" ;;
+            hk|jactionlint|shellcheck|rumdl|gitleaks|kingfisher|cargo-deny|swiftlint) printf "%s\n" "${TOOLCHAIN_FIXTURE%/pinned}/$2" ;;
             *) exit 71 ;;
         esac ;;
     *) exit 72 ;;
@@ -132,7 +132,7 @@ for name in cargo rustc rustdoc clippy-driver rustfmt; do
     printf "%s\n" '#!/bin/sh' 'exit 73' > "$fake_bin/$name"
     chmod +x "$fake_bin/$name"
 done
-for name in actionlint swiftlint; do
+for name in jactionlint shellcheck rumdl gitleaks kingfisher cargo-deny swiftlint; do
     printf "%s\n" '#!/bin/sh' 'exit 0' > "$fake_bin/$name"
     chmod +x "$fake_bin/$name"
 done
