@@ -16,6 +16,8 @@ use jackin_protocol::usage_monitor::{
 const NOW: i64 = 1_800_000_000;
 const TEST_OPERATOR: &str = "isolated-v2-test-operator";
 
+mod migration_tests;
+
 fn open_store() -> (tempfile::TempDir, MonitorStore) {
     let directory = tempfile::tempdir().expect("temporary data directory");
     let store = MonitorStore::open(directory.path()).expect("open monitor store");
