@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_protocol::control::{CanonicalRemainingPercent, PercentObservationOrigin};
+
 use super::super::{StatusSlot, bucket, with_status_slot};
 use super::{
     OMP_AUTH_BROKER_ACCOUNT_POOL_FILE, UsageConfidence, UsageSnapshotStatus, UsageSource,
@@ -20,7 +22,10 @@ fn session_bucket(remaining: u8) -> super::QuotaBucketView {
             "Session",
             Some("11% used".to_owned()),
             None,
-            Some(remaining),
+            Some((
+                CanonicalRemainingPercent::new(f64::from(remaining)).expect("valid percentage"),
+                PercentObservationOrigin::ProviderReported,
+            )),
             None,
             None,
             UsageSnapshotStatus::Fresh,

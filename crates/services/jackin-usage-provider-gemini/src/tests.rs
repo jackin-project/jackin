@@ -69,11 +69,127 @@ fn project_quotas_never_invent_denominators() {
     assert_eq!(quotas.len(), 3);
     let buckets = gemini_quota_buckets(&quotas, 1_781_728_000);
     assert_eq!(buckets[0].label, "gemini-3-pro · Requests Per Minute");
-    assert_eq!(buckets[0].remaining_percent, Some(75));
+    assert_eq!(buckets[0].remaining_percent, None);
     assert_eq!(buckets[0].status_slot, None);
-    assert_eq!(buckets[1].remaining_percent, Some(25));
+    assert_eq!(
+        buckets[0]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining, count.unit)),
+        Some((
+            Some(15),
+            Some(60),
+            None,
+            jackin_protocol::control::CountQuotaUnit::Requests
+        ))
+    );
+    assert_eq!(buckets[1].remaining_percent, None);
+    assert_eq!(
+        buckets[1]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining, count.unit)),
+        Some((
+            None,
+            Some(1_000_000),
+            Some(250_000),
+            jackin_protocol::control::CountQuotaUnit::Unknown
+        ))
+    );
     assert_eq!(buckets[2].remaining_percent, None);
+    assert!(buckets[2].count_quota.is_none());
     assert!(buckets[2].used_label.is_none());
+    assert_eq!(buckets[2].status, UsageSnapshotStatus::Unavailable);
+    assert!(
+        buckets[2]
+            .pace_label
+            .as_deref()
+            .is_some_and(|note| note.contains("No usable quota quantity"))
+    );
+}
+
+#[test]
+fn project_quota_counts_preserve_exact_unsigned_values() {
+    let quotas = parse_gemini_project_quotas(&serde_json::json!({
+        "quotas": [
+            {"metric": "requests_per_day", "used": "18446744073709551615", "limit": 9007199254740993_u64},
+            {"metric": "requests_per_day", "used": 18446744073709551616_u128.to_string()},
+            {"metric": "requests_per_day", "used": 1.5}
+        ]
+    }));
+    assert_eq!(quotas[0].used, Some(u64::MAX));
+    assert_eq!(quotas[0].limit, Some(9_007_199_254_740_993));
+    assert_eq!(quotas[1].used, None);
+    assert_eq!(quotas[2].used, None);
+}
+
+#[test]
+fn project_quota_invalid_fields_are_diagnostic_and_do_not_hide_valid_siblings() {
+    let quotas = parse_gemini_project_quotas(&serde_json::json!({
+        "quotas": [
+            {"metric": "requests", "resetTime": "2026-06-01T00:00:00Z"},
+            {
+                "metric": "requests",
+                "resetTime": "2026-06-01T00:00:00Z",
+                "usage": -1,
+                "limit": 1.5,
+                "remaining": "18446744073709551616"
+            },
+            {
+                "metric": "requests",
+                "usage": -1,
+                "used": "0",
+                "limit": 1.5,
+                "max": "18446744073709551615",
+                "remaining": "18446744073709551616",
+                "left": 0
+            }
+        ]
+    }));
+    let buckets = gemini_quota_buckets(&quotas, 1_781_728_000);
+
+    assert_eq!(quotas[0].diagnostic, None);
+    assert!(
+        quotas[1]
+            .diagnostic
+            .as_deref()
+            .is_some_and(|note| note.contains("usage")
+                && note.contains("limit")
+                && note.contains("remaining"))
+    );
+    for index in [0, 1] {
+        assert_eq!(buckets[index].status, UsageSnapshotStatus::Unavailable);
+        assert!(buckets[index].count_quota.is_none());
+        assert!(buckets[index].pace_label.is_some());
+    }
+    assert!(
+        buckets[0]
+            .pace_label
+            .as_deref()
+            .is_some_and(|note| note.contains("Reset time present"))
+    );
+    assert!(
+        buckets[1]
+            .pace_label
+            .as_deref()
+            .is_some_and(|note| note.contains("usage")
+                && note.contains("limit")
+                && note.contains("remaining"))
+    );
+
+    assert_eq!(buckets[2].status, UsageSnapshotStatus::Fresh);
+    assert!(
+        buckets[2]
+            .pace_label
+            .as_deref()
+            .is_some_and(|note| note.contains("usage")
+                && note.contains("limit")
+                && note.contains("remaining"))
+    );
+    assert_eq!(
+        buckets[2]
+            .count_quota
+            .map(|count| (count.used, count.limit, count.remaining)),
+        Some((Some(0), Some(u64::MAX), Some(0)))
+    );
 }
 
 #[test]

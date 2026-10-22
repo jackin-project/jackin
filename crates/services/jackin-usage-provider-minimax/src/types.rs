@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    MiniMaxBalanceResponse, MiniMaxRegion, MiniMaxWindow, minimax_bucket, minimax_is_general_model,
-};
+use super::buckets::{MiniMaxRawBucketInput, minimax_bucket_from_raw};
+use super::{MiniMaxBalanceResponse, MiniMaxRegion, MiniMaxWindow, minimax_is_general_model};
 use jackin_protocol::control::QuotaBucketView;
 use serde::Deserialize;
 
@@ -81,13 +80,13 @@ pub struct MiniMaxModelRemain {
     #[serde(rename = "model_name")]
     pub(crate) model_name: Option<String>,
     #[serde(rename = "current_interval_total_count")]
-    pub(crate) current_interval_total_count: Option<i64>,
+    pub(crate) current_interval_total_count: Option<serde_json::Value>,
     #[serde(rename = "current_interval_usage_count")]
-    pub(crate) current_interval_usage_count: Option<i64>,
+    pub(crate) current_interval_usage_count: Option<serde_json::Value>,
     #[serde(rename = "current_interval_remaining_percent")]
-    pub(crate) current_interval_remaining_percent: Option<f64>,
+    pub(crate) current_interval_remaining_percent: Option<serde_json::Value>,
     #[serde(rename = "current_interval_status")]
-    pub(crate) current_interval_status: Option<i64>,
+    pub(crate) current_interval_status: Option<serde_json::Value>,
     #[serde(rename = "end_time")]
     pub(crate) end_time: Option<i64>,
     #[serde(rename = "remains_time")]
@@ -100,13 +99,13 @@ pub struct MiniMaxModelRemain {
     )]
     pub(crate) interval_boost_permille: Option<f64>,
     #[serde(rename = "current_weekly_total_count")]
-    pub(crate) current_weekly_total_count: Option<i64>,
+    pub(crate) current_weekly_total_count: Option<serde_json::Value>,
     #[serde(rename = "current_weekly_usage_count")]
-    pub(crate) current_weekly_usage_count: Option<i64>,
+    pub(crate) current_weekly_usage_count: Option<serde_json::Value>,
     #[serde(rename = "current_weekly_remaining_percent")]
-    pub(crate) current_weekly_remaining_percent: Option<f64>,
+    pub(crate) current_weekly_remaining_percent: Option<serde_json::Value>,
     #[serde(rename = "current_weekly_status")]
-    pub(crate) current_weekly_status: Option<i64>,
+    pub(crate) current_weekly_status: Option<serde_json::Value>,
     #[serde(rename = "weekly_end_time")]
     pub(crate) weekly_end_time: Option<i64>,
     #[serde(rename = "weekly_remains_time")]
@@ -143,33 +142,33 @@ impl MiniMaxUsageResponse {
     pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         for remain in self.model_remains() {
-            if let Some(bucket) = minimax_bucket(
-                remain.model_name.as_deref().unwrap_or("MiniMax model"),
-                MiniMaxWindow::Interval,
-                remain.current_interval_total_count,
-                remain.current_interval_usage_count,
-                remain.current_interval_remaining_percent,
-                remain.interval_boost_permille,
-                remain.current_interval_status,
-                remain.end_time,
-                remain.remains_time,
+            if let Some(bucket) = minimax_bucket_from_raw(MiniMaxRawBucketInput {
+                model_name: remain.model_name.as_deref().unwrap_or("MiniMax model"),
+                window: MiniMaxWindow::Interval,
+                total: remain.current_interval_total_count.as_ref(),
+                usage: remain.current_interval_usage_count.as_ref(),
+                remaining_percent: remain.current_interval_remaining_percent.as_ref(),
+                boost_permille: remain.interval_boost_permille,
+                status: remain.current_interval_status.as_ref(),
+                end: remain.end_time,
+                remains_time: remain.remains_time,
                 now,
-            ) {
+            }) {
                 buckets.push(bucket);
             }
             if minimax_is_general_model(remain.model_name.as_deref())
-                && let Some(bucket) = minimax_bucket(
-                    remain.model_name.as_deref().unwrap_or("MiniMax model"),
-                    MiniMaxWindow::Weekly,
-                    remain.current_weekly_total_count,
-                    remain.current_weekly_usage_count,
-                    remain.current_weekly_remaining_percent,
-                    remain.weekly_boost_permille,
-                    remain.current_weekly_status,
-                    remain.weekly_end_time,
-                    remain.weekly_remains_time,
+                && let Some(bucket) = minimax_bucket_from_raw(MiniMaxRawBucketInput {
+                    model_name: remain.model_name.as_deref().unwrap_or("MiniMax model"),
+                    window: MiniMaxWindow::Weekly,
+                    total: remain.current_weekly_total_count.as_ref(),
+                    usage: remain.current_weekly_usage_count.as_ref(),
+                    remaining_percent: remain.current_weekly_remaining_percent.as_ref(),
+                    boost_permille: remain.weekly_boost_permille,
+                    status: remain.current_weekly_status.as_ref(),
+                    end: remain.weekly_end_time,
+                    remains_time: remain.weekly_remains_time,
                     now,
-                )
+                })
             {
                 buckets.push(bucket);
             }

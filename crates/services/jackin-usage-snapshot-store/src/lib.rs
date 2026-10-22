@@ -7,16 +7,13 @@ mod views;
 mod write;
 
 #[cfg(test)]
-use jackin_core::account_key_hash;
-#[cfg(test)]
-use jackin_usage_store_backend::connect_local;
-
-#[cfg(test)]
 pub(crate) use buckets::{
     lifecycle_status_bar_label, select_provider_rows, usage_bucket_order,
     usage_confidence_from_label, usage_provider_tabs_from_rows, usage_source_from_label,
     usage_status_from_label,
 };
+#[cfg(test)]
+use jackin_core::account_key_hash;
 #[cfg(test)]
 pub(crate) use read::stored_account_snapshots;
 #[cfg(test)]
@@ -32,6 +29,8 @@ pub use views::{
     StoredAccountUsageView, list_account_identities, load_account_usage_view,
     load_all_account_usage_views,
 };
+#[cfg(test)]
+pub(crate) use write::close_cached_store;
 #[cfg(test)]
 pub(crate) use write::connection_build_count;
 #[cfg(any(test, feature = "test-support"))]

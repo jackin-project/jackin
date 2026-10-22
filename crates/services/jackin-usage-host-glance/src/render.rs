@@ -6,52 +6,81 @@ use jackin_usage_host_presentation::{
     HostProviderGlanceRow, HostSurfaceId, SELECTED_ACCOUNT_UNAVAILABLE_NOTICE,
 };
 
-use jackin_protocol::control::{FocusedUsageView, UsageSeverity};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, FocusedUsageView,
+    MeterPercentPoints, PercentObservationOrigin, ProviderQuotaState, QuotaBucketView,
+    UsageMeterSide, UsageSeverity,
+};
 
 use jackin_usage_provider_core::{
-    UsageFormatPrefs, compact_duration_label, exact_reset_parenthetical, percent_headline,
-    provider_display_label, reset_label_with_prefs, usage_display_status_label,
-    usage_identity_presentation, usage_status_storage_label,
+    UsageFormatPrefs, compact_duration_label, count_summary_label, exact_reset_parenthetical,
+    format_percent_points, money_used_percent, percent_headline, provider_display_label,
+    quota_bucket_has_observation, quota_bucket_remaining_rank_points, reset_label_with_prefs,
+    select_quota_meter, usage_display_status_label, usage_identity_presentation,
+    usage_status_storage_label,
 };
 
 #[derive(Debug, Clone, Copy)]
 pub struct DrivingBucket {
-    pub remaining: u8,
+    pub used_percent: Option<CanonicalUsedPercent>,
+    pub used_percent_origin: Option<PercentObservationOrigin>,
+    pub remaining_percent: Option<CanonicalRemainingPercent>,
+    pub remaining_percent_origin: Option<PercentObservationOrigin>,
+    pub count_quota: Option<CountQuota>,
+    pub provider_quota_state: Option<ProviderQuotaState>,
+    pub meter_percent: Option<MeterPercentPoints>,
+    pub meter_side: Option<UsageMeterSide>,
     pub resets_at: Option<i64>,
 }
 
 pub const STATUS_BAR_MAX_CHIPS: usize = 3;
 
 #[must_use]
-pub fn status_bar_rank_key(remaining: u8, resets_at: Option<i64>) -> (i64, u8) {
-    let time_key = resets_at.unwrap_or(i64::MAX);
-    let remaining_key = u8::MAX.saturating_sub(remaining);
-    (time_key, remaining_key)
+pub fn status_bar_rank_key(bucket: &QuotaBucketView) -> (i64, f64) {
+    (
+        bucket.resets_at.unwrap_or(i64::MAX),
+        quota_bucket_remaining_rank_points(bucket).unwrap_or(f64::INFINITY),
+    )
 }
 
 pub fn driving_bucket_from_view(view: &FocusedUsageView) -> Option<DrivingBucket> {
-    let mut best: Option<(u8, Option<i64>)> = None;
-    for bucket in &view.buckets {
-        let Some(remaining) = bucket.remaining_percent else {
-            continue;
-        };
-        match best {
-            Some((best_remaining, _)) if remaining >= best_remaining => {}
-            _ => best = Some((remaining, bucket.resets_at)),
-        }
-    }
-    best.map(|(remaining, resets_at)| DrivingBucket {
-        remaining,
-        resets_at,
-    })
-}
-
-pub fn drive_label_prefix(view: &FocusedUsageView, remaining: u8) -> Option<&str> {
     view.buckets
         .iter()
-        .find(|bucket| bucket.remaining_percent == Some(remaining) && bucket.status_slot.is_none())
+        .filter(|bucket| bucket_has_summary(bucket))
+        .min_by(|left, right| bucket_summary_order(left).total_cmp(&bucket_summary_order(right)))
+        .map(|bucket| {
+            let (meter_percent, meter_side) = select_quota_meter(bucket);
+            DrivingBucket {
+                used_percent: bucket.used_percent,
+                used_percent_origin: bucket.used_percent_origin,
+                remaining_percent: bucket.remaining_percent,
+                remaining_percent_origin: bucket.remaining_percent_origin,
+                count_quota: bucket.count_quota,
+                provider_quota_state: bucket.provider_quota_state,
+                meter_percent,
+                meter_side,
+                resets_at: bucket.resets_at,
+            }
+        })
+}
+
+pub fn drive_label_prefix<'a>(
+    view: &'a FocusedUsageView,
+    bucket: &QuotaBucketView,
+) -> Option<&'a str> {
+    view.buckets
+        .iter()
+        .find(|candidate| std::ptr::eq(*candidate, bucket) && candidate.status_slot.is_none())
         .map(|bucket| bucket.label.as_str())
         .filter(|label| !label.is_empty())
+}
+
+fn bucket_has_summary(bucket: &QuotaBucketView) -> bool {
+    quota_bucket_has_observation(bucket)
+}
+
+fn bucket_summary_order(bucket: &QuotaBucketView) -> f64 {
+    quota_bucket_remaining_rank_points(bucket).unwrap_or(f64::INFINITY)
 }
 
 pub fn selected_account_unavailable_view(surface: HostSurfaceId) -> FocusedUsageView {
@@ -73,22 +102,11 @@ pub fn view_is_auto_detected(view: &FocusedUsageView) -> bool {
         .map(str::trim)
         .filter(|origin| !origin.is_empty())
         .is_some_and(|origin| !origin.to_ascii_lowercase().starts_with("needs "));
-    let bucket_evidence = view.buckets.iter().any(|bucket| {
-        bucket.remaining_percent.is_some()
-            || bucket.used_label.is_some()
-            || bucket.limit_label.is_some()
-            || bucket.used_money.is_some()
-            || bucket.limit_money.is_some()
-            || bucket.reset_label.is_some()
-            || bucket.resets_at.is_some()
-    });
+    let bucket_evidence = view.buckets.iter().any(quota_bucket_has_observation);
     origin_affirmative || bucket_evidence
 }
 
-pub fn glance_bucket(
-    surface: HostSurfaceId,
-    view: &FocusedUsageView,
-) -> Option<&jackin_protocol::control::QuotaBucketView> {
+pub fn glance_bucket(surface: HostSurfaceId, view: &FocusedUsageView) -> Option<&QuotaBucketView> {
     let slot = if surface == HostSurfaceId::Amp {
         jackin_protocol::control::StatusSlot::Daily
     } else {
@@ -96,7 +114,8 @@ pub fn glance_bucket(
     };
     view.buckets
         .iter()
-        .find(|bucket| bucket.status_slot == Some(slot))
+        .find(|bucket| bucket.status_slot == Some(slot) && quota_bucket_has_observation(bucket))
+        .or_else(|| accounts::summary_bucket(view))
 }
 
 pub fn build_provider_glance_row(
@@ -108,39 +127,51 @@ pub fn build_provider_glance_row(
 ) -> HostProviderGlanceRow {
     use jackin_protocol::control::UsageSnapshotStatus as Status;
     let display_label = provider_display_label(surface.label()).to_owned();
-    let glance = glance_bucket(surface, view);
-    let (
-        bar_label,
-        headline,
-        glance_remaining_percent,
-        reset_label,
-        compact_reset_label,
-        exact_reset,
-    ) = match glance.and_then(|bucket| bucket.remaining_percent) {
-        Some(percent) => {
-            let (reset_label, compact_reset_label, exact_reset) = glance
-                .and_then(|bucket| bucket.resets_at)
-                .map_or((None, None, None), |at| {
-                    (
-                        Some(reset_label_with_prefs(at, now, prefs)),
-                        Some(if at <= now {
-                            "now".to_owned()
-                        } else {
-                            compact_duration_label(at.saturating_sub(now))
-                        }),
-                        Some(exact_reset_parenthetical(at)),
-                    )
-                });
-            (
-                format!("{percent}%"),
-                format!("{percent}% left"),
-                Some(percent),
+    let glance = glance_bucket(surface, view).or_else(|| {
+        view.buckets
+            .iter()
+            .find(|bucket| bucket_has_summary(bucket))
+    });
+    let (meter_percent, meter_side) = glance.map_or((None, None), select_quota_meter);
+    let glance_used_percent = glance.and_then(|bucket| bucket.used_percent);
+    let glance_used_percent_origin = glance.and_then(|bucket| bucket.used_percent_origin);
+    let glance_remaining_percent = glance.and_then(|bucket| bucket.remaining_percent);
+    let glance_remaining_percent_origin = glance.and_then(|bucket| bucket.remaining_percent_origin);
+    let glance_count_quota = glance.and_then(|bucket| bucket.count_quota);
+    let glance_provider_quota_state = glance.and_then(|bucket| bucket.provider_quota_state);
+    let glance_resets_at = glance.and_then(|bucket| bucket.resets_at);
+    let (bar_label, headline, reset_label, compact_reset_label, exact_reset) = {
+        let label =
+            glance.and_then(|bucket| quota_bucket_label(bucket, meter_percent, meter_side, prefs));
+        let (reset_label, compact_reset_label, exact_reset) = glance
+            .and_then(|bucket| bucket.resets_at)
+            .map_or((None, None, None), |at| {
+                (
+                    Some(reset_label_with_prefs(at, now, prefs)),
+                    Some(if at <= now {
+                        "now".to_owned()
+                    } else {
+                        compact_duration_label(at.saturating_sub(now))
+                    }),
+                    Some(exact_reset_parenthetical(at)),
+                )
+            });
+        match label {
+            Some(label) => (
+                label.clone(),
+                label,
                 reset_label,
                 compact_reset_label,
                 exact_reset,
-            )
+            ),
+            None => (
+                "–".to_owned(),
+                "–".to_owned(),
+                reset_label,
+                compact_reset_label,
+                exact_reset,
+            ),
         }
-        None => ("–".to_owned(), "–".to_owned(), None, None, None, None),
     };
     let identity = usage_identity_presentation(&display_label, view, is_updating);
     HostProviderGlanceRow {
@@ -151,7 +182,15 @@ pub fn build_provider_glance_row(
         display_label,
         account_label: identity.account_label.clone(),
         plan_label: view.account.plan_label.clone(),
+        glance_used_percent,
+        glance_used_percent_origin,
         glance_remaining_percent,
+        glance_remaining_percent_origin,
+        glance_count_quota,
+        glance_provider_quota_state,
+        glance_resets_at,
+        glance_meter_percent: meter_percent,
+        glance_meter_side: meter_side,
         bar_label,
         headline,
         reset_label,
@@ -185,17 +224,20 @@ pub fn account_descriptor(
     use jackin_protocol::control::UsageSnapshotStatus as Status;
 
     let view = &entry.view;
-    let bucket = glance_bucket(surface, view).or_else(|| {
-        view.buckets
-            .iter()
-            .filter(|bucket| bucket.remaining_percent.is_some())
-            .min_by_key(|bucket| bucket.remaining_percent)
-    });
+    let bucket = glance_bucket(surface, view)
+        .or_else(|| accounts::summary_bucket(view))
+        .or_else(|| {
+            view.buckets
+                .iter()
+                .find(|bucket| bucket_has_summary(bucket))
+        });
     let remaining_percent = bucket.and_then(|bucket| bucket.remaining_percent);
-    let (remaining_label, headline) = remaining_percent.map_or_else(
-        || ("—".to_owned(), "—".to_owned()),
-        |percent| (format!("{percent}%"), percent_headline(percent, prefs)),
-    );
+    let used_percent = bucket.and_then(|bucket| bucket.used_percent);
+    let (meter_percent, meter_side) = bucket.map_or((None, None), select_quota_meter);
+    let remaining_label = bucket
+        .and_then(|bucket| quota_bucket_label(bucket, meter_percent, meter_side, prefs))
+        .unwrap_or_else(|| "—".to_owned());
+    let headline = remaining_label.clone();
     let (reset_label, exact_reset) =
         bucket
             .and_then(|bucket| bucket.resets_at)
@@ -248,7 +290,15 @@ pub fn account_descriptor(
         provenance,
         provenance_label,
         plan_or_status_label,
+        used_percent,
+        used_percent_origin: bucket.and_then(|bucket| bucket.used_percent_origin),
         remaining_percent,
+        remaining_percent_origin: bucket.and_then(|bucket| bucket.remaining_percent_origin),
+        count_quota: bucket.and_then(|bucket| bucket.count_quota),
+        provider_quota_state: bucket.and_then(|bucket| bucket.provider_quota_state),
+        resets_at: bucket.and_then(|bucket| bucket.resets_at),
+        meter_percent,
+        meter_side,
         remaining_label,
         headline,
         reset_label,
@@ -261,6 +311,41 @@ pub fn account_descriptor(
         last_error: view.last_error.clone(),
         dimmed: matches!(view.status, Status::Stale | Status::Error),
         accessibility_label,
+    }
+}
+
+fn quota_bucket_label(
+    bucket: &QuotaBucketView,
+    meter_percent: Option<MeterPercentPoints>,
+    meter_side: Option<UsageMeterSide>,
+    prefs: UsageFormatPrefs,
+) -> Option<String> {
+    if let Some(summary) = jackin_usage_provider_core::provider_quota_state_summary(bucket) {
+        return Some(summary);
+    }
+    if let Some(used) = bucket.used_percent {
+        return Some(used.label());
+    }
+    if let Some(remaining) = bucket.remaining_percent {
+        return Some(percent_headline(remaining, prefs));
+    }
+    if let Some(count) = count_summary_label(bucket) {
+        return Some(count);
+    }
+    if let Some(money_used) = money_used_percent(bucket) {
+        return Some(format!("{}% used", money_used.display_value()));
+    }
+    if let (Some(meter), Some(side)) = (meter_percent, meter_side) {
+        let value = format_percent_points(meter.get());
+        return Some(match side {
+            UsageMeterSide::Used => format!("{value}% used"),
+            UsageMeterSide::Remaining => format!("{value}% left"),
+        });
+    }
+    match (&bucket.used_label, &bucket.limit_label) {
+        (Some(used), Some(limit)) => Some(format!("{used} of {limit}")),
+        (Some(used), None) | (None, Some(used)) => Some(used.clone()),
+        (None, None) => None,
     }
 }
 
@@ -282,3 +367,6 @@ pub fn worst_severity_label(view: &FocusedUsageView) -> String {
     }
     .to_owned()
 }
+
+#[cfg(test)]
+mod tests;

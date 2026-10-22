@@ -130,7 +130,14 @@ extension VisualQAFixtures {
             lifecycleLabel: account.lifecycleLabel,
             provenanceLabel: account.provenanceLabel,
             planOrStatusLabel: account.planLabel ?? statusWord ?? account.planOrStatusLabel,
+            usedPercent: account.usedPercent,
+            usedPercentOrigin: account.usedPercentOrigin,
             remainingPercent: account.remainingPercent,
+            remainingPercentOrigin: account.remainingPercentOrigin,
+            countQuota: account.countQuota,
+            resetsAt: account.resetsAt,
+            meterPercent: account.meterPercent,
+            meterSide: account.meterSide,
             remainingLabel: account.remainingLabel,
             headline: account.headline,
             resetDisplayLabel: account.resetDisplayLabel,
@@ -166,8 +173,9 @@ extension VisualQAFixtures {
                     label: "Account quota",
                     layoutLines: lines,
                     displayLabel: displayLabel,
-                    meterPercent: account.remainingPercent,
+                    meterPercent: account.meterPercent,
                     severity: account.severity,
+                    meterSide: account.meterSide
                 )
             ])
     }

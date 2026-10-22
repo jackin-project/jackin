@@ -86,7 +86,12 @@ pub(super) fn fresh_view() -> FocusedUsageView {
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
-        remaining_percent: Some(75),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(CanonicalRemainingPercent::new(75.0).expect("valid percentage")),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: None,
@@ -102,7 +107,7 @@ pub(super) fn fresh_view() -> FocusedUsageView {
 
 pub(super) fn empty_projection() -> UsageProjectionV1 {
     UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "test:0".to_owned(),
         generated_at_epoch: 1_000,
         discovery_revision: "catalog".to_owned(),

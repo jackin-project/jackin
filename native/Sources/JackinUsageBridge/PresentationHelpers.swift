@@ -20,7 +20,16 @@ public func selectStatusBarGlanceRows(
     let cap = min(statusBarMaxChips, max(1, maxCount))
     return Array(
         rows
-            .filter { ($0.glanceRemainingPercent ?? 0) > 0 }
+            .filter { row in
+                switch (row.glanceMeterPercent, row.glanceMeterSide) {
+                case (.some(let percent), .some("remaining")):
+                    percent > 0
+                case (.some(let percent), .some("used")):
+                    percent < 100
+                default:
+                    false
+                }
+            }
             .prefix(cap)
     )
 }

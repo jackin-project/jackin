@@ -226,7 +226,16 @@ fn control_usage_account_list_uses_in_memory_cache() {
         label: "Session".to_owned(),
         used_label: Some("63% used".to_owned()),
         limit_label: Some("100%".to_owned()),
-        remaining_percent: Some(37),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(
+            jackin_protocol::control::CanonicalRemainingPercent::new(37.0).unwrap(),
+        ),
+        remaining_percent_origin: Some(
+            jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+        ),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: Some("Resets in 2h".to_owned()),
         resets_at: None,
         status_slot: None,
@@ -245,7 +254,22 @@ fn control_usage_account_list_uses_in_memory_cache() {
     assert_eq!(accounts.len(), 1);
     assert_eq!(accounts[0].provider, "OpenAI / Codex");
     assert_eq!(accounts[0].account_label, "codex@example.com");
-    assert_eq!(accounts[0].used_amount, Some(63));
+    assert_eq!(accounts[0].used_amount, None);
+    let bucket = accounts[0]
+        .quota_bucket
+        .as_ref()
+        .expect("typed quota evidence is retained");
+    assert_eq!(bucket.used_percent, None);
+    assert_eq!(
+        bucket
+            .remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(37.0)
+    );
+    assert_eq!(
+        bucket.remaining_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
 }
 
 #[test]

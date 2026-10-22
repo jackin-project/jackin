@@ -9,10 +9,11 @@ use std::sync::atomic::Ordering;
 
 use super::{
     ACCOUNT_STATE_SCHEMA_VERSION, AccountStateEnvelope, LEGACY_ACCOUNT_STATE_SCHEMA_VERSION,
-    MAX_ACCOUNT_STATE_BYTES, PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION,
+    LEGACY_PROJECTION_STATE_SCHEMA_VERSION, MAX_ACCOUNT_STATE_BYTES,
+    OLDER_ACCOUNT_STATE_SCHEMA_VERSION, PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION,
     PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION, PROJECTION_STATE_SCHEMA_VERSION,
-    STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER, StateStoreError, sanitize_envelope,
-    state_filename, validate_capability, validate_envelope, validate_owned_mode,
+    STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER, StateStoreError, state_filename,
+    validate_capability, validate_envelope, validate_owned_mode,
 };
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCatalogEntry, UsageProjectionV1};
 use nix::fcntl::{OFlag, open, openat, renameat};
@@ -55,6 +56,8 @@ impl ProjectionStateEnvelope {
     pub const SCHEMA_VERSION: u32 = PROJECTION_STATE_SCHEMA_VERSION;
 
     pub const MIGRATABLE_SCHEMA_VERSION: u32 = PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION;
+
+    pub const OLDER_MIGRATABLE_SCHEMA_VERSION: u32 = LEGACY_PROJECTION_STATE_SCHEMA_VERSION;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -77,19 +80,37 @@ impl FileProjectionStateStore {
     }
 
     pub fn load(&self) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
-        self.load_with_previous_schema(false)
+        let Some(value) = self.read_projection_value()? else {
+            return Ok(None);
+        };
+        let schema_version = value
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or(StateStoreError::Corrupt)?;
+        if schema_version != u64::from(PROJECTION_STATE_SCHEMA_VERSION) {
+            return Err(StateStoreError::SchemaMigrationRequired {
+                found: schema_version,
+                current: PROJECTION_STATE_SCHEMA_VERSION,
+            });
+        }
+        Self::decode_projection_envelope(value).map(Some)
     }
 
-    pub fn load_for_broker_migration(
-        &self,
-    ) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
-        self.load_with_previous_schema(true)
+    pub fn load_for_broker_migration(&self) -> Result<Option<serde_json::Value>, StateStoreError> {
+        let Some(value) = self.read_projection_value()? else {
+            return Ok(None);
+        };
+        let schema_version = value
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or(StateStoreError::Corrupt)?;
+        if schema_version == u64::from(PROJECTION_STATE_SCHEMA_VERSION) {
+            Self::decode_projection_envelope(value.clone())?;
+        }
+        Ok(Some(value))
     }
 
-    fn load_with_previous_schema(
-        &self,
-        allow_previous_schema: bool,
-    ) -> Result<Option<ProjectionStateEnvelope>, StateStoreError> {
+    fn read_projection_value(&self) -> Result<Option<serde_json::Value>, StateStoreError> {
         let bytes = match fs::read(&self.path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -98,14 +119,12 @@ impl FileProjectionStateStore {
         let Ok(value @ serde_json::Value::Object(_)) =
             serde_json::from_slice::<serde_json::Value>(&bytes)
         else {
-            self.quarantine()?;
             return Err(StateStoreError::Corrupt);
         };
         let Some(schema_version) = value
             .get("schema_version")
             .and_then(serde_json::Value::as_u64)
         else {
-            self.quarantine()?;
             return Err(StateStoreError::Corrupt);
         };
         let current = u64::from(PROJECTION_STATE_SCHEMA_VERSION);
@@ -116,30 +135,32 @@ impl FileProjectionStateStore {
                 current: PROJECTION_STATE_SCHEMA_VERSION,
             });
         }
-        if schema_version == previous && !allow_previous_schema {
-            self.decode_projection_envelope(value)?;
+        if schema_version == u64::from(PROJECTION_STATE_SCHEMA_VERSION) {
+            return Ok(Some(value));
+        }
+        if schema_version == previous
+            || schema_version == u64::from(LEGACY_PROJECTION_STATE_SCHEMA_VERSION)
+        {
+            return Ok(Some(value));
+        }
+        if schema_version < previous {
+            return Err(StateStoreError::Corrupt);
+        }
+        if schema_version > current {
             return Err(StateStoreError::SchemaMigrationRequired {
                 found: schema_version,
                 current: PROJECTION_STATE_SCHEMA_VERSION,
             });
         }
-        if schema_version != current && !(allow_previous_schema && schema_version == previous) {
-            self.quarantine()?;
-            return Err(StateStoreError::Corrupt);
-        }
-        self.decode_projection_envelope(value).map(Some)
+        Err(StateStoreError::Corrupt)
     }
 
     fn decode_projection_envelope(
-        &self,
         value: serde_json::Value,
     ) -> Result<ProjectionStateEnvelope, StateStoreError> {
         let envelope = match serde_json::from_value::<ProjectionStateEnvelope>(value) {
             Ok(envelope) if envelope.projection.validate().is_ok() => envelope,
-            Ok(_) | Err(_) => {
-                self.quarantine()?;
-                return Err(StateStoreError::Corrupt);
-            }
+            Ok(_) | Err(_) => return Err(StateStoreError::Corrupt),
         };
         Ok(envelope)
     }
@@ -191,10 +212,46 @@ impl FileProjectionStateStore {
         fsync(&directory).map_err(|_| StateStoreError::Unavailable)
     }
 
-    pub(crate) fn quarantine(&self) -> Result<(), StateStoreError> {
-        let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
-        let quarantined = self.path.with_extension(format!("corrupt.{suffix}"));
-        fs::rename(&self.path, quarantined).map_err(|_| StateStoreError::Unavailable)
+    pub fn store_migrated(
+        &self,
+        envelope: &ProjectionStateEnvelope,
+    ) -> Result<(), StateStoreError> {
+        if envelope.schema_version != PROJECTION_STATE_SCHEMA_VERSION {
+            return Err(StateStoreError::Corrupt);
+        }
+        envelope
+            .projection
+            .validate()
+            .map_err(|_| StateStoreError::Corrupt)?;
+        let preimage = fs::read(&self.path).map_err(|_| StateStoreError::Unavailable)?;
+        let value: serde_json::Value =
+            serde_json::from_slice(&preimage).map_err(|_| StateStoreError::Corrupt)?;
+        let schema_version = value
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or(StateStoreError::Corrupt)?;
+        if schema_version != u64::from(PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION)
+            && schema_version != u64::from(LEGACY_PROJECTION_STATE_SCHEMA_VERSION)
+        {
+            return Err(StateStoreError::Corrupt);
+        }
+        let Some(parent) = self.path.parent() else {
+            return Err(StateStoreError::Unavailable);
+        };
+        let directory = open(
+            parent,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .map_err(|_| StateStoreError::Unavailable)?;
+        let directory = File::from(directory);
+        let filename = self
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or(StateStoreError::Unavailable)?;
+        backup_preimage(&directory, filename, &preimage, "pre-quota-v4")?;
+        self.store(envelope)
     }
 }
 
@@ -256,81 +313,14 @@ impl AccountStateStore for FileAccountStateStore {
         };
         let mut file = File::from(fd);
         validate_owned_mode(&file, 0o600)?;
-        let mut bytes = Vec::new();
-        Read::by_ref(&mut file)
-            .take(MAX_ACCOUNT_STATE_BYTES.saturating_add(1))
-            .read_to_end(&mut bytes)
-            .map_err(|_| StateStoreError::Unavailable)?;
-        if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_ACCOUNT_STATE_BYTES {
-            return Err(StateStoreError::Corrupt);
+        let (bytes, mut value, schema_version) = read_account_state(&mut file)?;
+        if schema_version < ACCOUNT_STATE_SCHEMA_VERSION {
+            migrate_legacy_account_quota_payloads(&mut value)?;
         }
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&bytes).map_err(|_| StateStoreError::Corrupt)?;
-        let schema_version = value
-            .get("schema_version")
-            .and_then(serde_json::Value::as_u64)
-            .and_then(|version| u32::try_from(version).ok())
-            .ok_or(StateStoreError::Corrupt)?;
-        let (envelope, migrated) = match schema_version {
-            LEGACY_ACCOUNT_STATE_SCHEMA_VERSION => {
-                let object = value.as_object_mut().ok_or(StateStoreError::Corrupt)?;
-                object.insert("provider_invoked_at_epoch".into(), serde_json::Value::Null);
-                object.insert(
-                    "reload_fence_required".into(),
-                    serde_json::Value::Bool(false),
-                );
-                let mut envelope: AccountStateEnvelope =
-                    serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
-                let fresh_queued_generation = envelope.phase
-                    == jackin_protocol::usage_broker::UsageRefreshPhase::Queued
-                    && envelope.generation == 1
-                    && envelope.started_at_epoch.is_some()
-                    && envelope.terminal_result.is_none()
-                    && envelope.last_good.is_none()
-                    && envelope.terminal_error.is_none()
-                    && envelope.completed_at_epoch.is_none()
-                    && envelope.rate_limit_deadline_epoch.is_none()
-                    && envelope.retry_deadline_epoch.is_none()
-                    && envelope.success_deadline_epoch.is_none();
-                envelope.reload_fence_required = !fresh_queued_generation
-                    && (envelope.started_at_epoch.is_some()
-                        || envelope.generation > 0
-                        || envelope.terminal_result.is_some()
-                        || envelope.last_good.is_some()
-                        || envelope.terminal_error.is_some()
-                        || envelope.completed_at_epoch.is_some()
-                        || envelope.rate_limit_deadline_epoch.is_some()
-                        || envelope.retry_deadline_epoch.is_some()
-                        || envelope.success_deadline_epoch.is_some()
-                        || envelope.phase
-                            == jackin_protocol::usage_broker::UsageRefreshPhase::Updating);
-                envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
-                (envelope, true)
-            }
-            PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION => {
-                value
-                    .as_object_mut()
-                    .ok_or(StateStoreError::Corrupt)?
-                    .insert(
-                        "reload_fence_required".into(),
-                        serde_json::Value::Bool(false),
-                    );
-                let mut envelope: AccountStateEnvelope =
-                    serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
-                envelope.reload_fence_required = envelope.phase
-                    == jackin_protocol::usage_broker::UsageRefreshPhase::Updating
-                    && envelope.provider_invoked_at_epoch.is_none();
-                envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
-                (envelope, true)
-            }
-            ACCOUNT_STATE_SCHEMA_VERSION => (
-                serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?,
-                false,
-            ),
-            _ => return Err(StateStoreError::Corrupt),
-        };
+        let (envelope, migrated) = decode_account_state(value, schema_version)?;
         let envelope = validate_envelope(envelope, capability, now_epoch)?;
         if migrated {
+            backup_preimage(&directory, &filename, &bytes, "pre-quota-v4")?;
             self.store(&envelope, now_epoch)?;
         }
         Ok(Some(envelope))
@@ -342,7 +332,7 @@ impl AccountStateStore for FileAccountStateStore {
         now_epoch: i64,
     ) -> Result<(), StateStoreError> {
         validate_capability(&envelope.capability)?;
-        let mut envelope = sanitize_envelope(envelope.clone());
+        let mut envelope = envelope.clone();
         envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
         let expected = envelope.capability.clone();
         let envelope = validate_envelope(envelope, &expected, now_epoch)?;
@@ -418,6 +408,266 @@ impl AccountStateStore for FileAccountStateStore {
             Err(_) => Err(StateStoreError::Unavailable),
         }
     }
+}
+
+fn read_account_state(
+    file: &mut File,
+) -> Result<(Vec<u8>, serde_json::Value, u32), StateStoreError> {
+    let mut bytes = Vec::new();
+    Read::by_ref(file)
+        .take(MAX_ACCOUNT_STATE_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|_| StateStoreError::Unavailable)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_ACCOUNT_STATE_BYTES {
+        return Err(StateStoreError::Corrupt);
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| StateStoreError::Corrupt)?;
+    let schema_version = value
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|version| u32::try_from(version).ok())
+        .ok_or(StateStoreError::Corrupt)?;
+    Ok((bytes, value, schema_version))
+}
+
+fn decode_account_state(
+    value: serde_json::Value,
+    schema_version: u32,
+) -> Result<(AccountStateEnvelope, bool), StateStoreError> {
+    match schema_version {
+        LEGACY_ACCOUNT_STATE_SCHEMA_VERSION => {
+            decode_legacy_account_state(value).map(|envelope| (envelope, true))
+        }
+        OLDER_ACCOUNT_STATE_SCHEMA_VERSION => {
+            decode_older_account_state(value).map(|envelope| (envelope, true))
+        }
+        PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION => {
+            decode_previous_account_state(value).map(|envelope| (envelope, true))
+        }
+        ACCOUNT_STATE_SCHEMA_VERSION => serde_json::from_value(value)
+            .map(|envelope| (envelope, false))
+            .map_err(|_| StateStoreError::Corrupt),
+        _ => Err(StateStoreError::Corrupt),
+    }
+}
+
+fn decode_legacy_account_state(
+    mut value: serde_json::Value,
+) -> Result<AccountStateEnvelope, StateStoreError> {
+    let object = value.as_object_mut().ok_or(StateStoreError::Corrupt)?;
+    object.insert("provider_invoked_at_epoch".into(), serde_json::Value::Null);
+    object.insert(
+        "reload_fence_required".into(),
+        serde_json::Value::Bool(false),
+    );
+    let mut envelope: AccountStateEnvelope =
+        serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
+    envelope.reload_fence_required = legacy_reload_fence_required(&envelope);
+    envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
+    Ok(envelope)
+}
+
+fn legacy_reload_fence_required(envelope: &AccountStateEnvelope) -> bool {
+    let fresh_queued_generation = envelope.phase
+        == jackin_protocol::usage_broker::UsageRefreshPhase::Queued
+        && envelope.generation == 1
+        && envelope.started_at_epoch.is_some()
+        && envelope.terminal_result.is_none()
+        && envelope.last_good.is_none()
+        && envelope.terminal_error.is_none()
+        && envelope.completed_at_epoch.is_none()
+        && envelope.rate_limit_deadline_epoch.is_none()
+        && envelope.retry_deadline_epoch.is_none()
+        && envelope.success_deadline_epoch.is_none();
+    !fresh_queued_generation
+        && (envelope.started_at_epoch.is_some()
+            || envelope.generation > 0
+            || envelope.terminal_result.is_some()
+            || envelope.last_good.is_some()
+            || envelope.terminal_error.is_some()
+            || envelope.completed_at_epoch.is_some()
+            || envelope.rate_limit_deadline_epoch.is_some()
+            || envelope.retry_deadline_epoch.is_some()
+            || envelope.success_deadline_epoch.is_some()
+            || envelope.phase == jackin_protocol::usage_broker::UsageRefreshPhase::Updating)
+}
+
+fn decode_older_account_state(
+    mut value: serde_json::Value,
+) -> Result<AccountStateEnvelope, StateStoreError> {
+    value
+        .as_object_mut()
+        .ok_or(StateStoreError::Corrupt)?
+        .insert(
+            "reload_fence_required".into(),
+            serde_json::Value::Bool(false),
+        );
+    let mut envelope: AccountStateEnvelope =
+        serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
+    envelope.reload_fence_required = envelope.phase
+        == jackin_protocol::usage_broker::UsageRefreshPhase::Updating
+        && envelope.provider_invoked_at_epoch.is_none();
+    envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
+    Ok(envelope)
+}
+
+fn decode_previous_account_state(
+    value: serde_json::Value,
+) -> Result<AccountStateEnvelope, StateStoreError> {
+    let mut envelope: AccountStateEnvelope =
+        serde_json::from_value(value).map_err(|_| StateStoreError::Corrupt)?;
+    envelope.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
+    Ok(envelope)
+}
+
+fn migrate_legacy_account_quota_payloads(
+    envelope: &mut serde_json::Value,
+) -> Result<(), StateStoreError> {
+    use jackin_protocol::control::{CanonicalRemainingPercent, PercentObservationOrigin};
+
+    for result_name in ["terminal_result", "last_good"] {
+        let Some(result) = envelope.get_mut(result_name) else {
+            continue;
+        };
+        if result.is_null() {
+            continue;
+        }
+        let result = result.as_object_mut().ok_or(StateStoreError::Corrupt)?;
+        let Some(buckets) = result.get_mut("buckets") else {
+            continue;
+        };
+        let buckets = buckets.as_array_mut().ok_or(StateStoreError::Corrupt)?;
+        for bucket in buckets {
+            let bucket = bucket.as_object_mut().ok_or(StateStoreError::Corrupt)?;
+            if [
+                "used_percent",
+                "used_percent_origin",
+                "remaining_percent_origin",
+                "count_quota",
+                "provider_quota_state",
+            ]
+            .iter()
+            .any(|field| bucket.contains_key(*field))
+            {
+                return Err(StateStoreError::Corrupt);
+            }
+            let remaining = bucket
+                .remove("remaining_percent")
+                .unwrap_or(serde_json::Value::Null);
+            let (remaining, origin) = if remaining.is_null() {
+                (serde_json::Value::Null, serde_json::Value::Null)
+            } else {
+                let integer = remaining.as_i64().ok_or(StateStoreError::Corrupt)?;
+                let historical_percent =
+                    u8::try_from(integer).map_err(|_| StateStoreError::Corrupt)?;
+                let canonical = CanonicalRemainingPercent::new(f64::from(historical_percent))
+                    .map_err(|_| StateStoreError::Corrupt)?;
+                let value = serde_json::Number::from_f64(canonical.get())
+                    .map(serde_json::Value::Number)
+                    .ok_or(StateStoreError::Corrupt)?;
+                (
+                    value,
+                    serde_json::to_value(PercentObservationOrigin::HistoricalUnknown)
+                        .map_err(|_| StateStoreError::Corrupt)?,
+                )
+            };
+            bucket.insert("used_percent".to_owned(), serde_json::Value::Null);
+            bucket.insert("used_percent_origin".to_owned(), serde_json::Value::Null);
+            bucket.insert("remaining_percent".to_owned(), remaining);
+            bucket.insert("remaining_percent_origin".to_owned(), origin);
+            bucket.insert("count_quota".to_owned(), serde_json::Value::Null);
+            bucket.insert("provider_quota_state".to_owned(), serde_json::Value::Null);
+        }
+    }
+    Ok(())
+}
+
+fn backup_preimage(
+    directory: &File,
+    filename: &str,
+    bytes: &[u8],
+    marker: &str,
+) -> Result<(), StateStoreError> {
+    let stable_name = format!(".{filename}.{marker}.backup");
+    if let Some(existing) = read_backup(directory, &stable_name)? {
+        if existing == bytes {
+            return Ok(());
+        }
+    } else {
+        return write_backup(directory, filename, &stable_name, marker, bytes);
+    }
+
+    for _ in 0..16 {
+        let suffix = format!(
+            "{}-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default(),
+            STATE_TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
+        let candidate = format!(".{filename}.{marker}.{suffix}.backup");
+        if let Some(existing) = read_backup(directory, &candidate)? {
+            if existing == bytes {
+                return Ok(());
+            }
+            continue;
+        }
+        return write_backup(directory, filename, &candidate, marker, bytes);
+    }
+    Err(StateStoreError::Unavailable)
+}
+
+fn read_backup(directory: &File, name: &str) -> Result<Option<Vec<u8>>, StateStoreError> {
+    let fd = match openat(
+        directory,
+        name,
+        OFlag::O_RDONLY | OFlag::O_NOFOLLOW,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(nix::errno::Errno::ENOENT) => return Ok(None),
+        Err(_) => return Err(StateStoreError::Unavailable),
+    };
+    let mut file = File::from(fd);
+    validate_owned_mode(&file, 0o600)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|_| StateStoreError::Unavailable)?;
+    Ok(Some(bytes))
+}
+
+fn write_backup(
+    directory: &File,
+    filename: &str,
+    target: &str,
+    marker: &str,
+    bytes: &[u8],
+) -> Result<(), StateStoreError> {
+    let temporary = format!(
+        ".{filename}.{marker}.{}.{}.tmp",
+        std::process::id(),
+        STATE_TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    let fd = openat(
+        directory,
+        temporary.as_str(),
+        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW,
+        Mode::from_bits_truncate(0o600),
+    )
+    .map_err(|_| StateStoreError::Unavailable)?;
+    let mut file = File::from(fd);
+    let result = (|| {
+        file.write_all(bytes)
+            .map_err(|_| StateStoreError::Unavailable)?;
+        file.sync_all().map_err(|_| StateStoreError::Unavailable)?;
+        renameat(directory, temporary.as_str(), directory, target)
+            .map_err(|_| StateStoreError::Unavailable)?;
+        fsync(directory).map_err(|_| StateStoreError::Unavailable)
+    })();
+    if result.is_err() {
+        let _ignored_cleanup_result =
+            unlinkat(directory, temporary.as_str(), UnlinkatFlags::NoRemoveDir);
+    }
+    result
 }
 
 impl FileProjectionStateStore {

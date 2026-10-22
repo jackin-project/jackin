@@ -186,7 +186,13 @@ extension PresentationStore {
             label: bucket.label,
             usedLabel: bucket.usedLabel,
             limitLabel: bucket.limitLabel,
+            usedPercent: bucket.usedPercent,
+            usedPercentOrigin: bucket.usedPercentOrigin,
             remainingPercent: bucket.remainingPercent,
+            remainingPercentOrigin: bucket.remainingPercentOrigin,
+            countQuota: bucket.countQuota.map(CountQuotaModel.init(dto:)),
+            providerQuotaState: bucket.providerQuotaState,
+            resetsAt: bucket.resetsAt,
             resetLabel: bucket.resetLabel,
             paceLabel: bucket.paceLabel,
             statusSlot: bucket.statusSlot,
@@ -197,7 +203,8 @@ extension PresentationStore {
             remainingLabel: bucket.remainingLabel,
             displaySegments: bucket.displaySegments,
             displayLabel: bucket.displayLabel,
-            meterPercent: bucket.meterPercent
+            meterPercent: bucket.meterPercent,
+            meterSide: bucket.meterSide
         )
     }
 
@@ -213,7 +220,15 @@ extension PresentationStore {
             lifecycleLabel: row.lifecycleLabel,
             provenanceLabel: row.provenanceLabel,
             planOrStatusLabel: row.planOrStatusLabel,
+            usedPercent: row.usedPercent,
+            usedPercentOrigin: row.usedPercentOrigin,
             remainingPercent: row.remainingPercent,
+            remainingPercentOrigin: row.remainingPercentOrigin,
+            countQuota: row.countQuota.map(CountQuotaModel.init(dto:)),
+            providerQuotaState: row.providerQuotaState,
+            resetsAt: row.resetsAt,
+            meterPercent: row.meterPercent,
+            meterSide: row.meterSide,
             remainingLabel: row.remainingLabel,
             headline: row.headline,
             resetDisplayLabel: row.resetDisplayLabel,
@@ -251,7 +266,15 @@ extension PresentationStore {
             activityKind: row.activityKind,
             accessibilityLabel: row.accessibilityLabel,
             lastError: row.lastError,
-            dimmed: row.dimmed
+            dimmed: row.dimmed,
+            glanceUsedPercent: row.glanceUsedPercent,
+            glanceUsedPercentOrigin: row.glanceUsedPercentOrigin,
+            glanceRemainingPercentOrigin: row.glanceRemainingPercentOrigin,
+            glanceCountQuota: row.glanceCountQuota.map(CountQuotaModel.init(dto:)),
+            glanceProviderQuotaState: row.glanceProviderQuotaState,
+            glanceResetsAt: row.glanceResetsAt,
+            glanceMeterPercent: row.glanceMeterPercent,
+            glanceMeterSide: row.glanceMeterSide
         )
     }
 

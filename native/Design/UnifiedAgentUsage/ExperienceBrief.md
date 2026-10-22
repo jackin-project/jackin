@@ -338,7 +338,7 @@ system dates use locale-aware formatting.
 
 ## Evidence inputs
 
-- [Apple-native design evidence](../../../research/agent-usage-platform/02-apple-native-design.md)
-- [Codebase architecture and failure modes](../../../research/agent-usage-platform/01-codebase-architecture.md)
-- [Reference implementations and delivery directions](../../../research/agent-usage-platform/03-reference-implementations.md)
-- [Current native shell rules](../../AGENTS.md)
+- Apple-native design evidence
+- Codebase architecture and failure modes
+- Reference implementations and delivery directions
+- Current native shell rules

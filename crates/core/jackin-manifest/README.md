@@ -33,4 +33,3 @@ Validated manifest types and the load/validate/migrate entry points consumed by 
 cargo nextest run -p jackin-manifest
 cargo clippy -p jackin-manifest --all-targets -- -D warnings
 ```
-

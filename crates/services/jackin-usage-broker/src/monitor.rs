@@ -6,6 +6,7 @@ mod legacy;
 mod lifecycle;
 mod observations;
 mod operations;
+mod quota;
 mod spend;
 mod statusline;
 mod storage;
@@ -22,7 +23,7 @@ use evaluation::{
     quota_window_status, reconcile_all_monitors, refresh_all_goal_spend,
     spend_decision_blocks_dispatch, spend_issue, spend_policy, upsert_evidence,
 };
-use jackin_protocol::control::Money;
+use jackin_protocol::control::{Money, RawPercentPoints};
 use lifecycle::{
     append_event, append_event_if_changed, prune_inactive_sessions,
     prune_inactive_unbound_sessions, session_is_active, status_for, update_reset_barrier,
@@ -33,6 +34,7 @@ use observations::{
     sync_monitor_from_session, valid_bounded_text, valid_evidence_fingerprint, valid_identifier,
     valid_source_capability_id, validate_identifier, validate_observation,
 };
+use quota::{monitor_basis_points, monitor_source_used_points, monitor_window_used_points};
 use validation::validate_store_state;
 #[cfg(test)]
 use validation::{spend_snapshot_preserves_history, spend_state_matches_account};
@@ -1435,13 +1437,8 @@ fn projection_windows(
                 }) {
                     return None;
                 }
-                let raw_used = window.used_raw_percent.or_else(|| {
-                    window
-                        .remaining_raw_percent
-                        .map(|remaining| 100i32.saturating_sub(remaining))
-                });
-                let raw_used = raw_used.filter(|used| *used >= 0);
-                let used = raw_used.map(|value| value.min(100));
+                let raw_used = monitor_window_used_points(window);
+                let used = raw_used.and_then(monitor_basis_points);
                 let used_at = raw_used.and_then(|value| {
                     metric_group_time(
                         account,
@@ -1502,7 +1499,7 @@ fn projection_windows(
                 if used_reset == reset =>
             {
                 Some(ObservedQuotaPair {
-                    used_percentage_basis_points: used.saturating_mul(100),
+                    used_percentage_basis_points: used,
                     reset_at_epoch: reset,
                     evidence_at_epoch: Some(used_at.min(reset_at)),
                     received_at_epoch,
@@ -1516,7 +1513,7 @@ fn projection_windows(
             used: used_value
                 .zip(used_evidence_at)
                 .map(|(value, evidence_at_epoch)| ObservedPercentage {
-                    value: value.saturating_mul(100),
+                    value,
                     reset_at_epoch: used_reset,
                     evidence_at_epoch: Some(evidence_at_epoch),
                     received_at_epoch,
@@ -1542,7 +1539,7 @@ fn metric_group_time(
     account: &UsageAccountV1,
     window_index: usize,
     window_label: &str,
-    used_raw_percent: Option<i32>,
+    used_raw_percent: Option<RawPercentPoints>,
     reset_at_epoch: Option<i64>,
     now_epoch: i64,
 ) -> Option<Option<i64>> {
@@ -1584,8 +1581,11 @@ fn metric_group_time(
                 return false;
             }
             let UsageMetricValueV1::Window {
-                used_raw_percent: group_used,
-                remaining_raw_percent: group_remaining,
+                used_percent: group_used,
+                used_percent_origin: group_used_origin,
+                remaining_percent: group_remaining,
+                remaining_percent_origin: group_remaining_origin,
+                money_used_percent: group_money_used,
                 period,
                 ..
             } = &group.value
@@ -1595,8 +1595,13 @@ fn metric_group_time(
             if !period_matches(*period) {
                 return false;
             }
-            let group_used = (*group_used)
-                .or_else(|| group_remaining.map(|remaining| 100i32.saturating_sub(remaining)));
+            let group_used = monitor_source_used_points(
+                *group_used,
+                *group_used_origin,
+                *group_remaining,
+                *group_remaining_origin,
+                *group_money_used,
+            );
             (used_raw_percent.is_none() || group_used == used_raw_percent)
                 && group.reset_at_epoch == reset_at_epoch
         })

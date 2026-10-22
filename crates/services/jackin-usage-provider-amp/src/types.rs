@@ -1,10 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_protocol::control::Money;
+
 #[derive(Debug, Clone, Default)]
 pub struct AmpUsage {
     pub account_label: Option<String>,
-    pub daily_remaining_percent: Option<u8>,
+    pub daily_remaining_percent: Option<f64>,
     pub individual_credits: Option<f64>,
     pub workspace_balances: Vec<AmpWorkspaceBalance>,
     pub subscription: Option<AmpSubscription>,
@@ -27,14 +29,14 @@ pub struct AmpSubscription {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AmpSubscriptionKind {
     Tier {
-        agent_remaining: f64,
-        agent_limit: f64,
+        agent_remaining: Money,
+        agent_limit: Money,
         orb_remaining_hours: Option<f64>,
         orb_limit_hours: Option<f64>,
     },
     Legacy {
-        agent_remaining_percent: u8,
-        orb_remaining_percent: u8,
+        agent_remaining_percent: f64,
+        orb_remaining_percent: f64,
     },
 }
 

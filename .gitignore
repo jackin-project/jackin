@@ -41,3 +41,6 @@ docs/content/reference/crates/*.mdx
 
 # Materialized Rust policy releases (re-run install in CI before alint check)
 .cache/
+
+# rumdl (hk builtin) cache
+.rumdl_cache/

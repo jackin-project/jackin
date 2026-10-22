@@ -148,9 +148,9 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
 
     if partition_selected(args, "lint") {
         steps.push(Step::with_args(
-            "actionlint",
-            "actionlint",
-            workflow_lint::actionlint_args(root)?,
+            "jactionlint",
+            "jactionlint",
+            workflow_lint::jactionlint_args(root)?,
             "lint",
         ));
         steps.push(cargo("fmt", &["fmt", "--check"], "lint"));

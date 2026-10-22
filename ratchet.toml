@@ -40,11 +40,11 @@ bound = 2
 key = "clippy::cast_precision_loss@jackin-usage-provider-openrouter"
 bound = 2
 [[family.entry]]
-key = "clippy::cast_precision_loss@jackin-usage-provider-grok"
+key = "clippy::cast_precision_loss@jackin-usage-provider-amp"
 bound = 1
 [[family.entry]]
-key = "clippy::cast_precision_loss@jackin-usage-provider-kimi"
-bound = 2
+key = "clippy::cast_precision_loss@jackin-usage-provider-grok"
+bound = 1
 [[family.entry]]
 key = "clippy::cast_sign_loss@jackin-capsule"
 bound = 2
@@ -55,47 +55,8 @@ bound = 1
 key = "clippy::cast_sign_loss@jackin-launch"
 bound = 9
 [[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-cursor"
-bound = 6
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-codex"
-bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-gemini"
-bound = 2
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-muse"
-bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-opencode"
-bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-claude"
-bound = 1
-[[family.entry]]
 key = "clippy::cast_sign_loss@jackin-usage-provider-antigravity"
-bound = 4
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-grok"
-bound = 2
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-openrouter"
-bound = 2
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-minimax"
 bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-amp"
-bound = 4
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-kimi"
-bound = 3
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-core"
-bound = 1
-[[family.entry]]
-key = "clippy::cast_sign_loss@jackin-usage-provider-zai"
-bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin"
 bound = 19
@@ -156,6 +117,9 @@ bound = 5
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage-provider-core"
 bound = 2
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-usage-store-backend"
+bound = 6
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-usage-provider-openrouter"
 bound = 1
@@ -707,7 +671,7 @@ key = "crates/core/jackin-core/README.md"
 bound = 5624
 [[family.entry]]
 key = "crates/tools/jackin-dev/README.md"
-bound = 1199
+bound = 1198
 [[family.entry]]
 key = "crates/services/jackin-diagnostics/README.md"
 bound = 2137
@@ -716,7 +680,7 @@ key = "crates/adapters/jackin-docker/README.md"
 bound = 1864
 [[family.entry]]
 key = "crates/core/jackin-env/README.md"
-bound = 3051
+bound = 2873
 [[family.entry]]
 key = "crates/services/jackin-host/README.md"
 bound = 1999
@@ -731,10 +695,10 @@ key = "crates/services/jackin-instance-credentials/README.md"
 bound = 1713
 [[family.entry]]
 key = "crates/services/jackin-instance-roles/README.md"
-bound = 1266
+bound = 1245
 [[family.entry]]
 key = "crates/services/jackin-instance/README.md"
-bound = 2072
+bound = 2056
 [[family.entry]]
 key = "crates/services/jackin-isolation/README.md"
 bound = 2723
@@ -746,7 +710,7 @@ key = "crates/tools/jackin-lints/README.md"
 bound = 1781
 [[family.entry]]
 key = "crates/core/jackin-manifest/README.md"
-bound = 1797
+bound = 1796
 [[family.entry]]
 key = "crates/tools/jackin-pr-trailers/README.md"
 bound = 1882
@@ -761,7 +725,7 @@ key = "crates/core/jackin-protocol/README.md"
 bound = 2507
 [[family.entry]]
 key = "crates/services/jackin-runtime/README.md"
-bound = 3559
+bound = 3997
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-activate-entry/README.md"
 bound = 819
@@ -1016,7 +980,7 @@ key = "crates/ui/jackin-tui/README.md"
 bound = 2804
 [[family.entry]]
 key = "crates/services/jackin-usage/README.md"
-bound = 6435
+bound = 6076
 [[family.entry]]
 key = "crates/adapters/jackin-usage-ffi/README.md"
 bound = 3137
@@ -1234,7 +1198,7 @@ key = "jackin-manifest"
 bound = 5
 [[family.entry]]
 key = "jackin-protocol"
-bound = 9
+bound = 10
 [[family.entry]]
 key = "jackin-runtime"
 bound = 7
@@ -1622,10 +1586,10 @@ key = "jackin-telemetry"
 bound = 30
 [[family.entry]]
 key = "jackin-usage-snapshot-store"
-bound = 29
+bound = 27
 [[family.entry]]
 key = "jackin-usage-provider-core"
-bound = 23
+bound = 22
 [[family.entry]]
 key = "jackin-usage-broker"
 bound = 60
@@ -1634,13 +1598,13 @@ key = "jackin-xtask"
 bound = 78
 [[family.entry]]
 key = "jackin-usage-coordinator"
-bound = 40
+bound = 23
 [[family.entry]]
 key = "jackin-omp-store"
 bound = 45
 [[family.entry]]
 key = "jackin-usage-ffi"
-bound = 23
+bound = 22
 [[family.entry]]
 key = "jackin-runtime-host-daemon"
 bound = 21

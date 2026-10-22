@@ -5,10 +5,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::control::{FocusedUsageView, Money};
+use crate::control::{
+    CountQuota, CountQuotaPeriod, FocusedUsageView, MeterPercentPoints, Money,
+    PercentObservationOrigin, ProviderQuotaState, RawPercentPoints, UsageMeterSide,
+};
 use crate::usage_monitor::{MonitorIssue, MonitorOperation, MonitorReply};
 
-pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v8";
+pub const USAGE_BROKER_PROTOCOL_VERSION: &str = "v9";
 
 pub const USAGE_BROKER_MAX_FRAME_BYTES: usize = 1024 * 1024;
 
@@ -157,13 +160,13 @@ pub struct UsageCoordinationError {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "u16", into = "u16")]
-pub struct UsageProjectionSchemaV1;
+pub struct UsageProjectionSchemaV2;
 
-impl TryFrom<u16> for UsageProjectionSchemaV1 {
+impl TryFrom<u16> for UsageProjectionSchemaV2 {
     type Error = String;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        if value == 1 {
+        if value == 2 {
             Ok(Self)
         } else {
             Err(format!(
@@ -173,62 +176,9 @@ impl TryFrom<u16> for UsageProjectionSchemaV1 {
     }
 }
 
-impl From<UsageProjectionSchemaV1> for u16 {
-    fn from(_: UsageProjectionSchemaV1) -> Self {
-        1
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(try_from = "u16", into = "u16")]
-pub struct UsagePercent(u8);
-
-impl UsagePercent {
-    pub fn new(value: u8) -> Result<Self, String> {
-        if value <= 100 {
-            Ok(Self(value))
-        } else {
-            Err(format!("usage percentage {value} exceeds 100"))
-        }
-    }
-
-    #[must_use]
-    pub fn clamp_raw(value: i32) -> Self {
-        match u8::try_from(value.clamp(0, 100)) {
-            Ok(clamped) => Self(clamped),
-            Err(_) => Self(100),
-        }
-    }
-
-    #[must_use]
-    pub fn split_raw(value: i32) -> (i32, Self) {
-        (value, Self::clamp_raw(value))
-    }
-
-    #[must_use]
-    pub const fn meter_fill(self) -> u8 {
-        self.0
-    }
-
-    #[must_use]
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
-
-impl TryFrom<u16> for UsagePercent {
-    type Error = String;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        let value =
-            u8::try_from(value).map_err(|_| format!("usage percentage {value} exceeds 100"))?;
-        Self::new(value)
-    }
-}
-
-impl From<UsagePercent> for u16 {
-    fn from(value: UsagePercent) -> Self {
-        u16::from(value.0)
+impl From<UsageProjectionSchemaV2> for u16 {
+    fn from(_: UsageProjectionSchemaV2) -> Self {
+        2
     }
 }
 
@@ -348,13 +298,23 @@ pub struct UsageLimitWindowV1 {
     pub value_label: String,
     pub reset_label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub remaining_percent: Option<UsagePercent>,
+    pub remaining_percent: Option<RawPercentPoints>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub remaining_raw_percent: Option<i32>,
+    pub remaining_percent_origin: Option<PercentObservationOrigin>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub used_percent: Option<UsagePercent>,
+    pub used_percent: Option<RawPercentPoints>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub used_raw_percent: Option<i32>,
+    pub used_percent_origin: Option<PercentObservationOrigin>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meter_percent: Option<MeterPercentPoints>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meter_side: Option<UsageMeterSide>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count_quota: Option<CountQuota>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_quota_state: Option<ProviderQuotaState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub money_used_percent: Option<RawPercentPoints>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reset_at_epoch: Option<i64>,
     pub quota_state: UsageQuotaStateV1,
@@ -364,27 +324,107 @@ pub struct UsageLimitWindowV1 {
     pub runs_out_label: Option<String>,
 }
 
-fn validate_percent_side(
+fn validate_percent_origin(
     owner: &str,
     side: &str,
-    clamped: Option<UsagePercent>,
-    raw: Option<i32>,
-) -> Result<bool, String> {
-    if let Some(raw) = raw {
-        let Some(clamped) = clamped else {
-            return Err(format!(
-                "usage {owner} has raw {side} percent without a clamped representation"
-            ));
-        };
-        if clamped != UsagePercent::clamp_raw(raw) {
-            return Err(format!(
-                "usage {owner} has {side} percent inconsistent with its raw value"
-            ));
-        }
-        Ok(true)
-    } else {
-        Ok(clamped.is_some())
+    raw: Option<RawPercentPoints>,
+    origin: Option<PercentObservationOrigin>,
+) -> Result<(), String> {
+    if raw.is_some() != origin.is_some() {
+        return Err(format!(
+            "usage {owner} has {side} percent and origin without a matching pair"
+        ));
     }
+    Ok(())
+}
+
+fn validate_meter_pair(
+    owner: &str,
+    meter_percent: Option<MeterPercentPoints>,
+    meter_side: Option<UsageMeterSide>,
+) -> Result<(), String> {
+    if meter_percent.is_some() != meter_side.is_some() {
+        return Err(format!(
+            "usage {owner} has meter geometry and side without a matching pair"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_provider_quota_state(
+    owner: &str,
+    provider_state: Option<ProviderQuotaState>,
+    meter_percent: Option<MeterPercentPoints>,
+    meter_side: Option<UsageMeterSide>,
+    effective_state: UsageQuotaStateV1,
+) -> Result<(), String> {
+    let lifecycle_override = matches!(
+        effective_state,
+        UsageQuotaStateV1::Error
+            | UsageQuotaStateV1::Unavailable
+            | UsageQuotaStateV1::NoPermission
+            | UsageQuotaStateV1::Unsupported
+    );
+
+    match provider_state {
+        None => Ok(()),
+        Some(ProviderQuotaState::Unlimited) => {
+            if meter_percent.is_some() || meter_side.is_some() {
+                return Err(format!(
+                    "usage {owner} has meter geometry for an unlimited provider quota"
+                ));
+            }
+            if !lifecycle_override && effective_state != UsageQuotaStateV1::NotApplicable {
+                return Err(format!(
+                    "usage {owner} has an effective quota state inconsistent with an unlimited provider quota"
+                ));
+            }
+            Ok(())
+        }
+        Some(ProviderQuotaState::Exhausted) => {
+            if meter_percent.map(MeterPercentPoints::get) != Some(0.0)
+                || meter_side != Some(UsageMeterSide::Remaining)
+            {
+                return Err(format!(
+                    "usage {owner} must use zero remaining meter geometry for an exhausted provider quota"
+                ));
+            }
+            if !lifecycle_override && effective_state != UsageQuotaStateV1::Exhausted {
+                return Err(format!(
+                    "usage {owner} has an effective quota state inconsistent with an exhausted provider quota"
+                ));
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_count_period_unit(
+    owner: &str,
+    count_quota: CountQuota,
+    period: UsageMetricPeriodV1,
+    unit: Option<&str>,
+) -> Result<(), String> {
+    if count_quota.unit.machine_unit() != unit {
+        return Err(format!(
+            "usage {owner} has a count unit inconsistent with its window unit"
+        ));
+    }
+    let period_matches = matches!(
+        (count_quota.period, period),
+        (
+            CountQuotaPeriod::UtcDaily,
+            UsageMetricPeriodV1::Calendar {
+                granularity: UsageCalendarPeriodV1::Daily
+            }
+        ) | (CountQuotaPeriod::Unknown, UsageMetricPeriodV1::Unknown)
+    );
+    if !period_matches {
+        return Err(format!(
+            "usage {owner} has a count period inconsistent with its window period"
+        ));
+    }
+    Ok(())
 }
 
 impl UsageLimitWindowV1 {
@@ -393,19 +433,21 @@ impl UsageLimitWindowV1 {
             return Err(format!("window {} has noncanonical rank", self.window_id));
         }
         let owner = format!("window {}", self.window_id);
-        let remaining = validate_percent_side(
+        validate_percent_origin(
             &owner,
             "remaining",
             self.remaining_percent,
-            self.remaining_raw_percent,
+            self.remaining_percent_origin,
         )?;
-        let used = validate_percent_side(&owner, "used", self.used_percent, self.used_raw_percent)?;
-        if remaining && used {
-            return Err(format!(
-                "usage window {} has conflicting percent representations",
-                self.window_id
-            ));
-        }
+        validate_percent_origin(&owner, "used", self.used_percent, self.used_percent_origin)?;
+        validate_meter_pair(&owner, self.meter_percent, self.meter_side)?;
+        validate_provider_quota_state(
+            &owner,
+            self.provider_quota_state,
+            self.meter_percent,
+            self.meter_side,
+            self.quota_state,
+        )?;
         Ok(())
     }
 }
@@ -457,13 +499,23 @@ pub struct UsageMetricScopeV1 {
 pub enum UsageMetricValueV1 {
     Window {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        remaining_percent: Option<UsagePercent>,
+        remaining_percent: Option<RawPercentPoints>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        remaining_raw_percent: Option<i32>,
+        remaining_percent_origin: Option<PercentObservationOrigin>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        used_percent: Option<UsagePercent>,
+        used_percent: Option<RawPercentPoints>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        used_raw_percent: Option<i32>,
+        used_percent_origin: Option<PercentObservationOrigin>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        meter_percent: Option<MeterPercentPoints>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        meter_side: Option<UsageMeterSide>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count_quota: Option<CountQuota>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_quota_state: Option<ProviderQuotaState>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        money_used_percent: Option<RawPercentPoints>,
         period: UsageMetricPeriodV1,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         unit: Option<String>,
@@ -573,25 +625,36 @@ impl UsageMetricGroupV1 {
         }
         if let UsageMetricValueV1::Window {
             remaining_percent,
-            remaining_raw_percent,
+            remaining_percent_origin,
             used_percent,
-            used_raw_percent,
-            ..
+            used_percent_origin,
+            meter_percent,
+            meter_side,
+            count_quota,
+            provider_quota_state,
+            money_used_percent: _,
+            period,
+            unit,
         } = &self.value
         {
             let owner = format!("group {}", self.group_id);
-            let remaining = validate_percent_side(
+            validate_percent_origin(
                 &owner,
                 "remaining",
                 *remaining_percent,
-                *remaining_raw_percent,
+                *remaining_percent_origin,
             )?;
-            let used = validate_percent_side(&owner, "used", *used_percent, *used_raw_percent)?;
-            if remaining && used {
-                return Err(format!(
-                    "usage group {} has conflicting percent representations",
-                    self.group_id
-                ));
+            validate_percent_origin(&owner, "used", *used_percent, *used_percent_origin)?;
+            validate_meter_pair(&owner, *meter_percent, *meter_side)?;
+            validate_provider_quota_state(
+                &owner,
+                *provider_quota_state,
+                *meter_percent,
+                *meter_side,
+                self.quota_state,
+            )?;
+            if let Some(count_quota) = count_quota {
+                validate_count_period_unit(&owner, *count_quota, *period, unit.as_deref())?;
             }
         }
         if let UsageMetricValueV1::SpendCap {
@@ -793,7 +856,7 @@ pub struct UsageUnresolvedV1 {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UsageProjectionV1 {
-    pub schema_version: UsageProjectionSchemaV1,
+    pub schema_version: UsageProjectionSchemaV2,
     pub projection_id: String,
     pub generated_at_epoch: i64,
     pub discovery_revision: String,

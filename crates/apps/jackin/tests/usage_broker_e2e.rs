@@ -11,8 +11,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use jackin_protocol::control::{
-    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
-    UsageSource,
+    CanonicalRemainingPercent, FocusedUsageView, PercentObservationOrigin, QuotaBucketView,
+    UsageConfidence, UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
 use jackin_protocol::usage_broker::{UsageAccountCapability, UsageRefreshPhase};
 use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
@@ -65,7 +65,14 @@ impl UsageProviderExecutor for FileCountingProvider {
             wait_until(Duration::from_secs(10), || release.exists());
         }
         std::thread::park_timeout(Duration::from_millis(100));
-        ProviderProbeOutcome::success(quota_view())
+        match quota_view() {
+            Ok(view) => ProviderProbeOutcome::success(view),
+            Err(error) => ProviderProbeOutcome::Failure {
+                kind: UsageCoordinationErrorKind::ProviderUnavailable,
+                message: format!("invalid test quota fixture: {error}"),
+                retry_at_epoch: None,
+            },
+        }
     }
 }
 
@@ -76,7 +83,7 @@ fn capability() -> UsageAccountCapability {
     }
 }
 
-fn quota_view() -> FocusedUsageView {
+fn quota_view() -> Result<FocusedUsageView> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -91,7 +98,12 @@ fn quota_view() -> FocusedUsageView {
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
-        remaining_percent: Some(64),
+        remaining_percent: Some(CanonicalRemainingPercent::new(64.0).map_err(anyhow::Error::msg)?),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent_origin: Some(PercentObservationOrigin::HistoricalUnknown),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: None,
@@ -101,7 +113,7 @@ fn quota_view() -> FocusedUsageView {
         limit_money: None,
         severity: UsageSeverity::Normal,
     }];
-    view
+    Ok(view)
 }
 
 #[test]

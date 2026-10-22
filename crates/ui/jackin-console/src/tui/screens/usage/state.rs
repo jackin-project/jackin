@@ -7,9 +7,7 @@ use super::{
 };
 use std::time::Instant;
 
-use jackin_protocol::usage_broker::{
-    UsageFreshnessPhaseV1, UsageIssueV1, UsageLifecycleV1, UsagePercent,
-};
+use jackin_protocol::usage_broker::{UsageFreshnessPhaseV1, UsageIssueV1, UsageLifecycleV1};
 
 use crate::tui::runtime::BlockingSubscription;
 
@@ -106,10 +104,15 @@ impl UsageScreenState {
                         label: window.label.clone(),
                         value: window.value_label.clone(),
                         reset: window.reset_label.clone(),
-                        remaining_percent: window.remaining_percent.map(UsagePercent::get),
-                        remaining_raw_percent: window.remaining_raw_percent,
-                        used_percent: window.used_percent.map(UsagePercent::get),
-                        used_raw_percent: window.used_raw_percent,
+                        remaining_percent: window.remaining_percent,
+                        remaining_percent_origin: window.remaining_percent_origin,
+                        used_percent: window.used_percent,
+                        used_percent_origin: window.used_percent_origin,
+                        meter_percent: window.meter_percent,
+                        meter_side: window.meter_side,
+                        count_quota: window.count_quota,
+                        provider_quota_state: window.provider_quota_state,
+                        money_used_percent: window.money_used_percent,
                         reset_at_epoch: window.reset_at_epoch,
                         quota_state: window.quota_state,
                         pace_label: window.pace_label.clone(),

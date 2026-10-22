@@ -16,7 +16,7 @@ Role-state orchestration for role instances: `RoleState` preparation dispatch ac
 | Module | Owns | Tests |
 |---|---|---|
 | [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`role_state.rs`](src/role_state.rs) | `RoleState` record | [`auth_tests.rs`](src/auth_tests.rs) |
+| [`role_state.rs`](src/role_state.rs) | `RoleState` record | `auth_tests.rs` |
 | [`prepare.rs`](src/prepare.rs) · [`provision.rs`](src/provision.rs) | preparation dispatch | [`tests.rs`](src/tests.rs) |
 
 ## Public API

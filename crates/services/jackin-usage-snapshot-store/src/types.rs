@@ -7,22 +7,23 @@ use std::collections::HashMap;
 #[cfg(test)]
 use std::sync::{Mutex, OnceLock};
 
-pub(crate) const SCHEMA_VERSION: &str = "4";
+pub(crate) const SCHEMA_VERSION: &str = "5";
 
 #[cfg(test)]
 pub(crate) static CONNECTION_BUILDS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AccountIdentitySummary {
     pub provider: String,
     pub account_key_hash: String,
     pub account_label: String,
     pub plan_label: Option<String>,
-    pub remaining_percent: Option<u8>,
+    pub remaining_percent: Option<jackin_protocol::control::CanonicalRemainingPercent>,
+    pub remaining_percent_origin: Option<jackin_protocol::control::PercentObservationOrigin>,
     pub fetched_at: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StoredAccountUsageSnapshot {
     pub provider: String,
     pub account_key_hash: String,
@@ -41,7 +42,7 @@ pub struct StoredAccountUsageSnapshot {
     pub last_error: Option<String>,
     pub focused_provider: Option<String>,
     pub plan_label: Option<String>,
-    pub remaining_percent: Option<i64>,
+    pub quota_bucket: jackin_protocol::control::QuotaBucketView,
     pub used_label: Option<String>,
     pub limit_label: Option<String>,
     pub reset_label: Option<String>,

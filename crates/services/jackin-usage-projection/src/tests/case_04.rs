@@ -55,7 +55,10 @@ fn parity_overview_summary_first_ranked_limit() {
         .summary_window()
         .expect("a ranked summary window");
     assert_eq!(summary.label, "Gemini · Weekly");
-    assert_eq!(summary.meter_percent(), Some(41));
+    assert_eq!(
+        summary.meter_percent().map(MeterPercentPoints::get),
+        Some(41.0)
+    );
     let enriched = parity_tabs(&views);
     assert!(
         enriched[0].tabs[0].status_label.starts_with("41% left"),
@@ -65,7 +68,7 @@ fn parity_overview_summary_first_ranked_limit() {
 }
 
 #[test]
-fn parity_spend_meter_fills_by_remaining() {
+fn parity_spend_meter_uses_authoritative_money_geometry() {
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "cursor",
         display_name: "Cursor",
@@ -73,10 +76,26 @@ fn parity_spend_meter_fills_by_remaining() {
         provider_issues: Vec::new(),
     });
     let screen = UsageScreenState::from_projection(&projection);
-    assert_eq!(screen.accounts[0].windows[1].meter_percent(), Some(55));
+    let spend_window = &screen.accounts[0].windows[1];
+    assert_eq!(
+        spend_window.meter_percent().map(MeterPercentPoints::get),
+        Some(45.2)
+    );
+    assert_eq!(spend_window.meter_side, Some(UsageMeterSide::Used));
+    assert_eq!(
+        spend_window.remaining_percent.map(RawPercentPoints::get),
+        Some(55.0)
+    );
+    assert_eq!(
+        spend_window.remaining_percent_origin,
+        Some(PercentObservationOrigin::Derived)
+    );
     let spend = usage_bucket_presentation(&views[0].buckets[1]);
-    assert_eq!(spend.meter_percent, Some(55));
-    assert_eq!(spend.remaining_label.as_deref(), Some("45% used"));
+    assert_eq!(spend.meter_percent.map(MeterPercentPoints::get), Some(45.2));
+    assert_eq!(spend.meter_side, Some(UsageMeterSide::Used));
+    assert_eq!(spend.remaining_label.as_deref(), Some("45.2% used"));
+    assert!(spend.display_label.contains("45.2% used"));
+    assert!(spend.display_label.contains("55% left"));
 
     let (projection, views) = parity_single_provider(ParityProvider {
         provider_id: "opencode",
@@ -85,11 +104,28 @@ fn parity_spend_meter_fills_by_remaining() {
         provider_issues: Vec::new(),
     });
     let screen = UsageScreenState::from_projection(&projection);
-    assert_eq!(screen.accounts[0].windows[0].meter_percent(), Some(100));
+    let zero_window = &screen.accounts[0].windows[0];
     assert_eq!(
-        usage_bucket_presentation(&views[0].buckets[0]).meter_percent,
-        Some(100)
+        zero_window.meter_percent().map(MeterPercentPoints::get),
+        Some(0.0)
     );
+    assert_eq!(zero_window.meter_side, Some(UsageMeterSide::Used));
+    assert_eq!(
+        zero_window.remaining_percent.map(RawPercentPoints::get),
+        Some(100.0)
+    );
+    assert_eq!(
+        zero_window.remaining_percent_origin,
+        Some(PercentObservationOrigin::Derived)
+    );
+    let zero_bucket = usage_bucket_presentation(&views[0].buckets[0]);
+    assert_eq!(
+        zero_bucket.meter_percent,
+        Some(MeterPercentPoints::new(0.0).expect("bounded meter points"))
+    );
+    assert_eq!(zero_bucket.meter_side, Some(UsageMeterSide::Used));
+    assert_eq!(zero_bucket.remaining_label.as_deref(), Some("0% used"));
+    assert!(zero_bucket.display_label.contains("100% left"));
 }
 
 #[test]

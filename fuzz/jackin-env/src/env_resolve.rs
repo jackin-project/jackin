@@ -80,9 +80,6 @@ fuzz_target!(|data: &[u8]| {
     let reserved_present = keys.iter().any(|k| is_reserved(k));
     match validate_reserved_names(&config) {
         Ok(()) => assert!(!reserved_present, "reserved key should fail validate"),
-        Err(_) => {
-            if reserved_present {
-            }
-        }
+        Err(_) => if reserved_present {},
     }
 });

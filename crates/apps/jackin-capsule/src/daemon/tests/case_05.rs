@@ -178,7 +178,16 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
             label: "Session".to_owned(),
             used_label: Some("63% used".to_owned()),
             limit_label: Some("100%".to_owned()),
-            remaining_percent: Some(37),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(
+                jackin_protocol::control::CanonicalRemainingPercent::new(37.0).unwrap(),
+            ),
+            remaining_percent_origin: Some(
+                jackin_protocol::control::PercentObservationOrigin::ProviderReported,
+            ),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: Some("Resets at 15:00 UTC".to_owned()),
             resets_at: None,
             status_slot: None,

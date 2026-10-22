@@ -3,7 +3,7 @@
 
 use super::StoredAccountUsageSnapshot;
 use jackin_core::account_key_hash;
-use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
+use jackin_protocol::control::FocusedUsageView;
 use jackin_telemetry::ResultTelemetryExt as _;
 use jackin_usage_store_backend::{self, Connection, DbOperation, params};
 
@@ -11,11 +11,23 @@ pub(crate) async fn upsert_account_snapshot_rows(
     conn: &Connection,
     rows: Vec<StoredAccountUsageSnapshot>,
 ) -> Result<(), String> {
+    let rows = rows
+        .into_iter()
+        .map(|row| {
+            row.quota_bucket.validate().map_err(|err| {
+                format!("validate typed quota bucket for snapshot row failed: {err}")
+            })?;
+            let bucket_json = serde_json::to_string(&row.quota_bucket).map_err(|err| {
+                format!("encode typed quota bucket for snapshot row failed: {err}")
+            })?;
+            Ok((row, bucket_json))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     jackin_diagnostics::incr_db_statement("begin");
-    jackin_usage_store_backend::operation(DbOperation::Begin, conn.execute("BEGIN", ()))
+    jackin_usage_store_backend::operation(DbOperation::Begin, conn.execute("BEGIN IMMEDIATE", ()))
         .await
         .map_err(|err| format!("begin telemetry snapshot transaction failed: {err}"))?;
-    for row in rows {
+    for (row, bucket_json) in rows {
         jackin_diagnostics::incr_db_statement("upsert_account_usage_snapshot");
         if let Err(err) = jackin_usage_store_backend::operation(
             DbOperation::Upsert,
@@ -39,23 +51,19 @@ pub(crate) async fn upsert_account_snapshot_rows(
                 last_error,
                 focused_provider,
                 plan_label,
-                remaining_percent,
                 used_label,
                 limit_label,
                 reset_label,
                 pace_label,
                 view_status,
                 updated_label,
-                status_bar_label
+                status_bar_label,
+                quota_bucket_json
             )
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
             ON CONFLICT(provider, account_key_hash, source, window_kind) DO UPDATE SET
                 account_label = excluded.account_label,
                 confidence = excluded.confidence,
-                used_amount = excluded.used_amount,
-                used_unit = excluded.used_unit,
-                limit_amount = excluded.limit_amount,
-                limit_unit = excluded.limit_unit,
                 resets_at = excluded.resets_at,
                 fetched_at = excluded.fetched_at,
                 expires_at = excluded.expires_at,
@@ -63,14 +71,14 @@ pub(crate) async fn upsert_account_snapshot_rows(
                 last_error = excluded.last_error,
                 focused_provider = excluded.focused_provider,
                 plan_label = excluded.plan_label,
-                remaining_percent = excluded.remaining_percent,
                 used_label = excluded.used_label,
                 limit_label = excluded.limit_label,
                 reset_label = excluded.reset_label,
                 pace_label = excluded.pace_label,
                 view_status = excluded.view_status,
                 updated_label = excluded.updated_label,
-                status_bar_label = excluded.status_bar_label
+                status_bar_label = excluded.status_bar_label,
+                quota_bucket_json = excluded.quota_bucket_json
             ",
             params![
                 row.provider,
@@ -90,7 +98,6 @@ pub(crate) async fn upsert_account_snapshot_rows(
                 row.last_error,
                 row.focused_provider,
                 row.plan_label,
-                row.remaining_percent,
                 row.used_label,
                 row.limit_label,
                 row.reset_label,
@@ -98,6 +105,7 @@ pub(crate) async fn upsert_account_snapshot_rows(
                 row.view_status,
                 row.updated_label,
                 row.status_bar_label,
+                bucket_json,
             ],
             ),
         )
@@ -110,9 +118,78 @@ pub(crate) async fn upsert_account_snapshot_rows(
             return Err(format!("upsert telemetry account snapshot failed: {err}"));
         }
     }
-    jackin_usage_store_backend::operation(DbOperation::Commit, conn.execute("COMMIT", ()))
+    #[cfg(test)]
+    if let Err(error) = inject_requested_upsert_commit_failure(conn).await {
+        let rollback = jackin_usage_store_backend::operation(
+            DbOperation::Rollback,
+            conn.execute("ROLLBACK", ()),
+        )
+        .await;
+        return match rollback {
+            Ok(_) => Err(error),
+            Err(rollback_error) => Err(format!("{error}; rollback failed: {rollback_error}")),
+        };
+    }
+    match jackin_usage_store_backend::operation(DbOperation::Commit, conn.execute("COMMIT", ()))
         .await
-        .map_err(|err| format!("commit telemetry snapshot transaction failed: {err}"))?;
+    {
+        Ok(_) => {}
+        Err(commit_error) => {
+            let rollback = jackin_usage_store_backend::operation(
+                DbOperation::Rollback,
+                conn.execute("ROLLBACK", ()),
+            )
+            .await;
+            return match rollback {
+                Ok(_) => Err(format!(
+                    "commit telemetry snapshot transaction failed: {commit_error}"
+                )),
+                Err(rollback_error) => Err(format!(
+                    "commit telemetry snapshot transaction failed: {commit_error}; rollback failed: {rollback_error}"
+                )),
+            };
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+async fn inject_requested_upsert_commit_failure(conn: &Connection) -> Result<(), String> {
+    let mut rows = jackin_usage_store_backend::operation(
+        DbOperation::Select,
+        conn.query(
+            "SELECT value FROM _meta WHERE key = 'test_fail_snapshot_upsert_commit'",
+            (),
+        ),
+    )
+    .await
+    .map_err(|error| format!("read snapshot upsert commit failure marker failed: {error}"))?;
+    let marker = rows
+        .next()
+        .await
+        .map_err(|error| format!("read snapshot upsert commit failure row failed: {error}"))?
+        .map(|row| {
+            row.get::<String>(0).map_err(|error| {
+                format!("decode snapshot upsert commit failure marker failed: {error}")
+            })
+        })
+        .transpose()?;
+    drop(rows);
+    if marker.as_deref() == Some("1") {
+        jackin_usage_store_backend::operation(
+            DbOperation::Update,
+            conn.execute_batch(
+                "CREATE TEMP TABLE quota_upsert_commit_parent(id INTEGER PRIMARY KEY);
+                 CREATE TEMP TABLE quota_upsert_commit_child(
+                     parent_id INTEGER REFERENCES quota_upsert_commit_parent(id)
+                         DEFERRABLE INITIALLY DEFERRED
+                 );
+                 INSERT INTO quota_upsert_commit_child(parent_id) VALUES (1);",
+            ),
+        )
+        .await
+        .map_err(|error| format!("prepare snapshot upsert commit failure failed: {error}"))?;
+    }
     Ok(())
 }
 
@@ -127,62 +204,34 @@ pub(crate) fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccoun
     let last_error = view.last_error.clone();
     view.buckets
         .iter()
-        .map(|bucket| {
-            let quota = quota_amounts(bucket);
-            StoredAccountUsageSnapshot {
-                provider: provider.clone(),
-                account_key_hash: account_key_hash.clone(),
-                account_label: account_label.clone(),
-                source: source.clone(),
-                confidence: confidence.clone(),
-                window_kind: bucket.label.clone(),
-                used_amount: quota.used_amount,
-                used_unit: quota.used_unit,
-                limit_amount: quota.limit_amount,
-                limit_unit: quota.limit_unit,
-                resets_at: bucket.resets_at,
-                fetched_at,
-                expires_at: None,
-                status: jackin_usage_provider_core::usage_status_storage_label(bucket.status)
-                    .to_owned(),
-                last_error: last_error.clone(),
-                focused_provider: view.focused_provider.clone(),
-                plan_label: view.account.plan_label.clone(),
-                remaining_percent: bucket.remaining_percent.map(i64::from),
-                used_label: bucket.used_label.clone(),
-                limit_label: bucket.limit_label.clone(),
-                reset_label: bucket.reset_label.clone(),
-                pace_label: bucket.pace_label.clone(),
-                view_status: jackin_usage_provider_core::usage_status_storage_label(view.status)
-                    .to_owned(),
-                updated_label: view.updated_label.clone(),
-                status_bar_label: view.status_bar_label.clone(),
-            }
+        .map(|bucket| StoredAccountUsageSnapshot {
+            provider: provider.clone(),
+            account_key_hash: account_key_hash.clone(),
+            account_label: account_label.clone(),
+            source: source.clone(),
+            confidence: confidence.clone(),
+            window_kind: bucket.label.clone(),
+            used_amount: None,
+            used_unit: None,
+            limit_amount: None,
+            limit_unit: None,
+            resets_at: bucket.resets_at,
+            fetched_at,
+            expires_at: None,
+            status: jackin_usage_provider_core::usage_status_storage_label(bucket.status)
+                .to_owned(),
+            last_error: last_error.clone(),
+            focused_provider: view.focused_provider.clone(),
+            plan_label: view.account.plan_label.clone(),
+            quota_bucket: bucket.clone(),
+            used_label: bucket.used_label.clone(),
+            limit_label: bucket.limit_label.clone(),
+            reset_label: bucket.reset_label.clone(),
+            pace_label: bucket.pace_label.clone(),
+            view_status: jackin_usage_provider_core::usage_status_storage_label(view.status)
+                .to_owned(),
+            updated_label: view.updated_label.clone(),
+            status_bar_label: view.status_bar_label.clone(),
         })
         .collect()
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct QuotaAmounts {
-    used_amount: Option<i64>,
-    used_unit: Option<String>,
-    limit_amount: Option<i64>,
-    limit_unit: Option<String>,
-}
-
-pub(crate) fn quota_amounts(bucket: &QuotaBucketView) -> QuotaAmounts {
-    if let Some(remaining) = bucket.remaining_percent {
-        return QuotaAmounts {
-            used_amount: Some(i64::from(100_u8.saturating_sub(remaining.min(100)))),
-            used_unit: Some("percent".to_owned()),
-            limit_amount: Some(100),
-            limit_unit: Some("percent".to_owned()),
-        };
-    }
-    QuotaAmounts {
-        used_amount: None,
-        used_unit: None,
-        limit_amount: None,
-        limit_unit: None,
-    }
 }

@@ -2,6 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::{MeterPercentPoints, UsageMeterSide};
+
+fn meter(points: f64) -> MeterPercentPoints {
+    MeterPercentPoints::new(points).expect("valid meter geometry")
+}
 
 #[cfg(unix)]
 #[test]
@@ -250,7 +255,8 @@ fn usage_bucket_presentation_orders_normal_segments() {
         ]
     );
     assert_eq!(presentation.remaining_label.as_deref(), Some("57% left"));
-    assert_eq!(presentation.meter_percent, Some(57));
+    assert_eq!(presentation.meter_percent, Some(meter(57.0)));
+    assert_eq!(presentation.meter_side, Some(UsageMeterSide::Remaining));
     assert_eq!(
         presentation.display_label,
         "57% left · 13% in deficit · Runs out in 2d · Resets in 4d"
@@ -286,9 +292,10 @@ fn usage_bucket_presentation_orders_spend_cap() {
     let presentation = usage_bucket_presentation(&bucket);
     assert_eq!(
         presentation.display_segments,
-        vec!["30% used", "Monthly cap: SGD 78.49 / SGD 260.00"]
+        vec!["70% left", "Monthly cap: SGD 78.49 / SGD 260.00"]
     );
-    assert_eq!(presentation.meter_percent, Some(70));
+    assert_eq!(presentation.meter_percent, Some(meter(70.0)));
+    assert_eq!(presentation.meter_side, Some(UsageMeterSide::Remaining));
 }
 
 #[test]
@@ -299,13 +306,15 @@ fn usage_bucket_presentation_recovers_spend_overage_from_money() {
         Some(StatusSlot::Spend),
         UsageSnapshotStatus::Fresh,
     );
+    bucket.remaining_percent_origin = Some(PercentObservationOrigin::Derived);
     bucket.used_label = Some("$150.00".to_owned());
     bucket.limit_label = Some("$100.00".to_owned());
     bucket.used_money = Some(Money::new(15_000, "USD", 2));
     bucket.limit_money = Some(Money::new(10_000, "USD", 2));
     let presentation = usage_bucket_presentation(&bucket);
     assert_eq!(presentation.remaining_label.as_deref(), Some("150% used"));
-    assert_eq!(presentation.meter_percent, Some(0));
+    assert_eq!(presentation.meter_percent, Some(meter(100.0)));
+    assert_eq!(presentation.meter_side, Some(UsageMeterSide::Used));
 
     let mut bucket = presentation_bucket(
         "Extra usage",
@@ -318,8 +327,74 @@ fn usage_bucket_presentation_recovers_spend_overage_from_money() {
     bucket.used_money = Some(Money::new(4_520, "USD", 2));
     bucket.limit_money = Some(Money::new(10_000, "USD", 2));
     let presentation = usage_bucket_presentation(&bucket);
-    assert_eq!(presentation.remaining_label.as_deref(), Some("45% used"));
-    assert_eq!(presentation.meter_percent, Some(55));
+    assert_eq!(presentation.remaining_label.as_deref(), Some("55% left"));
+    assert!(
+        presentation
+            .display_segments
+            .contains(&"45.2% used".to_owned())
+    );
+    assert_eq!(presentation.meter_percent, Some(meter(55.0)));
+    assert_eq!(presentation.meter_side, Some(UsageMeterSide::Remaining));
+}
+
+#[test]
+fn spend_presentation_does_not_turn_unknown_zero_remaining_into_money_exhaustion() {
+    for origin in [
+        PercentObservationOrigin::Derived,
+        PercentObservationOrigin::HistoricalUnknown,
+    ] {
+        let mut bucket = presentation_bucket(
+            "Extra usage",
+            Some(0),
+            Some(StatusSlot::Spend),
+            UsageSnapshotStatus::Fresh,
+        );
+        bucket.remaining_percent_origin = Some(origin);
+        bucket.used_label = Some("$0.01".to_owned());
+        bucket.limit_label = Some("$1.00".to_owned());
+        bucket.used_money = Some(Money::new(1, "USD", 2));
+        bucket.limit_money = Some(Money::new(100, "USD", 2));
+
+        let presentation = usage_bucket_presentation(&bucket);
+        assert_eq!(presentation.remaining_label.as_deref(), Some("1% used"));
+        assert!(
+            presentation
+                .display_segments
+                .contains(&"0% left".to_owned())
+        );
+        assert!(
+            presentation
+                .display_segments
+                .contains(&"1% used".to_owned())
+        );
+        assert_eq!(presentation.meter_percent, Some(meter(1.0)));
+        assert_eq!(presentation.meter_side, Some(UsageMeterSide::Used));
+    }
+}
+
+#[test]
+fn spend_presentation_keeps_signed_money_ratio_visible() {
+    let mut bucket = presentation_bucket(
+        "Extra usage",
+        Some(0),
+        Some(StatusSlot::Spend),
+        UsageSnapshotStatus::Fresh,
+    );
+    bucket.remaining_percent_origin = Some(PercentObservationOrigin::HistoricalUnknown);
+    bucket.used_label = Some("-$0.10".to_owned());
+    bucket.limit_label = Some("$1.00".to_owned());
+    bucket.used_money = Some(Money::new(-10, "USD", 2));
+    bucket.limit_money = Some(Money::new(100, "USD", 2));
+
+    let presentation = usage_bucket_presentation(&bucket);
+    assert_eq!(presentation.remaining_label.as_deref(), Some("-10% used"));
+    assert!(
+        presentation
+            .display_segments
+            .contains(&"-10% used".to_owned())
+    );
+    assert_eq!(presentation.meter_percent, Some(meter(0.0)));
+    assert_eq!(presentation.meter_side, Some(UsageMeterSide::Used));
 }
 
 #[test]
@@ -364,7 +439,8 @@ fn usage_bucket_presentation_credits_zero_left() {
         Some("0 left")
     );
     assert!(presentation.display_segments.contains(&"$4.76".to_owned()));
-    assert_eq!(presentation.meter_percent, Some(0));
+    assert_eq!(presentation.meter_percent, Some(meter(0.0)));
+    assert_eq!(presentation.meter_side, Some(UsageMeterSide::Remaining));
 }
 
 #[test]
@@ -374,5 +450,6 @@ fn usage_bucket_presentation_limit_only_balance() {
     let presentation = usage_bucket_presentation(&bucket);
     assert_eq!(presentation.display_segments, vec!["$25"]);
     assert_eq!(presentation.meter_percent, None);
+    assert_eq!(presentation.meter_side, None);
     assert_eq!(presentation.remaining_label, None);
 }

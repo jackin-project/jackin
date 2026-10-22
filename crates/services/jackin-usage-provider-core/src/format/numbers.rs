@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use chrono::{DateTime, Utc};
+use jackin_protocol::control::{CanonicalRemainingPercent, CanonicalUsedPercent};
 
 pub const PROCESS_OUTPUT_MAX: usize = 1024 * 1024;
 
@@ -12,29 +13,32 @@ pub fn env_value(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-pub fn used_percent_from_fraction(value: f64) -> Option<u8> {
-    used_percent_uncapped(value).map(|used| used.min(100) as u8)
-}
-
-pub fn remaining_from_fraction(value: f64) -> Option<u8> {
-    used_percent_from_fraction(value).map(|used| 100u8.saturating_sub(used))
-}
-
-pub fn used_percent_label(value: f64) -> Option<String> {
-    used_percent_uncapped(value).map(|used| format!("{used}% used"))
-}
-
-pub(crate) fn used_percent_uncapped(value: f64) -> Option<u16> {
+pub fn used_percent_from_fraction(value: f64) -> Option<CanonicalUsedPercent> {
     if !value.is_finite() || value < 0.0 {
         return None;
     }
-    let used = if value <= 1.0 { value * 100.0 } else { value };
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "value filtered non-negative above; clamp bounds the f64→u16 cast"
-    )]
-    {
-        Some(used.round().clamp(0.0, f64::from(u16::MAX)) as u16)
+    CanonicalUsedPercent::new(value * 100.0).ok()
+}
+
+/// Convert a used fraction into a locally derived remaining percentage.
+///
+/// This complement is presentation data. It must not be tagged as a
+/// provider-reported remaining observation.
+pub fn derived_remaining_from_used_fraction(value: f64) -> Option<CanonicalRemainingPercent> {
+    let used = used_percent_from_fraction(value)?;
+    CanonicalRemainingPercent::new((100.0 - used.get()).max(0.0)).ok()
+}
+
+pub fn format_percent_points(value: f64) -> String {
+    let rounded = if value.abs() <= f64::MAX / 100.0 {
+        (value * 100.0).round() / 100.0
+    } else {
+        value
+    };
+    if rounded == 0.0 {
+        "0".to_owned()
+    } else {
+        rounded.to_string()
     }
 }
 

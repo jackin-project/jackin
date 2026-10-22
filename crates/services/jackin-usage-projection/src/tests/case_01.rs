@@ -11,8 +11,16 @@ fn window_projection_preserves_raw_overage_from_money_ratio() {
     spend.limit_money = Some(Money::new(10_000, "USD", 2));
     spend.used_label = Some("$120.00 of $100.00".into());
     let window = project_window("canon-1", &spend, 0).unwrap();
-    assert_eq!(window.used_percent.map(UsagePercent::get), Some(100));
-    assert_eq!(window.used_raw_percent, Some(120));
+    assert_eq!(window.used_percent, None);
+    assert_eq!(
+        window.money_used_percent.map(RawPercentPoints::get),
+        Some(120.0)
+    );
+    assert_eq!(
+        window.meter_percent.map(MeterPercentPoints::get),
+        Some(100.0)
+    );
+    assert_eq!(window.meter_side, Some(UsageMeterSide::Used));
     assert_eq!(window.remaining_percent, None);
     assert_eq!(window.quota_state, UsageQuotaStateV1::Exhausted);
     window.validate(0).unwrap();
@@ -24,8 +32,29 @@ fn window_projection_keeps_checked_math_without_wrap_or_fabrication() {
     huge.used_money = Some(Money::new(i64::MAX, "USD", 2));
     huge.limit_money = Some(Money::new(1, "USD", 2));
     let window = project_window("canon-1", &huge, 0).unwrap();
-    assert_eq!(window.used_percent.map(UsagePercent::get), Some(100));
-    assert_eq!(window.used_raw_percent, Some(i32::MAX));
+    assert_eq!(window.used_percent, None);
+    let money_points = window
+        .money_used_percent
+        .expect("signed raw Money ratio")
+        .get();
+    assert!(money_points > 9.0e20);
+    assert_eq!(
+        window.meter_percent.map(MeterPercentPoints::get),
+        Some(100.0)
+    );
+    window.validate(0).unwrap();
+
+    let mut refund = bucket("Refund");
+    refund.used_money = Some(Money::new(-10, "USD", 2));
+    refund.limit_money = Some(Money::new(100, "USD", 2));
+    let window = project_window("canon-1", &refund, 0).unwrap();
+    assert_eq!(
+        window.money_used_percent.map(RawPercentPoints::get),
+        Some(-10.0)
+    );
+    assert_eq!(window.meter_percent.map(MeterPercentPoints::get), Some(0.0));
+    assert_eq!(window.meter_side, Some(UsageMeterSide::Used));
+    assert_eq!(window.quota_state, UsageQuotaStateV1::Available);
     window.validate(0).unwrap();
 
     let mut mismatched = bucket("Mismatched");
@@ -33,7 +62,7 @@ fn window_projection_keeps_checked_math_without_wrap_or_fabrication() {
     mismatched.limit_money = Some(Money::new(10_000, "SGD", 2));
     let window = project_window("canon-1", &mismatched, 0).unwrap();
     assert_eq!(window.used_percent, None);
-    assert_eq!(window.used_raw_percent, None);
+    assert_eq!(window.money_used_percent, None);
     window.validate(0).unwrap();
 
     let mut zero_cap = bucket("Zero cap");
@@ -70,20 +99,62 @@ fn quota_state_keeps_permission_unknown_and_exhausted_distinct() {
     assert_eq!(quota_state(&empty), UsageQuotaStateV1::Unknown);
 
     let mut exhausted = bucket("Exhausted");
-    exhausted.remaining_percent = Some(0);
+    exhausted.remaining_percent = Some(reported_remaining(0.0));
+    exhausted.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
     assert_eq!(quota_state(&exhausted), UsageQuotaStateV1::Exhausted);
 
     let mut available = bucket("Available");
-    available.remaining_percent = Some(57);
+    available.remaining_percent = Some(reported_remaining(57.0));
+    available.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
     assert_eq!(quota_state(&available), UsageQuotaStateV1::Available);
 
+    let mut count_remaining = bucket("Count remaining");
+    count_remaining.remaining_percent = Some(reported_remaining(0.0));
+    count_remaining.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    count_remaining.count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    assert_eq!(quota_state(&count_remaining), UsageQuotaStateV1::Available);
+
+    let mut count_exhausted = bucket("Exact count exhausted");
+    count_exhausted.remaining_percent = Some(reported_remaining(57.0));
+    count_exhausted.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    count_exhausted.count_quota = Some(CountQuota::new(
+        Some(10),
+        Some(10),
+        Some(0),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    assert_eq!(quota_state(&count_exhausted), UsageQuotaStateV1::Exhausted);
+
+    for origin in [
+        PercentObservationOrigin::Derived,
+        PercentObservationOrigin::HistoricalUnknown,
+    ] {
+        let mut money_remaining = bucket("Money remaining");
+        money_remaining.remaining_percent = Some(reported_remaining(0.0));
+        money_remaining.remaining_percent_origin = Some(origin);
+        money_remaining.used_money = Some(Money::new(1, "USD", 2));
+        money_remaining.limit_money = Some(Money::new(100, "USD", 2));
+        assert_eq!(quota_state(&money_remaining), UsageQuotaStateV1::Available);
+    }
+
     let mut warn = bucket("Warn");
-    warn.remaining_percent = Some(10);
+    warn.remaining_percent = Some(reported_remaining(10.0));
+    warn.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
     warn.severity = UsageSeverity::Warn;
     assert_eq!(quota_state(&warn), UsageQuotaStateV1::Warning);
 
     let mut danger = bucket("Danger");
-    danger.remaining_percent = Some(10);
+    danger.remaining_percent = Some(reported_remaining(10.0));
+    danger.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
     danger.severity = UsageSeverity::Danger;
     assert_eq!(quota_state(&danger), UsageQuotaStateV1::Exhausted);
 }
@@ -91,7 +162,8 @@ fn quota_state_keeps_permission_unknown_and_exhausted_distinct() {
 #[test]
 fn account_projects_window_spend_and_plan_groups() {
     let mut weekly = bucket("Weekly");
-    weekly.remaining_percent = Some(57);
+    weekly.remaining_percent = Some(reported_remaining(57.0));
+    weekly.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
     weekly.resets_at = Some(1_800_100_000);
     weekly.reset_label = Some("Resets soon".into());
     weekly.status_slot = Some(StatusSlot::Weekly);
@@ -109,10 +181,15 @@ fn account_projects_window_spend_and_plan_groups() {
     let account = project_account(&entry, 0, 7).unwrap();
     assert_eq!(account.windows.len(), 2);
     assert_eq!(
-        account.windows[0].remaining_percent.map(UsagePercent::get),
-        Some(57)
+        account.windows[0]
+            .remaining_percent
+            .map(RawPercentPoints::get),
+        Some(57.0)
     );
-    assert_eq!(account.windows[0].remaining_raw_percent, Some(57));
+    assert_eq!(
+        account.windows[0].remaining_percent_origin,
+        Some(PercentObservationOrigin::ProviderReported)
+    );
 
     let kinds = account
         .metric_groups
@@ -272,7 +349,8 @@ fn group_timestamps_track_view_usability() {
 #[test]
 fn credential_expiry_stays_unset_without_provider_signal() {
     let mut weekly = bucket("Weekly");
-    weekly.remaining_percent = Some(57);
+    weekly.remaining_percent = Some(reported_remaining(57.0));
+    weekly.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
     weekly.resets_at = Some(1_800_100_000);
     let entry = catalog_entry(
         view_with_buckets(UsageSnapshotStatus::Fresh, vec![weekly]),
@@ -337,9 +415,9 @@ fn parity_antigravity_two_family_windows_groups_and_credits() {
     let meters = account
         .windows
         .iter()
-        .map(UsageWindow::meter_percent)
+        .map(|window| window.meter_percent().map(MeterPercentPoints::get))
         .collect::<Vec<_>>();
-    assert_eq!(meters, [Some(73), Some(41), Some(12), Some(88)]);
+    assert_eq!(meters, [Some(73.0), Some(41.0), Some(12.0), Some(88.0)]);
     assert_eq!(account.windows[0].value, "73% left");
     assert_eq!(account.windows[0].reset_at_epoch, Some(PARITY_NOW + 5_430));
     assert_eq!(account.windows[1].reset_at_epoch, Some(PARITY_NOW + 90_000));
@@ -351,17 +429,20 @@ fn parity_antigravity_two_family_windows_groups_and_credits() {
     );
 
     assert_eq!(account.metric_groups.len(), 6);
-    for (index, percent) in [73_u8, 41, 12, 88].iter().enumerate() {
+    for (index, percent) in [73.0_f64, 41.0, 12.0, 88.0].iter().enumerate() {
         let group = &account.metric_groups[index];
         assert_eq!(group.kind, UsageMetricGroupKindV1::Window);
-        assert_eq!(group.meter_percent(), Some(*percent));
+        assert_eq!(
+            group.meter_percent().map(MeterPercentPoints::get),
+            Some(*percent)
+        );
         assert!(
             matches!(
                 &group.value,
                 UsageMetricValueV1::Window {
                     remaining_percent: Some(remaining),
                     ..
-                } if remaining.get() == *percent
+                } if remaining.get().partial_cmp(percent) == Some(std::cmp::Ordering::Equal)
             ),
             "window group {index} must carry {percent}% remaining"
         );

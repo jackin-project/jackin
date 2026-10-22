@@ -18,7 +18,17 @@ fn codex_wham_relative_reset_resolves_against_now() {
         .iter()
         .find(|bucket| bucket.status_slot == Some(StatusSlot::Session))
         .expect("session bucket");
-    assert_eq!(session.remaining_percent, Some(75));
+    assert_eq!(session.remaining_percent, None);
+    assert_eq!(
+        session
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(25.0)
+    );
+    assert_eq!(
+        session.used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
     assert_eq!(session.resets_at, Some(1_781_185_560 + 3_600));
     let weekly = buckets
         .iter()
@@ -28,24 +38,30 @@ fn codex_wham_relative_reset_resolves_against_now() {
 }
 
 #[test]
-fn codex_used_percent_tolerates_float_string_and_missing() {
+fn codex_used_percent_preserves_fractional_and_over_cap_source_points() {
     for (raw, expected) in [
-        (serde_json::json!(63), Some(63)),
-        (serde_json::json!(63.7), Some(64)),
-        (serde_json::json!("41"), Some(41)),
-        (serde_json::json!(140), Some(100)),
-        (serde_json::json!(-3), Some(0)),
+        (serde_json::json!(63), Some(63.0)),
+        (serde_json::json!(63.7), Some(63.7)),
+        (serde_json::json!("41"), Some(41.0)),
+        (serde_json::json!(140), Some(140.0)),
+        (serde_json::json!(-3), None),
         (serde_json::json!("bogus"), None),
     ] {
         let snapshot: CodexWindowSnapshot =
             serde_json::from_value(serde_json::json!({"used_percent": raw}))
                 .expect("tolerant decode");
-        assert_eq!(snapshot.used_percent_clamped(), expected, "raw: {raw}");
+        assert_eq!(
+            snapshot
+                .used_percent_points()
+                .map(jackin_protocol::control::CanonicalUsedPercent::get),
+            expected,
+            "raw: {raw}"
+        );
     }
     let missing: CodexWindowSnapshot =
         serde_json::from_value(serde_json::json!({"reset_at": 1_782_000_000}))
             .expect("missing used decodes");
-    assert_eq!(missing.used_percent_clamped(), None);
+    assert_eq!(missing.used_percent_points(), None);
 }
 
 #[test]

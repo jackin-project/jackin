@@ -117,9 +117,13 @@ fn complete_publication_survives_refresh_cache_reopen_and_render() {
     window.quota_state = UsageQuotaStateV1::NotApplicable;
     window.value_label = "Independent unlimited quota".to_owned();
     window.remaining_percent = None;
-    window.remaining_raw_percent = None;
+    window.remaining_percent_origin = None;
     window.used_percent = None;
-    window.used_raw_percent = None;
+    window.used_percent_origin = None;
+    window.meter_percent = None;
+    window.meter_side = None;
+    window.count_quota = None;
+    window.money_used_percent = None;
     state.apply_refresh(
         UsageScreenState::from_projection(&unlimited),
         Instant::now(),

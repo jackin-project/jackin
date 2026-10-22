@@ -120,7 +120,7 @@ fn capsule_publication_preserves_identity_kind_and_provenance_per_account() {
     ]);
     let mut projection = empty_projection();
 
-    merge_views(&mut projection, &views, &metadata);
+    merge_views(&mut projection, &views, &metadata).expect("valid views project");
 
     let accounts = &projection.providers[0].accounts;
     assert_eq!(accounts.len(), 3);
@@ -149,7 +149,12 @@ fn capsule_publication_preserves_openrouter_overage_raw_used_percent() {
         label: "Account credits".to_owned(),
         used_label: Some("$120".to_owned()),
         limit_label: Some("$100".to_owned()),
+        used_percent: None,
+        used_percent_origin: None,
         remaining_percent: None,
+        remaining_percent_origin: None,
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: Some(StatusSlot::Spend),
@@ -169,14 +174,23 @@ fn capsule_publication_preserves_openrouter_overage_raw_used_percent() {
     }];
     let mut projection = empty_projection();
 
-    merge_views(&mut projection, &views, &BTreeMap::new());
+    merge_views(&mut projection, &views, &BTreeMap::new()).expect("valid views project");
 
     let window = &projection.providers[0].accounts[0].windows[0];
     assert_eq!(window.value_label, "120% used");
-    assert_eq!(window.used_percent.map(UsagePercent::get), Some(100));
-    assert_eq!(window.used_raw_percent, Some(120));
+    assert_eq!(window.used_percent, None);
+    assert_eq!(
+        window.money_used_percent.map(RawPercentPoints::get),
+        Some(120.0)
+    );
+    assert_eq!(
+        window
+            .meter_percent
+            .map(jackin_protocol::control::MeterPercentPoints::get),
+        Some(100.0)
+    );
+    assert_eq!(window.meter_side, Some(UsageMeterSide::Used));
     assert_eq!(window.remaining_percent, None);
-    assert_eq!(window.remaining_raw_percent, None);
     assert_eq!(window.quota_state, UsageQuotaStateV1::Exhausted);
     match &projection.providers[0].accounts[0].metric_groups[1].value {
         UsageMetricValueV1::SpendCap {
@@ -194,6 +208,141 @@ fn capsule_publication_preserves_openrouter_overage_raw_used_percent() {
 }
 
 #[test]
+fn window_and_group_keep_fractional_sources_count_geometry_and_money_ratio() {
+    let mut count_bucket = fresh_view().buckets.remove(0);
+    count_bucket.remaining_percent =
+        Some(CanonicalRemainingPercent::new(57.125).expect("valid raw remaining source"));
+    count_bucket.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    count_bucket.count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    let window = project_window("canon-count", &count_bucket, 0).expect("valid count window");
+    assert_eq!(
+        window.remaining_percent.map(RawPercentPoints::get),
+        Some(57.125)
+    );
+    assert_eq!(
+        window.remaining_percent_origin,
+        Some(PercentObservationOrigin::ProviderReported)
+    );
+    assert_eq!(
+        window
+            .meter_percent
+            .map(jackin_protocol::control::MeterPercentPoints::get),
+        Some(10.0)
+    );
+    assert_eq!(window.meter_side, Some(UsageMeterSide::Remaining));
+    assert_eq!(window.count_quota, count_bucket.count_quota);
+    let group = project_window_group(
+        "canon-count",
+        &count_bucket,
+        UsageSnapshotStatus::Fresh,
+        1_000,
+        0,
+    )
+    .expect("valid count group");
+    group.validate(0).expect("group validation");
+    assert!(matches!(
+        &group.value,
+        UsageMetricValueV1::Window {
+            remaining_percent: Some(remaining),
+            remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+            meter_percent: Some(meter),
+            meter_side: Some(UsageMeterSide::Remaining),
+            count_quota: Some(count),
+            provider_quota_state: None,
+            period: jackin_protocol::usage_broker::UsageMetricPeriodV1::Calendar {
+                granularity: jackin_protocol::usage_broker::UsageCalendarPeriodV1::Daily,
+            },
+            ..
+        } if remaining.get().partial_cmp(&57.125) == Some(std::cmp::Ordering::Equal)
+            && meter.get().partial_cmp(&10.0) == Some(std::cmp::Ordering::Equal)
+            && *count == count_bucket.count_quota.unwrap()
+    ));
+
+    let mut incomplete = count_bucket;
+    incomplete.count_quota = Some(CountQuota::new(
+        Some(9),
+        None,
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    let incomplete_window =
+        project_window("canon-incomplete", &incomplete, 0).expect("valid incomplete count window");
+    assert_eq!(
+        incomplete_window
+            .remaining_percent
+            .map(RawPercentPoints::get),
+        Some(57.125)
+    );
+    assert_eq!(incomplete_window.meter_percent, None);
+    assert_eq!(incomplete_window.meter_side, None);
+
+    let mut signed_money = fresh_view().buckets.remove(0);
+    signed_money.used_percent =
+        Some(CanonicalUsedPercent::new(43.375).expect("valid raw used source"));
+    signed_money.used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    signed_money.remaining_percent =
+        Some(CanonicalRemainingPercent::new(12.625).expect("valid raw remaining source"));
+    signed_money.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    signed_money.used_money = Some(Money::new(-10, "USD", 2));
+    signed_money.limit_money = Some(Money::new(100, "USD", 2));
+    let signed_window =
+        project_window("canon-money", &signed_money, 0).expect("valid signed money window");
+    assert_eq!(
+        signed_window.used_percent.map(RawPercentPoints::get),
+        Some(43.375)
+    );
+    assert_eq!(
+        signed_window.remaining_percent.map(RawPercentPoints::get),
+        Some(12.625)
+    );
+    assert_eq!(
+        signed_window.money_used_percent.map(RawPercentPoints::get),
+        Some(-10.0)
+    );
+    assert_eq!(
+        signed_window
+            .meter_percent
+            .map(jackin_protocol::control::MeterPercentPoints::get),
+        Some(43.375)
+    );
+    assert_eq!(signed_window.meter_side, Some(UsageMeterSide::Used));
+    let signed_group = project_window_group(
+        "canon-money",
+        &signed_money,
+        UsageSnapshotStatus::Fresh,
+        1_000,
+        0,
+    )
+    .expect("valid signed Money group");
+    signed_group.validate(0).expect("signed group validation");
+    assert!(matches!(
+        &signed_group.value,
+        UsageMetricValueV1::Window {
+            used_percent: Some(used),
+            used_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+            remaining_percent: Some(remaining),
+            remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+            meter_percent: Some(meter),
+            meter_side: Some(UsageMeterSide::Used),
+            money_used_percent: Some(money),
+            ..
+        } if used.get().partial_cmp(&43.375) == Some(std::cmp::Ordering::Equal)
+            && remaining.get().partial_cmp(&12.625) == Some(std::cmp::Ordering::Equal)
+            && meter.get().partial_cmp(&43.375) == Some(std::cmp::Ordering::Equal)
+            && money.get().partial_cmp(&-10.0) == Some(std::cmp::Ordering::Equal)
+    ));
+}
+
+#[test]
 fn publication_marks_empty_and_stale_quota_states_without_fabrication() {
     let capability = capability();
     let mut empty = fresh_view();
@@ -202,7 +351,12 @@ fn publication_marks_empty_and_stale_quota_states_without_fabrication() {
         label: "Provider-defined".to_owned(),
         used_label: None,
         limit_label: None,
+        used_percent: None,
+        used_percent_origin: None,
         remaining_percent: None,
+        remaining_percent_origin: None,
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: None,
@@ -222,7 +376,7 @@ fn publication_marks_empty_and_stale_quota_states_without_fabrication() {
             retry_at_epoch: None,
         }];
         let mut projection = empty_projection();
-        merge_views(&mut projection, &views, &BTreeMap::new());
+        merge_views(&mut projection, &views, &BTreeMap::new()).expect("valid views project");
         projection
     };
     assert_eq!(
@@ -242,7 +396,7 @@ fn publication_marks_empty_and_stale_quota_states_without_fabrication() {
         retry_at_epoch: None,
     }];
     let mut projection = empty_projection();
-    merge_views(&mut projection, &views, &BTreeMap::new());
+    merge_views(&mut projection, &views, &BTreeMap::new()).expect("valid views project");
     let account = &projection.providers[0].accounts[0];
     assert_eq!(account.freshness.phase, UsageFreshnessPhaseV1::Stale);
     assert!(account.freshness.is_stale);
@@ -278,7 +432,7 @@ fn publication_refreshing_is_scoped_to_provider_surface() {
         },
     ];
     let mut projection = empty_projection();
-    merge_views(&mut projection, &views, &BTreeMap::new());
+    merge_views(&mut projection, &views, &BTreeMap::new()).expect("valid views project");
 
     assert_eq!(
         projection.refresh_state,

@@ -3,7 +3,7 @@
 
 use jackin_core::account_key_hash;
 use jackin_protocol::control::{
-    Money, QuotaBucketView, StatusSlot, UsageConfidence, UsageSnapshotStatus,
+    Money, ProviderQuotaState, QuotaBucketView, StatusSlot, UsageConfidence, UsageSnapshotStatus,
 };
 use jackin_protocol::usage_broker::{
     UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageLifecycleV1, UsageMetricGroupKindV1,
@@ -102,11 +102,18 @@ pub fn project_window_group(
         quota_state: window.quota_state,
         value: UsageMetricValueV1::Window {
             remaining_percent: window.remaining_percent,
-            remaining_raw_percent: window.remaining_raw_percent,
+            remaining_percent_origin: window.remaining_percent_origin,
             used_percent: window.used_percent,
-            used_raw_percent: window.used_raw_percent,
-            period: group_period(bucket.status_slot),
-            unit: None,
+            used_percent_origin: window.used_percent_origin,
+            meter_percent: window.meter_percent,
+            meter_side: window.meter_side,
+            count_quota: window.count_quota,
+            provider_quota_state: window.provider_quota_state,
+            money_used_percent: window.money_used_percent,
+            period: group_period_for_bucket(bucket),
+            unit: bucket
+                .count_quota
+                .and_then(|count| count.unit.machine_unit().map(str::to_owned)),
         },
         reset_at_epoch: bucket.resets_at,
         renews_at_epoch: None,
@@ -214,6 +221,18 @@ pub fn group_period(status_slot: Option<StatusSlot>) -> UsageMetricPeriodV1 {
     }
 }
 
+fn group_period_for_bucket(bucket: &QuotaBucketView) -> UsageMetricPeriodV1 {
+    match bucket.count_quota.map(|count| count.period) {
+        Some(jackin_protocol::control::CountQuotaPeriod::UtcDaily) => {
+            UsageMetricPeriodV1::Calendar {
+                granularity: UsageCalendarPeriodV1::Daily,
+            }
+        }
+        Some(jackin_protocol::control::CountQuotaPeriod::Unknown) => UsageMetricPeriodV1::Unknown,
+        None => group_period(bucket.status_slot),
+    }
+}
+
 pub fn spend_remaining(bucket: &QuotaBucketView) -> Option<Money> {
     let used = bucket.used_money.as_ref()?;
     let limit = bucket.limit_money.as_ref()?;
@@ -237,10 +256,14 @@ pub fn spend_quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
         UsageSnapshotStatus::Unavailable => UsageQuotaStateV1::Unavailable,
         UsageSnapshotStatus::Error => UsageQuotaStateV1::Error,
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => {
-            match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
-                (Some(used), Some(limit)) => spend_ratio_state(used, limit),
-                (Some(_), None) => UsageQuotaStateV1::NotApplicable,
-                _ => UsageQuotaStateV1::Unknown,
+            match bucket.provider_quota_state {
+                Some(ProviderQuotaState::Exhausted) => UsageQuotaStateV1::Exhausted,
+                Some(ProviderQuotaState::Unlimited) => UsageQuotaStateV1::NotApplicable,
+                None => match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
+                    (Some(used), Some(limit)) => spend_ratio_state(used, limit),
+                    (Some(_), None) => UsageQuotaStateV1::NotApplicable,
+                    _ => UsageQuotaStateV1::Unknown,
+                },
             }
         }
     }
@@ -253,7 +276,7 @@ pub fn spend_ratio_state(used: &Money, limit: &Money) -> UsageQuotaStateV1 {
     }
     if used.amount_minor >= limit.amount_minor {
         UsageQuotaStateV1::Exhausted
-    } else if used.amount_minor.saturating_mul(100) / limit.amount_minor >= 80 {
+    } else if i128::from(used.amount_minor) * 100 / i128::from(limit.amount_minor) >= 80 {
         UsageQuotaStateV1::Warning
     } else {
         UsageQuotaStateV1::Available

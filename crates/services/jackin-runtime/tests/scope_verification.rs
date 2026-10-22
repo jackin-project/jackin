@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_protocol::control::{
-    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity, UsageSnapshotStatus,
-    UsageSource,
+    CanonicalRemainingPercent, FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSeverity,
+    UsageSnapshotStatus, UsageSource,
 };
 use jackin_protocol::usage_broker::{
     UsageAccountCapability, UsageCatalogEntry, UsageCoordinationErrorKind, UsageRefreshPhase,
@@ -205,18 +205,26 @@ impl UsageProviderExecutor for GateExecutor {
     }
 }
 
-fn quota_view() -> FocusedUsageView {
+fn quota_view() -> Result<FocusedUsageView, String> {
     let mut view = FocusedUsageView::unavailable("claude", 1_700_000_000);
     view.status = UsageSnapshotStatus::Fresh;
     view.source = UsageSource::ProviderApi;
     view.confidence = UsageConfidence::Authoritative;
     view.account.provider_label = "Claude".to_owned();
     view.account.account_label = "scope-proof@example.test".to_owned();
+    let remaining_percent = CanonicalRemainingPercent::new(55.0)?;
     view.buckets = vec![QuotaBucketView {
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
-        remaining_percent: Some(55),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(remaining_percent),
+        remaining_percent_origin: Some(
+            jackin_protocol::control::PercentObservationOrigin::HistoricalUnknown,
+        ),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: None,
@@ -226,7 +234,7 @@ fn quota_view() -> FocusedUsageView {
         limit_money: None,
         severity: UsageSeverity::Normal,
     }];
-    view
+    Ok(view)
 }
 
 fn coordinator_with(executor: Arc<GateExecutor>) -> (UsageCoordinator, Arc<GateExecutor>) {
@@ -298,9 +306,9 @@ fn s2_empty_scope_denies_everything() {
 }
 
 #[test]
-fn s2_stale_catalog_capability_is_revoked_for_direct_requests() {
+fn s2_stale_catalog_capability_is_revoked_for_direct_requests() -> Result<(), String> {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
-        quota_view(),
+        quota_view()?,
     )));
     let (coordinator, gate) = coordinator_with(gate);
     coordinator
@@ -337,12 +345,13 @@ fn s2_stale_catalog_capability_is_revoked_for_direct_requests() {
         .join_generation(&capability("acc-a"), sibling.generation, WAIT, NOW)
         .unwrap();
     assert_eq!(done.phase, UsageRefreshPhase::Completed);
+    Ok(())
 }
 
 #[test]
-fn s6_simultaneous_refreshes_share_one_generation() {
+fn s6_simultaneous_refreshes_share_one_generation() -> Result<(), String> {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
-        quota_view(),
+        quota_view()?,
     )));
     let (coordinator, gate) = coordinator_with(gate);
     let coordinator = Arc::new(coordinator);
@@ -372,12 +381,13 @@ fn s6_simultaneous_refreshes_share_one_generation() {
         .unwrap();
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);
     assert_eq!(gate.calls.load(Ordering::SeqCst), 1, "duplicate probes ran");
+    Ok(())
 }
 
 #[test]
-fn s6_stale_cas_adopts_the_winner() {
+fn s6_stale_cas_adopts_the_winner() -> Result<(), String> {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
-        quota_view(),
+        quota_view()?,
     )));
     let (coordinator, gate) = coordinator_with(gate);
     let cap = capability_for_surface("acc-a", "codex");
@@ -409,12 +419,13 @@ fn s6_stale_cas_adopts_the_winner() {
         .unwrap();
     assert_eq!(replay.generation, winner.generation);
     assert_eq!(replay.phase, UsageRefreshPhase::Completed);
+    Ok(())
 }
 
 #[test]
-fn s6_rotation_fences_in_flight_and_discards_late_results() {
+fn s6_rotation_fences_in_flight_and_discards_late_results() -> Result<(), String> {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
-        quota_view(),
+        quota_view()?,
     )));
     let (coordinator, gate, store) = coordinator_with_store(gate);
     let cap = capability_for_surface("acc-a", "codex");
@@ -455,12 +466,13 @@ fn s6_rotation_fences_in_flight_and_discards_late_results() {
         "fresh generation lost its data"
     );
     assert_eq!(gate.calls.load(Ordering::SeqCst), 2);
+    Ok(())
 }
 
 #[test]
-fn s6_distinct_accounts_refresh_independently() {
+fn s6_distinct_accounts_refresh_independently() -> Result<(), String> {
     let gate = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
-        quota_view(),
+        quota_view()?,
     )));
     let (coordinator, gate) = coordinator_with(gate);
     let a = capability("acc-a");
@@ -481,4 +493,5 @@ fn s6_distinct_accounts_refresh_independently() {
     assert_eq!(done_a.capability.account_id, "acc-a");
     assert_eq!(done_b.capability.account_id, "acc-b");
     assert_eq!(gate.calls.load(Ordering::SeqCst), 2);
+    Ok(())
 }

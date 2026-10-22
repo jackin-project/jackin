@@ -16,8 +16,8 @@ Employer contributions: confirm authorization before submitting. Use personal em
 2. Run `mise install` from the repo root to install the pinned toolchain and dev tools.
 3. Run `scripts/hooks-install` once per checkout to install the pre-commit hooks (see "Git hooks" below).
 4. Change. Sign every commit: `git commit -s`.
-4. Open PR describing problem solved. CI must pass.
-5. Optional blame hygiene: `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` skips mass layout/fmt sweeps listed in that file.
+5. Open PR describing problem solved. CI must pass.
+6. Optional blame hygiene: `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` skips mass layout/fmt sweeps listed in that file.
 
 ## Git hooks
 
@@ -26,7 +26,7 @@ root; the version is pinned in `mise.toml`/`mise.lock`). Install per checkout â€
 idempotent, safe to re-run:
 
 ```sh
-scripts/hooks-install   # installs scripts/pre-commit-snapshot
+scripts/hooks-install   # installs scripts/pre-commit-snapshot and the hk pre-push hook
 ```
 
 No shell activation needed. Requirements: Git 2.56+ (config-based hooks with
@@ -40,14 +40,23 @@ The installer disables the named `hk-pre-commit` hook locally so an inherited
 global hook cannot bypass the repository-owned snapshot boundary. Global
 configuration and unrelated hooks remain unchanged.
 
-The hook selects steps from the staged diff (see `hk.pkl` for exact commands):
+The hook selects steps from the staged diff (see `hk.pkl` for exact commands).
+It follows the owner hk standard: the pre-commit hook only checks (`fix = false`),
+and the same step list backs `hk check` and `hk fix`:
 
-- `cargo_fmt` (hk builtin): `cargo fmt` for affected Cargo manifests
-- `cargo_clippy` (hk builtin): `cargo clippy --fix --allow-dirty --allow-staged --quiet` for affected Cargo manifests
-- `actionlint`: changed workflows (`.github/workflows/*.yml`)
+- `mise` (hk builtin): `mise fmt --check` on `mise.toml`
+- `gitleaks` (hk builtin) and `kingfisher-staged`: secret scans of the staged change
+- `cargo_fmt`, `cargo_check`, `cargo_clippy`, `cargo_deny` (hk builtins) for affected Cargo manifests
+- `rust-toolchain-mirror`: `rust-toolchain.toml` must mirror the `mise.toml` rust entry
+  (channel, profile, components, targets)
+- `rumdl` (hk builtin): Markdown
+- `jactionlint` (check-only, the generated CI's flags and `.github/jactionlint.yaml`): workflows and composite actions
 - `swiftlint`, `swift-format`: `native/**` on macOS; skipped elsewhere
 
-Rust fixers run in the private snapshot. Strict whole-workspace Clippy and
+`pre-push` runs `betterleaks git . --redact` (`scripts/hooks-install` registers it as `jackin-pre-push`). The full-history `security-audit`
+hook never fires from Git; run it with `mise x -- hk run security-audit`.
+
+Checks run in the private snapshot. Strict whole-workspace Clippy and
 `xtask ci --only lint` remain required merge-readiness gates.
 
 Review mode, not auto-stage: the launcher validates the exact staged tree in
@@ -57,13 +66,13 @@ The isolated repository preserves the original HEAD and merge index, so hk
 and affected-package selection see the original staged diff. Unmerged index
 entries or staged symlinks escaping the snapshot fail before tools run.
 
-If a fixer changes source, the commit fails. The launcher saves a private
+If a step still changes source, the commit fails. The launcher saves a private
 patch under the common Git directory's `jackin-hook-evidence/pre-commit.*/`
 with directory mode 0700 and patch mode 0600. It prints the patch path, never
 its contents. Review and apply the fixes explicitly:
 
 ```sh
-git commit -m "..."       # isolated fix fails for review
+git commit -m "..."       # isolated check fails
 mise x -- hk fix          # apply fixes in your checkout
 git diff                 # review all unstaged changes
 git add -p && git commit -m "..."

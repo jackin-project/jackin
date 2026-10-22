@@ -243,19 +243,31 @@ fn usage_detail_presentation_grok_bounds_no_provider_path() {
 #[test]
 fn quota_pace_label_appends_runout_when_behind_pace() {
     assert_eq!(
-        quota_pace_label(Some(48), Some(10_530), Some(1_000), 10_000).expect("pace"),
+        quota_pace_label(
+            Some(reported_remaining(48.0)),
+            Some(10_530),
+            Some(1_000),
+            10_000
+        )
+        .expect("pace"),
         "5% in deficit · Runs out in 7m"
     );
     assert_eq!(
-        quota_pace_label(Some(48), Some(320_399), Some(604_800), 0).expect("pace"),
-        "5% in deficit · Runs out in 3d"
+        quota_pace_label(
+            Some(reported_remaining(48.0)),
+            Some(320_399),
+            Some(604_800),
+            0
+        )
+        .expect("pace"),
+        "4.98% in deficit · Runs out in 3d"
     );
 }
 
 #[test]
 fn quota_pace_label_no_runout_when_ahead_of_pace() {
     assert_eq!(
-        quota_pace_label(Some(90), Some(600), Some(1_000), 0).expect("pace"),
+        quota_pace_label(Some(reported_remaining(90.0)), Some(600), Some(1_000), 0).expect("pace"),
         "30% in reserve"
     );
 }
@@ -263,7 +275,7 @@ fn quota_pace_label_no_runout_when_ahead_of_pace() {
 #[test]
 fn quota_pace_label_no_runout_when_nothing_used() {
     assert_eq!(
-        quota_pace_label(Some(100), Some(500), Some(1_000), 0).expect("pace"),
+        quota_pace_label(Some(reported_remaining(100.0)), Some(500), Some(1_000), 0).expect("pace"),
         "50% in reserve"
     );
 }
@@ -271,7 +283,8 @@ fn quota_pace_label_no_runout_when_nothing_used() {
 #[test]
 fn quota_pace_label_no_runout_at_window_start() {
     assert_eq!(
-        quota_pace_label(Some(60), Some(1_000), Some(1_000), 0).expect("pace"),
+        quota_pace_label(Some(reported_remaining(60.0)), Some(1_000), Some(1_000), 0)
+            .expect("pace"),
         "40% in deficit"
     );
 }
@@ -279,23 +292,23 @@ fn quota_pace_label_no_runout_at_window_start() {
 #[test]
 fn quota_pace_label_runout_iff_behind_clock_boundary() {
     assert_eq!(
-        quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace"),
+        quota_pace_label(Some(reported_remaining(50.0)), Some(500), Some(1_000), 0).expect("pace"),
         "On pace"
     );
     assert_eq!(
-        quota_pace_label(Some(51), Some(500), Some(1_000), 0).expect("pace"),
+        quota_pace_label(Some(reported_remaining(51.0)), Some(500), Some(1_000), 0).expect("pace"),
         "On pace"
     );
     assert_eq!(
-        quota_pace_label(Some(49), Some(500), Some(1_000), 0).expect("pace"),
+        quota_pace_label(Some(reported_remaining(49.0)), Some(500), Some(1_000), 0).expect("pace"),
         "On pace · Runs out in 8m"
     );
     assert_eq!(
-        quota_pace_label(Some(48), Some(500), Some(1_000), 0).expect("pace"),
+        quota_pace_label(Some(reported_remaining(48.0)), Some(500), Some(1_000), 0).expect("pace"),
         "On pace · Runs out in 7m"
     );
     assert_eq!(
-        quota_pace_label(Some(47), Some(500), Some(1_000), 0).expect("pace"),
+        quota_pace_label(Some(reported_remaining(47.0)), Some(500), Some(1_000), 0).expect("pace"),
         "3% in deficit · Runs out in 7m"
     );
 }
@@ -303,7 +316,7 @@ fn quota_pace_label_runout_iff_behind_clock_boundary() {
 #[test]
 fn quota_pace_label_runout_depleted_bucket() {
     assert_eq!(
-        quota_pace_label(Some(0), Some(500), Some(1_000), 0).expect("pace"),
+        quota_pace_label(Some(reported_remaining(0.0)), Some(500), Some(1_000), 0).expect("pace"),
         "50% in deficit · Runs out in <1m"
     );
 }
@@ -311,13 +324,20 @@ fn quota_pace_label_runout_depleted_bucket() {
 #[test]
 fn quota_pace_label_exact_projection_precedes_reset_before_rounding() {
     assert_eq!(
-        quota_pace_label(Some(49), Some(10_515), Some(1_051), 10_000).expect("pace"),
+        quota_pace_label(
+            Some(reported_remaining(49.0)),
+            Some(10_515),
+            Some(1_051),
+            10_000
+        )
+        .expect("pace"),
         "On pace · Runs out in 8m"
     );
 }
 
 #[test]
 fn quota_pace_label_exact_clock_equality_ignores_float_drift() {
-    let label = quota_pace_label(Some(7), Some(70), Some(1_000), 0).expect("pace");
+    let label =
+        quota_pace_label(Some(reported_remaining(7.0)), Some(70), Some(1_000), 0).expect("pace");
     assert!(!label.contains("Runs out"), "unexpected run-out: {label}");
 }

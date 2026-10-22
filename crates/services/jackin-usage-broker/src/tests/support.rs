@@ -3,6 +3,8 @@
 
 use super::*;
 
+use jackin_protocol::control::{CanonicalRemainingPercent, PercentObservationOrigin};
+
 pub(super) struct PairedTestClock {
     state: Mutex<PairedTestClockState>,
 }
@@ -132,7 +134,14 @@ pub(super) fn quota_view() -> FocusedUsageView {
         label: "Weekly".to_owned(),
         used_label: None,
         limit_label: None,
-        remaining_percent: Some(75),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(
+            CanonicalRemainingPercent::new(75.0).expect("fixture remaining percentage is valid"),
+        ),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: None,

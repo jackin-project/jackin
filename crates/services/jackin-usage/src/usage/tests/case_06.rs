@@ -57,9 +57,27 @@ fn status_bar_headline_joins_windows_and_spend() {
     }))
     .expect("valid Claude OAuth usage");
     let buckets = usage.into_buckets(1_781_185_560);
+    for (slot, expected_used) in [(StatusSlot::Session, 11.0), (StatusSlot::Weekly, 27.0)] {
+        let window = buckets
+            .iter()
+            .find(|bucket| bucket.status_slot == Some(slot))
+            .expect("Claude usage window");
+        assert_eq!(
+            window
+                .used_percent
+                .map(jackin_protocol::control::CanonicalUsedPercent::get),
+            Some(expected_used)
+        );
+        assert_eq!(
+            window.used_percent_origin,
+            Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+        );
+        assert_eq!(window.remaining_percent, None);
+        assert_eq!(window.remaining_percent_origin, None);
+    }
     assert_eq!(
         status_bar_headline_for_surface(UsageSurface::Claude, &buckets).as_deref(),
-        Some("Session 89% · Weekly 73% · SGD 78 of 260")
+        Some("Session 11% · Weekly 27% · SGD 78 of 260")
     );
 }
 
@@ -77,10 +95,68 @@ fn status_bar_headline_drops_zero_window_and_zero_spend() {
     }))
     .expect("valid Claude OAuth usage");
     let buckets = usage.into_buckets(1_781_185_560);
+    for (slot, expected_used) in [(StatusSlot::Session, 0.0), (StatusSlot::Weekly, 1.0)] {
+        let window = buckets
+            .iter()
+            .find(|bucket| bucket.status_slot == Some(slot))
+            .expect("Claude usage window");
+        assert_eq!(
+            window
+                .used_percent
+                .map(jackin_protocol::control::CanonicalUsedPercent::get),
+            Some(expected_used)
+        );
+        assert_eq!(
+            window.used_percent_origin,
+            Some(PercentObservationOrigin::ProviderReported)
+        );
+        assert_eq!(window.remaining_percent, None);
+        assert_eq!(window.remaining_percent_origin, None);
+    }
     assert_eq!(
         status_bar_headline_for_surface(UsageSurface::Claude, &buckets).as_deref(),
+        Some("Session 0% · Weekly 1%"),
+        "$0 spend must be omitted while zero/one used points remain visible"
+    );
+
+    use jackin_protocol::control::{
+        CanonicalRemainingPercent, Money, PercentObservationOrigin, QuotaBucketView, UsageSeverity,
+    };
+    let empty_bucket = |label: &str, slot: StatusSlot| QuotaBucketView {
+        label: label.to_owned(),
+        used_label: None,
+        limit_label: None,
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: None,
+        remaining_percent_origin: None,
+        count_quota: None,
+        provider_quota_state: None,
+        reset_label: None,
+        resets_at: None,
+        status_slot: Some(slot),
+        pace_label: None,
+        status: UsageSnapshotStatus::Fresh,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
+    };
+    let mut session_remaining = empty_bucket("Session", StatusSlot::Session);
+    session_remaining.remaining_percent =
+        Some(CanonicalRemainingPercent::new(100.0).expect("valid remaining percentage"));
+    session_remaining.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    let mut weekly_remaining = empty_bucket("Weekly", StatusSlot::Weekly);
+    weekly_remaining.remaining_percent =
+        Some(CanonicalRemainingPercent::new(0.0).expect("valid remaining percentage"));
+    weekly_remaining.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    let mut zero_spend = empty_bucket("Spend", StatusSlot::Spend);
+    zero_spend.used_money = Some(Money::new(0, "USD", 2));
+    zero_spend.limit_money = Some(Money::new(30_000, "USD", 2));
+    let explicit_remaining = [session_remaining, weekly_remaining, zero_spend];
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Claude, &explicit_remaining).as_deref(),
         Some("Session 100%"),
-        "Weekly 0% and $0 spent must be omitted from the status bar"
+        "provider-reported zero remaining and exact zero spend stay omitted"
     );
 }
 
@@ -96,9 +172,26 @@ fn over_cap_window_surfaces_true_used_percent() {
         .find(|b| b.status_slot == Some(StatusSlot::Weekly))
         .expect("weekly bucket");
     assert_eq!(
-        weekly.remaining_percent,
-        Some(0),
-        "nothing left when over cap"
+        weekly
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(150.0),
+        "provider-reported overage remains unbounded"
+    );
+    assert_eq!(
+        weekly.used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
+    assert_eq!(weekly.remaining_percent, None);
+    assert_eq!(weekly.remaining_percent_origin, None);
+    let (meter_percent, meter_side) = select_quota_meter(weekly);
+    assert_eq!(
+        meter_percent.map(jackin_protocol::control::MeterPercentPoints::get),
+        Some(100.0)
+    );
+    assert_eq!(
+        meter_side,
+        Some(jackin_protocol::control::UsageMeterSide::Used)
     );
     assert_eq!(weekly.used_label.as_deref(), Some("150% used"));
 }

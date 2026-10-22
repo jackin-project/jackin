@@ -12,8 +12,9 @@ use nix::unistd::geteuid;
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 
 pub(crate) use envelope::{
-    ACCOUNT_STATE_SCHEMA_VERSION, LEGACY_ACCOUNT_STATE_SCHEMA_VERSION, MAX_ACCOUNT_STATE_BYTES,
-    MAX_CLOCK_SKEW_SECS, MAX_DISPLAY_CHARS, PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION,
+    ACCOUNT_STATE_SCHEMA_VERSION, LEGACY_ACCOUNT_STATE_SCHEMA_VERSION,
+    LEGACY_PROJECTION_STATE_SCHEMA_VERSION, MAX_ACCOUNT_STATE_BYTES, MAX_CLOCK_SKEW_SECS,
+    MAX_DISPLAY_CHARS, OLDER_ACCOUNT_STATE_SCHEMA_VERSION, PREVIOUS_ACCOUNT_STATE_SCHEMA_VERSION,
     PREVIOUS_PROJECTION_STATE_SCHEMA_VERSION, PROJECTION_STATE_SCHEMA_VERSION,
     STATE_QUARANTINE_COUNTER, STATE_TMP_COUNTER,
 };
@@ -25,7 +26,7 @@ pub use stores::{
     ProjectionStateEnvelope,
 };
 pub(crate) use validate::{
-    sanitize_envelope, state_filename, validate_capability, validate_envelope, validate_owned_mode,
+    state_filename, validate_capability, validate_envelope, validate_owned_mode,
 };
 
 #[cfg(test)]
