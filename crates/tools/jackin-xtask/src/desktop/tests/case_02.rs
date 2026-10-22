@@ -135,7 +135,7 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
     let mise = repo_text("mise.toml");
     let rust_toolchain = repo_text("rust-toolchain.toml");
     assert!(
-        mise.contains("rust = { version = \"1.99.1\", mr_boxington = true }"),
+        mise.contains("rust = { version = \"1.99.1\", components = [\"clippy\", \"rustfmt\"], targets = [\"aarch64-unknown-linux-gnu\", \"x86_64-unknown-linux-gnu\"], mr_boxington = true }"),
         "Mise's Rust integration must route Cargo through MBX natively"
     );
     assert!(

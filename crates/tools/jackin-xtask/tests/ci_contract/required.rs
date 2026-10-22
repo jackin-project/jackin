@@ -1,4 +1,4 @@
-//! Required covers all execution/setup jobs, excluding only the optional seed.
+//! Required covers execution/setup jobs; the bounded root seed alone tolerates failure.
 use super::job_needs;
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
@@ -22,7 +22,7 @@ pub(super) fn assert_inventory(workflow: &Value, needs: &BTreeSet<String>) -> Re
             && seed.get("outputs").is_none()
             && seed.get("permissions").is_none()
             && seed.get("environment").is_none()
-            && seed.get("continue-on-error").is_none(),
+            && seed.get("continue-on-error") == Some(&Value::Bool(true)),
         "only the bounded protected-main dependency seed is outside Required"
     );
     let steps = seed["steps"].as_array().context("seed has steps")?;
@@ -41,11 +41,17 @@ pub(super) fn assert_inventory(workflow: &Value, needs: &BTreeSet<String>) -> Re
     );
     assert_compile_lanes(steps)?;
     for (id, job) in jobs {
-        if id != SEED && job.get("needs").is_some() {
+        if id != SEED {
             ensure!(
-                !job_needs(job)?.contains(SEED) && job["needs"].as_str() != Some(SEED),
-                "execution/setup job cannot depend on optional seed: {id}"
+                job.get("continue-on-error").is_none(),
+                "only the optional dependency seed may tolerate job failure: {id}"
             );
+            if job.get("needs").is_some() {
+                ensure!(
+                    !job_needs(job)?.contains(SEED) && job["needs"].as_str() != Some(SEED),
+                    "execution/setup job cannot depend on optional seed: {id}"
+                );
+            }
         }
     }
     let expected = jobs
@@ -129,6 +135,52 @@ mod tests {
         let mut required_seed = needs;
         required_seed.insert(SEED.to_owned());
         ensure!(assert_inventory(&workflow, &required_seed).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn only_seed_job_may_tolerate_failure() -> Result<()> {
+        let (workflow, needs) = actual()?;
+        ensure!(
+            workflow["jobs"][SEED].get("continue-on-error") == Some(&Value::Bool(true)),
+            "root seed requires job-level failure tolerance"
+        );
+        let seed_steps = workflow["jobs"][SEED]["steps"]
+            .as_array()
+            .context("seed steps")?;
+        ensure!(
+            seed_steps
+                .iter()
+                .any(|step| step["continue-on-error"] == true),
+            "step-level cache-save failure handling remains separate"
+        );
+
+        let mut missing = workflow.clone();
+        missing["jobs"][SEED]
+            .as_object_mut()
+            .context("seed job")?
+            .remove("continue-on-error");
+        ensure!(
+            assert_inventory(&missing, &needs).is_err(),
+            "missing seed failure tolerance must not validate"
+        );
+        for value in [json!(false), json!("true")] {
+            let mut changed = workflow.clone();
+            changed["jobs"][SEED]["continue-on-error"] = value;
+            ensure!(
+                assert_inventory(&changed, &needs).is_err(),
+                "only boolean true is accepted for the seed"
+            );
+        }
+
+        for id in ["rust-jackin-image", "plan", "required"] {
+            let mut changed = workflow.clone();
+            changed["jobs"][id]["continue-on-error"] = json!(true);
+            ensure!(
+                assert_inventory(&changed, &needs).is_err(),
+                "mandatory crate/setup/verdict job cannot tolerate job failure: {id}"
+            );
+        }
         Ok(())
     }
 
