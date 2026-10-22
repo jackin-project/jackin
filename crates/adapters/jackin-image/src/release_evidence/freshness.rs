@@ -3,20 +3,22 @@
 
 //! Public observations supplement already authenticated receipt bytes; they never
 //! replace Sigstore verification or select a different requested helper version.
-//! Historical repository and exact-attempt build evidence is admitted once per
-//! pin. Mutable release, journal, inventory and tag facts remain fresh at every
-//! execution and installation boundary; a new download must admit its own pin.
+//! Historical repository, exact-attempt build evidence and source ancestry are
+//! admitted once per pin. Release lifecycle, recovery envelope, inventory and tag
+//! facts remain fresh at every execution and installation boundary; a new download
+//! must admit its own pin. Each preview source has its own immutable
+//! `preview-<source>` release, so no release ID or publication journal is pinned.
 //! Repository ownership/privacy/default-branch admission is invocation-local, not
 //! an immutability claim. Rechecks require the initially pinned positive release
 //! ID and complete snapshot; moving a repository does not revoke verified bytes.
 
-mod journal;
 mod runs;
 #[cfg(test)]
 mod tests;
 
 use super::{EVIDENCE_LIMIT, RECEIPT_LIMIT, digest, policy, transport::Transport};
 use anyhow::{Result, ensure};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use velnor_actions_contract::package_release::{PackageReleaseChannel, PackageReleaseReceipt};
@@ -144,33 +146,47 @@ struct Reference {
 struct AnnotatedTag {
     sha: String,
     tag: String,
+    message: Option<String>,
     object: Object,
 }
 
-async fn tag(transport: &impl Transport, receipt: &PackageReleaseReceipt) -> Result<Tag> {
+/// Velnor's canonical release body and preview tag message: the exact signed
+/// receipt and its bundle, so a release cannot carry another generation's evidence.
+fn recovery_envelope(raw: &[u8], bundle: &[u8]) -> String {
+    format!(
+        "velnor-package-release-recovery-v1\nreceipt_sha256={}\nreceipt={}\nbundle={}\n",
+        digest(raw),
+        URL_SAFE_NO_PAD.encode(raw),
+        URL_SAFE_NO_PAD.encode(bundle),
+    )
+}
+
+async fn tag(
+    transport: &impl Transport,
+    receipt: &PackageReleaseReceipt,
+    envelope: &str,
+) -> Result<Tag> {
     let reference: Reference = read(transport, &format!("git/ref/tags/{}", receipt.tag)).await?;
     ensure!(
         reference.name == format!("refs/tags/{}", receipt.tag)
             && hex_sha(&reference.object.sha, 40),
         "release tag reference mismatch"
     );
-    let source_sha = match reference.object.kind.as_str() {
-        "commit" if receipt.channel == PackageReleaseChannel::Preview => {
-            reference.object.sha.clone()
-        }
-        "tag" => {
-            let annotated: AnnotatedTag =
-                read(transport, &format!("git/tags/{}", reference.object.sha)).await?;
-            ensure!(
-                annotated.sha == reference.object.sha
-                    && annotated.tag == receipt.tag
-                    && annotated.object.kind == "commit",
-                "release annotated tag mismatch"
-            );
-            annotated.object.sha
-        }
-        _ => anyhow::bail!("unsupported release tag object"),
-    };
+    ensure!(
+        reference.object.kind == "tag",
+        "unsupported release tag object"
+    );
+    let annotated: AnnotatedTag =
+        read(transport, &format!("git/tags/{}", reference.object.sha)).await?;
+    ensure!(
+        annotated.sha == reference.object.sha
+            && annotated.tag == receipt.tag
+            && annotated.object.kind == "commit"
+            && (receipt.channel == PackageReleaseChannel::Stable
+                || annotated.message.as_deref() == Some(envelope)),
+        "release annotated tag mismatch"
+    );
+    let source_sha = annotated.object.sha;
     ensure!(
         source_sha == receipt.source.commit_sha,
         "release tag no longer selects signed source"
@@ -248,12 +264,13 @@ async fn observe(
         release.id > 0 && release.tag_name == receipt.tag && release.draft == Some(false),
         "release identity or draft state mismatch"
     );
+    let envelope = recovery_envelope(raw, bundle);
     match receipt.channel {
         PackageReleaseChannel::Preview => ensure!(
-            release.id == policy::PREVIEW_RELEASE_ID
-                && release.prerelease == Some(true)
-                && release.immutable == Some(false),
-            "preview must use the configured mutable rolling release"
+            release.prerelease == Some(true)
+                && release.immutable == Some(true)
+                && release.body.as_deref() == Some(envelope.as_str()),
+            "preview must be its source's immutable prerelease carrying the signed receipt"
         ),
         PackageReleaseChannel::Stable => ensure!(
             release.prerelease == Some(false) && release.immutable == Some(true),
@@ -267,16 +284,13 @@ async fn observe(
     )
     .await?;
     let assets = assets(rows, &expected)?;
-    if receipt.channel == PackageReleaseChannel::Preview {
-        journal::validate(&release, receipt, raw, &expected, &assets)?;
-    }
-    let tag = tag(transport, receipt).await?;
+    let tag = tag(transport, receipt, &envelope).await?;
     let final_release: Release = read(transport, &format!("releases/tags/{}", receipt.tag)).await?;
     ensure!(
         final_release == release,
-        "release journal or lifecycle changed during observation"
+        "release body or lifecycle changed during observation"
     );
-    let final_tag = self::tag(transport, receipt).await?;
+    let final_tag = self::tag(transport, receipt, &envelope).await?;
     ensure!(final_tag == tag, "release tag changed during observation");
     Ok(Snapshot {
         release,

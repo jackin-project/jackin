@@ -8,6 +8,9 @@ use serde_json::{Value, json};
 use std::sync::Mutex;
 use velnor_actions_contract::canonical_json_bytes;
 
+pub(super) const RELEASE_ID: u64 = 900;
+pub(super) const TAG_OBJECT: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
 pub(super) struct Fixture {
     pub(super) receipt: PackageReleaseReceipt,
     pub(super) raw: Vec<u8>,
@@ -29,7 +32,7 @@ impl Fixture {
             "private":false,"default_branch":"main","owner":{"id":273541039}}),
         );
         workflow_observations(&receipt, &mut responses);
-        publication_observations(&receipt, &expected, &raw, &mut responses);
+        publication_observations(&receipt, &expected, &raw, &bundle, &mut responses);
         Self {
             receipt,
             raw,
@@ -65,8 +68,8 @@ fn workflow_observations(receipt: &PackageReleaseReceipt, responses: &mut BTreeM
     let channel = receipt.channel;
     let producing_run = run(
         receipt,
-        receipt.workflow.run_id,
-        receipt.workflow.run_attempt,
+        &receipt.workflow.authority_sha,
+        (receipt.workflow.run_id, receipt.workflow.run_attempt),
         channel.workflow_path(),
         channel.event().as_str(),
         "in_progress",
@@ -86,8 +89,8 @@ fn workflow_observations(receipt: &PackageReleaseReceipt, responses: &mut BTreeM
         )),
         run(
             receipt,
-            receipt.source.ci_run_id,
-            receipt.source.ci_run_attempt,
+            &receipt.source.commit_sha,
+            (receipt.source.ci_run_id, receipt.source.ci_run_attempt),
             ".github/workflows/ci.yml",
             "push",
             "completed",
@@ -109,7 +112,7 @@ fn workflow_observations(receipt: &PackageReleaseReceipt, responses: &mut BTreeM
         .enumerate()
         .map(|(i, name)| {
             json!({"id":i+1,"name":name,
-        "run_id":receipt.workflow.run_id,"head_sha":receipt.source.commit_sha,
+        "run_id":receipt.workflow.run_id,"head_sha":receipt.workflow.authority_sha,
         "status":"completed","conclusion":"success"})
         })
         .collect();
@@ -117,51 +120,55 @@ fn workflow_observations(receipt: &PackageReleaseReceipt, responses: &mut BTreeM
         jobs_route(receipt),
         json!({"total_count":jobs.len(),"jobs":jobs}),
     );
+    let (source, authority) = (&receipt.source.commit_sha, &receipt.workflow.authority_sha);
+    if source != authority {
+        responses.insert(
+            compare_route(source, authority),
+            comparison(source, "ahead", 3),
+        );
+    }
+    responses.insert(
+        compare_route(authority, "main"),
+        comparison(authority, "ahead", 2),
+    );
 }
 
+pub(super) fn compare_route(base: &str, head: &str) -> String {
+    route(&format!("compare/{base}...{head}?per_page=1&page=2"))
+}
+
+fn comparison(base: &str, status: &str, ahead_by: u64) -> Value {
+    json!({"status":status,"ahead_by":ahead_by,"behind_by":0,"total_commits":ahead_by,
+        "base_commit":{"sha":base},"merge_base_commit":{"sha":base}})
+}
+
+/// Velnor 0.1.40 publishes every channel as an immutable release with an annotated
+/// tag; preview's body and tag message carry the exact signed receipt and bundle.
 fn publication_observations(
     receipt: &PackageReleaseReceipt,
     expected: &BTreeMap<String, (u64, String)>,
     raw: &[u8],
+    bundle: &[u8],
     responses: &mut BTreeMap<String, Value>,
 ) {
-    let channel = receipt.channel;
-    let release_id = if channel == PackageReleaseChannel::Preview {
-        policy::PREVIEW_RELEASE_ID
-    } else {
-        900
-    };
+    let preview = receipt.channel == PackageReleaseChannel::Preview;
+    let envelope = recovery_envelope(raw, bundle);
     let rows: Vec<_> = expected.iter().enumerate().map(|(i,(name,(size,sha)))|
         json!({"id":i+1,"name":name,"state":"uploaded","size":size,"digest":format!("sha256:{sha}")})).collect();
-    let body = if channel == PackageReleaseChannel::Preview {
-        json!(journal(receipt, raw, expected))
-    } else {
-        Value::Null
-    };
     responses.insert(
         release_route(receipt),
-        json!({"id":release_id,"tag_name":receipt.tag,
-        "draft":false,"prerelease":channel == PackageReleaseChannel::Preview,
-        "immutable":channel == PackageReleaseChannel::Stable,"body":body}),
+        json!({"id":RELEASE_ID,"tag_name":receipt.tag,"draft":false,"prerelease":preview,
+        "immutable":true,"body":envelope}),
     );
+    responses.insert(assets_route(), json!(rows));
     responses.insert(
-        route(&format!("releases/{release_id}/assets?per_page=100&page=1")),
-        json!(rows),
-    );
-    let object = if channel == PackageReleaseChannel::Preview {
-        json!({"sha":receipt.source.commit_sha,"type":"commit"})
-    } else {
-        let sha = "b".repeat(40);
-        responses.insert(
-            route(&format!("git/tags/{sha}")),
-            json!({"sha":sha,"tag":receipt.tag,
+        route(&format!("git/tags/{TAG_OBJECT}")),
+        json!({"sha":TAG_OBJECT,"tag":receipt.tag,"message":envelope,
         "object":{"sha":receipt.source.commit_sha,"type":"commit"}}),
-        );
-        json!({"sha":sha,"type":"tag"})
-    };
+    );
     responses.insert(
         tag_route(receipt),
-        json!({"ref":format!("refs/tags/{}",receipt.tag),"object":object}),
+        json!({"ref":format!("refs/tags/{}",receipt.tag),"object":{"sha":TAG_OBJECT,"type":"tag"}}),
     );
 }
 
@@ -203,6 +210,12 @@ pub(super) fn route(path: &str) -> String {
 pub(super) fn release_route(receipt: &PackageReleaseReceipt) -> String {
     route(&format!("releases/tags/{}", receipt.tag))
 }
+pub(super) fn assets_route() -> String {
+    route(&format!("releases/{RELEASE_ID}/assets?per_page=100&page=1"))
+}
+pub(super) fn annotated_tag_route() -> String {
+    route(&format!("git/tags/{TAG_OBJECT}"))
+}
 pub(super) fn tag_route(receipt: &PackageReleaseReceipt) -> String {
     route(&format!("git/ref/tags/{}", receipt.tag))
 }
@@ -215,40 +228,14 @@ pub(super) fn jobs_route(receipt: &PackageReleaseReceipt) -> String {
 
 fn run(
     receipt: &PackageReleaseReceipt,
-    id: u64,
-    attempt: u32,
+    head_sha: &str,
+    (id, attempt): (u64, u32),
     path: &str,
     event: &str,
     status: &str,
     conclusion: Value,
 ) -> Value {
-    json!({"id":id,"run_attempt":attempt,"head_sha":receipt.source.commit_sha,"head_branch":"main",
+    json!({"id":id,"run_attempt":attempt,"head_sha":head_sha,"head_branch":"main",
         "path":path,"event":event,"status":status,"conclusion":conclusion,
         "repository":{"id":receipt.repository.id},"head_repository":{"id":receipt.repository.id}})
-}
-
-fn journal(
-    receipt: &PackageReleaseReceipt,
-    raw: &[u8],
-    expected: &BTreeMap<String, (u64, String)>,
-) -> String {
-    use velnor_actions_contract::publication_retry::{PublicationIdentity, rolling::staged_name};
-    let identity = PublicationIdentity {
-        source_sha: receipt.source.commit_sha.clone(),
-        receipt_digest: digest(raw),
-        assets: expected
-            .iter()
-            .map(|(name, (_, sha))| (name.clone(), sha.clone()))
-            .collect(),
-    };
-    let staged: BTreeMap<_,_> = expected.iter().enumerate().map(|(i,(name,(size,sha)))|
-        (name.clone(),json!({"id":i+1,"name":staged_name(&identity,name),"state":"uploaded","size":size,"sha256":sha}))).collect();
-    let envelope = json!({"schema":"velnor.rolling-preview-journal.v1","repository":"jackin-project/jackin",
-        "repository_id":receipt.repository.id,"release_id":policy::PREVIEW_RELEASE_ID,"tag":"preview",
-        "journal":{"identity":identity,"original":{"run_id":receipt.workflow.run_id,"run_attempt":receipt.workflow.run_attempt,
-        "artifact_id":100,"archive_sha256":"a".repeat(64)},"phase":"committed","staged":staged,"obsolete":[]},"predecessor":null});
-    format!(
-        "velnor-rolling-preview-v1\n{}",
-        String::from_utf8(canonical_json_bytes(&envelope).unwrap()).unwrap()
-    )
 }
