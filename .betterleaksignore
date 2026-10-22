@@ -297,3 +297,103 @@ fb64c65df4fe7a87231eda954992d60e6af91a82:src/isolation/materialize.rs:generic-cr
 # Reason: velnor generated manifest: matrix_key digests (m-<hex>) from commit 2c0f1c2e2 (#1164), merged after the #1165 baseline; not credentials
 # 1 finding(s); rules: generic-api-key; files: .github/velnor/task-execution-manifest-v1.json (1)
 2c0f1c2e28c5bc7a6e1b569826db3a15517d6e9c:.github/velnor/task-execution-manifest-v1.json:generic-api-key:2
+
+# Reason: collector unit test creates a temporary Git repository with an example.invalid fake remote; checks alias equivalence, report shape, and dirty-work preservation. No external contact.
+# 1 finding; rule: generic-credential-uri; file: docs/consolidation-20261013/plan/goal-references/tools/test_collector.py.
+# Provenance: source commit 8a4d1982ab9776fe840dd3040027ca7b77e6d173; merged PR #1128.
+8a4d1982ab9776fe840dd3040027ca7b77e6d173:docs/consolidation-20261013/plan/goal-references/tools/test_collector.py:generic-credential-uri:43
+
+# Reason: redact_env_args_handles_value_containing_equals passes a synthetic URI with the literal fixture host `host` to the redactor and checks redacted output while retaining equals syntax. Test input only.
+# 2 findings; rule: generic-credential-uri; file: crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs.
+# Provenance: source commits 9e208685c8961f5fa1209d8d97daec7c16b4ad40 and b72046bbc9314e93cddf4d8252570dc375935f56; merged PR #1128.
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs:generic-credential-uri:248
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs:generic-credential-uri:248
+
+# Reason: endpoints_reject_credentials_without_echoing_them uses a synthetic URI with the literal collector host; requires InvalidEndpoint and asserts userinfo is not echoed. Test input only.
+# 2 findings; rule: generic-credential-uri; file: crates/services/jackin-diagnostics/src/observability/config/tests/case_01.rs.
+# Provenance: source commits 9e208685c8961f5fa1209d8d97daec7c16b4ad40 and b72046bbc9314e93cddf4d8252570dc375935f56; merged PR #1128.
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/observability/config/tests/case_01.rs:generic-credential-uri:184
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/observability/config/tests/case_01.rs:generic-credential-uri:187
+
+# Reason: strip_userinfo_removes_pat_from_https_origin uses a visibly abbreviated placeholder PAT in a URI and asserts userinfo removal. No token validation.
+# 2 findings; rule: generic-credential-uri; file: crates/services/jackin-isolation/src/materialize/tests/case_01.rs.
+# Provenance: source commits 9e208685c8961f5fa1209d8d97daec7c16b4ad40 and b72046bbc9314e93cddf4d8252570dc375935f56; merged PR #1128.
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:82
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:82
+
+# Reason: strip_userinfo_handles_authority_only_urls uses a short conventional placeholder password and asserts normalized output excludes userinfo. No network request.
+# 2 findings; rule: generic-credential-uri; file: crates/services/jackin-isolation/src/materialize/tests/case_01.rs.
+# Provenance: source commits 9e208685c8961f5fa1209d8d97daec7c16b4ad40 and b72046bbc9314e93cddf4d8252570dc375935f56; merged PR #1128.
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:112
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:112
+
+# Reason: clone_materialization_strips_embedded_credentials_from_host_origin uses a TempDir and FakeRunner canned origin; asserts credential stripping without a live credential-bearing clone.
+# 2 findings; rule: generic-credential-uri; file: crates/services/jackin-isolation/src/materialize/tests/case_03.rs.
+# Provenance: source commits 9e208685c8961f5fa1209d8d97daec7c16b4ad40 and b72046bbc9314e93cddf4d8252570dc375935f56; merged PR #1128.
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-isolation/src/materialize/tests/case_03.rs:generic-credential-uri:20
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-isolation/src/materialize/tests/case_03.rs:generic-credential-uri:20
+
+# Reason: diagnostics and build-log tests use synthetic private-key marker/body text to check nested, mismatched, sequential, multiline, stream, and EOF redaction/suppression. Test inputs only; assertions remain.
+# 40 findings; rule: private-key; files: crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs (6), crates/services/jackin-diagnostics/src/redact/tests/case_01.rs (20), crates/services/jackin-diagnostics/src/redact/tests/case_02.rs (2), crates/jackin-diagnostics/src/build_log/tests.rs (3), crates/jackin-diagnostics/src/redact/tests.rs (9).
+# Provenance: commits 9e208685c8961f5fa1209d8d97daec7c16b4ad40, b72046bbc9314e93cddf4d8252570dc375935f56, c2a80a7dc0618007840533e956b06f4af3458a70, f52557d8ce10c2646d49f12f5de6ff7cbf2a1578, 69b82de1a48cc18add3933e1995028c8aa2722e8, and 08135f1ae010c63cec1bd7ff3a8125036a5c1576; merged PR #1128.
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs:private-key:131
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs:private-key:144
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs:private-key:156
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_02.rs:private-key:114
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:69
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:80
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:97
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:106
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:125
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:136
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:244
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:257
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:267
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:358
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs:private-key:131
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs:private-key:144
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs:private-key:156
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_02.rs:private-key:114
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:69
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:80
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:97
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:106
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:125
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:136
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:244
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:257
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:267
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:private-key:358
+f52557d8ce10c2646d49f12f5de6ff7cbf2a1578:crates/jackin-diagnostics/src/redact/tests.rs:private-key:33
+c2a80a7dc0618007840533e956b06f4af3458a70:crates/jackin-diagnostics/src/build_log/tests.rs:private-key:130
+c2a80a7dc0618007840533e956b06f4af3458a70:crates/jackin-diagnostics/src/build_log/tests.rs:private-key:143
+c2a80a7dc0618007840533e956b06f4af3458a70:crates/jackin-diagnostics/src/build_log/tests.rs:private-key:155
+c2a80a7dc0618007840533e956b06f4af3458a70:crates/jackin-diagnostics/src/redact/tests.rs:private-key:33
+c2a80a7dc0618007840533e956b06f4af3458a70:crates/jackin-diagnostics/src/redact/tests.rs:private-key:43
+c2a80a7dc0618007840533e956b06f4af3458a70:crates/jackin-diagnostics/src/redact/tests.rs:private-key:62
+c2a80a7dc0618007840533e956b06f4af3458a70:crates/jackin-diagnostics/src/redact/tests.rs:private-key:73
+c2a80a7dc0618007840533e956b06f4af3458a70:crates/jackin-diagnostics/src/redact/tests.rs:private-key:181
+c2a80a7dc0618007840533e956b06f4af3458a70:crates/jackin-diagnostics/src/redact/tests.rs:private-key:194
+69b82de1a48cc18add3933e1995028c8aa2722e8:crates/jackin-diagnostics/src/redact/tests.rs:private-key:181
+08135f1ae010c63cec1bd7ff3a8125036a5c1576:crates/jackin-diagnostics/src/redact/tests.rs:private-key:137
+
+# Reason: quoted credential-key tests use fixed ordinary words and syntax; redact_text asserts those words are absent and the redaction marker is present. Test inputs only.
+# 4 findings; rule: generic-password; file: crates/services/jackin-diagnostics/src/redact/tests/case_01.rs.
+# Provenance: source commits 9e208685c8961f5fa1209d8d97daec7c16b4ad40 and b72046bbc9314e93cddf4d8252570dc375935f56; merged PR #1128.
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:generic-password:35
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:generic-password:36
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:generic-password:35
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-diagnostics/src/redact/tests/case_01.rs:generic-password:36
+
+# Reason: cursor parser tests use a hand-constructed three-segment synthetic token; assert dummy identifier extraction and malformed-input rejection. Offline parser only; no provider or token validation.
+# 2 findings; rule: jwt; files: crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs, crates/services/jackin-usage/src/usage/cursor/tests/case_01.rs.
+# Provenance: source commits 9e208685c8961f5fa1209d8d97daec7c16b4ad40 and b72046bbc9314e93cddf4d8252570dc375935f56; merged PR #1128.
+9e208685c8961f5fa1209d8d97daec7c16b4ad40:crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:9
+b72046bbc9314e93cddf4d8252570dc375935f56:crates/services/jackin-usage/src/usage/cursor/tests/case_01.rs:jwt:9
+
+# Reason: generated Velnor task-report/output namespace digests beside public task IDs; the producer contract derives matrix keys from public task IDs. Not credential or bearer authority.
+# 3 findings; rule: generic-api-key; file: .github/workflows/ci.yml (3).
+# Provenance: workflow regeneration commit 3e1bb814a50e2d6f56692802f6c1e1db9b0dbf84, merged PR #1109; producer v0.1.0 commit c57c700459bbe1549fe7eedcb7d8689585c38986.
+3e1bb814a50e2d6f56692802f6c1e1db9b0dbf84:.github/workflows/ci.yml:generic-api-key:5334
+3e1bb814a50e2d6f56692802f6c1e1db9b0dbf84:.github/workflows/ci.yml:generic-api-key:5421
+3e1bb814a50e2d6f56692802f6c1e1db9b0dbf84:.github/workflows/ci.yml:generic-api-key:5450
