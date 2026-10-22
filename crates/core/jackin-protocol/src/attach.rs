@@ -919,8 +919,10 @@ async fn read_framed_payload<R>(stream: &mut R, first_byte: u8) -> Result<Option
 where
     R: AsyncRead + Unpin,
 {
+    // The first byte is already supplied; prefix and payload share one frame-read remainder budget.
+    let deadline = tokio::time::Instant::now() + FRAME_READ_TIMEOUT;
     let mut len_buf = [0u8; 4];
-    match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(&mut len_buf)).await {
+    match tokio::time::timeout_at(deadline, stream.read_exact(&mut len_buf)).await {
         Ok(Ok(_)) => {}
         Ok(Err(e)) => {
             if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -943,7 +945,7 @@ where
         let Some(dest) = chunk.get_mut(..n) else {
             bail!("attach frame: chunk slice out of range");
         };
-        match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(dest)).await {
+        match tokio::time::timeout_at(deadline, stream.read_exact(dest)).await {
             Ok(Ok(_)) => {}
             Ok(Err(e)) => {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {

@@ -63,8 +63,12 @@ fn codex_test_stub_installs_complete_fail_fast_bundle() {
     let sibling = codex.with_file_name(jackin_core::CODEX_CODE_MODE_HOST_BINARY);
     assert!(is_executable_file(&codex));
     assert!(is_executable_file(&sibling));
-    let output = std::process::Command::new(&sibling).output().unwrap();
-    assert_eq!(output.status.code(), Some(127));
+    let output = jackin_process::exec_sync(&jackin_process::ExecRequest::new(
+        &sibling,
+        std::iter::empty::<&str>(),
+    ))
+    .unwrap();
+    assert_eq!(output.code, Some(127));
     assert!(
         String::from_utf8_lossy(&output.stderr)
             .contains("Codex code-mode host is not implemented by this test stub")
