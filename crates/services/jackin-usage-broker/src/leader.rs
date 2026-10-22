@@ -325,6 +325,7 @@ pub(crate) fn validate_owned_file(file: &File, mode: u32) -> Result<(), UsageCoo
 }
 
 pub(crate) fn wait_for_leader(client: &UsageBrokerClient) -> Result<(), UsageCoordinationError> {
+    client.initialization_result()?;
     let started = Instant::now();
     while started.elapsed() < CONNECT_RETRY {
         if connect_probe(client) {
