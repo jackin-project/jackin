@@ -5,5 +5,7 @@ mod amp;
 mod grammar;
 mod limits;
 mod numbers;
+mod proof_comparison;
+mod proof_material;
 mod proofs;
 mod v1_compat;

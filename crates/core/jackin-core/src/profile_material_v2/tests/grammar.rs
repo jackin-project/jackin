@@ -56,6 +56,7 @@ fn rejects_incomplete_ambiguous_or_non_json_structure() {
         b"[1}",
         b"{\"a\":[1}",
         b"[1]]",
+        b"\"unterminated",
         b"/* comment */ null",
         b"// comment\nnull",
         b"\x0bnull",
@@ -104,6 +105,15 @@ fn decoded_escaped_key_and_string_spellings_are_equivalent() {
         profile_credential_material_revision_v2(Agent::Codex, br#"{ "\u0061" : "\u0078" }"#)
             .expect("escaped spelling is valid JSON");
     assert_eq!(first, second);
+
+    let different_value = profile_credential_material_revision_v2(Agent::Codex, br#"{"a":"y"}"#)
+        .expect("different string value is valid JSON");
+    let number = profile_credential_material_revision_v2(Agent::Codex, br#"{"a":1}"#)
+        .expect("number fixture is valid JSON");
+    let numeric_string = profile_credential_material_revision_v2(Agent::Codex, br#"{"a":"1"}"#)
+        .expect("numeric-looking string fixture is valid JSON");
+    assert_ne!(first, different_value);
+    assert_ne!(number, numeric_string);
 }
 
 #[test]
@@ -124,6 +134,16 @@ fn parser_errors_do_not_echo_untrusted_canaries() {
     assert_eq!(error, ProfileCredentialV2Error::InvalidJson);
     assert!(!error.to_string().contains("canary"));
     assert!(!format!("{error:?}").contains("canary"));
+
+    let malformed_string = format!(r#"{{"bad":"{canary}\q"}}"#);
+    let Err(error) =
+        profile_credential_material_revision_v2(Agent::Codex, malformed_string.as_bytes())
+    else {
+        panic!("malformed JSON string with a canary unexpectedly succeeded");
+    };
+    assert_eq!(error, ProfileCredentialV2Error::InvalidJson);
+    assert!(!error.to_string().contains(canary));
+    assert!(!format!("{error:?}").contains(canary));
 
     let duplicate_key = br#"{"CANARY_KEY":"CANARY_VALUE","CANARY_KEY":"other"}"#;
     let Err(error) = profile_credential_material_revision_v2(Agent::Codex, duplicate_key) else {

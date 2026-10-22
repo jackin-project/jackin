@@ -160,6 +160,22 @@ fn enforces_eight_mib_per_selector_and_json_material_input() {
         .err(),
         Some(ProfileCredentialV2Error::InputTooLarge)
     );
+
+    let malformed_over = vec![b'!'; MAX_INPUT_BYTES + 1];
+    assert_eq!(
+        profile_credential_material_revision_v2(Agent::Codex, &malformed_over).err(),
+        Some(ProfileCredentialV2Error::InputTooLarge)
+    );
+    assert_eq!(
+        profile_credential_source_identity_v2(
+            Agent::Codex,
+            "openai",
+            Path::new("/profiles/main"),
+            Some(&malformed_over),
+        )
+        .err(),
+        Some(ProfileCredentialV2Error::InputTooLarge)
+    );
 }
 
 #[test]
@@ -213,6 +229,8 @@ fn enforces_eight_mib_for_amp_ignored_metadata_and_opaque_omp_bytes() {
 #[test]
 fn counts_root_containers_and_scalar_values_once_but_not_object_keys() {
     assert_eq!(MAX_JSON_VALUES, 65_536);
+    profile_credential_material_revision_v2(Agent::Codex, b"null")
+        .expect("a root scalar must count as one JSON value");
     profile_credential_material_revision_v2(Agent::Codex, b"[]")
         .expect("empty JSON array must be accepted");
     profile_credential_material_revision_v2(Agent::Codex, b"{}")
@@ -300,6 +318,20 @@ fn sibling_branches_receive_independent_depth_with_shared_value_budget() {
     raw.push(b']');
     profile_credential_material_revision_v2(Agent::Codex, &raw)
         .expect("value-limit object with unique keys must be accepted");
+
+    let left = null_array(MAX_JSON_VALUES / 2 - 1);
+    let right = null_array(MAX_JSON_VALUES / 2 - 1);
+    let mut shared_budget =
+        Vec::with_capacity(left.len().saturating_add(right.len()).saturating_add(3));
+    shared_budget.push(b'[');
+    shared_budget.extend_from_slice(&left);
+    shared_budget.push(b',');
+    shared_budget.extend_from_slice(&right);
+    shared_budget.push(b']');
+    assert_eq!(
+        profile_credential_material_revision_v2(Agent::Codex, &shared_budget).err(),
+        Some(ProfileCredentialV2Error::TooManyValues)
+    );
 }
 
 #[test]
@@ -338,6 +370,16 @@ fn object_value_budget_precedes_next_key_decoding_and_duplicate_checks() {
     assert!(duplicate_key.len() < MAX_INPUT_BYTES);
     assert_eq!(
         profile_credential_material_revision_v2(Agent::Codex, &duplicate_key).err(),
+        Some(ProfileCredentialV2Error::TooManyValues)
+    );
+
+    let mut nested_duplicate_key = null_array(MAX_JSON_VALUES - 3);
+    nested_duplicate_key.pop();
+    nested_duplicate_key.push(b',');
+    nested_duplicate_key.extend_from_slice(br#"{"k":null,"k":null}]"#);
+    assert!(nested_duplicate_key.len() < MAX_INPUT_BYTES);
+    assert_eq!(
+        profile_credential_material_revision_v2(Agent::Codex, &nested_duplicate_key).err(),
         Some(ProfileCredentialV2Error::TooManyValues)
     );
 }

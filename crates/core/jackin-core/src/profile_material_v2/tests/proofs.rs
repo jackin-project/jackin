@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-#[path = "proof_comparison.rs"]
-mod proof_comparison;
-#[path = "proof_material.rs"]
-mod proof_material;
-
 use std::path::Path;
 
 use crate::{
