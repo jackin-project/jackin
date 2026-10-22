@@ -61,6 +61,115 @@ url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_
 url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/384924880"
 provenance = "github-attestations"
 
+[[tools."aqua:betterleaks/betterleaks"]]
+version = "1.9.0"
+backend = "aqua:betterleaks/betterleaks"
+specifiers = ["1.9.0"]
+
+[tools."aqua:betterleaks/betterleaks"."platforms.linux-arm64"]
+checksum = "sha256:1d39116e0a58dc94574715e2aa12a2dbd5062f193eee3fec011fef6ba06bd13b"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/betterleaks/betterleaks/releases/assets/599108932"
+provenance = "cosign"
+
+[tools."aqua:betterleaks/betterleaks"."platforms.linux-arm64-musl"]
+checksum = "sha256:1d39116e0a58dc94574715e2aa12a2dbd5062f193eee3fec011fef6ba06bd13b"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/betterleaks/betterleaks/releases/assets/599108932"
+provenance = "cosign"
+
+[tools."aqua:betterleaks/betterleaks"."platforms.linux-x64"]
+checksum = "sha256:f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_linux_x64.tar.gz"
+url_api = "https://api.github.com/repos/betterleaks/betterleaks/releases/assets/599108929"
+provenance = "cosign"
+
+[tools."aqua:betterleaks/betterleaks"."platforms.linux-x64-baseline"]
+checksum = "sha256:f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_linux_x64.tar.gz"
+url_api = "https://api.github.com/repos/betterleaks/betterleaks/releases/assets/599108929"
+provenance = "cosign"
+
+[tools."aqua:betterleaks/betterleaks"."platforms.linux-x64-musl"]
+checksum = "sha256:f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_linux_x64.tar.gz"
+url_api = "https://api.github.com/repos/betterleaks/betterleaks/releases/assets/599108929"
+provenance = "cosign"
+
+[tools."aqua:betterleaks/betterleaks"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_linux_x64.tar.gz"
+url_api = "https://api.github.com/repos/betterleaks/betterleaks/releases/assets/599108929"
+provenance = "cosign"
+
+[tools."aqua:betterleaks/betterleaks"."platforms.macos-arm64"]
+checksum = "sha256:83dd7eaab13d44a1e8e347a17064cdef153a1478db473276d41b38d55613d3f2"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/betterleaks/betterleaks/releases/assets/599108927"
+provenance = "cosign"
+
+[tools."aqua:betterleaks/betterleaks"."platforms.macos-x64"]
+checksum = "sha256:68dfd83458d9e7f90663daa7a81c7f944083b170dae82e4f5f8d0581ed519ef1"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_darwin_x64.tar.gz"
+url_api = "https://api.github.com/repos/betterleaks/betterleaks/releases/assets/599108931"
+provenance = "cosign"
+
+[tools."aqua:betterleaks/betterleaks"."platforms.macos-x64-baseline"]
+checksum = "sha256:68dfd83458d9e7f90663daa7a81c7f944083b170dae82e4f5f8d0581ed519ef1"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_darwin_x64.tar.gz"
+url_api = "https://api.github.com/repos/betterleaks/betterleaks/releases/assets/599108931"
+provenance = "cosign"
+
+[[tools."aqua:gitleaks/gitleaks"]]
+version = "8.30.1"
+backend = "aqua:gitleaks/gitleaks"
+specifiers = ["8.30.1"]
+
+[tools."aqua:gitleaks/gitleaks"."platforms.linux-arm64"]
+checksum = "sha256:e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332057"
+
+[tools."aqua:gitleaks/gitleaks"."platforms.linux-arm64-musl"]
+checksum = "sha256:e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332057"
+
+[tools."aqua:gitleaks/gitleaks"."platforms.linux-x64"]
+checksum = "sha256:551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332058"
+
+[tools."aqua:gitleaks/gitleaks"."platforms.linux-x64-baseline"]
+checksum = "sha256:551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332058"
+
+[tools."aqua:gitleaks/gitleaks"."platforms.linux-x64-musl"]
+checksum = "sha256:551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332058"
+
+[tools."aqua:gitleaks/gitleaks"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332058"
+
+[tools."aqua:gitleaks/gitleaks"."platforms.macos-arm64"]
+checksum = "sha256:b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332059"
+
+[tools."aqua:gitleaks/gitleaks"."platforms.macos-x64"]
+checksum = "sha256:dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_darwin_x64.tar.gz"
+url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332053"
+
+[tools."aqua:gitleaks/gitleaks"."platforms.macos-x64-baseline"]
+checksum = "sha256:dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_darwin_x64.tar.gz"
+url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332053"
+
 [[tools."aqua:nextest-rs/nextest/cargo-nextest"]]
 version = "0.9.149"
 backend = "aqua:nextest-rs/nextest/cargo-nextest"
@@ -511,6 +620,68 @@ url_api = "https://api.github.com/repos/boltffi/boltffi/releases/assets/64054429
 checksum = "sha256:a2d180c6eef4bdd40535e7535a5627032e9d0d92a63c6fed302ebfd17ddddbc7"
 url = "https://github.com/boltffi/boltffi/releases/download/v0.31.1/boltffi-darwin-x86_64.tar.gz"
 url_api = "https://api.github.com/repos/boltffi/boltffi/releases/assets/640544290"
+
+[[tools."github:mongodb/kingfisher"]]
+version = "2.14.0"
+backend = "github:mongodb/kingfisher"
+specifiers = ["2.14.0"]
+
+[tools."github:mongodb/kingfisher".options]
+matching_regex = '^kingfisher-(darwin|linux)-(arm64|x64)\.tgz$|^kingfisher-windows-x64\.zip$'
+
+[tools."github:mongodb/kingfisher"."platforms.linux-arm64"]
+checksum = "sha256:3b04c3a339c9bb5f4ce6796e6cfa977cdea2c7ddc0b709ac61f24fd803e196d5"
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.14.0/kingfisher-linux-arm64.tgz"
+url_api = "https://api.github.com/repos/mongodb/kingfisher/releases/assets/658004559"
+provenance = "github-attestations"
+
+[tools."github:mongodb/kingfisher"."platforms.linux-arm64-musl"]
+checksum = "sha256:3b04c3a339c9bb5f4ce6796e6cfa977cdea2c7ddc0b709ac61f24fd803e196d5"
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.14.0/kingfisher-linux-arm64.tgz"
+url_api = "https://api.github.com/repos/mongodb/kingfisher/releases/assets/658004559"
+provenance = "github-attestations"
+
+[tools."github:mongodb/kingfisher"."platforms.linux-x64"]
+checksum = "sha256:45fc2e12d64dddc17f1f3143d7c0e5dddbc2079b92ec420c20be1a57a8e4829a"
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.14.0/kingfisher-linux-x64.tgz"
+url_api = "https://api.github.com/repos/mongodb/kingfisher/releases/assets/658004459"
+provenance = "github-attestations"
+
+[tools."github:mongodb/kingfisher"."platforms.linux-x64-baseline"]
+checksum = "sha256:45fc2e12d64dddc17f1f3143d7c0e5dddbc2079b92ec420c20be1a57a8e4829a"
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.14.0/kingfisher-linux-x64.tgz"
+url_api = "https://api.github.com/repos/mongodb/kingfisher/releases/assets/658004459"
+provenance = "github-attestations"
+
+[tools."github:mongodb/kingfisher"."platforms.linux-x64-musl"]
+checksum = "sha256:45fc2e12d64dddc17f1f3143d7c0e5dddbc2079b92ec420c20be1a57a8e4829a"
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.14.0/kingfisher-linux-x64.tgz"
+url_api = "https://api.github.com/repos/mongodb/kingfisher/releases/assets/658004459"
+provenance = "github-attestations"
+
+[tools."github:mongodb/kingfisher"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:45fc2e12d64dddc17f1f3143d7c0e5dddbc2079b92ec420c20be1a57a8e4829a"
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.14.0/kingfisher-linux-x64.tgz"
+url_api = "https://api.github.com/repos/mongodb/kingfisher/releases/assets/658004459"
+provenance = "github-attestations"
+
+[tools."github:mongodb/kingfisher"."platforms.macos-arm64"]
+checksum = "sha256:df6710130fac7314a6479e3ac7b2b092f8aa3a2bef131fbd307fa3dd8d7d9471"
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.14.0/kingfisher-darwin-arm64.tgz"
+url_api = "https://api.github.com/repos/mongodb/kingfisher/releases/assets/658004769"
+provenance = "github-attestations"
+
+[tools."github:mongodb/kingfisher"."platforms.macos-x64"]
+checksum = "sha256:0f31c55ddcb9e10509f96a05f5ed1506f8a52e2ccc2927e2175c04dbc1a21c30"
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.14.0/kingfisher-darwin-x64.tgz"
+url_api = "https://api.github.com/repos/mongodb/kingfisher/releases/assets/658004723"
+provenance = "github-attestations"
+
+[tools."github:mongodb/kingfisher"."platforms.macos-x64-baseline"]
+checksum = "sha256:0f31c55ddcb9e10509f96a05f5ed1506f8a52e2ccc2927e2175c04dbc1a21c30"
+url = "https://github.com/mongodb/kingfisher/releases/download/v2.14.0/kingfisher-darwin-x64.tgz"
+url_api = "https://api.github.com/repos/mongodb/kingfisher/releases/assets/658004723"
+provenance = "github-attestations"
 
 [[tools."github:open-telemetry/weaver"]]
 version = "0.28.0"

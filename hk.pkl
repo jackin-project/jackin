@@ -36,9 +36,9 @@ hooks {
   // placeholder/test-fixture findings with written reasons; betterleaks and gitleaks read .betterleaksignore / .gitleaksignore.
   ["security-audit"] {
     steps {
-      ["kingfisher-history"] { check = "kingfisher scan . --git-history full --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml" }
-      ["betterleaks-history"] { check = "betterleaks git . --redact" }
-      ["gitleaks-history"] { check = "gitleaks git . --redact --no-banner" }
+      ["kingfisher-history"] { check = "mise exec --locked -- kingfisher scan . --git-history full --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml" }
+      ["betterleaks-history"] { check = "mise exec --locked -- betterleaks git . --redact" }
+      ["gitleaks-history"] { check = "mise exec --locked -- gitleaks git . --redact --no-banner" }
     }
   }
 }
