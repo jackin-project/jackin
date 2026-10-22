@@ -16,13 +16,13 @@ pub(super) async fn download_and_cache(
     source: &str,
     dest: &Path,
 ) -> Result<()> {
-    let url = download_url(version, arch, channel)?;
+    let url = download_url(version, arch, channel, source)?;
     let tmp_archive = dest.with_extension("tar.gz.tmp");
     let tmp = dest.with_extension("tmp");
     let evidence = crate::release_evidence::verify_release(version, linux_target(arch), source)
         .await
         .context("authenticating complete capsule release evidence before installation")?;
-    download_verified_archive(version, &url, &tmp_archive, &evidence).await?;
+    download_verified_archive(version, source, &url, &tmp_archive, &evidence).await?;
     if let Err(e) = archive::extract_capsule(&tmp_archive, &tmp) {
         remove_with_debug_log(&tmp_archive);
         remove_with_debug_log(&tmp);
@@ -85,6 +85,7 @@ pub(super) async fn download_and_cache(
 
 async fn download_verified_archive(
     version: &str,
+    source: &str,
     url: &str,
     tmp_archive: &Path,
     evidence: &crate::release_evidence::VerifiedCapsule,
@@ -98,7 +99,7 @@ async fn download_verified_archive(
     .await;
     if let Err(e) = download_result {
         remove_with_debug_log(tmp_archive);
-        return Err(e).context(download_failure_message(version, url));
+        return Err(e).context(download_failure_message(version, source, url));
     }
     if std::fs::metadata(tmp_archive)?.len() != evidence.size {
         remove_with_debug_log(tmp_archive);

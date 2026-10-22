@@ -84,8 +84,8 @@ build task; signing, publication, and Homebrew promotion are separate workflow
 responsibilities. Generated preview publication requires successful exact-commit
 main CI. Stable release preparation and publication start only through manual
 dispatch and preserve the protected release environment's approval gate.
-Preview publication replaces the rolling `preview` generation; stable publication
-creates a permanent immutable version tag. Neither channel implicitly publishes
+Preview publication creates an immutable `preview-<full source SHA>` tag and
+release per source commit; stable publication creates a permanent immutable version tag. Neither channel implicitly publishes
 crates to crates.io. Homebrew promotion remains disabled during the initial tap
 bootstrap; enabling it requires the captured tap updater and exact-head review
 completion gates to be qualified first. Running this task alone does not publish.

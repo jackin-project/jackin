@@ -116,17 +116,21 @@ fn read_cached_release_at_past_ttl_without_wall_clock() {
     let path = metadata_cache_path(&paths, Agent::Claude);
     let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
     let clock = ManualClock::with_system_base(modified);
-    clock.advance(CACHE_TTL);
+    clock
+        .advance(CACHE_TTL)
+        .expect("cache TTL advance is representable");
     assert!(
         read_cached_release_with_clock(&paths, Agent::Claude, &clock).is_none(),
         "exactly CACHE_TTL old must miss"
     );
     let fresh_clock = ManualClock::with_system_base(modified);
-    fresh_clock.advance(
-        CACHE_TTL
-            .checked_sub(Duration::from_secs(1))
-            .expect("TTL exceeds one second"),
-    );
+    fresh_clock
+        .advance(
+            CACHE_TTL
+                .checked_sub(Duration::from_secs(1))
+                .expect("TTL exceeds one second"),
+        )
+        .expect("fresh-cache clock advance is representable");
     assert!(
         read_cached_release_with_clock(&paths, Agent::Claude, &fresh_clock).is_some(),
         "under TTL must hit"
