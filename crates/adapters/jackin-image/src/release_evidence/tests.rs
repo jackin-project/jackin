@@ -150,7 +150,7 @@ fn claims(receipt: &PackageReleaseReceipt) -> sigstore_crypto::FulcioCiClaims {
     claims.source_repository_uri = Some(policy::REPOSITORY.into());
     claims.source_repository_identifier = Some("1197700841".into());
     claims.source_repository_ref = Some("refs/heads/main".into());
-    claims.source_repository_digest = Some(receipt.source.commit_sha.clone());
+    claims.source_repository_digest = Some(receipt.workflow.authority_sha.clone());
     claims.source_repository_owner_uri = Some("https://github.com/jackin-project".into());
     claims.source_repository_owner_identifier = Some("273541039".into());
     claims.build_signer_uri = Some(policy::identity(receipt.channel).into());
@@ -205,6 +205,24 @@ fn exact_ci_claim_policy_rejects_every_missing_or_changed_claim() {
             );
         }
     }
+}
+
+#[test]
+fn ci_claims_bind_source_payload_and_workflow_authority_independently() {
+    let mut receipt = receipt();
+    receipt.workflow.authority_sha = "b".repeat(40);
+    let valid = claims(&receipt);
+    policy::validate_ci_claims(&valid, &receipt).unwrap();
+
+    let mut source_sha_transplant = valid;
+    source_sha_transplant.source_repository_digest = Some(receipt.source.commit_sha.clone());
+    policy::validate_ci_claims(&source_sha_transplant, &receipt)
+        .expect_err("the payload source SHA cannot replace the workflow authority SHA");
+
+    let mut unrelated_sha_transplant = claims(&receipt);
+    unrelated_sha_transplant.source_repository_digest = Some("c".repeat(40));
+    policy::validate_ci_claims(&unrelated_sha_transplant, &receipt)
+        .expect_err("an unrelated repository SHA cannot replace workflow authority");
 }
 
 #[test]
@@ -266,7 +284,7 @@ fn statement(receipt: &PackageReleaseReceipt) -> (Value, BTreeMap<String, String
                 "buildType":"https://actions.github.io/buildtypes/workflow/v1",
                 "externalParameters":{"workflow":{"ref":"refs/heads/main","repository":policy::REPOSITORY,"path":receipt.channel.workflow_path()}},
                 "internalParameters":{"github":{"event_name":receipt.channel.event().as_str(),"repository_id":"1197700841","repository_owner_id":"273541039","runner_environment":"github-hosted"}},
-                "resolvedDependencies":[{"uri":format!("git+{}@refs/heads/main",policy::REPOSITORY),"digest":{"gitCommit":receipt.source.commit_sha}}]
+                "resolvedDependencies":[{"uri":format!("git+{}@refs/heads/main",policy::REPOSITORY),"digest":{"gitCommit":receipt.workflow.authority_sha}}]
             },
             "runDetails":{"builder":{"id":policy::identity(receipt.channel)},"metadata":{"invocationId":format!("{}/actions/runs/{}/attempts/{}",policy::REPOSITORY,receipt.workflow.run_id,receipt.workflow.run_attempt)}}
         }
@@ -327,6 +345,26 @@ fn provenance_requires_exact_complete_eight_subject_inventory() {
         .push(json!({"name":"unexpected","digest":{"sha256":"a".repeat(64)}}));
     provenance::validate_statement(&extra, &receipt, &subjects)
         .expect_err("invalid evidence must be rejected");
+}
+
+#[test]
+fn provenance_binds_workflow_authority_separately_from_payload_source() {
+    let mut receipt = receipt();
+    receipt.workflow.authority_sha = "b".repeat(40);
+    let (valid_statement, subjects) = statement(&receipt);
+    provenance::validate_statement(&valid_statement, &receipt, &subjects).unwrap();
+
+    let mut source_sha_transplant = valid_statement;
+    source_sha_transplant["predicate"]["buildDefinition"]["resolvedDependencies"][0]["digest"]["gitCommit"] =
+        json!(receipt.source.commit_sha);
+    provenance::validate_statement(&source_sha_transplant, &receipt, &subjects)
+        .expect_err("the payload source SHA cannot replace the workflow authority SHA");
+
+    let mut unrelated_sha_transplant = statement(&receipt).0;
+    unrelated_sha_transplant["predicate"]["buildDefinition"]["resolvedDependencies"][0]["digest"]
+        ["gitCommit"] = json!("c".repeat(40));
+    provenance::validate_statement(&unrelated_sha_transplant, &receipt, &subjects)
+        .expect_err("an unrelated repository SHA cannot replace workflow authority");
 }
 
 mod channels;

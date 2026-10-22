@@ -1,5 +1,7 @@
 # Native Velnor preview release and Homebrew promotion design
 
+**Superseded preview identity:** [Immutable preview publication and migration](immutable-preview-publication.md) records the selected `preview-<full40-source-sha>` tag, unchanged `P-preview.N+sha7` package version, signed receipt-envelope binding, and non-overwriting migration rules. This later decision supersedes release-tag and retry details below where they conflict; the broader typed Velnor design remains historical context.
+
 Date: 2026-10-18. Status: researched proposal, not implemented configuration.
 
 Security review: three independent reviews completed. Accepted findings and remaining implementation proof are recorded in [the security review](velnor-native-preview-security-review.md). The requirements below incorporate their design corrections; no runtime implementation has been security-qualified yet.

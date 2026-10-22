@@ -37,6 +37,23 @@ fn tests_partition_runs_the_pre_commit_snapshot_fixture() {
 }
 
 #[test]
+fn lint_partition_uses_native_jactionlint() {
+    let args = CiArgs {
+        fast: true,
+        e2e: false,
+        e2e_capsule: None,
+        e2e_filter: None,
+        base: "origin/main".to_owned(),
+        only: vec!["lint".to_owned()],
+    };
+
+    assert_eq!(
+        step_names(&args).unwrap().first().map(String::as_str),
+        Some("jactionlint")
+    );
+}
+
+#[test]
 fn parse_capsule_export_accepts_single_quoted_path() {
     let temp = tempfile::tempdir().expect("tempdir");
     let capsule = temp.path().join("jackin-capsule");
@@ -214,44 +231,217 @@ jobs:
 }
 
 #[test]
-fn jactionlint_uses_the_generated_ci_flags_and_repository_scope() {
+fn jactionlint_uses_native_config_strict_flags_and_sorted_complete_inventory() {
     let temp = tempfile::tempdir().expect("tempdir");
     let workflows = temp.path().join(".github/workflows");
     fs::create_dir_all(&workflows).unwrap();
-    for name in ["z.yml", "a.yml", "README.md"] {
-        fs::write(workflows.join(name), "").unwrap();
-    }
     fs::write(
         temp.path().join(".github/jactionlint.yaml"),
         "profile: correctness\n",
     )
     .unwrap();
+    let action = temp.path().join(".github/actions/build/action.yml");
+    fs::create_dir_all(action.parent().unwrap()).unwrap();
+    fs::create_dir_all(temp.path().join(".github/actions/other")).unwrap();
+    for name in ["z.yml", "a.yml", "a.yaml", "x.y.extra.ml", "README.md"] {
+        fs::write(workflows.join(name), "").unwrap();
+    }
+    fs::write(&action, "").unwrap();
+    fs::write(
+        temp.path().join(".github/actions/build/action.extra.yml"),
+        "",
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join(".github/actions/build/action.y.extra.ml"),
+        "",
+    )
+    .unwrap();
+    fs::write(temp.path().join(".github/actions/other/README.md"), "").unwrap();
+    fs::write(temp.path().join(".github/dependabot.yaml"), "").unwrap();
+    fs::write(temp.path().join(".github/dependabot.y.extra.ml"), "").unwrap();
+    fs::write(temp.path().join(".github/dependabot.extra.yml"), "").unwrap();
+    fs::write(temp.path().join(".github/dependabot.md"), "").unwrap();
     let actual = super::workflow_lint::jactionlint_args(temp.path()).unwrap();
     let expected = [
+        "--config-file",
+        ".github/jactionlint.yaml",
+        "--format",
+        "oneline",
         "--strict-exit",
         "--no-online",
         "--shellcheck=shellcheck",
         "--pyflakes=",
+        "--no-color",
+        ".github/actions/build/action.y.extra.ml",
+        ".github/actions/build/action.yml",
+        ".github/dependabot.y.extra.ml",
+        ".github/dependabot.yaml",
+        ".github/workflows/a.yaml",
+        ".github/workflows/a.yml",
+        ".github/workflows/x.y.extra.ml",
+        ".github/workflows/z.yml",
     ];
     assert_eq!(actual, expected.map(std::ffi::OsString::from));
 }
 
 #[test]
-fn jactionlint_refuses_missing_workflows_or_generated_config() {
+fn jactionlint_refuses_missing_or_empty_complete_inventory() {
     let temp = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".github")).unwrap();
+    fs::write(
+        temp.path().join(".github/jactionlint.yaml"),
+        "profile: correctness\n",
+    )
+    .unwrap();
     let missing = super::workflow_lint::jactionlint_args(temp.path())
         .expect_err("missing workflows must reject");
-    assert!(missing.to_string().contains("does not exist"));
+    assert!(missing.to_string().contains(".github/workflows"));
     fs::create_dir_all(temp.path().join(".github/workflows")).unwrap();
     let empty = super::workflow_lint::jactionlint_args(temp.path())
         .expect_err("empty workflows must reject");
-    assert!(empty.to_string().contains("no workflow files found"));
-    fs::write(temp.path().join(".github/workflows/ci.yml"), "").unwrap();
-    let unconfigured = super::workflow_lint::jactionlint_args(temp.path())
-        .expect_err("a missing generated config must reject");
     assert!(
-        unconfigured
+        empty
             .to_string()
-            .contains("jactionlint.yaml does not exist")
+            .contains("no workflow, composite-action, or Dependabot")
+    );
+}
+
+#[test]
+fn jactionlint_requires_its_generated_config_file() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".github/workflows")).unwrap();
+
+    let error = super::workflow_lint::jactionlint_args(temp.path())
+        .expect_err("missing config must reject");
+    assert!(error.to_string().contains("jactionlint config"));
+}
+
+#[test]
+fn jactionlint_rejects_a_non_directory_inventory_root() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let github = temp.path().join(".github");
+    fs::create_dir_all(github.join("workflows")).unwrap();
+    fs::write(github.join("jactionlint.yaml"), "profile: correctness\n").unwrap();
+    fs::write(github.join("actions"), "not a directory").unwrap();
+    fs::write(github.join("workflows/ci.yml"), "").unwrap();
+
+    let error = super::workflow_lint::jactionlint_args(temp.path())
+        .expect_err("existing non-directory class root must reject");
+    assert!(
+        error
+            .to_string()
+            .contains(".github/actions is not a real directory")
+    );
+}
+
+#[test]
+fn jactionlint_rejects_symlinked_inventory_roots() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let external = temp.path().join("external");
+    fs::create_dir_all(external.join("workflows")).unwrap();
+    fs::write(external.join("jactionlint.yaml"), "profile: correctness\n").unwrap();
+    fs::write(external.join("workflows/ci.yml"), "").unwrap();
+    symlink(&external, temp.path().join(".github")).unwrap();
+    assert!(
+        super::workflow_lint::jactionlint_args(temp.path())
+            .unwrap_err()
+            .to_string()
+            .contains(".github is not a real directory")
+    );
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let github = temp.path().join(".github");
+    let external = temp.path().join("external");
+    fs::create_dir_all(&github).unwrap();
+    fs::create_dir_all(&external).unwrap();
+    fs::write(github.join("jactionlint.yaml"), "profile: correctness\n").unwrap();
+    fs::write(external.join("ci.yml"), "").unwrap();
+    symlink(&external, github.join("workflows")).unwrap();
+    assert!(
+        super::workflow_lint::jactionlint_args(temp.path())
+            .unwrap_err()
+            .to_string()
+            .contains(".github/workflows is not a real directory")
+    );
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let github = temp.path().join(".github");
+    let external = temp.path().join("external");
+    fs::create_dir_all(github.join("workflows")).unwrap();
+    fs::create_dir_all(&external).unwrap();
+    fs::write(github.join("jactionlint.yaml"), "profile: correctness\n").unwrap();
+    fs::write(github.join("workflows/ci.yml"), "").unwrap();
+    symlink(&external, github.join("actions")).unwrap();
+    assert!(
+        super::workflow_lint::jactionlint_args(temp.path())
+            .unwrap_err()
+            .to_string()
+            .contains(".github/actions is not a real directory")
+    );
+}
+
+#[test]
+fn jactionlint_rejects_symlinks_inside_workflow_action_and_dependabot_inventory() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let github = temp.path().join(".github");
+    let workflows = github.join("workflows");
+    fs::create_dir_all(&workflows).unwrap();
+    fs::write(github.join("jactionlint.yaml"), "profile: correctness\n").unwrap();
+    fs::write(temp.path().join("external.yml"), "").unwrap();
+    symlink(
+        temp.path().join("external.yml"),
+        workflows.join("unrelated.md"),
+    )
+    .unwrap();
+    assert!(
+        super::workflow_lint::jactionlint_args(temp.path())
+            .unwrap_err()
+            .to_string()
+            .contains("symlink is not allowed in lint inventory")
+    );
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let github = temp.path().join(".github");
+    let actions = github.join("actions/build");
+    let workflows = github.join("workflows");
+    fs::create_dir_all(&actions).unwrap();
+    fs::create_dir_all(&workflows).unwrap();
+    fs::write(github.join("jactionlint.yaml"), "profile: correctness\n").unwrap();
+    fs::write(workflows.join("ci.yml"), "").unwrap();
+    fs::write(temp.path().join("external.yml"), "").unwrap();
+    symlink(
+        temp.path().join("external.yml"),
+        actions.join("unrelated.md"),
+    )
+    .unwrap();
+    assert!(
+        super::workflow_lint::jactionlint_args(temp.path())
+            .unwrap_err()
+            .to_string()
+            .contains("symlink is not allowed in lint inventory")
+    );
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let github = temp.path().join(".github");
+    let workflows = github.join("workflows");
+    fs::create_dir_all(&workflows).unwrap();
+    fs::write(github.join("jactionlint.yaml"), "profile: correctness\n").unwrap();
+    fs::write(workflows.join("ci.yml"), "").unwrap();
+    fs::write(temp.path().join("external.yml"), "").unwrap();
+    symlink(
+        temp.path().join("external.yml"),
+        github.join("dependabot.yml"),
+    )
+    .unwrap();
+    assert!(
+        super::workflow_lint::jactionlint_args(temp.path())
+            .unwrap_err()
+            .to_string()
+            .contains("symlink is not allowed in lint inventory")
     );
 }

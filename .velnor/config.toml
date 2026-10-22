@@ -6,11 +6,12 @@ policy = "consumer-v1"
 default_branch = "main"
 generator_validation = "bootstrap"
 max_parallel_jobs = 4
-# velnor-actions 0.1.39 gives the dependency seed job this crate budget; its documentation lane needs ~12 minutes, so 10
-# cancelled every protected-push CI run. velnor-actions 0.1.40 (#350) adds a separate
-# `dependency_seed_timeout_minutes` (default 30); restore 10 here when jackin adopts it (that release also needs the
-# immutable-preview migration: preview `release_id`/`bootstrap_snapshot_sha256` are removed).
-crate_timeout_minutes = 20
+# velnor-actions 0.1.39 gave the dependency seed job the crate budget; its documentation lane needs ~12 minutes, so 10
+# cancelled protected-push CI runs. The verified velnor-actions 0.1.40 release (#350) adds a separate
+# `dependency_seed_timeout_minutes` budget (default 30), allowing the crate budget to return to 10.
+# This adoption also migrates immutable previews: preview `release_id`/`bootstrap_snapshot_sha256` are removed.
+crate_timeout_minutes = 10
+dependency_seed_timeout_minutes = 30
 mise_quiet = false
 pull_request_cache_policy = "read-only"
 runner_label = "ubuntu-26.04"
@@ -55,8 +56,6 @@ version_env = "JACKIN_VERSION_OVERRIDE"
 enabled = true
 versioning = "package-preview-commit-count-sha7"
 environment = "preview-publish"
-release_id = 328385904
-bootstrap_snapshot_sha256 = "a1fe28234278856de73506fcc90a897c1b6f079f7cf975e754fb7b85b81c90dd"
 
 [stacks.rust.binary_release.stable]
 enabled = true
