@@ -158,10 +158,14 @@ fn rebake_fixtures(file_kind: &str, migrate: MigrateFn, output_root: &Path) {
         let meta_raw = read_fixture_file(&source_dir.join("meta.toml"));
         let meta: FixtureMeta = toml::from_str(&meta_raw)
             .unwrap_or_else(|error| panic!("parsing {name}/meta.toml: {error}"));
-        assert_eq!(
-            name,
-            format!("from-{}", meta.from_version),
-            "fixture directory and from_version differ"
+        let expected_name = format!("from-{}", meta.from_version);
+        let reject_prefix = format!("{expected_name}-reject-");
+        let has_safe_reject_suffix = name.strip_prefix(&reject_prefix).is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.split('-').all(|part| !part.is_empty())
+        });
+        assert!(
+            name == expected_name || (meta.expected_error.is_some() && has_safe_reject_suffix),
+            "fixture directory and from_version differ or have an invalid rejection suffix"
         );
         let require_op_ref_migration = matches!(
             (file_kind, name.as_str()),
