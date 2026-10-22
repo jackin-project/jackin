@@ -49,4 +49,14 @@ if ! printf '%s\n' "$effective" | grep -Fx 'jackin-pre-commit' >/dev/null ||
     exit 1
 fi
 
-printf '%s\n' "installed Jackin staged-snapshot pre-commit hook"
+# Owner hk standard: pre-push runs hk's betterleaks history scan (hk.pkl).
+git config --local --replace-all hook.jackin-pre-push.command 'mise exec -- hk run pre-push'
+git config --local --replace-all hook.jackin-pre-push.event pre-push
+git config --local --replace-all hook.jackin-pre-push.enabled true
+
+if ! git hook list pre-push | grep -Fx 'jackin-pre-push' >/dev/null; then
+    printf '%s\n' 'error: pre-push must run the repository hk pre-push hook' >&2
+    exit 1
+fi
+
+printf '%s\n' "installed Jackin staged-snapshot pre-commit hook and hk pre-push hook"

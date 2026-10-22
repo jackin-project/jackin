@@ -26,7 +26,7 @@ root; the version is pinned in `mise.toml`/`mise.lock`). Install per checkout â€
 idempotent, safe to re-run:
 
 ```sh
-scripts/hooks-install   # installs scripts/pre-commit-snapshot
+scripts/hooks-install   # installs scripts/pre-commit-snapshot and the hk pre-push hook
 ```
 
 No shell activation needed. Requirements: Git 2.56+ (config-based hooks with
@@ -53,7 +53,7 @@ and the same step list backs `hk check` and `hk fix`:
 - `jactionlint` (check-only, the generated CI's flags and `.github/jactionlint.yaml`): workflows and composite actions
 - `swiftlint`, `swift-format`: `native/**` on macOS; skipped elsewhere
 
-`pre-push` runs `betterleaks git . --redact`. The full-history `security-audit`
+`pre-push` runs `betterleaks git . --redact` (`scripts/hooks-install` registers it as `jackin-pre-push`). The full-history `security-audit`
 hook never fires from Git; run it with `mise x -- hk run security-audit`.
 
 Checks run in the private snapshot. Strict whole-workspace Clippy and
