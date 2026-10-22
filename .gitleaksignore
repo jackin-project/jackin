@@ -246,3 +246,7 @@ e32254b26b26fd88a4b19f8e18eeefdd2041e585:crates/jackin-diagnostics/src/tests.rs:
 a3b57ad1144002e771ca725b0c6152606209fda7:crates/services/jackin-usage-provider-kimi/README.md:generic-api-key:3
 c7263d8d4a190091897c05e7386dc4ec2fc05c79:plans/jackin-desktop/001-provider-core-fixes.md:generic-api-key:143
 c7263d8d4a190091897c05e7386dc4ec2fc05c79:plans/jackin-desktop/spec/providers.md:generic-api-key:195
+
+# Reason: velnor generated manifest: matrix_key digests (m-<hex>) from commit 2c0f1c2e2 (#1164), merged after the #1165 baseline; not credentials
+# 1 finding(s); rules: generic-api-key; files: .github/velnor/task-execution-manifest-v1.json (1)
+2c0f1c2e28c5bc7a6e1b569826db3a15517d6e9c:.github/velnor/task-execution-manifest-v1.json:generic-api-key:2

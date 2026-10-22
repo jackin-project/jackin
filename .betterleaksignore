@@ -293,3 +293,7 @@ b7ce9db57a999968410130be654036d5ee2e0fa3:docs/content/docs/reference/research/se
 fb64c65df4fe7a87231eda954992d60e6af91a82:src/isolation/materialize.rs:generic-credential-uri:1154
 fb64c65df4fe7a87231eda954992d60e6af91a82:src/isolation/materialize.rs:generic-credential-uri:1184
 fb64c65df4fe7a87231eda954992d60e6af91a82:src/isolation/materialize.rs:generic-credential-uri:1867
+
+# Reason: velnor generated manifest: matrix_key digests (m-<hex>) from commit 2c0f1c2e2 (#1164), merged after the #1165 baseline; not credentials
+# 1 finding(s); rules: generic-api-key; files: .github/velnor/task-execution-manifest-v1.json (1)
+2c0f1c2e28c5bc7a6e1b569826db3a15517d6e9c:.github/velnor/task-execution-manifest-v1.json:generic-api-key:2
