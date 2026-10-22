@@ -1,8 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
-use jackin_usage_provider_core::{compact_count, quota_pace_label, timed_bucket, with_status_slot};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, CountQuotaPeriod,
+    CountQuotaProvenance, CountQuotaUnit, PercentObservationOrigin, QuotaBucketView, StatusSlot,
+    UsageSnapshotStatus,
+};
+use jackin_usage_provider_core::{
+    compact_count, quota_pace_label, timed_bucket, with_status_slot, with_used_percent,
+};
 
 use super::{
     KimiCount, KimiPool, KimiPools, KimiReset, KimiUsageDetail, KimiUsageResponse, KimiUsages,
@@ -52,20 +58,154 @@ pub(crate) fn kimi_pool_buckets(pools: &KimiPools, now: i64) -> Vec<QuotaBucketV
     let mut buckets = Vec::new();
     if let Some(pool) = &pools.limit_5h {
         buckets.push(with_status_slot(
-            kimi_pool_bucket(pool, "5-hour", 5 * 60 * 60, now),
+            parse_kimi_pool_bucket(pool, "5-hour", 5 * 60 * 60, now),
             Some(StatusSlot::Session),
         ));
     }
     if let Some(pool) = &pools.limit_7d {
         buckets.push(with_status_slot(
-            kimi_pool_bucket(pool, "Weekly", 7 * 24 * 60 * 60, now),
+            parse_kimi_pool_bucket(pool, "Weekly", 7 * 24 * 60 * 60, now),
             Some(StatusSlot::Weekly),
         ));
     }
     if let Some(pool) = &pools.limit_month_total {
-        buckets.push(kimi_pool_bucket(pool, "Monthly", 30 * 24 * 60 * 60, now));
+        buckets.push(parse_kimi_pool_bucket(
+            pool,
+            "Monthly",
+            30 * 24 * 60 * 60,
+            now,
+        ));
     }
     buckets
+}
+
+fn parse_kimi_pool_bucket(
+    raw: &serde_json::Value,
+    fallback_label: &str,
+    window_seconds: i64,
+    now: i64,
+) -> QuotaBucketView {
+    if let Ok(pool) = serde_json::from_value::<KimiPool>(raw.clone()) {
+        kimi_pool_bucket(&pool, fallback_label, window_seconds, now)
+    } else {
+        let message = format!("Kimi quota window {fallback_label}: malformed pool");
+        timed_bucket(
+            fallback_label,
+            None,
+            None,
+            None,
+            None,
+            now,
+            Some(&message),
+            UsageSnapshotStatus::Unavailable,
+        )
+    }
+}
+
+fn parsed_count(count: Option<&KimiCount>) -> Result<Option<u64>, &'static str> {
+    count.map(KimiCount::observation).transpose()
+}
+
+fn first_count_error(
+    label: &str,
+    limit: Option<&KimiCount>,
+    used: Option<&KimiCount>,
+    remaining: Option<&KimiCount>,
+) -> Option<String> {
+    [("limit", limit), ("used", used), ("remaining", remaining)]
+        .into_iter()
+        .find_map(|(field, count)| {
+            count
+                .and_then(|count| count.observation().err())
+                .map(|error| format!("Kimi quota window {label}: {field}: {error}"))
+        })
+}
+
+fn count_quota(
+    limit: Option<u64>,
+    used: Option<u64>,
+    remaining: Option<u64>,
+) -> Option<CountQuota> {
+    (limit.is_some() || used.is_some() || remaining.is_some()).then(|| {
+        CountQuota::new(
+            used,
+            limit,
+            remaining,
+            CountQuotaUnit::Unknown,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        )
+    })
+}
+
+struct KimiBucketObservations<'a> {
+    label: &'a str,
+    limit_raw: Option<&'a KimiCount>,
+    used_raw: Option<&'a KimiCount>,
+    remaining_raw: Option<&'a KimiCount>,
+    used_percent: Result<Option<CanonicalUsedPercent>, ()>,
+    reset_at: Option<i64>,
+    window_seconds: Option<i64>,
+    now: i64,
+}
+
+fn kimi_bucket_from_observations(observations: KimiBucketObservations<'_>) -> QuotaBucketView {
+    let KimiBucketObservations {
+        label,
+        limit_raw,
+        used_raw,
+        remaining_raw,
+        used_percent,
+        reset_at,
+        window_seconds,
+        now,
+    } = observations;
+    let limit = parsed_count(limit_raw).ok().flatten();
+    let used = parsed_count(used_raw).ok().flatten();
+    let remaining = parsed_count(remaining_raw).ok().flatten();
+    let count_quota = count_quota(limit, used, remaining);
+    let invalid_used_percent = used_percent.is_err();
+    let used_percent = used_percent.ok().flatten();
+
+    let diagnostic = first_count_error(label, limit_raw, used_raw, remaining_raw).or_else(|| {
+        invalid_used_percent
+            .then(|| format!("Kimi quota window {label}: invalid reported used ratio"))
+    });
+    let quantitative = count_quota.is_some() || used_percent.is_some();
+    let status = if quantitative {
+        UsageSnapshotStatus::Fresh
+    } else {
+        UsageSnapshotStatus::Unavailable
+    };
+
+    let pace = if let Some(diagnostic) = diagnostic {
+        Some(diagnostic)
+    } else if let Some(used_percent) = used_percent {
+        let remaining_points = CanonicalRemainingPercent::new(used_percent.remaining_points()).ok();
+        let pace = quota_pace_label(remaining_points, reset_at, window_seconds, now);
+        kimi_pace_with_over_cap(used_percent, pace)
+    } else if !quantitative {
+        Some(format!(
+            "Kimi quota window {label}: no quantitative observation"
+        ))
+    } else {
+        None
+    };
+    let mut view = timed_bucket(
+        label,
+        used.map(compact_count),
+        limit.map(compact_count),
+        None,
+        reset_at,
+        now,
+        pace.as_deref(),
+        status,
+    );
+    view.count_quota = count_quota;
+    with_used_percent(
+        view,
+        used_percent.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
+    )
 }
 
 pub(crate) fn kimi_pool_bucket(
@@ -74,37 +214,25 @@ pub(crate) fn kimi_pool_bucket(
     window_seconds: i64,
     now: i64,
 ) -> QuotaBucketView {
-    let limit = pool.limit.as_ref().and_then(KimiCount::value);
-    let used = pool.used.as_ref().and_then(KimiCount::value).or_else(|| {
-        limit.and_then(|limit| {
-            pool.remaining
-                .as_ref()
-                .and_then(KimiCount::value)
-                .map(|remaining| limit.saturating_sub(remaining))
-        })
-    });
-    let used_percent = pool.used_percent();
-    let remaining = used_percent.map(|used| 100u8.saturating_sub(used));
+    let label = pool.label(fallback_label);
     let reset_at = pool.reset_time.as_ref().and_then(KimiReset::epoch);
-    let pace = quota_pace_label(remaining, reset_at, Some(window_seconds), now);
-    let pace = kimi_pace_with_over_cap(pool.used_percent_raw(), pace);
-    timed_bucket(
-        &pool.label(fallback_label),
-        used.map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
-        limit.map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
-        remaining,
+    kimi_bucket_from_observations(KimiBucketObservations {
+        label: &label,
+        limit_raw: pool.limit.as_ref(),
+        used_raw: pool.used.as_ref(),
+        remaining_raw: pool.remaining.as_ref(),
+        used_percent: pool.used_percent(),
         reset_at,
+        window_seconds: Some(window_seconds),
         now,
-        pace.as_deref(),
-        UsageSnapshotStatus::Fresh,
-    )
+    })
 }
 
-pub(crate) fn kimi_pace_with_over_cap(
-    raw_percent: Option<f64>,
+fn kimi_pace_with_over_cap(
+    used_percent: CanonicalUsedPercent,
     pace: Option<String>,
 ) -> Option<String> {
-    let over_cap = raw_percent.and_then(kimi_over_cap_label);
+    let over_cap = kimi_over_cap_label(used_percent.get());
     match (over_cap, pace) {
         (Some(over_cap), Some(pace)) => Some(format!("{over_cap} · {pace}")),
         (Some(over_cap), None) => Some(over_cap),
@@ -113,53 +241,22 @@ pub(crate) fn kimi_pace_with_over_cap(
 }
 
 impl KimiUsageDetail {
-    pub(crate) fn limit_value(&self) -> Option<i64> {
+    pub(crate) fn limit_value(&self) -> Option<u64> {
         self.limit.as_ref().and_then(KimiCount::value)
     }
 
-    pub(crate) fn used_value(&self) -> Option<i64> {
+    pub(crate) fn used_value(&self) -> Option<u64> {
         self.used.as_ref().and_then(KimiCount::value)
     }
 
-    pub(crate) fn remaining_value(&self) -> Option<i64> {
+    pub(crate) fn remaining_value(&self) -> Option<u64> {
         self.remaining.as_ref().and_then(KimiCount::value)
-    }
-
-    pub(crate) fn used_percent_raw(&self) -> Option<f64> {
-        let limit = self.limit_value()?.max(0);
-        if limit == 0 {
-            return None;
-        }
-        let used = self.used_value().or_else(|| {
-            self.remaining_value()
-                .map(|remaining| limit.saturating_sub(remaining))
-        })?;
-        #[expect(clippy::cast_precision_loss, reason = "count magnitudes fit f64")]
-        Some(used.max(0) as f64 / limit as f64 * 100.0)
-    }
-
-    pub(crate) fn used_percent(&self) -> Option<u8> {
-        self.used_percent_raw().map(|raw| {
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "raw percent clamped non-negative; clamp bounds the f64→u8 cast"
-            )]
-            {
-                raw.round().clamp(0.0, 100.0) as u8
-            }
-        })
     }
 }
 
-pub(crate) fn kimi_over_cap_label(raw_percent: f64) -> Option<String> {
-    if !raw_percent.is_finite() || raw_percent <= 100.0 {
-        return None;
-    }
-    Some(if raw_percent.fract() == 0.0 {
-        format!("{raw_percent:.0}% used")
-    } else {
-        format!("{raw_percent:.1}% used")
-    })
+pub(crate) fn kimi_over_cap_label(used_percent: f64) -> Option<String> {
+    let used = CanonicalUsedPercent::new(used_percent).ok()?;
+    (used.get() > 100.0).then(|| used.label())
 }
 
 impl KimiWindow {
@@ -192,30 +289,18 @@ pub fn kimi_bucket(
     window: Option<&KimiWindow>,
     now: i64,
 ) -> QuotaBucketView {
-    let limit = detail.limit_value();
-    let used = detail.used_value().or_else(|| {
-        limit.and_then(|limit| {
-            detail
-                .remaining_value()
-                .map(|remaining| limit.saturating_sub(remaining))
-        })
-    });
-    let used_percent = detail.used_percent();
-    let remaining = used_percent.map(|used| 100u8.saturating_sub(used));
     let reset_at = detail.reset_time.as_ref().and_then(KimiReset::epoch);
     let window_seconds = kimi_window_seconds(label, window);
-    let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
-    let pace = kimi_pace_with_over_cap(detail.used_percent_raw(), pace);
-    timed_bucket(
+    kimi_bucket_from_observations(KimiBucketObservations {
         label,
-        used.map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
-        limit.map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
-        remaining,
+        limit_raw: detail.limit.as_ref(),
+        used_raw: detail.used.as_ref(),
+        remaining_raw: detail.remaining.as_ref(),
+        used_percent: Ok(None),
         reset_at,
+        window_seconds,
         now,
-        pace.as_deref(),
-        UsageSnapshotStatus::Fresh,
-    )
+    })
 }
 
 pub fn kimi_window_seconds(label: &str, window: Option<&KimiWindow>) -> Option<i64> {

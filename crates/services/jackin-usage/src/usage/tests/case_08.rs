@@ -25,7 +25,7 @@ fn grok_billing_config_maps_current_fallback_and_bounds() {
 
     assert_eq!(buckets[0].label, "Monthly");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
-    assert_eq!(buckets[0].remaining_percent, Some(64));
+    assert_eq!(buckets[0].remaining_percent, None);
     assert!(
         buckets[1..]
             .iter()
@@ -66,7 +66,17 @@ fn grok_billing_config_preferred_percent_path_has_pace() {
     let buckets = usage.buckets(now);
     assert_eq!(buckets[0].label, "Weekly");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
-    assert_eq!(buckets[0].remaining_percent, Some(57));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(
+        buckets[0]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(43.0)
+    );
+    assert_eq!(
+        buckets[0].used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
     assert!(buckets[0].pace_label.is_some());
 }
 
@@ -79,7 +89,8 @@ fn grok_plan_label_from_server_tier_only() {
     .expect("blank tier");
     assert_eq!(free.plan_label(), None);
     let web = GrokBillingSnapshot::Web(GrokWebBillingSnapshot {
-        used_percent: 40.0,
+        used_percent: jackin_protocol::control::CanonicalUsedPercent::new(40.0)
+            .expect("valid used percentage"),
         reset_at_epoch: Some(1_780_315_200),
     });
     assert_eq!(web.plan_label(), None);
@@ -170,7 +181,7 @@ fn grok_snapshot_uses_probe_success_without_local_credential_marker() {
     assert_eq!(view.confidence, UsageConfidence::Authoritative);
     assert_eq!(view.account.account_label, "needs Grok login");
     assert_eq!(view.buckets[0].label, "Monthly");
-    assert_eq!(view.buckets[0].remaining_percent, Some(80));
+    assert_eq!(view.buckets[0].remaining_percent, None);
     assert_eq!(view.last_error, None);
 }
 
@@ -191,7 +202,17 @@ fn grok_web_billing_response_maps_weekly_usage() {
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
 
     assert_eq!(buckets[0].label, "Weekly");
-    assert_eq!(buckets[0].remaining_percent, Some(14));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(
+        buckets[0]
+            .used_percent
+            .map(jackin_protocol::control::CanonicalUsedPercent::get),
+        Some(snapshot.used_percent.get())
+    );
+    assert_eq!(
+        buckets[0].used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
     assert_eq!(
         buckets[0].reset_label.as_deref(),
         Some(

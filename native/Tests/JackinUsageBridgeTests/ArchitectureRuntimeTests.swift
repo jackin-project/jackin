@@ -165,7 +165,7 @@ extension ArchitectureTests {
     }
 
     func testSelectStatusBarGlanceRowsHidesZeroAndCapsThree() {
-        func row(id: String, pct: UInt8?) -> GlanceProviderRow {
+        func row(id: String, pct: Double?) -> GlanceProviderRow {
             GlanceProviderRow(
                 surfaceId: id,
                 iconKey: id,
@@ -189,7 +189,9 @@ extension ArchitectureTests {
                 activityKind: "idle",
                 accessibilityLabel: id,
                 lastError: nil,
-                dimmed: false
+                dimmed: false,
+                glanceMeterPercent: pct,
+                glanceMeterSide: pct == nil ? nil : "remaining"
             )
         }
         let inventory = [

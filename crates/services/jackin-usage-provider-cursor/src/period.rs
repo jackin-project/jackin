@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::cursor_dashboard_url_with_base;
-use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, PercentObservationOrigin, QuotaBucketView,
+    StatusSlot, UsageSnapshotStatus,
+};
 use jackin_usage_provider_core::{
     bucket, format_currency, json_number, provider_http_client, timed_bucket, with_status_slot,
+    with_used_percent,
 };
 
 pub fn cursor_dashboard_post(
@@ -95,21 +99,20 @@ pub fn cursor_period_buckets(
 ) -> Vec<QuotaBucketView> {
     let mut buckets = Vec::new();
     if let Some(used) = usage.total_percent_used {
-        #[expect(
-            clippy::cast_sign_loss,
-            reason = "filtered non-negative; clamped 0..=100"
-        )]
-        let remaining = Some(100u8.saturating_sub(used.round().clamp(0.0, 100.0) as u8));
+        let used_percent = CanonicalUsedPercent::new(used).ok();
         buckets.push(with_status_slot(
-            timed_bucket(
-                "Billing cycle",
-                Some(format!("{used}% used")),
-                Some("100%".to_owned()),
-                remaining,
-                cycle_end,
-                now,
-                None,
-                UsageSnapshotStatus::Fresh,
+            with_used_percent(
+                timed_bucket(
+                    "Billing cycle",
+                    used_percent.map(CanonicalUsedPercent::label),
+                    Some("100%".to_owned()),
+                    None,
+                    cycle_end,
+                    now,
+                    None,
+                    UsageSnapshotStatus::Fresh,
+                ),
+                used_percent.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
             ),
             Some(StatusSlot::Weekly),
         ));
@@ -117,14 +120,10 @@ pub fn cursor_period_buckets(
     if let Some(spend) = usage.total_spend {
         let limit_label = usage.limit.map(format_currency);
         let remaining = usage.limit.and_then(|limit| {
-            if limit > 0.0 {
-                #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
-                {
-                    Some(((limit - spend).clamp(0.0, limit) / limit * 100.0).round() as u8)
-                }
-            } else {
-                None
-            }
+            (limit > 0.0)
+                .then(|| CanonicalRemainingPercent::new((limit - spend) / limit * 100.0).ok())
+                .flatten()
+                .map(|percent| (percent, PercentObservationOrigin::Derived))
         });
         buckets.push(with_status_slot(
             bucket(

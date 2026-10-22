@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_protocol::control::{
-    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+    CanonicalUsedPercent, FocusedUsageView, PercentObservationOrigin, QuotaBucketView,
+    UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 use jackin_usage_provider_core::{
     UsageSurface, UsageViewInput, bucket, parse_iso_epoch, provider_http_client, timed_bucket,
-    usage_view,
+    usage_view, with_used_percent,
 };
 use serde::Deserialize;
 use std::fs;
@@ -146,24 +147,39 @@ pub fn fetch_opencode_usage(path: &Path) -> Result<OpenCodeQuota, OpenCodeUsageE
         .map_err(OpenCodeUsageError::Schema)
 }
 
-fn opencode_window_percent(window: &serde_json::Value) -> Option<f64> {
-    window
-        .get("percent")
-        .or_else(|| window.get("usagePercent"))
-        .or_else(|| window.get("usage_percent"))
-        .and_then(serde_json::Value::as_f64)
-        .filter(|percent| percent.is_finite())
-        .or_else(|| {
-            let used = window
-                .get("used")?
-                .as_f64()
-                .filter(|used| used.is_finite())?;
-            let limit = window
-                .get("limit")?
-                .as_f64()
-                .filter(|limit| limit.is_finite() && *limit > 0.0)?;
-            Some((used / limit) * 100.0)
-        })
+fn opencode_window_percent(
+    window: &serde_json::Value,
+) -> Result<Option<(CanonicalUsedPercent, PercentObservationOrigin)>, ()> {
+    for key in ["percent", "usagePercent", "usage_percent"] {
+        let Some(value) = window.get(key) else {
+            continue;
+        };
+        let Some(percent) = value.as_f64() else {
+            return Err(());
+        };
+        return CanonicalUsedPercent::new(percent)
+            .map(|percent| Some((percent, PercentObservationOrigin::ProviderReported)))
+            .map_err(|_| ());
+    }
+
+    let Some(used) = window.get("used") else {
+        return Ok(None);
+    };
+    let Some(limit) = window.get("limit") else {
+        return Ok(None);
+    };
+    let Some(used) = used.as_f64() else {
+        return Err(());
+    };
+    let Some(limit) = limit.as_f64() else {
+        return Err(());
+    };
+    if !limit.is_finite() || limit <= 0.0 {
+        return Err(());
+    }
+    CanonicalUsedPercent::new((used / limit) * 100.0)
+        .map(|percent| Some((percent, PercentObservationOrigin::Derived)))
+        .map_err(|_| ())
 }
 
 fn opencode_window_reset(window: &serde_json::Value, now: i64) -> Option<i64> {
@@ -190,6 +206,9 @@ pub fn parse_opencode_usage(value: serde_json::Value, now: i64) -> Result<OpenCo
     let usage = value
         .get("usage")
         .ok_or_else(|| "OpenCode usage response is malformed".to_owned())?;
+    if !usage.is_object() {
+        return Err("OpenCode usage response is malformed".to_owned());
+    }
     let windows = [
         ("Rolling", "rolling"),
         ("Weekly", "weekly"),
@@ -198,44 +217,82 @@ pub fn parse_opencode_usage(value: serde_json::Value, now: i64) -> Result<OpenCo
     let mut rate_limited = false;
     let mut buckets = Vec::with_capacity(windows.len());
     for (label, key) in windows {
-        let window = usage
-            .get(key)
-            .ok_or_else(|| format!("OpenCode {label} window is missing"))?;
-        let status_raw = window
-            .get("status")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| format!("OpenCode {label} status is missing"))?;
+        let Some(window) = usage.get(key) else {
+            buckets.push(timed_bucket(
+                label,
+                None,
+                None,
+                None,
+                None,
+                now,
+                Some("No data"),
+                UsageSnapshotStatus::Unavailable,
+            ));
+            continue;
+        };
+        let status_raw = window.get("status").and_then(serde_json::Value::as_str);
         let status = match status_raw {
-            "ok" => UsageSnapshotStatus::Fresh,
-            "rate-limited" => {
+            Some("ok") => UsageSnapshotStatus::Fresh,
+            Some("rate-limited") => {
                 rate_limited = true;
                 UsageSnapshotStatus::Unavailable
             }
-            _ => return Err(format!("OpenCode {label} status is unsupported")),
+            _ => {
+                buckets.push(timed_bucket(
+                    label,
+                    None,
+                    None,
+                    None,
+                    opencode_window_reset(window, now),
+                    now,
+                    Some("OpenCode window status is unavailable"),
+                    UsageSnapshotStatus::Unavailable,
+                ));
+                continue;
+            }
         };
-        let percent = opencode_window_percent(window)
-            .ok_or_else(|| format!("OpenCode {label} percentage is missing"))?;
-        if percent < 0.0 {
-            return Err(format!("OpenCode {label} percentage is invalid"));
-        }
-        let reset_at = opencode_window_reset(window, now)
-            .ok_or_else(|| format!("OpenCode {label} reset timestamp is invalid"))?;
-        #[expect(
-            clippy::cast_sign_loss,
-            reason = "floored at 0.0 and clamped to 100.0 before cast"
-        )]
-        let used = percent.round().clamp(0.0, 100.0) as u8;
-        let used_label = (percent > 100.0).then(|| opencode_used_label(percent));
-        buckets.push(timed_bucket(
+        let reset_at = opencode_window_reset(window, now);
+        let percent = match opencode_window_percent(window) {
+            Ok(Some(percent)) => percent,
+            Ok(None) => {
+                buckets.push(timed_bucket(
+                    label,
+                    None,
+                    None,
+                    None,
+                    reset_at,
+                    now,
+                    Some("No data"),
+                    UsageSnapshotStatus::Unavailable,
+                ));
+                continue;
+            }
+            Err(()) => {
+                buckets.push(timed_bucket(
+                    label,
+                    None,
+                    None,
+                    None,
+                    reset_at,
+                    now,
+                    Some("OpenCode usage percentage is invalid"),
+                    UsageSnapshotStatus::Unavailable,
+                ));
+                continue;
+            }
+        };
+        let mut view = timed_bucket(
             label,
-            used_label,
+            Some(percent.0.label()),
+            Some("100%".to_owned()),
             None,
-            Some(100u8.saturating_sub(used)),
-            Some(reset_at),
+            reset_at,
             now,
             None,
             status,
-        ));
+        );
+        view = with_used_percent(view, Some(percent));
+        buckets.push(view);
     }
     Ok(OpenCodeQuota {
         buckets,
@@ -243,26 +300,48 @@ pub fn parse_opencode_usage(value: serde_json::Value, now: i64) -> Result<OpenCo
     })
 }
 
-fn opencode_used_label(used_percent: f64) -> String {
-    if used_percent.fract() == 0.0 {
-        format!("{used_percent:.0}% used")
-    } else {
-        format!("{used_percent:.1}% used")
-    }
-}
-
 pub fn opencode_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> FocusedUsageView {
     let result = fetch_opencode_usage(auth_path);
+    opencode_profile_view(agent, result, now)
+}
+
+pub(crate) fn opencode_profile_view(
+    agent: &str,
+    result: Result<OpenCodeQuota, OpenCodeUsageError>,
+    now: i64,
+) -> FocusedUsageView {
     let (buckets, status, error) = match result {
-        Ok(quota) => (
-            quota.buckets,
+        Ok(quota) => {
+            let has_observation = quota
+                .buckets
+                .iter()
+                .any(opencode_bucket_has_quantitative_observation);
+            let mut diagnostics = quota
+                .buckets
+                .iter()
+                .filter_map(|bucket| bucket.pace_label.as_deref())
+                .filter(|message| !message.is_empty() && *message != "No data")
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
             if quota.rate_limited {
-                UsageSnapshotStatus::Unavailable
-            } else {
+                diagnostics.push("OpenCode usage is rate limited".to_owned());
+            }
+            let status = if has_observation && !quota.rate_limited {
                 UsageSnapshotStatus::Fresh
-            },
-            None,
-        ),
+            } else {
+                UsageSnapshotStatus::Unavailable
+            };
+            if !has_observation && diagnostics.is_empty() {
+                diagnostics.push(
+                    "OpenCode usage response contained no quantitative observation".to_owned(),
+                );
+            }
+            (
+                quota.buckets,
+                status,
+                (!diagnostics.is_empty()).then(|| diagnostics.join("; ")),
+            )
+        }
         Err(error) => {
             let status = match &error {
                 OpenCodeUsageError::Key(_) => UsageSnapshotStatus::NeedsLogin,
@@ -308,4 +387,15 @@ pub fn opencode_profile_snapshot(agent: &str, auth_path: &Path, now: i64) -> Foc
         now,
         last_error: error,
     })
+}
+
+fn opencode_bucket_has_quantitative_observation(bucket: &QuotaBucketView) -> bool {
+    bucket.status == UsageSnapshotStatus::Fresh
+        && (bucket.used_percent.is_some()
+            || bucket.remaining_percent.is_some()
+            || bucket.used_money.is_some()
+            || bucket.limit_money.is_some()
+            || bucket.count_quota.is_some_and(|quota| {
+                quota.used.is_some() || quota.limit.is_some() || quota.remaining.is_some()
+            }))
 }

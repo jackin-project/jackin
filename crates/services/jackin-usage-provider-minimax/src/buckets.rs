@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit,
+    PercentObservationOrigin, ProviderQuotaState, QuotaBucketView, StatusSlot, UsageSnapshotStatus,
+};
 use jackin_usage_provider_core::{compact_count, timed_bucket, titlecase_ascii};
 
 use super::minimax_reset_epoch;
@@ -10,6 +13,33 @@ use super::minimax_reset_epoch;
 pub enum MiniMaxWindow {
     Interval,
     Weekly,
+}
+
+pub(crate) struct MiniMaxRawBucketInput<'a> {
+    pub(crate) model_name: &'a str,
+    pub(crate) window: MiniMaxWindow,
+    pub(crate) total: Option<&'a serde_json::Value>,
+    pub(crate) usage: Option<&'a serde_json::Value>,
+    pub(crate) remaining_percent: Option<&'a serde_json::Value>,
+    pub(crate) boost_permille: Option<f64>,
+    pub(crate) status: Option<&'a serde_json::Value>,
+    pub(crate) end: Option<i64>,
+    pub(crate) remains_time: Option<i64>,
+    pub(crate) now: i64,
+}
+
+struct MiniMaxBucketInput<'a> {
+    model_name: &'a str,
+    window: MiniMaxWindow,
+    total: Option<u64>,
+    usage: Option<u64>,
+    remaining_percent: Option<f64>,
+    boost_permille: Option<f64>,
+    status: Option<i64>,
+    end: Option<i64>,
+    remains_time: Option<i64>,
+    now: i64,
+    diagnostic: Option<&'a str>,
 }
 
 pub(crate) fn minimax_window_exhausted(status: Option<i64>) -> bool {
@@ -27,8 +57,8 @@ pub(crate) fn minimax_window_unlimited(status: Option<i64>) -> bool {
 pub fn minimax_bucket(
     model_name: &str,
     window: MiniMaxWindow,
-    total: Option<i64>,
-    usage: Option<i64>,
+    total: Option<u64>,
+    usage: Option<u64>,
     remaining_percent: Option<f64>,
     boost_permille: Option<f64>,
     status: Option<i64>,
@@ -36,82 +66,194 @@ pub fn minimax_bucket(
     remains_time: Option<i64>,
     now: i64,
 ) -> Option<QuotaBucketView> {
+    minimax_bucket_observations(MiniMaxBucketInput {
+        model_name,
+        window,
+        total,
+        usage,
+        remaining_percent,
+        boost_permille,
+        status,
+        end,
+        remains_time,
+        now,
+        diagnostic: None,
+    })
+}
+
+pub(crate) fn minimax_bucket_from_raw(input: MiniMaxRawBucketInput<'_>) -> Option<QuotaBucketView> {
+    let MiniMaxRawBucketInput {
+        model_name,
+        window,
+        total,
+        usage,
+        remaining_percent,
+        boost_permille,
+        status,
+        end,
+        remains_time,
+        now,
+    } = input;
+    let (total, total_invalid) = minimax_count(total);
+    let (usage, usage_invalid) = minimax_count(usage);
+    let (remaining_percent, percent_invalid) = minimax_percent(remaining_percent);
+    let (status, status_invalid) = minimax_status(status);
+    let mut invalid = Vec::new();
+    if total_invalid {
+        invalid.push("total_count");
+    }
+    if usage_invalid {
+        invalid.push("usage_count");
+    }
+    if percent_invalid {
+        invalid.push("remaining_percent");
+    }
+    if status_invalid {
+        invalid.push("status");
+    }
+    let diagnostic = (!invalid.is_empty()).then(|| {
+        format!(
+            "invalid provider field{}: {}",
+            if invalid.len() == 1 { "" } else { "s" },
+            invalid.join(", ")
+        )
+    });
+    minimax_bucket_observations(MiniMaxBucketInput {
+        model_name,
+        window,
+        total,
+        usage,
+        remaining_percent,
+        boost_permille,
+        status,
+        end,
+        remains_time,
+        now,
+        diagnostic: diagnostic.as_deref(),
+    })
+}
+
+fn minimax_bucket_observations(input: MiniMaxBucketInput<'_>) -> Option<QuotaBucketView> {
+    let MiniMaxBucketInput {
+        model_name,
+        window,
+        total,
+        usage,
+        remaining_percent,
+        boost_permille,
+        status,
+        end,
+        remains_time,
+        now,
+        diagnostic,
+    } = input;
     let status_slot = match (minimax_is_general_model(Some(model_name)), window) {
         (true, MiniMaxWindow::Interval) => Some(StatusSlot::Session),
         (true, MiniMaxWindow::Weekly) => Some(StatusSlot::Weekly),
         _ => None,
     };
     let reset_epoch = minimax_reset_epoch(end, remains_time, now);
-    if minimax_window_unlimited(status) {
-        let mut view = timed_bucket(
-            &minimax_bucket_label(model_name, window),
-            usage.map(|usage| compact_count(u64::try_from(usage.max(0)).unwrap_or(0))),
-            None,
-            None,
-            reset_epoch,
-            now,
-            Some("Unlimited"),
-            UsageSnapshotStatus::Fresh,
-        );
-        view.status_slot = status_slot;
-        return Some(view);
-    }
-    if matches!(status, Some(value) if !matches!(value, 0..=2)) {
-        return None;
-    }
-    if total.is_none() && usage.is_none() && remaining_percent.is_none() {
-        return None;
-    }
-    let remaining_percent = if minimax_window_exhausted(status) {
-        Some(0)
-    } else if let Some(remaining_percent) = remaining_percent {
-        minimax_effective_remaining(Some(remaining_percent), boost_permille)
+    let reported_remaining = remaining_percent
+        .and_then(|points| CanonicalRemainingPercent::new(points).ok())
+        .map(|percent| (percent, PercentObservationOrigin::ProviderReported));
+    let provider_quota_state = if minimax_window_exhausted(status) {
+        Some(ProviderQuotaState::Exhausted)
+    } else if minimax_window_unlimited(status) {
+        Some(ProviderQuotaState::Unlimited)
     } else {
-        let total = total?;
-        if total <= 0 {
-            None
-        } else {
-            let usage = usage?;
-            minimax_effective_remaining(
-                Some(100.0 - (usage.clamp(0, total) as f64 / total as f64) * 100.0),
-                boost_permille,
-            )
-        }
+        None
     };
-    let used_label = usage.map(|usage| compact_count(u64::try_from(usage.max(0)).unwrap_or(0)));
-    let mut pace = minimax_usage_count_line(usage, total, remaining_percent);
+    let quantitative_observation =
+        total.is_some() || usage.is_some() || remaining_percent.is_some();
+    if !quantitative_observation && provider_quota_state.is_none() && diagnostic.is_none() {
+        return None;
+    }
+    let used_label = usage.map(compact_count);
+    let mut pace = minimax_usage_count_line(usage, total);
     if let Some(note) = minimax_boost_note(boost_permille) {
         pace = Some(match pace {
             Some(line) => format!("{line} · {note}"),
             None => note,
         });
     }
-    if minimax_window_exhausted(status) {
+    if let Some(diagnostic) = diagnostic {
         pace = Some(match pace {
-            Some(line) => format!("{line} · Exhausted"),
-            None => "Exhausted".to_owned(),
+            Some(line) => format!("{line} · {diagnostic}"),
+            None => diagnostic.to_owned(),
         });
     }
     let mut view = timed_bucket(
         &minimax_bucket_label(model_name, window),
         used_label,
-        total
-            .filter(|value| *value > 0)
-            .map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
-        remaining_percent,
+        total.map(compact_count),
+        reported_remaining,
         reset_epoch,
         now,
         pace.as_deref(),
-        UsageSnapshotStatus::Fresh,
+        if quantitative_observation || provider_quota_state.is_some() {
+            UsageSnapshotStatus::Fresh
+        } else {
+            UsageSnapshotStatus::Unavailable
+        },
     );
     view.status_slot = status_slot;
+    view.provider_quota_state = provider_quota_state;
+    if total.is_some() || usage.is_some() {
+        view.count_quota = Some(CountQuota::new(
+            usage,
+            total,
+            None,
+            CountQuotaUnit::Unknown,
+            CountQuotaPeriod::Unknown,
+            CountQuotaProvenance::ProviderReported,
+        ));
+    }
     Some(view)
+}
+
+fn minimax_count(value: Option<&serde_json::Value>) -> (Option<u64>, bool) {
+    let Some(value) = value else {
+        return (None, false);
+    };
+    if value.is_null() {
+        return (None, false);
+    }
+    let parsed = value.as_u64().or_else(|| {
+        value
+            .as_str()
+            .and_then(|text| text.trim().parse::<u64>().ok())
+    });
+    (parsed, parsed.is_none())
+}
+
+fn minimax_percent(value: Option<&serde_json::Value>) -> (Option<f64>, bool) {
+    let Some(value) = value else {
+        return (None, false);
+    };
+    if value.is_null() {
+        return (None, false);
+    }
+    let parsed = value
+        .as_f64()
+        .filter(|value| CanonicalRemainingPercent::new(*value).is_ok());
+    (parsed, parsed.is_none())
+}
+
+fn minimax_status(value: Option<&serde_json::Value>) -> (Option<i64>, bool) {
+    let Some(value) = value else {
+        return (None, false);
+    };
+    if value.is_null() {
+        return (None, false);
+    }
+    let parsed = value.as_i64();
+    (parsed, parsed.is_none_or(|status| !matches!(status, 0..=3)))
 }
 
 pub(crate) fn minimax_effective_remaining(
     base_percent: Option<f64>,
     boost_permille: Option<f64>,
-) -> Option<u8> {
+) -> Option<f64> {
     let base = base_percent
         .filter(|base| base.is_finite())
         .map(|base| base.max(0.0))?;
@@ -119,13 +261,7 @@ pub(crate) fn minimax_effective_remaining(
         Some(boost) => base * boost / 1000.0,
         None => base,
     };
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "base clamped non-negative and boost positive; rounded f64→u8"
-    )]
-    {
-        Some(scaled.round().clamp(0.0, 255.0) as u8)
-    }
+    scaled.is_finite().then_some(scaled)
 }
 
 pub(crate) fn minimax_boost_note(boost_permille: Option<f64>) -> Option<String> {
@@ -154,16 +290,9 @@ pub fn minimax_bucket_label(model_name: &str, window: MiniMaxWindow) -> String {
     }
 }
 
-pub fn minimax_usage_count_line(
-    usage: Option<i64>,
-    total: Option<i64>,
-    remaining_percent: Option<u8>,
-) -> Option<String> {
-    let usage = u64::try_from(usage?.max(0)).unwrap_or(0);
-    let total = total.filter(|value| *value > 0).map_or_else(
-        || remaining_percent.map(|_| 100),
-        |value| Some(u64::try_from(value.max(0)).unwrap_or(0)),
-    )?;
+pub fn minimax_usage_count_line(usage: Option<u64>, total: Option<u64>) -> Option<String> {
+    let usage = usage?;
+    let total = total.filter(|value| *value > 0)?;
     Some(format!(
         "Usage: {} / {}",
         compact_count(usage),

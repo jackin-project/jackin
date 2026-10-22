@@ -28,7 +28,12 @@ fn amp_tier_line_maps_agent_dollars_orb_hours_and_renewal() {
         .expect("agent bucket");
     assert_eq!(agent.used_label.as_deref(), Some("$20.00 used"));
     assert_eq!(agent.limit_label.as_deref(), Some("$100.00"));
-    assert_eq!(agent.remaining_percent, Some(80));
+    assert_eq!(
+        agent
+            .remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(80.0)
+    );
     assert_eq!(agent.resets_at, Some(now + 12 * 86_400));
     assert_eq!(agent.status_slot, Some(StatusSlot::Spend));
     assert_eq!(
@@ -46,7 +51,11 @@ fn amp_tier_line_maps_agent_dollars_orb_hours_and_renewal() {
         .expect("orb bucket");
     assert_eq!(orb.used_label.as_deref(), Some("2h used"));
     assert_eq!(orb.limit_label.as_deref(), Some("10h"));
-    assert_eq!(orb.remaining_percent, Some(75));
+    assert_eq!(
+        orb.remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(75.0)
+    );
     assert_eq!(orb.resets_at, Some(now + 12 * 86_400));
 
     assert_eq!(
@@ -67,7 +76,12 @@ fn amp_tier_without_orb_keeps_agent_and_skips_orb() {
         .iter()
         .find(|bucket| bucket.label == "Agent usage")
         .expect("agent bucket");
-    assert_eq!(agent.remaining_percent, Some(62));
+    assert_eq!(
+        agent
+            .remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(61.725)
+    );
     assert_eq!(agent.resets_at, Some(1_781_185_560 + 60 * 86_400));
     assert!(
         buckets.iter().all(|bucket| bucket.label != "Orb usage"),
@@ -104,13 +118,22 @@ fn amp_legacy_subscription_line_maps_percent_pools() {
         .iter()
         .find(|bucket| bucket.label == "Agent usage")
         .expect("agent bucket");
-    assert_eq!(agent.remaining_percent, Some(30));
+    assert_eq!(
+        agent
+            .remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(30.0)
+    );
     assert_eq!(agent.resets_at, Some(1_781_185_560 + 30 * 86_400));
     let orb = buckets
         .iter()
         .find(|bucket| bucket.label == "Orb usage")
         .expect("orb bucket");
-    assert_eq!(orb.remaining_percent, Some(55));
+    assert_eq!(
+        orb.remaining_percent
+            .map(jackin_protocol::control::CanonicalRemainingPercent::get),
+        Some(55.0)
+    );
 
     let variant = parse_amp_usage_output(
         "Amp Business Subscription: 30% other usage and 55% orb usage remaining - resets upon renewal in 5 days",

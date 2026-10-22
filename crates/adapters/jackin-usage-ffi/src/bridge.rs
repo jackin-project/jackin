@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use jackin_protocol::usage_broker::{
     UsageCoordinationError, UsageCoordinationErrorKind, UsageProjectionRefreshStateV1,
-    UsageProjectionSchemaV1, UsageProjectionV1,
+    UsageProjectionSchemaV2, UsageProjectionV1,
 };
 use jackin_usage::host::{
     HostSurfaceId, HostUsageProjectionConfig, HostUsageProjectionRuntime, UsageBrokerClient,
@@ -491,7 +491,7 @@ impl UsageMenuBarBridge {
                 .into_iter()
                 .filter(|row| {
                     row.glance_remaining_percent
-                        .is_some_and(|percent| percent > 0)
+                        .is_some_and(|percent| percent > 0.0)
                 })
                 .collect::<Vec<_>>();
                 rows.sort_by_key(|row| std::cmp::Reverse(severity_rank(&row.severity)));
@@ -709,7 +709,7 @@ fn severity_rank(severity: &str) -> u8 {
 
 fn empty_projection(build_id: &str) -> UsageProjectionV1 {
     UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: format!("offline-{build_id}"),
         generated_at_epoch: 0,
         discovery_revision: "offline".to_owned(),

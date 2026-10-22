@@ -43,11 +43,27 @@ pub struct MoneyDto {
 
 #[derive(Debug, Clone)]
 #[boltffi::data]
+pub struct CountQuotaDto {
+    pub used: Option<u64>,
+    pub limit: Option<u64>,
+    pub remaining: Option<u64>,
+    pub unit: String,
+    pub period: String,
+    pub provenance: String,
+}
+
+#[derive(Debug, Clone)]
+#[boltffi::data]
 pub struct QuotaBucketDto {
     pub label: String,
     pub used_label: Option<String>,
     pub limit_label: Option<String>,
-    pub remaining_percent: Option<u8>,
+    pub used_percent: Option<f64>,
+    pub used_percent_origin: Option<String>,
+    pub remaining_percent: Option<f64>,
+    pub remaining_percent_origin: Option<String>,
+    pub count_quota: Option<CountQuotaDto>,
+    pub provider_quota_state: Option<String>,
     pub reset_label: Option<String>,
     pub resets_at: Option<i64>,
     pub status_slot: Option<String>,
@@ -59,7 +75,8 @@ pub struct QuotaBucketDto {
     pub remaining_label: Option<String>,
     pub display_segments: Vec<String>,
     pub display_label: String,
-    pub meter_percent: Option<u8>,
+    pub meter_percent: Option<f64>,
+    pub meter_side: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -77,7 +94,8 @@ pub struct UsageDetailRowDto {
     pub label: String,
     pub layout_lines: Vec<UsagePresentationLineDto>,
     pub display_label: String,
-    pub meter_percent: Option<u8>,
+    pub meter_percent: Option<f64>,
+    pub meter_side: Option<String>,
     pub severity: String,
 }
 
@@ -107,7 +125,15 @@ pub struct ProviderGlanceRowDto {
     pub display_label: String,
     pub account_label: String,
     pub plan_label: Option<String>,
-    pub glance_remaining_percent: Option<u8>,
+    pub glance_used_percent: Option<f64>,
+    pub glance_used_percent_origin: Option<String>,
+    pub glance_remaining_percent: Option<f64>,
+    pub glance_remaining_percent_origin: Option<String>,
+    pub glance_count_quota: Option<CountQuotaDto>,
+    pub glance_provider_quota_state: Option<String>,
+    pub glance_resets_at: Option<i64>,
+    pub glance_meter_percent: Option<f64>,
+    pub glance_meter_side: Option<String>,
     pub bar_label: String,
     pub headline: String,
     pub reset_label: Option<String>,
@@ -181,7 +207,15 @@ pub struct AccountDescriptorDto {
     pub provenance: Vec<String>,
     pub provenance_label: String,
     pub plan_or_status_label: String,
-    pub remaining_percent: Option<u8>,
+    pub used_percent: Option<f64>,
+    pub used_percent_origin: Option<String>,
+    pub remaining_percent: Option<f64>,
+    pub remaining_percent_origin: Option<String>,
+    pub count_quota: Option<CountQuotaDto>,
+    pub provider_quota_state: Option<String>,
+    pub resets_at: Option<i64>,
+    pub meter_percent: Option<f64>,
+    pub meter_side: Option<String>,
     pub remaining_label: String,
     pub headline: String,
     pub reset_label: Option<String>,

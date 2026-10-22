@@ -3,7 +3,9 @@
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
-use jackin_protocol::control::AccountUsageSnapshotView;
+use jackin_protocol::control::{
+    AccountUsageSnapshotView, CountQuotaUnit, PercentObservationOrigin, ProviderQuotaState,
+};
 use jackin_protocol::usage_broker::UsageProjectionV1;
 use jackin_protocol::usage_monitor::{
     MonitorAccountBindingInput, MonitorConfig, MonitorIssue, MonitorIssueCode, MonitorOperation,
@@ -1724,6 +1726,88 @@ fn resolve_usage_target(paths: &JackinPaths, input: &str) -> Result<UsageTarget>
 }
 
 fn usage_amount_label(account: &AccountUsageSnapshotView) -> String {
+    if let Some(bucket) = &account.quota_bucket {
+        let mut parts = Vec::new();
+        if let Some(state) = bucket.provider_quota_state {
+            parts.push(match state {
+                ProviderQuotaState::Exhausted => "Exhausted".to_owned(),
+                ProviderQuotaState::Unlimited => "Unlimited".to_owned(),
+            });
+        }
+        let empty_count_unit = if let Some(count) = bucket.count_quota {
+            let unit = match count.unit {
+                CountQuotaUnit::Requests => "requests",
+                CountQuotaUnit::Unknown => "count",
+            };
+            let mut count_parts = Vec::new();
+            if let Some(used) = count.used {
+                count_parts.push(format!("{used} used"));
+            }
+            if let Some(limit) = count.limit {
+                count_parts.push(format!("{limit} limit"));
+            }
+            if let Some(remaining) = count.remaining {
+                count_parts.push(format!("{remaining} remaining"));
+            }
+            if count_parts.is_empty() {
+                Some(unit)
+            } else {
+                if let Some(last) = count_parts.last_mut() {
+                    last.push(' ');
+                    last.push_str(unit);
+                }
+                parts.push(count_parts.join(" · "));
+                None
+            }
+        } else {
+            None
+        };
+
+        let has_money = bucket.used_money.is_some() || bucket.limit_money.is_some();
+        if has_money {
+            for label in [bucket.used_label.as_deref(), bucket.limit_label.as_deref()]
+                .into_iter()
+                .flatten()
+                .filter(|label| !label.trim().is_empty())
+            {
+                parts.push(label.trim().to_owned());
+            }
+        }
+        if let Some(percent) = bucket.used_percent {
+            parts.push(format!(
+                "{}% used ({})",
+                percent.display_value(),
+                percent_origin_label(bucket.used_percent_origin)
+            ));
+        }
+        if let Some(percent) = bucket.remaining_percent {
+            parts.push(format!(
+                "{}% remaining ({})",
+                percent.display_value(),
+                percent_origin_label(bucket.remaining_percent_origin)
+            ));
+        }
+        if let Some(unit) = empty_count_unit {
+            if parts.is_empty() {
+                return format!("{unit} unavailable");
+            }
+            parts.push(format!("{unit} unavailable"));
+        }
+        if !parts.is_empty() {
+            return parts.join(" · ");
+        }
+        return bucket
+            .used_label
+            .as_deref()
+            .filter(|label| !label.trim().is_empty())
+            .or_else(|| {
+                bucket
+                    .limit_label
+                    .as_deref()
+                    .filter(|label| !label.trim().is_empty())
+            })
+            .map_or_else(|| "unknown".to_owned(), |label| label.trim().to_owned());
+    }
     match (
         account.used_amount,
         account.used_unit.as_deref(),
@@ -1736,6 +1820,15 @@ fn usage_amount_label(account: &AccountUsageSnapshotView) -> String {
         (Some(used), Some(unit), _, _) => format!("{used} {unit}"),
         (_, _, Some(limit), Some(unit)) => format!("limit {limit} {unit}"),
         _ => "unknown".to_owned(),
+    }
+}
+
+fn percent_origin_label(origin: Option<PercentObservationOrigin>) -> &'static str {
+    match origin {
+        Some(PercentObservationOrigin::ProviderReported) => "reported",
+        Some(PercentObservationOrigin::Derived) => "derived",
+        Some(PercentObservationOrigin::HistoricalUnknown) => "historical",
+        None => "unknown source",
     }
 }
 

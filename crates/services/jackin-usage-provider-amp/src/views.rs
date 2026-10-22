@@ -3,8 +3,8 @@
 
 use super::{AmpSubscriptionKind, AmpUsage, parse_amp_usage_output};
 use jackin_protocol::control::{
-    FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence, UsageSnapshotStatus,
-    UsageSource,
+    CanonicalRemainingPercent, FocusedUsageView, Money, PercentObservationOrigin, QuotaBucketView,
+    StatusSlot, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 use jackin_usage_provider_core::{
     UsageSurface, UsageViewInput, bucket, format_currency, timed_bucket, usage_view,
@@ -41,12 +41,15 @@ impl AmpUsage {
     pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         if let Some(remaining) = self.daily_remaining_percent {
+            let remaining = CanonicalRemainingPercent::new(remaining)
+                .ok()
+                .map(|percent| (percent, PercentObservationOrigin::ProviderReported));
             buckets.push(with_status_slot(
                 bucket(
                     "Amp Free",
                     None,
                     None,
-                    Some(remaining),
+                    remaining,
                     Some("Resets daily".to_owned()),
                     None,
                     UsageSnapshotStatus::Fresh,
@@ -66,8 +69,8 @@ impl AmpUsage {
                 } => {
                     push_amp_agent_dollar_bucket(
                         &mut buckets,
-                        *agent_remaining,
-                        *agent_limit,
+                        agent_remaining,
+                        agent_limit,
                         reset_at,
                         now,
                         pace.as_deref(),
@@ -91,11 +94,14 @@ impl AmpUsage {
                         ("Agent usage", *agent_remaining_percent),
                         ("Orb usage", *orb_remaining_percent),
                     ] {
+                        let remaining = CanonicalRemainingPercent::new(remaining)
+                            .ok()
+                            .map(|percent| (percent, PercentObservationOrigin::ProviderReported));
                         buckets.push(timed_bucket(
                             label,
-                            Some(format!("{}% used", 100u8.saturating_sub(remaining))),
+                            None,
                             Some("100%".to_owned()),
-                            Some(remaining),
+                            remaining,
                             reset_at,
                             now,
                             pace.as_deref(),
@@ -135,20 +141,34 @@ impl AmpUsage {
 
 pub(crate) fn push_amp_agent_dollar_bucket(
     buckets: &mut Vec<QuotaBucketView>,
-    remaining: f64,
-    limit: f64,
+    remaining: &Money,
+    limit: &Money,
     reset_at: Option<i64>,
     now: i64,
     pace: Option<&str>,
 ) {
-    let used = (limit - remaining).max(0.0);
-    let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
-    let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
+    if limit.amount_minor <= 0
+        || remaining.currency != limit.currency
+        || remaining.exponent != limit.exponent
+    {
+        return;
+    }
+    let Some(used_minor) = limit.amount_minor.checked_sub(remaining.amount_minor) else {
+        return;
+    };
+    let used_money = Money::new(used_minor, limit.currency.clone(), limit.exponent);
+    let limit_money = limit.clone();
+    // `limit` is positive, and widening before multiplying bounds the absolute
+    // numerator by 100 * 2^63, far below f64::MAX. The Money values stay exact.
     #[expect(
-        clippy::cast_sign_loss,
-        reason = "fraction clamped to 0.0..=1.0; percent is rounded f64→u8"
+        clippy::cast_precision_loss,
+        reason = "the derived continuous percent is f64; exact Money remains in the bucket"
     )]
-    let remaining_percent = Some(((remaining / limit).clamp(0.0, 1.0) * 100.0).round() as u8);
+    let remaining_points =
+        (i128::from(remaining.amount_minor) * 100) as f64 / i128::from(limit.amount_minor) as f64;
+    let remaining_percent = CanonicalRemainingPercent::new(remaining_points)
+        .ok()
+        .map(|percent| (percent, PercentObservationOrigin::Derived));
     let mut view = timed_bucket(
         "Agent usage",
         Some(format!("{used_money} used")),
@@ -174,11 +194,9 @@ pub(crate) fn push_amp_orb_bucket(
     pace: Option<&str>,
 ) {
     let used = (limit - remaining).max(0.0);
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "fraction clamped to 0.0..=1.0; percent is rounded f64→u8"
-    )]
-    let remaining_percent = Some(((remaining / limit).clamp(0.0, 1.0) * 100.0).round() as u8);
+    let remaining_percent = CanonicalRemainingPercent::new(remaining / limit * 100.0)
+        .ok()
+        .map(|percent| (percent, PercentObservationOrigin::Derived));
     buckets.push(timed_bucket(
         "Orb usage",
         Some(format!("{} used", format_orb_hours(used))),
@@ -237,3 +255,6 @@ pub fn amp_view_from_usage(
         last_error: None,
     })
 }
+
+#[cfg(test)]
+mod tests;

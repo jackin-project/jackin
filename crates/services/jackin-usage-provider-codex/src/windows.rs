@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{CodexIndividualLimit, CodexUsageResponse, CodexWindowSnapshot};
-use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, Money, PercentObservationOrigin,
+    QuotaBucketView, StatusSlot, UsageSnapshotStatus,
+};
 use jackin_usage_provider_core::{
     bucket, codex_limit_label, expiry_label, format_amount_with_unit, json_number, parse_iso_epoch,
-    quota_pace_label, timed_bucket, with_status_slot,
+    quota_pace_label, timed_bucket, with_status_slot, with_used_percent,
 };
 use serde::Deserialize;
 
@@ -83,7 +86,7 @@ impl CodexUsageResponse {
                 "Credits",
                 None,
                 balance.map(|value| format_amount_with_unit(value, "credits")),
-                credits.unlimited.unwrap_or(false).then_some(100),
+                None,
                 None,
                 credits.unlimited.unwrap_or(false).then_some("unlimited"),
                 UsageSnapshotStatus::Fresh,
@@ -92,10 +95,10 @@ impl CodexUsageResponse {
         if let Some(limit) = self.individual_limit() {
             let limit_money = limit.limit.as_ref().and_then(codex_money_value);
             let used_money = limit.used.as_ref().and_then(codex_money_value);
-            let remaining = limit.remaining_percent.or_else(|| {
-                let used = used_money.as_ref()?.amount_minor;
-                let cap = limit_money.as_ref()?.amount_minor;
-                remaining_from_money(used, cap)
+            let remaining = limit.remaining_percent.and_then(|points| {
+                CanonicalRemainingPercent::new(points)
+                    .ok()
+                    .map(|percent| (percent, PercentObservationOrigin::ProviderReported))
             });
             if used_money.is_some() || limit_money.is_some() || remaining.is_some() {
                 let mut view = timed_bucket(
@@ -116,20 +119,6 @@ impl CodexUsageResponse {
         }
         buckets
     }
-}
-
-pub(crate) fn remaining_from_money(used: i64, cap: i64) -> Option<u8> {
-    if cap <= 0 {
-        return None;
-    }
-    let used = u128::try_from(used).ok()?;
-    let cap = u128::try_from(cap).ok()?;
-    let remaining = cap
-        .saturating_sub(used)
-        .saturating_mul(100)
-        .checked_div(cap)?
-        .min(100);
-    u8::try_from(remaining).ok()
 }
 
 pub(crate) fn preferred_slot(
@@ -224,34 +213,27 @@ pub fn push_codex_window(
     let Some(window) = window else {
         return;
     };
-    let used = window.used_percent_clamped();
-    let remaining = used.map(|value| 100u8.saturating_sub(value));
-    let used_label = window
-        .used_percent_raw()
-        .map(|raw| codex_used_label(raw.max(0.0)));
+    let used = window.used_percent_points();
+    let pace_remaining = used
+        .and_then(|percent| CanonicalRemainingPercent::new((100.0 - percent.get()).max(0.0)).ok());
+    let used_label = used.map(CanonicalUsedPercent::label);
     let window_seconds = window.window_seconds();
     let reset_at = window.resets_at(now);
-    let pace = quota_pace_label(remaining, reset_at, window_seconds, now)
+    let pace = quota_pace_label(pace_remaining, reset_at, window_seconds, now)
         .or_else(|| window.window_label());
-    buckets.push(with_status_slot(
-        timed_bucket(
-            label,
-            used_label,
-            Some("100%".to_owned()),
-            remaining,
-            reset_at,
-            now,
-            pace.as_deref(),
-            UsageSnapshotStatus::Fresh,
-        ),
-        slot,
-    ));
-}
-
-pub(crate) fn codex_used_label(used_percent: f64) -> String {
-    if used_percent.fract() == 0.0 {
-        format!("{used_percent:.0}% used")
-    } else {
-        format!("{used_percent:.1}% used")
-    }
+    let view = timed_bucket(
+        label,
+        used_label,
+        Some("100%".to_owned()),
+        None,
+        reset_at,
+        now,
+        pace.as_deref(),
+        UsageSnapshotStatus::Fresh,
+    );
+    let view = with_used_percent(
+        view,
+        used.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
+    );
+    buckets.push(with_status_slot(view, slot));
 }

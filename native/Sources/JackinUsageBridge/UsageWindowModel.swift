@@ -42,7 +42,8 @@ public struct UsageDetailRow: Identifiable, Equatable, Sendable {
     public let label: String
     public let layoutLines: [UsagePresentationLine]
     public let displayLabel: String
-    public let meterPercent: UInt8?
+    public let meterPercent: Double?
+    public let meterSide: String?
     public let severity: String
 
     public init(
@@ -51,8 +52,9 @@ public struct UsageDetailRow: Identifiable, Equatable, Sendable {
         label: String,
         layoutLines: [UsagePresentationLine],
         displayLabel: String,
-        meterPercent: UInt8?,
-        severity: String
+        meterPercent: Double?,
+        severity: String,
+        meterSide: String? = nil
     ) {
         self.rowId = rowId
         self.kind = kind
@@ -60,6 +62,7 @@ public struct UsageDetailRow: Identifiable, Equatable, Sendable {
         self.layoutLines = layoutLines
         self.displayLabel = displayLabel
         self.meterPercent = meterPercent
+        self.meterSide = meterSide
         self.severity = severity
     }
 }
@@ -84,7 +87,8 @@ public struct UsageDetailPresentation: Equatable, Sendable {
                 },
                 displayLabel: row.displayLabel,
                 meterPercent: row.meterPercent,
-                severity: row.severity
+                severity: row.severity,
+                meterSide: row.meterSide
             )
         }
     }

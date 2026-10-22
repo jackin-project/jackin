@@ -8,7 +8,7 @@ struct BucketFixture {
     let id: String
     let label: String
     let remaining: String
-    let meter: UInt8
+    let meter: Double
     let severity: String
     let supporting: [String]
 }
@@ -192,7 +192,8 @@ extension VisualQAFixtures {
             },
             displayLabel: ([fixture.remaining] + fixture.supporting).joined(separator: " · "),
             meterPercent: fixture.meter,
-            severity: fixture.severity
+            severity: fixture.severity,
+            meterSide: "remaining"
         )
     }
 }

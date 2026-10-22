@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use jackin_protocol::control::{CanonicalRemainingPercent, PercentObservationOrigin};
 
 #[derive(Default)]
 pub(super) struct FakeMonotonicClock {
@@ -215,7 +216,12 @@ pub(super) fn quota_view(epoch: i64, percent: u8) -> FocusedUsageView {
         label: "Session".into(),
         used_label: None,
         limit_label: None,
-        remaining_percent: Some(percent),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(CanonicalRemainingPercent::new(f64::from(percent)).unwrap()),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: None,

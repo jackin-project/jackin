@@ -68,11 +68,7 @@ pub(crate) fn parse_amp_tier_line(
     if !segment.contains("remaining") {
         return None;
     }
-    let amounts = dollar_amounts(segment);
-    let (remaining, limit) = (*amounts.first()?, *amounts.get(1)?);
-    if !remaining.is_finite() || !limit.is_finite() || remaining < 0.0 || limit <= 0.0 {
-        return None;
-    }
+    let (remaining, limit) = amp_tier_money_pair(segment)?;
     let (orb_remaining_hours, orb_limit_hours) =
         parse_amp_orb_hours(segment).map_or((None, None), |(r, l)| (Some(r), Some(l)));
     let subscription = AmpSubscription {
@@ -89,6 +85,68 @@ pub(crate) fn parse_amp_tier_line(
         parse_amp_renewal(segment),
         parse_amp_period(segment),
     ))
+}
+
+fn amp_tier_money_pair(
+    segment: &str,
+) -> Option<(
+    jackin_protocol::control::Money,
+    jackin_protocol::control::Money,
+)> {
+    let rest = segment.strip_prefix('$')?;
+    let (remaining_token, rest) = rest.split_once(" of $")?;
+    let (limit_token, suffix) = rest.split_once(" remaining")?;
+    if suffix
+        .chars()
+        .next()
+        .is_some_and(|character| !character.is_whitespace() && character != ',')
+    {
+        return None;
+    }
+    let (remaining_minor, remaining_scale) = amp_decimal_parts(remaining_token)?;
+    let (limit_minor, limit_scale) = amp_decimal_parts(limit_token)?;
+    let exponent = remaining_scale.max(limit_scale);
+    let scale =
+        |amount: i64, from: u8| amount.checked_mul(10_i64.checked_pow(u32::from(exponent - from))?);
+    let remaining_minor = scale(remaining_minor, remaining_scale)?;
+    let limit_minor = scale(limit_minor, limit_scale)?;
+    if remaining_minor < 0 || limit_minor <= 0 {
+        return None;
+    }
+    Some((
+        jackin_protocol::control::Money::new(remaining_minor, "USD", exponent),
+        jackin_protocol::control::Money::new(limit_minor, "USD", exponent),
+    ))
+}
+
+fn amp_decimal_parts(token: &str) -> Option<(i64, u8)> {
+    let (whole, fraction, has_decimal) = match token.split_once('.') {
+        Some((whole, fraction)) => (whole, fraction, true),
+        None => (token, "", false),
+    };
+    if whole.is_empty()
+        || (has_decimal && fraction.is_empty())
+        || !valid_amp_grouped_integer(whole)
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+        || fraction.len() > 6
+    {
+        return None;
+    }
+    let digits = format!("{}{fraction}", whole.replace(',', ""));
+    Some((digits.parse().ok()?, u8::try_from(fraction.len()).ok()?))
+}
+
+fn valid_amp_grouped_integer(value: &str) -> bool {
+    if !value.contains(',') {
+        return value.bytes().all(|byte| byte.is_ascii_digit());
+    }
+    let mut groups = value.split(',');
+    let Some(first) = groups.next() else {
+        return false;
+    };
+    (1..=3).contains(&first.len())
+        && first.bytes().all(|byte| byte.is_ascii_digit())
+        && groups.all(|group| group.len() == 3 && group.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn parse_amp_orb_hours(segment: &str) -> Option<(f64, f64)> {
@@ -172,14 +230,13 @@ fn parse_amp_legacy_subscription_line(line: &str) -> Option<(AmpSubscription, Op
     Some((subscription, parse_amp_renewal(segment)))
 }
 
-fn parse_amp_trailing_percent(before_percent: &str) -> Option<u8> {
+fn parse_amp_trailing_percent(before_percent: &str) -> Option<f64> {
     let token = before_percent.split_whitespace().last()?;
     let percent = parse_amp_number(token)?;
     if !percent.is_finite() {
         return None;
     }
-    #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0")]
-    Some(percent.round().clamp(0.0, 100.0) as u8)
+    (percent >= 0.0).then_some(percent)
 }
 
 fn parse_amp_number(token: &str) -> Option<f64> {
@@ -187,14 +244,13 @@ fn parse_amp_number(token: &str) -> Option<f64> {
     cleaned.trim().parse().ok()
 }
 
-fn parse_amp_daily_percent(rest: &str) -> Option<u8> {
+fn parse_amp_daily_percent(rest: &str) -> Option<f64> {
     let (value, _) = rest.trim().split_once('%')?;
     let percent: f64 = value.trim().parse().ok()?;
     if !percent.is_finite() {
         return None;
     }
-    #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 below")]
-    Some(percent.round().clamp(0.0, 100.0) as u8)
+    (percent >= 0.0).then_some(percent)
 }
 
 fn parse_amp_workspace(rest: &str) -> Option<AmpWorkspaceBalance> {

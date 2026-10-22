@@ -1,12 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{QuotaBucketView, StatusSlot, UsageSnapshotStatus, UsageSurface};
+use super::super::{
+    QuotaBucketView, StatusSlot, UsageSnapshotStatus, UsageSurface, quota_bucket_has_observation,
+};
 
 pub fn spend_headline_label(buckets: &[QuotaBucketView]) -> Option<String> {
     let spend = buckets.iter().find(|bucket| {
-        bucket.status_slot == Some(StatusSlot::Spend) && status_bar_fresh_or_stale(bucket)
+        bucket.status_slot == Some(StatusSlot::Spend)
+            && status_bar_fresh_or_stale(bucket)
+            && quota_bucket_has_observation(bucket)
     })?;
+    if let Some(summary) = super::super::provider_quota_state_summary(spend) {
+        return Some(summary);
+    }
     let used = spend.used_money.as_ref()?;
     if used.amount_minor == 0 {
         return None;
@@ -54,12 +61,27 @@ pub fn amp_status_bar_headline(buckets: &[QuotaBucketView]) -> Option<String> {
     buckets
         .iter()
         .find(|bucket| {
-            status_bar_fresh_or_stale(bucket) && bucket.status_slot == Some(StatusSlot::Daily)
+            status_bar_fresh_or_stale(bucket)
+                && bucket.status_slot == Some(StatusSlot::Daily)
+                && quota_bucket_has_observation(bucket)
         })
         .and_then(|bucket| {
-            bucket
-                .remaining_percent
-                .map(|remaining| format!("Free {remaining}%"))
+            if let Some(summary) = super::super::provider_quota_state_summary(bucket) {
+                return Some(summary);
+            }
+            let mut labels = Vec::new();
+            if let Some(used) = bucket.used_percent {
+                labels.push(format!("Used {}%", used.display_value()));
+            }
+            if let Some(remaining) = bucket.remaining_percent {
+                labels.push(format!("Free {}%", remaining.display_value()));
+            }
+            if labels.is_empty()
+                && let Some(count) = count_summary_label(bucket)
+            {
+                labels.push(count);
+            }
+            (!labels.is_empty()).then(|| labels.join(" · "))
         })
 }
 
@@ -72,12 +94,31 @@ pub fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {
     .filter_map(|(slot, label)| {
         buckets
             .iter()
-            .find(|bucket| bucket.status_slot == Some(slot) && status_bar_fresh_or_stale(bucket))
+            .find(|bucket| {
+                bucket.status_slot == Some(slot)
+                    && status_bar_fresh_or_stale(bucket)
+                    && quota_bucket_has_observation(bucket)
+            })
             .and_then(|bucket| {
-                bucket
-                    .remaining_percent
-                    .filter(|&remaining| remaining != 0)
-                    .map(|remaining| format!("{label} {remaining}%"))
+                let mut values = Vec::new();
+                if let Some(summary) = super::super::provider_quota_state_summary(bucket) {
+                    values.push(format!("{label} {summary}"));
+                    return Some(values.join(" · "));
+                }
+                if let Some(used) = bucket.used_percent {
+                    values.push(format!("{label} {}%", used.display_value()));
+                }
+                if let Some(remaining) = bucket.remaining_percent
+                    && remaining.get() != 0.0
+                {
+                    values.push(format!("{label} {}%", remaining.display_value()));
+                }
+                if values.is_empty()
+                    && let Some(summary) = count_summary_label(bucket)
+                {
+                    values.push(format!("{label} {summary}"));
+                }
+                (!values.is_empty()).then(|| values.join(" · "))
             })
     })
     .collect()
@@ -116,7 +157,27 @@ pub fn summary_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
         .iter()
         .enumerate()
         .filter(|(_, bucket)| bucket.status == UsageSnapshotStatus::Fresh)
-        .filter(|(_, bucket)| bucket.remaining_percent.is_some())
+        .filter(|(_, bucket)| has_quota_summary(bucket))
         .min_by_key(|(index, bucket)| (summary_slot_rank(bucket.status_slot), *index))
         .map(|(_, bucket)| bucket)
+}
+
+fn has_quota_summary(bucket: &QuotaBucketView) -> bool {
+    quota_bucket_has_observation(bucket)
+}
+
+pub fn count_summary_label(bucket: &QuotaBucketView) -> Option<String> {
+    let count = bucket.count_quota?;
+    let unit = if count.unit == jackin_protocol::control::CountQuotaUnit::Requests {
+        " requests"
+    } else {
+        ""
+    };
+    match (count.used, count.limit, count.remaining) {
+        (_, _, Some(remaining)) => Some(format!("{remaining}{unit} left")),
+        (Some(used), Some(limit), None) => Some(format!("{used} / {limit}{unit}")),
+        (Some(used), None, None) => Some(format!("{used}{unit} used")),
+        (None, Some(limit), None) => Some(format!("{limit}{unit} limit")),
+        (None, None, None) => None,
+    }
 }

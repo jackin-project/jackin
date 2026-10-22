@@ -142,7 +142,50 @@ fn token_usage_roundtrips_present_and_absent() {
 }
 
 #[test]
+fn provider_quota_state_is_an_explicit_independent_bucket_observation() {
+    let mut bucket = placeholder_sample_bucket();
+    bucket.provider_quota_state = Some(ProviderQuotaState::Exhausted);
+    bucket.count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    bucket.validate().unwrap();
+
+    let encoded = serde_json::to_value(&bucket).unwrap();
+    assert_eq!(encoded["provider_quota_state"], "exhausted");
+    assert_eq!(encoded["count_quota"]["remaining"], 1);
+    let decoded: QuotaBucketView = serde_json::from_value(encoded).unwrap();
+    assert_eq!(decoded, bucket);
+
+    let mut absent_state = serde_json::to_value(placeholder_sample_bucket()).unwrap();
+    absent_state
+        .as_object_mut()
+        .unwrap()
+        .remove("provider_quota_state");
+    let decoded: QuotaBucketView = serde_json::from_value(absent_state).unwrap();
+    assert_eq!(decoded.provider_quota_state, None);
+
+    for label in ["available", "unknown", "EXHAUSTED", "future"] {
+        serde_json::from_value::<ProviderQuotaState>(serde_json::json!(label))
+            .expect_err("only affirmative exhausted/unlimited source claims are valid");
+    }
+}
+
+#[test]
 fn usage_account_list_roundtrips() {
+    let mut quota_bucket = placeholder_sample_bucket();
+    quota_bucket.count_quota = Some(CountQuota::new(
+        Some(u64::MAX),
+        Some(u64::MAX),
+        Some(0),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    ));
     let accounts = vec![AccountUsageSnapshotView {
         provider: "Codex".to_owned(),
         account_label: "alexey@example.com".to_owned(),
@@ -158,6 +201,7 @@ fn usage_account_list_roundtrips() {
         expires_at: Some(1_781_185_860),
         status: "fresh".to_owned(),
         last_error: None,
+        quota_bucket: Some(quota_bucket),
     }];
     let json = serde_json::to_string(&ServerMsg::UsageAccounts {
         accounts: accounts.clone(),
@@ -168,6 +212,54 @@ fn usage_account_list_roundtrips() {
         ServerMsg::UsageAccounts { accounts: decoded } => assert_eq!(decoded, accounts),
         other => panic!("unexpected variant {other:?}"),
     }
+}
+
+#[test]
+fn quota_bucket_keeps_percent_origins_counts_and_money_separate() {
+    let mut bucket = placeholder_sample_bucket();
+    bucket.used_percent = Some(CanonicalUsedPercent::new(43.375).unwrap());
+    bucket.used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    bucket.count_quota = Some(CountQuota::new(
+        Some(u64::MAX),
+        None,
+        Some(0),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    bucket.validate().unwrap();
+
+    let json = serde_json::to_string(&bucket).unwrap();
+    let decoded: QuotaBucketView = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded, bucket);
+    assert!(json.contains("18446744073709551615"));
+    assert!(json.contains("43.375"));
+
+    bucket.used_percent_origin = None;
+    assert!(bucket.validate().unwrap_err().contains("origin"));
+    bucket.used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    bucket.used_money = Some(Money::new(-1, "USD", 2));
+    assert!(bucket.validate().unwrap_err().contains("count and money"));
+}
+
+#[test]
+fn usage_detail_meter_requires_a_side() {
+    let row = UsageDetailRow {
+        row_id: "weekly".to_owned(),
+        kind: UsageDetailRowKind::Bucket,
+        label: "Weekly".to_owned(),
+        layout_lines: Vec::new(),
+        display_label: "43.38% used".to_owned(),
+        meter_percent: Some(MeterPercentPoints::new(43.375).unwrap()),
+        meter_side: None,
+        severity: UsageSeverity::Normal,
+    };
+    assert!(row.validate().unwrap_err().contains("side"));
+    let valid = UsageDetailRow {
+        meter_side: Some(UsageMeterSide::Used),
+        ..row
+    };
+    valid.validate().unwrap();
 }
 
 #[test]

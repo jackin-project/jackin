@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_protocol::control::{Money, QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, Money, PercentObservationOrigin, QuotaBucketView, StatusSlot,
+    UsageSnapshotStatus,
+};
 use jackin_usage_provider_core::{
     bucket, epoch_seconds_from_maybe_ms, expiry_label, format_cents, parse_iso_epoch, timed_bucket,
 };
@@ -109,13 +112,15 @@ pub fn parse_openrouter_key_usage(
             .and_then(openrouter_cents)
             .filter(|remaining| *remaining >= 0);
         let used = remaining.map(|remaining| cap.saturating_sub(remaining).max(0));
-        let remaining_percent = remaining.map(|remaining| {
-            #[expect(clippy::cast_precision_loss, reason = "cents magnitudes fit f64")]
-            let fraction = (remaining.min(cap) as f64) / (cap as f64);
-            #[expect(clippy::cast_sign_loss, reason = "clamped 0.0..=100.0 before cast")]
-            {
-                (fraction * 100.0).round().clamp(0.0, 100.0) as u8
-            }
+        let remaining_percent = remaining.and_then(|remaining| {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "continuous ratio is derived from exact cent amounts"
+            )]
+            let points = (i128::from(remaining) * 100) as f64 / i128::from(cap) as f64;
+            CanonicalRemainingPercent::new(points)
+                .ok()
+                .map(|percent| (percent, PercentObservationOrigin::Derived))
         });
         let mut view = timed_bucket(
             "Key Limit",
@@ -199,16 +204,23 @@ pub fn parse_openrouter_credits(
 }
 
 pub fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) -> QuotaBucketView {
-    let balance = ceiling_cents.saturating_sub(spent_cents);
-    let overage = ceiling_cents > 0 && spent_cents > ceiling_cents;
-    let remaining_percent = (ceiling_cents > 0 && !overage).then(|| {
-        #[expect(clippy::cast_precision_loss, reason = "cents magnitudes fit f64")]
-        let fraction = (balance.max(0).min(ceiling_cents) as f64) / (ceiling_cents as f64);
-        #[expect(clippy::cast_sign_loss, reason = "clamped 0.0..=100.0 before cast")]
-        {
-            (fraction * 100.0).round().clamp(0.0, 100.0) as u8
+    let remaining_percent = if ceiling_cents > 0 {
+        let remaining_cents = i128::from(ceiling_cents) - i128::from(spent_cents);
+        if remaining_cents >= 0 {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "continuous ratio is derived from exact cent amounts"
+            )]
+            let points = (remaining_cents * 100) as f64 / i128::from(ceiling_cents) as f64;
+            CanonicalRemainingPercent::new(points)
+                .ok()
+                .map(|percent| (percent, PercentObservationOrigin::Derived))
+        } else {
+            None
         }
-    });
+    } else {
+        None
+    };
     let mut view = bucket(
         "Account credits",
         Some(format_cents(spent_cents)),
@@ -218,13 +230,6 @@ pub fn openrouter_credits_bucket(spent_cents: i64, ceiling_cents: i64) -> QuotaB
         None,
         UsageSnapshotStatus::Fresh,
     );
-    if overage {
-        let raw_used = spent_cents
-            .saturating_mul(100)
-            .checked_div(ceiling_cents)
-            .unwrap_or(i64::MAX);
-        view.used_label = Some(format!("{raw_used}% used"));
-    }
     view.used_money = Some(Money::new(spent_cents, "USD", 2));
     view.limit_money = Some(Money::new(ceiling_cents, "USD", 2));
     view

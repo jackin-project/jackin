@@ -1,6 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, MeterPercentPoints,
+    PercentObservationOrigin, ProviderQuotaState, UsageMeterSide,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostOverviewRow {
     pub surface_id: String,
@@ -21,7 +26,15 @@ pub struct HostProviderGlanceRow {
     pub display_label: String,
     pub account_label: String,
     pub plan_label: Option<String>,
-    pub glance_remaining_percent: Option<u8>,
+    pub glance_used_percent: Option<CanonicalUsedPercent>,
+    pub glance_used_percent_origin: Option<PercentObservationOrigin>,
+    pub glance_remaining_percent: Option<CanonicalRemainingPercent>,
+    pub glance_remaining_percent_origin: Option<PercentObservationOrigin>,
+    pub glance_count_quota: Option<CountQuota>,
+    pub glance_provider_quota_state: Option<ProviderQuotaState>,
+    pub glance_resets_at: Option<i64>,
+    pub glance_meter_percent: Option<MeterPercentPoints>,
+    pub glance_meter_side: Option<UsageMeterSide>,
     pub bar_label: String,
     pub headline: String,
     pub reset_label: Option<String>,

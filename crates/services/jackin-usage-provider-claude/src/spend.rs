@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_protocol::control::{
-    Money, QuotaBucketView, StatusSlot, UsageSeverity, UsageSnapshotStatus,
+    CanonicalUsedPercent, Money, PercentObservationOrigin, QuotaBucketView, StatusSlot,
+    UsageSeverity, UsageSnapshotStatus,
 };
 use jackin_usage_provider_core::{
     CLAUDE_CODE_USER_AGENT_FALLBACK, ProviderHttpError, bucket, get_json_bearer, humanize_reason,
-    humanize_window_label, parse_iso_epoch, severity_from_label, timed_bucket,
-    used_percent_from_fraction,
+    humanize_window_label, parse_iso_epoch, severity_from_label, timed_bucket, with_used_percent,
 };
 use std::collections::BTreeMap;
 
@@ -31,23 +31,15 @@ pub fn push_claude_dollar_windows(
         let used = window.used_dollars.unwrap_or(0.0).max(0.0);
         let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
         let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
-        #[expect(
-            clippy::cast_sign_loss,
-            reason = "fraction clamped to 0.0..=1.0; percent is rounded f64→u8"
-        )]
-        let remaining_percent =
-            Some(((1.0 - (used / limit).clamp(0.0, 1.0)) * 100.0).round() as u8);
         let reset_at = window.resets_at.as_deref().and_then(parse_iso_epoch);
         let mut view = timed_bucket(
             &humanize_window_label(&key),
             Some(format!("{used_money} spent")),
             Some(limit_money.to_string()),
-            remaining_percent,
+            None,
             reset_at,
             now,
-            remaining_percent
-                .map(|remaining| format!("{}% used", 100u8.saturating_sub(remaining)))
-                .as_deref(),
+            None,
             UsageSnapshotStatus::Fresh,
         );
         view.used_money = Some(used_money);
@@ -60,7 +52,7 @@ pub fn push_claude_dollar_windows(
 pub struct ClaudeSpend {
     pub used: Money,
     pub limit: Option<Money>,
-    pub used_percent: Option<u8>,
+    pub used_percent: Option<f64>,
     pub enabled: bool,
     pub disabled_reason: Option<String>,
     pub severity: UsageSeverity,
@@ -71,25 +63,31 @@ pub fn claude_spend_bucket(
     extra: Option<ClaudeOAuthExtraUsage>,
 ) -> Option<QuotaBucketView> {
     let spend = normalize_claude_spend(spend, extra)?;
-    let remaining_percent = spend.used_percent.map(|used| 100u8.saturating_sub(used));
+    let used_percent = spend
+        .used_percent
+        .and_then(|used| CanonicalUsedPercent::new(used).ok());
     let used_label = Some(format!("{} spent", spend.used));
     let limit_label = spend.limit.as_ref().map(Money::to_string);
     let pace = if spend.enabled {
-        spend.used_percent.map(|used| format!("{used}% used"))
+        used_percent.map(CanonicalUsedPercent::label)
     } else {
         Some(match &spend.disabled_reason {
             Some(reason) => format!("disabled · {}", humanize_reason(reason)),
             None => "disabled".to_owned(),
         })
     };
-    let mut view = bucket(
+    let view = bucket(
         "Extra usage",
         used_label,
         limit_label,
-        remaining_percent,
+        None,
         None,
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
+    );
+    let mut view = with_used_percent(
+        view,
+        used_percent.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
     );
     view.status_slot = Some(StatusSlot::Spend);
     view.severity = spend.severity;
@@ -108,7 +106,7 @@ pub fn normalize_claude_spend(
         return Some(ClaudeSpend {
             used,
             limit: spend.limit.and_then(ClaudeOAuthMoney::into_money),
-            used_percent: spend.percent.map(|percent| percent.min(100)),
+            used_percent: spend.percent,
             enabled: spend.enabled.unwrap_or(true),
             disabled_reason: spend.disabled_reason,
             severity: severity_from_label(spend.severity.as_deref()),
@@ -125,7 +123,10 @@ pub fn normalize_claude_spend(
     Some(ClaudeSpend {
         used,
         limit,
-        used_percent: extra.utilization.and_then(used_percent_from_fraction),
+        used_percent: extra
+            .utilization
+            .and_then(|points| CanonicalUsedPercent::new(points).ok())
+            .map(CanonicalUsedPercent::get),
         enabled: extra.is_enabled.unwrap_or(true),
         disabled_reason: extra.disabled_reason,
         severity: UsageSeverity::Normal,

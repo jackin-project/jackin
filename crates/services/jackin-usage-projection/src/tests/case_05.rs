@@ -100,15 +100,35 @@ fn parity_overage_magnitude_matches_raw_money() {
     });
     let screen = UsageScreenState::from_projection(&projection);
     let window = &screen.accounts[0].windows[2];
-    assert_eq!(window.used_percent, Some(100));
-    assert_eq!(window.used_raw_percent, Some(150));
-    assert_eq!(window.remaining_percent, None);
+    assert_eq!(window.used_percent, None);
+    assert_eq!(
+        window.money_used_percent.map(RawPercentPoints::get),
+        Some(150.0)
+    );
+    assert_eq!(
+        window.remaining_percent.map(RawPercentPoints::get),
+        Some(0.0)
+    );
+    assert_eq!(
+        window.remaining_percent_origin,
+        Some(PercentObservationOrigin::Derived)
+    );
     assert_eq!(window.value, "150% used");
-    assert_eq!(window.meter_percent(), Some(0));
+    assert_eq!(
+        window.meter_percent().map(MeterPercentPoints::get),
+        Some(100.0)
+    );
+    assert_eq!(window.meter_side, Some(UsageMeterSide::Used));
     assert_eq!(window.quota_state, UsageQuotaStateV1::Exhausted);
     let spend = usage_bucket_presentation(&views[0].buckets[2]);
     assert_eq!(spend.remaining_label.as_deref(), Some("150% used"));
-    assert_eq!(spend.meter_percent, Some(0));
+    assert_eq!(
+        spend.meter_percent.map(MeterPercentPoints::get),
+        Some(100.0)
+    );
+    assert_eq!(spend.meter_side, Some(UsageMeterSide::Used));
+    assert!(spend.display_label.contains("0% left"));
+    assert!(spend.display_label.contains("150% used"));
 }
 
 #[test]
@@ -187,9 +207,9 @@ fn parity_console_render_smoke_overview() {
         "73% left",
         "Other models · 5h",
         "12% left",
-        "Gemini · 5h: 73% left · provider-defined period",
-        "Gemini · Weekly: 41% left · weekly",
-        "Other models · 5h: 12% left",
+        "Gemini · 5h: 73% left (reported) · provider-defined period",
+        "Gemini · Weekly: 41% left (reported) · weekly",
+        "Other models · 5h: 12% left (reported)",
         "resets in 1h",
         "resets in 1d",
         "resets in 13d",
@@ -199,7 +219,7 @@ fn parity_console_render_smoke_overview() {
         "Anthropic · work@example.test",
         "Anthropic · personal@example.test",
         "150% used",
-        "raw used 150%",
+        "money ratio 150% used",
         "Cursor · cursor-user",
         "Billing cycle",
         "Spend (actual) spend: cap $100.00 · spent $45.20 · remaining $54.80",
@@ -256,12 +276,28 @@ fn parity_console_render_smoke_detail_scopes() {
         "pace: On pace",
         "Credits (balance · available · updated 5m ago)",
         "scope: pool credits-pool",
-        "expires in 30d",
-        "fetched 5m ago",
     ] {
         assert!(
             text.contains(expected),
             "antigravity detail must contain {expected:?}:\n{text}"
+        );
+    }
+
+    let mut screen = parity_mega_screen(PARITY_NOW);
+    screen.selected = 1;
+    screen.detail = true;
+    screen.scroll = 16;
+    let lower_text = parity_render_text(screen, 120, 70, PARITY_NOW);
+    for expected in [
+        "Credits (balance · available · updated 5m ago)",
+        "scope: pool credits-pool",
+        "$12.50",
+        "expires in 30d",
+        "fetched 5m ago",
+    ] {
+        assert!(
+            lower_text.contains(expected),
+            "scrolled antigravity detail must contain {expected:?}:\n{lower_text}"
         );
     }
 

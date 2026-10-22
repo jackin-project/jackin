@@ -39,11 +39,16 @@ fn claude_limits_array_surfaces_every_scoped_model_together() {
             .find(|b| b.label == label)
             .unwrap_or_else(|| panic!("{label} bucket"));
         assert_eq!(b.status_slot, None, "{label} must be non-headline");
-        assert!(b.remaining_percent.is_some(), "{label} must carry a meter");
+        assert!(
+            b.used_percent.is_some(),
+            "{label} must retain used evidence"
+        );
+        assert!(b.remaining_percent.is_none());
     }
     let fable = buckets.iter().find(|b| b.label == "Fable").expect("Fable");
     assert_eq!(fable.severity, UsageSeverity::Warn);
-    assert_eq!(fable.remaining_percent, Some(57));
+    assert_eq!(fable.remaining_percent, None);
+    assert_eq!(used_points(fable), Some(43.0));
 }
 
 #[test]
@@ -67,7 +72,8 @@ fn claude_codename_dollar_window_is_surfaced() {
         .expect("amber_ladder dollar window surfaced");
     assert_eq!(amber.used_label.as_deref(), Some("$5000.00 spent"));
     assert_eq!(amber.limit_label.as_deref(), Some("$25000.00"));
-    assert_eq!(amber.remaining_percent, Some(80));
+    assert_eq!(amber.remaining_percent, None);
+    assert!(amber.used_percent.is_none());
     assert_eq!(amber.status_slot, None);
     assert!(
         !buckets
@@ -123,18 +129,21 @@ fn claude_oauth_response_accepts_window_aliases() {
     assert!(
         buckets
             .iter()
-            .any(|bucket| bucket.label == "Weekly" && bucket.remaining_percent == Some(55))
+            .any(|bucket| bucket.label == "Session" && used_points(bucket) == Some(0.10))
     );
     assert!(
         buckets
             .iter()
-            .any(|bucket| bucket.label == "Daily Routines" && bucket.remaining_percent == Some(75))
+            .any(|bucket| bucket.label == "Weekly" && used_points(bucket) == Some(0.45))
     );
     assert!(
         buckets
             .iter()
-            .any(|bucket| bucket.label == "Opus" && bucket.status_slot.is_none())
+            .any(|bucket| bucket.label == "Daily Routines" && used_points(bucket) == Some(0.25))
     );
+    assert!(buckets.iter().any(|bucket| {
+        bucket.label == "Opus" && bucket.status_slot.is_none() && used_points(bucket) == Some(0.30)
+    }));
 }
 
 #[test]

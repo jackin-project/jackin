@@ -17,7 +17,12 @@ pub(super) fn bucket(label: &str) -> QuotaBucketView {
         label: label.into(),
         used_label: None,
         limit_label: None,
+        used_percent: None,
+        used_percent_origin: None,
         remaining_percent: None,
+        remaining_percent_origin: None,
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: None,
@@ -78,7 +83,8 @@ pub(super) fn catalog_entry(
 
 pub(super) fn status_bucket(label: &str, status: UsageSnapshotStatus) -> QuotaBucketView {
     let mut bucket = bucket(label);
-    bucket.remaining_percent = Some(57);
+    bucket.remaining_percent = Some(reported_remaining(57.0));
+    bucket.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
     bucket.status = status;
     bucket
 }
@@ -87,6 +93,10 @@ pub(super) const PARITY_NOW: i64 = 1_800_000_000;
 
 pub(super) const PARITY_GENERATION: u64 = 7;
 
+pub(super) fn reported_remaining(value: f64) -> CanonicalRemainingPercent {
+    CanonicalRemainingPercent::new(value).expect("test remaining percentage is valid")
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct ParityBucket {
     pub(super) label: &'static str,
@@ -94,6 +104,7 @@ pub(super) struct ParityBucket {
     pub(super) used_label: Option<&'static str>,
     pub(super) limit_label: Option<&'static str>,
     pub(super) remaining: Option<u8>,
+    pub(super) remaining_origin: Option<PercentObservationOrigin>,
     pub(super) reset_at: Option<i64>,
     pub(super) pace: Option<&'static str>,
     pub(super) status: UsageSnapshotStatus,
@@ -110,6 +121,7 @@ impl ParityBucket {
             used_label: None,
             limit_label: None,
             remaining: Some(remaining),
+            remaining_origin: Some(PercentObservationOrigin::ProviderReported),
             reset_at: None,
             pace: None,
             status: UsageSnapshotStatus::Fresh,
@@ -182,7 +194,13 @@ pub(super) fn parity_bucket_view_at(def: &ParityBucket, now: i64) -> QuotaBucket
         def.label,
         def.used_label.map(str::to_owned),
         def.limit_label.map(str::to_owned),
-        def.remaining,
+        def.remaining.map(|value| {
+            (
+                reported_remaining(f64::from(value)),
+                def.remaining_origin
+                    .expect("a test percent has an explicit authority"),
+            )
+        }),
         def.reset_at,
         now,
         def.pace,
@@ -350,7 +368,7 @@ pub(super) fn parity_projection_at(
         });
     }
     let projection = UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "parity-fixture:1".to_owned(),
         generated_at_epoch: now,
         discovery_revision: "parity".to_owned(),

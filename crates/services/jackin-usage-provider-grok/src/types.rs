@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::grok_cycle_label_from_minutes;
+use jackin_protocol::control::CanonicalUsedPercent;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +36,8 @@ pub struct GrokBillingResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokBillingConfig {
-    pub(crate) credit_usage_percent: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_present_json_value")]
+    pub(crate) credit_usage_percent: Option<serde_json::Value>,
     pub(crate) current_period: Option<GrokCurrentPeriod>,
     pub(crate) monthly_limit: Option<GrokCent>,
     pub(crate) used: Option<GrokCent>,
@@ -46,6 +48,29 @@ pub struct GrokBillingConfig {
     pub(crate) billing_period_end: Option<String>,
     pub(crate) period_start: Option<String>,
     pub(crate) period_end: Option<String>,
+}
+
+fn deserialize_present_json_value<'de, D>(
+    deserializer: D,
+) -> Result<Option<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    serde_json::Value::deserialize(deserializer).map(Some)
+}
+
+impl GrokBillingConfig {
+    /// `creditUsagePercent` is a provider-reported used percentage in points.
+    /// Keep malformed explicit values distinguishable from an omitted field.
+    pub(crate) fn credit_usage_percent_value(&self) -> Result<Option<CanonicalUsedPercent>, ()> {
+        let Some(value) = &self.credit_usage_percent else {
+            return Ok(None);
+        };
+        let Some(percent) = value.as_f64() else {
+            return Err(());
+        };
+        CanonicalUsedPercent::new(percent).map(Some).map_err(|_| ())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +108,6 @@ pub enum GrokBillingSnapshot {
 
 #[derive(Debug)]
 pub struct GrokWebBillingSnapshot {
-    pub used_percent: f64,
+    pub used_percent: CanonicalUsedPercent,
     pub reset_at_epoch: Option<i64>,
 }

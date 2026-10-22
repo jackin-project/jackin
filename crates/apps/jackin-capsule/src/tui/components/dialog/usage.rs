@@ -65,11 +65,14 @@ impl Dialog {
             ),
         );
         for row in &presentation.rows {
-            let value = match row.meter_percent {
-                Some(meter_percent) => {
-                    format!("{} {}", Self::usage_meter(meter_percent), row.display_label)
-                }
-                None => row.display_label.clone(),
+            let value = match (row.meter_percent, row.meter_side) {
+                (Some(meter_percent), Some(meter_side)) => format!(
+                    "{} {}",
+                    Self::usage_meter(meter_percent, meter_side),
+                    row.display_label
+                ),
+                (None, None) => row.display_label.clone(),
+                _ => row.display_label.clone(),
             };
             let mut info_row =
                 crate::tui::components::container_info_surface::ContainerInfoRow::new(
@@ -198,14 +201,19 @@ impl Dialog {
         Some(*selected)
     }
 
-    fn usage_meter(remaining_percent: u8) -> String {
+    fn usage_meter(
+        meter_percent: jackin_protocol::control::MeterPercentPoints,
+        _meter_side: jackin_protocol::control::UsageMeterSide,
+    ) -> String {
         const WIDTH: usize = 32;
-        let remaining = usize::from(remaining_percent.min(100));
-        let filled = if remaining >= 100 {
-            WIDTH
-        } else {
-            remaining * WIDTH / 100
-        };
+        // The bar fills the selected quantity directly; the side stays paired
+        // with its source label and must not invert the continuous geometry.
+        let percent = meter_percent.get();
+        let fill_cells = percent * WIDTH as f64 / 100.0;
+        // Quantize to whole glyph cells only at the final rendering step.
+        let filled = (0..WIDTH)
+            .take_while(|cell| fill_cells >= (*cell + 1) as f64)
+            .count();
         format!(
             "{}{}",
             "█".repeat(filled),

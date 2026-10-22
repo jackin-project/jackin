@@ -3,13 +3,19 @@
 
 use super::*;
 
+use jackin_protocol::control::{
+    CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit, MeterPercentPoints,
+    PercentObservationOrigin, ProviderQuotaState, RawPercentPoints, UsageMeterSide,
+};
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageCalendarPeriodV1, UsageFreshnessPhaseV1, UsageFreshnessV1,
-    UsageIdentityKindV1, UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1,
-    UsageMetricGroupKindV1, UsageMetricGroupV1, UsageMetricPeriodV1, UsageMetricScopeV1,
-    UsageMetricValueV1, UsagePercent, UsageProjectionRefreshStateV1, UsageProjectionSchemaV1,
-    UsageProviderV1, UsageQuotaStateV1, UsageWindowCategoryV1,
+    UsageIdentityKindV1, UsageIssueRecoverabilityV1, UsageIssueScopeV1, UsageIssueV1,
+    UsageLifecycleV1, UsageLimitWindowV1, UsageMembershipStateV1, UsageMetricGroupKindV1,
+    UsageMetricGroupV1, UsageMetricPeriodV1, UsageMetricScopeV1, UsageMetricValueV1,
+    UsageProjectionRefreshStateV1, UsageProjectionSchemaV2, UsageProviderV1, UsageQuotaStateV1,
+    UsageWindowCategoryV1,
 };
+use jackin_usage_provider_core::{PercentStyle, ResetStyle, UsageFormatPrefs};
 
 #[test]
 fn broker_conflict_has_a_specific_sanitized_bridge_error_code() {
@@ -117,10 +123,15 @@ fn fixture_projection() -> UsageProjectionV1 {
         is_stale: false,
         quota_state: UsageQuotaStateV1::Available,
         value: UsageMetricValueV1::Window {
-            remaining_percent: Some(UsagePercent::new(64).expect("percent")),
-            remaining_raw_percent: Some(64),
+            remaining_percent: Some(RawPercentPoints::new(64.0).expect("percent")),
+            remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
             used_percent: None,
-            used_raw_percent: None,
+            used_percent_origin: None,
+            meter_percent: Some(MeterPercentPoints::new(64.0).expect("meter")),
+            meter_side: Some(UsageMeterSide::Remaining),
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             period: UsageMetricPeriodV1::Calendar {
                 granularity: UsageCalendarPeriodV1::Weekly,
             },
@@ -147,10 +158,15 @@ fn fixture_projection() -> UsageProjectionV1 {
             label: "Weekly".to_owned(),
             value_label: "64% left".to_owned(),
             reset_label: "Resets in 3d".to_owned(),
-            remaining_percent: Some(UsagePercent::new(64).expect("percent")),
-            remaining_raw_percent: Some(64),
+            remaining_percent: Some(RawPercentPoints::new(64.0).expect("percent")),
+            remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
             used_percent: None,
-            used_raw_percent: None,
+            used_percent_origin: None,
+            meter_percent: Some(MeterPercentPoints::new(64.0).expect("meter")),
+            meter_side: Some(UsageMeterSide::Remaining),
+            count_quota: None,
+            provider_quota_state: None,
+            money_used_percent: None,
             reset_at_epoch: Some(1_800_100_000),
             quota_state: UsageQuotaStateV1::Available,
             pace_label: None,
@@ -165,7 +181,7 @@ fn fixture_projection() -> UsageProjectionV1 {
         issues: Vec::new(),
     };
     UsageProjectionV1 {
-        schema_version: UsageProjectionSchemaV1,
+        schema_version: UsageProjectionSchemaV2,
         projection_id: "fixture-projection-1".to_owned(),
         generated_at_epoch: 1_800_000_001,
         discovery_revision: "fixture-catalog-1".to_owned(),
@@ -189,12 +205,1309 @@ fn fixture_projection() -> UsageProjectionV1 {
     }
 }
 
+#[test]
+fn desktop_projection_copies_exact_count_and_raw_quota_fields() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge(dir.path());
+    let mut projection = fixture_projection();
+    let count = CountQuota::new(
+        Some(9_007_199_254_740_993),
+        Some(u64::MAX),
+        Some(0),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    );
+    let (remaining, remaining_origin, used, used_origin, meter, side) = {
+        let window = &mut projection.providers[0].accounts[0].windows[0];
+        window.value_label = "0 requests left".to_owned();
+        window.remaining_percent = Some(RawPercentPoints::new(57.125).expect("raw remaining"));
+        window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+        window.used_percent = Some(RawPercentPoints::new(43.375).expect("raw used"));
+        window.used_percent_origin = Some(PercentObservationOrigin::Derived);
+        window.count_quota = Some(count);
+        window.meter_percent = Some(MeterPercentPoints::new(0.0).expect("count meter"));
+        window.meter_side = Some(UsageMeterSide::Remaining);
+        (
+            window.remaining_percent,
+            window.remaining_percent_origin,
+            window.used_percent,
+            window.used_percent_origin,
+            window.meter_percent,
+            window.meter_side,
+        )
+    };
+    let group = &mut projection.providers[0].accounts[0].metric_groups[0];
+    group.reset_at_epoch = Some(1_800_200_000);
+    if let UsageMetricValueV1::Window {
+        remaining_percent,
+        remaining_percent_origin,
+        used_percent,
+        used_percent_origin,
+        meter_percent,
+        meter_side,
+        count_quota,
+        period,
+        unit,
+        ..
+    } = &mut group.value
+    {
+        *remaining_percent = remaining;
+        *remaining_percent_origin = remaining_origin;
+        *used_percent = used;
+        *used_percent_origin = used_origin;
+        *meter_percent = meter;
+        *meter_side = side;
+        *count_quota = Some(count);
+        *period = UsageMetricPeriodV1::Calendar {
+            granularity: UsageCalendarPeriodV1::Daily,
+        };
+        *unit = Some("requests".to_owned());
+    }
+    let mut group_only_projection = projection.clone();
+    group_only_projection.projection_id = "fixture-projection-2".to_owned();
+    group_only_projection.broker_generation += 1;
+    group_only_projection.providers[0].accounts[0]
+        .windows
+        .clear();
+    group_only_projection.providers[0].accounts[0].metric_groups[0].reset_at_epoch =
+        Some(1_800_200_000);
+    projection.providers[0].accounts[0].windows[0].reset_at_epoch = None;
+    bridge
+        .apply_publication(projection)
+        .expect("publish quota fixture");
+
+    let projected = bridge.desktop_projection(3).expect("desktop projection");
+    let account = &projected.providers[0].group.accounts[0];
+    assert_eq!(account.used_percent, Some(43.375));
+    assert_eq!(account.used_percent_origin.as_deref(), Some("derived"));
+    assert_eq!(account.remaining_percent, Some(57.125));
+    assert_eq!(
+        account.remaining_percent_origin.as_deref(),
+        Some("provider_reported")
+    );
+    assert_eq!(
+        account.count_quota.as_ref().and_then(|count| count.used),
+        count.used
+    );
+    assert_eq!(
+        account.count_quota.as_ref().and_then(|count| count.limit),
+        count.limit
+    );
+    assert_eq!(
+        account
+            .count_quota
+            .as_ref()
+            .and_then(|count| count.remaining),
+        Some(0)
+    );
+    assert_eq!(account.resets_at, None);
+    assert_eq!(account.provider_quota_state, None);
+    assert_eq!(account.meter_percent, Some(0.0));
+    assert_eq!(account.meter_side.as_deref(), Some("remaining"));
+    assert_eq!(account.headline, "0 requests left");
+
+    let bucket = &projected.providers[0].selected_usage.buckets[0];
+    assert_eq!(
+        bucket.count_quota.as_ref().and_then(|count| count.used),
+        count.used
+    );
+    assert_eq!(bucket.used_percent, Some(43.375));
+    assert_eq!(bucket.remaining_percent, Some(57.125));
+    assert_eq!(bucket.provider_quota_state, None);
+    assert_eq!(bucket.meter_percent, Some(0.0));
+    assert_eq!(bucket.meter_side.as_deref(), Some("remaining"));
+
+    let glance = &projected.glance_rows[0];
+    assert_eq!(
+        glance
+            .glance_count_quota
+            .as_ref()
+            .and_then(|count| count.used),
+        count.used
+    );
+    assert_eq!(glance.glance_resets_at, None);
+    assert_eq!(glance.glance_meter_percent, Some(0.0));
+    assert_eq!(glance.glance_meter_side.as_deref(), Some("remaining"));
+    assert_eq!(glance.bar_label, "0 requests left");
+
+    bridge
+        .apply_publication(group_only_projection)
+        .expect("publish group-only quota fixture");
+    let inventory = bridge.desktop_inventory().expect("desktop inventory");
+    let group_only_account = &inventory
+        .groups
+        .iter()
+        .find(|group| group.surface_id == "codex")
+        .expect("Codex account group")
+        .accounts[0];
+    assert_eq!(group_only_account.used_percent, Some(43.375));
+    assert_eq!(group_only_account.remaining_percent, Some(57.125));
+    assert_eq!(
+        group_only_account
+            .count_quota
+            .as_ref()
+            .and_then(|count| count.used),
+        count.used
+    );
+    assert_eq!(group_only_account.resets_at, Some(1_800_200_000));
+    assert_eq!(group_only_account.meter_percent, Some(0.0));
+    assert!(group_only_account.headline.contains("0 requests left"));
+    bridge.shutdown().expect("shutdown");
+}
+
+fn assert_group_and_state_only_unlimited(
+    bridge: &UsageMenuBarBridge,
+    projection: &UsageProjectionV1,
+) {
+    let mut group_only_projection = projection.clone();
+    group_only_projection.projection_id = "fixture-explicit-unlimited-group-only".to_owned();
+    group_only_projection.broker_generation += 1;
+    group_only_projection.providers[0].accounts[0]
+        .windows
+        .clear();
+    bridge
+        .apply_publication(group_only_projection)
+        .expect("publish group-only unlimited quota state");
+    let inventory = bridge.desktop_inventory().expect("group-only inventory");
+    let group_only_account = &inventory
+        .groups
+        .iter()
+        .find(|group| group.surface_id == "codex")
+        .expect("Codex account group")
+        .accounts[0];
+    assert_eq!(
+        group_only_account.provider_quota_state.as_deref(),
+        Some("unlimited")
+    );
+    assert_eq!(group_only_account.remaining_percent, Some(99.0));
+    assert_eq!(group_only_account.meter_percent, None);
+
+    let mut state_only_projection = projection.clone();
+    state_only_projection.projection_id = "fixture-state-only-unlimited".to_owned();
+    state_only_projection.broker_generation += 2;
+    {
+        let account = &mut state_only_projection.providers[0].accounts[0];
+        let window = &mut account.windows[0];
+        window.used_percent = None;
+        window.used_percent_origin = None;
+        window.remaining_percent = None;
+        window.remaining_percent_origin = None;
+        window.count_quota = None;
+        window.money_used_percent = None;
+        window.meter_percent = None;
+        window.meter_side = None;
+
+        let group = &mut account.metric_groups[0];
+        if let UsageMetricValueV1::Window {
+            used_percent,
+            used_percent_origin,
+            remaining_percent,
+            remaining_percent_origin,
+            count_quota,
+            money_used_percent,
+            provider_quota_state,
+            meter_percent,
+            meter_side,
+            period,
+            unit,
+            ..
+        } = &mut group.value
+        {
+            *used_percent = None;
+            *used_percent_origin = None;
+            *remaining_percent = None;
+            *remaining_percent_origin = None;
+            *count_quota = None;
+            *money_used_percent = None;
+            *provider_quota_state = Some(ProviderQuotaState::Unlimited);
+            *meter_percent = None;
+            *meter_side = None;
+            *period = UsageMetricPeriodV1::Calendar {
+                granularity: UsageCalendarPeriodV1::Weekly,
+            };
+            *unit = Some("tokens".to_owned());
+        }
+        account.windows.clear();
+    }
+    bridge
+        .apply_publication(state_only_projection)
+        .expect("publish state-only unlimited quota");
+    let state_only = bridge.desktop_projection(3).expect("state-only projection");
+    let account = &state_only.providers[0].group.accounts[0];
+    assert_eq!(account.headline, "Unlimited");
+    assert_eq!(account.provider_quota_state.as_deref(), Some("unlimited"));
+    assert_eq!(account.meter_percent, None);
+    let glance = state_only
+        .glance_rows
+        .iter()
+        .find(|row| row.surface_id == "codex")
+        .expect("Codex state-only glance row");
+    assert_eq!(glance.headline, "Unlimited");
+    assert_eq!(glance.bar_label, "Unlimited");
+    let detail = state_only.providers[0]
+        .selected_usage
+        .detail_presentation
+        .rows
+        .iter()
+        .find(|row| row.row_id == "weekly-group")
+        .expect("state-only weekly group detail");
+    assert!(detail.display_label.starts_with("Unlimited"));
+    assert!(!detail.display_label.contains("0 requests left"));
+}
+
+fn publish_exhausted_projection(bridge: &UsageMenuBarBridge, projection: UsageProjectionV1) {
+    let mut exhausted_projection = projection;
+    exhausted_projection.projection_id = "fixture-explicit-exhausted".to_owned();
+    exhausted_projection.broker_generation += 3;
+    let exhausted_count = CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    );
+    {
+        let account = &mut exhausted_projection.providers[0].accounts[0];
+        let window = &mut account.windows[0];
+        window.value_label = "Exhausted · Reported remaining: 57.125%".to_owned();
+        window.remaining_percent = Some(RawPercentPoints::new(57.125).expect("raw remaining"));
+        window.count_quota = Some(exhausted_count);
+        window.provider_quota_state = Some(ProviderQuotaState::Exhausted);
+        window.quota_state = UsageQuotaStateV1::Exhausted;
+        window.meter_percent = Some(MeterPercentPoints::new(0.0).expect("exhausted meter"));
+        window.meter_side = Some(UsageMeterSide::Remaining);
+
+        let group = &mut account.metric_groups[0];
+        group.quota_state = UsageQuotaStateV1::Exhausted;
+        if let UsageMetricValueV1::Window {
+            remaining_percent,
+            remaining_percent_origin,
+            count_quota,
+            provider_quota_state,
+            meter_percent,
+            meter_side,
+            period,
+            unit,
+            ..
+        } = &mut group.value
+        {
+            *remaining_percent = window.remaining_percent;
+            *remaining_percent_origin = window.remaining_percent_origin;
+            *count_quota = window.count_quota;
+            *provider_quota_state = window.provider_quota_state;
+            *meter_percent = window.meter_percent;
+            *meter_side = window.meter_side;
+            *period = UsageMetricPeriodV1::Calendar {
+                granularity: UsageCalendarPeriodV1::Daily,
+            };
+            *unit = Some("requests".to_owned());
+        }
+    }
+    bridge
+        .apply_publication(exhausted_projection)
+        .expect("publish exhausted quota state");
+}
+
+fn assert_exhausted_projection(bridge: &UsageMenuBarBridge) {
+    let exhausted = bridge.desktop_projection(3).expect("exhausted projection");
+    let account = &exhausted.providers[0].group.accounts[0];
+    assert_eq!(account.provider_quota_state.as_deref(), Some("exhausted"));
+    assert_eq!(account.remaining_percent, Some(57.125));
+    assert_eq!(
+        account.remaining_percent_origin.as_deref(),
+        Some("provider_reported")
+    );
+    assert_eq!(
+        account.count_quota.as_ref().and_then(|count| count.used),
+        Some(9)
+    );
+    assert_eq!(
+        account.count_quota.as_ref().and_then(|count| count.limit),
+        Some(10)
+    );
+    assert_eq!(
+        account
+            .count_quota
+            .as_ref()
+            .and_then(|count| count.remaining),
+        Some(1)
+    );
+    assert_eq!(account.meter_percent, Some(0.0));
+    assert_eq!(account.meter_side.as_deref(), Some("remaining"));
+    assert!(account.headline.starts_with("Exhausted"));
+    assert!(!account.headline.contains("1 requests left"));
+    let bucket = &exhausted.providers[0].selected_usage.buckets[0];
+    assert_eq!(bucket.provider_quota_state.as_deref(), Some("exhausted"));
+    assert_eq!(bucket.remaining_percent, Some(57.125));
+    assert_eq!(bucket.meter_percent, Some(0.0));
+    assert_eq!(bucket.meter_side.as_deref(), Some("remaining"));
+    let glance = exhausted
+        .glance_rows
+        .iter()
+        .find(|row| row.surface_id == "codex")
+        .expect("Codex glance row");
+    assert!(glance.headline.starts_with("Exhausted"));
+    assert!(glance.bar_label.starts_with("Exhausted"));
+    assert!(!glance.bar_label.contains("1 requests left"));
+    assert_eq!(
+        glance.glance_provider_quota_state.as_deref(),
+        Some("exhausted")
+    );
+    assert_eq!(glance.glance_remaining_percent, Some(57.125));
+    assert_eq!(
+        glance
+            .glance_count_quota
+            .as_ref()
+            .and_then(|count| count.used),
+        Some(9)
+    );
+    assert_eq!(
+        glance
+            .glance_count_quota
+            .as_ref()
+            .and_then(|count| count.limit),
+        Some(10)
+    );
+    assert_eq!(
+        glance
+            .glance_count_quota
+            .as_ref()
+            .and_then(|count| count.remaining),
+        Some(1)
+    );
+    assert_eq!(glance.glance_meter_percent, Some(0.0));
+    assert_eq!(glance.glance_meter_side.as_deref(), Some("remaining"));
+    let detail = exhausted.providers[0]
+        .selected_usage
+        .detail_presentation
+        .rows
+        .iter()
+        .find(|row| row.row_id == "weekly-group")
+        .expect("weekly group detail");
+    assert!(detail.display_label.starts_with("Exhausted"));
+    assert!(!detail.display_label.contains("1 requests left"));
+}
+
+#[test]
+fn desktop_projection_preserves_explicit_provider_state_and_independent_quota_values() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge(dir.path());
+    let mut projection = fixture_projection();
+    let unlimited_count = CountQuota::new(
+        Some(0),
+        Some(10),
+        Some(0),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    );
+    {
+        let account = &mut projection.providers[0].accounts[0];
+        let window = &mut account.windows[0];
+        window.value_label = "Unlimited · Reported remaining: 99%".to_owned();
+        window.remaining_percent = Some(RawPercentPoints::new(99.0).expect("raw remaining"));
+        window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+        window.count_quota = Some(unlimited_count);
+        window.provider_quota_state = Some(ProviderQuotaState::Unlimited);
+        window.quota_state = UsageQuotaStateV1::NotApplicable;
+        window.meter_percent = None;
+        window.meter_side = None;
+
+        let group = &mut account.metric_groups[0];
+        group.quota_state = UsageQuotaStateV1::NotApplicable;
+        if let UsageMetricValueV1::Window {
+            remaining_percent,
+            remaining_percent_origin,
+            count_quota,
+            provider_quota_state,
+            meter_percent,
+            meter_side,
+            period,
+            unit,
+            ..
+        } = &mut group.value
+        {
+            *remaining_percent = window.remaining_percent;
+            *remaining_percent_origin = window.remaining_percent_origin;
+            *count_quota = window.count_quota;
+            *provider_quota_state = window.provider_quota_state;
+            *meter_percent = None;
+            *meter_side = None;
+            *period = UsageMetricPeriodV1::Calendar {
+                granularity: UsageCalendarPeriodV1::Daily,
+            };
+            *unit = Some("requests".to_owned());
+        }
+    }
+    bridge
+        .apply_publication(projection.clone())
+        .expect("publish unlimited quota state");
+    let unlimited = bridge.desktop_projection(3).expect("unlimited projection");
+    let account = &unlimited.providers[0].group.accounts[0];
+    assert_eq!(account.provider_quota_state.as_deref(), Some("unlimited"));
+    assert_eq!(account.remaining_percent, Some(99.0));
+    assert_eq!(
+        account.remaining_percent_origin.as_deref(),
+        Some("provider_reported")
+    );
+    assert_eq!(
+        account
+            .count_quota
+            .as_ref()
+            .and_then(|count| count.remaining),
+        Some(0)
+    );
+    assert_eq!(account.meter_percent, None);
+    assert_eq!(account.meter_side, None);
+    assert!(account.headline.starts_with("Unlimited"));
+    assert!(!account.headline.contains("0 requests left"));
+    let bucket = &unlimited.providers[0].selected_usage.buckets[0];
+    assert_eq!(bucket.provider_quota_state.as_deref(), Some("unlimited"));
+    assert_eq!(bucket.remaining_percent, Some(99.0));
+    assert_eq!(bucket.meter_percent, None);
+    assert_eq!(bucket.meter_side, None);
+    let glance = unlimited
+        .glance_rows
+        .iter()
+        .find(|row| row.surface_id == "codex")
+        .expect("Codex glance row");
+    assert!(glance.headline.starts_with("Unlimited"));
+    assert!(glance.bar_label.starts_with("Unlimited"));
+    assert_eq!(
+        glance.glance_provider_quota_state.as_deref(),
+        Some("unlimited")
+    );
+    assert_eq!(glance.glance_remaining_percent, Some(99.0));
+    assert_eq!(
+        glance
+            .glance_count_quota
+            .as_ref()
+            .and_then(|count| count.remaining),
+        Some(0)
+    );
+    assert_eq!(glance.glance_meter_percent, None);
+    assert_eq!(glance.glance_meter_side, None);
+    let detail = unlimited.providers[0]
+        .selected_usage
+        .detail_presentation
+        .rows
+        .iter()
+        .find(|row| row.row_id == "weekly-group")
+        .expect("weekly group detail");
+    assert!(detail.display_label.starts_with("Unlimited"));
+
+    assert_group_and_state_only_unlimited(&bridge, &projection);
+
+    publish_exhausted_projection(&bridge, projection);
+    assert_exhausted_projection(&bridge);
+    bridge.shutdown().expect("shutdown");
+}
+
+#[test]
+fn desktop_projection_preserves_raw_remaining_with_complete_and_incomplete_requests_counts() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge(dir.path());
+    let mut projection = fixture_projection();
+    let count = CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    );
+    let account = &mut projection.providers[0].accounts[0];
+    let (remaining, remaining_origin, meter, side) = {
+        let window = &mut account.windows[0];
+        window.value_label = "1 requests left".to_owned();
+        window.remaining_percent = Some(RawPercentPoints::new(57.125).expect("raw remaining"));
+        window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+        window.count_quota = Some(count);
+        window.meter_percent = Some(MeterPercentPoints::new(10.0).expect("count meter"));
+        window.meter_side = Some(UsageMeterSide::Remaining);
+        (
+            window.remaining_percent,
+            window.remaining_percent_origin,
+            window.meter_percent,
+            window.meter_side,
+        )
+    };
+    let group = &mut account.metric_groups[0];
+    if let UsageMetricValueV1::Window {
+        remaining_percent,
+        remaining_percent_origin,
+        count_quota,
+        meter_percent,
+        meter_side,
+        period,
+        unit,
+        ..
+    } = &mut group.value
+    {
+        *remaining_percent = remaining;
+        *remaining_percent_origin = remaining_origin;
+        *count_quota = Some(count);
+        *meter_percent = meter;
+        *meter_side = side;
+        *period = UsageMetricPeriodV1::Calendar {
+            granularity: UsageCalendarPeriodV1::Daily,
+        };
+        *unit = Some("requests".to_owned());
+    }
+    bridge
+        .apply_publication(projection.clone())
+        .expect("complete count fixture");
+    let projected = bridge.desktop_projection(3).expect("complete projection");
+    let account = &projected.providers[0].group.accounts[0];
+    assert_eq!(account.remaining_percent, Some(57.125));
+    assert_eq!(
+        account.remaining_percent_origin.as_deref(),
+        Some("provider_reported")
+    );
+    assert_eq!(
+        account.count_quota.as_ref().and_then(|quota| quota.used),
+        Some(9)
+    );
+    assert_eq!(
+        account.count_quota.as_ref().and_then(|quota| quota.limit),
+        Some(10)
+    );
+    assert_eq!(
+        account
+            .count_quota
+            .as_ref()
+            .and_then(|quota| quota.remaining),
+        Some(1)
+    );
+    assert_eq!(account.meter_percent, Some(10.0));
+    assert_eq!(account.meter_side.as_deref(), Some("remaining"));
+    assert_eq!(account.headline, "1 requests left");
+    let bucket = &projected.providers[0].selected_usage.buckets[0];
+    assert_eq!(bucket.remaining_percent, Some(57.125));
+    assert_eq!(bucket.meter_percent, Some(10.0));
+    assert_eq!(bucket.meter_side.as_deref(), Some("remaining"));
+    let glance = &projected.glance_rows[0];
+    assert_eq!(glance.glance_remaining_percent, Some(57.125));
+    assert_eq!(glance.glance_meter_percent, Some(10.0));
+    assert_eq!(glance.bar_label, "1 requests left");
+
+    let mut incomplete = projection;
+    incomplete.projection_id = "fixture-projection-incomplete-count".to_owned();
+    incomplete.broker_generation += 1;
+    let account = &mut incomplete.providers[0].accounts[0];
+    let count = CountQuota::new(
+        Some(9),
+        None,
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    );
+    account.windows[0].count_quota = Some(count);
+    account.windows[0].meter_percent = None;
+    account.windows[0].meter_side = None;
+    let group = &mut account.metric_groups[0];
+    if let UsageMetricValueV1::Window {
+        count_quota,
+        meter_percent,
+        meter_side,
+        ..
+    } = &mut group.value
+    {
+        *count_quota = Some(count);
+        *meter_percent = None;
+        *meter_side = None;
+    }
+    bridge
+        .apply_publication(incomplete)
+        .expect("incomplete count fixture");
+    let projected = bridge.desktop_projection(3).expect("incomplete projection");
+    let account = &projected.providers[0].group.accounts[0];
+    assert_eq!(account.remaining_percent, Some(57.125));
+    assert_eq!(account.meter_percent, None);
+    assert_eq!(account.meter_side, None);
+    assert_eq!(
+        account.count_quota.as_ref().and_then(|quota| quota.limit),
+        None
+    );
+    assert_eq!(account.headline, "1 requests left");
+    let glance = &projected.glance_rows[0];
+    assert_eq!(glance.glance_remaining_percent, Some(57.125));
+    assert_eq!(glance.glance_meter_percent, None);
+    assert_eq!(glance.glance_meter_side, None);
+    bridge.shutdown().expect("shutdown");
+}
+
+fn configure_runtime_selected_metric_groups(
+    bridge: &UsageMenuBarBridge,
+    projection: &mut UsageProjectionV1,
+) {
+    let codex_account = &mut projection.providers[0].accounts[0];
+    let mut codex_session = codex_account.windows[0].clone();
+    codex_session.window_id = "codex-session".to_owned();
+    codex_session.category = UsageWindowCategoryV1::Session;
+    codex_session.label = "Session".to_owned();
+    codex_session.value_label = "90% left".to_owned();
+    codex_session.remaining_percent = Some(RawPercentPoints::new(90.0).expect("session raw"));
+    codex_session.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    codex_session.meter_percent = None;
+    codex_session.meter_side = None;
+    codex_session.provider_quota_state = Some(ProviderQuotaState::Unlimited);
+    codex_session.quota_state = UsageQuotaStateV1::NotApplicable;
+    codex_session.count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    codex_session.reset_at_epoch = Some(1_800_300_000);
+    codex_account.windows[0] = codex_session;
+    codex_account.issues.push(UsageIssueV1 {
+        code: "account-fallback".to_owned(),
+        scope: UsageIssueScopeV1::Account,
+        recoverability: UsageIssueRecoverabilityV1::Retryable,
+        message: "account fallback must not replace selected group".to_owned(),
+        retry_at_epoch: None,
+    });
+    let codex_weekly = &mut codex_account.metric_groups[0];
+    codex_weekly.reset_at_epoch = None;
+    codex_weekly.last_success_at_epoch = None;
+    codex_weekly.phase = UsageFreshnessPhaseV1::Failed;
+    codex_weekly.is_stale = false;
+    codex_weekly.quota_state = UsageQuotaStateV1::Error;
+    codex_weekly.issues.clear();
+    if let UsageMetricValueV1::Window {
+        used_percent,
+        used_percent_origin,
+        remaining_percent,
+        remaining_percent_origin,
+        count_quota,
+        provider_quota_state,
+        money_used_percent,
+        meter_percent,
+        meter_side,
+        period,
+        ..
+    } = &mut codex_weekly.value
+    {
+        *used_percent = Some(RawPercentPoints::new(43.375).expect("weekly used"));
+        *used_percent_origin = Some(PercentObservationOrigin::Derived);
+        *remaining_percent = Some(RawPercentPoints::new(57.125).expect("weekly remaining"));
+        *remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+        *count_quota = None;
+        *provider_quota_state = None;
+        *money_used_percent = None;
+        *meter_percent = Some(MeterPercentPoints::new(0.0).expect("weekly meter"));
+        *meter_side = Some(UsageMeterSide::Remaining);
+        *period = UsageMetricPeriodV1::Calendar {
+            granularity: UsageCalendarPeriodV1::Weekly,
+        };
+    }
+
+    let mut amp_provider = projection.providers[0].clone();
+    amp_provider.provider_id = "amp".to_owned();
+    amp_provider.display_name = "Amp".to_owned();
+    amp_provider.rank = 1;
+    amp_provider.accounts.truncate(1);
+    let amp_account = &mut amp_provider.accounts[0];
+    amp_account.canonical_account_id = "canonical-amp-a".to_owned();
+    amp_account.display_label = "amp@example.test".to_owned();
+    amp_account.issues.clear();
+    let mut amp_session = amp_account.windows[0].clone();
+    amp_session.window_id = "amp-session".to_owned();
+    amp_session.category = UsageWindowCategoryV1::Session;
+    amp_session.label = "Session".to_owned();
+    amp_session.value_label = "88% left".to_owned();
+    amp_session.remaining_percent = Some(RawPercentPoints::new(88.0).expect("session raw"));
+    amp_session.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+    amp_session.provider_quota_state = None;
+    amp_session.meter_percent = Some(MeterPercentPoints::new(88.0).expect("session meter"));
+    amp_session.meter_side = Some(UsageMeterSide::Remaining);
+    amp_session.reset_at_epoch = Some(1_800_400_000);
+    amp_account.windows = vec![amp_session];
+    let mut amp_weekly = amp_account.metric_groups[0].clone();
+    amp_weekly.group_id = "amp-weekly".to_owned();
+    amp_weekly.rank = 0;
+    amp_weekly.reset_at_epoch = Some(1_800_500_000);
+    let mut amp_daily = amp_weekly.clone();
+    amp_daily.group_id = "amp-daily".to_owned();
+    amp_daily.rank = 1;
+    amp_daily.label = "Daily quota".to_owned();
+    amp_daily.scope.model = None;
+    amp_daily.reset_at_epoch = None;
+    amp_daily.last_success_at_epoch = None;
+    amp_daily.phase = UsageFreshnessPhaseV1::Stale;
+    amp_daily.is_stale = true;
+    amp_daily.quota_state = UsageQuotaStateV1::Warning;
+    amp_daily.issues = vec![UsageIssueV1 {
+        code: "daily-stale".to_owned(),
+        scope: UsageIssueScopeV1::Group,
+        recoverability: UsageIssueRecoverabilityV1::Retryable,
+        message: "selected daily group is stale".to_owned(),
+        retry_at_epoch: None,
+    }];
+    if let UsageMetricValueV1::Window {
+        used_percent,
+        used_percent_origin,
+        remaining_percent,
+        remaining_percent_origin,
+        count_quota,
+        provider_quota_state,
+        money_used_percent,
+        meter_percent,
+        meter_side,
+        period,
+        ..
+    } = &mut amp_daily.value
+    {
+        *used_percent = Some(RawPercentPoints::new(12.345).expect("daily used"));
+        *used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+        *remaining_percent = None;
+        *remaining_percent_origin = None;
+        *count_quota = None;
+        *provider_quota_state = None;
+        *money_used_percent = None;
+        *meter_percent = Some(MeterPercentPoints::new(12.25).expect("daily meter"));
+        *meter_side = Some(UsageMeterSide::Used);
+        *period = UsageMetricPeriodV1::Calendar {
+            granularity: UsageCalendarPeriodV1::Daily,
+        };
+    }
+    amp_account.metric_groups = vec![amp_weekly, amp_daily];
+    projection.providers.push(amp_provider);
+    bridge
+        .apply_publication(projection.clone())
+        .expect("publish runtime-selected metric groups");
+}
+
+fn assert_runtime_selected_metric_glances(projected: &DesktopProjectionDto) {
+    let codex_account = &projected.providers[0].group.accounts[0];
+    assert_eq!(
+        codex_account.provider_quota_state.as_deref(),
+        Some("unlimited")
+    );
+    assert!(codex_account.headline.starts_with("Unlimited"));
+    let codex = projected
+        .glance_rows
+        .iter()
+        .find(|row| row.surface_id == "codex")
+        .expect("Codex glance row");
+    assert_eq!(codex.glance_used_percent, Some(43.375));
+    assert_eq!(codex.glance_used_percent_origin.as_deref(), Some("derived"));
+    assert_eq!(codex.glance_remaining_percent, Some(57.125));
+    assert_eq!(codex.glance_provider_quota_state, None);
+    assert_eq!(
+        codex.glance_remaining_percent_origin.as_deref(),
+        Some("provider_reported")
+    );
+    assert!(codex.glance_count_quota.is_none());
+    assert_eq!(codex.glance_meter_percent, Some(0.0));
+    assert_eq!(codex.glance_meter_side.as_deref(), Some("remaining"));
+    assert_eq!(codex.glance_resets_at, None);
+    assert_eq!(codex.reset_label, None);
+    assert_eq!(codex.exact_reset, None);
+    assert_eq!(codex.status_word, "error");
+    assert_eq!(codex.last_error, None);
+    assert_eq!(codex.activity_label, "error");
+    assert_eq!(codex.updated_label, "No successful update");
+    assert_eq!(codex.headline, "gpt-5 43.38% used");
+    assert_eq!(codex.bar_label, "43.38% used");
+
+    let amp = projected
+        .glance_rows
+        .iter()
+        .find(|row| row.surface_id == "amp")
+        .expect("Amp glance row");
+    assert_eq!(amp.glance_used_percent, Some(12.345));
+    assert_eq!(
+        amp.glance_used_percent_origin.as_deref(),
+        Some("provider_reported")
+    );
+    assert_eq!(amp.glance_remaining_percent, None);
+    assert_eq!(amp.glance_meter_percent, Some(12.25));
+    assert_eq!(amp.glance_meter_side.as_deref(), Some("used"));
+    assert_eq!(amp.glance_resets_at, None);
+    assert_eq!(amp.reset_label, None);
+    assert_eq!(amp.exact_reset, None);
+    assert_eq!(amp.status_word, "stale");
+    assert_eq!(amp.severity, "warn");
+    assert_eq!(
+        amp.last_error.as_deref(),
+        Some("selected daily group is stale")
+    );
+    assert_eq!(amp.activity_label, "selected daily group is stale");
+    assert_eq!(amp.updated_label, "No successful update");
+    assert_eq!(amp.headline, "12.35% used");
+    assert_eq!(amp.bar_label, "12.35% used");
+}
+
+fn publish_absent_selected_values(bridge: &UsageMenuBarBridge, projection: UsageProjectionV1) {
+    let mut absent_selected_values = projection;
+    absent_selected_values.projection_id = "fixture-selected-glance-values-absent".to_owned();
+    absent_selected_values.broker_generation += 1;
+    {
+        let account = &mut absent_selected_values.providers[0].accounts[0];
+        let selected = &mut account.metric_groups[0];
+        selected.issues = vec![UsageIssueV1 {
+            code: "weekly-failed".to_owned(),
+            scope: UsageIssueScopeV1::Group,
+            recoverability: UsageIssueRecoverabilityV1::Retryable,
+            message: "selected weekly group failed".to_owned(),
+            retry_at_epoch: None,
+        }];
+        if let UsageMetricValueV1::Window {
+            used_percent,
+            used_percent_origin,
+            remaining_percent,
+            remaining_percent_origin,
+            count_quota,
+            provider_quota_state,
+            money_used_percent,
+            meter_percent,
+            meter_side,
+            ..
+        } = &mut selected.value
+        {
+            *used_percent = None;
+            *used_percent_origin = None;
+            *remaining_percent = None;
+            *remaining_percent_origin = None;
+            *count_quota = None;
+            *provider_quota_state = None;
+            *money_used_percent = None;
+            *meter_percent = None;
+            *meter_side = None;
+        }
+    }
+    {
+        let account = &mut absent_selected_values.providers[1].accounts[0];
+        account.windows[0].provider_quota_state = Some(ProviderQuotaState::Unlimited);
+        account.windows[0].meter_percent = None;
+        account.windows[0].meter_side = None;
+        let selected = &mut account.metric_groups[1];
+        selected.reset_at_epoch = Some(1_800_600_000);
+        if let UsageMetricValueV1::Window {
+            used_percent,
+            used_percent_origin,
+            remaining_percent,
+            remaining_percent_origin,
+            count_quota,
+            provider_quota_state,
+            money_used_percent,
+            meter_percent,
+            meter_side,
+            ..
+        } = &mut selected.value
+        {
+            *used_percent = None;
+            *used_percent_origin = None;
+            *remaining_percent = None;
+            *remaining_percent_origin = None;
+            *count_quota = None;
+            *provider_quota_state = None;
+            *money_used_percent = None;
+            *meter_percent = None;
+            *meter_side = None;
+        }
+    }
+    bridge
+        .apply_publication(absent_selected_values)
+        .expect("publish selected groups without quota observations");
+}
+
+fn assert_absent_selected_glances(absent: &DesktopProjectionDto) {
+    let codex = absent
+        .glance_rows
+        .iter()
+        .find(|row| row.surface_id == "codex")
+        .expect("Codex glance row");
+    assert_eq!(codex.glance_used_percent, None);
+    assert_eq!(codex.glance_used_percent_origin, None);
+    assert_eq!(codex.glance_remaining_percent, None);
+    assert_eq!(codex.glance_remaining_percent_origin, None);
+    assert!(codex.glance_count_quota.is_none());
+    assert_eq!(codex.glance_provider_quota_state, None);
+    assert_eq!(codex.glance_meter_percent, None);
+    assert_eq!(codex.glance_meter_side, None);
+    assert_eq!(codex.glance_resets_at, None);
+    assert_eq!(codex.reset_label, None);
+    assert_eq!(codex.exact_reset, None);
+    assert_eq!(codex.status_word, "error");
+    assert_eq!(
+        codex.last_error.as_deref(),
+        Some("selected weekly group failed")
+    );
+    assert_eq!(codex.activity_label, "selected weekly group failed");
+    assert_eq!(codex.updated_label, "No successful update");
+    assert_eq!(codex.headline, "weekly · quota error");
+    assert_eq!(codex.bar_label, "weekly · quota error");
+    assert!(codex.accessibility_label.contains("weekly · quota error"));
+    assert!(!codex.accessibility_label.contains("Unlimited"));
+    assert!(!codex.accessibility_label.contains("90%"));
+
+    let amp = absent
+        .glance_rows
+        .iter()
+        .find(|row| row.surface_id == "amp")
+        .expect("Amp glance row");
+    assert_eq!(amp.glance_used_percent, None);
+    assert_eq!(amp.glance_used_percent_origin, None);
+    assert_eq!(amp.glance_remaining_percent, None);
+    assert_eq!(amp.glance_remaining_percent_origin, None);
+    assert!(amp.glance_count_quota.is_none());
+    assert_eq!(amp.glance_provider_quota_state, None);
+    assert_eq!(amp.glance_meter_percent, None);
+    assert_eq!(amp.glance_meter_side, None);
+    assert_eq!(amp.glance_resets_at, Some(1_800_600_000));
+    assert!(amp.reset_label.is_some());
+    assert!(amp.exact_reset.is_some());
+    assert_eq!(amp.status_word, "stale");
+    assert_eq!(
+        amp.last_error.as_deref(),
+        Some("selected daily group is stale")
+    );
+    assert_eq!(amp.activity_label, "selected daily group is stale");
+    assert_eq!(amp.updated_label, "No successful update");
+    assert_eq!(amp.headline, "daily · quota warning");
+    assert_eq!(amp.bar_label, "daily · quota warning");
+    assert!(amp.accessibility_label.contains("daily · quota warning"));
+    assert!(!amp.accessibility_label.contains("Unlimited"));
+    assert!(!amp.accessibility_label.contains("88%"));
+}
+
+#[test]
+fn desktop_glance_uses_runtime_selected_metric_group_as_an_atomic_source() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge = open_bridge_with_surfaces(dir.path(), vec!["codex".to_owned(), "amp".to_owned()]);
+    let mut projection = fixture_projection();
+
+    configure_runtime_selected_metric_groups(&bridge, &mut projection);
+
+    let projected = bridge.desktop_projection(3).expect("desktop projection");
+    assert_runtime_selected_metric_glances(&projected);
+
+    publish_absent_selected_values(&bridge, projection);
+
+    let absent = bridge
+        .desktop_projection(3)
+        .expect("selected groups without quota observations");
+    assert_absent_selected_glances(&absent);
+    bridge.shutdown().expect("shutdown");
+}
+
+fn assert_percent_and_money_collision_sources(
+    provider: &UsageProviderV1,
+    account: &mut UsageAccountV1,
+    surface: HostSurfaceId,
+) {
+    let collision_cases = [
+        (
+            Some(43.375),
+            Some(PercentObservationOrigin::Derived),
+            None,
+            None,
+            -10.0,
+            43.375,
+            UsageMeterSide::Used,
+            "Derived used: 43.38% · Money ratio: -10% used",
+        ),
+        (
+            None,
+            None,
+            Some(57.125),
+            Some(PercentObservationOrigin::ProviderReported),
+            150.0,
+            57.125,
+            UsageMeterSide::Remaining,
+            "Reported remaining: 57.13% · Money ratio: 150% used",
+        ),
+    ];
+    for percent_style in [PercentStyle::Left, PercentStyle::Used] {
+        for (used, used_origin, remaining, remaining_origin, money, meter, side, expected) in
+            collision_cases
+        {
+            let UsageMetricValueV1::Window {
+                remaining_percent,
+                remaining_percent_origin,
+                used_percent,
+                used_percent_origin,
+                count_quota,
+                money_used_percent,
+                meter_percent,
+                meter_side,
+                ..
+            } = &mut account.metric_groups[0].value
+            else {
+                panic!("fixture group is a Window");
+            };
+            *remaining_percent =
+                remaining.map(|value| RawPercentPoints::new(value).expect("remaining source"));
+            *remaining_percent_origin = remaining_origin;
+            *used_percent = used.map(|value| RawPercentPoints::new(value).expect("used source"));
+            *used_percent_origin = used_origin;
+            *count_quota = None;
+            *money_used_percent = Some(RawPercentPoints::new(money).expect("money ratio"));
+            *meter_percent = Some(MeterPercentPoints::new(meter).expect("meter"));
+            *meter_side = Some(side);
+
+            let prefs = UsageFormatPrefs {
+                percent_style,
+                reset_style: ResetStyle::Countdown,
+            };
+            let account_dto =
+                crate::presentation::account_dto(surface, provider, account, prefs, true);
+            let glance = crate::presentation::glance_row(
+                surface,
+                Some(provider),
+                account,
+                Some(&account.metric_groups[0]),
+                prefs,
+            );
+            let detail = crate::presentation::view_dto(surface, account, prefs);
+            assert_eq!(account_dto.headline, expected);
+            assert!(account_dto.remaining_label.contains(expected));
+            assert_eq!(glance.headline, expected);
+            assert_eq!(glance.bar_label, expected);
+            assert_eq!(account_dto.used_percent, used);
+            assert_eq!(account_dto.remaining_percent, remaining);
+            assert_eq!(
+                account_dto.used_percent_origin.as_deref(),
+                used_origin.map(|value| {
+                    match value {
+                        PercentObservationOrigin::ProviderReported => "provider_reported",
+                        PercentObservationOrigin::Derived => "derived",
+                        PercentObservationOrigin::HistoricalUnknown => "historical_unknown",
+                    }
+                })
+            );
+            assert_eq!(
+                account_dto.remaining_percent_origin.as_deref(),
+                remaining_origin.map(|value| match value {
+                    PercentObservationOrigin::ProviderReported => "provider_reported",
+                    PercentObservationOrigin::Derived => "derived",
+                    PercentObservationOrigin::HistoricalUnknown => "historical_unknown",
+                })
+            );
+            assert_eq!(account_dto.meter_percent, Some(meter));
+            assert_eq!(account_dto.meter_side.as_deref(), Some(side.wire_label()));
+            let detail_group = detail
+                .detail_presentation
+                .rows
+                .iter()
+                .find(|row| row.row_id == "weekly-group")
+                .expect("Window detail row");
+            assert!(detail_group.display_label.contains(expected));
+        }
+    }
+}
+
+#[test]
+fn metric_only_account_glance_and_detail_labels_preserve_used_and_signed_money_sources() {
+    let projection = fixture_projection();
+    let provider = &projection.providers[0];
+    let mut account = provider.accounts[0].clone();
+    account.windows.clear();
+    account.metric_groups[0].scope.model = None;
+    let surface = HostSurfaceId::from_id("codex").expect("Codex surface");
+
+    {
+        let UsageMetricValueV1::Window {
+            remaining_percent,
+            remaining_percent_origin,
+            used_percent,
+            used_percent_origin,
+            count_quota,
+            money_used_percent,
+            meter_percent,
+            meter_side,
+            ..
+        } = &mut account.metric_groups[0].value
+        else {
+            panic!("fixture group is a Window");
+        };
+        *remaining_percent = None;
+        *remaining_percent_origin = None;
+        *used_percent = Some(RawPercentPoints::new(43.375).expect("used source"));
+        *used_percent_origin = Some(PercentObservationOrigin::Derived);
+        *count_quota = None;
+        *money_used_percent = None;
+        *meter_percent = Some(MeterPercentPoints::new(43.375).expect("used meter"));
+        *meter_side = Some(UsageMeterSide::Used);
+    }
+
+    for percent_style in [PercentStyle::Left, PercentStyle::Used] {
+        let prefs = UsageFormatPrefs {
+            percent_style,
+            reset_style: ResetStyle::Countdown,
+        };
+        let account_dto =
+            crate::presentation::account_dto(surface, provider, &account, prefs, true);
+        let glance = crate::presentation::glance_row(
+            surface,
+            Some(provider),
+            &account,
+            Some(&account.metric_groups[0]),
+            prefs,
+        );
+        let detail = crate::presentation::view_dto(surface, &account, prefs);
+        assert_eq!(account_dto.headline, "43.38% used");
+        assert_eq!(glance.headline, "43.38% used");
+        assert_eq!(
+            glance.bar_label,
+            match percent_style {
+                PercentStyle::Left => "43.38% used",
+                PercentStyle::Used => "43.38%",
+            }
+        );
+        assert_eq!(account_dto.used_percent, Some(43.375));
+        assert_eq!(account_dto.remaining_percent, None);
+        let detail_group = detail
+            .detail_presentation
+            .rows
+            .iter()
+            .find(|row| row.row_id == "weekly-group")
+            .expect("Window detail row");
+        assert!(detail_group.display_label.contains("43.38% used"));
+    }
+
+    assert_percent_and_money_collision_sources(provider, &mut account, surface);
+
+    for raw_money_ratio in [-10.0, 150.0] {
+        let money = RawPercentPoints::new(raw_money_ratio).expect("signed money ratio");
+        let UsageMetricValueV1::Window {
+            remaining_percent,
+            remaining_percent_origin,
+            used_percent,
+            used_percent_origin,
+            count_quota,
+            money_used_percent,
+            meter_percent,
+            meter_side,
+            ..
+        } = &mut account.metric_groups[0].value
+        else {
+            panic!("fixture group is a Window");
+        };
+        *remaining_percent = None;
+        *remaining_percent_origin = None;
+        *used_percent = None;
+        *used_percent_origin = None;
+        *count_quota = None;
+        *money_used_percent = Some(money);
+        *meter_percent =
+            Some(MeterPercentPoints::new(raw_money_ratio.clamp(0.0, 100.0)).expect("meter"));
+        *meter_side = Some(UsageMeterSide::Used);
+        let prefs = UsageFormatPrefs::default();
+        let account_dto =
+            crate::presentation::account_dto(surface, provider, &account, prefs, true);
+        let glance = crate::presentation::glance_row(
+            surface,
+            Some(provider),
+            &account,
+            Some(&account.metric_groups[0]),
+            prefs,
+        );
+        let detail = crate::presentation::view_dto(surface, &account, prefs);
+        let label = format!("{}% used", money.display_value());
+        assert_eq!(account_dto.headline, label);
+        assert_eq!(glance.headline, label);
+        assert_eq!(glance.bar_label, label);
+        assert_eq!(account_dto.used_percent, None);
+        assert_eq!(account_dto.remaining_percent, None);
+        let detail_group = detail
+            .detail_presentation
+            .rows
+            .iter()
+            .find(|row| row.row_id == "weekly-group")
+            .expect("Window detail row");
+        assert!(detail_group.display_label.contains(&label));
+    }
+}
+
+#[test]
+fn metric_only_request_summary_renders_u64_max_as_a_rust_owned_literal() {
+    let projection = fixture_projection();
+    let provider = &projection.providers[0];
+    let mut account = provider.accounts[0].clone();
+    account.windows.clear();
+    let count = CountQuota::new(
+        None,
+        Some(u64::MAX),
+        Some(u64::MAX),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    );
+    let UsageMetricValueV1::Window {
+        remaining_percent,
+        remaining_percent_origin,
+        used_percent,
+        used_percent_origin,
+        count_quota,
+        meter_percent,
+        meter_side,
+        period,
+        unit,
+        ..
+    } = &mut account.metric_groups[0].value
+    else {
+        panic!("fixture group is a Window");
+    };
+    *remaining_percent = None;
+    *remaining_percent_origin = None;
+    *used_percent = None;
+    *used_percent_origin = None;
+    *count_quota = Some(count);
+    *meter_percent = Some(MeterPercentPoints::new(100.0).expect("count meter"));
+    *meter_side = Some(UsageMeterSide::Remaining);
+    *period = UsageMetricPeriodV1::Calendar {
+        granularity: UsageCalendarPeriodV1::Daily,
+    };
+    *unit = Some("requests".to_owned());
+
+    let surface = HostSurfaceId::from_id("codex").expect("Codex surface");
+    let prefs = UsageFormatPrefs::default();
+    let account_dto = crate::presentation::account_dto(surface, provider, &account, prefs, true);
+    let glance = crate::presentation::glance_row(
+        surface,
+        Some(provider),
+        &account,
+        Some(&account.metric_groups[0]),
+        prefs,
+    );
+    let detail = crate::presentation::view_dto(surface, &account, prefs);
+    let literal = "18446744073709551615 requests left";
+    let headline = format!("gpt-5 {literal}");
+    assert_eq!(account_dto.headline, headline);
+    assert_eq!(
+        account_dto
+            .count_quota
+            .as_ref()
+            .and_then(|quota| quota.remaining),
+        Some(u64::MAX)
+    );
+    assert_eq!(account_dto.meter_percent, Some(100.0));
+    assert_eq!(glance.headline, headline);
+    assert_eq!(glance.bar_label, literal);
+    let detail_group = detail
+        .detail_presentation
+        .rows
+        .iter()
+        .find(|row| row.row_id == "weekly-group")
+        .expect("Window detail row");
+    assert!(detail_group.display_label.contains(literal));
+}
+
 fn provider_with_glance(
     source: &UsageProviderV1,
     provider_id: &str,
     rank: u32,
     reset_at_epoch: Option<i64>,
-    remaining: u8,
+    remaining: f64,
 ) -> UsageProviderV1 {
     let mut provider = source.clone();
     provider.provider_id = provider_id.to_owned();
@@ -206,8 +1519,11 @@ fn provider_with_glance(
         for window in &mut account.windows {
             window.window_id = format!("{provider_id}-window-{}", account.rank);
             window.value_label = format!("{remaining}% left");
-            window.remaining_percent = Some(UsagePercent::new(remaining).expect("percent"));
-            window.remaining_raw_percent = Some(i32::from(remaining));
+            window.remaining_percent = Some(RawPercentPoints::new(remaining).expect("percent"));
+            window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+            window.meter_percent =
+                Some(MeterPercentPoints::new(remaining.clamp(0.0, 100.0)).expect("meter"));
+            window.meter_side = Some(UsageMeterSide::Remaining);
             window.reset_at_epoch = reset_at_epoch;
         }
         for group in &mut account.metric_groups {
@@ -215,19 +1531,24 @@ fn provider_with_glance(
             group.reset_at_epoch = reset_at_epoch;
             if let UsageMetricValueV1::Window {
                 remaining_percent,
-                remaining_raw_percent,
+                remaining_percent_origin,
+                meter_percent,
+                meter_side,
                 ..
             } = &mut group.value
             {
-                *remaining_percent = Some(UsagePercent::new(remaining).expect("percent"));
-                *remaining_raw_percent = Some(i32::from(remaining));
+                *remaining_percent = Some(RawPercentPoints::new(remaining).expect("percent"));
+                *remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+                *meter_percent =
+                    Some(MeterPercentPoints::new(remaining.clamp(0.0, 100.0)).expect("meter"));
+                *meter_side = Some(UsageMeterSide::Remaining);
             }
         }
     }
     provider
 }
 
-fn fixture_with_provider_glances(specs: &[(&str, u32, Option<i64>, u8)]) -> UsageProjectionV1 {
+fn fixture_with_provider_glances(specs: &[(&str, u32, Option<i64>, f64)]) -> UsageProjectionV1 {
     let mut projection = fixture_projection();
     let source = projection.providers[0].clone();
     projection.providers = specs
@@ -237,6 +1558,105 @@ fn fixture_with_provider_glances(specs: &[(&str, u32, Option<i64>, u8)]) -> Usag
         })
         .collect();
     projection
+}
+
+#[test]
+fn desktop_projection_sorts_used_side_by_remaining_capacity() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge =
+        open_bridge_with_surfaces(dir.path(), vec!["codex".to_owned(), "claude".to_owned()]);
+    let mut projection =
+        fixture_with_provider_glances(&[("openai", 0, None, 40.0), ("anthropic", 1, None, 70.0)]);
+    for account in &mut projection.providers[1].accounts {
+        for window in &mut account.windows {
+            window.value_label = "70% used".to_owned();
+            window.remaining_percent = None;
+            window.remaining_percent_origin = None;
+            window.used_percent = Some(RawPercentPoints::new(70.0).expect("used"));
+            window.used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+            window.meter_percent = Some(MeterPercentPoints::new(70.0).expect("meter"));
+            window.meter_side = Some(UsageMeterSide::Used);
+        }
+        for group in &mut account.metric_groups {
+            if let UsageMetricValueV1::Window {
+                remaining_percent,
+                remaining_percent_origin,
+                used_percent,
+                used_percent_origin,
+                meter_percent,
+                meter_side,
+                ..
+            } = &mut group.value
+            {
+                *remaining_percent = None;
+                *remaining_percent_origin = None;
+                *used_percent = Some(RawPercentPoints::new(70.0).expect("used"));
+                *used_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+                *meter_percent = Some(MeterPercentPoints::new(70.0).expect("meter"));
+                *meter_side = Some(UsageMeterSide::Used);
+            }
+        }
+    }
+    bridge
+        .apply_publication(projection)
+        .expect("fixture publication");
+
+    let projection = bridge.desktop_projection(3).expect("desktop projection");
+    assert_eq!(
+        projection
+            .status_bar_glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        ["claude", "codex"]
+    );
+    assert_eq!(
+        projection.status_bar_glance_rows[0]
+            .glance_meter_side
+            .as_deref(),
+        Some("used")
+    );
+    bridge.shutdown().expect("shutdown");
+}
+
+#[test]
+fn desktop_projection_ranks_unrounded_remaining_overages_independent_of_input_order() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bridge =
+        open_bridge_with_surfaces(dir.path(), vec!["codex".to_owned(), "claude".to_owned()]);
+    bridge
+        .apply_publication(fixture_with_provider_glances(&[
+            ("anthropic", 0, Some(1_800_050_000), 150.0),
+            ("openai", 1, Some(1_800_050_000), 100.125),
+        ]))
+        .expect("same-reset overage fixture");
+
+    let projection = bridge.desktop_projection(3).expect("desktop projection");
+    assert_eq!(
+        projection
+            .status_bar_glance_rows
+            .iter()
+            .map(|row| row.surface_id.as_str())
+            .collect::<Vec<_>>(),
+        ["codex", "claude"]
+    );
+    assert_eq!(
+        projection.status_bar_glance_rows[0].glance_remaining_percent,
+        Some(100.125)
+    );
+    assert_eq!(
+        projection.status_bar_glance_rows[1].glance_remaining_percent,
+        Some(150.0)
+    );
+    assert_eq!(
+        projection.status_bar_glance_rows[0].glance_meter_percent,
+        Some(100.0)
+    );
+    assert_eq!(
+        projection.status_bar_glance_rows[1].glance_meter_percent,
+        Some(100.0)
+    );
+    bridge.shutdown().expect("shutdown");
 }
 
 #[test]
@@ -253,10 +1673,10 @@ fn desktop_projection_ranks_status_rows_before_cap_and_preserves_full_provider_o
     );
     bridge
         .apply_publication(fixture_with_provider_glances(&[
-            ("openai", 0, Some(1_800_070_000), 10),
-            ("anthropic", 1, Some(1_800_050_000), 80),
-            ("xai", 2, Some(1_800_050_000), 32),
-            ("zai", 3, Some(1_800_050_000), 32),
+            ("openai", 0, Some(1_800_070_000), 10.0),
+            ("anthropic", 1, Some(1_800_050_000), 80.0),
+            ("xai", 2, Some(1_800_050_000), 32.0),
+            ("zai", 3, Some(1_800_050_000), 32.0),
         ]))
         .expect("fixture publication");
 
@@ -297,9 +1717,9 @@ fn desktop_projection_ranks_unknown_status_reset_after_known_resets() {
     );
     bridge
         .apply_publication(fixture_with_provider_glances(&[
-            ("openai", 0, None, 5),
-            ("anthropic", 1, Some(1_800_070_000), 80),
-            ("amp", 2, Some(1_800_050_000), 70),
+            ("openai", 0, None, 5.0),
+            ("anthropic", 1, Some(1_800_070_000), 80.0),
+            ("amp", 2, Some(1_800_050_000), 70.0),
         ]))
         .expect("fixture publication");
 
@@ -329,7 +1749,7 @@ fn passive_bridge_reads_only_cached_broker_projection() {
     let snapshot = bridge.snapshot("codex".to_owned()).expect("snapshot");
     assert_eq!(snapshot.account_label, "alice@example.test");
     assert_eq!(snapshot.status, "fresh");
-    assert_eq!(snapshot.buckets[0].remaining_percent, Some(64));
+    assert_eq!(snapshot.buckets[0].remaining_percent, Some(64.0));
     assert_eq!(bridge.refresh_floor_secs().expect("floor"), 120);
     bridge.shutdown().expect("shutdown");
 }

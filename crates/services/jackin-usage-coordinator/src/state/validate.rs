@@ -70,6 +70,15 @@ pub(crate) fn validate_envelope(
     {
         return Err(StateStoreError::Corrupt);
     }
+    for view in envelope
+        .terminal_result
+        .iter()
+        .chain(envelope.last_good.iter())
+    {
+        for bucket in &view.buckets {
+            bucket.validate().map_err(|_| StateStoreError::Corrupt)?;
+        }
+    }
     Ok(sanitize_envelope(envelope))
 }
 

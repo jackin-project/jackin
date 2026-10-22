@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::cursor_rest_get;
-use jackin_protocol::control::{QuotaBucketView, StatusSlot, UsageSnapshotStatus};
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, PercentObservationOrigin, QuotaBucketView,
+    StatusSlot, UsageSnapshotStatus,
+};
 use jackin_usage_provider_core::{
     bucket, epoch_seconds_from_maybe_ms, format_currency, humanize_plan_label, json_number,
-    parse_iso_epoch, quota_pace_label, timed_bucket, with_status_slot,
+    parse_iso_epoch, quota_pace_label, timed_bucket, with_status_slot, with_used_percent,
 };
 
 #[derive(Debug, Clone)]
@@ -83,46 +86,47 @@ pub fn parse_cursor_usage_summary(value: &serde_json::Value) -> Option<CursorUsa
 pub fn cursor_summary_buckets(summary: &CursorUsageSummary, now: i64) -> Vec<QuotaBucketView> {
     let mut buckets = Vec::new();
     if let Some(used) = summary.total_percent {
-        #[expect(
-            clippy::cast_sign_loss,
-            reason = "filtered non-negative; clamped 0..=100"
-        )]
-        let remaining = Some(100u8.saturating_sub(used.round().clamp(0.0, 100.0) as u8));
+        let used_percent = CanonicalUsedPercent::new(used).ok();
+        let pace_remaining = used_percent.and_then(|percent| {
+            CanonicalRemainingPercent::new((100.0 - percent.get()).max(0.0)).ok()
+        });
         let window = match (summary.cycle_start, summary.cycle_end) {
             (Some(start), Some(end)) if end > start => Some(end - start),
             _ => None,
         };
-        let pace = quota_pace_label(remaining, summary.cycle_end, window, now);
+        let pace = quota_pace_label(pace_remaining, summary.cycle_end, window, now);
         buckets.push(with_status_slot(
-            timed_bucket(
-                "Billing cycle",
-                Some(format!("{used}% used")),
-                Some("100%".to_owned()),
-                remaining,
-                summary.cycle_end,
-                now,
-                pace.as_deref(),
-                UsageSnapshotStatus::Fresh,
+            with_used_percent(
+                timed_bucket(
+                    "Billing cycle",
+                    used_percent.map(CanonicalUsedPercent::label),
+                    Some("100%".to_owned()),
+                    None,
+                    summary.cycle_end,
+                    now,
+                    pace.as_deref(),
+                    UsageSnapshotStatus::Fresh,
+                ),
+                used_percent.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
             ),
             Some(StatusSlot::Weekly),
         ));
     }
     for (label, percent) in [("Auto", summary.auto_percent), ("API", summary.api_percent)] {
         if let Some(used) = percent {
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "filtered non-negative; clamped 0..=100"
-            )]
-            let remaining = Some(100u8.saturating_sub(used.round().clamp(0.0, 100.0) as u8));
-            buckets.push(timed_bucket(
-                label,
-                Some(format!("{used}% used")),
-                Some("100%".to_owned()),
-                remaining,
-                summary.cycle_end,
-                now,
-                None,
-                UsageSnapshotStatus::Fresh,
+            let used_percent = CanonicalUsedPercent::new(used).ok();
+            buckets.push(with_used_percent(
+                timed_bucket(
+                    label,
+                    used_percent.map(CanonicalUsedPercent::label),
+                    Some("100%".to_owned()),
+                    None,
+                    summary.cycle_end,
+                    now,
+                    None,
+                    UsageSnapshotStatus::Fresh,
+                ),
+                used_percent.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
             ));
         }
     }

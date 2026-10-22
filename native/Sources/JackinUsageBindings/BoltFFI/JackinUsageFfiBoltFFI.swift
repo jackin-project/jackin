@@ -155,11 +155,61 @@ public struct MoneyDto: Hashable, Equatable, Sendable {
     }
 }
 
+public struct CountQuotaDto: Hashable, Equatable, Sendable {
+    public var used: UInt64?
+    public var limit: UInt64?
+    public var remaining: UInt64?
+    public var unit: String
+    public var period: String
+    public var provenance: String
+
+    public init(
+        used: UInt64?,
+        limit: UInt64?,
+        remaining: UInt64?,
+        unit: String,
+        period: String,
+        provenance: String
+    ) {
+        self.used = used
+        self.limit = limit
+        self.remaining = remaining
+        self.unit = unit
+        self.period = period
+        self.provenance = provenance
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> CountQuotaDto {
+        CountQuotaDto(
+            used: reader.readOptional { reader in reader.readU64() },
+            limit: reader.readOptional { reader in reader.readU64() },
+            remaining: reader.readOptional { reader in reader.readU64() },
+            unit: reader.readString(),
+            period: reader.readString(),
+            provenance: reader.readString()
+        )
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeOptional(self.used) { writer, boltffiValue0 in writer.writeU64(boltffiValue0) }
+        writer.writeOptional(self.limit) { writer, boltffiValue0 in writer.writeU64(boltffiValue0) }
+        writer.writeOptional(self.remaining) { writer, boltffiValue0 in writer.writeU64(boltffiValue0) }
+        writer.writeString(self.unit)
+        writer.writeString(self.period)
+        writer.writeString(self.provenance)
+    }
+}
+
 public struct QuotaBucketDto: Hashable, Equatable, Sendable {
     public var label: String
     public var usedLabel: String?
     public var limitLabel: String?
-    public var remainingPercent: UInt8?
+    public var usedPercent: Double?
+    public var usedPercentOrigin: String?
+    public var remainingPercent: Double?
+    public var remainingPercentOrigin: String?
+    public var countQuota: CountQuotaDto?
+    public var providerQuotaState: String?
     public var resetLabel: String?
     public var resetsAt: Int64?
     public var statusSlot: String?
@@ -171,13 +221,19 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
     public var remainingLabel: String?
     public var displaySegments: [String]
     public var displayLabel: String
-    public var meterPercent: UInt8?
+    public var meterPercent: Double?
+    public var meterSide: String?
 
     public init(
         label: String,
         usedLabel: String?,
         limitLabel: String?,
-        remainingPercent: UInt8?,
+        usedPercent: Double?,
+        usedPercentOrigin: String?,
+        remainingPercent: Double?,
+        remainingPercentOrigin: String?,
+        countQuota: CountQuotaDto?,
+        providerQuotaState: String?,
         resetLabel: String?,
         resetsAt: Int64?,
         statusSlot: String?,
@@ -189,12 +245,18 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
         remainingLabel: String?,
         displaySegments: [String],
         displayLabel: String,
-        meterPercent: UInt8?
+        meterPercent: Double?,
+        meterSide: String?
     ) {
         self.label = label
         self.usedLabel = usedLabel
         self.limitLabel = limitLabel
+        self.usedPercent = usedPercent
+        self.usedPercentOrigin = usedPercentOrigin
         self.remainingPercent = remainingPercent
+        self.remainingPercentOrigin = remainingPercentOrigin
+        self.countQuota = countQuota
+        self.providerQuotaState = providerQuotaState
         self.resetLabel = resetLabel
         self.resetsAt = resetsAt
         self.statusSlot = statusSlot
@@ -207,6 +269,7 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
         self.displaySegments = displaySegments
         self.displayLabel = displayLabel
         self.meterPercent = meterPercent
+        self.meterSide = meterSide
     }
 
     @inlinable static func decode(from reader: inout WireReader) -> QuotaBucketDto {
@@ -214,7 +277,12 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
             label: reader.readString(),
             usedLabel: reader.readOptional { reader in reader.readString() },
             limitLabel: reader.readOptional { reader in reader.readString() },
-            remainingPercent: reader.readOptional { reader in reader.readU8() },
+            usedPercent: reader.readOptional { reader in reader.readF64() },
+            usedPercentOrigin: reader.readOptional { reader in reader.readString() },
+            remainingPercent: reader.readOptional { reader in reader.readF64() },
+            remainingPercentOrigin: reader.readOptional { reader in reader.readString() },
+            countQuota: reader.readOptional { reader in CountQuotaDto.decode(from: &reader) },
+            providerQuotaState: reader.readOptional { reader in reader.readString() },
             resetLabel: reader.readOptional { reader in reader.readString() },
             resetsAt: reader.readOptional { reader in reader.readI64() },
             statusSlot: reader.readOptional { reader in reader.readString() },
@@ -226,7 +294,8 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
             remainingLabel: reader.readOptional { reader in reader.readString() },
             displaySegments: reader.readArray { reader in reader.readString() },
             displayLabel: reader.readString(),
-            meterPercent: reader.readOptional { reader in reader.readU8() }
+            meterPercent: reader.readOptional { reader in reader.readF64() },
+            meterSide: reader.readOptional { reader in reader.readString() }
         )
     }
 
@@ -234,7 +303,12 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
         writer.writeString(self.label)
         writer.writeOptional(self.usedLabel) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeOptional(self.limitLabel) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
-        writer.writeOptional(self.remainingPercent) { writer, boltffiValue0 in writer.writeU8(boltffiValue0) }
+        writer.writeOptional(self.usedPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.usedPercentOrigin) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+        writer.writeOptional(self.remainingPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.remainingPercentOrigin) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+        writer.writeOptional(self.countQuota) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeOptional(self.providerQuotaState) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeOptional(self.resetLabel) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeOptional(self.resetsAt) { writer, boltffiValue0 in writer.writeI64(boltffiValue0) }
         writer.writeOptional(self.statusSlot) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
@@ -246,7 +320,8 @@ public struct QuotaBucketDto: Hashable, Equatable, Sendable {
         writer.writeOptional(self.remainingLabel) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeArray(self.displaySegments) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeString(self.displayLabel)
-        writer.writeOptional(self.meterPercent) { writer, boltffiValue0 in writer.writeU8(boltffiValue0) }
+        writer.writeOptional(self.meterPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.meterSide) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
     }
 }
 
@@ -275,7 +350,8 @@ public struct UsageDetailRowDto: Hashable, Equatable, Sendable {
     public var label: String
     public var layoutLines: [UsagePresentationLineDto]
     public var displayLabel: String
-    public var meterPercent: UInt8?
+    public var meterPercent: Double?
+    public var meterSide: String?
     public var severity: String
 
     public init(
@@ -284,7 +360,8 @@ public struct UsageDetailRowDto: Hashable, Equatable, Sendable {
         label: String,
         layoutLines: [UsagePresentationLineDto],
         displayLabel: String,
-        meterPercent: UInt8?,
+        meterPercent: Double?,
+        meterSide: String?,
         severity: String
     ) {
         self.rowId = rowId
@@ -293,6 +370,7 @@ public struct UsageDetailRowDto: Hashable, Equatable, Sendable {
         self.layoutLines = layoutLines
         self.displayLabel = displayLabel
         self.meterPercent = meterPercent
+        self.meterSide = meterSide
         self.severity = severity
     }
 
@@ -303,7 +381,8 @@ public struct UsageDetailRowDto: Hashable, Equatable, Sendable {
             label: reader.readString(),
             layoutLines: reader.readArray { reader in UsagePresentationLineDto.decode(from: &reader) },
             displayLabel: reader.readString(),
-            meterPercent: reader.readOptional { reader in reader.readU8() },
+            meterPercent: reader.readOptional { reader in reader.readF64() },
+            meterSide: reader.readOptional { reader in reader.readString() },
             severity: reader.readString()
         )
     }
@@ -314,7 +393,8 @@ public struct UsageDetailRowDto: Hashable, Equatable, Sendable {
         writer.writeString(self.label)
         writer.writeArray(self.layoutLines) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
         writer.writeString(self.displayLabel)
-        writer.writeOptional(self.meterPercent) { writer, boltffiValue0 in writer.writeU8(boltffiValue0) }
+        writer.writeOptional(self.meterPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.meterSide) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeString(self.severity)
     }
 }
@@ -383,7 +463,15 @@ public struct ProviderGlanceRowDto: Hashable, Equatable, Sendable {
     public var displayLabel: String
     public var accountLabel: String
     public var planLabel: String?
-    public var glanceRemainingPercent: UInt8?
+    public var glanceUsedPercent: Double?
+    public var glanceUsedPercentOrigin: String?
+    public var glanceRemainingPercent: Double?
+    public var glanceRemainingPercentOrigin: String?
+    public var glanceCountQuota: CountQuotaDto?
+    public var glanceProviderQuotaState: String?
+    public var glanceResetsAt: Int64?
+    public var glanceMeterPercent: Double?
+    public var glanceMeterSide: String?
     public var barLabel: String
     public var headline: String
     public var resetLabel: String?
@@ -408,7 +496,15 @@ public struct ProviderGlanceRowDto: Hashable, Equatable, Sendable {
         displayLabel: String,
         accountLabel: String,
         planLabel: String?,
-        glanceRemainingPercent: UInt8?,
+        glanceUsedPercent: Double?,
+        glanceUsedPercentOrigin: String?,
+        glanceRemainingPercent: Double?,
+        glanceRemainingPercentOrigin: String?,
+        glanceCountQuota: CountQuotaDto?,
+        glanceProviderQuotaState: String?,
+        glanceResetsAt: Int64?,
+        glanceMeterPercent: Double?,
+        glanceMeterSide: String?,
         barLabel: String,
         headline: String,
         resetLabel: String?,
@@ -432,7 +528,15 @@ public struct ProviderGlanceRowDto: Hashable, Equatable, Sendable {
         self.displayLabel = displayLabel
         self.accountLabel = accountLabel
         self.planLabel = planLabel
+        self.glanceUsedPercent = glanceUsedPercent
+        self.glanceUsedPercentOrigin = glanceUsedPercentOrigin
         self.glanceRemainingPercent = glanceRemainingPercent
+        self.glanceRemainingPercentOrigin = glanceRemainingPercentOrigin
+        self.glanceCountQuota = glanceCountQuota
+        self.glanceProviderQuotaState = glanceProviderQuotaState
+        self.glanceResetsAt = glanceResetsAt
+        self.glanceMeterPercent = glanceMeterPercent
+        self.glanceMeterSide = glanceMeterSide
         self.barLabel = barLabel
         self.headline = headline
         self.resetLabel = resetLabel
@@ -459,7 +563,15 @@ public struct ProviderGlanceRowDto: Hashable, Equatable, Sendable {
             displayLabel: reader.readString(),
             accountLabel: reader.readString(),
             planLabel: reader.readOptional { reader in reader.readString() },
-            glanceRemainingPercent: reader.readOptional { reader in reader.readU8() },
+            glanceUsedPercent: reader.readOptional { reader in reader.readF64() },
+            glanceUsedPercentOrigin: reader.readOptional { reader in reader.readString() },
+            glanceRemainingPercent: reader.readOptional { reader in reader.readF64() },
+            glanceRemainingPercentOrigin: reader.readOptional { reader in reader.readString() },
+            glanceCountQuota: reader.readOptional { reader in CountQuotaDto.decode(from: &reader) },
+            glanceProviderQuotaState: reader.readOptional { reader in reader.readString() },
+            glanceResetsAt: reader.readOptional { reader in reader.readI64() },
+            glanceMeterPercent: reader.readOptional { reader in reader.readF64() },
+            glanceMeterSide: reader.readOptional { reader in reader.readString() },
             barLabel: reader.readString(),
             headline: reader.readString(),
             resetLabel: reader.readOptional { reader in reader.readString() },
@@ -486,7 +598,15 @@ public struct ProviderGlanceRowDto: Hashable, Equatable, Sendable {
         writer.writeString(self.displayLabel)
         writer.writeString(self.accountLabel)
         writer.writeOptional(self.planLabel) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
-        writer.writeOptional(self.glanceRemainingPercent) { writer, boltffiValue0 in writer.writeU8(boltffiValue0) }
+        writer.writeOptional(self.glanceUsedPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.glanceUsedPercentOrigin) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+        writer.writeOptional(self.glanceRemainingPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.glanceRemainingPercentOrigin) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+        writer.writeOptional(self.glanceCountQuota) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeOptional(self.glanceProviderQuotaState) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+        writer.writeOptional(self.glanceResetsAt) { writer, boltffiValue0 in writer.writeI64(boltffiValue0) }
+        writer.writeOptional(self.glanceMeterPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.glanceMeterSide) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeString(self.barLabel)
         writer.writeString(self.headline)
         writer.writeOptional(self.resetLabel) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
@@ -691,7 +811,15 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
     public var provenance: [String]
     public var provenanceLabel: String
     public var planOrStatusLabel: String
-    public var remainingPercent: UInt8?
+    public var usedPercent: Double?
+    public var usedPercentOrigin: String?
+    public var remainingPercent: Double?
+    public var remainingPercentOrigin: String?
+    public var countQuota: CountQuotaDto?
+    public var providerQuotaState: String?
+    public var resetsAt: Int64?
+    public var meterPercent: Double?
+    public var meterSide: String?
     public var remainingLabel: String
     public var headline: String
     public var resetLabel: String?
@@ -717,7 +845,15 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
         provenance: [String],
         provenanceLabel: String,
         planOrStatusLabel: String,
-        remainingPercent: UInt8?,
+        usedPercent: Double?,
+        usedPercentOrigin: String?,
+        remainingPercent: Double?,
+        remainingPercentOrigin: String?,
+        countQuota: CountQuotaDto?,
+        providerQuotaState: String?,
+        resetsAt: Int64?,
+        meterPercent: Double?,
+        meterSide: String?,
         remainingLabel: String,
         headline: String,
         resetLabel: String?,
@@ -742,7 +878,15 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
         self.provenance = provenance
         self.provenanceLabel = provenanceLabel
         self.planOrStatusLabel = planOrStatusLabel
+        self.usedPercent = usedPercent
+        self.usedPercentOrigin = usedPercentOrigin
         self.remainingPercent = remainingPercent
+        self.remainingPercentOrigin = remainingPercentOrigin
+        self.countQuota = countQuota
+        self.providerQuotaState = providerQuotaState
+        self.resetsAt = resetsAt
+        self.meterPercent = meterPercent
+        self.meterSide = meterSide
         self.remainingLabel = remainingLabel
         self.headline = headline
         self.resetLabel = resetLabel
@@ -770,7 +914,15 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
             provenance: reader.readArray { reader in reader.readString() },
             provenanceLabel: reader.readString(),
             planOrStatusLabel: reader.readString(),
-            remainingPercent: reader.readOptional { reader in reader.readU8() },
+            usedPercent: reader.readOptional { reader in reader.readF64() },
+            usedPercentOrigin: reader.readOptional { reader in reader.readString() },
+            remainingPercent: reader.readOptional { reader in reader.readF64() },
+            remainingPercentOrigin: reader.readOptional { reader in reader.readString() },
+            countQuota: reader.readOptional { reader in CountQuotaDto.decode(from: &reader) },
+            providerQuotaState: reader.readOptional { reader in reader.readString() },
+            resetsAt: reader.readOptional { reader in reader.readI64() },
+            meterPercent: reader.readOptional { reader in reader.readF64() },
+            meterSide: reader.readOptional { reader in reader.readString() },
             remainingLabel: reader.readString(),
             headline: reader.readString(),
             resetLabel: reader.readOptional { reader in reader.readString() },
@@ -798,7 +950,15 @@ public struct AccountDescriptorDto: Hashable, Equatable, Sendable {
         writer.writeArray(self.provenance) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeString(self.provenanceLabel)
         writer.writeString(self.planOrStatusLabel)
-        writer.writeOptional(self.remainingPercent) { writer, boltffiValue0 in writer.writeU8(boltffiValue0) }
+        writer.writeOptional(self.usedPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.usedPercentOrigin) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+        writer.writeOptional(self.remainingPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.remainingPercentOrigin) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+        writer.writeOptional(self.countQuota) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeOptional(self.providerQuotaState) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
+        writer.writeOptional(self.resetsAt) { writer, boltffiValue0 in writer.writeI64(boltffiValue0) }
+        writer.writeOptional(self.meterPercent) { writer, boltffiValue0 in writer.writeF64(boltffiValue0) }
+        writer.writeOptional(self.meterSide) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }
         writer.writeString(self.remainingLabel)
         writer.writeString(self.headline)
         writer.writeOptional(self.resetLabel) { writer, boltffiValue0 in writer.writeString(boltffiValue0) }

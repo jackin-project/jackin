@@ -13,6 +13,7 @@ pub use compose::{UsageViewInput, usage_view};
 pub(crate) use meta::broker_account_id_from_cache_key;
 pub use meta::{
     bucket, timed_bucket, usage_tab_source_label, usage_tab_status_label, with_status_slot,
+    with_used_percent,
 };
 pub(crate) use refresh::refresh_failed_view_presentation;
 pub use refresh::{
@@ -21,7 +22,7 @@ pub use refresh::{
 };
 pub use snapshots::{account_snapshot_views_from_cache, quota_amounts_for_account_snapshot};
 pub use status::{
-    amp_status_bar_headline, compact_account_identity, spend_headline_label,
+    amp_status_bar_headline, compact_account_identity, count_summary_label, spend_headline_label,
     status_bar_fresh_or_stale, status_bar_headline_for_surface, status_bar_label,
     status_bar_quota_labels, summary_bucket,
 };

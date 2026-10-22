@@ -326,7 +326,9 @@ impl ProjectionPublisher {
         };
         let previous = projection.clone();
         let mut next = projection.clone();
-        merge_views(&mut next, &views, &self.identity_metadata);
+        if merge_views(&mut next, &views, &self.identity_metadata).is_err() {
+            return false;
+        }
         if let Ok(catalog) = self.catalog.lock()
             && let Some(catalog) = catalog.as_ref()
         {

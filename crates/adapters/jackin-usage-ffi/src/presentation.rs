@@ -4,8 +4,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jackin_protocol::control::{
-    FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
-    UsageSeverity, UsageSnapshotStatus, UsageSource,
+    CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, FocusedAccountHeader,
+    FocusedUsageView, MeterPercentPoints, Money, PercentObservationOrigin, ProviderQuotaState,
+    QuotaBucketView, RawPercentPoints, StatusSlot, UsageConfidence, UsageMeterSide, UsageSeverity,
+    UsageSnapshotStatus, UsageSource,
 };
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageFreshnessPhaseV1, UsageIssueScopeV1, UsageIssueV1, UsageLifecycleV1,
@@ -16,15 +18,122 @@ use jackin_protocol::usage_broker::{
 use jackin_usage::host::{
     HostSurfaceId, HostUsageProjectionRuntime, HostUsageProjectionSelectedAccount,
 };
-use jackin_usage_provider_core::{PercentStyle, UsageFormatPrefs};
+use jackin_usage_provider_core::{
+    PercentStyle, UsageFormatPrefs, quota_source_remaining_rank_points,
+};
 
 use crate::dto::{
-    AccountDescriptorDto, DesktopInventoryDto, DesktopProjectionDto, DesktopProviderGroupDto,
-    DesktopProviderProjectionDto, DesktopProviderStateDto, DiscoveryDiagnosticDto, MoneyDto,
-    OverviewRowDto, ProviderGlanceRowDto, QuotaBucketDto, SelectedAccountRouteDto,
-    SurfaceDescriptorDto, UsageDetailPresentationDto, UsageDetailRowDto,
+    AccountDescriptorDto, CountQuotaDto, DesktopInventoryDto, DesktopProjectionDto,
+    DesktopProviderGroupDto, DesktopProviderProjectionDto, DesktopProviderStateDto,
+    DiscoveryDiagnosticDto, MoneyDto, OverviewRowDto, ProviderGlanceRowDto, QuotaBucketDto,
+    SelectedAccountRouteDto, SurfaceDescriptorDto, UsageDetailPresentationDto, UsageDetailRowDto,
     UsageIdentityPresentationDto, UsagePresentationLineDto, UsageViewDto,
 };
+
+mod quota_labels;
+use quota_labels::{
+    metric_window_bar_label, metric_window_headline, metric_window_percent_label,
+    window_display_summary, window_headline, window_numeric_label,
+};
+
+#[derive(Clone)]
+struct QuotaFields {
+    used_percent: Option<f64>,
+    used_percent_origin: Option<String>,
+    remaining_percent: Option<f64>,
+    remaining_percent_origin: Option<String>,
+    count_quota: Option<CountQuotaDto>,
+    provider_quota_state: Option<String>,
+    meter_percent: Option<f64>,
+    meter_side: Option<String>,
+}
+
+fn count_quota_dto(count: CountQuota) -> CountQuotaDto {
+    CountQuotaDto {
+        used: count.used,
+        limit: count.limit,
+        remaining: count.remaining,
+        unit: count.unit.wire_label().to_owned(),
+        period: count.period.wire_label().to_owned(),
+        provenance: count.provenance.wire_label().to_owned(),
+    }
+}
+
+struct QuotaFieldInputs {
+    used_percent: Option<RawPercentPoints>,
+    used_percent_origin: Option<PercentObservationOrigin>,
+    remaining_percent: Option<RawPercentPoints>,
+    remaining_percent_origin: Option<PercentObservationOrigin>,
+    count_quota: Option<CountQuota>,
+    meter_percent: Option<MeterPercentPoints>,
+    meter_side: Option<UsageMeterSide>,
+    provider_quota_state: Option<ProviderQuotaState>,
+}
+
+fn quota_fields(input: QuotaFieldInputs) -> QuotaFields {
+    let QuotaFieldInputs {
+        used_percent,
+        used_percent_origin,
+        remaining_percent,
+        remaining_percent_origin,
+        count_quota,
+        meter_percent,
+        meter_side,
+        provider_quota_state,
+    } = input;
+    QuotaFields {
+        used_percent: used_percent.map(RawPercentPoints::get),
+        used_percent_origin: used_percent_origin.map(|origin| origin.wire_label().to_owned()),
+        remaining_percent: remaining_percent.map(RawPercentPoints::get),
+        remaining_percent_origin: remaining_percent_origin
+            .map(|origin| origin.wire_label().to_owned()),
+        count_quota: count_quota.map(count_quota_dto),
+        provider_quota_state: provider_quota_state
+            .map(|provider_state| provider_state.wire_label().to_owned()),
+        meter_percent: meter_percent.map(MeterPercentPoints::get),
+        meter_side: meter_side.map(|side| side.wire_label().to_owned()),
+    }
+}
+
+fn window_quota_fields(window: &UsageLimitWindowV1) -> QuotaFields {
+    quota_fields(QuotaFieldInputs {
+        used_percent: window.used_percent,
+        used_percent_origin: window.used_percent_origin,
+        remaining_percent: window.remaining_percent,
+        remaining_percent_origin: window.remaining_percent_origin,
+        count_quota: window.count_quota,
+        meter_percent: window.meter_percent,
+        meter_side: window.meter_side,
+        provider_quota_state: window.provider_quota_state,
+    })
+}
+
+fn metric_window_quota_fields(group: &UsageMetricGroupV1) -> Option<QuotaFields> {
+    let UsageMetricValueV1::Window {
+        used_percent,
+        used_percent_origin,
+        remaining_percent,
+        remaining_percent_origin,
+        count_quota,
+        provider_quota_state,
+        meter_percent,
+        meter_side,
+        ..
+    } = &group.value
+    else {
+        return None;
+    };
+    Some(quota_fields(QuotaFieldInputs {
+        used_percent: *used_percent,
+        used_percent_origin: *used_percent_origin,
+        remaining_percent: *remaining_percent,
+        remaining_percent_origin: *remaining_percent_origin,
+        count_quota: *count_quota,
+        meter_percent: *meter_percent,
+        meter_side: *meter_side,
+        provider_quota_state: *provider_quota_state,
+    }))
+}
 
 pub(crate) fn surface_rows(enabled: &[String]) -> Vec<SurfaceDescriptorDto> {
     HostSurfaceId::ALL
@@ -288,23 +397,36 @@ pub(crate) fn desktop_projection(
     let ranked_glance_rows = provider_glance_rows_with_reset_rank(runtime, enabled, format_prefs)?;
     let glance_rows = ranked_glance_rows
         .iter()
-        .map(|(row, _)| row.clone())
+        .map(|(row, _, _, _)| row.clone())
         .collect::<Vec<_>>();
     let mut status_rows = ranked_glance_rows
         .into_iter()
-        .filter(|(row, _)| row.glance_remaining_percent.is_some_and(|value| value > 0))
+        .filter(|(row, _, _, provider_state)| {
+            provider_state.is_some() || glance_row_has_remaining_capacity(row)
+        })
         .collect::<Vec<_>>();
-    status_rows.sort_by_key(|(row, reset_at_epoch)| {
-        (
-            reset_at_epoch.is_none(),
-            reset_at_epoch.unwrap_or(i64::MAX),
-            row.glance_remaining_percent.unwrap_or(u8::MAX),
-        )
-    });
+    status_rows.sort_by(
+        |(_, left_reset, left_rank, _), (_, right_reset, right_rank, _)| {
+            left_reset
+                .is_none()
+                .cmp(&right_reset.is_none())
+                .then_with(|| {
+                    left_reset
+                        .unwrap_or(i64::MAX)
+                        .cmp(&right_reset.unwrap_or(i64::MAX))
+                })
+                .then_with(|| match (left_rank, right_rank) {
+                    (Some(left), Some(right)) => left.total_cmp(right),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                })
+        },
+    );
     status_rows.truncate(status_bar_max.clamp(1, 3) as usize);
     let status_rows = status_rows
         .into_iter()
-        .map(|(row, _)| row)
+        .map(|(row, _, _, _)| row)
         .collect::<Vec<_>>();
     let projection = runtime.projection();
     let error_message = projection.issues.first().map(|issue| issue.message.clone());
@@ -321,6 +443,18 @@ pub(crate) fn desktop_projection(
     })
 }
 
+fn glance_row_has_remaining_capacity(row: &ProviderGlanceRowDto) -> bool {
+    glance_remaining_capacity(row).is_some_and(|remaining| remaining > 0.0)
+}
+
+fn glance_remaining_capacity(row: &ProviderGlanceRowDto) -> Option<f64> {
+    match (row.glance_meter_percent, row.glance_meter_side.as_deref()) {
+        (Some(percent), Some("remaining")) => Some(percent),
+        (Some(percent), Some("used")) => Some(100.0 - percent),
+        _ => None,
+    }
+}
+
 pub(crate) fn provider_glance_rows(
     runtime: &HostUsageProjectionRuntime,
     enabled: &[String],
@@ -329,16 +463,23 @@ pub(crate) fn provider_glance_rows(
     Ok(
         provider_glance_rows_with_reset_rank(runtime, enabled, format_prefs)?
             .into_iter()
-            .map(|(row, _)| row)
+            .map(|(row, _, _, _)| row)
             .collect(),
     )
 }
+
+type ProviderGlanceRowWithResetRank = (
+    ProviderGlanceRowDto,
+    Option<i64>,
+    Option<f64>,
+    Option<ProviderQuotaState>,
+);
 
 fn provider_glance_rows_with_reset_rank(
     runtime: &HostUsageProjectionRuntime,
     enabled: &[String],
     format_prefs: UsageFormatPrefs,
-) -> Result<Vec<(ProviderGlanceRowDto, Option<i64>)>, String> {
+) -> Result<Vec<ProviderGlanceRowWithResetRank>, String> {
     let mut rows = Vec::new();
     for surface in HostSurfaceId::DESKTOP_PROVIDER_ORDER.iter().copied() {
         if !is_surface_enabled(enabled, surface) {
@@ -350,6 +491,34 @@ fn provider_glance_rows_with_reset_rank(
         {
             let metric_window = presentation.glance_metric_group;
             let reset_at_epoch = glance_reset_epoch(account, metric_window);
+            let remaining_rank_points = if let Some(group) = metric_window {
+                metric_window_remaining_rank_points(group)
+            } else {
+                account.windows.first().and_then(|window| {
+                    quota_source_remaining_rank_points(
+                        window.count_quota,
+                        window.used_percent,
+                        window.used_percent_origin,
+                        window.remaining_percent,
+                        window.remaining_percent_origin,
+                        window.money_used_percent,
+                        window.provider_quota_state,
+                    )
+                })
+            };
+            let provider_quota_state = metric_window
+                .and_then(metric_window_provider_quota_state)
+                .or_else(|| {
+                    metric_window
+                        .is_none()
+                        .then(|| {
+                            account
+                                .windows
+                                .first()
+                                .and_then(|window| window.provider_quota_state)
+                        })
+                        .flatten()
+                });
             rows.push((
                 glance_row(
                     surface,
@@ -359,6 +528,8 @@ fn provider_glance_rows_with_reset_rank(
                     format_prefs,
                 ),
                 reset_at_epoch,
+                remaining_rank_points,
+                provider_quota_state,
             ));
         }
     }
@@ -369,17 +540,54 @@ fn glance_reset_epoch(
     account: &UsageAccountV1,
     metric_window: Option<&UsageMetricGroupV1>,
 ) -> Option<i64> {
-    metric_window
-        .and_then(|group| group.reset_at_epoch)
-        .or_else(|| {
+    metric_window.map_or_else(
+        || {
             account
                 .windows
                 .first()
                 .and_then(|window| window.reset_at_epoch)
-        })
+        },
+        |group| group.reset_at_epoch,
+    )
 }
 
-fn glance_row(
+fn metric_window_remaining_rank_points(group: &UsageMetricGroupV1) -> Option<f64> {
+    let UsageMetricValueV1::Window {
+        used_percent,
+        used_percent_origin,
+        remaining_percent,
+        remaining_percent_origin,
+        count_quota,
+        provider_quota_state,
+        money_used_percent,
+        ..
+    } = &group.value
+    else {
+        return None;
+    };
+    quota_source_remaining_rank_points(
+        *count_quota,
+        *used_percent,
+        *used_percent_origin,
+        *remaining_percent,
+        *remaining_percent_origin,
+        *money_used_percent,
+        *provider_quota_state,
+    )
+}
+
+fn metric_window_provider_quota_state(group: &UsageMetricGroupV1) -> Option<ProviderQuotaState> {
+    let UsageMetricValueV1::Window {
+        provider_quota_state,
+        ..
+    } = &group.value
+    else {
+        return None;
+    };
+    *provider_quota_state
+}
+
+pub(crate) fn glance_row(
     surface: HostSurfaceId,
     provider: Option<&UsageProviderV1>,
     account: &UsageAccountV1,
@@ -387,65 +595,79 @@ fn glance_row(
     format_prefs: UsageFormatPrefs,
 ) -> ProviderGlanceRowDto {
     let window = account.windows.first();
-    let remaining = metric_window.and_then(window_group_remaining).or_else(|| {
-        window.and_then(|window| {
-            window
-                .remaining_percent
-                .map(jackin_protocol::usage_broker::UsagePercent::get)
-        })
-    });
+    let quota_fields = match metric_window {
+        Some(group) => metric_window_quota_fields(group),
+        None => window.map(window_quota_fields),
+    };
     let quota_state = metric_window
         .map(|group| group.quota_state)
         .or_else(|| window.map(|window| window.quota_state));
     let severity = quota_state.map_or("normal", severity_label);
-    let status = metric_window.map_or_else(
-        || account_status(account),
-        |group| metric_status(group, account),
+    let status = metric_window.map_or_else(|| account_status(account), metric_status_for_glance);
+    let activity_kind = metric_window.map_or_else(
+        || activity_kind(account),
+        |group| {
+            if group.phase == UsageFreshnessPhaseV1::Refreshing {
+                "updating"
+            } else if status == "fresh" {
+                "idle"
+            } else {
+                "exceptional"
+            }
+        },
     );
-    let activity_kind =
-        if metric_window.is_some_and(|group| group.phase == UsageFreshnessPhaseV1::Refreshing) {
-            "updating"
-        } else {
-            activity_kind(account)
-        };
-    let activity_label = if activity_kind == "updating" {
-        "Updating".to_owned()
-    } else {
-        activity_label(account)
+    let last_success_at = metric_window.map_or(account.freshness.last_good_at_epoch, |group| {
+        group.last_success_at_epoch
+    });
+    let activity_label = match (metric_window, activity_kind) {
+        (_, "updating") => "Updating".to_owned(),
+        (_, "idle") => updated_label(last_success_at),
+        (Some(group), _) => group
+            .issues
+            .first()
+            .map_or_else(|| status.to_owned(), |issue| issue.message.clone()),
+        (None, _) => account
+            .issues
+            .first()
+            .map_or_else(|| status.to_owned(), |issue| issue.message.clone()),
     };
     let account_label = account.display_label.clone();
-    let last_error = metric_window
-        .and_then(|group| group.issues.first())
-        .or_else(|| account.issues.first())
-        .or_else(|| provider.and_then(|provider| provider.issues.first()))
-        .map(|issue| issue.message.clone());
-    let label = metric_window
-        .map(metric_group_summary)
-        .or_else(|| window.map(|window| window.value_label.clone()))
-        .unwrap_or_else(|| "Usage unavailable".to_owned());
-    let headline = metric_window
-        .and_then(|group| metric_window_headline(group, format_prefs))
-        .or_else(|| window.map(|window| window_headline(window, format_prefs)))
-        .unwrap_or_else(|| label.clone());
-    let bar_label = match format_prefs.percent_style {
-        PercentStyle::Left => metric_window
-            .and_then(|group| metric_window_percent_label(group, PercentStyle::Left))
-            .or_else(|| window.map(|window| window.value_label.clone()))
-            .unwrap_or_else(|| "—".to_owned()),
-        PercentStyle::Used => metric_window
-            .and_then(|group| metric_window_percent_label(group, PercentStyle::Used))
-            .or_else(|| window.and_then(window_used_label))
-            .or_else(|| window.map(|window| window.value_label.clone()))
-            .unwrap_or_else(|| "—".to_owned()),
-    };
-    let reset = metric_window
-        .and_then(|group| formatted_epoch_reset(group.reset_at_epoch, format_prefs))
-        .or_else(|| window.and_then(|window| formatted_reset(window, format_prefs)));
-    let updated_label = updated_label(
-        metric_window
-            .and_then(|group| group.last_success_at_epoch)
-            .or(account.freshness.last_good_at_epoch),
+    let last_error = metric_window.map_or_else(
+        || {
+            account
+                .issues
+                .first()
+                .or_else(|| provider.and_then(|provider| provider.issues.first()))
+                .map(|issue| issue.message.clone())
+        },
+        |group| group.issues.first().map(|issue| issue.message.clone()),
     );
+    let (label, headline, bar_label) = if let Some(group) = metric_window {
+        let label = metric_group_summary(group);
+        let headline = metric_window_headline(group, format_prefs).unwrap_or_else(|| label.clone());
+        let bar_label = metric_window_bar_label(group, format_prefs.percent_style)
+            .unwrap_or_else(|| label.clone());
+        (label, headline, bar_label)
+    } else {
+        let label = window.map_or_else(
+            || "Usage unavailable".to_owned(),
+            |window| window_display_summary(window, format_prefs),
+        );
+        let headline = window.map_or_else(
+            || label.clone(),
+            |window| window_headline(window, format_prefs),
+        );
+        let bar_label = window
+            .and_then(|window| window_numeric_label(window, format_prefs))
+            .or_else(|| window.map(|window| window_display_summary(window, format_prefs)))
+            .unwrap_or_else(|| "—".to_owned());
+        (label, headline, bar_label)
+    };
+    let reset = metric_window.map_or_else(
+        || window.and_then(|window| formatted_reset(window, format_prefs)),
+        |group| formatted_epoch_reset(group.reset_at_epoch, format_prefs),
+    );
+    let updated_label = updated_label(last_success_at);
     let plan_label = account.plan_label.clone();
     let display_label = surface.label().to_owned();
     ProviderGlanceRowDto {
@@ -456,7 +678,29 @@ fn glance_row(
         display_label,
         account_label: account_label.clone(),
         plan_label,
-        glance_remaining_percent: remaining,
+        glance_used_percent: quota_fields.as_ref().and_then(|fields| fields.used_percent),
+        glance_used_percent_origin: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.used_percent_origin.clone()),
+        glance_remaining_percent: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.remaining_percent),
+        glance_remaining_percent_origin: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.remaining_percent_origin.clone()),
+        glance_count_quota: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.count_quota.clone()),
+        glance_provider_quota_state: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.provider_quota_state.clone()),
+        glance_resets_at: glance_reset_epoch(account, metric_window),
+        glance_meter_percent: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.meter_percent),
+        glance_meter_side: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.meter_side.clone()),
         bar_label: bar_label.clone(),
         headline,
         reset_label: reset.clone(),
@@ -464,9 +708,10 @@ fn glance_row(
         exact_reset: glance_reset_epoch(account, metric_window)
             .map(jackin_usage_provider_core::local_timestamp_label),
         status_word: status.to_owned(),
-        is_refreshing: metric_window
-            .is_some_and(|group| group.phase == UsageFreshnessPhaseV1::Refreshing)
-            || account.freshness.phase == UsageFreshnessPhaseV1::Refreshing,
+        is_refreshing: metric_window.map_or(
+            account.freshness.phase == UsageFreshnessPhaseV1::Refreshing,
+            |group| group.phase == UsageFreshnessPhaseV1::Refreshing,
+        ),
         status_label: status.to_owned(),
         severity: severity.to_owned(),
         updated_label,
@@ -492,16 +737,59 @@ pub(crate) fn account_dto(
     selected: bool,
 ) -> AccountDescriptorDto {
     let window = account.windows.first();
-    let percent = window.and_then(|window| {
-        window
-            .remaining_percent
-            .map(jackin_protocol::usage_broker::UsagePercent::get)
-    });
-    let status = account_status(account);
-    let severity = window.map_or("normal", |window| severity_label(window.quota_state));
-    let remaining_label =
-        window.map_or_else(|| "—".to_owned(), |window| window.value_label.clone());
-    let reset_label = window.and_then(|window| formatted_reset(window, format_prefs));
+    let metric_window = account
+        .metric_groups
+        .iter()
+        .filter(|group| {
+            group.kind == UsageMetricGroupKindV1::Window
+                && matches!(&group.value, UsageMetricValueV1::Window { .. })
+        })
+        .min_by_key(|group| group.rank);
+    let quota_fields = window
+        .map(window_quota_fields)
+        .or_else(|| metric_window.and_then(metric_window_quota_fields));
+    let status = if window.is_some() {
+        account_status(account)
+    } else {
+        metric_window.map_or_else(
+            || account_status(account),
+            |group| metric_status(group, account),
+        )
+    };
+    let severity = window
+        .map(|window| severity_label(window.quota_state))
+        .or_else(|| metric_window.map(|group| severity_label(group.quota_state)))
+        .unwrap_or("normal");
+    let remaining_label = window
+        .map(|window| window_display_summary(window, format_prefs))
+        .or_else(|| metric_window.map(metric_group_summary))
+        .unwrap_or_else(|| "—".to_owned());
+    let resets_at = window.map_or_else(
+        || metric_window.and_then(|group| group.reset_at_epoch),
+        |window| window.reset_at_epoch,
+    );
+    let reset_label = window.map_or_else(
+        || {
+            metric_window
+                .and_then(|group| formatted_epoch_reset(group.reset_at_epoch, format_prefs))
+        },
+        |window| formatted_reset(window, format_prefs),
+    );
+    let headline = window
+        .map(|window| window_headline(window, format_prefs))
+        .or_else(|| metric_window.and_then(|group| metric_window_headline(group, format_prefs)))
+        .unwrap_or_else(|| remaining_label.clone());
+    let selected_group_error = window
+        .is_none()
+        .then(|| metric_window.and_then(|group| group.issues.first()))
+        .flatten();
+    let last_success_at_epoch = if window.is_some() {
+        account.freshness.last_good_at_epoch
+    } else {
+        metric_window
+            .and_then(|group| group.last_success_at_epoch)
+            .or(account.freshness.last_good_at_epoch)
+    };
     let lifecycle = lifecycle_label(account.lifecycle).to_owned();
     let lifecycle_label = lifecycle_display(account.lifecycle).to_owned();
     let provenance_label = format!(
@@ -529,21 +817,42 @@ pub(crate) fn account_dto(
             .clone()
             .or_else(|| account.status_label.clone())
             .unwrap_or_else(|| "—".to_owned()),
-        remaining_percent: percent,
+        used_percent: quota_fields.as_ref().and_then(|fields| fields.used_percent),
+        used_percent_origin: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.used_percent_origin.clone()),
+        remaining_percent: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.remaining_percent),
+        remaining_percent_origin: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.remaining_percent_origin.clone()),
+        count_quota: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.count_quota.clone()),
+        provider_quota_state: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.provider_quota_state.clone()),
+        resets_at,
+        meter_percent: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.meter_percent),
+        meter_side: quota_fields
+            .as_ref()
+            .and_then(|fields| fields.meter_side.clone()),
         remaining_label,
-        headline: window.map_or_else(|| status.to_owned(), |window| window.value_label.clone()),
+        headline,
         reset_label: reset_label.clone(),
         reset_display_label: reset_label.unwrap_or_else(|| "—".to_owned()),
-        exact_reset: window
-            .and_then(|window| window.reset_at_epoch)
-            .map(jackin_usage_provider_core::local_timestamp_label),
+        exact_reset: resets_at.map(jackin_usage_provider_core::local_timestamp_label),
         status_word: status.to_owned(),
         status_label: status.to_owned(),
         severity: severity.to_owned(),
-        updated_label: updated_label(account.freshness.last_good_at_epoch),
+        updated_label: updated_label(last_success_at_epoch),
         last_error: account
             .issues
             .first()
+            .or(selected_group_error)
             .or_else(|| provider.issues.first())
             .map(|issue| issue.message.clone()),
         dimmed: status != "fresh",
@@ -589,18 +898,25 @@ pub(crate) fn view_dto(
             .into_iter()
             .enumerate()
             .map(|(index, bucket)| {
-                let mut dto = bucket_dto(bucket);
+                let source = account.windows.get(index).map(window_quota_fields);
+                let mut dto = bucket_dto(bucket, source);
                 if let Some(window) = account.windows.get(index) {
-                    dto.display_label = window.value_label.clone();
-                    dto.display_segments = vec![window.value_label.clone()];
-                    dto.remaining_label = window
-                        .remaining_raw_percent
-                        .map(|raw| format!("{raw}% left"))
-                        .or_else(|| {
-                            window
-                                .remaining_percent
-                                .map(|percent| format!("{}% left", percent.get()))
-                        });
+                    if window.provider_quota_state.is_some()
+                        || (window.money_used_percent.is_some()
+                            && (window.used_percent.is_some()
+                                || window.remaining_percent.is_some()))
+                    {
+                        let summary = window_display_summary(window, format_prefs);
+                        dto.display_segments = summary.split(" · ").map(str::to_owned).collect();
+                        dto.display_label = summary.clone();
+                        dto.remaining_label = Some(summary);
+                    } else if window.count_quota.is_none() {
+                        dto.display_label = window.value_label.clone();
+                        dto.display_segments = vec![window.value_label.clone()];
+                        dto.remaining_label = window
+                            .remaining_percent
+                            .map(|raw| format!("{}% left", raw.display_value()));
+                    }
                 }
                 dto
             })
@@ -633,11 +949,7 @@ fn focused_view(
     let headline = account
         .windows
         .iter()
-        .map(|window| match format_prefs.percent_style {
-            PercentStyle::Left if window.remaining_percent.is_some() => window.value_label.clone(),
-            PercentStyle::Used if window.used_percent.is_some() => window.value_label.clone(),
-            _ => window.value_label.clone(),
-        })
+        .map(|window| window_display_summary(window, format_prefs))
         .collect::<Vec<_>>()
         .join(" · ");
     let last_error = account.issues.first().map(|issue| issue.message.clone());
@@ -718,18 +1030,24 @@ fn view_dto_from_view(view: FocusedUsageView, surface: HostSurfaceId) -> UsageVi
 }
 
 fn window_bucket(window: &UsageLimitWindowV1, format_prefs: UsageFormatPrefs) -> QuotaBucketView {
+    let used_percent = window
+        .used_percent
+        .and_then(|percent| CanonicalUsedPercent::new(percent.get()).ok());
+    let remaining_percent = window
+        .remaining_percent
+        .and_then(|percent| CanonicalRemainingPercent::new(percent.get()).ok());
     QuotaBucketView {
         label: window.label.clone(),
-        used_label: window.used_percent.map(|percent| {
-            format!(
-                "{}% used",
-                window.used_raw_percent.unwrap_or(i32::from(percent.get()))
-            )
-        }),
+        used_label: window
+            .used_percent
+            .map(|percent| format!("{}% used", percent.display_value())),
         limit_label: None,
-        remaining_percent: window
-            .remaining_percent
-            .map(jackin_protocol::usage_broker::UsagePercent::get),
+        used_percent,
+        used_percent_origin: used_percent.and(window.used_percent_origin),
+        remaining_percent,
+        remaining_percent_origin: remaining_percent.and(window.remaining_percent_origin),
+        count_quota: window.count_quota,
+        provider_quota_state: window.provider_quota_state,
         reset_label: formatted_reset(window, format_prefs),
         resets_at: window.reset_at_epoch,
         status_slot: match window.category {
@@ -755,6 +1073,11 @@ fn spend_cap_bucket(group: &UsageMetricGroupV1) -> Option<QuotaBucketView> {
         used_label: spent.as_ref().map(ToString::to_string),
         limit_label: cap.as_ref().map(ToString::to_string),
         remaining_percent: None,
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent_origin: None,
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: group.reset_at_epoch,
         status_slot: Some(StatusSlot::Spend),
@@ -766,13 +1089,36 @@ fn spend_cap_bucket(group: &UsageMetricGroupV1) -> Option<QuotaBucketView> {
     })
 }
 
-fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {
+fn bucket_dto(bucket: QuotaBucketView, source: Option<QuotaFields>) -> QuotaBucketDto {
     let presentation = jackin_usage_provider_core::usage_bucket_presentation(&bucket);
+    let fields = source.unwrap_or_else(|| QuotaFields {
+        used_percent: bucket.used_percent.map(CanonicalUsedPercent::get),
+        used_percent_origin: bucket
+            .used_percent_origin
+            .map(|origin| origin.wire_label().to_owned()),
+        remaining_percent: bucket.remaining_percent.map(CanonicalRemainingPercent::get),
+        remaining_percent_origin: bucket
+            .remaining_percent_origin
+            .map(|origin| origin.wire_label().to_owned()),
+        count_quota: bucket.count_quota.map(count_quota_dto),
+        provider_quota_state: bucket
+            .provider_quota_state
+            .map(|provider_state| provider_state.wire_label().to_owned()),
+        meter_percent: presentation.meter_percent.map(MeterPercentPoints::get),
+        meter_side: presentation
+            .meter_side
+            .map(|side| side.wire_label().to_owned()),
+    });
     QuotaBucketDto {
         label: bucket.label,
         used_label: bucket.used_label,
         limit_label: bucket.limit_label,
-        remaining_percent: bucket.remaining_percent,
+        used_percent: fields.used_percent,
+        used_percent_origin: fields.used_percent_origin,
+        remaining_percent: fields.remaining_percent,
+        remaining_percent_origin: fields.remaining_percent_origin,
+        count_quota: fields.count_quota,
+        provider_quota_state: fields.provider_quota_state,
         reset_label: bucket.reset_label,
         resets_at: bucket.resets_at,
         status_slot: bucket.status_slot.map(|slot| {
@@ -792,7 +1138,8 @@ fn bucket_dto(bucket: QuotaBucketView) -> QuotaBucketDto {
         remaining_label: presentation.remaining_label,
         display_segments: presentation.display_segments,
         display_label: presentation.display_label,
-        meter_percent: presentation.meter_percent,
+        meter_percent: fields.meter_percent,
+        meter_side: fields.meter_side,
     }
 }
 
@@ -818,18 +1165,18 @@ fn typed_detail_presentation(
         lifecycle_display(account.lifecycle).to_owned(),
     ));
     for window in &account.windows {
+        let summary = window_display_summary(window, format_prefs);
         rows.push(UsageDetailRowDto {
             row_id: window.window_id.clone(),
             kind: "bucket".to_owned(),
             label: window.label.clone(),
             layout_lines: vec![UsagePresentationLineDto {
-                leading: Some(window.value_label.clone()),
+                leading: Some(summary.clone()),
                 trailing: formatted_reset(window, format_prefs),
             }],
-            display_label: window.value_label.clone(),
-            meter_percent: window
-                .remaining_percent
-                .map(jackin_protocol::usage_broker::UsagePercent::meter_fill),
+            display_label: summary,
+            meter_percent: window.meter_percent.map(MeterPercentPoints::get),
+            meter_side: window.meter_side.map(|side| side.wire_label().to_owned()),
             severity: severity_label(window.quota_state).to_owned(),
         });
     }
@@ -853,9 +1200,15 @@ fn typed_detail_presentation(
             }],
             display_label: summary,
             meter_percent: match &group.value {
-                UsageMetricValueV1::Window {
-                    remaining_percent, ..
-                } => remaining_percent.map(jackin_protocol::usage_broker::UsagePercent::meter_fill),
+                UsageMetricValueV1::Window { meter_percent, .. } => {
+                    meter_percent.map(MeterPercentPoints::get)
+                }
+                _ => None,
+            },
+            meter_side: match &group.value {
+                UsageMetricValueV1::Window { meter_side, .. } => {
+                    meter_side.map(|side| side.wire_label().to_owned())
+                }
                 _ => None,
             },
             severity: severity_label(group.quota_state).to_owned(),
@@ -872,6 +1225,7 @@ fn typed_detail_presentation(
             }],
             display_label: issue.message.clone(),
             meter_percent: None,
+            meter_side: None,
             severity: "warn".to_owned(),
         });
     }
@@ -889,6 +1243,7 @@ fn metadata_row(row_id: &str, label: &str, value: String) -> UsageDetailRowDto {
         }],
         display_label: value,
         meter_percent: None,
+        meter_side: None,
         severity: "normal".to_owned(),
     }
 }
@@ -911,22 +1266,11 @@ fn metric_scope_label(group: &UsageMetricGroupV1) -> Option<String> {
 fn metric_group_summary(group: &UsageMetricGroupV1) -> String {
     match &group.value {
         UsageMetricValueV1::Window {
-            remaining_percent,
-            remaining_raw_percent,
-            used_percent,
-            used_raw_percent,
+            count_quota,
             period,
             unit,
+            ..
         } => {
-            let value = if let Some(raw) = remaining_raw_percent {
-                Some(format!("{raw}% left"))
-            } else if let Some(percent) = remaining_percent {
-                Some(format!("{}% left", percent.get()))
-            } else if let Some(raw) = used_raw_percent {
-                Some(format!("{raw}% used"))
-            } else {
-                used_percent.map(|percent| format!("{}% used", percent.get()))
-            };
             let period = match period {
                 UsageMetricPeriodV1::Rolling { window_secs } => format!("{window_secs}s"),
                 UsageMetricPeriodV1::Calendar { granularity } => {
@@ -935,6 +1279,12 @@ fn metric_group_summary(group: &UsageMetricGroupV1) -> String {
                 UsageMetricPeriodV1::ProviderDefined => "provider-defined period".to_owned(),
                 UsageMetricPeriodV1::Unknown => "period unknown".to_owned(),
             };
+            if count_quota.is_some()
+                && let Some(summary) = metric_window_percent_label(group, PercentStyle::Left)
+            {
+                return format!("{summary} · {period}");
+            }
+            let value = metric_window_percent_label(group, PercentStyle::Left);
             value.map_or_else(
                 || format!("{period} · quota {}", quota_state_label(group.quota_state)),
                 |value| {
@@ -1115,17 +1465,6 @@ fn activity_kind(account: &UsageAccountV1) -> &'static str {
     }
 }
 
-fn activity_label(account: &UsageAccountV1) -> String {
-    match activity_kind(account) {
-        "updating" => "Updating".to_owned(),
-        "idle" => updated_label(account.freshness.last_good_at_epoch),
-        _ => account.issues.first().map_or_else(
-            || lifecycle_display(account.lifecycle).to_owned(),
-            |issue| issue.message.clone(),
-        ),
-    }
-}
-
 fn lifecycle_label(lifecycle: UsageLifecycleV1) -> &'static str {
     match lifecycle {
         UsageLifecycleV1::Available => "current",
@@ -1200,103 +1539,26 @@ fn quota_state_label(quota: UsageQuotaStateV1) -> &'static str {
     }
 }
 
-fn window_group_remaining(group: &UsageMetricGroupV1) -> Option<u8> {
-    match &group.value {
-        UsageMetricValueV1::Window {
-            remaining_percent, ..
-        } => remaining_percent.map(jackin_protocol::usage_broker::UsagePercent::get),
-        _ => None,
-    }
-}
-
-fn metric_window_percent_label(group: &UsageMetricGroupV1, style: PercentStyle) -> Option<String> {
-    let UsageMetricValueV1::Window {
-        remaining_percent,
-        remaining_raw_percent,
-        used_percent,
-        used_raw_percent,
-        ..
-    } = &group.value
-    else {
-        return None;
-    };
-    match style {
-        PercentStyle::Left => remaining_raw_percent
-            .map(|raw| format!("{raw}%"))
-            .or_else(|| remaining_percent.map(|value| format!("{}%", value.get()))),
-        PercentStyle::Used => used_raw_percent
-            .map(|raw| format!("{raw}%"))
-            .or_else(|| used_percent.map(|value| format!("{}%", value.get())))
-            .or_else(|| {
-                remaining_percent.map(|value| format!("{}%", 100u8.saturating_sub(value.get())))
-            }),
-    }
-}
-
-fn metric_window_headline(
-    group: &UsageMetricGroupV1,
-    format_prefs: UsageFormatPrefs,
-) -> Option<String> {
-    let value = metric_window_percent_label(group, format_prefs.percent_style)?;
-    let headline = match format_prefs.percent_style {
-        PercentStyle::Left => format!("{value} left"),
-        PercentStyle::Used => format!("{value} used"),
-    };
-    Some(
-        group
-            .scope
-            .model
-            .as_ref()
-            .map_or_else(|| headline.clone(), |model| format!("{model} {headline}")),
-    )
-}
-
-fn window_headline(window: &UsageLimitWindowV1, format_prefs: UsageFormatPrefs) -> String {
-    match format_prefs.percent_style {
-        PercentStyle::Left => window
-            .remaining_raw_percent
-            .map(|raw| format!("{raw}% left"))
-            .or_else(|| {
-                window
-                    .remaining_percent
-                    .map(|percent| format!("{}% left", percent.get()))
-            })
-            .unwrap_or_else(|| window.value_label.clone()),
-        PercentStyle::Used => window_used_label(window)
-            .map(|value| format!("{value} used"))
-            .or_else(|| {
-                window.remaining_percent.map(|remaining| {
-                    jackin_usage_provider_core::percent_headline(remaining.get(), format_prefs)
-                })
-            })
-            .unwrap_or_else(|| window.value_label.clone()),
-    }
-}
-
-fn window_used_label(window: &UsageLimitWindowV1) -> Option<String> {
-    window
-        .used_raw_percent
-        .map(|raw| format!("{raw}%"))
-        .or_else(|| window.used_percent.map(|value| format!("{}%", value.get())))
-        .or_else(|| {
-            window
-                .remaining_percent
-                .map(|remaining| format!("{}%", 100u8.saturating_sub(remaining.get())))
-        })
-}
-
 fn metric_status(group: &UsageMetricGroupV1, account: &UsageAccountV1) -> &'static str {
-    let metric_status = if group.phase == UsageFreshnessPhaseV1::Failed && !group.is_stale {
+    let status = metric_group_status(group);
+    if status == "fresh" {
+        account_status(account)
+    } else {
+        status
+    }
+}
+
+fn metric_status_for_glance(group: &UsageMetricGroupV1) -> &'static str {
+    metric_group_status(group)
+}
+
+fn metric_group_status(group: &UsageMetricGroupV1) -> &'static str {
+    if group.phase == UsageFreshnessPhaseV1::Failed && !group.is_stale {
         "error"
     } else if group.is_stale || group.phase == UsageFreshnessPhaseV1::Stale {
         "stale"
     } else {
         jackin_usage_provider_core::usage_status_storage_label(status_for_quota(group.quota_state))
-    };
-    if metric_status == "fresh" {
-        account_status(account)
-    } else {
-        metric_status
     }
 }
 

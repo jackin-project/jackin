@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::cursor_dashboard_post;
-use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
+use jackin_protocol::control::{
+    CanonicalUsedPercent, PercentObservationOrigin, QuotaBucketView, UsageSnapshotStatus,
+};
 use jackin_usage_provider_core::{
-    epoch_seconds_from_maybe_ms, json_number, parse_iso_epoch, timed_bucket,
+    epoch_seconds_from_maybe_ms, json_number, parse_iso_epoch, timed_bucket, with_used_percent,
 };
 
 #[derive(Debug, Clone)]
@@ -61,19 +63,19 @@ pub fn parse_cursor_sand_usage(value: &serde_json::Value) -> Option<CursorSandUs
 }
 
 pub fn cursor_sand_bucket(sand: &CursorSandUsage, now: i64) -> QuotaBucketView {
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "filtered non-negative; clamped 0..=100"
-    )]
-    let remaining = Some(100u8.saturating_sub(sand.usage_percent.round().clamp(0.0, 100.0) as u8));
-    timed_bucket(
+    let used = CanonicalUsedPercent::new(sand.usage_percent).ok();
+    let view = timed_bucket(
         "Grok Bot",
-        Some(format!("{}% used", sand.usage_percent)),
+        used.map(CanonicalUsedPercent::label),
         Some("100%".to_owned()),
-        remaining,
+        None,
         sand.reset_at,
         now,
         None,
         UsageSnapshotStatus::Fresh,
+    );
+    with_used_percent(
+        view,
+        used.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
     )
 }

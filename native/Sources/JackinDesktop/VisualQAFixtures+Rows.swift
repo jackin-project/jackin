@@ -10,7 +10,7 @@ struct AccountFixture {
     let key: String
     let label: String
     let plan: String?
-    let remaining: UInt8?
+    let remaining: Double?
     let selected: Bool
 }
 
@@ -20,7 +20,7 @@ struct GlanceFixture {
     let label: String
     let accountLabel: String
     let planLabel: String?
-    let remaining: UInt8?
+    let remaining: Double?
     let reset: String?
     let status: String
     let updated: String
@@ -50,7 +50,7 @@ extension VisualQAFixtures {
             }
         }
 
-        var remaining: UInt8 {
+        var remaining: Double {
             switch self {
             case .codex: 57
             case .claude: 12
@@ -189,7 +189,7 @@ extension VisualQAFixtures {
         let providerLabel = Provider(rawValue: fixture.surfaceId)?.label ?? fixture.surfaceId
         let status = "fresh"
         let planOrStatusLabel = fixture.plan ?? "—"
-        let remainingLabel = fixture.remaining.map { "\($0)%" } ?? "—"
+        let remainingLabel = fixture.remaining.map { "\(Self.percentLabel($0))%" } ?? "—"
         let resetDisplayLabel = "—"
         return AccountRow(
             surfaceId: fixture.surfaceId,
@@ -203,8 +203,10 @@ extension VisualQAFixtures {
             provenanceLabel: "Fixture",
             planOrStatusLabel: planOrStatusLabel,
             remainingPercent: fixture.remaining,
+            meterPercent: fixture.remaining,
+            meterSide: fixture.remaining == nil ? nil : "remaining",
             remainingLabel: remainingLabel,
-            headline: fixture.remaining.map { "\($0)% left" } ?? "—",
+            headline: fixture.remaining.map { "\(Self.percentLabel($0))% left" } ?? "—",
             resetDisplayLabel: resetDisplayLabel,
             statusWord: status,
             statusLabel: status,
@@ -221,8 +223,8 @@ extension VisualQAFixtures {
         let provider = Provider(rawValue: fixture.surfaceId)
         let shownAccount =
             fixture.accountLabel.isEmpty ? "No authenticated account" : fixture.accountLabel
-        let barLabel = fixture.remaining.map { "\($0)%" } ?? "—"
-        let headline = fixture.remaining.map { "\($0)% left" } ?? "—"
+        let barLabel = fixture.remaining.map { "\(Self.percentLabel($0))%" } ?? "—"
+        let headline = fixture.remaining.map { "\(Self.percentLabel($0))% left" } ?? "—"
         let activityLabel: String
         if fixture.refreshing {
             activityLabel = "Updating…"
@@ -258,7 +260,9 @@ extension VisualQAFixtures {
                 ? "updating" : (fixture.status == "fresh" ? "idle" : "exceptional"),
             accessibilityLabel: "\(fixture.label), \(shownAccount), \(activityLabel)",
             lastError: fixture.error,
-            dimmed: fixture.status != "fresh"
+            dimmed: fixture.status != "fresh",
+            glanceMeterPercent: fixture.remaining,
+            glanceMeterSide: fixture.remaining == nil ? nil : "remaining"
         )
     }
 
@@ -294,10 +298,16 @@ extension VisualQAFixtures {
         )
     }
 
-    static func severity(for remaining: UInt8?) -> String {
+    static func severity(for remaining: Double?) -> String {
         guard let remaining else { return "normal" }
         if remaining <= 15 { return "danger" }
         if remaining <= 60 { return "warn" }
         return "normal"
+    }
+
+    private static func percentLabel(_ value: Double) -> String {
+        let text = String(value)
+        guard text.hasSuffix(".0") else { return text }
+        return String(text.dropLast(2))
     }
 }

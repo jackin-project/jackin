@@ -3,7 +3,8 @@
 
 use super::*;
 
-use jackin_protocol::usage_broker::{UsageIdentityKindV1, UsagePercent, UsageProjectionV1};
+use jackin_protocol::control::{PercentObservationOrigin, RawPercentPoints, UsageMeterSide};
+use jackin_protocol::usage_broker::{UsageIdentityKindV1, UsageProjectionV1};
 use jackin_protocol::usage_monitor::{
     MonitorAccountBinding, MonitorEvidenceSource, MonitorStatus, StatuslineObservation,
     StatuslineQuotaWindow, StatuslineRateLimits, USAGE_STATUSLINE_INPUT_SCHEMA_VERSION,
@@ -14,10 +15,25 @@ fn local_source_projection(
     remaining_percent: i32,
     now_epoch: i64,
 ) -> UsageProjectionV1 {
-    let mut projection: UsageProjectionV1 = serde_json::from_str(include_str!(
+    let mut fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../jackin-usage/tests/fixtures/contracts/usage-projection-v1-current.json"
     ))
     .expect("valid shared usage projection fixture");
+    fixture["schema_version"] = serde_json::json!(2);
+    let windows = fixture["providers"][0]["accounts"][0]["windows"]
+        .as_array_mut()
+        .expect("fixture account windows");
+    for window in windows {
+        let remaining = window["remaining_percent"]
+            .as_f64()
+            .expect("legacy fixture remaining percentage");
+        window["remaining_percent"] = serde_json::json!(remaining);
+        window["remaining_percent_origin"] = serde_json::json!("provider_reported");
+        window["meter_percent"] = serde_json::json!(remaining.clamp(0.0, 100.0));
+        window["meter_side"] = serde_json::json!("remaining");
+    }
+    let mut projection: UsageProjectionV1 =
+        serde_json::from_value(fixture).expect("valid typed usage projection fixture");
     projection.generated_at_epoch = now_epoch;
     let provider = &mut projection.providers[0];
     provider.provider_id = "claude".to_owned();
@@ -28,8 +44,16 @@ fn local_source_projection(
     account.identity_kind = UsageIdentityKindV1::LocalSourceHandle;
     account.freshness.last_good_at_epoch = Some(now_epoch);
     for window in &mut account.windows {
-        window.remaining_raw_percent = Some(remaining_percent);
-        window.remaining_percent = Some(UsagePercent::clamp_raw(remaining_percent));
+        let raw_remaining = RawPercentPoints::new(f64::from(remaining_percent))
+            .expect("fixture remaining percentage is finite");
+        window.remaining_percent = Some(raw_remaining);
+        window.remaining_percent_origin = Some(PercentObservationOrigin::ProviderReported);
+        window.used_percent = None;
+        window.used_percent_origin = None;
+        window.meter_percent = Some(raw_remaining.meter_geometry());
+        window.meter_side = Some(UsageMeterSide::Remaining);
+        window.count_quota = None;
+        window.money_used_percent = None;
         window.reset_at_epoch = Some(now_epoch + 24 * 60 * 60);
     }
     projection

@@ -141,7 +141,7 @@ struct PopoverProviderDetails: View {
                     .foregroundStyle(.primary)
             }
             if let percent = row.meterPercent {
-                ProgressView(value: Double(percent), total: 100)
+                ProgressView(value: percent, total: 100)
                     .tint(severityTint(row.severity))
                     .accessibilityHidden(true)
             }

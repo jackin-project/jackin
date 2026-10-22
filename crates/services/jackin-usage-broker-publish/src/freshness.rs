@@ -1,10 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_protocol::control::{QuotaBucketView, UsageSeverity, UsageSnapshotStatus};
+use jackin_protocol::control::{QuotaBucketView, UsageSnapshotStatus};
 use jackin_protocol::usage_broker::{
     UsageAccountV1, UsageFreshnessPhaseV1, UsageFreshnessV1, UsageQuotaStateV1,
 };
+
+pub use super::quota::{bucket_has_quantity, money_is_exhausted};
 
 pub fn freshness(status: UsageSnapshotStatus, last_good: i64, generation: u64) -> UsageFreshnessV1 {
     let phase = match status {
@@ -59,51 +61,7 @@ pub fn provider_freshness(accounts: &[UsageAccountV1], generation: u64) -> Usage
 }
 
 pub fn quota_state(bucket: &QuotaBucketView) -> UsageQuotaStateV1 {
-    match bucket.status {
-        UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::NeedsSecret => {
-            UsageQuotaStateV1::NoPermission
-        }
-        UsageSnapshotStatus::Unsupported => UsageQuotaStateV1::Unsupported,
-        UsageSnapshotStatus::Unavailable => UsageQuotaStateV1::Unavailable,
-        UsageSnapshotStatus::Error => UsageQuotaStateV1::Error,
-        UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale => {
-            if bucket.remaining_percent == Some(0) || money_is_exhausted(bucket) {
-                UsageQuotaStateV1::Exhausted
-            } else {
-                match bucket.severity {
-                    UsageSeverity::Danger => UsageQuotaStateV1::Exhausted,
-                    UsageSeverity::Warn => UsageQuotaStateV1::Warning,
-                    UsageSeverity::Normal => {
-                        if bucket_has_quantity(bucket) {
-                            UsageQuotaStateV1::Available
-                        } else {
-                            UsageQuotaStateV1::Unknown
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub fn money_is_exhausted(bucket: &QuotaBucketView) -> bool {
-    match (bucket.used_money.as_ref(), bucket.limit_money.as_ref()) {
-        (Some(used), Some(limit)) => {
-            used.currency == limit.currency
-                && used.exponent == limit.exponent
-                && limit.amount_minor > 0
-                && used.amount_minor >= limit.amount_minor
-        }
-        _ => false,
-    }
-}
-
-pub fn bucket_has_quantity(bucket: &QuotaBucketView) -> bool {
-    bucket.remaining_percent.is_some()
-        || bucket.used_money.is_some()
-        || bucket.limit_money.is_some()
-        || bucket.used_label.is_some()
-        || bucket.limit_label.is_some()
+    super::quota::quota_state_for_bucket(bucket)
 }
 
 pub const fn status_label(status: UsageSnapshotStatus) -> &'static str {

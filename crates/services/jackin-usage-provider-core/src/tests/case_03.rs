@@ -12,7 +12,12 @@ fn status_bar_label_uses_stale_cached_percentages() {
         label: "Session".to_owned(),
         used_label: Some("99% used".to_owned()),
         limit_label: Some("100%".to_owned()),
-        remaining_percent: Some(1),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(reported_remaining(1.0)),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: Some(StatusSlot::Session),
@@ -40,7 +45,12 @@ fn status_bar_label_drops_tagged_bucket_that_failed() {
         label: "Session".to_owned(),
         used_label: Some("50% used".to_owned()),
         limit_label: Some("100%".to_owned()),
-        remaining_percent: Some(50),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(reported_remaining(50.0)),
+        remaining_percent_origin: Some(PercentObservationOrigin::ProviderReported),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: None,
         resets_at: None,
         status_slot: Some(StatusSlot::Session),
@@ -60,6 +70,34 @@ fn status_bar_label_drops_tagged_bucket_that_failed() {
 }
 
 #[test]
+fn used_side_percentage_remains_visible_in_status_summary() {
+    let bucket = with_used_percent(
+        presentation_bucket(
+            "Session",
+            None,
+            Some(StatusSlot::Session),
+            UsageSnapshotStatus::Fresh,
+        ),
+        Some((
+            CanonicalUsedPercent::new(57.375).expect("valid used percentage"),
+            PercentObservationOrigin::ProviderReported,
+        )),
+    );
+
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Codex,
+            "operator@example.com",
+            UsageSnapshotStatus::Fresh,
+            std::slice::from_ref(&bucket),
+        ),
+        "Session 57.38%"
+    );
+    let view = detail_view(vec![bucket], None, UsageSnapshotStatus::Fresh);
+    assert_eq!(usage_tab_status_label(&view), "57.38% used");
+}
+
+#[test]
 fn status_bar_label_uses_amp_daily_only() {
     let buckets = vec![
         QuotaBucketView {
@@ -69,7 +107,12 @@ fn status_bar_label_uses_amp_daily_only() {
             label: "Amp Free".to_owned(),
             used_label: None,
             limit_label: None,
-            remaining_percent: Some(48),
+            used_percent: None,
+            used_percent_origin: None,
+            remaining_percent: Some(reported_remaining(48.0)),
+            remaining_percent_origin: Some(PercentObservationOrigin::Derived),
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: Some("Resets daily".to_owned()),
             resets_at: None,
             status_slot: Some(StatusSlot::Daily),
@@ -83,7 +126,12 @@ fn status_bar_label_uses_amp_daily_only() {
             label: "Individual credits".to_owned(),
             used_label: None,
             limit_label: Some("$4.76".to_owned()),
+            used_percent: None,
+            used_percent_origin: None,
             remaining_percent: None,
+            remaining_percent_origin: None,
+            count_quota: None,
+            provider_quota_state: None,
             reset_label: None,
             resets_at: None,
             status_slot: None,
@@ -104,6 +152,43 @@ fn status_bar_label_uses_amp_daily_only() {
 }
 
 #[test]
+fn count_only_daily_summary_keeps_exact_count_and_freshness() {
+    let mut daily = presentation_bucket(
+        "Requests",
+        None,
+        Some(StatusSlot::Daily),
+        UsageSnapshotStatus::Fresh,
+    );
+    daily.count_quota = Some(CountQuota::new(
+        Some(9),
+        Some(10),
+        Some(1),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::UtcDaily,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    let view = detail_view(vec![daily.clone()], None, UsageSnapshotStatus::Fresh);
+
+    assert_eq!(usage_tab_status_label(&view), "1 requests left");
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Amp,
+            "operator@example.com",
+            UsageSnapshotStatus::Fresh,
+            &view.buckets,
+        ),
+        "1 requests left"
+    );
+    assert_eq!(
+        usage_bucket_presentation(&daily).display_label,
+        "1 requests left"
+    );
+
+    let stale_view = detail_view(vec![daily], None, UsageSnapshotStatus::Stale);
+    assert_eq!(usage_tab_status_label(&stale_view), "stale");
+}
+
+#[test]
 fn status_bar_label_uses_stale_amp_cache() {
     let buckets = vec![QuotaBucketView {
         used_money: None,
@@ -112,7 +197,12 @@ fn status_bar_label_uses_stale_amp_cache() {
         label: "Amp Free".to_owned(),
         used_label: None,
         limit_label: None,
-        remaining_percent: Some(9),
+        used_percent: None,
+        used_percent_origin: None,
+        remaining_percent: Some(reported_remaining(9.0)),
+        remaining_percent_origin: Some(PercentObservationOrigin::Derived),
+        count_quota: None,
+        provider_quota_state: None,
         reset_label: Some("Resets daily".to_owned()),
         resets_at: None,
         status_slot: Some(StatusSlot::Daily),

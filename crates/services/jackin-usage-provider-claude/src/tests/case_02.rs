@@ -74,7 +74,9 @@ fn claude_oauth_response_maps_windows_to_buckets() {
 
     assert_eq!(buckets[0].label, "Session");
     assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
-    assert_eq!(buckets[0].remaining_percent, Some(16));
+    assert_eq!(buckets[0].remaining_percent, None);
+    assert_eq!(used_points(&buckets[0]), Some(0.84));
+    assert_eq!(buckets[0].used_label.as_deref(), Some("0.84% used"));
     assert_eq!(
         buckets[0].reset_label.as_deref(),
         Some(
@@ -87,8 +89,18 @@ fn claude_oauth_response_maps_windows_to_buckets() {
     );
     assert_eq!(buckets[1].label, "Weekly");
     assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
-    assert_eq!(buckets[1].remaining_percent, Some(22));
+    assert_eq!(buckets[1].remaining_percent, None);
+    assert_eq!(used_points(&buckets[1]), Some(0.78));
     assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
+    assert_eq!(
+        used_points(
+            buckets
+                .iter()
+                .find(|bucket| bucket.label == "Sonnet")
+                .expect("Sonnet")
+        ),
+        Some(0.02)
+    );
     assert!(
         buckets
             .iter()
@@ -102,7 +114,8 @@ fn claude_oauth_response_maps_windows_to_buckets() {
             .is_some_and(|bucket| bucket.pace_label.is_some())
     );
     assert!(buckets.iter().any(|bucket| bucket.label == "Daily Routines"
-        && bucket.remaining_percent == Some(100)
+        && bucket.remaining_percent.is_none()
+        && used_points(bucket) == Some(0.0)
         && bucket.pace_label.is_none()
         && bucket.status_slot.is_none()));
     assert!(!buckets.iter().any(|bucket| bucket.label == "Opus"));
@@ -111,7 +124,8 @@ fn claude_oauth_response_maps_windows_to_buckets() {
         .find(|bucket| bucket.label == "Extra usage")
         .expect("extra usage bucket");
     assert_eq!(extra.status_slot, Some(StatusSlot::Spend));
-    assert_eq!(extra.remaining_percent, Some(70));
+    assert_eq!(extra.remaining_percent, None);
+    assert_eq!(used_points(extra), Some(30.0));
     assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49 spent"));
     assert_eq!(extra.limit_label.as_deref(), Some("SGD 260.00"));
     assert_eq!(extra.pace_label.as_deref(), Some("30% used"));
@@ -160,12 +174,42 @@ fn claude_spend_object_preferred_and_scaled() {
     assert_eq!(spend.used_label.as_deref(), Some("$53.31 spent"));
     assert_eq!(spend.limit_label.as_deref(), Some("$300.00"));
     assert_eq!(spend.pace_label.as_deref(), Some("18% used"));
-    assert_eq!(spend.remaining_percent, Some(82));
+    assert_eq!(spend.remaining_percent, None);
+    assert_eq!(used_points(spend), Some(18.0));
     assert_eq!(spend.severity, UsageSeverity::Normal);
 
     assert_eq!(
         spend_headline_label(&buckets).as_deref(),
         Some("$53 of 300")
+    );
+}
+
+#[test]
+fn claude_spend_preserves_fractional_reported_percent() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "spend": {
+            "used": { "amount_minor": 1_234, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 10_000, "currency": "USD", "exponent": 2 },
+            "percent": 37.125,
+            "enabled": true
+        }
+    }))
+    .expect("valid fractional Claude spend");
+
+    let spend = usage
+        .into_buckets(1_781_185_560)
+        .into_iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Spend))
+        .expect("spend bucket");
+    assert_eq!(used_points(&spend), Some(37.125));
+    assert_eq!(
+        spend.used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
+    assert_eq!(spend.pace_label.as_deref(), Some("37.13% used"));
+    assert_eq!(
+        spend.used_money.as_ref().map(|money| money.amount_minor),
+        Some(1_234)
     );
 }
 
@@ -200,7 +244,8 @@ fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
         .find(|b| b.status_slot == Some(StatusSlot::Session))
         .expect("session bucket from limits");
     assert_eq!(session.label, "Session");
-    assert_eq!(session.remaining_percent, Some(93));
+    assert_eq!(session.remaining_percent, None);
+    assert_eq!(used_points(session), Some(7.0));
     assert_eq!(session.used_label.as_deref(), Some("7% used"));
 
     let all_models = buckets
@@ -208,13 +253,15 @@ fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
         .find(|b| b.status_slot == Some(StatusSlot::Weekly))
         .expect("weekly slot from limits");
     assert_eq!(all_models.label, "All models");
-    assert_eq!(all_models.remaining_percent, Some(72));
+    assert_eq!(all_models.remaining_percent, None);
+    assert_eq!(used_points(all_models), Some(28.0));
 
     let fable = buckets
         .iter()
         .find(|b| b.label == "Fable")
         .expect("Fable model-scoped bucket");
-    assert_eq!(fable.remaining_percent, Some(65));
+    assert_eq!(fable.remaining_percent, None);
+    assert_eq!(used_points(fable), Some(35.0));
     assert_eq!(fable.used_label.as_deref(), Some("35% used"));
     assert_eq!(fable.status_slot, None);
     assert_eq!(fable.severity, UsageSeverity::Warn);
@@ -270,12 +317,14 @@ fn claude_oauth_limits_array_backfills_missing_legacy_windows() {
         .find(|b| b.status_slot == Some(StatusSlot::Weekly))
         .expect("legacy Weekly backfill");
     assert_eq!(weekly.label, "Weekly");
-    assert_eq!(weekly.remaining_percent, Some(56));
+    assert_eq!(weekly.remaining_percent, None);
+    assert_eq!(used_points(weekly), Some(44.0));
     let sonnet = buckets
         .iter()
         .find(|b| b.label == "Sonnet")
         .expect("legacy Sonnet backfill");
-    assert_eq!(sonnet.remaining_percent, Some(45));
+    assert_eq!(sonnet.remaining_percent, None);
+    assert_eq!(used_points(sonnet), Some(55.0));
 }
 
 #[test]
@@ -296,14 +345,90 @@ fn claude_oauth_limits_percent_accepts_string_float_and_over_cap() {
         .iter()
         .find(|b| b.status_slot == Some(StatusSlot::Session))
         .expect("session bucket");
-    assert_eq!(session.used_label.as_deref(), Some("35% used"));
-    assert_eq!(session.remaining_percent, Some(65));
+    assert_eq!(session.used_label.as_deref(), Some("35.4% used"));
+    assert_eq!(session.remaining_percent, None);
+    assert_eq!(used_points(session), Some(35.4));
     let fable = buckets
         .iter()
         .find(|b| b.label == "Fable")
         .expect("Fable bucket");
     assert_eq!(fable.used_label.as_deref(), Some("150% used"));
-    assert_eq!(fable.remaining_percent, Some(0));
+    assert_eq!(fable.remaining_percent, None);
+    assert_eq!(used_points(fable), Some(150.0));
+}
+
+#[test]
+fn claude_explicit_limit_percent_is_always_percentage_points() {
+    let values = [0.0, 0.375, 1.0, 12.34, 43.375, 150.0];
+    let limits = values
+        .iter()
+        .map(|percent| {
+            serde_json::json!({
+                "kind": "session",
+                "percent": percent,
+                "severity": "normal"
+            })
+        })
+        .collect::<Vec<_>>();
+    let usage: ClaudeOAuthUsageResponse =
+        serde_json::from_value(serde_json::json!({ "limits": limits }))
+            .expect("explicit Claude percentages");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+    assert_eq!(buckets.len(), values.len());
+    for (bucket, expected) in buckets.iter().zip(values) {
+        assert_eq!(used_points(bucket), Some(expected));
+        assert_eq!(
+            bucket.used_percent_origin,
+            Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+        );
+    }
+    assert_eq!(buckets[1].used_label.as_deref(), Some("0.38% used"));
+    assert_eq!(buckets[2].used_label.as_deref(), Some("1% used"));
+    assert_eq!(buckets[3].used_label.as_deref(), Some("12.34% used"));
+}
+
+#[test]
+fn claude_extra_usage_fractional_percent_is_points_and_missing_percent_is_not_inferred() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "extra_usage": {
+            "is_enabled": true,
+            "monthly_limit": 30000.0,
+            "used_credits": 5331.0,
+            "utilization": 0.375,
+            "currency": "USD",
+            "decimal_places": 2
+        }
+    }))
+    .expect("fractional extra-usage percentage");
+    let bucket = usage
+        .into_buckets(1_781_300_000)
+        .into_iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Spend))
+        .expect("extra-usage bucket");
+    assert_eq!(used_points(&bucket), Some(0.375));
+    assert_eq!(
+        bucket.used_percent_origin,
+        Some(jackin_protocol::control::PercentObservationOrigin::ProviderReported)
+    );
+
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "extra_usage": {
+            "is_enabled": true,
+            "monthly_limit": 30000.0,
+            "used_credits": 5331.0,
+            "currency": "USD",
+            "decimal_places": 2
+        }
+    }))
+    .expect("extra-usage amounts without a percent");
+    let bucket = usage
+        .into_buckets(1_781_300_000)
+        .into_iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Spend))
+        .expect("extra-usage bucket");
+    assert_eq!(bucket.used_percent, None);
+    assert_eq!(bucket.used_percent_origin, None);
 }
 
 #[test]
@@ -335,7 +460,9 @@ fn claude_legacy_and_limits_sources_share_one_builder() {
         .expect("limits Fable bucket");
 
     assert_eq!(sonnet.used_label, fable.used_label);
-    assert_eq!(sonnet.remaining_percent, fable.remaining_percent);
+    assert_eq!(sonnet.remaining_percent, None);
+    assert_eq!(fable.remaining_percent, None);
+    assert_eq!(used_points(&sonnet), used_points(&fable));
     assert_eq!(sonnet.reset_label, fable.reset_label);
     assert_eq!(sonnet.resets_at, fable.resets_at);
     assert_eq!(sonnet.pace_label, fable.pace_label);

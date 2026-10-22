@@ -4,10 +4,14 @@
 use super::{UsageScreenState, summary_category_rank};
 use std::time::Duration;
 
+use jackin_protocol::control::{
+    CountQuota, MeterPercentPoints, PercentObservationOrigin, ProviderQuotaState, RawPercentPoints,
+    UsageMeterSide,
+};
 use jackin_protocol::usage_broker::{
     UsageFreshnessPhaseV1, UsageIdentityKindV1, UsageIssueV1, UsageLifecycleV1,
-    UsageMetricGroupKindV1, UsageMetricScopeV1, UsageMetricValueV1, UsagePercent,
-    UsageQuotaStateV1, UsageWindowCategoryV1,
+    UsageMetricGroupKindV1, UsageMetricScopeV1, UsageMetricValueV1, UsageQuotaStateV1,
+    UsageWindowCategoryV1,
 };
 
 pub const USAGE_HEARTBEAT_INTERVAL: Duration = Duration::from_mins(2);
@@ -99,10 +103,15 @@ pub struct UsageWindow {
     pub label: String,
     pub value: String,
     pub reset: String,
-    pub remaining_percent: Option<u8>,
-    pub remaining_raw_percent: Option<i32>,
-    pub used_percent: Option<u8>,
-    pub used_raw_percent: Option<i32>,
+    pub remaining_percent: Option<RawPercentPoints>,
+    pub remaining_percent_origin: Option<PercentObservationOrigin>,
+    pub used_percent: Option<RawPercentPoints>,
+    pub used_percent_origin: Option<PercentObservationOrigin>,
+    pub meter_percent: Option<MeterPercentPoints>,
+    pub meter_side: Option<UsageMeterSide>,
+    pub count_quota: Option<CountQuota>,
+    pub provider_quota_state: Option<ProviderQuotaState>,
+    pub money_used_percent: Option<RawPercentPoints>,
     pub reset_at_epoch: Option<i64>,
     pub quota_state: UsageQuotaStateV1,
     pub pace_label: Option<String>,
@@ -110,11 +119,24 @@ pub struct UsageWindow {
 
 impl UsageWindow {
     #[must_use]
-    pub fn meter_percent(&self) -> Option<u8> {
-        self.remaining_percent.or_else(|| {
-            self.used_percent
-                .map(|used| 100_u8.saturating_sub(used.min(100)))
-        })
+    pub fn meter_percent(&self) -> Option<MeterPercentPoints> {
+        self.meter_percent
+    }
+
+    pub fn meter_geometry(&self) -> Option<(MeterPercentPoints, UsageMeterSide)> {
+        Some((self.meter_percent?, self.meter_side?))
+    }
+
+    fn remaining_for_sort(&self) -> Option<f64> {
+        jackin_usage_provider_core::quota_source_remaining_rank_points(
+            self.count_quota,
+            self.used_percent,
+            self.used_percent_origin,
+            self.remaining_percent,
+            self.remaining_percent_origin,
+            self.money_used_percent,
+            self.provider_quota_state,
+        )
     }
 }
 
@@ -139,16 +161,48 @@ pub struct UsageMetricGroup {
 
 impl UsageMetricGroup {
     #[must_use]
-    pub fn meter_percent(&self) -> Option<u8> {
+    pub fn meter_percent(&self) -> Option<MeterPercentPoints> {
+        if let UsageMetricValueV1::Window { meter_percent, .. } = &self.value {
+            *meter_percent
+        } else {
+            None
+        }
+    }
+
+    pub fn meter_geometry(&self) -> Option<(MeterPercentPoints, UsageMeterSide)> {
         if let UsageMetricValueV1::Window {
-            remaining_percent,
-            used_percent,
+            meter_percent,
+            meter_side,
             ..
         } = &self.value
         {
-            remaining_percent
-                .map(UsagePercent::get)
-                .or_else(|| used_percent.map(|used| 100_u8.saturating_sub(used.get().min(100))))
+            Some(((*meter_percent)?, (*meter_side)?))
+        } else {
+            None
+        }
+    }
+
+    fn remaining_for_sort(&self) -> Option<f64> {
+        if let UsageMetricValueV1::Window {
+            remaining_percent,
+            remaining_percent_origin,
+            used_percent,
+            used_percent_origin,
+            count_quota,
+            money_used_percent,
+            provider_quota_state,
+            ..
+        } = &self.value
+        {
+            jackin_usage_provider_core::quota_source_remaining_rank_points(
+                *count_quota,
+                *used_percent,
+                *used_percent_origin,
+                *remaining_percent,
+                *remaining_percent_origin,
+                *money_used_percent,
+                *provider_quota_state,
+            )
         } else {
             None
         }
@@ -195,16 +249,16 @@ impl UsageAccount {
     }
 
     #[must_use]
-    pub fn min_remaining(&self) -> Option<u8> {
+    pub fn min_remaining(&self) -> Option<f64> {
         self.windows
             .iter()
-            .filter_map(UsageWindow::meter_percent)
+            .filter_map(UsageWindow::remaining_for_sort)
             .chain(
                 self.metric_groups
                     .iter()
-                    .filter_map(UsageMetricGroup::meter_percent),
+                    .filter_map(UsageMetricGroup::remaining_for_sort),
             )
-            .min()
+            .min_by(f64::total_cmp)
     }
 
     #[must_use]
@@ -212,8 +266,15 @@ impl UsageAccount {
         self.windows
             .iter()
             .filter(|window| {
-                window.meter_percent().is_some()
+                window.meter_geometry().is_some()
                     || window.quota_state == UsageQuotaStateV1::NotApplicable
+                    || window.provider_quota_state.is_some()
+                    || window.used_percent.is_some()
+                    || window.remaining_percent.is_some()
+                    || window.money_used_percent.is_some()
+                    || window.count_quota.is_some_and(|count| {
+                        count.used.is_some() || count.limit.is_some() || count.remaining.is_some()
+                    })
             })
             .min_by_key(|window| (summary_category_rank(window.category), window.rank))
     }

@@ -5,7 +5,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use jackin_protocol::control::FocusedUsageView;
+use jackin_protocol::control::{
+    CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, FocusedUsageView,
+    MeterPercentPoints, PercentObservationOrigin, ProviderQuotaState, UsageMeterSide,
+};
 use serde::{Deserialize, Serialize};
 
 use jackin_usage_provider_core::atomic_write_usage_json;
@@ -26,7 +29,15 @@ pub struct HostAccountDescriptor {
     pub provenance: Vec<String>,
     pub provenance_label: String,
     pub plan_or_status_label: String,
-    pub remaining_percent: Option<u8>,
+    pub used_percent: Option<CanonicalUsedPercent>,
+    pub used_percent_origin: Option<PercentObservationOrigin>,
+    pub remaining_percent: Option<CanonicalRemainingPercent>,
+    pub remaining_percent_origin: Option<PercentObservationOrigin>,
+    pub count_quota: Option<CountQuota>,
+    pub provider_quota_state: Option<ProviderQuotaState>,
+    pub resets_at: Option<i64>,
+    pub meter_percent: Option<MeterPercentPoints>,
+    pub meter_side: Option<UsageMeterSide>,
     pub remaining_label: String,
     pub headline: String,
     pub reset_label: Option<String>,
