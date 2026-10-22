@@ -36,7 +36,7 @@ async fn renamed_branch_pushed_clean_is_safe_to_delete() {
 }
 
 #[tokio::test]
-async fn pruned_gone_branch_is_treated_as_merged_and_cleaned() {
+async fn pruned_gone_branch_with_remote_reachability_is_cleaned() {
     let dir = TempDir::new().unwrap();
     let r = rec(dir.path());
     std::fs::create_dir_all(&r.original_src).unwrap();
@@ -47,7 +47,12 @@ async fn pruned_gone_branch_is_treated_as_merged_and_cleaned() {
     ]
     .join("\n")
         + "\n";
-    let mut runner = fake_with_outputs(&["", &branches, "refs/heads/jackin/scratch/x"]);
+    let mut runner = fake_with_outputs(&[
+        "",
+        &branches,
+        "refs/remotes/origin/retained\n",
+        "refs/heads/jackin/scratch/x",
+    ]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -66,9 +71,56 @@ async fn pruned_gone_branch_is_treated_as_merged_and_cleaned() {
     assert_eq!(dec, FinalizeDecision::Cleaned);
     assert!(read_records(dir.path()).unwrap().is_empty());
     assert!(
-        !runner.recorded.iter().any(|c| c.contains("rev-list")),
-        "gone branch must not issue reachability queries; recorded={:?}",
-        runner.recorded,
+        runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("--contains=newhead"))
+    );
+}
+
+#[tokio::test]
+async fn pruned_gone_branch_without_remote_reachability_preserves_unheld_work() {
+    let dir = TempDir::new().unwrap();
+    let r = rec(dir.path());
+    std::fs::create_dir_all(&r.original_src).unwrap();
+    write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+    let branches = [
+        ferow("jackin/scratch/x", "abc", "", ""),
+        ferow("feature/x", "newhead", "origin/feature/x", "[gone]"),
+    ]
+    .join("\n")
+        + "\n";
+    let mut runner = fake_with_outputs(&["", &branches, ""]);
+    let mut p = NoPrompt;
+    let docker = jackin_test_support::FakeDockerClient::default();
+    let dec = finalize_foreground_session(FinalizeContext {
+        container_name: "jackin-x",
+        container_state_dir: dir.path(),
+        outcome: AttachOutcome::stopped(0),
+        is_interactive: false,
+        dirty_exit_policy: DirtyExitPolicy::Ask,
+        prompt: &mut p,
+        docker: &docker,
+        runner: &mut runner,
+        container: ContainerHandle::new("jackin-x", "test-finalizer-id").unwrap(),
+    })
+    .await
+    .unwrap();
+    assert_eq!(dec, FinalizeDecision::Preserved);
+    let recs = read_records(dir.path()).unwrap();
+    assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    assert!(Path::new(&r.worktree_path).exists());
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("--contains=newhead"))
+    );
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("worktree remove"))
     );
 }
 
@@ -151,7 +203,13 @@ async fn multiple_branches_all_safe_deletes_record() {
     ]
     .join("\n")
         + "\n";
-    let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/b"]);
+    let mut runner = fake_with_outputs(&[
+        "",
+        &branches,
+        "refs/remotes/origin/retained\n",
+        "",
+        "refs/heads/feature/b",
+    ]);
     let mut p = NoPrompt;
     let docker = jackin_test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(FinalizeContext {
@@ -176,9 +234,16 @@ async fn multiple_branches_all_safe_deletes_record() {
         .count();
     assert_eq!(
         revlist_calls, 1,
-        "only the live-upstream branch issues a reachability query; \
-         the [gone] branch is accepted as merged-and-pruned without one. recorded={:?}",
+        "only the live-upstream branch uses rev-list; the [gone] branch uses remote-ref reachability. recorded={:?}",
         runner.recorded,
+    );
+    assert_eq!(
+        runner
+            .recorded
+            .iter()
+            .filter(|c| c.contains("--contains=aaaa"))
+            .count(),
+        1,
     );
 }
 

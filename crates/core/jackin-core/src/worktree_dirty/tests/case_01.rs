@@ -71,7 +71,7 @@ fn branch_fully_pushed_is_clean() {
 }
 
 #[test]
-fn upstream_gone_is_treated_as_merged_clean() {
+fn upstream_gone_without_remote_reachability_is_unpushed() {
     let mut mock = MockGit {
         porcelain: String::new(),
         for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t[gone]"
@@ -79,7 +79,70 @@ fn upstream_gone_is_treated_as_merged_clean() {
         symbolic_ref_ok: true,
         ..MockGit::default()
     };
+    assert_eq!(assess(&mut mock), WorktreeState::Unpushed);
+    assert_eq!(mock.remote_contains_calls, 1);
+}
+
+#[test]
+fn upstream_gone_with_remote_reachability_is_clean() {
+    let mut mock = MockGit {
+        porcelain: String::new(),
+        for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t[gone]"
+            .to_owned(),
+        remote_refs_containing_tip: vec!["refs/remotes/origin/retained\n".to_owned()].into(),
+        symbolic_ref_ok: true,
+        ..MockGit::default()
+    };
     assert_eq!(assess(&mut mock), WorktreeState::Clean);
+    assert_eq!(mock.remote_contains_calls, 1);
+}
+
+#[test]
+fn upstream_gone_remote_reachability_failure_is_unpushed() {
+    let mut mock = MockGit {
+        porcelain: String::new(),
+        for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t[gone]"
+            .to_owned(),
+        fail_remote_contains: true,
+        symbolic_ref_ok: true,
+        ..MockGit::default()
+    };
+    assert_eq!(assess(&mut mock), WorktreeState::Unpushed);
+    assert_eq!(mock.remote_contains_calls, 1);
+}
+
+#[test]
+fn upstream_gone_malformed_remote_reachability_output_is_unpushed() {
+    let mut mock = MockGit {
+        porcelain: String::new(),
+        for_each_ref: "feature\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature\t[gone]"
+            .to_owned(),
+        remote_refs_containing_tip: vec!["refs/heads/feature\n".to_owned()].into(),
+        symbolic_ref_ok: true,
+        ..MockGit::default()
+    };
+    assert_eq!(assess(&mut mock), WorktreeState::Unpushed);
+}
+
+#[test]
+fn every_gone_branch_needs_remote_reachability() {
+    let mut mock = MockGit {
+        porcelain: String::new(),
+        for_each_ref: [
+            "feature/a\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\torigin/feature/a\t[gone]",
+            "feature/b\tcccccccccccccccccccccccccccccccccccccccc\torigin/feature/b\t[gone]",
+        ]
+        .join("\n"),
+        remote_refs_containing_tip: vec![
+            "refs/remotes/origin/retained\n".to_owned(),
+            String::new(),
+        ]
+        .into(),
+        symbolic_ref_ok: true,
+        ..MockGit::default()
+    };
+    assert_eq!(assess(&mut mock), WorktreeState::Unpushed);
+    assert_eq!(mock.remote_contains_calls, 2);
 }
 
 #[test]
