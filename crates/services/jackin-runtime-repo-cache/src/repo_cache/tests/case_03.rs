@@ -45,7 +45,9 @@ fn fetch_head_age_at_is_deterministic() {
     std::fs::write(&fetch_head, "deadbeef\n").unwrap();
     let modified = std::fs::metadata(&fetch_head).unwrap().modified().unwrap();
     let clock = Arc::new(ManualClock::with_system_base(modified));
-    clock.advance(Duration::from_mins(2));
+    clock
+        .advance(Duration::from_mins(2))
+        .expect("repository cache age advance is representable");
     let age = fetch_head_age_at(dir.path(), clock.now_system()).expect("age");
     assert_eq!(age, Duration::from_mins(2));
     let options = RepoResolveOptions::interactive(false).with_clock(clock);

@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
 pub trait Clock: Send + Sync + std::fmt::Debug {
@@ -20,33 +20,68 @@ impl Clock for SystemClock {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManualClockAdvanceError {
+    Overflow,
+}
+
+impl std::fmt::Display for ManualClockAdvanceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Overflow => f.write_str("manual clock advance exceeds representable time"),
+        }
+    }
+}
+
+impl std::error::Error for ManualClockAdvanceError {}
+
+#[derive(Debug, Clone, Copy)]
+struct ClockState {
+    monotonic: Instant,
+    system: SystemTime,
+}
+
 #[derive(Debug)]
 pub struct ManualClock {
-    base: Instant,
-    system_base: SystemTime,
-    offset_ns: AtomicU64,
+    state: Mutex<ClockState>,
 }
 
 impl ManualClock {
     pub fn new() -> Self {
         Self {
-            base: Instant::now(),
-            system_base: SystemTime::now(),
-            offset_ns: AtomicU64::new(0),
+            state: Mutex::new(ClockState {
+                monotonic: Instant::now(),
+                system: SystemTime::now(),
+            }),
         }
     }
 
     pub fn with_system_base(system_base: SystemTime) -> Self {
         Self {
-            base: Instant::now(),
-            system_base,
-            offset_ns: AtomicU64::new(0),
+            state: Mutex::new(ClockState {
+                monotonic: Instant::now(),
+                system: system_base,
+            }),
         }
     }
 
-    pub fn advance(&self, by: Duration) {
-        let add = u64::try_from(by.as_nanos()).unwrap_or(u64::MAX);
-        self.offset_ns.fetch_add(add, Ordering::Relaxed);
+    fn lock_state(&self) -> MutexGuard<'_, ClockState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub fn advance(&self, by: Duration) -> Result<(), ManualClockAdvanceError> {
+        let mut state = self.lock_state();
+        let monotonic = state
+            .monotonic
+            .checked_add(by)
+            .ok_or(ManualClockAdvanceError::Overflow)?;
+        let system = state
+            .system
+            .checked_add(by)
+            .ok_or(ManualClockAdvanceError::Overflow)?;
+
+        *state = ClockState { monotonic, system };
+        Ok(())
     }
 }
 
@@ -58,13 +93,11 @@ impl Default for ManualClock {
 
 impl Clock for ManualClock {
     fn now(&self) -> Instant {
-        let offset = self.offset_ns.load(Ordering::Relaxed);
-        self.base + Duration::from_nanos(offset)
+        self.lock_state().monotonic
     }
 
     fn now_system(&self) -> SystemTime {
-        let offset = self.offset_ns.load(Ordering::Relaxed);
-        self.system_base + Duration::from_nanos(offset)
+        self.lock_state().system
     }
 }
 
