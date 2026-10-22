@@ -273,5 +273,7 @@ crates/services/jackin-diagnostics/src/secret_scrub/tests.rs:generic-api-key:39
 crates/services/jackin-diagnostics/src/secret_scrub/tests.rs:generic-api-key:9
 # Reason: test JWT whose payload is {"sub":"auth0|user_123"} and whose signature segment is base64("signature")
 crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:8
+# Reason: same previously approved JWT fixture; quota helper shifted the unchanged test to line 14
+crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:14
 # Reason: prose in Markdown documentation matched by a keyword rule, no literal credential
 crates/services/jackin-usage-provider-kimi/README.md:generic-api-key:3

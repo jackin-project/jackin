@@ -420,7 +420,7 @@ EOF
     grep -Fx "$(printf 'global\tdisabled\thk-pre-commit')" "$fake_bin/effective-hooks"
     grep -Fx "$(printf 'global\tother-project')" "$fake_bin/effective-hooks"
     grep -Fx "$(printf 'local\tjackin-pre-commit')" "$fake_bin/effective-hooks"
-    test "$(git -C "$install_fixture" config --local --get hook.jackin-pre-push.command)" = 'mise exec -- hk run pre-push'
+    test "$(git -C "$install_fixture" config --local --get hook.jackin-pre-push.command)" = 'sh scripts/pre-push-security'
     test "$(git -C "$install_fixture" config --local --get hook.jackin-pre-push.enabled)" = true
     git -C "$install_fixture" hook list --show-scope pre-push > "$fake_bin/effective-push-hooks"
     grep -Fx "$(printf 'local\tjackin-pre-push')" "$fake_bin/effective-push-hooks"
@@ -461,4 +461,6 @@ EOF
     cmp "$install_fixture/.git/config" "$fake_bin/local-supported"
     cmp "$GIT_CONFIG_GLOBAL" "$fake_bin/global-reinstalled"
 )
+sh "$repo_root/scripts/test-pre-push-security"
+python3 "$repo_root/scripts/test-security-audit"
 printf '%s\n' 'pre-commit isolated staged-tree fixture passed'
