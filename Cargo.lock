@@ -3026,6 +3026,7 @@ name = "jackin-image"
 version = "0.6.4"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "filetime",
  "flate2",
  "hex",
@@ -8731,8 +8732,8 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.38"
-source = "git+https://github.com/tailrocks/velnor-new?rev=f14043d24601a3d1787997376b7f0adcde61f139#f14043d24601a3d1787997376b7f0adcde61f139"
+version = "0.1.40"
+source = "git+https://github.com/tailrocks/velnor-new?rev=3118a34c13481a4a303af7ad51464a614d42962b#3118a34c13481a4a303af7ad51464a614d42962b"
 dependencies = [
  "blake3",
  "serde",

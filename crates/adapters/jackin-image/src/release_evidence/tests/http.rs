@@ -44,6 +44,11 @@ async fn mocked_http_authenticates_receipt_before_payload_download() {
     assert!(
         requests[0].ends_with("/release.json") && requests[1].ends_with("/release.json.bundle")
     );
+    let immutable = format!(
+        "/releases/download/preview-{}/",
+        receipt().source.commit_sha
+    );
+    assert!(requests.iter().all(|url| url.contains(&immutable)));
 }
 
 #[tokio::test]

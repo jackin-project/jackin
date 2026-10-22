@@ -7,6 +7,8 @@ default_branch = "main"
 generator_validation = "bootstrap"
 max_parallel_jobs = 4
 crate_timeout_minutes = 10
+# Dependency seed lanes have their own budget (velnor-actions 0.1.40); main CI seeds took 9.6-14.2 minutes.
+dependency_seed_timeout_minutes = 30
 mise_quiet = false
 pull_request_cache_policy = "read-only"
 runner_label = "ubuntu-26.04"
@@ -51,8 +53,6 @@ version_env = "JACKIN_VERSION_OVERRIDE"
 enabled = true
 versioning = "package-preview-commit-count-sha7"
 environment = "preview-publish"
-release_id = 328385904
-bootstrap_snapshot_sha256 = "a1fe28234278856de73506fcc90a897c1b6f079f7cf975e754fb7b85b81c90dd"
 
 [stacks.rust.binary_release.stable]
 enabled = true

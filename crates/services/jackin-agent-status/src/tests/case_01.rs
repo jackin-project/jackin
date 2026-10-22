@@ -106,6 +106,17 @@ fn osc_status_decoder_handles_optional_codes_and_payload_boundary() {
             }),
         ]
     );
+    let mut zero_bel_decoder = OscStatusDecoder::default();
+    assert_eq!(
+        zero_bel_decoder.feed(b"\x1b]133;D;0\x07"),
+        vec![Shell(CommandFinished { exit_code: Some(0) })]
+    );
+    let mut zero_st_decoder = OscStatusDecoder::default();
+    assert!(zero_st_decoder.feed(b"\x1b]133;D;0\x1b").is_empty());
+    assert_eq!(
+        zero_st_decoder.feed(b"\\"),
+        vec![Shell(CommandFinished { exit_code: Some(0) })]
+    );
     for payload_len in [64, 65] {
         let mut wire = b"\x1b]133;C;".to_vec();
         wire.extend(vec![b'x'; payload_len - 6]);

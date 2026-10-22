@@ -18,7 +18,7 @@ pub(super) fn assert_inventory(workflow: &Value, needs: &BTreeSet<String>) -> Re
             && seed["env"].get("VELNOR_INTERNAL_OP").is_none()
             && seed["env"].get("VELNOR_TASK_EXECUTION_DIGEST").is_none()
             && seed["if"] == SEED_CONDITION
-            && seed["timeout-minutes"] == 10
+            && seed["timeout-minutes"] == 30
             && job_needs(seed)? == BTreeSet::from(["plan".to_owned()])
             && seed.get("outputs").is_none()
             && seed.get("permissions").is_none()

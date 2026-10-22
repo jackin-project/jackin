@@ -14,19 +14,34 @@ fn capsule_resolution_future_stays_within_launch_stack_budget() {
     );
 }
 
+const PREVIEW_SOURCE: &str = "bf7df07111111111111111111111111111111111";
+
 #[test]
-fn preview_url_uses_fixed_rolling_tag_and_canonical_target() {
+fn preview_url_uses_the_immutable_source_tag_and_canonical_target() {
     let version = "0.6.0-preview.411+bf7df07";
     for (arch, target) in [
         ("amd64", "x86_64-unknown-linux-gnu"),
         ("arm64", "aarch64-unknown-linux-gnu"),
     ] {
         assert_eq!(
-            download_url(version, arch, ReleaseChannel::Preview).unwrap(),
+            download_url(version, arch, ReleaseChannel::Preview, PREVIEW_SOURCE).unwrap(),
             format!(
-                "https://github.com/jackin-project/jackin/releases/download/preview/jackin-capsule-{target}.tar.gz"
+                "https://github.com/jackin-project/jackin/releases/download/preview-{PREVIEW_SOURCE}/jackin-capsule-{target}.tar.gz"
             )
         );
+    }
+}
+
+#[test]
+fn preview_url_rejects_sources_its_version_does_not_abbreviate() {
+    let version = "0.6.0-preview.411+bf7df07";
+    for source in [
+        "f".repeat(40),
+        "bf7df07".to_owned(),
+        PREVIEW_SOURCE.to_uppercase(),
+        format!("{PREVIEW_SOURCE}0"),
+    ] {
+        download_url(version, "amd64", ReleaseChannel::Preview, &source).unwrap_err();
     }
 }
 
@@ -118,9 +133,10 @@ fn cleanup_and_failure_messages_name_actionable_local_recovery() {
     let version = "0.6.0-preview.411+bf7df07";
     let message = download_failure_message(
         version,
-        &download_url(version, "amd64", ReleaseChannel::Preview).unwrap(),
+        PREVIEW_SOURCE,
+        &download_url(version, "amd64", ReleaseChannel::Preview, PREVIEW_SOURCE).unwrap(),
     );
-    assert!(message.contains("releases/tag/preview"));
+    assert!(message.contains(&format!("releases/tag/preview-{PREVIEW_SOURCE}")));
     assert!(message.contains("JACKIN_CAPSULE_BIN"));
 }
 
@@ -175,12 +191,18 @@ fn archive_rejects_noncanonical_members_and_requires_one_executable() {
 #[test]
 fn stable_helpers_use_permanent_tags_and_reject_mixed_channel_arguments() {
     assert_eq!(
-        download_url("0.6.4", "amd64", ReleaseChannel::Stable).unwrap(),
+        download_url("0.6.4", "amd64", ReleaseChannel::Stable, PREVIEW_SOURCE).unwrap(),
         "https://github.com/jackin-project/jackin/releases/download/v0.6.4/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"
     );
-    download_url("0.6.4", "arm64", ReleaseChannel::Preview).unwrap_err();
-    download_url("0.6.4-preview.1+abcdef0", "arm64", ReleaseChannel::Stable).unwrap_err();
-    download_url("dev", "arm64", ReleaseChannel::LocalOnly).unwrap_err();
+    download_url("0.6.4", "arm64", ReleaseChannel::Preview, PREVIEW_SOURCE).unwrap_err();
+    download_url(
+        "0.6.4-preview.1+abcdef0",
+        "arm64",
+        ReleaseChannel::Stable,
+        PREVIEW_SOURCE,
+    )
+    .unwrap_err();
+    download_url("dev", "arm64", ReleaseChannel::LocalOnly, PREVIEW_SOURCE).unwrap_err();
 }
 
 #[test]

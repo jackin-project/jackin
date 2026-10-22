@@ -187,7 +187,7 @@ fn validate_source_dependency(statement: &Value, receipt: &PackageReleaseReceipt
             .any(
                 |dependency| value(dependency, "/uri").is_ok_and(|uri| uri == source_uri)
                     && value(dependency, "/digest/gitCommit")
-                        .is_ok_and(|sha| sha == receipt.source.commit_sha)
+                        .is_ok_and(|sha| sha == receipt.workflow.authority_sha)
             ),
         "provenance source commit mismatch"
     );
