@@ -32,4 +32,13 @@ hooks {
     stage = false
     fail_on_fix = true
   }
+  // Owner security-audit hook (full history, all findings redacted). The kingfisher baseline holds reviewed
+  // placeholder/test-fixture findings with written reasons; betterleaks and gitleaks read .betterleaksignore / .gitleaksignore.
+  ["security-audit"] {
+    steps {
+      ["kingfisher-history"] { check = "kingfisher scan . --git-history full --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml" }
+      ["betterleaks-history"] { check = "betterleaks git . --redact" }
+      ["gitleaks-history"] { check = "gitleaks git . --redact --no-banner" }
+    }
+  }
 }
