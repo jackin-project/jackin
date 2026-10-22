@@ -37,7 +37,7 @@ shellcheck = "0.11.0"
 jactionlint = "2.3.0"
 rumdl = "0.3.0"
 node = "26.12.1"
-python = "3.15.0"
+python = "3.15.1"
 periphery = { version = "3.8.0", os = ["macos"] }
 swiftlint = { version = "0.65.1", os = ["macos"] }
 xcodegen = { version = "2.46.0", os = ["macos"] }
