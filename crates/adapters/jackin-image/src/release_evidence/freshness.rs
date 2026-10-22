@@ -260,10 +260,17 @@ async fn observe(
         "release identity or draft state mismatch"
     );
     match receipt.channel {
-        PackageReleaseChannel::Preview => ensure!(
-            release.prerelease == Some(true) && release.immutable == Some(true),
-            "preview release must be permanent and immutable"
-        ),
+        PackageReleaseChannel::Preview => {
+            ensure!(
+                release.prerelease == Some(true) && release.immutable == Some(true),
+                "preview release must be permanent and immutable"
+            );
+            let expected_body = recovery_envelope(raw, bundle)?;
+            ensure!(
+                release.body.as_deref() == Some(expected_body.as_str()),
+                "preview release body recovery envelope mismatch"
+            );
+        }
         PackageReleaseChannel::Stable => ensure!(
             release.prerelease == Some(false) && release.immutable == Some(true),
             "stable release must be permanent and immutable"

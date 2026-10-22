@@ -5,8 +5,8 @@ title: "Verifying Releases"
 Jackin's native Velnor release policy defines two channels. A preview is bound
 to one exact `main` source commit and uses the immutable tag
 `preview-<full-source-sha>`. Its Homebrew version remains
-`<package-version>-preview.<main-commit-count>+<source-sha7>`. The annotated tag
-is bound to the signed receipt envelope. Preview releases and their assets are
+`<package-version>-preview.<main-commit-count>+<source-sha7>`. The annotated tag message and release body
+must both equal the canonical envelope of the signed receipt and detached bundle. Preview releases and their assets are
 immutable; retries must verify the same receipt and bytes and cannot move a tag
 or replace an asset. Stable publication starts only through manual workflow
 dispatch and keeps its permanent `v<version>` tag and release. Stable release

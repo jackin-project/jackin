@@ -220,6 +220,26 @@ async fn preview_requires_exact_signed_receipt_recovery_envelope_in_annotated_ta
 }
 
 #[tokio::test]
+async fn preview_requires_exact_signed_receipt_recovery_envelope_in_release_body() {
+    for mutation in 0..4 {
+        let fixture = Fixture::new(PackageReleaseChannel::Preview);
+        let body = match mutation {
+            0 => Value::Null,
+            1 => json!("unrelated release notes"),
+            2 => json!(recovery_envelope(b"different receipt", &fixture.bundle).unwrap()),
+            _ => json!(recovery_envelope(&fixture.raw, b"different signature bundle").unwrap()),
+        };
+        fixture.change(&release_route(&fixture.receipt), |release| {
+            release["body"] = body;
+        });
+        assert!(
+            fixture.pin().await.is_err(),
+            "preview release body mutation {mutation} must fail closed"
+        );
+    }
+}
+
+#[tokio::test]
 async fn retained_publication_rechecks_receipt_bundle_and_inventory() {
     for mutation in 0..4 {
         let mut fixture = Fixture::new(PackageReleaseChannel::Preview);

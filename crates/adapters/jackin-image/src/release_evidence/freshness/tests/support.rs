@@ -32,7 +32,7 @@ impl Fixture {
             "private":false,"default_branch":"main","owner":{"id":273541039}}),
         );
         workflow_observations(&receipt, &mut responses);
-        publication_observations(&receipt, &expected, &raw, &mut responses);
+        publication_observations(&receipt, &expected, &raw, &bundle, &mut responses);
         Self {
             receipt,
             raw,
@@ -126,6 +126,7 @@ fn publication_observations(
     receipt: &PackageReleaseReceipt,
     expected: &BTreeMap<String, (u64, String)>,
     raw: &[u8],
+    bundle: &[u8],
     responses: &mut BTreeMap<String, Value>,
 ) {
     let channel = receipt.channel;
@@ -136,7 +137,8 @@ fn publication_observations(
     };
     let rows: Vec<_> = expected.iter().enumerate().map(|(i,(name,(size,sha)))|
         json!({"id":i+1,"name":name,"state":"uploaded","size":size,"digest":format!("sha256:{sha}")})).collect();
-    let body = Value::Null;
+    let body = (channel == PackageReleaseChannel::Preview)
+        .then(|| json!(recovery_envelope(raw, bundle).unwrap()));
     responses.insert(
         release_route(receipt),
         json!({"id":release_id,"tag_name":receipt.tag,
@@ -149,7 +151,7 @@ fn publication_observations(
     );
     let sha = "b".repeat(40);
     let message = (channel == PackageReleaseChannel::Preview)
-        .then(|| recovery_envelope(raw, b"API model signature bundle").unwrap());
+        .then(|| recovery_envelope(raw, bundle).unwrap());
     responses.insert(
         route(&format!("git/tags/{sha}")),
         json!({"sha":sha,"tag":receipt.tag,"message":message,
