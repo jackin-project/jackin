@@ -38,9 +38,9 @@ The package name is required because the repository root is a Cargo workspace.
 </Tabs>
 
 Homebrew installs prebuilt GitHub Release binaries. Preview upgrades use
-`brew update` followed by `brew upgrade jackin-preview`. Native verification
-accepts only a complete committed signed generation; the rolling `preview`
-release's asset listing can be transient during replacement. Stable versions use
+`brew update` followed by `brew upgrade jackin-preview`. Each preview source
+commit has its own immutable `preview-<full source SHA>` tag and release, and
+native verification accepts only that complete signed generation. Stable versions use
 permanent version tags and the `jackin` formula, which remains disabled until
 the first verified stable release is promoted to the tap.
 

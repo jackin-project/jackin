@@ -150,7 +150,8 @@ fn claims(receipt: &PackageReleaseReceipt) -> sigstore_crypto::FulcioCiClaims {
     claims.source_repository_uri = Some(policy::REPOSITORY.into());
     claims.source_repository_identifier = Some("1197700841".into());
     claims.source_repository_ref = Some("refs/heads/main".into());
-    claims.source_repository_digest = Some(receipt.source.commit_sha.clone());
+    // Fulcio's source digest is the signing run's commit: workflow authority B.
+    claims.source_repository_digest = Some(receipt.workflow.authority_sha.clone());
     claims.source_repository_owner_uri = Some("https://github.com/jackin-project".into());
     claims.source_repository_owner_identifier = Some("273541039".into());
     claims.build_signer_uri = Some(policy::identity(receipt.channel).into());
@@ -266,7 +267,7 @@ fn statement(receipt: &PackageReleaseReceipt) -> (Value, BTreeMap<String, String
                 "buildType":"https://actions.github.io/buildtypes/workflow/v1",
                 "externalParameters":{"workflow":{"ref":"refs/heads/main","repository":policy::REPOSITORY,"path":receipt.channel.workflow_path()}},
                 "internalParameters":{"github":{"event_name":receipt.channel.event().as_str(),"repository_id":"1197700841","repository_owner_id":"273541039","runner_environment":"github-hosted"}},
-                "resolvedDependencies":[{"uri":format!("git+{}@refs/heads/main",policy::REPOSITORY),"digest":{"gitCommit":receipt.source.commit_sha}}]
+                "resolvedDependencies":[{"uri":format!("git+{}@refs/heads/main",policy::REPOSITORY),"digest":{"gitCommit":receipt.workflow.authority_sha}}]
             },
             "runDetails":{"builder":{"id":policy::identity(receipt.channel)},"metadata":{"invocationId":format!("{}/actions/runs/{}/attempts/{}",policy::REPOSITORY,receipt.workflow.run_id,receipt.workflow.run_attempt)}}
         }

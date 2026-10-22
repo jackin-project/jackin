@@ -12,4 +12,4 @@ pub use fixture_process::{FakeBinary, FakeProcessHarness, Invocation, ProcessScr
 pub use runner::FakeRunner;
 pub use seed::{TEST_DOCKERFILE_FROM, first_temp_role_repo, seed_valid_role_repo};
 pub use snapshot::{normalize_snapshot_text, redact_digit_runs};
-pub use time::ManualClock;
+pub use time::{ManualClock, ManualClockError};

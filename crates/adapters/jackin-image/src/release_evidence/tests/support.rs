@@ -12,6 +12,8 @@ pub(super) fn receipt(channel: PackageReleaseChannel) -> PackageReleaseReceipt {
     if channel == PackageReleaseChannel::Stable {
         value["channel"] = serde_json::json!("stable");
         value["tag"] = serde_json::json!("v0.6.4");
+        // Stable workflow authority is the released source itself.
+        value["workflow"]["authority_sha"] = value["source"]["commit_sha"].clone();
         value["source"]["event"] = serde_json::json!("workflow_dispatch");
         value["version"]["value"] = serde_json::json!("0.6.4");
         value["version"]["commit_count"] = Value::Null;

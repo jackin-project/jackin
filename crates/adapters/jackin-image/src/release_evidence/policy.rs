@@ -13,7 +13,6 @@ use velnor_actions_contract::{
 
 pub(super) const REPOSITORY: &str = "https://github.com/jackin-project/jackin";
 pub(super) const ISSUER: &str = "https://token.actions.githubusercontent.com";
-pub(super) const PREVIEW_RELEASE_ID: u64 = 328_385_904;
 
 pub(super) fn identity(channel: PackageReleaseChannel) -> &'static str {
     match channel {
@@ -36,9 +35,23 @@ pub(crate) fn release_channel(version: &str) -> Result<PackageReleaseChannel> {
     }
 }
 
-pub(crate) fn release_tag(version: &str) -> Result<String> {
+/// Immutable release tag: `preview-<full source SHA>` or permanent `v<version>`.
+/// A preview source must be the full lowercase commit its version suffix abbreviates.
+pub(crate) fn release_tag(version: &str, source: &str) -> Result<String> {
     Ok(match release_channel(version)? {
-        PackageReleaseChannel::Preview => "preview".to_owned(),
+        PackageReleaseChannel::Preview => {
+            ensure!(
+                source.len() == 40
+                    && source
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                    && version
+                        .rsplit_once('+')
+                        .is_some_and(|(_, sha7)| source.starts_with(sha7)),
+                "preview tag requires the full source commit of its version"
+            );
+            format!("preview-{source}")
+        }
         PackageReleaseChannel::Stable => format!("v{version}"),
     })
 }
@@ -132,7 +145,8 @@ pub(super) fn validate_receipt(receipt: &PackageReleaseReceipt, version: &str) -
         "release repository numeric identity mismatch"
     );
     ensure!(
-        receipt.version.value == version && receipt.tag == release_tag(version)?,
+        receipt.version.value == version
+            && receipt.tag == release_tag(version, &receipt.source.commit_sha)?,
         "release version/tag mismatch"
     );
     Ok(())
@@ -253,7 +267,7 @@ fn validate_source_claims(
         (
             "source digest",
             claims.source_repository_digest.as_deref(),
-            receipt.source.commit_sha.as_str(),
+            receipt.workflow.authority_sha.as_str(),
         ),
         (
             "owner URI",
