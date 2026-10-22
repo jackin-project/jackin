@@ -98,3 +98,6 @@ pub fn ensure_usage_monitor_process(
     wait_for_leader(&client)?;
     Ok(client)
 }
+
+#[cfg(test)]
+mod tests;
