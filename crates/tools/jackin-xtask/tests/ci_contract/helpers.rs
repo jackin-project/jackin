@@ -17,6 +17,9 @@ use metadata::workspace_package_ids;
 #[path = "execution.rs"]
 mod execution;
 
+#[path = "required.rs"]
+mod required;
+
 pub(super) fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
@@ -262,15 +265,8 @@ pub(super) fn assert_complete_required_fan_in(
         expected == actual,
         "every configured native check has exactly one job"
     );
-    let expected = jobs
-        .iter()
-        .filter(|id| !matches!(id.as_str(), "required" | "required-gate"))
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    ensure!(
-        *needs == expected,
-        "Required verdict covers the exact complete execution and setup inventory"
-    );
+    let (workflow, _) = workflow_jobs(root)?;
+    required::assert_inventory(&workflow, needs)?;
     assert_terminal_required_gate(root)?;
     Ok(())
 }
