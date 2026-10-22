@@ -39,7 +39,7 @@ async fn real_git_cleanup_removes_owned_registration_and_preserves_host_head() {
 }
 
 #[tokio::test]
-async fn real_git_gone_upstream_is_clean_without_remote_reachability() {
+async fn real_git_pruned_upstream_needs_positive_remote_reachability() {
     let repo = TempDir::new().unwrap();
     let container = TempDir::new().unwrap();
     let rec = real_record(repo.path(), container.path()).await;
@@ -82,9 +82,22 @@ async fn real_git_gone_upstream_is_clean_without_remote_reachability() {
         jackin_core::assess_worktree(&rec.worktree_path, &rec.base_commit, &mut runner, |_| {})
             .await
             .unwrap(),
-        jackin_core::WorktreeState::Clean
+        jackin_core::WorktreeState::Unpushed
     );
     assert!(wt.exists());
+
+    let tip = fixture_git(wt, &["rev-parse", "HEAD"]).await;
+    fixture_git(
+        repo.path(),
+        &["update-ref", "refs/remotes/origin/retained", &tip],
+    )
+    .await;
+    assert_eq!(
+        jackin_core::assess_worktree(&rec.worktree_path, &rec.base_commit, &mut runner, |_| {})
+            .await
+            .unwrap(),
+        jackin_core::WorktreeState::Clean
+    );
 }
 
 #[tokio::test]

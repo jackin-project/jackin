@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, ensure};
 
 pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     let display = display_command(cmd);
@@ -34,6 +34,23 @@ pub(crate) fn run_streaming(cmd: &mut Command) -> Result<()> {
         jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
     if result.success {
         Ok(())
+    } else {
+        Err(anyhow!("{display} failed with code {:?}", result.code))
+    }
+}
+
+pub(crate) fn run_streaming_timeout(cmd: &mut Command, timeout: Duration) -> Result<()> {
+    let display = display_command(cmd);
+    let mut request = exec_request(cmd);
+    request.stdout_mode = jackin_process::StdioMode::Inherit;
+    request.stderr_mode = jackin_process::StdioMode::Inherit;
+    request = request.timeout(timeout);
+    let result =
+        jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
+    if result.success {
+        Ok(())
+    } else if result.timed_out {
+        Err(anyhow!("{display} timed out"))
     } else {
         Err(anyhow!("{display} failed with code {:?}", result.code))
     }
@@ -77,6 +94,46 @@ pub(crate) fn output_timeout_limited(
         Some(timeout),
         Some((max_stdout_bytes, max_stderr_bytes)),
     )
+}
+
+pub(crate) fn output_timeout_bounded(
+    cmd: &mut Command,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+    max_stderr_bytes: usize,
+) -> Result<Vec<u8>> {
+    let display = display_command(cmd);
+    let stdout_limit = max_stdout_bytes
+        .checked_add(1)
+        .context("stdout capture bound is too large")?;
+    let stderr_limit = max_stderr_bytes
+        .checked_add(1)
+        .context("stderr capture bound is too large")?;
+    let mut request = exec_request(cmd);
+    request = request
+        .timeout(timeout)
+        .output_limits(stdout_limit, stderr_limit);
+    let output =
+        jackin_process::exec_sync(&request).with_context(|| format!("running {display}"))?;
+    if output.timed_out {
+        return Err(anyhow!("{display} timed out"));
+    }
+    ensure!(
+        output.stdout.len() <= max_stdout_bytes && output.stderr.len() <= max_stderr_bytes,
+        "{display} exceeded bounded output capture (stdout limit {max_stdout_bytes} bytes, stderr limit {max_stderr_bytes} bytes)"
+    );
+    if output.success {
+        Ok(output.stdout)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(anyhow!(
+            "{display} failed with {}\n{}",
+            output
+                .code
+                .map_or_else(|| "signal".to_owned(), |code| code.to_string()),
+            stderr.trim()
+        ))
+    }
 }
 
 fn output_request(

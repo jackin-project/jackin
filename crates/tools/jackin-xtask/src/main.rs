@@ -19,6 +19,7 @@ mod ci_toolchain;
 mod clippy_affected;
 mod cmd;
 mod construct;
+mod consumer_ci_gate;
 mod container_paths_gate;
 mod desktop;
 mod docs;
@@ -72,6 +73,8 @@ enum Command {
     CiFuzz(ci_fuzz::CiFuzzArgs),
     #[command(name = "ci-junit")]
     CiJunit(ci_junit::CiJunitArgs),
+    #[command(name = "consumer-ci-gate")]
+    ConsumerCiGate(consumer_ci_gate::ConsumerCiGateArgs),
     #[command(name = "ci-result", subcommand)]
     CiResult(ci_result::CiResultCommand),
     #[command(name = "ci-route")]
@@ -207,6 +210,7 @@ fn main() -> ExitCode {
         Command::CiEvidence(command) => ci_evidence::run(command),
         Command::CiFuzz(args) => ci_fuzz::run(args),
         Command::CiJunit(args) => ci_junit::run(args),
+        Command::ConsumerCiGate(args) => consumer_ci_gate::run(args),
         Command::CiResult(command) => ci_result::run(command),
         Command::CiRoute(args) => ci_route::run(args),
         Command::CiStage(args) => ci_stage::run(args),
