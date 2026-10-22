@@ -21,7 +21,7 @@ cargo-deny = "0.20.2"
 cosign = "3.1.4"
 gh = "2.102.1"
 hk = "2.7.0"
-mr-boxington = "1.26.0"
+mr-boxington = { version = "1.26.0", workflow = "release.yml@refs/heads/main" }
 rust = { version = "1.99.1", components = ["clippy", "rustfmt"], targets = ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"], mr_boxington = true }
 shellcheck = "0.11.0"
 node = "26.12.0"
