@@ -109,7 +109,7 @@ pub(crate) fn select_omp_snapshot_account<'a>(
     provider: Option<AiProvider>,
     selector: Option<&ProfileSelector>,
 ) -> anyhow::Result<OmpSelectedAccount<'a>> {
-    if snapshot.accounts().len() != 1 {
+    if selector.is_none() && snapshot.accounts().len() != 1 {
         anyhow::bail!("OMP account selection is missing or ambiguous");
     }
     let selector = selector.map(|selector| OmpSelector {
