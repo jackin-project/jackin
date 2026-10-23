@@ -21,6 +21,7 @@ mod projection;
 mod rediscover;
 mod serve;
 mod service;
+mod socket_alias;
 mod source_identity;
 mod startup;
 
@@ -30,7 +31,6 @@ pub(crate) use capabilities::{
 pub use client::UsageBrokerClient;
 pub(crate) use client::{validate_broker_data_ancestors, validate_broker_data_tree};
 pub use config::UsageBrokerConfig;
-pub use config::short_socket_alias;
 pub use ensure::{ensure_usage_broker_process, ensure_usage_monitor_process};
 pub use handle::ForwardedUsageSources;
 #[cfg(not(target_os = "macos"))]
@@ -44,6 +44,7 @@ pub use service::{
     run_usage_broker_foreground_bootstrap, run_usage_broker_service,
     run_usage_broker_service_with_executor, run_usage_monitor_service,
 };
+pub use socket_alias::short_socket_alias;
 
 pub(crate) use authorize::{
     ForwardingRequirement, authorize_credential_binding_group, credential_scope_has_matching_proof,

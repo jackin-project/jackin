@@ -1,25 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fs::{self};
-use std::io::ErrorKind;
-
-use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use std::time::Duration;
-
-use nix::unistd::geteuid;
-use sha2::{Digest as _, Sha256};
 
 use jackin_usage_coordinator::UsageCoordinatorConfig;
 
 use crate::{
-    BROKER_DIR, BROKER_IDLE_EXIT, BROKER_LEASE_DURATION, BROKER_LEASE_RENEWAL, BROKER_RUN_DIR,
-    BROKER_SOCKET, BROKER_SOCKET_ALIAS_DIR_PREFIX, UNIX_SOCKET_PATH_LIMIT, UsageBrokerClient,
-    unavailable,
+    BROKER_IDLE_EXIT, BROKER_LEASE_DURATION, BROKER_LEASE_RENEWAL, UsageBrokerClient,
+    socket_alias::socket_path_for_data_dir,
 };
+
 #[derive(Debug, Clone)]
 pub struct UsageBrokerConfig {
     pub data_dir: PathBuf,
@@ -29,6 +21,8 @@ pub struct UsageBrokerConfig {
     pub lease_duration: Duration,
     pub lease_renewal: Duration,
     pub service_executable: Option<PathBuf>,
+    /// Optional trusted root for short broker socket aliases.
+    pub socket_alias_root: Option<PathBuf>,
 }
 
 impl UsageBrokerConfig {
@@ -42,135 +36,37 @@ impl UsageBrokerConfig {
             lease_duration: BROKER_LEASE_DURATION,
             lease_renewal: BROKER_LEASE_RENEWAL,
             service_executable: default_service_executable(),
+            socket_alias_root: None,
         }
-    }
-
-    pub(crate) fn socket_path(&self) -> PathBuf {
-        let full = self
-            .data_dir
-            .join(BROKER_DIR)
-            .join(BROKER_RUN_DIR)
-            .join(BROKER_SOCKET);
-        short_socket_alias_path(&full).unwrap_or(full)
     }
 
     pub(crate) fn prepare_socket_path(
         &self,
     ) -> Result<PathBuf, jackin_protocol::usage_broker::UsageCoordinationError> {
-        let full = self
-            .data_dir
-            .join(BROKER_DIR)
-            .join(BROKER_RUN_DIR)
-            .join(BROKER_SOCKET);
-        if full.as_os_str().len() < UNIX_SOCKET_PATH_LIMIT {
-            return Ok(self.socket_path());
-        }
-        short_socket_alias(&full).ok_or_else(unavailable)
+        socket_path_for_data_dir(&self.data_dir, self.socket_alias_root.as_deref())
     }
 
     #[must_use]
     pub fn client(&self) -> UsageBrokerClient {
         let full = self
             .data_dir
-            .join(BROKER_DIR)
-            .join(BROKER_RUN_DIR)
-            .join(BROKER_SOCKET);
-        UsageBrokerClient::at_host(
-            short_socket_alias_path(&full).unwrap_or(full),
-            self.data_dir.clone(),
-            self.build_id.clone(),
-        )
-    }
-}
-
-pub fn short_socket_alias(full: &Path) -> Option<PathBuf> {
-    let alias = short_socket_alias_path(full)?;
-    let dir = alias.parent()?;
-    validate_trusted_ancestors(dir.parent()?)?;
-    match fs::create_dir(dir) {
-        Ok(()) => fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).ok()?,
-        Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
-        Err(_) => return None,
-    }
-    let metadata = fs::symlink_metadata(dir).ok()?;
-    if metadata.file_type().is_symlink()
-        || !metadata.is_dir()
-        || metadata.uid() != geteuid().as_raw()
-        || metadata.mode() & 0o777 != 0o700
-    {
-        return None;
-    }
-    Some(alias)
-}
-
-fn validate_trusted_ancestors(path: &Path) -> Option<()> {
-    if path
-        .components()
-        .any(|component| matches!(component, std::path::Component::ParentDir))
-    {
-        return None;
-    }
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir().ok()?.join(path)
-    };
-    let mut prefix = PathBuf::new();
-    for component in absolute.components() {
-        match component {
-            std::path::Component::RootDir => prefix.push(component.as_os_str()),
-            std::path::Component::CurDir => continue,
-            std::path::Component::ParentDir => return None,
-            std::path::Component::Normal(_) | std::path::Component::Prefix(_) => {
-                prefix.push(component.as_os_str());
-            }
-        }
-        let link_metadata = fs::symlink_metadata(&prefix).ok()?;
-        let (owner, mode, is_dir) = if link_metadata.file_type().is_symlink() {
-            if link_metadata.uid() != 0 && link_metadata.uid() != geteuid().as_raw() {
-                return None;
-            }
-            let target = fs::metadata(&prefix).ok()?;
-            (target.uid(), target.mode(), target.is_dir())
-        } else {
-            (
-                link_metadata.uid(),
-                link_metadata.mode(),
-                link_metadata.is_dir(),
-            )
-        };
-        let root_sticky = owner == 0 && mode & 0o1000 != 0;
-        if !is_dir
-            || (owner != 0 && owner != geteuid().as_raw())
-            || (mode & 0o022 != 0 && !root_sticky)
-        {
-            return None;
+            .join(crate::BROKER_DIR)
+            .join(crate::BROKER_RUN_DIR)
+            .join(crate::BROKER_SOCKET);
+        match self.prepare_socket_path() {
+            Ok(socket_path) => UsageBrokerClient::at_host(
+                socket_path,
+                self.data_dir.clone(),
+                self.build_id.clone(),
+            ),
+            Err(error) => UsageBrokerClient::at_host_with_initialization_error(
+                full,
+                self.data_dir.clone(),
+                self.build_id.clone(),
+                error,
+            ),
         }
     }
-    Some(())
-}
-
-fn short_socket_alias_path(full: &Path) -> Option<PathBuf> {
-    if full.as_os_str().len() < UNIX_SOCKET_PATH_LIMIT {
-        return None;
-    }
-    let digest = Sha256::digest(full.as_os_str().as_encoded_bytes());
-    let mut name = String::with_capacity(21);
-    name.push_str("jk-");
-    for byte in digest.iter().take(8) {
-        use std::fmt::Write as _;
-        let _written = write!(name, "{byte:02x}");
-    }
-    name.push_str(".sock");
-    let dir = std::env::temp_dir().join(format!(
-        "{BROKER_SOCKET_ALIAS_DIR_PREFIX}{}",
-        geteuid().as_raw()
-    ));
-    let alias = dir.join(name);
-    if alias.as_os_str().len() >= UNIX_SOCKET_PATH_LIMIT {
-        return None;
-    }
-    Some(alias)
 }
 
 pub(crate) fn default_service_executable() -> Option<PathBuf> {

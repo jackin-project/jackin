@@ -32,31 +32,60 @@ fn selected_role_database_contains_only_the_bound_omp_credential_row() {
 }
 
 #[test]
-fn source_writers_that_commit_or_checkpoint_between_capture_passes_are_rejected() {
-    for checkpoint_after_write in [false, true] {
-        let temp = tempdir().unwrap();
-        let (source, writer) = create_source(temp.path(), false);
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "test fixture opens a tempdir source root"
-        )]
-        let root = fs::File::open(&source).unwrap();
-        let result = OmpSnapshot::capture_from_root_inner(&root, deadline(), || {
-            writer
+fn source_commit_between_complete_pair_reads_retries_the_new_committed_row() {
+    use super::super::test_hooks::{CapturePhase, set_capture_hook};
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let temp = tempdir().unwrap();
+    let (source, writer) = create_source(temp.path(), false);
+    let writer = Rc::new(writer);
+    let writer_hook = Rc::clone(&writer);
+    let changed = Rc::new(Cell::new(false));
+    let changed_hook = Rc::clone(&changed);
+    let hook = set_capture_hook(move |phase| {
+        if matches!(
+            phase,
+            CapturePhase::AfterPairRead {
+                attempt: 0,
+                pass: 0,
+                ..
+            }
+        ) {
+            writer_hook
                 .execute(
                     "UPDATE auth_credentials SET data = ?1 WHERE id = 41",
                     [r#"{"key":"changed-during-capture"}"#],
                 )
                 .unwrap();
-            if checkpoint_after_write {
-                checkpoint(&writer);
-            }
-        });
-        assert!(
-            matches!(result, Err(OmpError::Unavailable)),
-            "source mutation was accepted with checkpoint_after_write={checkpoint_after_write}"
-        );
-    }
+            changed_hook.set(true);
+        }
+    });
+    let mut snapshot = OmpSnapshot::capture_from_directory(&source)
+        .unwrap()
+        .expect("source exists");
+    drop(hook);
+
+    assert!(changed.get());
+    let output = export_selected(&mut snapshot, 41);
+    assert_exported_selected_row(
+        &output,
+        &temp.path().join("selected-export.db"),
+        r#"{"key":"changed-during-capture"}"#,
+    );
+}
+
+#[test]
+fn stable_present_empty_wal_after_truncate_remains_rejected() {
+    let temp = tempdir().unwrap();
+    let (source, writer) = create_source(temp.path(), false);
+    checkpoint(&writer);
+    let wal_path = source.join("agent/agent.db-wal");
+    assert!(wal_path.exists());
+    assert_eq!(fs::metadata(wal_path).unwrap().len(), 0);
+
+    let result = OmpSnapshot::capture_from_directory(&source);
+    assert!(matches!(result, Err(OmpError::Unavailable)));
 }
 
 #[test]

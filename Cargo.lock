@@ -3126,6 +3126,7 @@ dependencies = [
  "jackin-instance-agents",
  "jackin-instance-credentials",
  "jackin-manifest",
+ "jackin-omp-store",
  "jackin-telemetry",
  "nix 0.31.3",
  "rusqlite",
@@ -3362,7 +3363,6 @@ dependencies = [
  "jackin-runtime-launch-trust",
  "jackin-runtime-naming",
  "jackin-runtime-prewarm-trigger",
- "jackin-runtime-process-telemetry",
  "jackin-runtime-progress",
  "jackin-runtime-prune-output",
  "jackin-runtime-reactive-daemon",
@@ -3409,10 +3409,16 @@ dependencies = [
 name = "jackin-runtime-apple-container-attach-outcome"
 version = "0.6.4"
 dependencies = [
+ "anyhow",
  "jackin-core",
+ "jackin-runtime-apple-container-client",
  "jackin-runtime-apple-container-running",
  "jackin-runtime-isolation",
  "jackin-runtime-launch-attach-outcome",
+ "jackin-telemetry",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3432,6 +3438,7 @@ dependencies = [
  "jackin-process",
  "jackin-runtime-identity",
  "jackin-runtime-process-telemetry",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -3449,6 +3456,7 @@ dependencies = [
 name = "jackin-runtime-apple-container-running"
 version = "0.6.4"
 dependencies = [
+ "anyhow",
  "jackin-runtime-apple-container-client",
 ]
 
@@ -8731,8 +8739,8 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.41"
-source = "git+https://github.com/tailrocks/velnor-new?rev=90e7d4dda2925dc22308ec48f6c09c1876dc4997#90e7d4dda2925dc22308ec48f6c09c1876dc4997"
+version = "0.1.45"
+source = "git+https://github.com/tailrocks/velnor-new?rev=308a6f47c68dbb149b6de4fa469dae6c65de0cbf#308a6f47c68dbb149b6de4fa469dae6c65de0cbf"
 dependencies = [
  "blake3",
  "serde",

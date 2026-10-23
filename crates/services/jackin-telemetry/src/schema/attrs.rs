@@ -77,6 +77,26 @@ pub const APP_WIDGET_NAME_DEF: super::AttributeMetadata = super::AttributeMetada
     value_type: super::ValueType::String,
     allowed_values: &[],
 };
+pub const APPLE_CONTAINER_ATTACH_OUTCOME_REASON: &str = "apple.container.attach_outcome.reason";
+pub const APPLE_CONTAINER_ATTACH_OUTCOME_REASON_DEF: super::AttributeMetadata =
+    super::AttributeMetadata {
+        name: APPLE_CONTAINER_ATTACH_OUTCOME_REASON,
+        description: "Bounded reason Apple Container attach outcome recording abstained or failed.",
+        value_type: super::ValueType::String,
+        allowed_values: &[
+            "inspection_uncertain",
+            "absent",
+            "state_uncertain",
+            "recording_failed",
+        ],
+    };
+pub const APPLE_CONTAINER_STATE: &str = "apple.container.state";
+pub const APPLE_CONTAINER_STATE_DEF: super::AttributeMetadata = super::AttributeMetadata {
+    name: APPLE_CONTAINER_STATE,
+    description: "Bounded observed Apple Container lifecycle state for an uncertain attach outcome.",
+    value_type: super::ValueType::String,
+    allowed_values: &["unknown", "stopping"],
+};
 pub const AUTH_MODE: &str = "auth.mode";
 pub const AUTH_MODE_DEF: super::AttributeMetadata = super::AttributeMetadata {
     name: AUTH_MODE,
@@ -717,6 +737,8 @@ pub const ALL_KEYS: &[&str] = &[
     APP_SCREEN_NAME,
     APP_WIDGET_ID,
     APP_WIDGET_NAME,
+    APPLE_CONTAINER_ATTACH_OUTCOME_REASON,
+    APPLE_CONTAINER_STATE,
     AUTH_MODE,
     BACKGROUND_CYCLE_NAME,
     CACHE_NAME,
@@ -773,6 +795,8 @@ pub const ALL_DEFINITIONS: &[super::AttributeMetadata] = &[
     APP_SCREEN_NAME_DEF,
     APP_WIDGET_ID_DEF,
     APP_WIDGET_NAME_DEF,
+    APPLE_CONTAINER_ATTACH_OUTCOME_REASON_DEF,
+    APPLE_CONTAINER_STATE_DEF,
     AUTH_MODE_DEF,
     BACKGROUND_CYCLE_NAME_DEF,
     CACHE_NAME_DEF,
@@ -869,15 +893,15 @@ pub mod std_attrs {
     pub use opentelemetry_semantic_conventions::attribute::SESSION_ID;
     pub use opentelemetry_semantic_conventions::attribute::SESSION_PREVIOUS_ID;
     pub use opentelemetry_semantic_conventions::attribute::URL_TEMPLATE;
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.45.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.46.0.
     pub const GEN_AI_AGENT_NAME: &str = "gen_ai.agent.name";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.45.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.46.0.
     pub const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.45.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.46.0.
     pub const GEN_AI_OPERATION_NAME: &str = "gen_ai.operation.name";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.45.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.46.0.
     pub const GEN_AI_PROVIDER_NAME: &str = "gen_ai.provider.name";
-    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.45.0.
+    // Local pin: not authoritative in opentelemetry-semantic-conventions =0.33.1; registry schema 1.46.0.
     pub const GEN_AI_TOKEN_TYPE: &str = "gen_ai.token.type";
     pub const ALL_KEYS: &[&str] = &[
         APP_BUILD_ID,

@@ -4,42 +4,6 @@
 use super::*;
 
 #[test]
-fn parse_json_array_shape() {
-    let json = r#"[{"name":"jk-a","status":"running"},{"name":"jk-b","status":"stopped"}]"#;
-    let all = parse_all_containers_json(json);
-    assert_eq!(all.len(), 2);
-    assert_eq!(all[0].name, "jk-a");
-    assert!(all[0].is_running());
-    assert!(!all[1].is_running());
-}
-
-#[test]
-fn parse_ndjson_shape() {
-    let json =
-        "{\"name\":\"jk-a\",\"status\":\"running\"}\n{\"name\":\"jk-b\",\"status\":\"stopped\"}";
-    let all = parse_all_containers_json(json);
-    assert_eq!(all.len(), 2);
-}
-
-#[test]
-fn parse_capitalized_keys_and_missing_status() {
-    let json = r#"[{"Name":"jk-a","State":"Running"},{"name":"jk-b"}]"#;
-    let all = parse_all_containers_json(json);
-    assert_eq!(all[0].name, "jk-a");
-    assert!(all[0].is_running());
-    assert_eq!(all[1].status, "unknown");
-    assert!(!all[1].is_running());
-}
-
-#[test]
-fn parse_empty_and_malformed() {
-    assert!(parse_all_containers_json("").is_empty());
-    assert!(parse_all_containers_json("   ").is_empty());
-    let json = "{\"name\":\"jk-a\",\"status\":\"running\"}\nnot json";
-    assert_eq!(parse_all_containers_json(json).len(), 1);
-}
-
-#[test]
 fn launch_args_use_env_file_without_secret_values() {
     let secret = "fake-apple-container-secret";
     let temp = tempfile::tempdir().unwrap();
@@ -94,11 +58,11 @@ fn launch_args_preserve_mount_permissions() {
 
     assert!(
         args.windows(2)
-            .any(|pair| pair == ["-v", "/host/read-write:/guest/read-write"])
+            .any(|pair| { pair == ["-v", "/host/read-write:/guest/read-write"] })
     );
     assert!(
         args.windows(2)
-            .any(|pair| pair == ["-v", "/host/read-only:/guest/read-only:ro"])
+            .any(|pair| { pair == ["-v", "/host/read-only:/guest/read-only:ro"] })
     );
     assert!(args.windows(2).any(|pair| pair == ["--user", "0:0"]));
 }
@@ -115,24 +79,51 @@ async fn fake_client_lifecycle_contract() {
         caps_add: vec![],
     };
     client.run_container("jk-a", &spec).await.unwrap();
-    assert!(
+    assert_eq!(
         client
             .inspect_container("jk-a")
             .await
             .unwrap()
             .unwrap()
-            .is_running()
+            .status,
+        AppleContainerStatus::Running
     );
 
     client.stop_container("jk-a").await.unwrap();
-    assert!(
-        !client
+    assert_eq!(
+        client
             .inspect_container("jk-a")
             .await
             .unwrap()
             .unwrap()
-            .is_running()
+            .status,
+        AppleContainerStatus::Stopped
     );
+
+    let start = client.start_container("jk-a");
+    assert!(client.start_calls.lock().unwrap().is_empty());
+    assert_eq!(
+        client
+            .containers
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|container| container.id == "jk-a")
+            .unwrap()
+            .status,
+        AppleContainerStatus::Stopped
+    );
+    start.await.unwrap();
+    assert_eq!(
+        client
+            .inspect_container("jk-a")
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        AppleContainerStatus::Running
+    );
+    assert_eq!(*client.start_calls.lock().unwrap(), ["jk-a"]);
 
     client.run_container("other", &spec).await.unwrap();
     let listed = client.list_containers("jk-").await.unwrap();
@@ -140,4 +131,19 @@ async fn fake_client_lifecycle_contract() {
 
     client.remove_container("jk-a").await.unwrap();
     assert!(client.inspect_container("jk-a").await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn fake_inventory_mutex_poisoning_returns_errors_for_list_and_inspect() {
+    let client = FakeAppleContainerClient::new();
+    std::thread::scope(|scope| {
+        let poison = scope.spawn(|| {
+            let _guard = client.containers.lock().unwrap();
+            panic!("controlled fake inventory mutex poison");
+        });
+        assert!(poison.join().is_err());
+    });
+
+    client.list_containers("jk-").await.unwrap_err();
+    client.inspect_container("jk-a").await.unwrap_err();
 }

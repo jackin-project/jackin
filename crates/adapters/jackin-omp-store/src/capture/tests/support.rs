@@ -100,6 +100,64 @@ pub(super) fn checkpoint(connection: &Connection) {
         .unwrap();
 }
 
+pub(super) fn full_checkpoint(connection: &Connection) -> (i64, i64, i64) {
+    connection.busy_timeout(Duration::from_millis(50)).unwrap();
+    connection
+        .query_row("PRAGMA wal_checkpoint(FULL)", [], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .unwrap()
+}
+
+pub(super) fn export_selected(snapshot: &mut OmpSnapshot, id: i64) -> zeroize::Zeroizing<Vec<u8>> {
+    let selected = snapshot
+        .select(Some("openai"), Some(&selector(id)))
+        .unwrap();
+    let mut output = zeroize::Zeroizing::new(Vec::new());
+    selected.write_standalone_database(&mut *output).unwrap();
+    output
+}
+
+pub(super) fn assert_exported_selected_row(bytes: &[u8], export_path: &Path, expected_data: &str) {
+    fs::write(export_path, bytes).unwrap();
+    let connection = Connection::open(export_path).unwrap();
+    let mut statement = connection
+        .prepare("SELECT id, provider, credential_type, data FROM auth_credentials ORDER BY id")
+        .unwrap();
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        vec![(
+            41,
+            "openai".to_owned(),
+            "api_key".to_owned(),
+            expected_data.to_owned()
+        )]
+    );
+    let tables = connection
+        .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' \
+             AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(tables, vec!["auth_credentials", "auth_schema_version"]);
+}
+
 pub(super) fn write_uncommitted_spill(connection: &Connection) {
     connection
         .execute_batch(

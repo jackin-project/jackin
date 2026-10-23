@@ -1115,6 +1115,57 @@ pub const RUN_SUMMARY_DEF: super::EventMetadata = super::EventMetadata {
         },
     ],
 };
+pub const RUNTIME_APPLE_CONTAINER_ATTACH_OUTCOME_WARNING: &str =
+    "runtime.apple_container.attach_outcome.warning";
+pub const RUNTIME_APPLE_CONTAINER_ATTACH_OUTCOME_WARNING_DEF: super::EventMetadata =
+    super::EventMetadata {
+        name: RUNTIME_APPLE_CONTAINER_ATTACH_OUTCOME_WARNING,
+        description: "Apple Container attach outcome recording abstained or failed.",
+        severity: super::EventSeverity::Warn,
+        attributes: &[
+            super::AttributeRequirement {
+                name: "apple.container.attach_outcome.reason",
+                value_type: super::ValueType::String,
+                requirement: super::RequirementLevel::Required,
+                allowed_values: &[
+                    "inspection_uncertain",
+                    "absent",
+                    "state_uncertain",
+                    "recording_failed",
+                ],
+            },
+            super::AttributeRequirement {
+                name: "apple.container.state",
+                value_type: super::ValueType::String,
+                requirement: super::RequirementLevel::Recommended,
+                allowed_values: &["unknown", "stopping"],
+            },
+            super::AttributeRequirement {
+                name: "cli.invocation.id",
+                value_type: super::ValueType::String,
+                requirement: super::RequirementLevel::Recommended,
+                allowed_values: &[],
+            },
+            super::AttributeRequirement {
+                name: "container.id",
+                value_type: super::ValueType::String,
+                requirement: super::RequirementLevel::Required,
+                allowed_values: &[],
+            },
+            super::AttributeRequirement {
+                name: "exception.message",
+                value_type: super::ValueType::String,
+                requirement: super::RequirementLevel::Recommended,
+                allowed_values: &[],
+            },
+            super::AttributeRequirement {
+                name: "session.id",
+                value_type: super::ValueType::String,
+                requirement: super::RequirementLevel::Recommended,
+                allowed_values: &[],
+            },
+        ],
+    };
 pub const SESSION_END: &str = "session.end";
 pub const SESSION_END_DEF: super::EventMetadata = super::EventMetadata {
     name: SESSION_END,
@@ -1512,6 +1563,7 @@ pub const ALL: &[&str] = &[
     PTY_SPAWN,
     RETRY_SCHEDULED,
     RUN_SUMMARY,
+    RUNTIME_APPLE_CONTAINER_ATTACH_OUTCOME_WARNING,
     SESSION_END,
     SESSION_START,
     TELEMETRY_VALIDATE,
@@ -1549,6 +1601,7 @@ pub const DEFINITIONS: &[super::EventMetadata] = &[
     PTY_SPAWN_DEF,
     RETRY_SCHEDULED_DEF,
     RUN_SUMMARY_DEF,
+    RUNTIME_APPLE_CONTAINER_ATTACH_OUTCOME_WARNING_DEF,
     SESSION_END_DEF,
     SESSION_START_DEF,
     TELEMETRY_VALIDATE_DEF,
