@@ -34,7 +34,9 @@ fn abort_idle_older_than_drops_transfer_past_timeout() {
     let mut transfers = transfers_with(&clock);
     transfers.start(start(1, 8)).expect("start");
 
-    clock.advance(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT + Duration::from_secs(1));
+    clock
+        .advance(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT + Duration::from_secs(1))
+        .expect("clipboard timeout advance is representable");
     let aborted = transfers.abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
     assert_eq!(aborted, 1);
     assert!(transfers.active.is_empty());
@@ -46,17 +48,23 @@ fn chunk_activity_resets_idle_window() {
     let mut transfers = transfers_with(&clock);
     transfers.start(start(1, 16)).expect("start");
 
-    clock.advance(Duration::from_mins(4));
+    clock
+        .advance(Duration::from_mins(4))
+        .expect("initial clipboard activity advance is representable");
     transfers
         .chunk(chunk(1, 0, b"\x89PNG\r\n\x1a\n".to_vec()))
         .expect("chunk at T+4min");
 
-    clock.advance(Duration::from_mins(1) + Duration::from_secs(1));
+    clock
+        .advance(Duration::from_mins(1) + Duration::from_secs(1))
+        .expect("clipboard activity-window advance is representable");
     let aborted = transfers.abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
     assert_eq!(aborted, 0);
     assert_eq!(transfers.active.len(), 1);
 
-    clock.advance(Duration::from_mins(4));
+    clock
+        .advance(Duration::from_mins(4))
+        .expect("clipboard expiry advance is representable");
     let aborted = transfers.abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
     assert_eq!(aborted, 1);
     assert!(transfers.active.is_empty());
@@ -69,7 +77,9 @@ fn abort_idle_only_drops_idle_of_two_transfers() {
     transfers.start(start(1, 8)).expect("start idle");
     transfers.start(start(2, 8)).expect("start active");
 
-    clock.advance(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT + Duration::from_secs(1));
+    clock
+        .advance(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT + Duration::from_secs(1))
+        .expect("clipboard idle timeout advance is representable");
     transfers
         .chunk(chunk(2, 0, b"\x89PNG\r\n\x1a\n".to_vec()))
         .expect("refresh active transfer");
@@ -86,7 +96,9 @@ fn abort_idle_boundary_idle_exactly_timeout_is_aborted() {
     let mut transfers = transfers_with(&clock);
     transfers.start(start(1, 8)).expect("start");
 
-    clock.advance(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
+    clock
+        .advance(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT)
+        .expect("exact clipboard timeout advance is representable");
     let aborted = transfers.abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
     assert_eq!(aborted, 1);
     assert!(transfers.active.is_empty());

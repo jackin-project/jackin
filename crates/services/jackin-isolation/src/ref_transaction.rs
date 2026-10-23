@@ -287,6 +287,15 @@ fn reclaim_abandoned_lock(
     parent: BorrowedFd<'_>,
     leaf: &str,
 ) -> anyhow::Result<bool> {
+    reclaim_abandoned_lock_with_sync(root, parent, leaf, sync_directory)
+}
+
+fn reclaim_abandoned_lock_with_sync(
+    root: BorrowedFd<'_>,
+    parent: BorrowedFd<'_>,
+    leaf: &str,
+    mut sync: impl FnMut(BorrowedFd<'_>) -> anyhow::Result<()>,
+) -> anyhow::Result<bool> {
     let Some(lock) = read_regular(parent, leaf)? else {
         return Ok(false);
     };
@@ -375,9 +384,10 @@ fn reclaim_abandoned_lock(
         "Git lock changed during crash recovery; record retained"
     );
     unlinkat(parent, leaf, UnlinkatFlags::NoRemoveDir)?;
+    // Persist lock removal before discarding its recovery witness.
+    sync(parent)?;
     unlinkat(&journal, *candidate_name, UnlinkatFlags::NoRemoveDir)?;
-    sync_directory(parent)?;
-    sync_directory(journal.as_fd())?;
+    sync(journal.as_fd())?;
     Ok(true)
 }
 

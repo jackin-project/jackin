@@ -47,6 +47,36 @@ fn superseded_preview_and_version_tag_aliases_are_not_admitted() {
     let mut stable = channel_receipt(PackageReleaseChannel::Stable);
     stable.tag = "preview".into();
     assert!(policy::validate_receipt(&stable, "0.6.4").is_err());
+    for tag in [
+        "preview".to_owned(),
+        format!("preview-{}", current.workflow.authority_sha),
+        format!("preview-{}", &current.source.commit_sha[..7]),
+    ] {
+        let mut aliased = current.clone();
+        aliased.tag = tag;
+        assert!(
+            policy::validate_receipt(&aliased, &aliased.version.value).is_err(),
+            "{}",
+            aliased.tag
+        );
+    }
+}
+
+#[test]
+fn preview_signing_binds_workflow_authority_while_the_tag_binds_source() {
+    let preview = receipt();
+    assert_ne!(preview.source.commit_sha, preview.workflow.authority_sha);
+    assert_eq!(
+        preview.tag,
+        format!("preview-{}", preview.source.commit_sha)
+    );
+    let mut source_signed = claims(&preview);
+    source_signed.source_repository_digest = Some(preview.source.commit_sha.clone());
+    assert!(policy::validate_ci_claims(&source_signed, &preview).is_err());
+    let (mut statement, subjects) = statement(&preview);
+    statement["predicate"]["buildDefinition"]["resolvedDependencies"][0]["digest"]["gitCommit"] =
+        json!(preview.source.commit_sha);
+    assert!(provenance::validate_statement(&statement, &preview, &subjects).is_err());
 }
 
 #[test]

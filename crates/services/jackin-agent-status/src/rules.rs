@@ -378,6 +378,7 @@ fn load_signed_bundle(
     load_bundle_entries(packs, entries)
 }
 
+// Entry parsing does not authenticate a bundle; runtime loading must pass bundle verification first.
 fn load_bundle_entries(
     packs: &mut HashMap<String, RulePack>,
     entries: &[SignedPackEntry],
