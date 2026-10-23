@@ -141,16 +141,33 @@ pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<
         width: overlay.width.saturating_sub(2),
         height: overlay.height.saturating_sub(2),
     };
-    let (content, _) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
-    if content.height < 2 {
-        return None;
-    }
-    Some(Rect {
+    let (content, action_row) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
+    git_prompt_url_row_for_layout(inner, content, action_row)
+}
+
+fn git_prompt_url_row_for_layout(inner: Rect, content: Rect, action_row: Rect) -> Option<Rect> {
+    let url_row = Rect {
         x: content.x,
         y: content.y.saturating_add(1),
         width: content.width,
         height: 1,
-    })
+    };
+    if url_row.width == 0
+        || url_row.x < inner.x
+        || url_row.y < inner.y
+        || url_row.right() > inner.right()
+        || url_row.bottom() > inner.bottom()
+    {
+        return None;
+    }
+
+    let overlaps_action = action_row.width > 0
+        && action_row.height > 0
+        && url_row.x < action_row.right()
+        && action_row.x < url_row.right()
+        && url_row.y < action_row.bottom()
+        && action_row.y < url_row.bottom();
+    (!overlaps_action).then_some(url_row)
 }
 
 pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
@@ -240,13 +257,8 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
         prompt_row,
     );
 
-    if has_url {
+    if has_url && let Some(url_row) = git_prompt_url_row_for_layout(inner, content, action_row) {
         let url = state.pending_git_url.as_deref().unwrap_or_default();
-        let url_row = Rect {
-            y: content.y.saturating_add(1),
-            height: 1,
-            ..content
-        };
         frame.render_widget(
             Paragraph::new(Span::styled(
                 url.to_owned(),

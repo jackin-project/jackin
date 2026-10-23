@@ -8,6 +8,33 @@ use ratatui::{
     layout::{Position, Rect},
 };
 
+const GIT_PROMPT_TEST_URL: &str = "q7://stage3b.invalid/row";
+
+fn git_prompt_test_state(rejected: bool) -> (tempfile::TempDir, FileBrowserState) {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path().join("root");
+    let repo = root.join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+    let mut state = make_state_at(root);
+    state.pending_git_prompt = Some(repo);
+    state.pending_git_url = Some(GIT_PROMPT_TEST_URL.to_owned());
+    if rejected {
+        state.rejected_reason = Some("synthetic rejection".to_owned());
+    }
+    (tmp, state)
+}
+
+fn visible_symbol_positions(buffer: &Buffer, area: Rect, symbol: &str) -> Vec<Position> {
+    (area.y..area.bottom())
+        .flat_map(|y| {
+            (area.x..area.right()).filter_map(move |x| {
+                (buffer[(x, y)].symbol() == symbol).then_some(Position::new(x, y))
+            })
+        })
+        .collect()
+}
+
 fn visible_label_position(buffer: &Buffer, area: Rect, label: &str) -> Option<Position> {
     (area.y..area.bottom()).find_map(|y| {
         let row = row_string(buffer, y);
@@ -481,4 +508,253 @@ fn painted_listing_regions_handle_tiny_translated_viewports() {
     for area in areas {
         terminal.draw(|frame| render(frame, area, &state)).unwrap();
     }
+}
+
+#[test]
+fn git_prompt_url_paint_and_full_row_hit_agree_at_roomy_and_seven_rows() {
+    for (modal_height, has_rejection, expected_overlay_height) in
+        [(8, false, 8), (9, true, 8), (7, false, 7), (8, true, 7)]
+    {
+        let (_tmp, state) = git_prompt_test_state(has_rejection);
+        let area = Rect::new(9, 3, 76, modal_height);
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        terminal.draw(|frame| render(frame, area, &state)).unwrap();
+
+        let listing = listing_rect(area, has_rejection);
+        let overlay = crate::tui::components::file_browser::git_prompt_rect(listing, true)
+            .expect("visible URL prompt overlay");
+        assert_eq!(overlay.height, expected_overlay_height);
+        let inner = Rect::new(
+            overlay.x + 1,
+            overlay.y + 1,
+            overlay.width - 2,
+            overlay.height - 2,
+        );
+        let buffer = terminal.backend().buffer();
+        let url = visible_label_position(buffer, overlay, GIT_PROMPT_TEST_URL)
+            .expect("the resolved URL is visible in the actual rendered buffer");
+        assert!(
+            inner.contains(url),
+            "URL starts inside dialog interior: {url:?}"
+        );
+        assert_eq!(
+            row_string(buffer, url.y)
+                .matches(GIT_PROMPT_TEST_URL)
+                .count(),
+            1,
+            "the resolved URL occupies one actual rendered row"
+        );
+
+        let prompt = visible_label_position(buffer, overlay, "What would you like to do?")
+            .expect("the prompt remains visible");
+        let action = visible_label_position(buffer, overlay, "Mount this repository")
+            .expect("the action remains visible");
+        assert_ne!(prompt.y, url.y);
+        assert_ne!(action.y, url.y);
+        assert_ne!(prompt.y, action.y);
+        assert!(
+            buffer[(action.x, action.y)]
+                .modifier
+                .contains(Modifier::BOLD),
+            "the actual painted action retains its button style"
+        );
+
+        for column in [inner.x, url.x, inner.right() - 1] {
+            assert_eq!(
+                state.url_to_open_on_click(area, column, url.y).as_deref(),
+                Some(GIT_PROMPT_TEST_URL),
+                "the full painted URL row is clickable at column {column}"
+            );
+        }
+        assert!(state.pending_git_prompt.is_some());
+        assert_eq!(
+            state.pending_git_url.as_deref(),
+            Some(GIT_PROMPT_TEST_URL),
+            "requesting the URL leaves the prompt and resolved URL intact"
+        );
+
+        assert!(
+            state
+                .url_to_open_on_click(area, prompt.x, prompt.y)
+                .is_none()
+        );
+        assert!(
+            state
+                .url_to_open_on_click(area, action.x, action.y)
+                .is_none()
+        );
+        assert!(state.url_to_open_on_click(area, overlay.x, url.y).is_none());
+        assert!(
+            state
+                .url_to_open_on_click(area, overlay.x - 1, url.y)
+                .is_none()
+        );
+
+        let blank_interior = (inner.y..inner.bottom()).find(|row| {
+            *row != prompt.y
+                && *row != url.y
+                && *row != action.y
+                && (inner.x..inner.right())
+                    .all(|column| buffer[(column, *row)].symbol().trim().is_empty())
+        });
+        let blank_interior = blank_interior.expect("a non-URL spacer remains blank");
+        assert!(
+            state
+                .url_to_open_on_click(area, inner.x, blank_interior)
+                .is_none()
+        );
+    }
+}
+
+fn assert_git_prompt_narrow_widths_do_not_wrap_or_target_empty_rows() {
+    for width in [4, 5, 6, 7, 8] {
+        let (_tmp, state) = git_prompt_test_state(false);
+        let area = Rect::new(4, 3, width, 8);
+        let mut terminal = Terminal::new(TestBackend::new(24, 16)).unwrap();
+        terminal.draw(|frame| render(frame, area, &state)).unwrap();
+        let buffer = terminal.backend().buffer();
+        assert!(visible_label_position(buffer, area, GIT_PROMPT_TEST_URL).is_none());
+
+        let Some(overlay) =
+            crate::tui::components::file_browser::git_prompt_rect(listing_rect(area, false), true)
+        else {
+            assert_eq!(width, 4);
+            assert!(state.url_to_open_on_click(area, area.x, area.y).is_none());
+            continue;
+        };
+        let inner = Rect::new(
+            overlay.x + 1,
+            overlay.y + 1,
+            overlay.width.saturating_sub(2),
+            overlay.height.saturating_sub(2),
+        );
+        let marker_positions = visible_symbol_positions(buffer, inner, "q");
+        if inner.width == 0 {
+            assert!(marker_positions.is_empty());
+            assert!(state.url_to_open_on_click(area, inner.x, inner.y).is_none());
+        } else {
+            assert_eq!(inner.width, width - 6);
+            assert_eq!(marker_positions.len(), 1);
+            let marker = marker_positions[0];
+            assert_eq!(
+                state
+                    .url_to_open_on_click(area, marker.x, marker.y)
+                    .as_deref(),
+                Some(GIT_PROMPT_TEST_URL),
+                "a clipped but actually painted narrow URL cell remains targetable"
+            );
+            assert!(state.pending_git_prompt.is_some());
+        }
+    }
+}
+
+fn assert_git_prompt_zero_to_two_rows_hide_url_and_old_target() {
+    for height in 0..=2 {
+        let (_tmp, state) = git_prompt_test_state(false);
+        let area = Rect::new(9, 3, 76, height);
+        let mut terminal = Terminal::new(TestBackend::new(100, 18)).unwrap();
+        terminal.draw(|frame| render(frame, area, &state)).unwrap();
+        let buffer = terminal.backend().buffer();
+        assert!(
+            visible_label_position(buffer, buffer.area, GIT_PROMPT_TEST_URL).is_none(),
+            "no URL text appears anywhere in the buffer at height {height}"
+        );
+
+        let old_candidate = git_prompt_old_url_candidate(area);
+        if let Some(candidate) = old_candidate {
+            assert!(
+                state
+                    .url_to_open_on_click(area, candidate.x, candidate.y)
+                    .is_none(),
+                "the prior candidate is not clickable at height {height}"
+            );
+        } else {
+            assert!(state.url_to_open_on_click(area, area.x, area.y).is_none());
+        }
+    }
+}
+
+fn git_prompt_old_url_candidate(modal_area: Rect) -> Option<Position> {
+    let listing = listing_rect(modal_area, false);
+    let overlay = crate::tui::components::file_browser::git_prompt_rect(listing, true)?;
+    let inner = Rect::new(
+        overlay.x.saturating_add(1),
+        overlay.y.saturating_add(1),
+        overlay.width.saturating_sub(2),
+        overlay.height.saturating_sub(2),
+    );
+    let (content, _) = crate::tui::dialog_layout::dialog_content_and_actions(inner);
+    Some(Position::new(content.x, content.y.saturating_add(1)))
+}
+
+#[test]
+fn git_prompt_url_tiny_rows_preserve_visible_fallback_without_action_overlap() {
+    for (height, url_is_visible) in [(4, true), (5, false), (6, false), (3, false)] {
+        let (_tmp, state) = git_prompt_test_state(false);
+        let area = Rect::new(9, 3, 76, height);
+        let mut terminal = Terminal::new(TestBackend::new(100, 18)).unwrap();
+        terminal.draw(|frame| render(frame, area, &state)).unwrap();
+
+        let overlay =
+            crate::tui::components::file_browser::git_prompt_rect(listing_rect(area, false), true)
+                .expect("nonzero-width tiny prompt overlay");
+        let buffer = terminal.backend().buffer();
+        let visible_url = visible_label_position(buffer, overlay, GIT_PROMPT_TEST_URL);
+        assert_eq!(
+            visible_url.is_some(),
+            url_is_visible,
+            "height {height} URL visibility follows actual interior and action paint"
+        );
+
+        if let Some(url) = visible_url {
+            let action = visible_label_position(buffer, overlay, "Mount this repository")
+                .expect("the action remains visible at height four");
+            assert!(
+                url.y > action.y,
+                "the height-four URL fallback remains after final action paint"
+            );
+            let inner = Rect::new(
+                overlay.x + 1,
+                overlay.y + 1,
+                overlay.width - 2,
+                overlay.height - 2,
+            );
+            assert_eq!(
+                state.url_to_open_on_click(area, inner.x, url.y).as_deref(),
+                Some(GIT_PROMPT_TEST_URL)
+            );
+            assert_eq!(
+                state
+                    .url_to_open_on_click(area, inner.right() - 1, url.y)
+                    .as_deref(),
+                Some(GIT_PROMPT_TEST_URL)
+            );
+        } else {
+            assert!(
+                state
+                    .url_to_open_on_click(area, overlay.x + 1, overlay.y + 1)
+                    .is_none()
+            );
+            if let Some(action) = visible_label_position(buffer, overlay, "Mount this repository") {
+                assert!(
+                    state
+                        .url_to_open_on_click(area, action.x, action.y)
+                        .is_none()
+                );
+            }
+        }
+
+        assert!(
+            state
+                .url_to_open_on_click(area, overlay.x, overlay.y)
+                .is_none()
+        );
+        assert!(
+            state
+                .url_to_open_on_click(area, overlay.x - 1, overlay.y + 1)
+                .is_none()
+        );
+    }
+    assert_git_prompt_narrow_widths_do_not_wrap_or_target_empty_rows();
+    assert_git_prompt_zero_to_two_rows_hide_url_and_old_target();
 }
