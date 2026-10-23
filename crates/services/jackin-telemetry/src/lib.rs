@@ -23,6 +23,7 @@ mod validation;
 pub use error::{ResultTelemetryExt, TelemetryError, record_error, record_recovered_degradation};
 pub use event::{
     Attr, EventDef, FieldSet, Rejection, Severity, Value, emit_event, emit_event_display,
+    event_enabled,
 };
 pub use health::{FacadeHealth, Signal, facade_health, record_export_rejection};
 pub use metric::{

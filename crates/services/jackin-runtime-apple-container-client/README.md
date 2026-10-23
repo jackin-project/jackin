@@ -1,51 +1,17 @@
 # jackin-runtime-apple-container-client
 
-Apple Container
-backend client:
-lifecycle over the
-`container` CLI.
+Apple Container lifecycle over the `container` CLI and shared process telemetry.
 
-## What this crate owns
+The client owns run/start/stop/remove/inspect/list. Listing validates the complete official JSON array and returns typed IDs/states; malformed UTF-8, shape, identity, or state is an error. Unknown metadata remains additive. See the [inventory contract](../../../docs/content/research/platform/isolation/apple-container-backend.mdx).
 
-- Client
-  (`apple_container_client`):
-  `AppleContainerClient`,
-  `AppleContainerApi`,
-  `AppleContainerSpec`,
-  `AppleContainerMount`,
-  `AppleContainerInfo` —
-  run/stop/remove/
-  inspect/list via
-  the shared process
-  transport.
-- Parsing
-  (`apple_container_client`):
-  `container ps
-  --format json`
-  array + NDJSON
-  shapes, capitalized
-  keys, `unknown`
-  default.
-- Test double
-  (`apple_container_client`,
-  `test-support`):
-  `FakeAppleContainerClient`
-  in-memory lifecycle.
+`FakeAppleContainerClient` is an in-memory test double available through `test-support`.
 
-## Structure
+| Source | Tests |
+|---|---|
+| [`lib.rs`](src/lib.rs) | — |
+| [`apple_container_client.rs`](src/apple_container_client.rs) | [`tests/`](src/apple_container_client/tests/) |
 
-| Module | Owns | Tests |
-|---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`apple_container_client.rs`](src/apple_container_client.rs) | client | `apple_container_client/tests/` |
-| [`apple_container_client/`](src/apple_container_client/) | test suites | `apple_container_client/tests/` |
-
-## Public API
-
-`apple_container_client::AppleContainerClient`,
-`apple_container_client::AppleContainerApi`,
-`apple_container_client::AppleContainerSpec`,
-`apple_container_client::BACKEND_NAME`.
+Public API: `AppleContainerClient`, `AppleContainerApi`, `AppleContainerSpec`, `AppleContainerMount`, `AppleContainerInfo`, `AppleContainerStatus`, and `BACKEND_NAME` in `apple_container_client`.
 
 ## How to verify
 
