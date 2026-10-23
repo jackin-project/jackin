@@ -5,30 +5,53 @@ use super::super::{
     CachedUsage, FocusedUsageView, HashMap, UsageProviderTab, UsageSurface, account_key_hash,
 };
 use super::{compact_account_identity, usage_tab_source_label, usage_tab_status_label};
+use jackin_protocol::usage_broker::UsageAccountCapability;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum UsageTabIdentity {
+    Bound(UsageAccountCapability),
+    Unbound(String),
+}
+
+/// Return the legacy display-only tab key for an unbound label pair.
+/// This value must never select a broker capability.
 pub fn usage_account_tab_id(provider_label: &str, account_label: &str) -> String {
     account_key_hash(provider_label, account_label)
 }
 
+pub(crate) fn usage_tab_id_for_view(view: &FocusedUsageView) -> String {
+    view.account.account_capability.as_ref().map_or_else(
+        || usage_account_tab_id(&view.account.provider_label, &view.account.account_label),
+        UsageAccountCapability::opaque_identity_key,
+    )
+}
+
+fn usage_tab_identity(view: &FocusedUsageView) -> UsageTabIdentity {
+    view.account.account_capability.clone().map_or_else(
+        || {
+            UsageTabIdentity::Unbound(usage_account_tab_id(
+                &view.account.provider_label,
+                &view.account.account_label,
+            ))
+        },
+        UsageTabIdentity::Bound,
+    )
+}
+
 pub fn provider_tabs(views: &[&FocusedUsageView]) -> Vec<UsageProviderTab> {
-    let mut keyed: Vec<(String, &FocusedUsageView)> = views
+    let mut keyed: Vec<(UsageTabIdentity, String, &FocusedUsageView)> = views
         .iter()
-        .map(|view| {
-            (
-                usage_account_tab_id(&view.account.provider_label, &view.account.account_label),
-                *view,
-            )
-        })
+        .map(|view| (usage_tab_identity(view), usage_tab_id_for_view(view), *view))
         .collect();
     keyed.sort_by(|left, right| {
         left.0
             .cmp(&right.0)
-            .then(right.1.fetched_at_epoch.cmp(&left.1.fetched_at_epoch))
+            .then(right.2.fetched_at_epoch.cmp(&left.2.fetched_at_epoch))
     });
     keyed.dedup_by(|left, right| left.0 == right.0);
     let mut tabs: Vec<UsageProviderTab> = keyed
         .into_iter()
-        .map(|(id, view)| account_tab(id, view))
+        .map(|(_, id, view)| account_tab(id, view))
         .collect();
     tabs.sort_by(|left, right| {
         left.label
@@ -53,6 +76,7 @@ pub(crate) fn account_tab(id: String, view: &FocusedUsageView) -> UsageProviderT
         plan_label: view.account.plan_label.clone(),
         source_label: Some(usage_tab_source_label(view)),
         active: false,
+        account_capability: view.account.account_capability.clone(),
     }
 }
 

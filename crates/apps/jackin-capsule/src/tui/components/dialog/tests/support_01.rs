@@ -123,6 +123,7 @@ pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView
             username: None,
             plan_label: Some("Pro 20x".to_owned()),
             credential_origin: None,
+            account_capability: None,
         },
         buckets: vec![
             jackin_protocol::control::QuotaBucketView {
@@ -183,6 +184,7 @@ pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView
                 plan_label: Some("Pro 20x".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
                 active: true,
+                account_capability: None,
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-claude".to_owned(),
@@ -192,6 +194,7 @@ pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView
                 plan_label: Some("Max".to_owned()),
                 source_label: Some("stale · provider".to_owned()),
                 active: false,
+                account_capability: None,
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-amp".to_owned(),
@@ -201,6 +204,7 @@ pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView
                 plan_label: None,
                 source_label: None,
                 active: false,
+                account_capability: None,
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-grok".to_owned(),
@@ -210,6 +214,7 @@ pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView
                 plan_label: None,
                 source_label: Some("needs-login · provider".to_owned()),
                 active: false,
+                account_capability: None,
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-zai".to_owned(),
@@ -219,6 +224,7 @@ pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView
                 plan_label: Some("GLM Coding".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
                 active: false,
+                account_capability: None,
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-kimi".to_owned(),
@@ -228,6 +234,7 @@ pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView
                 plan_label: Some("Moonshot".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
                 active: false,
+                account_capability: None,
             },
             jackin_protocol::control::UsageProviderTab {
                 id: "test-tab-minimax".to_owned(),
@@ -237,6 +244,7 @@ pub(super) fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView
                 plan_label: Some("M1 Coding".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
                 active: false,
+                account_capability: None,
             },
         ],
         last_error: None,
@@ -338,6 +346,7 @@ pub(super) fn provider_usage_view_fixture(
         username: None,
         plan_label: plan_label.map(str::to_owned),
         credential_origin: None,
+        account_capability: None,
     };
     view.updated_label = updated_label.to_owned();
     view.buckets = buckets;

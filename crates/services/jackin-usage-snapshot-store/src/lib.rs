@@ -1,4 +1,5 @@
 mod buckets;
+mod identity;
 mod read;
 mod schema;
 mod types;

@@ -97,6 +97,7 @@ fn usage_provider_tab_id_roundtrips_and_defaults_when_absent() {
         plan_label: None,
         source_label: None,
         active: true,
+        account_capability: None,
     };
     let decoded: UsageProviderTab =
         serde_json::from_str(&serde_json::to_string(&tab).unwrap()).unwrap();
@@ -202,6 +203,7 @@ fn usage_account_list_roundtrips() {
         status: "fresh".to_owned(),
         last_error: None,
         quota_bucket: Some(quota_bucket),
+        account_capability: None,
     }];
     let json = serde_json::to_string(&ServerMsg::UsageAccounts {
         accounts: accounts.clone(),

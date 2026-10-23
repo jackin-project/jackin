@@ -93,6 +93,25 @@ pub struct UsageAccountCapability {
     pub surface_id: String,
 }
 
+impl UsageAccountCapability {
+    /// Return a stable opaque key by hashing both selector values without normalization.
+    ///
+    /// The key is metadata for identity continuity and grants no membership or
+    /// authorization.
+    #[must_use]
+    pub fn opaque_identity_key(&self) -> String {
+        let identity = format!(
+            "{}:{}{}:{}",
+            self.surface_id.len(),
+            self.surface_id,
+            self.account_id.len(),
+            self.account_id
+        );
+        let digest = jackin_core::account_key_hash("usage-capability-v1", &identity);
+        format!("capability-v1:{digest}")
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct UsageCatalogEntry {
     pub capability: UsageAccountCapability,

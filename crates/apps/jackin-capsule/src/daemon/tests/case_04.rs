@@ -215,6 +215,7 @@ fn control_usage_account_list_uses_in_memory_cache() {
         username: None,
         plan_label: Some("Pro 20x".to_owned()),
         credential_origin: None,
+        account_capability: None,
     };
     view.status = jackin_protocol::control::UsageSnapshotStatus::Fresh;
     view.source = jackin_protocol::control::UsageSource::ProviderApi;
@@ -345,6 +346,7 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
                 username: None,
                 plan_label: None,
                 credential_origin: None,
+                account_capability: None,
             },
             ..jackin_protocol::control::FocusedUsageView::unavailable("seed", 1)
         },

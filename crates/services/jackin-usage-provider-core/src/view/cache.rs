@@ -7,8 +7,7 @@ use super::super::{
     usage_cache_key_for_broker_account,
 };
 use super::{
-    broker_account_id_from_cache_key, enrich_provider_tabs, mark_active_tab,
-    refresh_failed_view_presentation, usage_account_tab_id,
+    enrich_provider_tabs, mark_active_tab, refresh_failed_view_presentation, usage_tab_id_for_view,
 };
 
 impl UsageCache {
@@ -58,6 +57,10 @@ impl UsageCache {
         if state.error.is_some() {
             refresh_failed_view_presentation(&mut view);
         }
+        // The exact target/state match and surface check above authenticate this
+        // selector for the adopted view; discard any provider-supplied tab set.
+        view.account.account_capability = Some(target.capability.clone());
+        view.tabs.clear();
         self.snapshots.insert(
             usage_cache_key_for_broker_account(
                 &target.agent,
@@ -85,8 +88,17 @@ impl UsageCache {
             let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
             view.focused_agent = Some(target.agent.clone());
             view.focused_provider = target.provider.clone();
+            view.account.account_capability = Some(target.capability.clone());
             CachedUsage { view }
         });
+        if cached.view.account.account_capability.as_ref() != Some(&target.capability) {
+            let mut view = FocusedUsageView::unavailable(&error.message, now_epoch());
+            view.focused_agent = Some(target.agent.clone());
+            view.focused_provider = target.provider.clone();
+            view.account.account_capability = Some(target.capability.clone());
+            cached.view = view;
+        }
+        cached.view.tabs.clear();
         cached.view.last_error = Some(error.message.clone());
         cached.view.status = if cached.view.buckets.is_empty() {
             UsageSnapshotStatus::Error
@@ -98,37 +110,69 @@ impl UsageCache {
 }
 
 impl UsageCache {
-    pub fn focused_snapshot_for_account_id(&self, account_id: &str) -> Option<FocusedUsageView> {
-        let mut view = self
+    pub fn focused_snapshot_for_account_id(&self, tab_id: &str) -> Option<FocusedUsageView> {
+        let bound = self
             .snapshots
             .values()
             .filter(|cached| {
-                usage_account_tab_id(
-                    &cached.view.account.provider_label,
-                    &cached.view.account.account_label,
-                ) == account_id
+                cached
+                    .view
+                    .account
+                    .account_capability
+                    .as_ref()
+                    .is_some_and(|capability| capability.opaque_identity_key() == tab_id)
             })
-            .max_by_key(|cached| cached.view.fetched_at_epoch)
-            .map(|cached| cached.view.clone())?;
+            .collect::<Vec<_>>();
+        let cached = if let Some(first) = bound.first() {
+            let capability = first.view.account.account_capability.as_ref()?;
+            if bound
+                .iter()
+                .any(|cached| cached.view.account.account_capability.as_ref() != Some(capability))
+            {
+                return None;
+            }
+            bound
+                .into_iter()
+                .max_by_key(|cached| cached.view.fetched_at_epoch)?
+        } else {
+            let mut unbound = self.snapshots.values().filter(|cached| {
+                cached.view.account.account_capability.is_none()
+                    && usage_tab_id_for_view(&cached.view) == tab_id
+            });
+            let cached = unbound.next()?;
+            if unbound.next().is_some() {
+                return None;
+            }
+            cached
+        };
+        let mut view = cached.view.clone();
         refresh_cached_updated_label(&mut view, now_epoch());
         enrich_provider_tabs(&mut view, &self.snapshots);
         mark_active_tab(&mut view);
         Some(view)
     }
 
-    pub fn broker_account_id_for_tab_id(&self, tab_id: &str) -> Option<String> {
-        self.snapshots
-            .iter()
-            .filter(|(_, cached)| {
-                usage_account_tab_id(
-                    &cached.view.account.provider_label,
-                    &cached.view.account.account_label,
-                ) == tab_id
-            })
-            .filter_map(|(key, cached)| {
-                broker_account_id_from_cache_key(key).map(|id| (cached.view.fetched_at_epoch, id))
-            })
-            .max_by_key(|(fetched_at_epoch, _)| *fetched_at_epoch)
-            .map(|(_, id)| id)
+    pub fn broker_capability_for_tab_id(
+        &self,
+        tab_id: &str,
+    ) -> Option<jackin_protocol::usage_broker::UsageAccountCapability> {
+        let mut selected = None;
+        for capability in self
+            .snapshots
+            .values()
+            .filter_map(|cached| cached.view.account.account_capability.as_ref())
+        {
+            if capability.opaque_identity_key() != tab_id {
+                continue;
+            }
+            if selected
+                .as_ref()
+                .is_some_and(|previous| previous != capability)
+            {
+                return None;
+            }
+            selected = Some(capability.clone());
+        }
+        selected
     }
 }

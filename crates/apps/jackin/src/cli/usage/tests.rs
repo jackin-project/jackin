@@ -7,6 +7,7 @@ use jackin_protocol::control::{
     Money, PercentObservationOrigin, ProviderQuotaState, QuotaBucketView, UsageSeverity,
     UsageSnapshotStatus,
 };
+use jackin_protocol::usage_broker::UsageAccountCapability;
 use jackin_protocol::usage_monitor::SpendRecordSource;
 
 #[test]
@@ -16,6 +17,73 @@ fn canonical_overview() {
         "openaicodex"
     );
     assert_eq!(normalize_usage_provider_label("Z.AI"), "zai");
+}
+
+#[test]
+fn account_json_keeps_v1_envelope_and_optional_capability_carriers() {
+    let mut personal = account("Codex", "fresh", "provider_api", "authoritative");
+    personal.account_label = "shared@example.test".to_owned();
+    personal.account_capability = Some(UsageAccountCapability {
+        account_id: "account-personal".to_owned(),
+        surface_id: "codex".to_owned(),
+    });
+    personal.used_amount = Some(i64::MIN);
+    personal.used_unit = Some("historic used unit".to_owned());
+    personal.limit_amount = Some(i64::MAX);
+    personal.limit_unit = Some("historic limit unit".to_owned());
+    personal.quota_bucket.as_mut().unwrap().used_money = Some(Money::new(i64::MIN, "USD", 4));
+    personal.quota_bucket.as_mut().unwrap().limit_money = Some(Money::new(i64::MAX, "USD", 7));
+
+    let mut work = personal.clone();
+    work.account_capability = Some(UsageAccountCapability {
+        account_id: "account-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    });
+    let mut legacy = account("Codex", "stale", "provider_api", "authoritative");
+    legacy.account_label = "shared@example.test".to_owned();
+
+    let envelope = OutputEnvelope::v1(UsageAccountsOutput {
+        container: "host-cache".to_owned(),
+        accounts: vec![personal.clone(), work.clone(), legacy.clone()],
+        synced_host_cache_path: None,
+        host_cache_path: Some("/private/accounts.db".to_owned()),
+    });
+    let encoded = serde_json::to_string(&envelope).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(value["schema_version"], "v1");
+    assert_eq!(value["data"]["container"], "host-cache");
+    assert_eq!(
+        value["data"]["synced_host_cache_path"],
+        serde_json::Value::Null
+    );
+    assert_eq!(value["data"]["host_cache_path"], "/private/accounts.db");
+    let accounts = value["data"]["accounts"].as_array().unwrap();
+    assert_eq!(accounts.len(), 3);
+    assert_eq!(
+        accounts[0]["account_capability"]["account_id"],
+        "account-personal"
+    );
+    assert_eq!(accounts[0]["account_capability"]["surface_id"], "codex");
+    assert_eq!(
+        accounts[1]["account_capability"]["account_id"],
+        "account-work"
+    );
+    assert_eq!(accounts[1]["account_capability"]["surface_id"], "codex");
+    assert!(accounts[2].get("account_capability").is_none());
+    let decoded = accounts
+        .iter()
+        .map(|account| serde_json::from_value::<AccountUsageSnapshotView>(account.clone()).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(decoded, [personal, work, legacy]);
+
+    let mut legacy_json = serde_json::to_value(&decoded[2]).unwrap();
+    legacy_json
+        .as_object_mut()
+        .unwrap()
+        .remove("account_capability");
+    let old_account: AccountUsageSnapshotView = serde_json::from_value(legacy_json).unwrap();
+    assert!(old_account.account_capability.is_none());
+    assert_eq!(OutputFormat::parse("json"), OutputFormat::Json);
 }
 
 #[test]
@@ -36,6 +104,7 @@ fn formats_account_usage_with_shared_unit() {
         status: "fresh".to_owned(),
         last_error: None,
         quota_bucket: None,
+        account_capability: None,
     };
 
     assert_eq!(usage_amount_label(&account), "37/100 percent");
@@ -169,6 +238,7 @@ fn account(
             limit_money: None,
             severity: UsageSeverity::Normal,
         }),
+        account_capability: None,
     }
 }
 

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::TelemetryContext;
 use crate::agent_status::AgentStatusReport;
+use crate::usage_broker::UsageAccountCapability;
 
 pub use crate::quota::{
     CanonicalRemainingPercent, CanonicalUsedPercent, CountQuota, CountQuotaPeriod,
@@ -322,6 +323,9 @@ pub struct TokenUsageSummary {
 pub struct AccountUsageSnapshotView {
     pub provider: String,
     pub account_label: String,
+    /// A persisted account selector. This value is metadata and grants no authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_capability: Option<UsageAccountCapability>,
     pub source: String,
     pub confidence: String,
     pub window_kind: String,
@@ -383,6 +387,7 @@ impl FocusedUsageView {
                 username: None,
                 plan_label: None,
                 credential_origin: None,
+                account_capability: None,
             },
             buckets: Vec::new(),
             status: UsageSnapshotStatus::Unavailable,
@@ -422,6 +427,7 @@ impl FocusedUsageView {
             && self.account.username.is_none()
             && self.account.plan_label.is_none()
             && self.account.credential_origin.is_none()
+            && self.account.account_capability.is_none()
             && self.status_bar_label == "refreshing"
             && self.updated_label == "Refreshing"
             && self.last_error.as_deref() == Some("refreshing")
@@ -432,6 +438,9 @@ impl FocusedUsageView {
 pub struct FocusedAccountHeader {
     pub provider_label: String,
     pub account_label: String,
+    /// A persisted account selector. This value is metadata and grants no authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_capability: Option<UsageAccountCapability>,
     #[serde(default)]
     pub username: Option<String>,
     pub plan_label: Option<String>,
@@ -622,6 +631,9 @@ pub struct UsageDetailPresentation {
 pub struct UsageProviderTab {
     #[serde(default)]
     pub id: String,
+    /// A persisted account selector. This value is metadata and grants no authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_capability: Option<UsageAccountCapability>,
     pub label: String,
     pub status_label: String,
     pub account_label: String,

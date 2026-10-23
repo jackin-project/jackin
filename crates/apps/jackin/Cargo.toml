@@ -53,6 +53,7 @@ jackin-usage-credential-resolver = { workspace = true }
 jackin-usage-discovery = { workspace = true }
 jackin-usage-host-credentials = { workspace = true }
 jackin-usage-provider-claude = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
 jackin-workflow-spec = { workspace = true }
 jackin-workflow = { workspace = true }
 jackin-process = { workspace = true }
@@ -97,6 +98,7 @@ syn = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true }
+jackin-usage-store-backend = { workspace = true, features = ["test-support"] }
 
 [[bench]]
 name = "console_frame"

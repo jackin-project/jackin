@@ -143,6 +143,7 @@ fn usage_overview_renders_one_row_per_account_tab() {
             plan_label: Some("Max".to_owned()),
             source_label: Some("fresh · provider".to_owned()),
             active: false,
+            account_capability: None,
         },
         jackin_protocol::control::UsageProviderTab {
             id: "test-tab-claude-b".to_owned(),
@@ -152,6 +153,7 @@ fn usage_overview_renders_one_row_per_account_tab() {
             plan_label: Some("Max 20x".to_owned()),
             source_label: Some("fresh · provider".to_owned()),
             active: true,
+            account_capability: None,
         },
         jackin_protocol::control::UsageProviderTab {
             id: "test-tab-codex".to_owned(),
@@ -161,6 +163,7 @@ fn usage_overview_renders_one_row_per_account_tab() {
             plan_label: Some("Pro 20x".to_owned()),
             source_label: Some("fresh · provider".to_owned()),
             active: false,
+            account_capability: None,
         },
     ];
     let strip = crate::tui::components::dialog_widgets::usage_tab_strip_labels(
@@ -230,6 +233,7 @@ fn usage_dialog_renders_auth_source_and_omits_blank_email() {
         username: Some("donbeave".to_owned()),
         plan_label: Some("GLM Coding".to_owned()),
         credential_origin: Some("API token \u{b7} env ZAI_API_KEY".to_owned()),
+        account_capability: None,
     };
     let snapshot = render_usage_dialog_snapshot_for_view(120, 40, UsageDialogTab::Provider, view);
     assert!(

@@ -139,7 +139,7 @@ fn schema_v4_migration_preserves_old_scalars_and_marks_percent_history_unknown()
     assert_eq!(legacy.pace_label.as_deref(), Some("historic pace"));
     assert_eq!(
         schema_version(&db).expect("schema version"),
-        Some("5".to_owned())
+        Some("6".to_owned())
     );
     block_on_store(async {
         let conn = open_store(&db).await?;
@@ -285,6 +285,21 @@ fn failed_snapshot_migration_commit_rolls_back_and_can_retry() {
     })
     .expect("verify failed commit rolled back");
 
+    let committed_receipt_exists = std::fs::read_dir(dir.path())
+        .expect("scan snapshot migration backup generations")
+        .map(|entry| entry.expect("read snapshot backup directory entry"))
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(".jackin-quota-backup-"))
+        })
+        .any(|path| path.join("migration_committed.manifest").is_file());
+    assert!(
+        !committed_receipt_exists,
+        "failed COMMIT must not publish a migration_committed receipt"
+    );
+
     store_usage_snapshot(&db, &usage_view()).expect("retry migration with a fresh handle");
     assert_eq!(
         connection_build_count(&db).expect("retry connection count"),
@@ -292,7 +307,7 @@ fn failed_snapshot_migration_commit_rolls_back_and_can_retry() {
     );
     assert_eq!(
         schema_version(&db).expect("schema version").as_deref(),
-        Some("5")
+        Some("6")
     );
     let rows = stored_account_snapshots(&db).expect("read retry result");
     assert_eq!(
@@ -427,7 +442,7 @@ fn schema_migration_error_rolls_back_and_can_retry_after_fixing_source_row() {
         row.quota_bucket.remaining_percent_origin,
         Some(PercentObservationOrigin::HistoricalUnknown)
     );
-    assert_eq!(schema_version(&db).unwrap().as_deref(), Some("5"));
+    assert_eq!(schema_version(&db).unwrap().as_deref(), Some("6"));
 }
 
 #[test]
@@ -477,7 +492,7 @@ fn cached_snapshot_connection_rechecks_future_schema_before_writing() {
     block_on_store(async {
         let conn = open_store(&db).await?;
         conn.execute(
-            "UPDATE _meta SET value = '6' WHERE key = 'schema_version'",
+            "UPDATE _meta SET value = '7' WHERE key = 'schema_version'",
             (),
         )
         .await
@@ -498,7 +513,7 @@ fn cached_snapshot_connection_rechecks_future_schema_before_writing() {
         let version: String = row.get(0).map_err(|err| err.to_string())?;
         Ok::<String, String>(version)
     });
-    assert_eq!(version.unwrap(), "6");
+    assert_eq!(version.unwrap(), "7");
 }
 
 #[test]
