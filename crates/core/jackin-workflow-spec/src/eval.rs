@@ -221,15 +221,42 @@ pub fn evaluate_bounded(
         .timeout(limits.deadline)
         .env_clear()
         .output_limits(limits.max_stdout_bytes, limits.max_stderr_bytes);
-    let outcome = jackin_process::exec_sync(&spawn).map_err(|error| {
-        WorkflowError::single(Diagnostic::new(
-            file_label,
-            "",
-            ErrorCode::EvaluationLimit,
-            format!("cannot run the evaluation helper: {error}"),
-            "reinstall jackin so jackin-workflow-eval sits next to the CLI",
-        ))
-    })?;
+    let outcome = match jackin_process::exec_sync(&spawn) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            if let Some(delivery) = error.downcast_ref::<jackin_process::StdinDeliveryError>() {
+                let child = delivery.result();
+                let delivery_detail = match delivery.operation() {
+                    jackin_process::StdinDeliveryOperation::Write => "writing the request",
+                    jackin_process::StdinDeliveryOperation::Shutdown => "closing request stdin",
+                };
+                return Err(helper_death_error(
+                    file_label,
+                    child.code,
+                    &child.stderr,
+                    Some(delivery_detail),
+                    child.success,
+                ));
+            }
+            let missing_helper = error.chain().any(|cause| {
+                cause
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|io_error| io_error.kind() == std::io::ErrorKind::NotFound)
+            });
+            let action = if missing_helper {
+                "reinstall jackin so jackin-workflow-eval sits next to the CLI"
+            } else {
+                "inspect the helper transport error and verify the helper can run"
+            };
+            return Err(WorkflowError::single(Diagnostic::new(
+                file_label,
+                "",
+                ErrorCode::EvaluationLimit,
+                format!("cannot run the evaluation helper: {error}"),
+                action,
+            )));
+        }
+    };
     if outcome.timed_out {
         return Err(WorkflowError::single(Diagnostic::new(
             file_label,
@@ -243,17 +270,13 @@ pub fn evaluate_bounded(
         )));
     }
     if !outcome.success {
-        return Err(WorkflowError::single(Diagnostic::new(
+        return Err(helper_death_error(
             file_label,
-            "",
-            ErrorCode::EvaluationLimit,
-            format!(
-                "evaluation helper died (code={:?}): {}",
-                outcome.code,
-                stderr_excerpt(&outcome.stderr)
-            ),
-            "retry; a repeated death means the definition exhausts the evaluation memory cap",
-        )));
+            outcome.code,
+            &outcome.stderr,
+            None,
+            false,
+        ));
     }
     let response: HelperResponse = serde_json::from_slice(&outcome.stdout).map_err(|error| {
         WorkflowError::single(Diagnostic::new(
@@ -280,6 +303,38 @@ pub fn evaluate_bounded(
         module_digests: bundle.module_digests(),
         env_reads: response.env_reads.unwrap_or_default(),
     })
+}
+
+fn helper_death_error(
+    file_label: &str,
+    code: Option<i32>,
+    stderr: &[u8],
+    delivery_detail: Option<&str>,
+    child_success: bool,
+) -> WorkflowError {
+    let stderr = stderr_excerpt(stderr);
+    let delivery = delivery_detail.map_or_else(String::new, |detail| {
+        format!("; stdin delivery failed while {detail}")
+    });
+    let message = if child_success {
+        format!(
+            "evaluation helper exited successfully before request delivery completed (code={code:?}{delivery}): {stderr}"
+        )
+    } else {
+        format!("evaluation helper died (code={code:?}{delivery}): {stderr}")
+    };
+    let action = if stderr.contains("cannot set the memory cap") {
+        "check the configured evaluation memory cap and retry"
+    } else {
+        "inspect the helper's reported cause; resource limits may cause helper failure"
+    };
+    WorkflowError::single(Diagnostic::new(
+        file_label,
+        "",
+        ErrorCode::EvaluationLimit,
+        message,
+        action,
+    ))
 }
 
 fn stderr_excerpt(bytes: &[u8]) -> String {
