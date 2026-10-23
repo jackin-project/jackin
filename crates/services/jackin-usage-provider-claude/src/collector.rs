@@ -257,6 +257,11 @@ where
                 provider_http_status: Some(401),
             });
         }
+        if !admit_operation() {
+            return Err(ClaudeFetchError::ConsentRevoked {
+                provider_http_status: Some(401),
+            });
+        }
         let access_token = credential.access_token;
         resolved.replace_access_token(access_token.clone());
         let retried = fetch(resolved.access_token()).map_err(ClaudeFetchError::Provider);
