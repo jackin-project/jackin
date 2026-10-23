@@ -38,7 +38,7 @@ mod op_types;
 mod operator_notice;
 mod path_text;
 mod paths;
-mod profile_material;
+mod profile_material_v2;
 mod prompt_result;
 mod reasoning_effort;
 mod runner;
@@ -84,10 +84,11 @@ pub use operator_notice::{
 };
 pub use path_text::*;
 pub use paths::*;
-pub use profile_material::{
-    ProfileCredentialSourceIdentity, ProfileCredentialSourceMaterial,
-    amp_profile_credential_payload, profile_credential_material_revision,
-    profile_credential_source_identity,
+pub use profile_material_v2::{
+    ProfileCredentialFingerprintV2, ProfileCredentialProofComparison,
+    ProfileCredentialSourceIdentityV2, ProfileCredentialSourceMaterialV2, ProfileCredentialV2Error,
+    compare_profile_credential_material_proofs, profile_credential_material_revision_v2,
+    profile_credential_source_identity_v2, profile_credential_source_material_v2,
 };
 pub use prompt_result::*;
 pub use reasoning_effort::{ParseReasoningEffortError, ReasoningEffort};
