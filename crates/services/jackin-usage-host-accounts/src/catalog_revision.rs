@@ -6,6 +6,7 @@
 
 mod framing;
 mod lease;
+mod private_acl;
 mod state;
 mod storage;
 

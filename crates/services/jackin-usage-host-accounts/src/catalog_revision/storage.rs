@@ -1,3 +1,4 @@
+use super::private_acl::ensure_private_descriptor;
 use super::state::{
     FileIdentity, StateRecord, decode_key_file, decode_marker, encode_key_file, encode_marker,
     key_commitment,
@@ -13,6 +14,7 @@ use rustix::io::Errno;
 use rustix::process::geteuid;
 use std::fs::File;
 use std::io::Write;
+use std::os::fd::AsFd;
 use std::os::unix::fs::FileExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -73,9 +75,8 @@ impl InitializationGuard {
         if self.identity != root.identity || self.owner_uid != root.owner_uid {
             return Err(CatalogAuthorityError::UnsafeStore);
         }
-        let stat = fstat(&self.directory).map_err(storage_error)?;
-        validate_directory_stat(
-            &stat,
+        validate_directory_descriptor(
+            &self.directory,
             self.owner_uid,
             Some(PRIVATE_DIRECTORY_MODE),
             Some(self.identity),
@@ -92,9 +93,8 @@ pub(super) fn acquire_initialization_guard(
     let opened =
         openat(root.directory(), ".", DIRECTORY_FLAGS, Mode::empty()).map_err(storage_error)?;
     let directory = File::from(opened);
-    let stat = fstat(&directory).map_err(storage_error)?;
-    validate_directory_stat(
-        &stat,
+    validate_directory_descriptor(
+        &directory,
         root.owner_uid(),
         Some(PRIVATE_DIRECTORY_MODE),
         Some(root.identity),
@@ -111,9 +111,8 @@ pub(super) fn acquire_initialization_guard(
         }
         Err(error) => return Err(storage_error(error)),
     }
-    let stat = fstat(&directory).map_err(storage_error)?;
-    validate_directory_stat(
-        &stat,
+    validate_directory_descriptor(
+        &directory,
         root.owner_uid(),
         Some(PRIVATE_DIRECTORY_MODE),
         Some(root.identity),
@@ -133,8 +132,12 @@ impl RootAnchor {
         }
         let directory = walk_absolute_directory(path)?;
         let owner_uid = effective_uid();
-        let stat = fstat(&directory).map_err(storage_error)?;
-        validate_directory_stat(&stat, owner_uid, Some(PRIVATE_DIRECTORY_MODE), None)?;
+        let stat = validate_directory_descriptor(
+            &directory,
+            owner_uid,
+            Some(PRIVATE_DIRECTORY_MODE),
+            None,
+        )?;
         Ok(Arc::new(Self {
             path: path.to_path_buf(),
             identity: identity_from_stat(&stat),
@@ -147,21 +150,20 @@ impl RootAnchor {
         if effective_uid() != self.owner_uid {
             return Err(CatalogAuthorityError::UnsafeStore);
         }
-        let pinned = fstat(&self.directory).map_err(storage_error)?;
-        validate_directory_stat(
-            &pinned,
+        validate_directory_descriptor(
+            &self.directory,
             self.owner_uid,
             Some(PRIVATE_DIRECTORY_MODE),
             Some(self.identity),
         )?;
         let current = walk_absolute_directory(&self.path)?;
-        let current_stat = fstat(&current).map_err(storage_error)?;
-        validate_directory_stat(
-            &current_stat,
+        validate_directory_descriptor(
+            &current,
             self.owner_uid,
             Some(PRIVATE_DIRECTORY_MODE),
             Some(self.identity),
         )
+        .map(|_| ())
     }
 
     pub(super) fn directory(&self) -> &File {
@@ -343,6 +345,7 @@ fn create_or_recover_lock_temp(
 }
 
 fn prepare_lock_temp(root: &RootAnchor, lock_temp: &File) -> Result<(), CatalogAuthorityError> {
+    ensure_private_descriptor(root.directory().as_fd())?;
     failure_point(FailurePoint::LockTempCreated)?;
     acquire_lock(lock_temp, true)?;
     verify_open_regular(
@@ -361,6 +364,7 @@ fn publish_lock_name(
     lock_temp: &File,
     intent: &InitializationIntent,
 ) -> Result<Option<Arc<CatalogRevisionAuthority>>, CatalogAuthorityError> {
+    ensure_private_descriptor(root.directory().as_fd())?;
     match linkat(
         root.directory(),
         LOCK_TEMP_NAME,
@@ -400,6 +404,7 @@ fn finish_lock_publication(
     root: &RootAnchor,
     lock_temp: &File,
 ) -> Result<(), CatalogAuthorityError> {
+    ensure_private_descriptor(root.directory().as_fd())?;
     let linked_lock =
         named_stat(root.directory(), LOCK_NAME)?.ok_or(CatalogAuthorityError::RecoveryRequired)?;
     let lock_temp_stat = fstat(lock_temp).map_err(storage_error)?;
@@ -490,6 +495,7 @@ fn open_lock(
     if file_type(&named)? != FileType::RegularFile {
         return Err(CatalogAuthorityError::UnsafeStore);
     }
+    ensure_private_descriptor(root.as_fd())?;
     let flags = if exclusive {
         READ_WRITE_FILE_FLAGS
     } else {
@@ -551,6 +557,7 @@ fn create_private_file(
     name: &str,
     owner_uid: u32,
 ) -> Result<File, CatalogAuthorityError> {
+    ensure_private_descriptor(root.as_fd())?;
     let opened = openat(
         root,
         name,
@@ -582,6 +589,7 @@ fn verify_open_regular(
     {
         return Err(CatalogAuthorityError::UnsafeStore);
     }
+    ensure_private_descriptor(file.as_fd())?;
     Ok(stat)
 }
 
@@ -593,6 +601,7 @@ fn verify_named_descriptor(
     mode: u32,
     size: i64,
 ) -> Result<(), CatalogAuthorityError> {
+    ensure_private_descriptor(parent.as_fd())?;
     let before = named_stat(parent, name)?.ok_or(CatalogAuthorityError::RecoveryRequired)?;
     if file_type(&before)? != FileType::RegularFile {
         return Err(CatalogAuthorityError::UnsafeStore);
@@ -627,6 +636,7 @@ fn open_named_regular(
     expected_identity: Option<FileIdentity>,
 ) -> Result<File, CatalogAuthorityError> {
     let expected_size = i64::try_from(size).map_err(|_| CatalogAuthorityError::InvalidEvidence)?;
+    ensure_private_descriptor(parent.as_fd())?;
     let before = named_stat(parent, name)?.ok_or(CatalogAuthorityError::RecoveryRequired)?;
     if file_type(&before)? != FileType::RegularFile {
         return Err(CatalogAuthorityError::UnsafeStore);
@@ -656,6 +666,7 @@ fn open_named_directory(
     owner_uid: u32,
     expected_identity: FileIdentity,
 ) -> Result<File, CatalogAuthorityError> {
+    ensure_private_descriptor(parent.as_fd())?;
     let before = named_stat(parent, name)?.ok_or(CatalogAuthorityError::RecoveryRequired)?;
     validate_directory_stat(
         &before,
@@ -665,9 +676,8 @@ fn open_named_directory(
     )?;
     let opened = openat(parent, name, DIRECTORY_FLAGS, Mode::empty()).map_err(storage_error)?;
     let directory = File::from(opened);
-    let opened_stat = fstat(&directory).map_err(storage_error)?;
-    validate_directory_stat(
-        &opened_stat,
+    validate_directory_descriptor(
+        &directory,
         owner_uid,
         Some(PRIVATE_DIRECTORY_MODE),
         Some(expected_identity),
@@ -696,6 +706,7 @@ fn publish_initial_state(
     failure_point(FailurePoint::InitialStateTempCreated)?;
     let encoded = initial.encode();
     prepare_initial_state_temp(root, &temp, &encoded)?;
+    ensure_private_descriptor(root.directory().as_fd())?;
     linkat(
         root.directory(),
         INITIAL_STATE_TEMP_NAME,
@@ -726,6 +737,15 @@ fn prepare_initial_state_temp(
     temp: &File,
     encoded: &[u8; super::state::STATE_RECORD_BYTES],
 ) -> Result<(), CatalogAuthorityError> {
+    ensure_private_descriptor(root.directory().as_fd())?;
+    verify_named_descriptor(
+        root.directory(),
+        INITIAL_STATE_TEMP_NAME,
+        temp,
+        root.owner_uid(),
+        PRIVATE_FILE_MODE,
+        0,
+    )?;
     let mut writer = temp;
     writer
         .write_all(encoded)
@@ -755,6 +775,7 @@ fn verify_linked_initial_state(
     temp: &File,
     encoded_len: usize,
 ) -> Result<(), CatalogAuthorityError> {
+    ensure_private_descriptor(root.directory().as_fd())?;
     let linked_state =
         named_stat(root.directory(), STATE_NAME)?.ok_or(CatalogAuthorityError::RecoveryRequired)?;
     let temp_stat = fstat(temp).map_err(storage_error)?;
@@ -862,6 +883,7 @@ fn verify_initial_authority_state(
 fn create_authority_directory(
     root: &RootAnchor,
 ) -> Result<(File, FileIdentity), CatalogAuthorityError> {
+    ensure_private_descriptor(root.directory().as_fd())?;
     mkdirat(
         root.directory(),
         AUTHORITY_DIRECTORY_NAME,
@@ -877,9 +899,8 @@ fn create_authority_directory(
     .map_err(storage_error)?;
     let directory = File::from(opened_dir);
     fchmod(&directory, Mode::from_raw_mode(PRIVATE_DIRECTORY_RAW_MODE)).map_err(storage_error)?;
-    let directory_stat = fstat(&directory).map_err(storage_error)?;
-    validate_directory_stat(
-        &directory_stat,
+    let directory_stat = validate_directory_descriptor(
+        &directory,
         root.owner_uid(),
         Some(PRIVATE_DIRECTORY_MODE),
         None,
@@ -901,6 +922,15 @@ fn write_key_payload(
     owner_uid: u32,
     key_encoded: &Zeroizing<[u8; super::state::KEY_FILE_BYTES]>,
 ) -> Result<(), CatalogAuthorityError> {
+    ensure_private_descriptor(directory.as_fd())?;
+    verify_named_descriptor(
+        directory,
+        KEY_NAME,
+        key_file,
+        owner_uid,
+        PRIVATE_FILE_MODE,
+        0,
+    )?;
     let mut key_writer = key_file;
     key_writer
         .write_all(&key_encoded[..])
@@ -924,6 +954,15 @@ fn write_marker_payload(
     owner_uid: u32,
     marker: &[u8; super::state::MARKER_BYTES],
 ) -> Result<(), CatalogAuthorityError> {
+    ensure_private_descriptor(directory.as_fd())?;
+    verify_named_descriptor(
+        directory,
+        MARKER_NAME,
+        marker_file,
+        owner_uid,
+        PRIVATE_FILE_MODE,
+        0,
+    )?;
     let mut marker_writer = marker_file;
     marker_writer
         .write_all(marker)
@@ -986,6 +1025,15 @@ fn prepare_adopted_state_temp(
     temp: &File,
     encoded: &[u8; super::state::STATE_RECORD_BYTES],
 ) -> Result<(), CatalogAuthorityError> {
+    ensure_private_descriptor(root.directory().as_fd())?;
+    verify_named_descriptor(
+        root.directory(),
+        ADOPTED_STATE_TEMP_NAME,
+        temp,
+        root.owner_uid(),
+        PRIVATE_FILE_MODE,
+        0,
+    )?;
     let mut writer = temp;
     writer
         .write_all(encoded)
@@ -1014,6 +1062,7 @@ fn verify_current_state_before_adopted_replace(
     root: &RootAnchor,
     current_state: &File,
 ) -> Result<(), CatalogAuthorityError> {
+    ensure_private_descriptor(root.directory().as_fd())?;
     let current_named =
         named_stat(root.directory(), STATE_NAME)?.ok_or(CatalogAuthorityError::RecoveryRequired)?;
     if identity_from_stat(&current_named) != identity_from_file(current_state)? {
@@ -1028,9 +1077,9 @@ fn verify_named_directory_identity(
     expected: FileIdentity,
     owner_uid: u32,
 ) -> Result<(), CatalogAuthorityError> {
-    let child_stat = fstat(child).map_err(storage_error)?;
-    validate_directory_stat(
-        &child_stat,
+    ensure_private_descriptor(parent.as_fd())?;
+    validate_directory_descriptor(
+        child,
         owner_uid,
         Some(PRIVATE_DIRECTORY_MODE),
         Some(expected),
@@ -1428,6 +1477,7 @@ fn fill_random(destination: &mut [u8]) -> Result<(), CatalogAuthorityError> {
 }
 
 fn read_fixed<const N: usize>(file: &File) -> Result<Zeroizing<[u8; N]>, CatalogAuthorityError> {
+    ensure_private_descriptor(file.as_fd())?;
     let mut bytes = Zeroizing::new([0_u8; N]);
     let mut offset = 0_usize;
     while offset < N {
@@ -1494,18 +1544,30 @@ fn validate_directory_stat(
     Ok(())
 }
 
+fn validate_directory_descriptor(
+    directory: &File,
+    owner_uid: u32,
+    expected_mode: Option<u32>,
+    expected_identity: Option<FileIdentity>,
+) -> Result<rustix::fs::Stat, CatalogAuthorityError> {
+    let stat = fstat(directory).map_err(storage_error)?;
+    validate_directory_stat(&stat, owner_uid, expected_mode, expected_identity)?;
+    ensure_private_descriptor(directory.as_fd())?;
+    Ok(stat)
+}
+
 #[cfg(test)]
 pub(super) fn validate_root_owner_for_test(
     root: &RootAnchor,
     candidate_owner_uid: u32,
 ) -> Result<(), CatalogAuthorityError> {
-    let stat = fstat(root.directory()).map_err(storage_error)?;
-    validate_directory_stat(
-        &stat,
+    validate_directory_descriptor(
+        root.directory(),
         candidate_owner_uid,
         Some(PRIVATE_DIRECTORY_MODE),
         Some(root.identity),
     )
+    .map(|_| ())
 }
 
 fn identity_from_file(file: &File) -> Result<FileIdentity, CatalogAuthorityError> {

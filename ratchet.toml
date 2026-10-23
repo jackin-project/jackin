@@ -610,6 +610,9 @@ bound = 1
 key = "unsafe_code@jackin-process-directory"
 bound = 1
 [[family.entry]]
+key = "unsafe_code@jackin-usage-host-accounts"
+bound = 6
+[[family.entry]]
 key = "clippy::too_many_lines@jackin-usage-coordinator"
 bound = 1
 [[family.entry]]
