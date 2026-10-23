@@ -25,6 +25,7 @@ use jackin_usage_coordinator::{
 
 mod collector;
 mod collector_routing;
+mod resetless_cli;
 
 const SOURCE_ID_PREFIX: &str = "a";
 

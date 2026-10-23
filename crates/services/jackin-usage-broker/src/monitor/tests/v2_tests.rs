@@ -1698,6 +1698,64 @@ fn populated_monitor_state() -> (tempfile::TempDir, String, serde_json::Value) {
     (directory, started.monitor_id, state)
 }
 
+fn remove_statusline_pair_source_times_for_legacy_fixture(
+    state: &mut serde_json::Value,
+    session_id: &str,
+) {
+    let accounts = state
+        .get("accounts")
+        .and_then(serde_json::Value::as_object)
+        .expect("legacy fixture account object");
+    assert!(accounts.is_empty(), "fixture has no account authority");
+
+    let unbound_sessions = state
+        .get_mut("unbound_sessions")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("legacy fixture unbound sessions object");
+    assert_eq!(
+        unbound_sessions.len(),
+        1,
+        "fixture contains exactly its expected unbound session"
+    );
+    let session = unbound_sessions
+        .get_mut(session_id)
+        .expect("expected unbound session");
+    let windows = session
+        .get_mut("windows")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("legacy fixture session windows");
+    assert_eq!(windows.len(), 2, "fixture has both statusline windows");
+
+    for window in windows {
+        assert_eq!(
+            window
+                .get("used")
+                .and_then(|used| used.get("evidence_at_epoch")),
+            Some(&serde_json::Value::Null),
+            "statusline used source is actually absent"
+        );
+        assert_eq!(
+            window
+                .get("reset")
+                .and_then(|reset| reset.get("evidence_at_epoch")),
+            Some(&serde_json::Value::Null),
+            "statusline reset source is actually absent"
+        );
+        let pair = window
+            .get_mut("paired")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("legacy fixture statusline pair");
+        let removed_source_times = pair
+            .remove("source_times")
+            .expect("remove only schema-5 pair metadata");
+        assert_eq!(
+            removed_source_times,
+            serde_json::json!([null, null]),
+            "legacy pair metadata matches its actual source fields"
+        );
+    }
+}
+
 fn events_for<'a>(state: &'a serde_json::Value, monitor_id: &str) -> &'a [serde_json::Value] {
     state["monitors"][monitor_id]["events"]
         .as_array()
@@ -1764,6 +1822,10 @@ fn assert_rejected_without_rewriting(directory: &tempfile::TempDir, bytes: &[u8]
 #[test]
 fn v2_store_rejects_wrong_nested_event_schema_without_rewriting_source() {
     let (directory, monitor_id, mut state) = populated_monitor_state();
+    remove_statusline_pair_source_times_for_legacy_fixture(
+        &mut state,
+        "session-v2-event-migration",
+    );
     state["schema_version"] = serde_json::json!(2);
     let event_count = set_event_schema_versions(&mut state, &monitor_id, 2);
     state["monitors"][&monitor_id]["events"][0]["status"]["schema_version"] =
@@ -1778,6 +1840,10 @@ fn v2_store_rejects_wrong_nested_event_schema_without_rewriting_source() {
 fn v3_migration_rejects_wrong_or_future_nested_event_schema_without_rewriting_source() {
     for mismatched_version in [USAGE_MONITOR_SCHEMA_VERSION, u16::MAX] {
         let (directory, monitor_id, mut state) = populated_monitor_state();
+        remove_statusline_pair_source_times_for_legacy_fixture(
+            &mut state,
+            "session-v2-event-migration",
+        );
         state["schema_version"] = serde_json::json!(3);
         let event_count = set_event_schema_versions(&mut state, &monitor_id, 3);
         state["monitors"][&monitor_id]["events"][0]["status"]["schema_version"] =
@@ -1792,6 +1858,11 @@ fn v3_migration_rejects_wrong_or_future_nested_event_schema_without_rewriting_so
 #[test]
 fn v2_store_migrates_explicitly_to_current_schema() {
     let (directory, monitor_id, mut state) = populated_monitor_state();
+    let expected_current = state.clone();
+    remove_statusline_pair_source_times_for_legacy_fixture(
+        &mut state,
+        "session-v2-event-migration",
+    );
     state["schema_version"] = serde_json::json!(2);
     let event_count = set_event_schema_versions(&mut state, &monitor_id, 2);
     assert!(
@@ -1805,10 +1876,7 @@ fn v2_store_migrates_explicitly_to_current_schema() {
         &std::fs::read(persisted_state_path(&directory)).expect("read rewritten monitor state"),
     )
     .expect("parse rewritten monitor state");
-    let mut expected = state;
-    expected["schema_version"] = serde_json::json!(USAGE_MONITOR_SCHEMA_VERSION);
-    set_event_schema_versions(&mut expected, &monitor_id, USAGE_MONITOR_SCHEMA_VERSION);
-    assert_eq!(rewritten, expected);
+    assert_eq!(rewritten, expected_current);
     assert_eq!(
         events_for(&rewritten, &monitor_id).len(),
         event_count,
