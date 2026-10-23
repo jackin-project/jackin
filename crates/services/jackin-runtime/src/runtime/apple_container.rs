@@ -4,12 +4,13 @@
 use crate::apple_container_client::AppleContainerMount;
 use anyhow::{Context as _, Result, bail};
 
-use crate::apple_container_client::AppleContainerApi as _;
+use crate::apple_container_client::{AppleContainerApi as _, AppleContainerStatus};
 use crate::instance::{
     AppleContainerResources, BackendResources, DockerResources, InstanceManifest,
     NewInstanceManifest,
 };
 use jackin_core::JackinPaths;
+use std::future::Future;
 
 pub use jackin_runtime_apple_container_stop::stop::stop_with;
 
@@ -224,7 +225,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     Ok(())
 }
 
-use jackin_runtime_apple_container_running::running::is_container_running;
+use jackin_runtime_apple_container_running::running::inspect_container_with;
 
 pub async fn reconnect(
     paths: &JackinPaths,
@@ -232,30 +233,67 @@ pub async fn reconnect(
     focus_session: Option<u64>,
     entry_claim: Option<&super::universe::EntryClaim>,
 ) -> Result<()> {
-    let running = is_container_running(container_name).await;
+    let client = crate::apple_container_client::AppleContainerClient::new();
+    reconnect_with_client(paths, container_name, focus_session, entry_claim, &client).await
+}
 
-    if !running {
-        let start = crate::process_telemetry::exec_async(&jackin_process::ExecRequest::new(
-            "container",
-            ["start", container_name],
-        ))
+pub(crate) async fn reconnect_with_client(
+    paths: &JackinPaths,
+    container_name: &str,
+    focus_session: Option<u64>,
+    entry_claim: Option<&super::universe::EntryClaim>,
+    client: &impl crate::apple_container_client::AppleContainerApi,
+) -> Result<()> {
+    reconnect_with_client_and(client, container_name, || async {
+        if let Some(claim) = entry_claim {
+            claim
+                .activate()
+                .await
+                .context("activating running launch entry")?;
+        }
+        wait_for_capsule(container_name).await?;
+        let exit_code = attach(container_name, focus_session).await?;
+        record_attach_outcome(paths, container_name, exit_code).await;
+        Ok(())
+    })
+    .await
+}
+
+async fn reconnect_with_client_and<C, F, Fut>(
+    client: &C,
+    container_name: &str,
+    after_observed_running: F,
+) -> Result<()>
+where
+    C: crate::apple_container_client::AppleContainerApi,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<()>>,
+{
+    let observed = inspect_container_with(client, container_name)
         .await
-        .context("container start failed — is apple/container installed?")?;
-        if !start.success {
-            bail!("container start exited unsuccessfully");
+        .with_context(|| {
+            format!("cannot safely reconnect to Apple Container `{container_name}`")
+        })?;
+    let info = observed.ok_or_else(|| {
+        anyhow::anyhow!("Apple Container `{container_name}` is absent from the complete inventory")
+    })?;
+    anyhow::ensure!(
+        info.id == container_name,
+        "Apple Container inspection returned a different id"
+    );
+
+    match info.status {
+        AppleContainerStatus::Running => {}
+        AppleContainerStatus::Stopped => client
+            .start_container(container_name)
+            .await
+            .context("container start failed — is apple/container installed?")?,
+        AppleContainerStatus::Unknown | AppleContainerStatus::Stopping => {
+            bail!("Apple Container `{container_name}` has an uncertain lifecycle state")
         }
     }
 
-    if let Some(claim) = entry_claim {
-        claim
-            .activate()
-            .await
-            .context("activating running launch entry")?;
-    }
-    wait_for_capsule(container_name).await?;
-    let exit_code = attach(container_name, focus_session).await?;
-    record_attach_outcome(paths, container_name, exit_code).await;
-    Ok(())
+    after_observed_running().await
 }
 
 pub async fn ensure_absent_for_purge(container_name: &str) -> Result<()> {
@@ -274,7 +312,7 @@ pub async fn ensure_absent_for_purge_with(
         .list_containers(container_name)
         .await?
         .iter()
-        .any(|c| c.name == container_name);
+        .any(|c| c.id == container_name);
     if exists {
         bail!(
             "cannot purge local state: apple-container `{container_name}` still exists; \

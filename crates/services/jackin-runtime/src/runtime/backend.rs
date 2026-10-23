@@ -173,9 +173,14 @@ where
     ) -> Result<()> {
         let admission_lease =
             super::attach::require_current_account_admission(paths, container_name)?;
-        let result =
-            crate::runtime::apple_container::reconnect(paths, container_name, focus_session, None)
-                .await;
+        let result = crate::runtime::apple_container::reconnect_with_client(
+            paths,
+            container_name,
+            focus_session,
+            None,
+            &self.client,
+        )
+        .await;
         admission_lease.ensure_current(paths)?;
         result
     }

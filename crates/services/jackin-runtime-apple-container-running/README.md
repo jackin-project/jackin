@@ -1,35 +1,12 @@
 # jackin-runtime-apple-container-running
 
-Jackin apple-container
-running-state probe
-for attach.
+Typed reconnect and post-attach observation.
 
-## What this crate owns
+`inspect_container` and `inspect_container_with` use the shared client listing and return `Result<Option<AppleContainerInfo>>` for an exact ID: errors mean listing failure, `None` means absence, and `Some` has `Running`, `Stopped`, `Unknown`, or `Stopping`. See the [inventory contract](../../../docs/content/research/platform/isolation/apple-container-backend.mdx).
 
-- Probing
-  (`running`):
-  `is_container_running` —
-  report whether an
-  apple/container
-  container is running
-  through the shared
-  client listing,
-  shared by the
-  reconnect path and
-  the post-attach
-  outcome recording
-  (S7 split 108).
+Source: [`running.rs`](src/running.rs); callers: runtime and attach-outcome.
 
-## Structure
-
-| Module | Owns | Tests |
-|---|---|---|
-| [`lib.rs`](src/lib.rs) | re-exports | — |
-| [`running.rs`](src/running.rs) | probing | hub `apple_container` paths (no dedicated suite) |
-
-## Public API
-
-`running::is_container_running`.
+Public API: `running::inspect_container`, `running::inspect_container_with`.
 
 ## How to verify
 

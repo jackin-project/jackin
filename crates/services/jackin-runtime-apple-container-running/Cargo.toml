@@ -19,6 +19,7 @@ name = "jackin_runtime_apple_container_running"
 path = "src/lib.rs"
 
 [dependencies]
+anyhow = { workspace = true }
 jackin-runtime-apple-container-client = { workspace = true }
 
 [lints]
