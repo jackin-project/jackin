@@ -22,7 +22,7 @@ The preview formula retains version `P-preview.N+sha7`, and its six archive URLs
 
 ## Workflow lint tool migration
 
-The released SDK owns [`.github/jactionlint.yaml`](../../.github/jactionlint.yaml). Local CI and staged hooks use Jactionlint 2.3.0 and pinned ShellCheck with the SDK's strict offline flags. They check workflows, composite actions, and Dependabot YAML through an explicit sorted file inventory. The previous Actionlint compatibility-ignore bridge is removed. Tool pins, lock records, generated configuration, hooks, and CI assertions change together; a Git revert of the migration restores the previous paired configuration without altering published releases.
+The released SDK owns [`.github/jactionlint.yaml`](../../.github/jactionlint.yaml). Local CI and staged hooks use Jactionlint 2.3.0 and pinned ShellCheck with the SDK's strict offline flags. They use native repository mode to check workflows, repository composite actions and their local `uses` closure, Dependabot YAML, and the optional workflow `actions.lock`. Before linting, local CI requires a nonempty top-level workflow set and checks input custody, including referenced actions in otherwise excluded directories; unrelated fixtures remain excluded. The previous Actionlint compatibility-ignore bridge is removed. Tool pins, lock records, generated configuration, hooks, and CI assertions change together; a Git revert of the migration restores the previous paired configuration without altering published releases.
 
 ## CI eligibility and dependency seeding
 

@@ -32,6 +32,23 @@ fn preview_url_uses_full_source_tag_and_canonical_target() {
 }
 
 #[test]
+fn preview_url_rejects_noncanonical_or_mismatched_full_source_sha() {
+    let version = "0.6.0-preview.411+bf7df07";
+    let source = format!("bf7df07{}", "a".repeat(33));
+    for invalid_source in [
+        format!("c{}", "a".repeat(39)),
+        source[..7].to_owned(),
+        source.to_ascii_uppercase(),
+        format!("{source}a"),
+    ] {
+        assert!(
+            download_url(version, "amd64", ReleaseChannel::Preview, &invalid_source).is_err(),
+            "accepted invalid preview source {invalid_source:?}"
+        );
+    }
+}
+
+#[test]
 fn canonical_version_patterns_identify_channels_without_granting_fetch_authority() {
     assert_eq!(
         version_channel("0.6.0-preview.411+bf7df07"),

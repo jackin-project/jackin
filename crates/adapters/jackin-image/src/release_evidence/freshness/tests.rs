@@ -29,6 +29,21 @@ fn recovery_envelope_binds_the_receipt_digest_and_detached_bundle() {
     );
 }
 
+#[test]
+fn recovery_envelope_accepts_exact_limit_and_rejects_next_base64_boundary() {
+    let accepted_bundle = vec![0; 84_378];
+    let accepted = recovery_envelope(b"abc", &accepted_bundle).unwrap();
+    assert_eq!(accepted.len(), 110 * 1024);
+
+    let rejected_bundle = vec![0; 84_379];
+    assert_eq!(
+        recovery_envelope(b"abc", &rejected_bundle)
+            .unwrap_err()
+            .to_string(),
+        "preview recovery envelope exceeds native limit"
+    );
+}
+
 #[tokio::test]
 async fn publication_success_does_not_wait_for_downstream_tap() {
     for channel in [
@@ -356,7 +371,7 @@ async fn preview_requires_exact_signed_receipt_recovery_envelope_in_release_body
 
 #[tokio::test]
 async fn retained_publication_rechecks_receipt_bundle_and_inventory() {
-    for mutation in 0..4 {
+    for mutation in 0..5 {
         let mut fixture = Fixture::new(PackageReleaseChannel::Preview);
         let pin = fixture.pin().await.unwrap();
         match mutation {
@@ -365,11 +380,19 @@ async fn retained_publication_rechecks_receipt_bundle_and_inventory() {
             2 => fixture.change(&assets_route(&fixture.receipt), |rows| {
                 rows[0]["id"] = json!(999);
             }),
-            _ => fixture.change(&tag_route(&fixture.receipt), |tag| {
+            3 => fixture.change(&tag_route(&fixture.receipt), |tag| {
                 tag["object"]["sha"] = json!("f".repeat(40));
             }),
+            _ => fixture.change(&annotated_tag_route(), |tag| {
+                tag["message"] = json!("replacement recovery envelope");
+            }),
         }
-        assert!(pin.recheck(&fixture).await.is_err(), "mutation {mutation}");
+        let error = pin.recheck(&fixture).await.unwrap_err().to_string();
+        if mutation == 4 {
+            assert!(error.contains("preview annotated tag recovery envelope mismatch"));
+        } else {
+            assert!(!error.is_empty(), "mutation {mutation}");
+        }
     }
 }
 
