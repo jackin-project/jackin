@@ -145,11 +145,77 @@ fn expired_foreign_protocol_lease_is_not_reclaimed() {
 
 fn demonstrably_dead_pid() -> i32 {
     for pid in (2..100_000).rev() {
-        if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err() {
+        if matches!(
+            nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+            Err(nix::errno::Errno::ESRCH)
+        ) {
             return pid;
         }
     }
     panic!("expected a pid that the kernel reports as absent");
+}
+
+fn write_expired_lease(path: &std::path::Path, build_id: &str) -> Vec<u8> {
+    let mut expired = BrokerLease::new(build_id);
+    expired.renewed_at_epoch = 0;
+    let original = serde_json::to_vec(&expired).unwrap();
+    fs::write(path, &original).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    original
+}
+
+fn open_locked_lease_file(path: &std::path::Path) -> fs::File {
+    let fd = open(
+        path,
+        OFlag::O_RDWR | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .unwrap();
+    let file = fs::File::from(fd);
+    file.try_lock().unwrap();
+    file
+}
+
+#[test]
+fn legacy_pid_owner_classifier_accepts_only_esrch_for_positive_pid() {
+    let pid = 31_415;
+    let body = format!(" {pid}\n");
+    let mut probed = Vec::new();
+    assert!(leader::legacy_pid_owner_is_dead_with(
+        body.as_bytes(),
+        |observed| {
+            probed.push(observed.as_raw());
+            Err(nix::errno::Errno::ESRCH)
+        }
+    ));
+    assert_eq!(probed, vec![pid]);
+
+    for outcome in [
+        Ok(()),
+        Err(nix::errno::Errno::EPERM),
+        Err(nix::errno::Errno::EINVAL),
+        Err(nix::errno::Errno::EIO),
+    ] {
+        let mut probed = Vec::new();
+        assert!(!leader::legacy_pid_owner_is_dead_with(
+            body.as_bytes(),
+            |observed| {
+                probed.push(observed.as_raw());
+                outcome
+            }
+        ));
+        assert_eq!(probed, vec![pid]);
+    }
+}
+
+#[test]
+fn legacy_pid_owner_classifier_rejects_invalid_pid_without_probe() {
+    let invalid_bodies: [&[u8]; 5] = [b"0", b"-7", b"not-a-pid", b"2147483648", b"\xff"];
+    for body in invalid_bodies {
+        assert!(!leader::legacy_pid_owner_is_dead_with(body, |_| {
+            panic!("invalid or nonpositive PID must not invoke the probe")
+        }));
+    }
 }
 
 #[test]
@@ -183,6 +249,8 @@ fn claim_existing_lease_refuses_swapped_path() {
     fs::write(&path, swapped).unwrap();
 
     let replacement = BrokerLease::new(build_id);
+    file.seek(SeekFrom::Start(7)).unwrap();
+    let cursor_before = file.stream_position().unwrap();
     assert!(
         leader::claim_existing_lease(
             &path,
@@ -194,12 +262,215 @@ fn claim_existing_lease_refuses_swapped_path() {
         .unwrap()
         .is_none()
     );
+    assert_eq!(
+        file.stream_position().unwrap(),
+        cursor_before,
+        "swapped path refusal must happen before reading the held descriptor"
+    );
     assert_eq!(fs::read(&path).unwrap(), swapped);
     assert_eq!(fs::read(&aside).unwrap(), original);
     file.seek(SeekFrom::Start(0)).unwrap();
     let mut descriptor = Vec::new();
     file.read_to_end(&mut descriptor).unwrap();
     assert_eq!(descriptor, original);
+}
+
+#[test]
+fn claim_existing_reclaims_expired_structured_regular_lease() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let build_id = "build";
+    let original = write_expired_lease(&path, build_id);
+    let mut file = open_locked_lease_file(&path);
+    let replacement = BrokerLease::new(build_id);
+
+    assert_eq!(
+        leader::claim_existing_lease(
+            &path,
+            &mut file,
+            &replacement,
+            build_id,
+            Duration::from_secs(30),
+        )
+        .unwrap(),
+        Some(true)
+    );
+
+    let persisted = fs::read(&path).unwrap();
+    assert_ne!(persisted, original);
+    let parsed: BrokerLease = serde_json::from_slice(&persisted).unwrap();
+    assert_eq!(parsed.instance_id, replacement.instance_id);
+    assert_eq!(parsed.process_id, replacement.process_id);
+    assert_eq!(parsed.protocol_version, replacement.protocol_version);
+    assert_eq!(parsed.build_id, replacement.build_id);
+    assert_eq!(parsed.renewed_at_epoch, replacement.renewed_at_epoch);
+}
+
+#[test]
+fn claim_existing_accepts_matching_hard_link_to_expired_lease() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let alias = temp.path().join("lease-alias");
+    let build_id = "build";
+    let original = write_expired_lease(&path, build_id);
+    fs::hard_link(&path, &alias).unwrap();
+    let mut file = open_locked_lease_file(&alias);
+    assert!(file.metadata().unwrap().nlink() > 1);
+    let replacement = BrokerLease::new(build_id);
+
+    assert_eq!(
+        leader::claim_existing_lease(
+            &alias,
+            &mut file,
+            &replacement,
+            build_id,
+            Duration::from_secs(30),
+        )
+        .unwrap(),
+        Some(true)
+    );
+
+    let persisted = fs::read(&path).unwrap();
+    assert_ne!(persisted, original);
+    assert_eq!(fs::read(&alias).unwrap(), persisted);
+    let parsed: BrokerLease = serde_json::from_slice(&persisted).unwrap();
+    assert_eq!(parsed.instance_id, replacement.instance_id);
+    assert_eq!(parsed.build_id, replacement.build_id);
+}
+
+#[test]
+fn claim_existing_refuses_symlink_name_before_read() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let aside = temp.path().join("lease-aside");
+    let build_id = "build";
+    let original = write_expired_lease(&path, build_id);
+    let mut file = open_locked_lease_file(&path);
+    fs::rename(&path, &aside).unwrap();
+    symlink(&aside, &path).unwrap();
+    assert!(file.metadata().unwrap().nlink() > 0);
+    file.seek(SeekFrom::Start(7)).unwrap();
+    let cursor_before = file.stream_position().unwrap();
+    let replacement = BrokerLease::new(build_id);
+
+    assert!(
+        leader::claim_existing_lease(
+            &path,
+            &mut file,
+            &replacement,
+            build_id,
+            Duration::from_secs(30),
+        )
+        .unwrap()
+        .is_none()
+    );
+    assert_eq!(file.stream_position().unwrap(), cursor_before);
+    assert_eq!(fs::read(&aside).unwrap(), original);
+    assert_eq!(fs::read_link(&path).unwrap(), aside);
+}
+
+#[test]
+fn claim_existing_refuses_directory_fd_without_mutating_contents() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease-directory");
+    let canary = path.join("canary");
+    fs::create_dir(&path).unwrap();
+    fs::write(&canary, b"preserve directory contents").unwrap();
+    let fd = open(
+        &path,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .unwrap();
+    let mut file = fs::File::from(fd);
+    let replacement = BrokerLease::new("build");
+
+    assert!(
+        leader::claim_existing_lease(
+            &path,
+            &mut file,
+            &replacement,
+            "build",
+            Duration::from_secs(30),
+        )
+        .unwrap()
+        .is_none()
+    );
+
+    let mut entries = fs::read_dir(&path)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    entries.sort_unstable();
+    assert_eq!(entries, vec![std::ffi::OsString::from("canary")]);
+    assert_eq!(fs::read(&canary).unwrap(), b"preserve directory contents");
+}
+
+#[test]
+fn claim_existing_refuses_unlinked_regular_fd_before_read() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let build_id = "build";
+    let original = write_expired_lease(&path, build_id);
+    let mut file = open_locked_lease_file(&path);
+    file.seek(SeekFrom::Start(7)).unwrap();
+    let cursor_before = file.stream_position().unwrap();
+    fs::remove_file(&path).unwrap();
+    assert_eq!(file.metadata().unwrap().nlink(), 0);
+    let replacement = BrokerLease::new(build_id);
+
+    assert!(
+        leader::claim_existing_lease(
+            &path,
+            &mut file,
+            &replacement,
+            build_id,
+            Duration::from_secs(30),
+        )
+        .unwrap()
+        .is_none()
+    );
+    assert_eq!(file.stream_position().unwrap(), cursor_before);
+    file.seek(SeekFrom::Start(0)).unwrap();
+    let mut descriptor = Vec::new();
+    file.read_to_end(&mut descriptor).unwrap();
+    assert_eq!(descriptor, original);
+    assert!(!path.exists());
+}
+
+#[test]
+fn claim_existing_refuses_missing_name_while_fd_remains_linked_before_read() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("lease");
+    let alias = temp.path().join("lease-alias");
+    let build_id = "build";
+    let original = write_expired_lease(&path, build_id);
+    fs::hard_link(&path, &alias).unwrap();
+    let mut file = open_locked_lease_file(&path);
+    file.seek(SeekFrom::Start(7)).unwrap();
+    let cursor_before = file.stream_position().unwrap();
+    fs::remove_file(&path).unwrap();
+    assert!(file.metadata().unwrap().nlink() > 0);
+    let replacement = BrokerLease::new(build_id);
+
+    assert!(
+        leader::claim_existing_lease(
+            &path,
+            &mut file,
+            &replacement,
+            build_id,
+            Duration::from_secs(30),
+        )
+        .unwrap()
+        .is_none()
+    );
+    assert_eq!(file.stream_position().unwrap(), cursor_before);
+    assert_eq!(fs::read(&alias).unwrap(), original);
+    file.seek(SeekFrom::Start(0)).unwrap();
+    let mut descriptor = Vec::new();
+    file.read_to_end(&mut descriptor).unwrap();
+    assert_eq!(descriptor, original);
+    assert!(!path.exists());
 }
 
 #[test]
