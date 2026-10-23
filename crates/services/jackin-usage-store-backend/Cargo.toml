@@ -18,6 +18,9 @@ repository.workspace = true
 name = "jackin_usage_store_backend"
 path = "src/lib.rs"
 
+[features]
+test-support = []
+
 [dependencies]
 hex = { workspace = true }
 jackin-telemetry = { workspace = true }

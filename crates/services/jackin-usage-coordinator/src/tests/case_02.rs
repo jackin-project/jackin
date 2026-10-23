@@ -494,6 +494,7 @@ fn account_state_v1_migration_preserves_results_and_enforces_fresh_attempt_floor
     assert_eq!(persisted.provider_invoked_at_epoch, None);
     assert!(persisted.reload_fence_required);
     let mut expected_view = last_good;
+    expected_view.account.account_capability = Some(account.clone());
     for bucket in &mut expected_view.buckets {
         bucket.used_percent = None;
         bucket.used_percent_origin = None;

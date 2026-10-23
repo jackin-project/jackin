@@ -977,6 +977,7 @@ fn focused_view(
             username: None,
             plan_label: account.plan_label.clone(),
             credential_origin: None,
+            account_capability: None,
         },
         buckets,
         status,
