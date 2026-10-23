@@ -2947,6 +2947,361 @@ fn known_none_resetless_orphans_require_source_and_keep_statusline_receipt_only_
         .expect("receipt-only statusline pairs remain valid");
 }
 
+fn paired_statusline_account_fixture(
+    account_id: &str,
+    session_id: &str,
+) -> (tempfile::TempDir, MonitorStore, super::AccountObservations) {
+    let (directory, store) = open_store();
+    let _started = start(
+        &store,
+        config(account_id, "goal-resetless-statusline-fixture", None, None),
+        NOW,
+    );
+    ingest(
+        &store,
+        account_id,
+        observation(
+            session_id,
+            None,
+            (Some(5_400), Some(NOW + 3_600)),
+            (Some(7_200), Some(NOW + 7 * 24 * 60 * 60)),
+        ),
+        NOW,
+    );
+    let account = store.lock().accounts[account_id].clone();
+    (directory, store, account)
+}
+
+fn assert_receipt_only_statusline_window(
+    account: &super::AccountObservations,
+    session_id: &str,
+    index: usize,
+    now_epoch: i64,
+) -> serde_json::Value {
+    let window = &account.sessions[session_id].windows[index];
+    assert_eq!(
+        window
+            .used
+            .as_ref()
+            .expect("statusline used field")
+            .evidence_at_epoch,
+        None
+    );
+    assert_eq!(
+        window
+            .reset
+            .as_ref()
+            .expect("statusline reset field")
+            .evidence_at_epoch,
+        None
+    );
+    assert_eq!(
+        window
+            .paired
+            .as_ref()
+            .expect("receipt-only statusline pair")
+            .source_times,
+        [None, None]
+    );
+    assert!(super::resetless::valid_statusline_observed_window(
+        window,
+        account.input_sequence,
+        now_epoch
+    ));
+    assert!(!super::resetless::valid_broker_observed_window(
+        window,
+        account.input_sequence,
+        now_epoch
+    ));
+    serde_json::to_value(window).expect("serialize receipt-only statusline window")
+}
+
+fn resetless_candidate(
+    source_at_epoch: i64,
+    received_at_epoch: i64,
+    input_sequence: u64,
+) -> super::ObservedPercentage {
+    super::ObservedPercentage {
+        value: 5_400,
+        reset_at_epoch: None,
+        evidence_at_epoch: Some(source_at_epoch),
+        received_at_epoch,
+        input_sequence,
+        claude_code_version: None,
+    }
+}
+
+fn assert_used_only_rejection_preserves_state(
+    account: &super::AccountObservations,
+    candidate: &super::ObservedPercentage,
+    now_epoch: i64,
+    reason: &str,
+) {
+    let before = serde_json::to_value(account).expect("serialize admission state preimage");
+    assert!(
+        !super::resetless::used_only_is_admissible(
+            account,
+            0,
+            candidate,
+            candidate.input_sequence,
+            now_epoch
+        ),
+        "{reason}"
+    );
+    let after = serde_json::to_value(account).expect("serialize admission state postimage");
+    assert_eq!(after, before, "rejected admission preserves saved state");
+}
+
+fn assert_invalid_statusline_pair_shapes_rejected(
+    account: &super::AccountObservations,
+    session_id: &str,
+    candidate: &super::ObservedPercentage,
+    now_epoch: i64,
+) {
+    let mut incoherent_pair = account.clone();
+    incoherent_pair
+        .sessions
+        .get_mut(session_id)
+        .expect("cloned statusline session")
+        .windows[0]
+        .paired
+        .as_mut()
+        .expect("cloned statusline pair")
+        .used_percentage_basis_points += 1;
+    let incoherent_window = &incoherent_pair.sessions[session_id].windows[0];
+    assert!(!super::resetless::valid_statusline_observed_window(
+        incoherent_window,
+        incoherent_pair.input_sequence,
+        now_epoch
+    ));
+
+    let mut wrong_source_domain = account.clone();
+    let wrong_domain_window = &mut wrong_source_domain
+        .sessions
+        .get_mut(session_id)
+        .expect("cloned statusline session")
+        .windows[0];
+    wrong_domain_window
+        .used
+        .as_mut()
+        .expect("statusline used field")
+        .evidence_at_epoch = Some(NOW);
+    wrong_domain_window
+        .reset
+        .as_mut()
+        .expect("statusline reset field")
+        .evidence_at_epoch = Some(NOW);
+    let wrong_domain_pair = wrong_domain_window
+        .paired
+        .as_mut()
+        .expect("statusline pair");
+    wrong_domain_pair.evidence_at_epoch = Some(NOW);
+    wrong_domain_pair.source_times = [Some(NOW), Some(NOW)];
+    assert!(super::resetless::valid_broker_observed_window(
+        wrong_domain_window,
+        wrong_source_domain.input_sequence,
+        now_epoch
+    ));
+
+    for (reason, variant) in [
+        ("incoherent statusline pair is rejected", incoherent_pair),
+        (
+            "source-bearing broker pair is rejected in the statusline domain",
+            wrong_source_domain,
+        ),
+    ] {
+        let window = &variant.sessions[session_id].windows[0];
+        assert!(!super::resetless::valid_statusline_observed_window(
+            window,
+            variant.input_sequence,
+            now_epoch
+        ));
+        assert_used_only_rejection_preserves_state(&variant, candidate, now_epoch, reason);
+    }
+}
+
+#[test]
+fn paired_statusline_session_allows_newer_resetless_projection_without_pair_promotion() {
+    for (category, label, index) in [
+        (UsageWindowCategoryV1::Session, "session", 0),
+        (UsageWindowCategoryV1::LongRange, "weekly", 1),
+    ] {
+        let account_id = format!("acct-resetless-statusline-first-{label}");
+        let (_directory, store, before_account) =
+            paired_statusline_account_fixture(&account_id, "statusline-before-resetless");
+        let statusline_window_before = assert_receipt_only_statusline_window(
+            &before_account,
+            "statusline-before-resetless",
+            index,
+            NOW,
+        );
+        let reset_high_water_before = before_account.latest_reset_epochs;
+        let reset_fences_before = before_account.reset_admission_fences.clone();
+        let sibling_reset_before =
+            broker_window_identity(&before_account.broker_windows[1 - index]).1;
+        let broker_reset_before = broker_window_identity(&before_account.broker_windows[index]).1;
+        let sibling_marker_before = before_account.used_only_admission_sequences[1 - index];
+        let input_sequence_before = before_account.input_sequence;
+
+        let projection_at = NOW + 10;
+        let resetless_projection = quota_projection(QuotaProjectionSpec {
+            account_id: &account_id,
+            generation: 1,
+            category,
+            label,
+            used_points: Some(54.0),
+            reset_at_epoch: None,
+            source_at_epoch: projection_at,
+            last_good_at_epoch: projection_at,
+        });
+        store
+            .observe_projection(&resetless_projection, projection_at)
+            .expect("admit a newer resetless projection after statusline session evidence");
+
+        let after = store.lock().clone();
+        let account = &after.accounts[&account_id];
+        let used = account.broker_windows[index]
+            .used
+            .as_ref()
+            .expect("source-bearing resetless broker usage");
+        assert_eq!(used.value, 5_400);
+        assert_eq!(used.evidence_at_epoch, Some(projection_at));
+        assert_eq!(used.received_at_epoch, projection_at);
+        assert!(used.input_sequence > input_sequence_before);
+        assert_eq!(used.input_sequence, account.input_sequence);
+        assert_eq!(
+            account.used_only_admission_sequences[index],
+            Some(used.input_sequence)
+        );
+        assert_eq!(account.latest_reset_epochs, reset_high_water_before);
+        assert_eq!(account.reset_admission_fences, reset_fences_before);
+        assert_eq!(
+            broker_window_identity(&account.broker_windows[index]).1,
+            broker_reset_before
+        );
+        assert_eq!(
+            broker_window_identity(&account.broker_windows[1 - index]).1,
+            sibling_reset_before
+        );
+        assert_eq!(
+            account.used_only_admission_sequences[1 - index],
+            sibling_marker_before
+        );
+        assert!(account.broker_windows[index].paired.is_none());
+        assert_eq!(
+            serde_json::to_value(&account.sessions["statusline-before-resetless"].windows[index])
+                .expect("serialize retained statusline window"),
+            statusline_window_before
+        );
+        super::validate_store_state(&after)
+            .expect("statusline-first resetless state remains valid");
+    }
+}
+
+#[test]
+fn invalid_statusline_session_blocks_resetless_projection_without_state_change() {
+    let account_id = "acct-resetless-invalid-statusline-session";
+    let (_directory, store, paired_account) =
+        paired_statusline_account_fixture(account_id, "statusline-paired-session");
+    let newer_candidate =
+        resetless_candidate(NOW + 12, NOW + 12, paired_account.input_sequence + 1);
+    assert_receipt_only_statusline_window(
+        &paired_account,
+        "statusline-paired-session",
+        0,
+        NOW + 12,
+    );
+    assert!(super::resetless::used_only_is_admissible(
+        &paired_account,
+        0,
+        &newer_candidate,
+        newer_candidate.input_sequence,
+        NOW + 12
+    ));
+    assert_invalid_statusline_pair_shapes_rejected(
+        &paired_account,
+        "statusline-paired-session",
+        &newer_candidate,
+        NOW + 12,
+    );
+
+    let fallback_session = "statusline-paired-session";
+    ingest(
+        &store,
+        account_id,
+        observation(fallback_session, None, (Some(6_000), None), (None, None)),
+        NOW + 10,
+    );
+    let stale_account = store.lock().accounts[account_id].clone();
+    let stale_window = &stale_account.sessions[fallback_session].windows[0];
+    let retained_used = stale_window
+        .used
+        .as_ref()
+        .expect("retained statusline used sample");
+    assert_eq!(retained_used.value, 6_000);
+    assert_eq!(retained_used.evidence_at_epoch, None);
+    assert_eq!(retained_used.reset_at_epoch, None);
+    assert_eq!(retained_used.received_at_epoch, NOW + 10);
+    assert_eq!(retained_used.input_sequence, stale_account.input_sequence);
+    assert!(retained_used.input_sequence > paired_account.input_sequence);
+    assert!(stale_window.paired.is_none());
+    let original_reset = paired_account.sessions["statusline-paired-session"].windows[0]
+        .reset
+        .as_ref()
+        .expect("original paired statusline reset");
+    assert_eq!(original_reset.value, NOW + 3_600);
+    assert_eq!(
+        stale_window.reset.as_ref().map(|reset| reset.value),
+        Some(original_reset.value)
+    );
+    assert_eq!(
+        stale_account.latest_reset_epochs,
+        paired_account.latest_reset_epochs
+    );
+    assert_eq!(
+        stale_account.reset_admission_fences,
+        paired_account.reset_admission_fences
+    );
+    assert!(super::resetless::valid_statusline_observed_window(
+        stale_window,
+        stale_account.input_sequence,
+        NOW + 12
+    ));
+    let stale_candidate = resetless_candidate(
+        retained_used.received_at_epoch,
+        NOW + 12,
+        stale_account.input_sequence + 1,
+    );
+    // A source-less statusline usage uses its receipt as the ordering boundary.
+    assert_eq!(
+        stale_candidate.evidence_at_epoch,
+        Some(retained_used.received_at_epoch)
+    );
+    assert_used_only_rejection_preserves_state(
+        &stale_account,
+        &stale_candidate,
+        NOW + 12,
+        "a candidate equal to the retained receipt fallback is stale",
+    );
+    let newer_source_epoch = retained_used.received_at_epoch + 1;
+    let newer_source_candidate = resetless_candidate(
+        newer_source_epoch,
+        stale_candidate.received_at_epoch,
+        stale_candidate.input_sequence,
+    );
+    assert_eq!(
+        newer_source_candidate.evidence_at_epoch,
+        Some(retained_used.received_at_epoch + 1)
+    );
+    assert!(super::resetless::used_only_is_admissible(
+        &stale_account,
+        0,
+        &newer_source_candidate,
+        newer_source_candidate.input_sequence,
+        NOW + 12
+    ));
+}
+
 fn assert_exact_raw_candidate(exact: &UsageProjectionV1) {
     let account = &exact.providers[0].accounts[0];
     let candidate = super::resetless::strict_resetless_candidates(account, NOW, NOW)[1]

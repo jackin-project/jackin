@@ -32,13 +32,9 @@ pub(crate) fn sanitize_usage_view(mut view: FocusedUsageView) -> FocusedUsageVie
             money.currency = sanitize_text(&money.currency);
         }
     }
-    for tab in &mut view.tabs {
-        tab.label = sanitize_text(&tab.label);
-        tab.status_label = sanitize_text(&tab.status_label);
-        tab.account_label = sanitize_text(&tab.account_label);
-        tab.plan_label = tab.plan_label.take().map(|value| sanitize_text(&value));
-        tab.source_label = tab.source_label.take().map(|value| sanitize_text(&value));
-    }
+    // Provider tab selectors are not authenticated by the trusted top-level
+    // selector. The host reconstructs tabs from its trusted cache boundary.
+    view.tabs.clear();
     view
 }
 

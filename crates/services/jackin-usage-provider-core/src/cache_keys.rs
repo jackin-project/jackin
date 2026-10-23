@@ -21,6 +21,9 @@ pub fn usage_cache_key_for_view(
     focused_provider: Option<&str>,
     view: &FocusedUsageView,
 ) -> String {
+    if let Some(capability) = view.account.account_capability.as_ref() {
+        return usage_cache_key_for_broker_account(agent, focused_provider, capability);
+    }
     let base = canonical_usage_cache_key(agent, focused_provider);
     let Some(label) = stable_cache_account_label(&view.account.account_label) else {
         return base;
@@ -43,10 +46,9 @@ pub fn usage_cache_key_for_broker_account(
     capability: &jackin_protocol::usage_broker::UsageAccountCapability,
 ) -> String {
     format!(
-        "{}:account-id-v1:{}:{}",
+        "{}:account-{}",
         canonical_usage_cache_key(agent, focused_provider),
-        capability.surface_id,
-        capability.account_id,
+        capability.opaque_identity_key(),
     )
 }
 

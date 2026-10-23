@@ -292,6 +292,6 @@ fn usage_snapshot_store_records_schema_version() {
 
     assert_eq!(
         schema_version(&db).expect("schema version").as_deref(),
-        Some("5")
+        Some("6")
     );
 }

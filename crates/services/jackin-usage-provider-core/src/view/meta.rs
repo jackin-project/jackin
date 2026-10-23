@@ -11,12 +11,6 @@ use super::super::{
 };
 use super::{count_summary_label, summary_bucket};
 
-pub(crate) fn broker_account_id_from_cache_key(key: &str) -> Option<String> {
-    let (_, rest) = key.split_once(":account-id-v1:")?;
-    let (surface_id, account_id) = rest.split_once(':')?;
-    (!surface_id.is_empty() && !account_id.is_empty()).then(|| account_id.to_owned())
-}
-
 pub fn usage_tab_source_label(view: &FocusedUsageView) -> String {
     let freshness = match view.status {
         UsageSnapshotStatus::Fresh => "fresh",

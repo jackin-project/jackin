@@ -221,7 +221,7 @@ pub(super) fn used_only_is_admissible(
         let Some(prior_window) = session.windows.get(index) else {
             return false;
         };
-        if !valid_broker_window(prior_window, account.input_sequence, now_epoch) {
+        if !valid_statusline_observed_window(prior_window, account.input_sequence, now_epoch) {
             return false;
         }
         for (source, received) in broker_window_times(prior_window) {

@@ -35,6 +35,55 @@ fn coordinator_winner_joiner_and_force_join_share_one_generation() {
 }
 
 #[test]
+fn coordinator_success_stamps_fenced_capability_and_discards_provider_tabs() {
+    let expected = capability("account-a");
+    let forged = capability("provider-forged-account");
+    let mut provider_view = quota_view(1_000, 80);
+    provider_view.account.account_capability = Some(forged.clone());
+    provider_view.tabs = vec![jackin_protocol::control::UsageProviderTab {
+        id: forged.opaque_identity_key(),
+        account_capability: Some(forged),
+        label: "forged provider tab".to_owned(),
+        status_label: "fresh".to_owned(),
+        account_label: "forged@example.test".to_owned(),
+        plan_label: None,
+        source_label: Some("provider".to_owned()),
+        active: true,
+    }];
+    let executor = Arc::new(ImmediateExecutor::new(ProviderProbeOutcome::success(
+        provider_view,
+    )));
+    let provider_executor: Arc<dyn UsageProviderExecutor> =
+        Arc::<ImmediateExecutor>::clone(&executor);
+    let coordinator = coordinator_with_fake_clock(
+        provider_executor,
+        Arc::new(MemoryStore::default()),
+        UsageCoordinatorConfig::default(),
+    );
+
+    let queued = coordinator
+        .request_refresh(&expected, 0, true, 1_000)
+        .unwrap();
+    let completed = join_ok(&coordinator, &expected, queued.generation, 1_001);
+    let snapshot = completed.snapshot.expect("completed snapshot");
+
+    assert_eq!(
+        snapshot.account.account_capability.as_ref(),
+        Some(&expected),
+        "a fenced job's exact selector replaces provider-supplied identity"
+    );
+    assert!(
+        snapshot.tabs.is_empty(),
+        "provider-supplied selector tabs are not trusted routing metadata"
+    );
+    assert_eq!(
+        snapshot.buckets[0].remaining_percent,
+        Some(CanonicalRemainingPercent::new(80.0).unwrap()),
+        "the authoritative stamp must preserve provider quota evidence"
+    );
+}
+
+#[test]
 fn coordinator_revisioned_capabilities_do_not_join_in_flight_probe() {
     let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
         quota_view(1_000, 80),

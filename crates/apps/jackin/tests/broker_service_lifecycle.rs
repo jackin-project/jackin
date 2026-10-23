@@ -18,7 +18,7 @@ use jackin_usage_broker::short_socket_alias;
 #[test]
 fn broker_service_lifecycle() {
     assert_eq!(USAGE_BROKER_PROTOCOL_VERSION, "v9");
-    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 4);
+    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 5);
 
     let root = workspace_state_dir();
     let _ignored = fs::remove_dir_all(&root);
