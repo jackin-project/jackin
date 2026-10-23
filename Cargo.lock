@@ -3361,7 +3361,6 @@ dependencies = [
  "jackin-runtime-launch-trust",
  "jackin-runtime-naming",
  "jackin-runtime-prewarm-trigger",
- "jackin-runtime-process-telemetry",
  "jackin-runtime-progress",
  "jackin-runtime-prune-output",
  "jackin-runtime-reactive-daemon",
@@ -3408,10 +3407,16 @@ dependencies = [
 name = "jackin-runtime-apple-container-attach-outcome"
 version = "0.6.4"
 dependencies = [
+ "anyhow",
  "jackin-core",
+ "jackin-runtime-apple-container-client",
  "jackin-runtime-apple-container-running",
  "jackin-runtime-isolation",
  "jackin-runtime-launch-attach-outcome",
+ "jackin-telemetry",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3431,6 +3436,7 @@ dependencies = [
  "jackin-process",
  "jackin-runtime-identity",
  "jackin-runtime-process-telemetry",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -3448,6 +3454,7 @@ dependencies = [
 name = "jackin-runtime-apple-container-running"
 version = "0.6.4"
 dependencies = [
+ "anyhow",
  "jackin-runtime-apple-container-client",
 ]
 

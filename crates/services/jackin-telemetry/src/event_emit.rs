@@ -19,7 +19,7 @@ macro_rules! event_field_value {
 fn emit_registered_event(def: &'static EventDef, fields: FieldSet<'_>) {
     if def.name <= "launch.stage.started" {
         emit_registered_event_0(def, fields);
-    } else if def.name <= "ui.screen.exited" {
+    } else if def.name <= "ui.screen.entered" {
         emit_registered_event_1(def, fields);
     } else if def.name <= "ui.widget.unfocused" {
         emit_registered_event_2(def, fields);
@@ -108,6 +108,9 @@ fn emit_registered_event_1(def: &'static EventDef, fields: FieldSet<'_>) {
         schema::events::RUN_SUMMARY => {
             emit_run_summary(def, fields);
         }
+        schema::events::RUNTIME_APPLE_CONTAINER_ATTACH_OUTCOME_WARNING => {
+            emit_runtime_apple_container_attach_outcome_warning(def, fields);
+        }
         schema::events::SESSION_END => {
             emit_session_end(def, fields);
         }
@@ -129,15 +132,15 @@ fn emit_registered_event_1(def: &'static EventDef, fields: FieldSet<'_>) {
         schema::events::UI_SCREEN_ENTERED => {
             emit_ui_screen_entered(def, fields);
         }
-        schema::events::UI_SCREEN_EXITED => {
-            emit_ui_screen_exited(def, fields);
-        }
         _ => unreachable!("validated event registry chunk"),
     }
 }
 
 fn emit_registered_event_2(def: &'static EventDef, fields: FieldSet<'_>) {
     match def.name {
+        schema::events::UI_SCREEN_EXITED => {
+            emit_ui_screen_exited(def, fields);
+        }
         schema::events::UI_WIDGET_FOCUSED => {
             emit_ui_widget_focused(def, fields);
         }
@@ -528,6 +531,29 @@ fn emit_run_summary(def: &'static EventDef, fields: FieldSet<'_>) {
         [
             ("cli.invocation.id", field_cli_invocation_id, String),
             ("outcome", field_outcome, String),
+            ("session.id", field_session_id, String),
+        ]
+    );
+}
+
+fn emit_runtime_apple_container_attach_outcome_warning(
+    def: &'static EventDef,
+    fields: FieldSet<'_>,
+) {
+    emit_schema_event!(
+        "runtime.apple_container.attach_outcome.warning",
+        def.severity,
+        fields,
+        [
+            (
+                "apple.container.attach_outcome.reason",
+                field_apple_container_attach_outcome_reason,
+                String
+            ),
+            ("apple.container.state", field_apple_container_state, String),
+            ("cli.invocation.id", field_cli_invocation_id, String),
+            ("container.id", field_container_id, String),
+            ("exception.message", field_exception_message, String),
             ("session.id", field_session_id, String),
         ]
     );
