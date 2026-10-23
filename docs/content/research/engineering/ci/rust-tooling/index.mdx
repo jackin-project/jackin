@@ -9,7 +9,7 @@ description: Evaluates Rust CI tooling for dependency hygiene, spell checking, c
 
 Rust CI should add focused dependency, spelling, coverage, and snapshot gates only where each tool has a clear ownership boundary.
 
-The tooling research records earlier dependency-hygiene and Codebook choices. Current <RepoFile path=".github/workflows/ci.yml" /> provides Rust crate verification and actionlint, with no dependency-hygiene, Codebook, coverage, or scheduled hygiene jobs. The historical adoption evidence and proposed wiring below do not establish current CI execution.
+The tooling research records earlier dependency-hygiene and Codebook choices. Current <RepoFile path=".github/workflows/ci.yml" /> provides Rust crate verification and Jactionlint, with no dependency-hygiene, Codebook, coverage, or scheduled hygiene jobs. The historical adoption evidence and proposed wiring below do not establish current CI execution.
 
 Generated workflow changes belong in the Velnor generator and <RepoFile path=".velnor/config.toml" />, following <RepoFile path=".github/AGENTS.md" />; the generated YAML must not be hand-edited.
 

@@ -48,6 +48,13 @@ async fn historical_admission_is_once_per_pin_with_mutable_checks_at_both_bounda
                 .count(),
             6
         );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|url| **url == annotated_tag_route())
+                .count(),
+            6
+        );
     }
 }
 
@@ -102,7 +109,9 @@ async fn reject_mutated_publication(
         0 => fixture.change(&release_route(&fixture.receipt), |r| {
             r["draft"] = json!(true);
         }),
-        1 => fixture.change(&assets_route(), |rows| rows[0]["id"] = json!(999)),
+        1 => fixture.change(&assets_route(&fixture.receipt), |rows| {
+            rows[0]["id"] = json!(999);
+        }),
         _ => fixture.change(&tag_route(&fixture.receipt), |r| {
             r["object"]["sha"] = json!("f".repeat(40));
         }),
@@ -131,7 +140,7 @@ async fn successful_pin_is_private_and_a_new_pin_readmits_repository_and_history
 }
 
 #[tokio::test]
-async fn recovery_envelope_and_signed_bytes_are_fresh_at_each_boundary() {
+async fn release_lifecycle_and_signed_bytes_are_fresh_at_each_boundary() {
     for boundary in 0..2 {
         for mutation in 0..3 {
             let mut fixture = Fixture::new(PackageReleaseChannel::Preview);
