@@ -668,7 +668,7 @@ key = "crates/ui/jackin-console/README.md"
 bound = 2779
 [[family.entry]]
 key = "crates/core/jackin-core/README.md"
-bound = 5624
+bound = 5567
 [[family.entry]]
 key = "crates/tools/jackin-dev/README.md"
 bound = 1198
