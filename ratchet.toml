@@ -1197,8 +1197,9 @@ bound = 8
 key = "jackin-manifest"
 bound = 5
 [[family.entry]]
+# B2.1 adds the versioned credential_update_v2 transcript API.
 key = "jackin-protocol"
-bound = 10
+bound = 11
 [[family.entry]]
 key = "jackin-runtime"
 bound = 7
