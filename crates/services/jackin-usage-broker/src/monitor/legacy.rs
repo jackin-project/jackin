@@ -20,11 +20,12 @@ use serde::Deserialize;
 
 use validation::valid_timestamp;
 
+use super::resetless::PairSource;
 use super::spend::{SpendAccountState, SpendState};
 use super::{
     AccountObservations, AccountResetBarrier, DurableGoalSpend, DurableMonitor, MAX_BINDINGS,
-    Observed, ObservedPercentage, ObservedQuotaPair, ObservedWindow, ResetBarrier,
-    SessionObservation, StoreState,
+    Observed, ObservedPercentage, ObservedQuotaPair, ObservedWindow, ResetAdmissionFence,
+    ResetBarrier, SessionObservation, StoreState,
 };
 
 const V1_SCHEMA_VERSION: u16 = 1;
@@ -92,7 +93,9 @@ pub(super) fn migrate_v1(bytes: &[u8]) -> Result<StoreState, MonitorIssue> {
         .map(|(account_id, account)| {
             Ok((
                 account_id.clone(),
-                account.clone().into_account_observations(account_id)?,
+                account
+                    .clone()
+                    .into_account_observations(account_id, legacy.last_now_epoch)?,
             ))
         })
         .collect::<Result<BTreeMap<_, _>, MonitorIssue>>()?;
@@ -840,6 +843,7 @@ impl V1AccountObservations {
     fn into_account_observations(
         self,
         account_id: &str,
+        last_now_epoch: i64,
     ) -> Result<AccountObservations, MonitorIssue> {
         Ok(AccountObservations {
             sessions: self
@@ -849,8 +853,12 @@ impl V1AccountObservations {
                 .collect::<Result<BTreeMap<_, _>, MonitorIssue>>()?,
             broker_windows: self
                 .broker_windows
-                .map(V1ObservedWindow::into_observed_window),
+                .map(|window| window.into_observed_window(PairSource::BrokerProjection)),
             latest_reset_epochs: self.latest_reset_epochs,
+            reset_admission_fences: std::array::from_fn(|_| ResetAdmissionFence::Unknown {
+                after_epoch: last_now_epoch,
+            }),
+            used_only_admission_sequences: [None, None],
             reset_barriers: self
                 .reset_barriers
                 .map(|barrier| barrier.map(V1AccountResetBarrier::into_account_reset_barrier)),
@@ -885,7 +893,9 @@ impl V1SessionObservation {
     fn into_session_observation(self) -> Result<SessionObservation, MonitorIssue> {
         Ok(SessionObservation {
             model: self.model.map(V1Observed::into_observed),
-            windows: self.windows.map(V1ObservedWindow::into_observed_window),
+            windows: self
+                .windows
+                .map(|window| window.into_observed_window(PairSource::Statusline)),
             last_observation_received_at_epoch: self.last_observation_received_at_epoch,
             claude_code_version: None,
             last_callback_received_at_epoch: None,
@@ -894,29 +904,67 @@ impl V1SessionObservation {
 }
 
 impl V1ObservedWindow {
-    fn into_observed_window(self) -> ObservedWindow {
+    fn into_observed_window(self, pair_source: PairSource) -> ObservedWindow {
+        let used = self
+            .used
+            .map(V1ObservedPercentage::into_observed_percentage);
+        let reset = self.reset.map(V1Observed::into_observed);
+        let paired = self.paired.and_then(|pair| {
+            pair.into_observed_quota_pair(used.as_ref(), reset.as_ref(), pair_source)
+        });
         ObservedWindow {
-            used: self
-                .used
-                .map(V1ObservedPercentage::into_observed_percentage),
-            reset: self.reset.map(V1Observed::into_observed),
-            paired: self
-                .paired
-                .map(V1ObservedQuotaPair::into_observed_quota_pair),
+            used,
+            reset,
+            paired,
         }
     }
 }
 
 impl V1ObservedQuotaPair {
-    fn into_observed_quota_pair(self) -> ObservedQuotaPair {
-        ObservedQuotaPair {
+    fn into_observed_quota_pair(
+        self,
+        used: Option<&ObservedPercentage>,
+        reset: Option<&Observed<i64>>,
+        pair_source: PairSource,
+    ) -> Option<ObservedQuotaPair> {
+        let (Some(used), Some(reset)) = (used, reset) else {
+            return None;
+        };
+        let evidence_at_epoch = match (used.evidence_at_epoch, reset.evidence_at_epoch) {
+            (Some(used_source), Some(reset_source)) => Some(used_source.min(reset_source)),
+            (None, None) => None,
+            _ => return None,
+        };
+        let pair = ObservedQuotaPair {
             used_percentage_basis_points: self.used_percentage_basis_points,
             reset_at_epoch: self.reset_at_epoch,
             evidence_at_epoch: self.evidence_at_epoch,
+            source_times: [used.evidence_at_epoch, reset.evidence_at_epoch],
             received_at_epoch: self.received_at_epoch,
             input_sequence: self.input_sequence,
             claude_code_version: None,
+        };
+        if used.reset_at_epoch != Some(reset.value)
+            || !match pair_source {
+                PairSource::BrokerProjection => {
+                    used.evidence_at_epoch.is_some() && reset.evidence_at_epoch.is_some()
+                }
+                PairSource::Statusline => {
+                    used.evidence_at_epoch.is_none() && reset.evidence_at_epoch.is_none()
+                }
+            }
+            || pair.used_percentage_basis_points != used.value
+            || pair.reset_at_epoch != reset.value
+            || pair.input_sequence == 0
+            || pair.input_sequence != used.input_sequence
+            || pair.input_sequence != reset.input_sequence
+            || pair.received_at_epoch != used.received_at_epoch
+            || pair.received_at_epoch != reset.received_at_epoch
+            || pair.evidence_at_epoch != evidence_at_epoch
+        {
+            return None;
         }
+        Some(pair)
     }
 }
 

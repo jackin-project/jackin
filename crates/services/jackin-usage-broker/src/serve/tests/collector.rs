@@ -115,7 +115,7 @@ impl UsageProviderExecutor for RetryAfterExecutor {
     }
 }
 
-fn provider_view(now_epoch: i64) -> FocusedUsageView {
+pub(super) fn provider_view(now_epoch: i64) -> FocusedUsageView {
     let mut view = FocusedUsageView::unavailable("fixture", now_epoch);
     view.focused_agent = Some("claude".to_owned());
     view.focused_provider = Some("Claude".to_owned());
@@ -163,17 +163,17 @@ fn provider_view(now_epoch: i64) -> FocusedUsageView {
     view
 }
 
-struct CollectorHarness {
-    store: Arc<MonitorStore>,
-    coordinator: Arc<UsageCoordinator>,
+pub(super) struct CollectorHarness {
+    pub(super) store: Arc<MonitorStore>,
+    pub(super) coordinator: Arc<UsageCoordinator>,
     coordinator_clock: Arc<CollectorCoordinatorClock>,
-    publisher: publish::ProjectionPublisher,
-    temp: tempfile::TempDir,
-    capability: UsageAccountCapability,
+    pub(super) publisher: publish::ProjectionPublisher,
+    pub(super) temp: tempfile::TempDir,
+    pub(super) capability: UsageAccountCapability,
 }
 
 impl CollectorHarness {
-    fn new(executor: Arc<dyn UsageProviderExecutor>) -> Self {
+    pub(super) fn new(executor: Arc<dyn UsageProviderExecutor>) -> Self {
         let temp = tempfile::tempdir().expect("temporary collector state");
         let source_id = source_id();
         let capability = crate::source_identity::claude_usage_capability_for_source_id(&source_id);
@@ -218,7 +218,7 @@ impl CollectorHarness {
         }
     }
 
-    fn set_coordinator_clock(&self, sample: ClockSample) {
+    pub(super) fn set_coordinator_clock(&self, sample: ClockSample) {
         self.coordinator_clock.set(sample);
     }
 
@@ -302,7 +302,7 @@ impl CollectorHarness {
         }
     }
 
-    fn monitor_state_file(&self) -> std::path::PathBuf {
+    pub(super) fn monitor_state_file(&self) -> std::path::PathBuf {
         self.temp
             .path()
             .join(crate::BROKER_DIR)

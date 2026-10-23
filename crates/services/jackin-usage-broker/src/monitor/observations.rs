@@ -1,13 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::resetless::{
+    PairSource, ResetlessCandidate, exact_observed_pair, exact_observed_pair_for_source,
+    pair_from_observations, used_only_is_admissible,
+};
 use super::{
     AccountObservations, AccountResetBarrier, BTreeMap, DurableMonitor, EvidenceInput,
     MAX_EVIDENCE_PER_MONITOR, MAX_ID_LENGTH, MAX_MODEL_LENGTH, MONITOR_EVIDENCE_TTL_SECS,
     MONITOR_RESET_GRACE_SECS, MonitorEvidenceSource, MonitorEvidenceValue, MonitorIssue,
-    MonitorIssueCode, MonitorQuotaWindow, Observed, ObservedPercentage, ObservedQuotaPair,
-    ObservedWindow, SessionObservation, StatuslineObservation, StatuslineQuotaWindow,
-    USAGE_STATUSLINE_INPUT_SCHEMA_VERSION, field_age, issue, scope_session_id, upsert_evidence,
+    MonitorIssueCode, MonitorQuotaWindow, Observed, ObservedPercentage, ObservedWindow,
+    SessionObservation, StatuslineObservation, StatuslineQuotaWindow,
+    USAGE_STATUSLINE_INPUT_SCHEMA_VERSION, advance_reset_admission_fence, field_age, issue,
+    scope_session_id, upsert_evidence,
 };
 
 pub(super) fn validate_observation(
@@ -159,6 +164,28 @@ pub(super) fn apply_statusline(
     latest_resets[0] = max_option(latest_resets[0], five_hour_reset);
     latest_resets[1] = max_option(latest_resets[1], seven_day_reset);
     account.latest_reset_epochs = latest_resets;
+    let accepted_resets = account
+        .sessions
+        .get(&observation.session_id)
+        .map(|session| {
+            session
+                .windows
+                .iter()
+                .enumerate()
+                .filter_map(|(index, window)| {
+                    window
+                        .reset
+                        .as_ref()
+                        .filter(|reset| reset.input_sequence == input_sequence)
+                        .cloned()
+                        .map(|reset| (index, reset))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for (index, reset) in accepted_resets {
+        advance_reset_admission_fence(account, index, reset.value, &reset, now_epoch);
+    }
     if changed {
         let new_barriers = account
             .sessions
@@ -278,8 +305,19 @@ pub(super) fn apply_unbound_statusline(
 pub(super) fn latch_account_reset_barrier(
     account: &mut AccountObservations,
     index: usize,
-    incoming: AccountResetBarrier,
+    mut incoming: AccountResetBarrier,
 ) {
+    incoming.prior_reset_at_epoch = max_option(
+        incoming.prior_reset_at_epoch,
+        account.latest_reset_epochs[index],
+    );
+    incoming.prior_reset_at_epoch = max_option(
+        incoming.prior_reset_at_epoch,
+        account.broker_windows[index]
+            .reset
+            .as_ref()
+            .map(|reset| reset.value),
+    );
     let Some(slot) = account.reset_barriers.get_mut(index) else {
         return;
     };
@@ -298,6 +336,9 @@ pub(super) fn latch_account_reset_barrier(
         let mut incoming = incoming;
         incoming.prior_reset_at_epoch =
             max_option(existing.prior_reset_at_epoch, incoming.prior_reset_at_epoch);
+        incoming.prior_used_percentage_basis_points = incoming
+            .prior_used_percentage_basis_points
+            .max(existing.prior_used_percentage_basis_points);
         *slot = Some(incoming);
     }
 }
@@ -316,18 +357,22 @@ fn account_reset_barrier_satisfied(
     if now_epoch < required_at {
         return false;
     }
-    let pair_satisfies = |window: &ObservedWindow| {
+    let pair_satisfies = |window: &ObservedWindow, pair_source: PairSource| {
         let (Some(used), Some(reset), Some(pair)) = (
             window.used.as_ref(),
             window.reset.as_ref(),
-            window.paired.as_ref(),
+            exact_observed_pair_for_source(window, pair_source),
         ) else {
             return false;
         };
         let reset_advanced = barrier
             .prior_reset_at_epoch
-            .is_none_or(|previous| pair.reset_at_epoch > previous);
+            .map_or(pair.reset_at_epoch > barrier.started_at_epoch, |previous| {
+                pair.reset_at_epoch > previous
+            });
         pair.input_sequence > barrier.input_sequence_before
+            && used.input_sequence == pair.input_sequence
+            && reset.input_sequence == pair.input_sequence
             && pair.received_at_epoch >= required_at
             && pair.received_at_epoch <= now_epoch
             && pair
@@ -344,12 +389,16 @@ fn account_reset_barrier_satisfied(
             && reset_advanced
     };
 
-    account
+    let session_pair_satisfies = account
         .sessions
         .values()
         .filter_map(|session| session.windows.get(index))
-        .chain(account.broker_windows.get(index))
-        .any(pair_satisfies)
+        .any(|window| pair_satisfies(window, PairSource::Statusline));
+    let broker_pair_satisfies = account
+        .broker_windows
+        .get(index)
+        .is_some_and(|window| pair_satisfies(window, PairSource::BrokerProjection));
+    session_pair_satisfies || broker_pair_satisfies
 }
 
 pub(super) fn advance_account_reset_barriers(
@@ -401,6 +450,7 @@ fn apply_session_window(
                 input_sequence,
                 claude_code_version: claude_code_version.map(str::to_owned),
             });
+            stored.paired = None;
             effective_reset = Some(candidate_reset);
             changed = true;
         } else if stored
@@ -417,21 +467,66 @@ fn apply_session_window(
         let reset_advanced = effective_reset.is_some_and(|reset| {
             current.is_some_and(|used| used.reset_at_epoch.is_none_or(|old| reset > old))
         });
-        let watermark_allows_used =
-            watermark.is_none_or(|latest| effective_reset.is_some_and(|reset| reset >= latest));
+        let local_reset_follows_input = stored.reset.as_ref().is_some_and(|reset| {
+            watermark == Some(reset.value)
+                && reset.input_sequence < input_sequence
+                && reset.received_at_epoch < now_epoch
+        });
+        let local_reset_is_current = stored
+            .reset
+            .as_ref()
+            .is_some_and(|reset| watermark == Some(reset.value));
+        let resetless_high_risk = input.reset_at_epoch.is_none()
+            && watermark.is_some()
+            && candidate_used >= 9_500
+            && current.is_none_or(|used| candidate_used > used.value)
+            && (!local_reset_is_current || local_reset_follows_input);
+        let watermark_allows_used = watermark.is_none_or(|latest| {
+            input.reset_at_epoch.is_some() && effective_reset.is_some_and(|reset| reset >= latest)
+        });
+        let partial_increase_allowed = input.reset_at_epoch.is_none()
+            && current.is_some_and(|used| candidate_used > used.value)
+            && (watermark.is_none() || local_reset_follows_input);
         let should_accept = current.is_none()
             || reset_advanced
-            || current.is_some_and(|used| same_window && candidate_used > used.value);
-        if watermark_allows_used && should_accept {
+            || current.is_some_and(|used| same_window && candidate_used > used.value)
+            || partial_increase_allowed;
+        if resetless_high_risk {
             stored.used = Some(ObservedPercentage {
                 value: candidate_used,
-                reset_at_epoch: effective_reset,
+                reset_at_epoch: None,
                 evidence_at_epoch: None,
                 received_at_epoch: now_epoch,
                 input_sequence,
                 claude_code_version: claude_code_version.map(str::to_owned),
             });
+            stored.paired = None;
             changed = true;
+        } else if (watermark_allows_used || partial_increase_allowed) && should_accept {
+            stored.used = Some(ObservedPercentage {
+                value: candidate_used,
+                reset_at_epoch: input.reset_at_epoch.and(effective_reset),
+                evidence_at_epoch: None,
+                received_at_epoch: now_epoch,
+                input_sequence,
+                claude_code_version: claude_code_version.map(str::to_owned),
+            });
+            stored.paired = None;
+            changed = true;
+            if let Some(candidate_reset) = input.reset_at_epoch
+                && stored.reset.as_ref().is_some_and(|reset| {
+                    reset.value == candidate_reset && reset.input_sequence != input_sequence
+                })
+            {
+                stored.reset = Some(Observed {
+                    value: candidate_reset,
+                    evidence_at_epoch: None,
+                    received_at_epoch: now_epoch,
+                    input_sequence,
+                    claude_code_version: claude_code_version.map(str::to_owned),
+                });
+                changed = true;
+            }
         }
     }
     if let (Some(candidate_used), Some(candidate_reset)) =
@@ -439,23 +534,21 @@ fn apply_session_window(
         && stored.used.as_ref().is_some_and(|used| {
             used.value == candidate_used && used.reset_at_epoch == Some(candidate_reset)
         })
-        && stored
-            .reset
-            .as_ref()
-            .is_some_and(|reset| reset.value == candidate_reset)
-        && stored.paired.as_ref().is_none_or(|pair| {
-            pair.used_percentage_basis_points != candidate_used
-                || pair.reset_at_epoch != candidate_reset
+        && stored.reset.as_ref().is_some_and(|reset| {
+            reset.value == candidate_reset && reset.input_sequence == input_sequence
         })
+        && stored
+            .used
+            .as_ref()
+            .is_some_and(|used| used.input_sequence == input_sequence)
+        && stored.paired.is_none()
+        && let Some(pair) = stored
+            .used
+            .as_ref()
+            .zip(stored.reset.as_ref())
+            .and_then(|(used, reset)| pair_from_observations(used, reset, PairSource::Statusline))
     {
-        stored.paired = Some(ObservedQuotaPair {
-            used_percentage_basis_points: candidate_used,
-            reset_at_epoch: candidate_reset,
-            evidence_at_epoch: None,
-            received_at_epoch: now_epoch,
-            input_sequence,
-            claude_code_version: claude_code_version.map(str::to_owned),
-        });
+        stored.paired = Some(pair);
         changed = true;
     }
     (changed, stored.reset.as_ref().map(|reset| reset.value))
@@ -662,4 +755,139 @@ fn sync_window(
             },
         );
     }
+}
+
+pub(super) fn is_used_only_window(window: &ObservedWindow) -> bool {
+    window.reset.is_none()
+        && window.paired.is_none()
+        && window
+            .used
+            .as_ref()
+            .is_some_and(|used| used.reset_at_epoch.is_none())
+}
+
+pub(super) fn update_broker_used_only(
+    account: &mut AccountObservations,
+    index: usize,
+    next: &ObservedWindow,
+    candidate: ResetlessCandidate,
+    input_sequence: u64,
+    now_epoch: i64,
+) -> bool {
+    let Some(mut used) = next.used.clone() else {
+        return false;
+    };
+    if used.reset_at_epoch.is_some()
+        || used.value != candidate.value
+        || used.evidence_at_epoch != Some(candidate.source_at_epoch)
+        || !used_only_is_admissible(account, index, &used, input_sequence, now_epoch)
+    {
+        return false;
+    }
+    used.input_sequence = input_sequence;
+    used.reset_at_epoch = None;
+    let Some(current) = account.broker_windows.get_mut(index) else {
+        return false;
+    };
+    current.used = Some(used);
+    current.paired = None;
+    account.used_only_admission_sequences[index] = Some(input_sequence);
+    true
+}
+
+pub(super) fn update_broker_window(
+    current: &mut ObservedWindow,
+    next: &ObservedWindow,
+    input_sequence: u64,
+) -> bool {
+    let mut changed = false;
+    if let Some(next_reset) = &next.reset {
+        let mut next_reset = next_reset.clone();
+        next_reset.input_sequence = input_sequence;
+        match current.reset.as_ref() {
+            None => {
+                current.reset = Some(next_reset);
+                changed = true;
+            }
+            Some(previous) if next_reset.value > previous.value => {
+                current.reset = Some(next_reset);
+                changed = true;
+            }
+            Some(previous)
+                if next_reset.value == previous.value
+                    && source_observation_is_newer(&next_reset, previous) =>
+            {
+                current.reset = Some(next_reset);
+                changed = true;
+            }
+            _ => {}
+        }
+    }
+    if let Some(next_used) = &next.used {
+        let mut next_used = next_used.clone();
+        next_used.input_sequence = input_sequence;
+        let next_reset = next_used.reset_at_epoch;
+        let current_used = current.used.as_ref();
+        let reset_is_current = current
+            .reset
+            .as_ref()
+            .is_none_or(|reset| next_reset.is_some_and(|candidate| candidate >= reset.value));
+        if reset_is_current {
+            match current_used {
+                None => {
+                    current.used = Some(next_used);
+                    changed = true;
+                }
+                Some(previous) if next_reset > previous.reset_at_epoch => {
+                    current.used = Some(next_used);
+                    changed = true;
+                }
+                Some(previous)
+                    if next_reset == previous.reset_at_epoch
+                        && next_used.value > previous.value =>
+                {
+                    current.used = Some(next_used);
+                    changed = true;
+                }
+                Some(previous)
+                    if next_reset == previous.reset_at_epoch
+                        && next_used.value == previous.value
+                        && next_used.evidence_at_epoch > previous.evidence_at_epoch =>
+                {
+                    current.used = Some(next_used);
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
+    }
+    if changed {
+        current.paired = None;
+    }
+    if let Some(next_pair) = &next.paired {
+        let exact_window = ObservedWindow {
+            used: current.used.clone(),
+            reset: current.reset.clone(),
+            paired: Some(next_pair.clone()),
+        };
+        if exact_observed_pair(&exact_window).is_none() {
+            return changed;
+        }
+        let pair_is_newer = current.paired.as_ref().is_none_or(|previous| {
+            next_pair.used_percentage_basis_points != previous.used_percentage_basis_points
+                || next_pair.reset_at_epoch != previous.reset_at_epoch
+                || next_pair.evidence_at_epoch > previous.evidence_at_epoch
+        });
+        if pair_is_newer {
+            let mut next_pair = next_pair.clone();
+            next_pair.input_sequence = input_sequence;
+            current.paired = Some(next_pair);
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn source_observation_is_newer<T>(next: &Observed<T>, current: &Observed<T>) -> bool {
+    next.evidence_at_epoch > current.evidence_at_epoch
 }
