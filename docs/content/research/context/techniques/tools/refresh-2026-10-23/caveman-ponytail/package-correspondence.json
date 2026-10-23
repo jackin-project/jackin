@@ -1,0 +1,46 @@
+{
+  "accessed": "2026-10-23T15:37:47.728900+00:00",
+  "packages": {
+    "@caveman-ai/cli": {
+      "bytes": 445537,
+      "sha1_matches_registry": true,
+      "sha256": "78cda01d208eb67747bcc7c063869252a2d316c7786fe504e3f695940e59366f",
+      "files": {
+        "package/dist/binaries.generated.js": {
+          "binary_refs": [
+            "bin-v4.0.1"
+          ]
+        },
+        "package/dist/index.js": {
+          "binary_refs": [
+            "bin-v2.0.0"
+          ]
+        },
+        "package/package.json": {
+          "bytes": 2926,
+          "sha256": "916bb5c8261036d5664a3361434f9843f1577631ef49e26c227beb78f6b99c6f"
+        }
+      }
+    },
+    "@dietrichgebert/ponytail": {
+      "bytes": 95495,
+      "sha1_matches_registry": true,
+      "sha256": "d2e8ef2f98e8f70bf40ffcd3ff157634fe13b2572e10ad70a62fc26db6de6dc5",
+      "files": {
+        "package/package.json": {
+          "bytes": 1260,
+          "sha256": "f062af314f6031fe88fcc63bdf1c42fbae9e4acb28b7ac94c1f8acc22d204562"
+        },
+        "package/pi-extension/package.json": {
+          "bytes": 144,
+          "sha256": "376677d0d7d7846e7e521fc14f129e41cdbb60f0018834f34d3ef638f30e4be0"
+        },
+        "package/skills/ponytail/SKILL.md": {
+          "bytes": 3496,
+          "sha256": "9badd22a32e19cb884e46dfa8d3aae82bb81dfa5484105b8b4f0262df823a509",
+          "matches_tag": true
+        }
+      }
+    }
+  }
+}

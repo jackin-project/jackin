@@ -1,75 +1,144 @@
-
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-"""Decompose a Claude Code session transcript into token classes and dollars.
+"""Audit explicitly supplied Claude JSONL files without discovering private sessions.
 
-THE TRAP THIS AVOIDS: Claude Code writes one JSONL line per content block, and repeats the
-*same* message.usage on every line of the same API response. Summing usage over raw lines
-overcounts by ~3x (one response can be 6 lines). This script deduplicates by message.id first
-— the single most important correctness step in any transcript analyzer.
+python3 session_cost.py session.jsonl [more.jsonl] [--prices rates.json]
 
-  python3 session_cost.py [path-to-session.jsonl] [model]
-
-Default path = the newest transcript for this project; default model = claude-opus-4-8.
-Prices are list $/MTok (override in PRICES). Output: token volume by class, dollar split by class.
+Prices are USD/MTok keyed by the exact message model: input, cache_read,
+cache_write_5m, cache_write_1h, output. Missing write TTLs remain unknown.
+List-price estimates are not invoices or subscription-quota measurements.
 """
-import json, sys, glob, os
+import argparse
+import json
+import math
+from pathlib import Path
 
-PRICES = {
-    "claude-opus-4-8":   dict(inp=5.0,  cr=0.5,  cw5=6.25, cw1=10.0, out=25.0),
-    "claude-sonnet-4-6": dict(inp=3.0,  cr=0.3,  cw5=3.75, cw1=6.0,  out=15.0),
-    "claude-haiku-4-5":  dict(inp=1.0,  cr=0.1,  cw5=1.25, cw1=2.0,  out=5.0),
-    "claude-fable-5":    dict(inp=10.0, cr=1.0,  cw5=12.5, cw1=20.0, out=50.0),
-}
+FIELDS = ("input", "cache_read", "cache_write_5m", "cache_write_1h",
+          "cache_write_unknown", "output")
 
-def newest_transcript():
-    base = os.path.expanduser("~/.claude/projects")
-    files = glob.glob(f"{base}/*/*.jsonl")
-    return max(files, key=os.path.getmtime) if files else None
+
+def nonnegative(value, field):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{field} must be a nonnegative integer")
+    return value
+
+
+def normalize(usage):
+    """Return disjoint token classes; never silently drop aggregate cache writes."""
+    counts = {k: 0 for k in FIELDS}
+    for target, source in (("input", "input_tokens"),
+                           ("cache_read", "cache_read_input_tokens"),
+                           ("output", "output_tokens")):
+        if source in ("input_tokens", "output_tokens") and source not in usage:
+            raise ValueError(f"missing {source}; incomplete usage receipt")
+        counts[target] = nonnegative(usage.get(source, 0), source)
+    detail = usage.get("cache_creation") or {}
+    counts["cache_write_5m"] = nonnegative(
+        detail.get("ephemeral_5m_input_tokens", 0), "5m cache writes")
+    counts["cache_write_1h"] = nonnegative(
+        detail.get("ephemeral_1h_input_tokens", 0), "1h cache writes")
+    known = counts["cache_write_5m"] + counts["cache_write_1h"]
+    aggregate = nonnegative(usage.get("cache_creation_input_tokens", known),
+                            "cache_creation_input_tokens")
+    if aggregate < known:
+        raise ValueError("cache write breakdown exceeds aggregate")
+    counts["cache_write_unknown"] = aggregate - known
+    return counts
+
+
+def collect(paths):
+    """Deduplicate IDs per session, rejecting ambiguous/non-monotone receipts.
+
+    Equal records repeat; cumulative streaming updates replace earlier records.
+    Missing session IDs scope the message ID to the explicit file.
+    """
+    seen = {}
+    duplicates = 0
+    for filename in paths:
+        path = Path(filename)
+        with path.open(encoding="utf-8") as stream:
+            for line_number, line in enumerate(stream, 1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                    if record.get("type") != "assistant":
+                        continue
+                    message = record.get("message") or {}
+                    usage = message.get("usage")
+                    if usage is None:
+                        continue
+                    if not message.get("id"):
+                        raise ValueError("usage-bearing response has no message ID")
+                    session = record.get("sessionId") or record.get("session_id")
+                    scope = ("session", session) if session else ("file", str(path.resolve()))
+                    key = (scope, message["id"])
+                    model = message.get("model") or "unknown"
+                    new = normalize(usage)
+                    if key in seen:
+                        duplicates += 1
+                        old_model, old = seen[key]
+                        if old_model != model:
+                            raise ValueError("response model changed for the same ID")
+                        old_values = [old[k] for k in ("input", "cache_read", "output")]
+                        new_values = [new[k] for k in ("input", "cache_read", "output")]
+                        old_values.append(sum(old[k] for k in FIELDS if k.startswith("cache_write")))
+                        new_values.append(sum(new[k] for k in FIELDS if k.startswith("cache_write")))
+                        if any(n < o for n, o in zip(new_values, old_values)):
+                            raise ValueError("non-monotone duplicate usage; inspect receipts")
+                        if new_values == old_values and new["cache_write_unknown"] > old["cache_write_unknown"]:
+                            continue  # Retain the more detailed equivalent receipt.
+                        if any(new[k] < old[k] for k in ("cache_write_5m", "cache_write_1h")):
+                            raise ValueError("conflicting cache TTL breakdown for the same ID")
+                    seen[key] = (model, new)
+                except (ValueError, TypeError, AttributeError) as error:
+                    raise ValueError(f"{path.name}:{line_number}: {error}") from error
+    totals = {}
+    for model, counts in seen.values():
+        dest = totals.setdefault(model, {k: 0 for k in FIELDS})
+        for key in FIELDS:
+            dest[key] += counts[key]
+    return {"unique_responses": len(seen), "duplicate_records": duplicates,
+            "tokens_by_model": totals}
+
+
+def price(totals, rates):
+    costs = {}
+    for model, counts in totals.items():
+        rate = rates.get(model)
+        if rate is None:
+            costs[model] = {"usd": None, "reason": "no rate for exact model"}
+            continue
+        required = [k for k in FIELDS if k != "cache_write_unknown"]
+        if any(k not in rate or isinstance(rate[k], bool) or
+               not isinstance(rate[k], (int, float)) or
+               not math.isfinite(rate[k]) or rate[k] < 0 for k in required):
+            raise ValueError(f"invalid or incomplete rates for {model}")
+        if counts["cache_write_unknown"]:
+            costs[model] = {"usd": None, "reason": "cache write TTL unknown"}
+            continue
+        parts = {k: counts[k] * rate[k] / 1_000_000 for k in required}
+        costs[model] = {"usd": sum(parts.values()), "by_class": parts}
+    return costs
+
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else newest_transcript()
-    model = sys.argv[2] if len(sys.argv) > 2 else "claude-opus-4-8"
-    P = PRICES[model]
-    seen = {}
-    for line in open(path):
-        line = line.strip()
-        if not line:
-            continue
-        o = json.loads(line)
-        if o.get("type") != "assistant":
-            continue
-        m = o.get("message") or {}
-        mid, u = m.get("id"), m.get("usage")
-        if mid and u:
-            seen[mid] = u
-    tot = dict(inp=0, cr=0, cw5=0, cw1=0, out=0)
-    for u in seen.values():
-        tot["inp"] += u.get("input_tokens", 0)
-        tot["cr"]  += u.get("cache_read_input_tokens", 0)
-        cc = u.get("cache_creation") or {}
-        tot["cw5"] += cc.get("ephemeral_5m_input_tokens", 0)
-        tot["cw1"] += cc.get("ephemeral_1h_input_tokens", 0)
-        tot["out"] += u.get("output_tokens", 0)
-    d = {k: tot[k] * P[k] / 1e6 for k in tot}
-    D = sum(d.values()) or 1.0
-    inp_side = tot["inp"] + tot["cr"] + tot["cw5"] + tot["cw1"]
-    print(f"transcript: {path}")
-    print(f"model: {model}   unique API responses: {len(seen)}")
-    print(f"\nTOKEN VOLUME")
-    print(f"  uncached input : {tot['inp']:>12,}")
-    print(f"  cache read     : {tot['cr']:>12,}  ({100*tot['cr']/max(1,inp_side):.1f}% of input-side volume)")
-    print(f"  cache write 5m : {tot['cw5']:>12,}")
-    print(f"  cache write 1h : {tot['cw1']:>12,}")
-    print(f"  output         : {tot['out']:>12,}")
-    print(f"\nDOLLAR SPLIT  (total ${D:.4f})")
-    print(f"  output      : {100*d['out']/D:5.1f}%   (${d['out']:.4f})")
-    print(f"  cache write : {100*(d['cw5']+d['cw1'])/D:5.1f}%   (${d['cw5']+d['cw1']:.4f})")
-    print(f"  cache read  : {100*d['cr']/D:5.1f}%   (${d['cr']:.4f})")
-    print(f"  uncached in : {100*d['inp']/D:5.1f}%   (${d['inp']:.4f})")
-    print("\nNote: output_tokens includes thinking (billed, but redacted from the transcript text).")
-    print("To split thinking vs visible, count_tokens the text+tool_use blocks and subtract from output.")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("transcripts", nargs="+")
+    parser.add_argument("--prices", type=Path)
+    args = parser.parse_args()
+    result = collect(args.transcripts)
+    result["accounting"] = "observed Claude usage; no subscription conversion"
+    if args.prices:
+        result["list_price_estimate"] = price(
+            result["tokens_by_model"], json.loads(args.prices.read_text()))
+    result["limits"] = [
+        "Explicit files only; include subagents and failed attempts.",
+        "Output includes reasoning and tool arguments; no inferred thinking percentage.",
+        "This is not a Codex/OpenAI receipt parser; missing input/output receipts fail."]
+    print(json.dumps(result, indent=2, sort_keys=True))
+
 
 if __name__ == "__main__":
     main()

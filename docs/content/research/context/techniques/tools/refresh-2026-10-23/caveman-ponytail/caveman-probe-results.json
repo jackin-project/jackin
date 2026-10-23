@@ -1,0 +1,31 @@
+{
+  "default_record_exact": true,
+  "fixture": {
+    "byte_exact_recovery_crlf_unicode_no_final_newline": true,
+    "bytes": 45007,
+    "content_type": "json",
+    "tokens_after": 139,
+    "tokens_before": 14002
+  },
+  "instruction_counts": {
+    "../caveman-injected.txt": {
+      "bytes": 4961,
+      "o200k_base": 1248
+    },
+    "../caveman/skills/caveman/SKILL.md": {
+      "bytes": 4678,
+      "o200k_base": 1158
+    },
+    "../ponytail-injected-full.txt": {
+      "bytes": 2861,
+      "o200k_base": 639
+    },
+    "../ponytail/skills/ponytail/SKILL.md": {
+      "bytes": 3496,
+      "o200k_base": 802
+    }
+  },
+  "malformed_json_passes_original": true,
+  "missing_recovery_is_error": true,
+  "no_store_passes_original": true
+}
