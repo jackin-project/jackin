@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::ffi::OsStr;
+use std::future::Future;
+use std::io;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -161,6 +163,76 @@ pub struct ExecResult {
     pub stderr: Vec<u8>,
     pub duration: Duration,
     pub timed_out: bool,
+}
+
+/// The child pipe reported `BrokenPipe` while delivering requested stdin.
+///
+/// The process was still observed, drained, and reaped under the original
+/// request deadline. Its result is available even though incomplete input
+/// remains an execution error and must not be retried automatically.
+pub struct StdinDeliveryError {
+    source: io::Error,
+    operation: StdinDeliveryOperation,
+    result: ExecResult,
+}
+
+/// The stdin operation that failed after the child closed its input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdinDeliveryOperation {
+    /// Writing request bytes to the child's stdin.
+    Write,
+    /// Shutting down the child's stdin after writing request bytes.
+    Shutdown,
+}
+
+impl StdinDeliveryError {
+    /// Return the observed result from the child after bounded capture and wait.
+    #[must_use]
+    pub const fn result(&self) -> &ExecResult {
+        &self.result
+    }
+
+    /// Return which stdin operation observed the closed pipe.
+    #[must_use]
+    pub const fn operation(&self) -> StdinDeliveryOperation {
+        self.operation
+    }
+}
+
+impl std::fmt::Debug for StdinDeliveryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("StdinDeliveryError")
+            .field("source", &self.source)
+            .field("operation", &self.operation)
+            .field("child_code", &self.result.code)
+            .field("child_success", &self.result.success)
+            .field("stdout_bytes", &self.result.stdout.len())
+            .field("stderr_bytes", &self.result.stderr.len())
+            .field("duration", &self.result.duration)
+            .field("timed_out", &self.result.timed_out)
+            .finish()
+    }
+}
+
+impl std::fmt::Display for StdinDeliveryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let operation = match self.operation {
+            StdinDeliveryOperation::Write => "writing request bytes to child stdin",
+            StdinDeliveryOperation::Shutdown => "shutting down child stdin",
+        };
+        write!(
+            formatter,
+            "stdin delivery failed while {operation}: {}",
+            self.source
+        )
+    }
+}
+
+impl std::error::Error for StdinDeliveryError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
 }
 
 pub async fn exec_async(request: &ExecRequest) -> Result<ExecResult> {
@@ -330,6 +402,16 @@ async fn read_captured(
 }
 
 async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
+    run_once_with_gate_async(request, std::future::ready(Ok(()))).await
+}
+
+async fn run_once_with_gate_async<F>(
+    request: &ExecRequest,
+    before_stdin_write: F,
+) -> Result<ExecResult>
+where
+    F: Future<Output = Result<()>>,
+{
     use tokio::io::AsyncWriteExt;
     validate_request(request, false)?;
     let started = Instant::now();
@@ -363,15 +445,29 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
     let completion = async {
         let write = async {
             if let (Some(bytes), Some(mut stdin)) = (&request.stdin, stdin) {
-                stdin
-                    .write_all(bytes)
-                    .await
-                    .context("writing stdin to child")?;
-                stdin.shutdown().await.context("closing child stdin")?;
+                before_stdin_write.await?;
+                match stdin.write_all(bytes).await {
+                    Err(error)
+                        if deadline.is_some() && error.kind() == io::ErrorKind::BrokenPipe =>
+                    {
+                        return Ok(Some((error, StdinDeliveryOperation::Write)));
+                    }
+                    Err(error) => return Err(error).context("writing stdin to child"),
+                    Ok(()) => {}
+                }
+                match stdin.shutdown().await {
+                    Err(error)
+                        if deadline.is_some() && error.kind() == io::ErrorKind::BrokenPipe =>
+                    {
+                        return Ok(Some((error, StdinDeliveryOperation::Shutdown)));
+                    }
+                    Err(error) => return Err(error).context("closing child stdin"),
+                    Ok(()) => {}
+                }
             }
-            Ok::<_, anyhow::Error>(())
+            Ok(None)
         };
-        let ((), stdout, stderr) = tokio::try_join!(
+        let (delivery_error, stdout, stderr) = tokio::try_join!(
             write,
             read_captured(
                 stdout,
@@ -385,7 +481,7 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
             ),
         )?;
         let status = owned.child.wait().await.context("waiting on child")?;
-        Ok::<_, anyhow::Error>(((), stdout, stderr, status))
+        Ok::<_, anyhow::Error>((delivery_error, stdout, stderr, status))
     };
     let outcome = if let Some(deadline) = deadline {
         tokio::time::timeout_at(deadline, completion).await.ok()
@@ -408,16 +504,26 @@ async fn run_once_async(request: &ExecRequest) -> Result<ExecResult> {
             owned.kill_and_reap().await.context(error.to_string())?;
             Err(error)
         }
-        Some(Ok(((), stdout, stderr, status))) => {
+        Some(Ok((delivery_error, stdout, stderr, status))) => {
             owned.disarm();
-            Ok(ExecResult {
+            let result = ExecResult {
                 code: status.code(),
                 success: status.success(),
                 stdout,
                 stderr,
                 duration: started.elapsed(),
                 timed_out: false,
-            })
+            };
+            if let Some((source, operation)) = delivery_error {
+                Err(StdinDeliveryError {
+                    source,
+                    operation,
+                    result,
+                }
+                .into())
+            } else {
+                Ok(result)
+            }
         }
     }
 }
