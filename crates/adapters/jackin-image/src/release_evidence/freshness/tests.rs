@@ -8,6 +8,42 @@ use super::*;
 use serde_json::{Value, json};
 use support::*;
 
+#[test]
+fn recovery_envelope_binds_the_receipt_digest_and_detached_bundle() {
+    let receipt = b"receipt bytes";
+    let bundle = b"signature bundle";
+    let expected = concat!(
+        "velnor-package-release-recovery-v1\n",
+        "receipt_sha256=9e85aa95f04db5f108534e48b63e75e8045a7ecab59988405e70a9260300a0d6\n",
+        "receipt=cmVjZWlwdCBieXRlcw\n",
+        "bundle=c2lnbmF0dXJlIGJ1bmRsZQ\n",
+    );
+    assert_eq!(recovery_envelope(receipt, bundle).unwrap(), expected);
+    assert_ne!(
+        recovery_envelope(b"other receipt", bundle).unwrap(),
+        expected
+    );
+    assert_ne!(
+        recovery_envelope(receipt, b"other bundle").unwrap(),
+        expected
+    );
+}
+
+#[test]
+fn recovery_envelope_accepts_exact_limit_and_rejects_next_base64_boundary() {
+    let accepted_bundle = vec![0; 84_378];
+    let accepted = recovery_envelope(b"abc", &accepted_bundle).unwrap();
+    assert_eq!(accepted.len(), 110 * 1024);
+
+    let rejected_bundle = vec![0; 84_379];
+    assert_eq!(
+        recovery_envelope(b"abc", &rejected_bundle)
+            .unwrap_err()
+            .to_string(),
+        "preview recovery envelope exceeds native limit"
+    );
+}
+
 #[tokio::test]
 async fn publication_success_does_not_wait_for_downstream_tap() {
     for channel in [
@@ -106,6 +142,28 @@ async fn producer_and_source_ci_identity_fail_closed() {
         fixture.change(&url, |run| run[field] = json!("untrusted"));
         assert!(fixture.pin().await.is_err(), "{field}");
     }
+    let fixture = Fixture::new(PackageReleaseChannel::Preview);
+    let url = route(&format!(
+        "actions/runs/{}/attempts/{}",
+        fixture.receipt.workflow.run_id, fixture.receipt.workflow.run_attempt
+    ));
+    fixture.change(&url, |run| {
+        run["head_sha"] = json!(fixture.receipt.source.commit_sha);
+    });
+    assert!(
+        fixture.pin().await.is_err(),
+        "producer run cannot use payload source SHA A"
+    );
+
+    let fixture = Fixture::new(PackageReleaseChannel::Preview);
+    fixture.change(&jobs_route(&fixture.receipt), |rows| {
+        rows["jobs"][0]["head_sha"] = json!(fixture.receipt.source.commit_sha);
+    });
+    assert!(
+        fixture.pin().await.is_err(),
+        "producer jobs cannot use payload source SHA A"
+    );
+
     let fixture = Fixture::new(PackageReleaseChannel::Preview);
     let url = route(&format!(
         "actions/runs/{}/attempts/{}",
@@ -233,7 +291,7 @@ async fn preview_source_and_workflow_authority_are_distinct_identities() {
 async fn preview_source_must_precede_its_authority_on_protected_main() {
     for (base_is_source, mutation) in [true, false]
         .into_iter()
-        .flat_map(|first| (0..5).map(move |m| (first, m)))
+        .flat_map(|first| (0..5).map(move |mutation| (first, mutation)))
     {
         let fixture = Fixture::new(PackageReleaseChannel::Preview);
         let receipt = &fixture.receipt;
@@ -247,9 +305,7 @@ async fn preview_source_must_precede_its_authority_on_protected_main() {
             1 => comparison["status"] = json!("behind"),
             2 => comparison["behind_by"] = json!(1),
             3 => comparison["merge_base_commit"]["sha"] = json!("f".repeat(40)),
-            _ => {
-                comparison["status"] = json!("identical");
-            }
+            _ => comparison["status"] = json!("identical"),
         });
         let error = fixture.pin().await.unwrap_err().to_string();
         assert!(
@@ -278,19 +334,65 @@ async fn stable_needs_no_source_to_authority_comparison() {
 }
 
 #[tokio::test]
-async fn retained_publication_rechecks_receipt_bundle_and_inventory() {
+async fn preview_requires_exact_signed_receipt_recovery_envelope_in_annotated_tag() {
+    let fixture = Fixture::new(PackageReleaseChannel::Preview);
+    fixture.change(&annotated_tag_route(), |tag| {
+        tag["message"] = json!("velnor-package-release-recovery-v1\nforged");
+    });
+    assert!(
+        fixture
+            .pin()
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("recovery envelope mismatch")
+    );
+}
+
+#[tokio::test]
+async fn preview_requires_exact_signed_receipt_recovery_envelope_in_release_body() {
     for mutation in 0..4 {
+        let fixture = Fixture::new(PackageReleaseChannel::Preview);
+        let body = match mutation {
+            0 => Value::Null,
+            1 => json!("unrelated release notes"),
+            2 => json!(recovery_envelope(b"different receipt", &fixture.bundle).unwrap()),
+            _ => json!(recovery_envelope(&fixture.raw, b"different signature bundle").unwrap()),
+        };
+        fixture.change(&release_route(&fixture.receipt), |release| {
+            release["body"] = body;
+        });
+        assert!(
+            fixture.pin().await.is_err(),
+            "preview release body mutation {mutation} must fail closed"
+        );
+    }
+}
+
+#[tokio::test]
+async fn retained_publication_rechecks_receipt_bundle_and_inventory() {
+    for mutation in 0..5 {
         let mut fixture = Fixture::new(PackageReleaseChannel::Preview);
         let pin = fixture.pin().await.unwrap();
         match mutation {
             0 => fixture.raw.push(b' '),
             1 => fixture.bundle.push(b' '),
-            2 => fixture.change(&assets_route(), |rows| rows[0]["id"] = json!(999)),
-            _ => fixture.change(&tag_route(&fixture.receipt), |tag| {
+            2 => fixture.change(&assets_route(&fixture.receipt), |rows| {
+                rows[0]["id"] = json!(999);
+            }),
+            3 => fixture.change(&tag_route(&fixture.receipt), |tag| {
                 tag["object"]["sha"] = json!("f".repeat(40));
             }),
+            _ => fixture.change(&annotated_tag_route(), |tag| {
+                tag["message"] = json!("replacement recovery envelope");
+            }),
         }
-        assert!(pin.recheck(&fixture).await.is_err(), "mutation {mutation}");
+        let error = pin.recheck(&fixture).await.unwrap_err().to_string();
+        if mutation == 4 {
+            assert!(error.contains("preview annotated tag recovery envelope mismatch"));
+        } else {
+            assert!(!error.is_empty(), "mutation {mutation}");
+        }
     }
 }
 
@@ -299,7 +401,8 @@ async fn unknown_missing_and_incomplete_assets_fail_closed() {
     for mutation in 0..5 {
         let fixture = Fixture::new(PackageReleaseChannel::Preview);
         fixture.fail_or_remove_job("Publish authenticated channel release", false);
-        fixture.change(&assets_route(), |rows| match mutation {
+        let url = assets_route(&fixture.receipt);
+        fixture.change(&url, |rows| match mutation {
             0 => {
                 rows.as_array_mut().unwrap().pop();
             }
