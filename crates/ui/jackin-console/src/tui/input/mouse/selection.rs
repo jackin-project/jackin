@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    ManagerMessage, ManagerStage, ManagerState, MouseEvent, Rect, SettingsTab, dispatch_manager,
-    editor_auth_row_index_at_position, editor_mount_index_at_position, editor_scroll_area,
-    editor_tab_at_position, settings_tab_at_position, settings_trust_row_at_position,
+    EditorTab, ManagerMessage, ManagerStage, ManagerState, MouseEvent, Rect, SettingsTab,
+    dispatch_manager, editor_auth_row_index_at_position, editor_mount_index_at_position,
+    editor_scroll_area, settings_trust_row_at_position,
 };
 
-pub fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
+pub fn try_select_editor_tab(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&jackin_config::AppConfig>,
+) -> bool {
     let ManagerStage::Editor(editor) = &state.stage else {
         return false;
     };
@@ -15,7 +20,11 @@ pub fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) ->
         return false;
     }
 
-    let Some(tab) = editor_tab_at_position(mouse.row, mouse.column) else {
+    let regions = super::editor_tab_hit_regions(editor, term_size, config, state.op_available);
+    let Some(tab_id) = super::tab_hit_id(&regions, mouse) else {
+        return false;
+    };
+    let Some(tab) = EditorTab::ALL.get(tab_id).copied() else {
         return false;
     };
 
@@ -23,7 +32,11 @@ pub fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) ->
     true
 }
 
-pub fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
+pub fn try_select_settings_tab(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
     let ManagerStage::Settings(settings) = &state.stage else {
         return false;
     };
@@ -31,7 +44,11 @@ pub fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) 
         return false;
     }
 
-    let Some(tab) = settings_tab_at_position(mouse.row, mouse.column) else {
+    let regions = super::settings_tab_hit_regions(settings, term_size, state.op_available);
+    let Some(tab_id) = super::tab_hit_id(&regions, mouse) else {
+        return false;
+    };
+    let Some(tab) = SettingsTab::ALL.get(tab_id).copied() else {
         return false;
     };
     dispatch_manager(state, ManagerMessage::SelectSettingsTab(tab));

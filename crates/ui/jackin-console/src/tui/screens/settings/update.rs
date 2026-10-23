@@ -56,14 +56,14 @@ pub use env_plans::{
 pub(crate) use focus::settings_focus_region_eq;
 pub use focus::{
     SettingsFocusRegion, settings_focus_head, settings_focus_next, settings_focus_order,
-    settings_focus_region, settings_tab_hover_plan, settings_tab_hover_target_plan,
+    settings_focus_region,
 };
 pub use keys::{
     settings_auth_key_plan, settings_env_delete_key_for_row, settings_env_header_key_plan,
     settings_env_key_plan, settings_env_selected_delete_key, settings_env_selected_header_key_plan,
     settings_env_selected_is_op_ref, settings_env_selected_key_is_op_ref,
     settings_env_selected_key_matches, settings_general_key_plan, settings_shell_key_plan,
-    settings_tab_at_position, settings_top_level_key_plan, settings_trust_key_plan,
+    settings_top_level_key_plan, settings_trust_key_plan,
 };
 pub use mount_commits::{
     global_mount_add_finalize_apply_plan, global_mount_add_finalize_plan,

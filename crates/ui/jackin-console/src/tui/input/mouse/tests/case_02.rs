@@ -87,6 +87,7 @@ fn container_info_copy_click_queues_typed_effect() {
 
 #[test]
 fn mouse_down_on_editor_tab_selects_tab() {
+    let config = jackin_config::AppConfig::default();
     let mut state = list_state();
     let ws = WorkspaceConfig {
         workdir: "/w".into(),
@@ -95,7 +96,7 @@ fn mouse_down_on_editor_tab_selects_tab() {
     };
     state.stage = ManagerStage::Editor(EditorState::new_edit("x".into(), ws));
 
-    handle_mouse(&mut state, mouse_down_at(33, 3), term(100));
+    handle_mouse_with_config(&mut state, mouse_down_at(33, 3), term(100), Some(&config));
 
     let ManagerStage::Editor(editor) = state.stage else {
         panic!("expected editor stage");
@@ -106,6 +107,7 @@ fn mouse_down_on_editor_tab_selects_tab() {
 
 #[test]
 fn mouse_motion_sets_and_clears_editor_tab_hover() {
+    let config = jackin_config::AppConfig::default();
     let mut state = list_state();
     let ws = WorkspaceConfig {
         workdir: "/w".into(),
@@ -114,10 +116,11 @@ fn mouse_motion_sets_and_clears_editor_tab_hover() {
     };
     state.stage = ManagerStage::Editor(EditorState::new_edit("x".into(), ws));
 
-    handle_mouse(
+    handle_mouse_with_config(
         &mut state,
         mouse_kind_at(MouseEventKind::Moved, 22, 3),
         term(100),
+        Some(&config),
     );
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("expected editor stage");
@@ -126,10 +129,11 @@ fn mouse_motion_sets_and_clears_editor_tab_hover() {
     assert_eq!(editor.hover_target, Some(EditorHoverTarget::Tab(2)));
     assert_eq!(editor.active_tab, EditorTab::General);
 
-    handle_mouse(
+    handle_mouse_with_config(
         &mut state,
         mouse_kind_at(MouseEventKind::Moved, 22, 0),
         term(100),
+        Some(&config),
     );
     let ManagerStage::Editor(editor) = &state.stage else {
         panic!("expected editor stage");
@@ -244,6 +248,7 @@ fn mouse_motion_sets_and_clears_settings_trust_row_hover() {
 
 #[test]
 fn mouse_down_on_editor_tab_clears_secrets_view_when_leaving() {
+    let config = jackin_config::AppConfig::default();
     let mut state = list_state();
     let ws = WorkspaceConfig {
         workdir: "/w".into(),
@@ -258,7 +263,7 @@ fn mouse_down_on_editor_tab_clears_secrets_view_when_leaving() {
     editor.secrets_expanded.insert("agent-smith".to_owned());
     state.stage = ManagerStage::Editor(editor);
 
-    handle_mouse(&mut state, mouse_down_at(3, 3), term(100));
+    handle_mouse_with_config(&mut state, mouse_down_at(3, 3), term(100), Some(&config));
 
     let ManagerStage::Editor(editor) = state.stage else {
         panic!("expected editor stage");
