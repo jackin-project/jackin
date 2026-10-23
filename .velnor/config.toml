@@ -85,7 +85,7 @@ kind = "xcode"
 version = "27.1"
 build = "27A9275"
 sdk_version = "27.0"
-developer_dir = "/Applications/Xcode_27.1_Release_Candidate.app/Contents/Developer"
+developer_dir = "/Applications/Xcode_27.1.app/Contents/Developer"
 
 [[stacks.rust.binary_release.products]]
 id = "jackin"
