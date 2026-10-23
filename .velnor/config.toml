@@ -14,6 +14,7 @@ max_parallel_jobs = 4
 # Release 0.1.44 bounds literal workspace members separately from wildcard projection work.
 # Release 0.1.45 exports source-admission uploads as mode 0644 under a restrictive umask.
 # Release 0.1.46 binds preview source acquisition to its declared product and target.
+# Release 0.1.48 supports opaque GitHub installation tokens in native release roles.
 # This adoption also migrates immutable previews: preview `release_id`/`bootstrap_snapshot_sha256` are removed.
 crate_timeout_minutes = 10
 dependency_seed_timeout_minutes = 30
