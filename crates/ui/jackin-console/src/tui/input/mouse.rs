@@ -14,10 +14,9 @@ use ratatui::layout::Rect;
 use crate::tui::components::file_browser::FileBrowserState;
 use crate::tui::components::modal_overlay;
 use crate::tui::layout::{
-    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_VERTICAL_SCROLL_STEP,
-    SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, apply_scrollbar_drag,
-    horizontal_split_pane_dims, is_horizontally_scrollable, point_in_rect,
-    scroll_selection_at_position, split_seam_column,
+    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MOUSE_VERTICAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT,
+    ScrollbarAxis, TAB_STRIP_HEIGHT, apply_scrollbar_drag, horizontal_split_pane_dims,
+    is_horizontally_scrollable, point_in_rect, scroll_selection_at_position, split_seam_column,
 };
 use crate::tui::model::{ConsoleInputDispatchPlan, ConsolePaintedInputOwner};
 use crate::tui::run::{ConsoleClickStageFacts, ConsoleClickabilityFacts, console_clickable_at};
@@ -93,6 +92,13 @@ pub fn handle_mouse_with_config(
     term_size: Rect,
     config: Option<&jackin_config::AppConfig>,
 ) -> super::InputOutcome {
+    if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
+        if state.drag_state.is_some() {
+            dispatch_manager(state, ManagerMessage::SetDragState(None));
+        }
+        return super::InputOutcome::Continue;
+    }
+
     let input_owner = state.painted_input_owner();
     if !input_owner.allows_manager_pointer_actions() {
         state.clear_pointer_state();
@@ -103,11 +109,11 @@ pub fn handle_mouse_with_config(
         ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::ListModal)
     );
 
-    if term_size.width < MIN_DRAGGABLE_WIDTH {
-        return super::InputOutcome::Continue;
-    }
-
     if matches!(mouse.kind, MouseEventKind::Moved) {
+        if !term_size.contains(ratatui::layout::Position::new(mouse.column, mouse.row)) {
+            clear_pointer_hover(state);
+            return super::InputOutcome::Continue;
+        }
         if list_modal_painted {
             state.clear_pointer_state();
             update_container_info_hover(state, mouse, term_size);
@@ -119,6 +125,10 @@ pub fn handle_mouse_with_config(
                 info.set_hovered_row(None);
             }
         }
+        return super::InputOutcome::Continue;
+    }
+
+    if !term_size.contains(ratatui::layout::Position::new(mouse.column, mouse.row)) {
         return super::InputOutcome::Continue;
     }
 
@@ -238,6 +248,23 @@ pub fn handle_mouse_with_config(
     super::InputOutcome::Continue
 }
 
+fn clear_pointer_hover(state: &mut ManagerState<'_>) {
+    state.hover_target = None;
+    state.hover = termrock::interaction::HoverState::default();
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => editor.set_hover_target(None),
+        ManagerStage::Settings(settings) => settings.set_hover_target(None),
+        ManagerStage::List
+        | ManagerStage::CreatePrelude(_)
+        | ManagerStage::Workflows(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
+    }
+    if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() {
+        info.set_hovered_row(None);
+    }
+}
+
 fn handle_modal_pointer_event(
     state: &mut ManagerState<'_>,
     owner: ConsolePaintedInputOwner,
@@ -304,6 +331,11 @@ pub fn clickable_at(
     term_size: Rect,
     config: Option<&jackin_config::AppConfig>,
 ) -> bool {
+    let pointer_supported =
+        term_size.contains(ratatui::layout::Position::new(mouse.column, mouse.row));
+    if !pointer_supported {
+        return false;
+    }
     let input_owner = state.painted_input_owner();
     if !input_owner.allows_manager_pointer_actions() {
         return false;
@@ -363,7 +395,7 @@ pub fn clickable_at(
     };
 
     console_clickable_at(ConsoleClickabilityFacts {
-        pointer_supported: term_size.width >= MIN_DRAGGABLE_WIDTH,
+        pointer_supported,
         file_browser_url_target: file_browser_url_row_at(state, mouse, term_size),
         container_info_copy_target: list_modal_painted
             && container_info_copyable_row_at(state, mouse, term_size),
