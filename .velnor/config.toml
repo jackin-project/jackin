@@ -10,6 +10,7 @@ max_parallel_jobs = 4
 # so 10 cancelled protected-push CI runs. Release 0.1.40 (#350) adds a separate `dependency_seed_timeout_minutes`
 # budget (default 30), allowing the crate budget to return to 10. Release 0.1.41 (#357) restores explicit-token
 # GitHub CLI launch while preserving its selected Mise cache, including a non-default `XDG_DATA_HOME`.
+# Release 0.1.43 bounds recursive Git-tree JSON at 8 MiB while retaining the default 1 MiB API limit.
 # This adoption also migrates immutable previews: preview `release_id`/`bootstrap_snapshot_sha256` are removed.
 crate_timeout_minutes = 10
 dependency_seed_timeout_minutes = 30
