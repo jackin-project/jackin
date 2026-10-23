@@ -11,7 +11,7 @@ use crate::agent_status::SessionStatus;
 use crate::protocol::AgentState;
 use anyhow::{Context, Result};
 use jackin_telemetry::ResultTelemetryExt as _;
-use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -27,6 +27,64 @@ pub fn validate_spawn_token_syntax(raw: &str) -> Result<&str, &'static str> {
         return Err("contains whitespace or control characters");
     }
     Ok(raw)
+}
+
+enum SpawnedChild {
+    Registered {
+        child: Box<dyn Child + Send + Sync>,
+        pid: u32,
+        registration: jackin_process::ChildRegistration,
+    },
+    MissingPid(Box<dyn Child + Send + Sync>),
+}
+
+struct MissingPidOwnershipError {
+    _child: Box<dyn Child + Send + Sync>,
+    kill_error: Option<std::io::Error>,
+}
+
+impl std::fmt::Debug for MissingPidOwnershipError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MissingPidOwnershipError")
+            .field("kill_error", &self.kill_error)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Display for MissingPidOwnershipError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kill_error {
+            Some(error) => write!(
+                formatter,
+                "PTY backend did not expose a child PID and handle-based termination failed: {error}"
+            ),
+            None => formatter.write_str(
+                "PTY backend did not expose a child PID; the concrete child remains in error custody after handle-based termination",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for MissingPidOwnershipError {}
+
+fn spawn_child_with_registration(
+    spawn: impl FnOnce() -> Result<(Box<dyn Child + Send + Sync>, Option<u32>)>,
+) -> Result<SpawnedChild> {
+    jackin_process::coordinate_children(|registry| {
+        let slot = registry
+            .prepare_registration()
+            .map_err(anyhow::Error::from)?;
+        let (child, pid) = spawn()?;
+        Ok(match pid {
+            Some(pid) => SpawnedChild::Registered {
+                child,
+                pid,
+                registration: registry.register_prepared(pid, slot),
+            },
+            None => SpawnedChild::MissingPid(child),
+        })
+    })
 }
 
 impl Session {
@@ -83,13 +141,32 @@ impl Session {
             &control_capability,
         );
 
-        let mut child = slave
-            .spawn_command(cmd)
-            .context("failed to spawn session process")?;
-        let child_pid = child.process_id();
-        if let Some(pid) = child_pid {
-            crate::pid1::register_managed_child(pid);
-        }
+        let child_spawn = spawn_child_with_registration(|| {
+            let child = slave
+                .spawn_command(cmd)
+                .context("failed to spawn session process")?;
+            let pid = child.process_id();
+            Ok((child, pid))
+        });
+        let (mut child, child_pid, child_registration) = match child_spawn {
+            Ok(SpawnedChild::Registered {
+                child,
+                pid,
+                registration,
+            }) => (child, Some(pid), registration),
+            Ok(SpawnedChild::MissingPid(mut child)) => {
+                record_pty_spawn_ownership_error(sid);
+                let kill_error = child.kill().err();
+                if kill_error.is_some() {
+                    record_pty_spawn_ownership_error(sid);
+                }
+                return Err(anyhow::Error::new(MissingPidOwnershipError {
+                    _child: child,
+                    kill_error,
+                }));
+            }
+            Err(error) => return Err(error),
+        };
         let child_killer = Arc::new(Mutex::new(child.clone_killer()));
         let termination_requested = Arc::new(AtomicBool::new(false));
         drop(slave);
@@ -196,9 +273,12 @@ impl Session {
                 status.as_ref(),
                 exit_termination_requested.load(Ordering::Acquire),
             );
-            if let Some(pid) = child_pid {
-                crate::pid1::unregister_managed_child(pid);
-                crate::pid1::reap_zombies();
+            if status.is_err() {
+                record_pty_wait_uncertainty(child_pid);
+                drop(child);
+                child_registration.release_to_reaper();
+            } else {
+                drop(child_registration);
             }
             drop(event_tx_exit.send(SessionEvent::Exited {
                 session_id: sid,
@@ -258,3 +338,16 @@ impl Session {
         ))
     }
 }
+
+fn record_pty_spawn_ownership_error(_session_id: u64) {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+}
+
+fn record_pty_wait_uncertainty(_pid: Option<u32>) {
+    let _error =
+        jackin_telemetry::record_error(jackin_telemetry::schema::enums::ErrorType::IoError);
+}
+
+#[cfg(test)]
+mod tests;

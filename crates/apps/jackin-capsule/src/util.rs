@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::Path;
 use std::process::Child;
 use std::time::{Duration, Instant};
@@ -30,6 +30,11 @@ pub fn read_text_bounded(path: &Path, max_bytes: u64) -> Option<String> {
 
 const COMMAND_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
+pub(crate) enum ChildPollOutcome {
+    Exited(std::process::ExitStatus),
+    TimedOut,
+}
+
 pub(crate) enum WaitOutcome {
     Exited(std::process::ExitStatus),
     Reaped,
@@ -37,27 +42,49 @@ pub(crate) enum WaitOutcome {
     Failed,
 }
 
-pub(crate) fn wait_child_with_timeout(child: &mut Child, timeout: Duration) -> WaitOutcome {
+#[expect(
+    clippy::disallowed_methods,
+    reason = "bounded synchronous polling supervises only this owned child outside the multiplexer render loop"
+)]
+pub(crate) fn poll_owned_child_until_timeout(
+    child: &mut Child,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> io::Result<ChildPollOutcome> {
+    if poll_interval.is_zero() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "child polling interval must be nonzero",
+        ));
+    }
+
     let started = Instant::now();
     loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return WaitOutcome::Exited(status),
-            Ok(None) => {}
-            Err(e) if e.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
-                return WaitOutcome::Reaped;
-            }
-            Err(_) => return WaitOutcome::Failed,
+        if let Some(status) = child.try_wait()? {
+            return Ok(ChildPollOutcome::Exited(status));
         }
-        if started.elapsed() >= timeout {
+
+        let remaining = timeout.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return Ok(ChildPollOutcome::TimedOut);
+        }
+
+        std::thread::sleep(poll_interval.min(remaining));
+    }
+}
+
+pub(crate) fn wait_child_with_timeout(child: &mut Child, timeout: Duration) -> WaitOutcome {
+    match poll_owned_child_until_timeout(child, timeout, COMMAND_PROBE_POLL_INTERVAL) {
+        Ok(ChildPollOutcome::Exited(status)) => WaitOutcome::Exited(status),
+        Ok(ChildPollOutcome::TimedOut) => {
             drop(child.kill());
             drop(child.wait());
-            return WaitOutcome::TimedOut;
+            WaitOutcome::TimedOut
         }
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "command probe waits on an owned child process outside the multiplexer render loop"
-        )]
-        std::thread::sleep(COMMAND_PROBE_POLL_INTERVAL);
+        Err(error) if error.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
+            WaitOutcome::Reaped
+        }
+        Err(_) => WaitOutcome::Failed,
     }
 }
 
@@ -72,14 +99,12 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
         operation.complete_io_failure();
         return None;
     };
-    let stdout_reader = jackin_telemetry::spawn::thread_stream(
-        "process.stdout",
-        move || -> std::io::Result<Vec<u8>> {
+    let stdout_reader =
+        jackin_telemetry::spawn::thread_stream("process.stdout", move || -> io::Result<Vec<u8>> {
             let mut bytes = Vec::new();
             stdout.read_to_end(&mut bytes)?;
             Ok(bytes)
-        },
-    );
+        });
     let status = match wait_child_with_timeout(&mut child, timeout) {
         WaitOutcome::Exited(status) => Some(status),
         WaitOutcome::Reaped => None,

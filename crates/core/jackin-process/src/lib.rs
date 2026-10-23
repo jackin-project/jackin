@@ -10,6 +10,23 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
+mod child_ownership;
+mod spooled;
+
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use child_ownership::registry_contention_count;
+pub(crate) use child_ownership::supports_selective_reaping;
+pub use child_ownership::{
+    ChildRegistration, ChildRegistrationSlot, ChildRegistry, coordinate_children,
+    has_reaper_wakeup, install_reaper_wakeup, take_registry_poisoned,
+};
+pub use spooled::{
+    SpoolCaptureObservation, SpoolCleanupObservation, SpoolError, SpoolExecResult,
+    SpoolExecutionObservation, SpoolFailure, SpoolFailureKind, SpoolPipeObservation, SpoolRecovery,
+    exec_spooled_sync_cancellable,
+};
+
 pub const DEFAULT_CAPTURE_LIMIT: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

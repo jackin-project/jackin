@@ -46,7 +46,7 @@ tokio = { workspace = true, features = ["rt", "io-util", "io-std", "sync", "macr
 crossterm = { workspace = true }
 portable-pty = { workspace = true }
 nix = { workspace = true, features = ["term", "signal", "process", "inotify", "fs"] }
-libc = "0.2"
+libc = { workspace = true }
 termpane = { workspace = true }
 url = { workspace = true }
 unicode-width = { workspace = true }
@@ -58,6 +58,10 @@ hex = { workspace = true }
 dhat = { workspace = true, optional = true }
 tempfile = { workspace = true }
 uuid = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+jackin-process-directory = { workspace = true }
+
 [build-dependencies]
 jackin-build-meta = { workspace = true }
 
@@ -70,6 +74,7 @@ name = "scrollback_snapshot"
 harness = false
 
 [dev-dependencies]
+jackin-process = { workspace = true, features = ["test-support"] }
 criterion = { workspace = true, features = ["html_reports"] }
 jackin-diagnostics = { workspace = true, features = ["test-support"] }
 jackin-otlp-testbed = { workspace = true }

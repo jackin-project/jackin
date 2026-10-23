@@ -3,20 +3,10 @@
 
 # jackin-process-directory
 
-Unix working-directory descriptors for existing `std::process::Command` and
-Tokio commands. The parent process keeps its cwd. Renaming a repository or
-replacing its original pathname cannot redirect a command configured here.
+Unix descriptor cwd for std/Tokio commands leaves parent cwd unchanged; renames or pathname replacement cannot redirect it. Reject pathname cwd and non-directory descriptors. Duplicate above fd2 with CLOEXEC; retain until command drop, close on exec. The audited pre_exec callback uses only async-signal-safe fchdir and errno conversion, without allocation. Spawn errors propagate; callers own timeout, cancellation and reaping.
 
-The safe API rejects pathname cwd and non-directory descriptors. Before fork,
-it duplicates the descriptor above standard input/output/error with CLOEXEC.
-The only unsafe boundary installs a `pre_exec` callback that calls `fchdir`
-and converts errno without allocation. Ownership retains the duplicate until
-the command drops; exec closes the child's duplicate. Spawn errors propagate,
-while the caller retains all timeout, cancellation, and child-reaping duties.
+macOS peek_exited_child (P_ALL) and peek_specific_exited_child (positive P_PID) use WEXITED|WNOHANG|WNOWAIT. Neither reaps nor signals; both validate PID, SIGCHLD and terminal status. Hold the shared ownership lock through peek, owner check and selected-PID wait. ACLs and exclusive wait ownership are not checked.
 
-This crate explicitly copies the workspace lint rules with `unsafe_code=deny`,
-and expects unsafe code only on the reviewed registration function. All
-existing crates retain the workspace `unsafe_code=forbid` policy.
+Workspace unsafe_code=deny remains; cwd and waitid each have a function-local reviewed expect. waitid zeroes ABI storage, reads no error output and returns only checked PIDs; no crate-wide relaxation.
 
-Native Windows has no implementation. Callers must reject unsupported pinned
-working directories rather than fall back to a pathname.
+No native Windows cwd support: reject unsupported pinned cwd; never fall back to a pathname.
