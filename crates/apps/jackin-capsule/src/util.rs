@@ -106,16 +106,24 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
             Ok(bytes)
         });
     let status = match wait_child_with_timeout(&mut child, timeout) {
-        WaitOutcome::Exited(status) => Some(status),
-        WaitOutcome::Reaped => None,
+        WaitOutcome::Exited(status) => {
+            drop(child);
+            Some(status)
+        }
+        WaitOutcome::Reaped => {
+            drop(child);
+            None
+        }
         WaitOutcome::TimedOut => {
-            drop(stdout_reader.join());
             operation.complete_timeout();
+            drop(child);
+            drop(stdout_reader.join());
             return None;
         }
         WaitOutcome::Failed => {
-            drop(stdout_reader.join());
             operation.complete_io_failure();
+            drop(child);
+            drop(stdout_reader.join());
             return None;
         }
     };

@@ -820,3 +820,321 @@ fn sync_facade_preserves_child_diagnostics_after_stdin_broken_pipe() {
     assert_eq!(delivery.result().stderr, b"sync-stdin-close-marker");
     assert_fixture_absent(&dir, &custody);
 }
+
+#[cfg(all(target_os = "macos", feature = "test-support"))]
+#[test]
+fn darwin_async_spawn_waits_for_registry_lock_before_launch() {
+    use std::sync::mpsc;
+    use std::thread;
+
+    let directory = tempfile::tempdir().unwrap();
+    let launched_path = directory.path().join("launched");
+    let request = ExecRequest::new(
+        "/bin/sh",
+        [
+            "-c",
+            "printf launched > \"$1\"; exit 0",
+            "fixture",
+            launched_path.to_str().unwrap(),
+        ],
+    );
+    let before_contention = registry_contention_count();
+    let (started_sender, started_receiver) = mpsc::sync_channel(1);
+
+    let worker = coordinate_children(|_| {
+        let worker = thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            started_sender
+                .send(())
+                .expect("worker readiness receiver is live");
+            runtime.block_on(async {
+                let mut command = tokio::process::Command::new(&request.program);
+                configure_async_command(&mut command, &request);
+                command.kill_on_drop(true);
+                let (child, registration) =
+                    spawn_and_register_async(&mut command, &request).unwrap();
+                let pid = child.id().unwrap();
+                let mut owned = OwnedChild::with_registration(child, registration);
+                let success =
+                    match tokio::time::timeout(Duration::from_secs(2), owned.child.wait()).await {
+                        Ok(Ok(status)) => {
+                            owned.disarm();
+                            status.success()
+                        }
+                        Ok(Err(_)) => false,
+                        Err(_) => {
+                            let _cleanup = owned.kill_and_reap().await;
+                            false
+                        }
+                    };
+                (pid, success)
+            })
+        });
+
+        let worker_started = started_receiver
+            .recv_timeout(Duration::from_secs(2))
+            .is_ok();
+        let contention_deadline = Instant::now() + Duration::from_secs(2);
+        while registry_contention_count() <= before_contention
+            && worker_started
+            && Instant::now() < contention_deadline
+        {
+            thread::yield_now();
+        }
+        let contended = registry_contention_count() > before_contention;
+
+        let launch_deadline = Instant::now() + Duration::from_millis(100);
+        while !launched_path.exists() && Instant::now() < launch_deadline {
+            thread::yield_now();
+        }
+        let blocked_before_unlock = !launched_path.exists();
+        (worker, worker_started, contended, blocked_before_unlock)
+    });
+
+    let (worker, worker_started, contended, blocked_before_unlock) = worker;
+    let joined = worker.join();
+    let worker_panicked = joined.is_err();
+    let (pid, success) = joined.unwrap_or((0, false));
+    assert!(
+        worker_started,
+        "spawn worker reached the coordinated operation"
+    );
+    assert!(
+        contended,
+        "spawn worker contended on the held child registry"
+    );
+    assert!(
+        blocked_before_unlock,
+        "child launch must wait until its registry transaction owns the lock"
+    );
+    assert!(!worker_panicked, "spawn worker completed without panic");
+    assert!(success, "registered child {pid} must exit successfully");
+    assert!(launched_path.is_file(), "child launches after lock release");
+    assert!(
+        !coordinate_children(|registry| registry.contains(pid)),
+        "successful wait releases the exact PID reservation"
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn darwin_owned_wait_retains_registration_while_pending_and_releases_after_success() {
+    use std::os::unix::process::CommandExt;
+
+    struct ReleaseGate {
+        path: PathBuf,
+        released: bool,
+    }
+
+    impl ReleaseGate {
+        fn release(&mut self) -> io::Result<()> {
+            let result = std::fs::write(&self.path, b"release");
+            self.released = result.is_ok();
+            result
+        }
+    }
+
+    impl Drop for ReleaseGate {
+        fn drop(&mut self) {
+            if !self.released {
+                drop(std::fs::write(&self.path, b"release"));
+            }
+        }
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let ready_path = directory.path().join("ready.pid");
+    let release_path = directory.path().join("release");
+    let mut gate = ReleaseGate {
+        path: release_path.clone(),
+        released: false,
+    };
+    let script = concat!(
+        "printf '%s' \"$$\" > \"$1\"; ",
+        "n=0; while [ ! -f \"$2\" ] && [ \"$n\" -lt 200 ]; do ",
+        "n=$((n + 1)); sleep 0.01; done; ",
+        "[ -f \"$2\" ] || exit 99; exit 0"
+    );
+    let request = ExecRequest::new(
+        "/bin/sh",
+        [
+            "-c",
+            script,
+            "fixture",
+            ready_path.to_str().unwrap(),
+            release_path.to_str().unwrap(),
+        ],
+    );
+    let mut command = tokio::process::Command::new(&request.program);
+    configure_async_command(&mut command, &request);
+    command.kill_on_drop(true);
+    command.as_std_mut().process_group(0);
+    let (child, registration) = spawn_and_register_async(&mut command, &request).unwrap();
+    let pid = child.id().unwrap();
+    let mut owned = OwnedChild::with_registration(child, registration);
+
+    let ready_deadline = Instant::now() + Duration::from_secs(1);
+    while !ready_path.is_file() && Instant::now() < ready_deadline {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let ready_pid = std::fs::read_to_string(&ready_path)
+        .ok()
+        .and_then(|text| text.parse::<u32>().ok());
+    let ready_for_owned_child = ready_pid == Some(pid);
+    let registered_before_wait = coordinate_children(|registry| registry.contains(pid));
+    let first_wait_pending = tokio::time::timeout(Duration::from_millis(10), owned.child.wait())
+        .await
+        .is_err();
+    let registered_while_pending = coordinate_children(|registry| registry.contains(pid));
+
+    let release_result = gate.release();
+    let final_wait = tokio::time::timeout(Duration::from_secs(2), owned.child.wait()).await;
+    let final_success = matches!(&final_wait, Ok(Ok(status)) if status.success());
+    let registered_after_wait = coordinate_children(|registry| registry.contains(pid));
+    if final_success {
+        owned.disarm();
+    }
+    drop(owned);
+    let released_after_successful_disarm = !coordinate_children(|registry| registry.contains(pid));
+
+    assert!(release_result.is_ok(), "release the exact child gate");
+    assert!(
+        ready_for_owned_child,
+        "child readiness records the owned PID"
+    );
+    assert!(
+        registered_before_wait,
+        "registration exists before direct wait"
+    );
+    assert!(
+        first_wait_pending,
+        "the withheld child leaves direct wait Pending"
+    );
+    assert!(
+        registered_while_pending,
+        "Pending direct wait retains registration"
+    );
+    assert!(
+        final_success,
+        "release lets the direct child wait succeed: {final_wait:?}"
+    );
+    assert!(
+        registered_after_wait,
+        "owner retains registration through its wait"
+    );
+    assert!(
+        released_after_successful_disarm,
+        "successful direct wait disarms the PID reservation"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn reaped_cleanup_error_disarms_owned_state_before_return() {
+    use std::os::unix::process::CommandExt;
+
+    let request = ExecRequest::new("/bin/sh", ["-c", "exit 0"]);
+    let mut command = tokio::process::Command::new(&request.program);
+    configure_async_command(&mut command, &request);
+    command.kill_on_drop(true);
+    command.as_std_mut().process_group(0);
+    #[cfg(target_os = "macos")]
+    let (child, registration) = spawn_and_register_async(&mut command, &request).unwrap();
+    #[cfg(not(target_os = "macos"))]
+    let child = command.spawn().unwrap();
+    #[cfg(target_os = "macos")]
+    let pid = child.id().unwrap();
+    #[cfg(target_os = "macos")]
+    let mut owned = OwnedChild::with_registration(child, registration);
+    #[cfg(not(target_os = "macos"))]
+    let mut owned = OwnedChild::new(child);
+
+    #[cfg(target_os = "macos")]
+    let registered_before_reap = coordinate_children(|registry| registry.contains(pid));
+    let wait_and_cleanup = owned
+        .reap_and_finish(Err(anyhow::anyhow!("injected group-cleanup error")), Ok(()))
+        .await
+        .expect("the production helper completed a native child wait");
+    let (status, cleanup_result) = wait_and_cleanup;
+    let waited_successfully = status.success();
+    let error = cleanup_result.unwrap_err();
+    let retained_cleanup_error = error.to_string().contains("injected group-cleanup error");
+    let group_cleared = owned.group.is_none();
+    #[cfg(target_os = "macos")]
+    let released_registration = !coordinate_children(|registry| registry.contains(pid));
+    #[cfg(not(target_os = "macos"))]
+    let released_registration = true;
+    drop(owned);
+
+    assert!(
+        waited_successfully,
+        "the native success fixture child exited successfully"
+    );
+    assert!(
+        retained_cleanup_error,
+        "the original cleanup error is preserved"
+    );
+    assert!(group_cleared, "the reaped process group is disarmed");
+    #[cfg(target_os = "macos")]
+    assert!(
+        registered_before_reap,
+        "native child is registered before its wait"
+    );
+    assert!(
+        released_registration,
+        "a reaped PID and group are disarmed before cleanup errors propagate"
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn darwin_cancellation_releases_wait_status_after_child_cleanup() {
+    let mut directory = FixtureDir::new();
+    let pid_path = directory.path().join("cancelled-child.pid");
+    let script = "printf '%s' $$ > \"$1\"; exec /bin/sleep 30";
+    let mut request = ExecRequest::new(
+        "/bin/sh",
+        ["-c", script, "fixture", pid_path.to_str().unwrap()],
+    );
+    request.stdin = Some(vec![b'x'; 4096]);
+    let run =
+        tokio::spawn(
+            async move { run_once_with_gate_async(&request, std::future::pending()).await },
+        );
+
+    let ready = tokio::time::timeout(
+        Duration::from_secs(1),
+        wait_for_fixture_ready(pid_path.clone()),
+    )
+    .await;
+    let ready_observed = matches!(ready.as_ref(), Ok(Ok(())));
+    let pid = std::fs::read_to_string(&pid_path)
+        .ok()
+        .and_then(|text| text.parse::<u32>().ok());
+    let registered_while_running =
+        pid.is_some_and(|pid| coordinate_children(|registry| registry.contains(pid)));
+
+    run.abort();
+    let cancelled = run.await.is_err_and(|error| error.is_cancelled());
+    let custody = finalize_fixture(&mut directory, &pid_path).await;
+    let released_after_cancellation =
+        pid.is_some_and(|pid| !coordinate_children(|registry| registry.contains(pid)));
+
+    assert!(ready_observed, "child must reach the gated stdin phase");
+    assert!(
+        registered_while_running,
+        "child wait ownership remains live until cancellation"
+    );
+    assert!(
+        cancelled,
+        "the execution future must observe task cancellation"
+    );
+    assert_fixture_absent(&directory, &custody);
+    assert!(
+        released_after_cancellation,
+        "cancellation releases the child reservation"
+    );
+}
