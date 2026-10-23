@@ -114,7 +114,7 @@ fn session_send_reaches_the_pty_and_events_report_the_working_transition() {
         &[],
         PtyFileSentinel {
             path: &workspace_dir.join("never-written.txt"),
-            text: "unreachable",
+            text: Some("unreachable"),
             timeout: Duration::from_mins(8),
             accept_early_exit_after: None,
             stop_after: Some(&completed),

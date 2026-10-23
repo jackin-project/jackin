@@ -35,25 +35,26 @@ pub(crate) fn release_channel(version: &str) -> Result<PackageReleaseChannel> {
     }
 }
 
-/// Immutable release tag: `preview-<full source SHA>` or permanent `v<version>`.
-/// A preview source must be the full lowercase commit its version suffix abbreviates.
 pub(crate) fn release_tag(version: &str, source: &str) -> Result<String> {
     Ok(match release_channel(version)? {
         PackageReleaseChannel::Preview => {
+            ensure!(hex_sha(source), "invalid preview source SHA");
+            let sha7 = preview_sha7(version)?;
             ensure!(
-                source.len() == 40
-                    && source
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-                    && version
-                        .rsplit_once('+')
-                        .is_some_and(|(_, sha7)| source.starts_with(sha7)),
-                "preview tag requires the full source commit of its version"
+                source.starts_with(sha7),
+                "preview source/version SHA mismatch"
             );
             format!("preview-{source}")
         }
         PackageReleaseChannel::Stable => format!("v{version}"),
     })
+}
+
+fn hex_sha(value: &str) -> bool {
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn validate_base(base: &str) -> Result<()> {
@@ -91,6 +92,16 @@ fn preview_base(version: &str) -> Result<&str> {
         "invalid preview version"
     );
     Ok(base)
+}
+
+fn preview_sha7(version: &str) -> Result<&str> {
+    let (_, suffix) = version
+        .split_once("-preview.")
+        .context("remote preview capsule requires X.Y.Z-preview.N+sha7 version")?;
+    let (_, sha7) = suffix
+        .split_once('+')
+        .context("preview version requires count and sha7")?;
+    Ok(sha7)
 }
 
 fn trusted_plan(version: &str) -> Result<PackageReleasePlan> {

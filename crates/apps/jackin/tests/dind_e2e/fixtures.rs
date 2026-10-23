@@ -15,10 +15,9 @@ pub(super) fn seed_existing_construct_entry(home: &Path) {
 }
 
 pub(super) fn seed_agent_smith_role_repo(path: &Path) {
-    std::fs::create_dir_all(path).unwrap();
-    std::fs::write(path.join("Dockerfile"), role_dockerfile()).unwrap();
-    std::fs::write(
-        path.join("jackin.role.toml"),
+    seed_agent_smith_role_repo_with(
+        path,
+        role_dockerfile(),
         r#"version = "v1alpha6"
 dockerfile = "Dockerfile"
 agents = ["claude"]
@@ -36,8 +35,33 @@ plugins = ["caveman@jackin-e2e", "rtk@jackin-e2e"]
 source = "jackin/e2e-marketplace"
 sparse = ["plugins"]
 "#,
-    )
-    .unwrap();
+    );
+}
+
+pub(super) fn seed_chaos_role_repo(path: &Path) {
+    seed_agent_smith_role_repo_with(
+        path,
+        chaos_role_dockerfile(),
+        r#"version = "v1alpha6"
+dockerfile = "Dockerfile"
+agents = ["claude"]
+
+[identity]
+name = "Agent Smith"
+
+[docker]
+dind = "privileged"
+
+[claude]
+plugins = []
+"#,
+    );
+}
+
+fn seed_agent_smith_role_repo_with(path: &Path, dockerfile: &str, role_manifest: &str) {
+    std::fs::create_dir_all(path).unwrap();
+    std::fs::write(path.join("Dockerfile"), dockerfile).unwrap();
+    std::fs::write(path.join("jackin.role.toml"), role_manifest).unwrap();
 
     run("git", &["init"], Some(path));
     run("git", &["add", "."], Some(path));
@@ -243,6 +267,12 @@ RUN install -d -m 0750 /home/agent/.claude/backups && \
 "
 }
 
+pub(super) const fn chaos_role_dockerfile() -> &'static str {
+    r"FROM projectjackin/construct:0.1-trixie
+USER agent
+"
+}
+
 pub(super) fn seed_claude_installer_stub(home: &Path) {
     let stub = home
         .join(".jackin")
@@ -251,6 +281,17 @@ pub(super) fn seed_claude_installer_stub(home: &Path) {
         .join("claude");
     std::fs::create_dir_all(stub.parent().unwrap()).unwrap();
     std::fs::write(&stub, fake_claude_installer()).unwrap();
+    chmod_executable(&stub);
+}
+
+pub(super) fn seed_chaos_claude_installer_stub(home: &Path) {
+    let stub = home
+        .join(".jackin")
+        .join("cache")
+        .join("agent-binaries-test-stub")
+        .join("claude");
+    std::fs::create_dir_all(stub.parent().unwrap()).unwrap();
+    std::fs::write(&stub, fake_chaos_claude_installer()).unwrap();
     chmod_executable(&stub);
 }
 
@@ -300,6 +341,10 @@ fi
 }
 
 pub(super) fn seed_agent_stub(home: &Path, slug: &str, body: &str) {
+    if slug == "codex" {
+        let paths = jackin_core::JackinPaths::resolve_with_env(home, None, None);
+        jackin_image::agent_binary::install_test_stub(&paths, jackin_core::Agent::Codex).unwrap();
+    }
     let stub = home
         .join(".jackin")
         .join("cache")
@@ -336,6 +381,61 @@ CLAUDE
 fi
 {runtime}
 "#
+    )
+}
+
+fn fake_chaos_claude_installer() -> String {
+    let runtime = fake_chaos_claude_runtime_script();
+    format!(
+        r#"#!/bin/sh
+set -eu
+if [ "${{1:-}}" = "install" ]; then
+  mkdir -p "$HOME/.local/bin"
+  cat > "$HOME/.local/bin/claude" <<'CLAUDE'
+{runtime}
+CLAUDE
+  chmod 0755 "$HOME/.local/bin/claude"
+  exit 0
+fi
+if [ "${{1:-}}" = "--version" ]; then
+  echo "claude 0.0.0-e2e"
+  exit 0
+fi
+{runtime}
+"#
+    )
+}
+
+fn fake_chaos_claude_runtime_script() -> String {
+    format!(
+        r#"#!/bin/sh
+set -eu
+if [ "${{1:-}}" = "--version" ]; then
+  echo "claude 0.0.0-e2e"
+  exit 0
+fi
+if [ "${{1:-}}" = "plugin" ] || [ "${{1:-}}" = "mcp" ]; then
+  exit 0
+fi
+report_path=/workspace/jackin-e2e-report.txt
+: > "$report_path"
+attempt=0
+until docker info >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 120 ]; then
+    printf '%s\n' 'DIND_READY=timeout' >> "$report_path"
+    exit 1
+  fi
+  sleep 1
+done
+printf '%s\n' '{begin}' 'DIND_READY=ok' '{end}' >> "$report_path"
+printf '%s\n' 'DIND_READY=ok'
+while :; do
+  sleep 1
+done
+"#,
+        begin = super::util::REPORT_BEGIN,
+        end = super::util::REPORT_END,
     )
 }
 
@@ -457,12 +557,29 @@ public final class JackinTestcontainersSmoke {{
     }}
 }}
 JAVA
+maven_status=0
 (
   unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
   cd "$tmpdir"
-  mvn -q -DskipTests compile exec:java -Dexec.mainClass=JackinTestcontainersSmoke
-)
-emit_report "TESTCONTAINERS_SMOKE=ok"
+  mvn -q -Dmaven.repo.local="$tmpdir/maven-repository" -DskipTests compile exec:java -Dexec.mainClass=JackinTestcontainersSmoke
+) > "$tmpdir/maven.stdout" 2> "$tmpdir/maven.stderr" || maven_status=$?
+emit_report "MAVEN_EXIT_STATUS=$maven_status"
+emit_report "MAVEN_STDOUT_BEGIN"
+cat "$tmpdir/maven.stdout" >> "$report_path"
+cat "$tmpdir/maven.stdout"
+printf '\n' >> "$report_path"
+emit_report "MAVEN_STDOUT_END"
+emit_report "MAVEN_STDERR_BEGIN"
+cat "$tmpdir/maven.stderr" >> "$report_path"
+cat "$tmpdir/maven.stderr" >&2
+printf '\n' >> "$report_path"
+emit_report "MAVEN_STDERR_END"
+if [ "$maven_status" -ne 0 ]; then
+  emit_report "MAVEN_RESULT=failed"
+  exit "$maven_status"
+fi
+emit_report "MAVEN_RESULT=passed"
+emit_report "TESTCONTAINERS_SMOKE_FINISHED=ok"
 rm -rf "$tmpdir"
 "#,
         begin = super::util::REPORT_BEGIN,

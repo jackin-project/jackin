@@ -124,18 +124,40 @@ pub(super) fn apply_fault(fault: Fault, container: &str) {
             assert!(status.success(), "docker kill {container} failed");
         }
         Fault::SigkillCapsule => {
+            let capsule = docker_command()
+                .args(["exec", container, "readlink", "/proc/1/exe"])
+                .output()
+                .expect("inspect capsule PID 1 executable");
+            assert!(capsule.status.success(), "cannot inspect capsule PID 1");
+            assert_eq!(
+                String::from_utf8_lossy(&capsule.stdout).trim(),
+                "/jackin/runtime/jackin-capsule",
+                "SIGKILL fault must target the capsule as container PID 1"
+            );
+            // Linux namespace PID 1 ignores same-namespace kill -9. The Docker daemon
+            // sends SIGKILL from the ancestor namespace to the capsule main process.
             let status = docker_command()
-                .args(["exec", container, "kill", "-9", "1"])
+                .args(["kill", "--signal", "KILL", container])
                 .status()
-                .expect("docker exec kill -9 1");
-            let _ = status;
+                .expect("docker kill --signal KILL capsule");
+            assert!(status.success(), "capsule SIGKILL for {container} failed");
         }
         Fault::DropControlSocket => {
             let status = docker_command()
-                .args(["exec", container, "rm", "-f", "/jackin/run/jackin.sock"])
+                .args([
+                    "exec",
+                    container,
+                    "sh",
+                    "-eu",
+                    "-c",
+                    "test -S /jackin/run/jackin.sock && rm /jackin/run/jackin.sock && test ! -e /jackin/run/jackin.sock",
+                ])
                 .status()
-                .expect("docker exec rm socket");
-            let _ = status;
+                .expect("remove live capsule control socket");
+            assert!(
+                status.success(),
+                "control socket fault for {container} failed"
+            );
         }
     }
 }

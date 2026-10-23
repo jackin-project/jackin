@@ -77,27 +77,19 @@ struct Comparison {
     merge_base_commit: Commit,
 }
 
-/// One expected run identity; `sha` is the run's own head commit.
-struct Expected<'a> {
+fn identity(
+    run: &Run,
     id: u64,
     attempt: u32,
-    path: &'a str,
-    event: &'a str,
-    sha: &'a str,
-}
-
-fn identity(run: &Run, expected: &Expected<'_>, receipt: &PackageReleaseReceipt) -> Result<()> {
-    let Expected {
-        id,
-        attempt,
-        path,
-        event,
-        sha,
-    } = *expected;
+    path: &str,
+    event: &str,
+    expected_sha: &str,
+    receipt: &PackageReleaseReceipt,
+) -> Result<()> {
     ensure!(
         run.id == id
             && run.run_attempt == attempt
-            && run.head_sha == sha
+            && run.head_sha == expected_sha
             && run.head_branch.as_deref() == Some("main")
             && run.path == path
             && run.event == event
@@ -163,17 +155,13 @@ pub(super) async fn validate(
         ),
     )
     .await?;
-    // A preview publication runs on protected main at workflow authority B after
-    // CI of its payload source A completes; stable requires B == A.
     identity(
         &run,
-        &Expected {
-            id: receipt.workflow.run_id,
-            attempt: receipt.workflow.run_attempt,
-            path: receipt.channel.workflow_path(),
-            event: receipt.channel.event().as_str(),
-            sha: &receipt.workflow.authority_sha,
-        },
+        receipt.workflow.run_id,
+        receipt.workflow.run_attempt,
+        receipt.channel.workflow_path(),
+        receipt.channel.event().as_str(),
+        &receipt.workflow.authority_sha,
         receipt,
     )?;
     ensure!(
@@ -185,7 +173,7 @@ pub(super) async fn validate(
     // still-running promotion does not unpublish the complete signed generation.
     // Recovery retains the original signed receipt even when its publisher failed.
     // Current publication authority comes from the complete authenticated release
-    // inventory and immutable lifecycle, checked separately.
+    // inventory, immutable lifecycle and signed source-bound tag, checked separately.
     let jobs: Jobs = read(
         transport,
         &format!(
@@ -205,19 +193,19 @@ pub(super) async fn validate(
     .await?;
     identity(
         &ci,
-        &Expected {
-            id: receipt.source.ci_run_id,
-            attempt: receipt.source.ci_run_attempt,
-            path: ".github/workflows/ci.yml",
-            event: "push",
-            sha: &receipt.source.commit_sha,
-        },
+        receipt.source.ci_run_id,
+        receipt.source.ci_run_attempt,
+        ".github/workflows/ci.yml",
+        "push",
+        &receipt.source.commit_sha,
         receipt,
     )?;
     ensure!(
         ci.status == "completed" && ci.conclusion.as_deref() == Some("success"),
         "signed source CI is not successful"
     );
+    // Source ancestry is immutable signing context and is admitted once per pin.
+    // Rechecks observe mutable publication state without repeating this history query.
     ancestry(
         transport,
         &receipt.source.commit_sha,
@@ -232,7 +220,7 @@ async fn ancestry(transport: &impl Transport, base: &str, head: &str) -> Result<
     if base == head {
         return Ok(());
     }
-    // Page 2 keeps the comparison metadata without the potentially large file list.
+    // Page 2 keeps comparison metadata without the potentially large file list.
     let comparison: Comparison = read(
         transport,
         &format!("compare/{base}...{head}?per_page=1&page=2"),

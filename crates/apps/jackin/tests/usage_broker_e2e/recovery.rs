@@ -16,6 +16,8 @@ const RECOVERY_CLIENTS: usize = 8;
 
 #[test]
 fn usage_broker_killed_owner_recovers_once_without_a_herd() -> Result<()> {
+    // Claude's 300s restart fence is covered by ManualClock coordinator regressions (case_02.rs).
+    // Keep this case on Codex to isolate generic OS-owner recovery and request coalescing.
     let temp = tempfile::tempdir()?;
     let root = temp.path();
     let executable = std::env::current_exe()?;
@@ -31,8 +33,9 @@ fn usage_broker_killed_owner_recovers_once_without_a_herd() -> Result<()> {
     let recovery_now = epoch_now();
     let account_store = FileAccountStateStore::under_data_dir(&root.join("data"));
     let mut abandoned = account_store
-        .load(&capability(), recovery_now)?
+        .load(&owner_recovery_capability(), recovery_now)?
         .context("killed owner left no persisted account state")?;
+    assert_eq!(abandoned.capability, owner_recovery_capability());
     assert_eq!(abandoned.generation, 1);
     assert_eq!(abandoned.phase, UsageRefreshPhase::Updating);
     let original_start = abandoned
@@ -69,6 +72,19 @@ fn usage_broker_killed_owner_recovers_once_without_a_herd() -> Result<()> {
         assert!(child.wait()?.success());
     }
     assert_eq!(entries_with_prefix(root, "provider-call-"), 2);
+    let completed = account_store
+        .load(&owner_recovery_capability(), epoch_now())?
+        .context("recovery clients left no persisted account state")?;
+    assert_eq!(completed.capability, owner_recovery_capability());
+    assert_eq!(completed.generation, 2);
+    assert_eq!(completed.phase, UsageRefreshPhase::Completed);
+    assert_eq!(
+        completed
+            .terminal_result
+            .as_ref()
+            .map(|result| result.account.provider_label.as_str()),
+        Some("Codex")
+    );
     Ok(())
 }
 
@@ -93,7 +109,7 @@ fn seed_authoritative_catalog(root: &Path) -> Result<()> {
         aliases: Vec::new(),
         catalog_revision,
         catalog: vec![UsageCatalogEntry {
-            capability: capability(),
+            capability: owner_recovery_capability(),
             revision: format!("e2e-shared-account-{USAGE_BROKER_PROTOCOL_VERSION}"),
         }],
         retry_deadline_epoch: None,
