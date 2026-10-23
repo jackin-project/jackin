@@ -38,7 +38,7 @@ pub fn account_snapshot_views_from_cache(
                     status: usage_status_storage_label(status).to_owned(),
                     last_error: view.last_error.clone(),
                     quota_bucket: Some(bucket.clone()),
-                    account_capability: None,
+                    account_capability: view.account.account_capability.clone(),
                 }
             })
         })

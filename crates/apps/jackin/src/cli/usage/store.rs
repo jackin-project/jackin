@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use jackin_core::account_key_hash;
 use jackin_protocol::control::AccountUsageSnapshotView;
+use jackin_protocol::usage_broker::UsageAccountCapability;
 use jackin_usage::store_backend::{
     BackupReceipt, CommittedMigrationValidation, Connection, DbOperation, LocalStore,
     ManagedStoreKind, Row, StoreOperationGuard, acquire_store_operation, operation, params,
@@ -13,18 +14,39 @@ use jackin_usage::store_backend::{
 
 use jackin_core::JackinPaths;
 
-const SCHEMA_VERSION: &str = "2";
+const SCHEMA_VERSION: &str = "3";
+
+mod identity;
+
+struct PreparedAccount {
+    account: AccountUsageSnapshotView,
+    account_key_hash: String,
+    quota_bucket_json: String,
+}
+
+struct SnapshotColumn {
+    declared_type: String,
+    not_null: bool,
+    primary_key_position: i64,
+}
+
+struct StoredIdentity {
+    provider: String,
+    account_key_hash: String,
+    capability: Option<UsageAccountCapability>,
+}
 
 pub(super) async fn upsert_accounts(
     paths: &JackinPaths,
     accounts: &[AccountUsageSnapshotView],
 ) -> Result<PathBuf> {
+    let rows = prepare_account_rows(accounts)?;
     let path = host_account_cache_path(paths);
     let store_operation = acquire_store_operation(&path)
         .await
         .context("acquire host usage cache operation")?;
     let store = open_store(&path, &store_operation).await?;
-    upsert_account_rows(store.connection(), accounts).await?;
+    upsert_prepared_account_rows(store.connection(), &rows).await?;
     Ok(path)
 }
 
@@ -210,6 +232,8 @@ async fn migrate_schema(store: &LocalStore) -> Result<Option<BackupReceipt>> {
             status TEXT NOT NULL,
             last_error TEXT,
             quota_bucket_json TEXT,
+            capability_account_id TEXT,
+            capability_surface_id TEXT,
             UNIQUE(provider, account_key_hash, source, window_kind)
         );
         ",
@@ -229,16 +253,49 @@ async fn migrate_schema(store: &LocalStore) -> Result<Option<BackupReceipt>> {
         .await
         .context("add typed quota bucket to host usage cache")?;
     }
+    if !columns.contains("capability_account_id") {
+        operation(
+            DbOperation::Update,
+            conn.execute(
+                "ALTER TABLE account_usage_snapshots ADD COLUMN capability_account_id TEXT",
+                (),
+            ),
+        )
+        .await
+        .context("add host usage account capability id")?;
+    }
+    if !columns.contains("capability_surface_id") {
+        operation(
+            DbOperation::Update,
+            conn.execute(
+                "ALTER TABLE account_usage_snapshots ADD COLUMN capability_surface_id TEXT",
+                (),
+            ),
+        )
+        .await
+        .context("add host usage capability surface id")?;
+    }
     let previous = prior_version.unwrap_or_else(|| "unversioned".to_owned());
+    if previous != "2" {
+        operation(
+            DbOperation::Upsert,
+            conn.execute(
+                "INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version_before_quota_v2', ?1)",
+                [previous.clone()],
+            ),
+        )
+        .await
+        .context("preserve prior host usage cache schema version")?;
+    }
     operation(
         DbOperation::Upsert,
         conn.execute(
-            "INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version_before_quota_v2', ?1)",
+            "INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version_before_capability_v3', ?1)",
             [previous],
         ),
     )
     .await
-    .context("preserve prior host usage cache schema version")?;
+    .context("preserve prior host usage capability schema version")?;
     operation(
         DbOperation::Upsert,
         conn.execute(
@@ -307,29 +364,36 @@ async fn validate_existing_schema_shape(conn: &Connection, version: Option<&str>
     }
 
     let columns = account_snapshot_columns(conn).await?;
-    if version != Some(SCHEMA_VERSION) && columns.contains("quota_bucket_json") {
-        anyhow::bail!("pre-v2 host usage cache contains a partial typed quota column");
-    }
-    for required in [
-        "id",
-        "provider",
-        "account_key_hash",
-        "account_label",
-        "source",
-        "confidence",
-        "window_kind",
-        "used_amount",
-        "used_unit",
-        "limit_amount",
-        "limit_unit",
-        "resets_at",
-        "fetched_at",
-        "expires_at",
-        "status",
-        "last_error",
-    ] {
-        if !columns.contains(required) {
-            anyhow::bail!("host usage cache is missing required legacy column {required}");
+    match version {
+        None | Some("0" | "1") => {
+            if columns.contains("quota_bucket_json") {
+                anyhow::bail!("pre-v2 host usage cache contains a partial typed quota column");
+            }
+            if columns.contains("capability_account_id")
+                || columns.contains("capability_surface_id")
+            {
+                anyhow::bail!("pre-v3 host usage cache contains partial capability columns");
+            }
+            validate_snapshot_columns(conn, "pre-v2", false, false).await?;
+            validate_unique_identity_key(conn).await?;
+        }
+        Some("2") => {
+            if columns.contains("capability_account_id")
+                || columns.contains("capability_surface_id")
+            {
+                anyhow::bail!("schema 2 contains unexpected capability identity columns");
+            }
+            validate_snapshot_columns(conn, "2", true, false).await?;
+            validate_unique_identity_key(conn).await?;
+            validate_typed_quota_rows(conn).await?;
+            validate_legacy_identity_rows(conn).await?;
+        }
+        Some("3") => {
+            validate_current_columns(conn).await?;
+            validate_unique_identity_key(conn).await?;
+        }
+        Some(other) => {
+            anyhow::bail!("host usage cache schema {other:?} is not a recognized version");
         }
     }
     Ok(())
@@ -342,40 +406,25 @@ fn ensure_supported_schema_version(version: Option<String>) -> Result<()> {
     let parsed = version
         .parse::<u32>()
         .with_context(|| format!("unsupported host usage cache schema version {version:?}"))?;
-    if parsed > 2 {
-        anyhow::bail!("host usage cache schema {parsed} is newer than supported schema 2");
+    if parsed > 3 {
+        anyhow::bail!("host usage cache schema {parsed} is newer than supported schema 3");
     }
     Ok(())
 }
 
 async fn validate_current_schema(conn: &Connection) -> Result<()> {
-    let columns = account_snapshot_columns(conn).await?;
-    for required in [
-        "provider",
-        "account_key_hash",
-        "account_label",
-        "source",
-        "confidence",
-        "window_kind",
-        "used_amount",
-        "used_unit",
-        "limit_amount",
-        "limit_unit",
-        "resets_at",
-        "fetched_at",
-        "expires_at",
-        "status",
-        "last_error",
-        "quota_bucket_json",
-    ] {
-        if !columns.contains(required) {
-            anyhow::bail!("host usage cache schema 2 is missing {required}");
-        }
-    }
+    validate_current_columns(conn).await?;
+    validate_unique_identity_key(conn).await?;
+    validate_typed_quota_rows(conn).await?;
+    read_stored_identities(conn).await?;
+    Ok(())
+}
+
+async fn validate_typed_quota_rows(conn: &Connection) -> Result<()> {
     operation(DbOperation::Select, async {
         let mut rows = conn
             .query(
-                "SELECT id, window_kind, quota_bucket_json FROM account_usage_snapshots ORDER BY id",
+                "SELECT id, window_kind, quota_bucket_json, typeof(quota_bucket_json) FROM account_usage_snapshots ORDER BY id",
                 (),
             )
             .await
@@ -387,6 +436,12 @@ async fn validate_current_schema(conn: &Connection) -> Result<()> {
         {
             let id: i64 = row.get(0).context("read host usage quota row id")?;
             let window: String = row.get(1).context("read host usage quota window")?;
+            let encoded_type = row_string(&row, 3)?;
+            if !matches!(encoded_type.as_str(), "null" | "text") {
+                anyhow::bail!(
+                    "quota_bucket_json for host usage row {id} ({window:?}) must be NULL or TEXT, got {encoded_type}"
+                );
+            }
             let encoded: Option<String> = row
                 .get(2)
                 .context("read host usage quota payload")?;
@@ -408,19 +463,380 @@ async fn validate_current_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-async fn account_snapshot_columns(conn: &Connection) -> Result<std::collections::HashSet<String>> {
+async fn validate_current_columns(conn: &Connection) -> Result<()> {
+    validate_snapshot_columns(conn, SCHEMA_VERSION, true, true).await?;
+    let columns = account_snapshot_column_info(conn).await?;
+    for name in ["capability_account_id", "capability_surface_id"] {
+        if columns.get(name).is_some_and(|column| column.not_null) {
+            anyhow::bail!("host usage cache schema 3 capability columns must be nullable");
+        }
+    }
+    Ok(())
+}
+
+async fn validate_snapshot_columns(
+    conn: &Connection,
+    schema: &str,
+    include_quota: bool,
+    include_capability: bool,
+) -> Result<()> {
+    let mut required = vec![
+        ("id", "INTEGER", None),
+        ("provider", "TEXT", Some(true)),
+        ("account_key_hash", "TEXT", Some(true)),
+        ("account_label", "TEXT", Some(true)),
+        ("source", "TEXT", Some(true)),
+        ("confidence", "TEXT", Some(true)),
+        ("window_kind", "TEXT", Some(true)),
+        ("used_amount", "INTEGER", Some(false)),
+        ("used_unit", "TEXT", Some(false)),
+        ("limit_amount", "INTEGER", Some(false)),
+        ("limit_unit", "TEXT", Some(false)),
+        ("resets_at", "INTEGER", Some(false)),
+        ("fetched_at", "INTEGER", Some(true)),
+        ("expires_at", "INTEGER", Some(false)),
+        ("status", "TEXT", Some(true)),
+        ("last_error", "TEXT", Some(false)),
+    ];
+    if include_quota {
+        required.push(("quota_bucket_json", "TEXT", Some(false)));
+    }
+    if include_capability {
+        required.extend([
+            ("capability_account_id", "TEXT", None),
+            ("capability_surface_id", "TEXT", None),
+        ]);
+    }
+
+    let columns = account_snapshot_column_info(conn).await?;
+    for (name, expected_type, expected_not_null) in required {
+        let Some(column) = columns.get(name) else {
+            anyhow::bail!("host usage cache schema {schema} is missing {name}");
+        };
+        if !sqlite_type_matches(&column.declared_type, expected_type) {
+            anyhow::bail!(
+                "host usage cache schema {schema} has incompatible type for {name}: {:?}",
+                column.declared_type
+            );
+        }
+        if expected_not_null.is_some_and(|expected| column.not_null != expected) {
+            anyhow::bail!(
+                "host usage cache schema {schema} has incompatible nullability for {name}"
+            );
+        }
+    }
+    validate_rowid_primary_key(conn, schema, &columns).await?;
+    Ok(())
+}
+
+fn sqlite_type_matches(declared_type: &str, expected: &str) -> bool {
+    let declared_type = declared_type.to_ascii_uppercase();
+    let affinity = if declared_type.contains("INT") {
+        "INTEGER"
+    } else if declared_type.contains("CHAR")
+        || declared_type.contains("CLOB")
+        || declared_type.contains("TEXT")
+    {
+        "TEXT"
+    } else if declared_type.contains("BLOB") || declared_type.trim().is_empty() {
+        "BLOB"
+    } else if declared_type.contains("REAL")
+        || declared_type.contains("FLOA")
+        || declared_type.contains("DOUB")
+    {
+        "REAL"
+    } else {
+        "NUMERIC"
+    };
+    affinity == expected
+}
+
+async fn validate_rowid_primary_key(
+    conn: &Connection,
+    schema: &str,
+    columns: &std::collections::HashMap<String, SnapshotColumn>,
+) -> Result<()> {
+    let has_rowid_id = columns.get("id").is_some_and(|column| {
+        column.primary_key_position == 1
+            && column.declared_type.trim().eq_ignore_ascii_case("INTEGER")
+    });
+    let has_other_primary_key_column = columns
+        .iter()
+        .any(|(name, column)| name != "id" && column.primary_key_position != 0);
+    if !has_rowid_id || has_other_primary_key_column {
+        anyhow::bail!(
+            "host usage cache schema {schema} id must be a rowid-generating INTEGER PRIMARY KEY"
+        );
+    }
+
+    validate_rowid_table_metadata(conn, schema).await?;
+
+    let mut indexes = operation(
+        DbOperation::Select,
+        conn.query("PRAGMA index_list(account_usage_snapshots)", ()),
+    )
+    .await
+    .context("inspect host usage rowid primary key")?;
+    while let Some(index) = indexes
+        .next()
+        .await
+        .context("read host usage rowid primary-key index")?
+    {
+        if row_string(&index, 3)? == "pk" {
+            anyhow::bail!(
+                "host usage cache schema {schema} id must be a rowid-generating INTEGER PRIMARY KEY"
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn validate_rowid_table_metadata(conn: &Connection, schema: &str) -> Result<()> {
+    let mut tables = operation(
+        DbOperation::Select,
+        conn.query("PRAGMA main.table_list(account_usage_snapshots)", ()),
+    )
+    .await
+    .context("inspect host usage rowid table metadata")?;
+    let (table_schema, table_name, table_type, without_rowid) = {
+        let Some(table) = tables
+            .next()
+            .await
+            .context("read host usage rowid table metadata")?
+        else {
+            anyhow::bail!(
+                "host usage cache schema {schema} id must be a rowid-generating INTEGER PRIMARY KEY"
+            );
+        };
+        let table_schema = table
+            .get::<String>(0)
+            .context("read host usage rowid table schema")?;
+        let table_name = table
+            .get::<String>(1)
+            .context("read host usage rowid table name")?;
+        let table_type = table
+            .get::<String>(2)
+            .context("read host usage rowid table type")?;
+        let without_rowid = table
+            .get::<i64>(4)
+            .context("read host usage rowid table flag")?;
+        (table_schema, table_name, table_type, without_rowid)
+    };
+    let has_duplicate = tables
+        .next()
+        .await
+        .context("read duplicate host usage rowid table metadata")?
+        .is_some();
+    drop(tables);
+    if has_duplicate
+        || table_schema != "main"
+        || table_name != "account_usage_snapshots"
+        || table_type != "table"
+        || without_rowid != 0
+    {
+        anyhow::bail!(
+            "host usage cache schema {schema} id must be a rowid-generating INTEGER PRIMARY KEY"
+        );
+    }
+    Ok(())
+}
+
+async fn validate_unique_identity_key(conn: &Connection) -> Result<()> {
+    let expected = ["provider", "account_key_hash", "source", "window_kind"];
+    let mut indexes = operation(
+        DbOperation::Select,
+        conn.query("PRAGMA index_list(account_usage_snapshots)", ()),
+    )
+    .await
+    .context("inspect host usage unique key")?;
+    let mut unique_indexes = Vec::new();
+    while let Some(index) = indexes
+        .next()
+        .await
+        .context("read host usage unique index")?
+    {
+        let unique: i64 = index.get(2).context("read host usage index uniqueness")?;
+        let partial: i64 = index.get(4).context("read host usage index partial flag")?;
+        if unique == 0 || partial != 0 {
+            continue;
+        }
+        unique_indexes.push(row_string(&index, 1)?);
+    }
+    drop(indexes);
+    for name in unique_indexes {
+        let escaped_name = name.replace('"', "\"\"");
+        let pragma = format!("PRAGMA index_info(\"{escaped_name}\")");
+        let mut columns = operation(DbOperation::Select, conn.query(&pragma, ()))
+            .await
+            .context("inspect host usage unique key columns")?;
+        let mut actual = Vec::new();
+        while let Some(column) = columns
+            .next()
+            .await
+            .context("read host usage unique key column")?
+        {
+            actual.push(row_opt_string(&column, 2)?);
+        }
+        if actual
+            .iter()
+            .map(Option::as_deref)
+            .collect::<Option<Vec<_>>>()
+            == Some(expected.to_vec())
+        {
+            return Ok(());
+        }
+    }
+    anyhow::bail!("host usage cache is missing the required unique account key")
+}
+
+async fn account_snapshot_column_info(
+    conn: &Connection,
+) -> Result<std::collections::HashMap<String, SnapshotColumn>> {
     operation(DbOperation::Select, async {
         let mut rows = conn
             .query("PRAGMA table_info(account_usage_snapshots)", ())
             .await
             .context("inspect host usage cache columns")?;
-        let mut columns = std::collections::HashSet::new();
+        let mut columns = std::collections::HashMap::new();
         while let Some(row) = rows.next().await.context("read host usage cache column")? {
-            columns.insert(row_string(&row, 1)?);
+            let name = row_string(&row, 1)?;
+            let declared_type = row_string(&row, 2)?;
+            let not_null: i64 = row.get(3).context("read host usage column nullability")?;
+            let primary_key_position: i64 =
+                row.get(5).context("read host usage primary-key position")?;
+            columns.insert(
+                name,
+                SnapshotColumn {
+                    declared_type,
+                    not_null: not_null != 0,
+                    primary_key_position,
+                },
+            );
         }
         Ok(columns)
     })
     .await
+}
+
+async fn account_snapshot_columns(conn: &Connection) -> Result<std::collections::HashSet<String>> {
+    Ok(account_snapshot_column_info(conn)
+        .await?
+        .into_keys()
+        .collect())
+}
+
+async fn read_stored_identities(conn: &Connection) -> Result<Vec<StoredIdentity>> {
+    let identities = operation(DbOperation::Select, async {
+        let mut rows = conn
+            .query(
+                "SELECT id, provider, account_key_hash, capability_account_id, capability_surface_id, typeof(provider), typeof(account_key_hash), typeof(capability_account_id), typeof(capability_surface_id) FROM account_usage_snapshots ORDER BY id",
+                (),
+            )
+            .await
+            .context("query host usage account identities")?;
+        let mut identities = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .context("read host usage account identity")?
+        {
+            let id = row_i64(&row, 0)?;
+            let provider_type = row_string(&row, 5)?;
+            let key_type = row_string(&row, 6)?;
+            if provider_type != "text" || key_type != "text" {
+                anyhow::bail!(
+                    "host usage row {id} provider and account key must be TEXT, got {provider_type}/{key_type}"
+                );
+            }
+            let account_id_type = row_string(&row, 7)?;
+            let surface_id_type = row_string(&row, 8)?;
+            if !matches!(account_id_type.as_str(), "null" | "text")
+                || !matches!(surface_id_type.as_str(), "null" | "text")
+            {
+                anyhow::bail!(
+                    "host usage row {id} capability cells must be NULL or TEXT, got {account_id_type}/{surface_id_type}"
+                );
+            }
+            let provider = row_string(&row, 1)?;
+            let account_key_hash = row_string(&row, 2)?;
+            let capability = identity::decode_account_capability(
+                &provider,
+                &account_key_hash,
+                row_opt_string(&row, 3)?,
+                row_opt_string(&row, 4)?,
+            )
+            .map_err(|error| anyhow::anyhow!("validate host usage row {id} identity: {error}"))?;
+            identities.push(StoredIdentity {
+                provider,
+                account_key_hash,
+                capability,
+            });
+        }
+        Ok::<_, anyhow::Error>(identities)
+    })
+    .await?;
+    identity::validate_identity_groups(identities.iter().map(|row| {
+        (
+            row.provider.as_str(),
+            row.account_key_hash.as_str(),
+            row.capability.as_ref(),
+        )
+    }))
+    .map_err(anyhow::Error::msg)?;
+    Ok(identities)
+}
+
+async fn validate_legacy_identity_rows(conn: &Connection) -> Result<()> {
+    let identities = operation(DbOperation::Select, async {
+        let mut rows = conn
+            .query(
+                "SELECT id, provider, account_key_hash, typeof(provider), typeof(account_key_hash) FROM account_usage_snapshots ORDER BY id",
+                (),
+            )
+            .await
+            .context("query schema 2 host usage identities")?;
+        let mut identities = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .context("read schema 2 host usage identity")?
+        {
+            let id = row_i64(&row, 0)?;
+            let provider_type = row_string(&row, 3)?;
+            let key_type = row_string(&row, 4)?;
+            if provider_type != "text" || key_type != "text" {
+                anyhow::bail!(
+                    "schema 2 host usage row {id} provider and account key must be TEXT, got {provider_type}/{key_type}"
+                );
+            }
+            let provider = row_string(&row, 1)?;
+            let account_key_hash = row_string(&row, 2)?;
+            let capability = identity::decode_account_capability(
+                &provider,
+                &account_key_hash,
+                None,
+                None,
+            )
+            .map_err(|error| {
+                anyhow::anyhow!("validate schema 2 host usage row {id} identity: {error}")
+            })?;
+            identities.push(StoredIdentity {
+                provider,
+                account_key_hash,
+                capability,
+            });
+        }
+        Ok::<_, anyhow::Error>(identities)
+    })
+    .await?;
+    identity::validate_identity_groups(identities.iter().map(|row| {
+        (
+            row.provider.as_str(),
+            row.account_key_hash.as_str(),
+            row.capability.as_ref(),
+        )
+    }))
+    .map_err(anyhow::Error::msg)
 }
 
 async fn stored_schema_version(conn: &Connection) -> Result<Option<String>> {
@@ -459,13 +875,31 @@ async fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
     .await
 }
 
-async fn upsert_account_rows(
-    conn: &Connection,
-    accounts: &[AccountUsageSnapshotView],
-) -> Result<()> {
-    let rows = accounts
+fn prepare_account_rows(accounts: &[AccountUsageSnapshotView]) -> Result<Vec<PreparedAccount>> {
+    let keys = accounts
         .iter()
         .map(|account| {
+            identity::account_key_for_view(
+                &account.provider,
+                &account.account_label,
+                account.account_capability.as_ref(),
+            )
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(anyhow::Error::msg)?;
+    identity::validate_identity_groups(accounts.iter().zip(&keys).map(|(account, key)| {
+        (
+            account.provider.as_str(),
+            key.as_str(),
+            account.account_capability.as_ref(),
+        )
+    }))
+    .map_err(anyhow::Error::msg)?;
+
+    accounts
+        .iter()
+        .zip(keys)
+        .map(|(account, account_key_hash)| {
             let bucket = account.quota_bucket.as_ref().ok_or_else(|| {
                 anyhow::anyhow!(
                     "host usage account {:?} is missing its typed quota bucket",
@@ -478,23 +912,23 @@ async fn upsert_account_rows(
                     account.window_kind
                 )
             })?;
-            let bucket_json =
+            let quota_bucket_json =
                 serde_json::to_string(bucket).context("encode host usage quota bucket")?;
-            Ok((account, bucket_json))
+            Ok(PreparedAccount {
+                account: account.clone(),
+                account_key_hash,
+                quota_bucket_json,
+            })
         })
-        .collect::<Result<Vec<_>>>()?;
-    if rows.is_empty() {
-        return Ok(());
-    }
-    operation(DbOperation::Begin, conn.execute("BEGIN IMMEDIATE", ()))
-        .await
-        .context("begin host usage account snapshot upsert")?;
-    let upsert = async {
-        for (account, bucket_json) in rows {
-            operation(
-                DbOperation::Upsert,
-                conn.execute(
-                    "
+        .collect()
+}
+
+async fn upsert_prepared_account_row(conn: &Connection, row: &PreparedAccount) -> Result<()> {
+    let account = &row.account;
+    operation(
+        DbOperation::Upsert,
+        conn.execute(
+            "
             INSERT INTO account_usage_snapshots (
                 provider,
                 account_key_hash,
@@ -511,9 +945,11 @@ async fn upsert_account_rows(
                 expires_at,
                 status,
                 last_error,
-                quota_bucket_json
+                quota_bucket_json,
+                capability_account_id,
+                capability_surface_id
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
             ON CONFLICT(provider, account_key_hash, source, window_kind) DO UPDATE SET
                 account_label = excluded.account_label,
                 confidence = excluded.confidence,
@@ -542,30 +978,99 @@ async fn upsert_account_rows(
                 expires_at = excluded.expires_at,
                 status = excluded.status,
                 last_error = excluded.last_error,
-                quota_bucket_json = excluded.quota_bucket_json
+                quota_bucket_json = excluded.quota_bucket_json,
+                capability_account_id = excluded.capability_account_id,
+                capability_surface_id = excluded.capability_surface_id
             ",
-                    params![
-                        account.provider.clone(),
-                        account_key_hash(&account.provider, &account.account_label),
-                        account.account_label.clone(),
-                        account.source.clone(),
-                        account.confidence.clone(),
-                        account.window_kind.clone(),
-                        account.used_amount,
-                        account.used_unit.clone(),
-                        account.limit_amount,
-                        account.limit_unit.clone(),
-                        account.resets_at,
-                        account.fetched_at,
-                        account.expires_at,
-                        account.status.clone(),
-                        account.last_error.clone(),
-                        bucket_json,
-                    ],
-                ),
+            params![
+                account.provider.clone(),
+                row.account_key_hash.clone(),
+                account.account_label.clone(),
+                account.source.clone(),
+                account.confidence.clone(),
+                account.window_kind.clone(),
+                account.used_amount,
+                account.used_unit.clone(),
+                account.limit_amount,
+                account.limit_unit.clone(),
+                account.resets_at,
+                account.fetched_at,
+                account.expires_at,
+                account.status.clone(),
+                account.last_error.clone(),
+                row.quota_bucket_json.clone(),
+                account
+                    .account_capability
+                    .as_ref()
+                    .map(|capability| capability.account_id.clone()),
+                account
+                    .account_capability
+                    .as_ref()
+                    .map(|capability| capability.surface_id.clone()),
+            ],
+        ),
+    )
+    .await
+    .context("upsert host usage account snapshot")?;
+    Ok(())
+}
+
+async fn upsert_prepared_account_rows(conn: &Connection, rows: &[PreparedAccount]) -> Result<()> {
+    for row in rows {
+        identity::validate_account_identity(
+            &row.account.provider,
+            &row.account_key_hash,
+            row.account.account_capability.as_ref(),
+        )
+        .map_err(anyhow::Error::msg)?;
+        let bucket = row.account.quota_bucket.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "host usage account {:?} is missing its typed quota bucket",
+                row.account.window_kind
             )
-            .await
-            .context("upsert host usage account snapshot")?;
+        })?;
+        bucket.validate().map_err(|error| {
+            anyhow::anyhow!(
+                "validate host usage quota bucket {:?}: {error}",
+                row.account.window_kind
+            )
+        })?;
+    }
+    identity::validate_identity_groups(rows.iter().map(|row| {
+        (
+            row.account.provider.as_str(),
+            row.account_key_hash.as_str(),
+            row.account.account_capability.as_ref(),
+        )
+    }))
+    .map_err(anyhow::Error::msg)?;
+
+    operation(DbOperation::Begin, conn.execute("BEGIN IMMEDIATE", ()))
+        .await
+        .context("begin host usage account snapshot upsert")?;
+    let upsert = async {
+        let existing = read_stored_identities(conn).await?;
+        identity::validate_identity_groups(
+            existing
+                .iter()
+                .map(|row| {
+                    (
+                        row.provider.as_str(),
+                        row.account_key_hash.as_str(),
+                        row.capability.as_ref(),
+                    )
+                })
+                .chain(rows.iter().map(|row| {
+                    (
+                        row.account.provider.as_str(),
+                        row.account_key_hash.as_str(),
+                        row.account.account_capability.as_ref(),
+                    )
+                })),
+        )
+        .map_err(anyhow::Error::msg)?;
+        for row in rows {
+            upsert_prepared_account_row(conn, row).await?;
         }
         Ok::<(), anyhow::Error>(())
     }
@@ -615,7 +1120,10 @@ async fn read_account_rows(conn: &Connection) -> Result<Vec<AccountUsageSnapshot
                 expires_at,
                 status,
                 last_error,
-                quota_bucket_json
+                quota_bucket_json,
+                account_key_hash,
+                capability_account_id,
+                capability_surface_id
             FROM account_usage_snapshots
             ORDER BY provider, account_label, source, window_kind
             ",
@@ -624,6 +1132,7 @@ async fn read_account_rows(conn: &Connection) -> Result<Vec<AccountUsageSnapshot
             .await
             .context("query host usage account snapshots")?;
         let mut accounts = Vec::new();
+        let mut identities = Vec::new();
         while let Some(row) = rows
             .next()
             .await
@@ -644,8 +1153,22 @@ async fn read_account_rows(conn: &Connection) -> Result<Vec<AccountUsageSnapshot
                     Ok::<jackin_protocol::control::QuotaBucketView, anyhow::Error>(bucket)
                 })
                 .transpose()?;
+            let provider = row_string(&row, 0)?;
+            let account_key_hash = row_string(&row, 15)?;
+            let account_capability = identity::decode_account_capability(
+                &provider,
+                &account_key_hash,
+                row_opt_string(&row, 16)?,
+                row_opt_string(&row, 17)?,
+            )
+            .map_err(|error| anyhow::anyhow!("validate host usage identity: {error}"))?;
+            identities.push(StoredIdentity {
+                provider: provider.clone(),
+                account_key_hash,
+                capability: account_capability.clone(),
+            });
             accounts.push(AccountUsageSnapshotView {
-                provider: row_string(&row, 0)?,
+                provider,
                 account_label: row_string(&row, 1)?,
                 source: row_string(&row, 2)?,
                 confidence: row_string(&row, 3)?,
@@ -660,9 +1183,17 @@ async fn read_account_rows(conn: &Connection) -> Result<Vec<AccountUsageSnapshot
                 status: row_string(&row, 12)?,
                 last_error: row_opt_string(&row, 13)?,
                 quota_bucket,
-                account_capability: None,
+                account_capability,
             });
         }
+        identity::validate_identity_groups(identities.iter().map(|identity| {
+            (
+                identity.provider.as_str(),
+                identity.account_key_hash.as_str(),
+                identity.capability.as_ref(),
+            )
+        }))
+        .map_err(anyhow::Error::msg)?;
         Ok(accounts)
     })
     .await

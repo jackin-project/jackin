@@ -11,6 +11,8 @@ use std::ops::Deref;
 const SEED_CHILD_MODE: &str = "JACKIN_USAGE_CACHE_SEED_MODE";
 const SEED_CHILD_PATH: &str = "JACKIN_USAGE_CACHE_SEED_PATH";
 
+mod case_01;
+
 struct TestStore {
     _operation: StoreOperationGuard,
     store: LocalStore,
@@ -38,6 +40,17 @@ async fn open_test_store(path: &Path) -> Result<TestStore> {
 async fn schema_version(path: &Path) -> Result<Option<String>> {
     let store = open_test_store(path).await?;
     stored_schema_version(&store).await
+}
+
+async fn metadata_value(path: &Path, key: &str) -> Result<Option<String>> {
+    let store = open_test_store(path).await?;
+    let mut rows = store
+        .query("SELECT value FROM _meta WHERE key = ?1", [key])
+        .await?;
+    rows.next()
+        .await?
+        .map(|row| row_string(&row, 0))
+        .transpose()
 }
 
 fn account(window: &str, used: i64) -> AccountUsageSnapshotView {
@@ -90,6 +103,20 @@ fn seed_host_cache_in_finished_child(path: &Path, mode: &str) {
         .status()
         .expect("start finished-child cache seeder");
     assert!(status.success(), "finished-child cache seed {mode} failed");
+}
+
+fn has_migration_committed_receipt(path: &Path) -> bool {
+    std::fs::read_dir(path.parent().expect("host cache parent"))
+        .expect("read host cache sibling backups")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .any(|directory| {
+            directory
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(".jackin-quota-backup-"))
+                && directory.join("migration_committed.manifest").is_file()
+        })
 }
 
 async fn create_partial_typed_host_cache_schema(conn: &Connection) {
@@ -206,8 +233,12 @@ fn seed_host_cache_child() {
                     .expect("add old host cache commit failure marker");
                 }
             }
-            "missing_table_v1" | "missing_table_v2" => {
-                let version = if mode.ends_with('1') { "1" } else { "2" };
+            "missing_table_v1" | "missing_table_v2" | "missing_table_v3" => {
+                let version = match mode.as_str() {
+                    "missing_table_v1" => "1",
+                    "missing_table_v2" => "2",
+                    _ => "3",
+                };
                 conn.execute(
                     "CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
                     (),
@@ -441,7 +472,21 @@ async fn host_account_cache_v1_migration_preserves_legacy_scalars_and_null_bucke
     assert_eq!(rows[0].expires_at, Some(i64::MIN));
     assert_eq!(rows[0].last_error.as_deref(), Some("historic failure"));
     assert!(rows[0].quota_bucket.is_none());
-    assert_eq!(schema_version(&path).await.unwrap().as_deref(), Some("2"));
+    assert_eq!(schema_version(&path).await.unwrap().as_deref(), Some("3"));
+    assert_eq!(
+        metadata_value(&path, "schema_version_before_quota_v2")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("1")
+    );
+    assert_eq!(
+        metadata_value(&path, "schema_version_before_capability_v3")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("1")
+    );
 }
 
 #[tokio::test]
@@ -605,26 +650,26 @@ async fn host_account_cache_future_version_fails_closed_without_rewriting_versio
         .unwrap();
     let conn = open_test_store(&path).await.unwrap();
     conn.execute(
-        "UPDATE _meta SET value = '3' WHERE key = 'schema_version'",
+        "UPDATE _meta SET value = '4' WHERE key = 'schema_version'",
         (),
     )
     .await
     .unwrap();
     let version = stored_schema_version(&conn).await.unwrap();
-    assert_eq!(version.as_deref(), Some("3"));
+    assert_eq!(version.as_deref(), Some("4"));
     drop(conn);
 
     let error = read_accounts(&paths).await.unwrap_err();
     assert!(error.to_string().contains("newer than supported schema"));
     let conn = open_test_store(&path).await.unwrap();
     let version = stored_schema_version(&conn).await.unwrap();
-    assert_eq!(version.as_deref(), Some("3"));
+    assert_eq!(version.as_deref(), Some("4"));
     drop(conn);
 }
 
 #[tokio::test]
 async fn host_account_cache_versioned_file_missing_rows_table_is_not_silent_empty() {
-    for version in ["1", "2"] {
+    for version in ["1", "2", "3"] {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let path = host_account_cache_path(&paths);
@@ -633,8 +678,10 @@ async fn host_account_cache_versioned_file_missing_rows_table_is_not_silent_empt
             &path,
             if version == "1" {
                 "missing_table_v1"
-            } else {
+            } else if version == "2" {
                 "missing_table_v2"
+            } else {
+                "missing_table_v3"
             },
         );
 
@@ -772,6 +819,10 @@ async fn host_account_cache_commit_failure_rolls_back_and_migration_can_retry() 
             .unwrap()
             .contains("quota_bucket_json")
     );
+    assert!(
+        !has_migration_committed_receipt(&path),
+        "failed schema COMMIT must not publish a migration_committed receipt"
+    );
     conn.execute(
         "UPDATE _meta SET value = '0' WHERE key = 'test_fail_schema_commit'",
         (),
@@ -792,7 +843,7 @@ async fn host_account_cache_commit_failure_rolls_back_and_migration_can_retry() 
     assert_eq!(rows[0].expires_at, Some(i64::MIN));
     assert_eq!(rows[0].last_error.as_deref(), Some("historic failure"));
     assert!(rows[0].quota_bucket.is_none());
-    assert_eq!(schema_version(&path).await.unwrap().as_deref(), Some("2"));
+    assert_eq!(schema_version(&path).await.unwrap().as_deref(), Some("3"));
 }
 
 #[tokio::test]
@@ -830,7 +881,7 @@ async fn host_account_cache_failed_migration_rolls_back_and_retries_after_repair
     assert_eq!(rows[0].used_unit.as_deref(), Some("historic"));
     assert_eq!(rows[0].limit_amount, Some(-i64::MAX));
     assert!(rows[0].quota_bucket.is_none());
-    assert_eq!(schema_version(&path).await.unwrap().as_deref(), Some("2"));
+    assert_eq!(schema_version(&path).await.unwrap().as_deref(), Some("3"));
 }
 
 #[tokio::test]

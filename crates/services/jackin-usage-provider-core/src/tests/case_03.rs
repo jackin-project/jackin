@@ -307,6 +307,73 @@ fn usage_cache_keeps_account_snapshots_isolated_across_one_provider_target() {
 }
 
 #[test]
+fn account_snapshot_flatten_preserves_full_capability_for_same_label() {
+    let personal = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-personal".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let work = jackin_protocol::usage_broker::UsageAccountCapability {
+        account_id: "account-work".to_owned(),
+        surface_id: "codex".to_owned(),
+    };
+    let mut personal_view = codex_cached_usage_view();
+    personal_view.account.account_label = "shared@example.test".to_owned();
+    personal_view.buckets[0].used_money = Some(Money::new(i64::MIN, "USD", 4));
+    personal_view.buckets[0].limit_money = Some(Money::new(i64::MAX, "USD", 7));
+    let personal_bucket = personal_view.buckets[0].clone();
+    let mut work_view = codex_cached_usage_view();
+    work_view.account.account_label = "shared@example.test".to_owned();
+    work_view.buckets[0].count_quota = Some(CountQuota::new(
+        Some(u64::MAX),
+        Some(u64::MAX),
+        Some(0),
+        CountQuotaUnit::Requests,
+        CountQuotaPeriod::Unknown,
+        CountQuotaProvenance::ProviderReported,
+    ));
+    let work_bucket = work_view.buckets[0].clone();
+
+    let mut cache = UsageCache::default();
+    cache.insert_snapshot_for_capability_for_test(
+        "codex",
+        Some("OpenAI"),
+        &personal,
+        personal_view,
+    );
+    cache.insert_snapshot_for_capability_for_test("codex", Some("OpenAI"), &work, work_view);
+
+    let rows = cache.account_snapshot_views();
+    assert_eq!(rows.len(), 2);
+    let personal_row = rows
+        .iter()
+        .find(|row| row.account_capability.as_ref() == Some(&personal))
+        .expect("flattened personal capability");
+    assert_eq!(personal_row.account_label, "shared@example.test");
+    assert_eq!(personal_row.quota_bucket.as_ref(), Some(&personal_bucket));
+    assert_eq!(personal_row.used_amount, Some(i64::MIN));
+    assert_eq!(personal_row.used_unit.as_deref(), Some("USD"));
+    assert_eq!(personal_row.limit_amount, Some(i64::MAX));
+    assert_eq!(personal_row.limit_unit.as_deref(), Some("USD"));
+
+    let work_row = rows
+        .iter()
+        .find(|row| row.account_capability.as_ref() == Some(&work))
+        .expect("flattened work capability");
+    assert_eq!(work_row.account_label, "shared@example.test");
+    assert_eq!(work_row.quota_bucket.as_ref(), Some(&work_bucket));
+    assert_eq!(work_row.used_amount, None);
+    assert_eq!(work_row.limit_amount, None);
+    assert_eq!(
+        work_row
+            .quota_bucket
+            .as_ref()
+            .and_then(|bucket| bucket.count_quota.as_ref())
+            .map(|quota| quota.used),
+        Some(Some(u64::MAX))
+    );
+}
+
+#[test]
 fn usage_cache_rejects_provider_surface_capability_mismatch() {
     let capability = jackin_protocol::usage_broker::UsageAccountCapability {
         account_id: "account-codex".to_owned(),
