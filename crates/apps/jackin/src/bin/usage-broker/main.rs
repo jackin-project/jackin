@@ -105,6 +105,7 @@ fn main() {
                 let mut config = UsageBrokerConfig::for_data_dir(request.data_dir);
                 config.build_id = request.build_id;
                 config.service_executable = None;
+                config.socket_alias_root = request.socket_alias_root;
                 let scope = UsageDiscoveryScope::HostDesktop {
                     config_root: request.config_root,
                     operator_home: request.operator_home,
@@ -143,6 +144,7 @@ struct ForegroundBootstrapRequest {
     config_root: PathBuf,
     operator_home: PathBuf,
     build_id: String,
+    socket_alias_root: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for ForegroundBootstrapRequest {
@@ -154,6 +156,7 @@ impl std::fmt::Debug for ForegroundBootstrapRequest {
             .field("config_root", &self.config_root)
             .field("operator_home", &self.operator_home)
             .field("build_id", &self.build_id)
+            .field("socket_alias_root", &self.socket_alias_root)
             .finish()
     }
 }
@@ -185,6 +188,13 @@ impl From<ClaudeCredentialBootstrapOutcome> for ForegroundBootstrapOutcome {
 }
 
 fn parse_prepare_auth_args(args: &[String]) -> Result<ForegroundBootstrapRequest, (i32, String)> {
+    let socket_alias_root = parse_socket_alias_root_argument(args).map_err(|_| {
+        auth_error(
+            "invalid_request",
+            "socket alias root must be supplied once as an absolute path",
+            3,
+        )
+    })?;
     let mut prepare_flag = false;
     let mut provider = None;
     let mut service = None;
@@ -222,6 +232,9 @@ fn parse_prepare_auth_args(args: &[String]) -> Result<ForegroundBootstrapRequest
             }
             "--build-id" if build_id.is_none() => {
                 build_id = Some(required_option_value(&mut args, "--build-id")?);
+            }
+            "--socket-alias-root" => {
+                let _value = required_option_value(&mut args, "--socket-alias-root")?;
             }
             _ => {
                 return Err(auth_error(
@@ -283,6 +296,7 @@ fn parse_prepare_auth_args(args: &[String]) -> Result<ForegroundBootstrapRequest
         config_root,
         operator_home,
         build_id,
+        socket_alias_root,
     })
 }
 
@@ -406,6 +420,7 @@ fn detach_from_activating_session() {}
 fn run() -> Result<(), String> {
     let args = std::env::args().collect::<Vec<_>>();
     let data_dir = argument(&args, "--data-dir")?;
+    let socket_alias_root = parse_socket_alias_root_argument(&args)?;
     if local_only_requested(&args) {
         let build_id = argument(&args, "--build-id")?
             .to_str()
@@ -414,6 +429,7 @@ fn run() -> Result<(), String> {
         let mut config = UsageBrokerConfig::for_data_dir(data_dir);
         config.build_id = build_id;
         config.service_executable = None;
+        config.socket_alias_root = socket_alias_root;
         return run_usage_monitor_service(config).map_err(|error| error.message);
     }
     let _unattended_keychain_guard = jackin_usage_provider_claude::unattended_keychain_guard()
@@ -434,6 +450,7 @@ fn run() -> Result<(), String> {
     let mut config = UsageBrokerConfig::for_data_dir(data_dir);
     config.build_id = build_id;
     config.service_executable = None;
+    config.socket_alias_root = socket_alias_root;
     let resolver: Arc<dyn ProviderCredentialEnvResolver> = resolver;
     run_usage_broker_service(config, scope, discovery, resolver).map_err(|error| error.message)
 }
@@ -446,6 +463,27 @@ fn argument(args: &[String], name: &str) -> Result<PathBuf, String> {
     args.get(index + 1)
         .map(PathBuf::from)
         .ok_or_else(|| format!("missing value for broker argument {name}"))
+}
+
+fn parse_socket_alias_root_argument(args: &[String]) -> Result<Option<PathBuf>, String> {
+    let mut indices = args
+        .iter()
+        .enumerate()
+        .filter_map(|(index, argument)| (argument == "--socket-alias-root").then_some(index));
+    let Some(index) = indices.next() else {
+        return Ok(None);
+    };
+    if indices.next().is_some() {
+        return Err("duplicate --socket-alias-root argument".to_owned());
+    }
+    let value = args
+        .get(index + 1)
+        .ok_or_else(|| "missing value for --socket-alias-root".to_owned())?;
+    let path = PathBuf::from(value);
+    if value.is_empty() || !path.is_absolute() || path.as_os_str().as_encoded_bytes().contains(&0) {
+        return Err("--socket-alias-root must be a nonempty absolute path".to_owned());
+    }
+    Ok(Some(path))
 }
 
 #[cfg(test)]
