@@ -7,8 +7,8 @@ use std::os::unix::fs::MetadataExt as _;
 use std::path::{Component, Path, PathBuf};
 
 use jackin_protocol::usage_broker::{UsageCoordinationError, UsageCoordinationErrorKind};
-use nix::fcntl::{OFlag, open, openat};
-use nix::sys::stat::{Mode, mkdirat};
+use nix::fcntl::{AtFlags, OFlag, open, openat};
+use nix::sys::stat::{FchmodatFlags, Mode, SFlag, fchmodat, fstat, fstatat, mkdirat};
 use nix::unistd::geteuid;
 use sha2::{Digest as _, Sha256};
 
@@ -285,19 +285,70 @@ pub(crate) fn private_socket_alias_child(
     parent: &File,
     name: &str,
 ) -> Result<File, UsageCoordinationError> {
+    private_socket_alias_child_with_normalizer(parent, name, |parent, name| {
+        fchmodat(
+            parent,
+            name,
+            Mode::from_bits_truncate(0o700),
+            FchmodatFlags::NoFollowSymlink,
+        )
+    })
+}
+
+fn private_socket_alias_child_with_normalizer(
+    parent: &File,
+    name: &str,
+    mut normalize: impl FnMut(&File, &str) -> nix::Result<()>,
+) -> Result<File, UsageCoordinationError> {
     if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\0') {
         return Err(alias_error(
             "per-user alias directory name must be one path component".to_owned(),
         ));
     }
-    match mkdirat(parent, name, Mode::from_bits_truncate(0o700)) {
-        Ok(()) | Err(nix::errno::Errno::EEXIST) => {}
+    let created = match mkdirat(parent, name, Mode::from_bits_truncate(0o700)) {
+        Ok(()) => true,
+        Err(nix::errno::Errno::EEXIST) => false,
         Err(error) => {
             return Err(alias_error(format!(
                 "cannot create per-user alias directory {name}: {error}"
             )));
         }
-    }
+    };
+
+    let created_identity = if created {
+        // The parent FD anchors both no-follow checks and the one permitted chmod.
+        // This does not defend against a hostile process running as the same UID:
+        // fstatat/fchmodat are separate operations, and the root trust model assumes
+        // same-UID processes are trusted.
+        let created_stat =
+            fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(|error| {
+                alias_error(format!(
+                    "cannot inspect newly created per-user alias directory {name}: {error}"
+                ))
+            })?;
+        let identity = validate_created_socket_alias_child_stat(name, &created_stat, false)?;
+        if created_stat.st_mode & 0o7777 != 0o700 {
+            normalize(parent, name).map_err(|error| {
+                alias_error(format!(
+                    "cannot normalize newly created per-user alias directory {name} to mode 0700 without following links: {error}"
+                ))
+            })?;
+        }
+
+        let normalized_stat =
+            fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(|error| {
+                alias_error(format!(
+                    "cannot re-inspect newly created per-user alias directory {name}: {error}"
+                ))
+            })?;
+        let normalized_identity =
+            validate_created_socket_alias_child_stat(name, &normalized_stat, true)?;
+        ensure_socket_alias_child_identity(name, identity, normalized_identity)?;
+        Some(identity)
+    } else {
+        None
+    };
+
     let fd = openat(
         parent,
         name,
@@ -324,7 +375,58 @@ pub(crate) fn private_socket_alias_child(
             geteuid().as_raw()
         )));
     }
+    if let Some(identity) = created_identity {
+        let opened_stat = fstat(&directory).map_err(|error| {
+            alias_error(format!(
+                "cannot inspect opened per-user alias directory {name} identity: {error}"
+            ))
+        })?;
+        ensure_socket_alias_child_identity(
+            name,
+            identity,
+            (opened_stat.st_dev, opened_stat.st_ino),
+        )?;
+    }
     Ok(directory)
+}
+
+type SocketAliasChildIdentity = (nix::libc::dev_t, nix::libc::ino_t);
+
+fn validate_created_socket_alias_child_stat(
+    name: &str,
+    stat: &nix::sys::stat::FileStat,
+    require_private_mode: bool,
+) -> Result<SocketAliasChildIdentity, UsageCoordinationError> {
+    let mode = stat.st_mode & 0o7777;
+    let file_type = stat.st_mode & SFlag::S_IFMT.bits();
+    if file_type != SFlag::S_IFDIR.bits()
+        || stat.st_uid != geteuid().as_raw()
+        || mode & !0o700 != 0
+        || (require_private_mode && mode != 0o700)
+    {
+        return Err(alias_error(format!(
+            "newly created per-user alias directory {name} must remain an effective-uid-owned directory with permissions no broader than mode 0700{}",
+            if require_private_mode {
+                " and exact mode 0700"
+            } else {
+                " and no special bits"
+            }
+        )));
+    }
+    Ok((stat.st_dev, stat.st_ino))
+}
+
+fn ensure_socket_alias_child_identity(
+    name: &str,
+    expected: SocketAliasChildIdentity,
+    actual: SocketAliasChildIdentity,
+) -> Result<(), UsageCoordinationError> {
+    if expected != actual {
+        return Err(alias_error(format!(
+            "newly created per-user alias directory {name} changed device/inode during validation"
+        )));
+    }
+    Ok(())
 }
 
 fn alias_error(message: String) -> UsageCoordinationError {
