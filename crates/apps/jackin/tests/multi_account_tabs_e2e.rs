@@ -170,7 +170,7 @@ fn multi_account_tabs_isolate_and_preserve_bindings() {
         &[],
         PtyFileSentinel {
             path: &workspace_dir.join("s3-restored.txt"),
-            text: "restored",
+            text: Some("restored"),
             timeout: Duration::from_mins(10),
             accept_early_exit_after: None,
             stop_after: None,
@@ -261,7 +261,7 @@ fn run_boot_split_newtab(
         &script,
         PtyFileSentinel {
             path: &workspace_dir.join("never-written.txt"),
-            text: "unreachable",
+            text: Some("unreachable"),
             timeout: Duration::from_mins(14),
             accept_early_exit_after: None,
             stop_after: Some(&completed),
@@ -476,7 +476,7 @@ fn phase_c_reconnect(
         &script,
         PtyFileSentinel {
             path: &workspace_dir.join("never-written.txt"),
-            text: "unreachable",
+            text: Some("unreachable"),
             timeout: Duration::from_mins(4),
             accept_early_exit_after: None,
             stop_after: Some(&reconnect_done),
@@ -806,6 +806,11 @@ done
 }
 
 fn seed_fake_agent(home: &Path, agent: &str) {
+    if agent == "codex" {
+        let paths = JackinPaths::resolve_with_env(home, None, None);
+        jackin_image::agent_binary::install_test_stub(&paths, jackin_core::Agent::Codex)
+            .expect("install Codex test bundle");
+    }
     let script = fake_agent_script(agent);
     let stub = home
         .join(".jackin")

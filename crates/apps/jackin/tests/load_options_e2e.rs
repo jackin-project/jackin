@@ -35,6 +35,10 @@ async fn load_options_launch() {
             .args(["--exact", "load_options_launch", "--nocapture"])
             .env(CHILD_MARKER, "1")
             .env("JACKIN_CONSTRUCT_IMAGE", image)
+            .env(
+                "JACKIN_USAGE_BROKER_BIN",
+                env!("CARGO_BIN_EXE_jackin-usage-broker"),
+            )
             .output()
             .expect("run programmatic launch with isolated image override");
         print!("{}", String::from_utf8_lossy(&output.stdout));

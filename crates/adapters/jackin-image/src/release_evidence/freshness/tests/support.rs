@@ -8,9 +8,6 @@ use serde_json::{Value, json};
 use std::sync::Mutex;
 use velnor_actions_contract::canonical_json_bytes;
 
-pub(super) const RELEASE_ID: u64 = 900;
-pub(super) const TAG_OBJECT: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-
 pub(super) struct Fixture {
     pub(super) receipt: PackageReleaseReceipt,
     pub(super) raw: Vec<u8>,
@@ -68,8 +65,8 @@ fn workflow_observations(receipt: &PackageReleaseReceipt, responses: &mut BTreeM
     let channel = receipt.channel;
     let producing_run = run(
         receipt,
-        &receipt.workflow.authority_sha,
-        (receipt.workflow.run_id, receipt.workflow.run_attempt),
+        receipt.workflow.run_id,
+        receipt.workflow.run_attempt,
         channel.workflow_path(),
         channel.event().as_str(),
         "in_progress",
@@ -89,8 +86,8 @@ fn workflow_observations(receipt: &PackageReleaseReceipt, responses: &mut BTreeM
         )),
         run(
             receipt,
-            &receipt.source.commit_sha,
-            (receipt.source.ci_run_id, receipt.source.ci_run_attempt),
+            receipt.source.ci_run_id,
+            receipt.source.ci_run_attempt,
             ".github/workflows/ci.yml",
             "push",
             "completed",
@@ -142,8 +139,6 @@ fn comparison(base: &str, status: &str, ahead_by: u64) -> Value {
         "base_commit":{"sha":base},"merge_base_commit":{"sha":base}})
 }
 
-/// Velnor 0.1.40 publishes every channel as an immutable release with an annotated
-/// tag; preview's body and tag message carry the exact signed receipt and bundle.
 fn publication_observations(
     receipt: &PackageReleaseReceipt,
     expected: &BTreeMap<String, (u64, String)>,
@@ -151,24 +146,38 @@ fn publication_observations(
     bundle: &[u8],
     responses: &mut BTreeMap<String, Value>,
 ) {
-    let preview = receipt.channel == PackageReleaseChannel::Preview;
-    let envelope = recovery_envelope(raw, bundle);
+    let channel = receipt.channel;
+    let release_id = if channel == PackageReleaseChannel::Preview {
+        901
+    } else {
+        900
+    };
     let rows: Vec<_> = expected.iter().enumerate().map(|(i,(name,(size,sha)))|
         json!({"id":i+1,"name":name,"state":"uploaded","size":size,"digest":format!("sha256:{sha}")})).collect();
+    let body = (channel == PackageReleaseChannel::Preview)
+        .then(|| json!(recovery_envelope(raw, bundle).unwrap()));
     responses.insert(
         release_route(receipt),
-        json!({"id":RELEASE_ID,"tag_name":receipt.tag,"draft":false,"prerelease":preview,
-        "immutable":true,"body":envelope}),
+        json!({"id":release_id,"tag_name":receipt.tag,
+        "draft":false,"prerelease":channel == PackageReleaseChannel::Preview,
+        "immutable":true,"body":body}),
     );
-    responses.insert(assets_route(), json!(rows));
     responses.insert(
-        route(&format!("git/tags/{TAG_OBJECT}")),
-        json!({"sha":TAG_OBJECT,"tag":receipt.tag,"message":envelope,
+        route(&format!("releases/{release_id}/assets?per_page=100&page=1")),
+        json!(rows),
+    );
+    let sha = "b".repeat(40);
+    let message = (channel == PackageReleaseChannel::Preview)
+        .then(|| recovery_envelope(raw, bundle).unwrap());
+    responses.insert(
+        route(&format!("git/tags/{sha}")),
+        json!({"sha":sha,"tag":receipt.tag,"message":message,
         "object":{"sha":receipt.source.commit_sha,"type":"commit"}}),
     );
+    let object = json!({"sha":sha,"type":"tag"});
     responses.insert(
         tag_route(receipt),
-        json!({"ref":format!("refs/tags/{}",receipt.tag),"object":{"sha":TAG_OBJECT,"type":"tag"}}),
+        json!({"ref":format!("refs/tags/{}",receipt.tag),"object":object}),
     );
 }
 
@@ -210,14 +219,24 @@ pub(super) fn route(path: &str) -> String {
 pub(super) fn release_route(receipt: &PackageReleaseReceipt) -> String {
     route(&format!("releases/tags/{}", receipt.tag))
 }
-pub(super) fn assets_route() -> String {
-    route(&format!("releases/{RELEASE_ID}/assets?per_page=100&page=1"))
+pub(super) fn release_id(receipt: &PackageReleaseReceipt) -> u64 {
+    if receipt.channel == PackageReleaseChannel::Preview {
+        901
+    } else {
+        900
+    }
 }
-pub(super) fn annotated_tag_route() -> String {
-    route(&format!("git/tags/{TAG_OBJECT}"))
+pub(super) fn assets_route(receipt: &PackageReleaseReceipt) -> String {
+    route(&format!(
+        "releases/{}/assets?per_page=100&page=1",
+        release_id(receipt)
+    ))
 }
 pub(super) fn tag_route(receipt: &PackageReleaseReceipt) -> String {
     route(&format!("git/ref/tags/{}", receipt.tag))
+}
+pub(super) fn annotated_tag_route() -> String {
+    route(&format!("git/tags/{}", "b".repeat(40)))
 }
 pub(super) fn jobs_route(receipt: &PackageReleaseReceipt) -> String {
     route(&format!(
@@ -228,13 +247,18 @@ pub(super) fn jobs_route(receipt: &PackageReleaseReceipt) -> String {
 
 fn run(
     receipt: &PackageReleaseReceipt,
-    head_sha: &str,
-    (id, attempt): (u64, u32),
+    id: u64,
+    attempt: u32,
     path: &str,
     event: &str,
     status: &str,
     conclusion: Value,
 ) -> Value {
+    let head_sha = if id == receipt.workflow.run_id {
+        &receipt.workflow.authority_sha
+    } else {
+        &receipt.source.commit_sha
+    };
     json!({"id":id,"run_attempt":attempt,"head_sha":head_sha,"head_branch":"main",
         "path":path,"event":event,"status":status,"conclusion":conclusion,
         "repository":{"id":receipt.repository.id},"head_repository":{"id":receipt.repository.id}})

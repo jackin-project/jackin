@@ -1,5 +1,7 @@
 # Automatic Homebrew preview publication
 
+**Superseded preview identity:** [Immutable preview publication and migration](immutable-preview-publication.md) records the selected `preview-<full40-source-sha>` tag, unchanged `P-preview.N+sha7` package version, signed receipt-envelope binding, and non-overwriting migration rules. Treat tag and retry recommendations below as historical where they conflict; stable release requirements remain unchanged.
+
 Research date: 2026-10-18. Status: reviewed implementation proposal; no publishing implementation has been made.
 
 Design refinement: [Native Velnor preview release and Homebrew promotion](velnor-native-preview-design.md) compares the current release APIs and proposes extending `binary_release` with a preview policy plus a separate distribution adapter. That document supersedes the illustrative sibling `binary_preview` naming below; no preserved or handwritten workflows are proposed.

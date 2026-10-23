@@ -998,6 +998,22 @@ pub fn install_test_stub(paths: &JackinPaths, agent: Agent) -> Result<()> {
     }
     std::fs::write(&stub, b"#!/bin/sh\nprintf 'stub agent binary\\n'\n")?;
     chmod_executable(&stub)?;
+    if agent == Agent::Codex {
+        install_codex_code_mode_host_test_stub(&stub)?;
+    }
+    Ok(())
+}
+
+fn install_codex_code_mode_host_test_stub(codex_stub: &Path) -> Result<()> {
+    let sibling = codex_stub.with_file_name(jackin_core::CODEX_CODE_MODE_HOST_BINARY);
+    if is_executable_file(&sibling) {
+        return Ok(());
+    }
+    std::fs::write(
+        &sibling,
+        b"#!/bin/sh\nprintf '%s\\n' 'Codex code-mode host is not implemented by this test stub' >&2\nexit 127\n",
+    )?;
+    chmod_executable(&sibling)?;
     Ok(())
 }
 
