@@ -13,13 +13,77 @@ fn atomic_state_round_trip_uses_private_permissions_and_old_or_new_envelopes() {
     let temp = tempfile::tempdir().unwrap();
     let store = FileAccountStateStore::at(temp.path().join("accounts"));
     let first = completed(1_000, "first@example.test");
+    assert!(
+        first
+            .terminal_result
+            .as_ref()
+            .unwrap()
+            .account
+            .account_capability
+            .is_none()
+    );
+    assert!(
+        first
+            .last_good
+            .as_ref()
+            .unwrap()
+            .account
+            .account_capability
+            .is_none()
+    );
     store.store(&first, 1_000).unwrap();
-    assert_eq!(store.load(&capability(), 1_000).unwrap(), Some(first));
+    let mut expected_first = first.clone();
+    let first_capability = expected_first.capability.clone();
+    for result in [
+        &mut expected_first.terminal_result,
+        &mut expected_first.last_good,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        result.account.account_capability = Some(first_capability.clone());
+    }
+    assert_eq!(
+        store.load(&capability(), 1_000).unwrap(),
+        Some(expected_first)
+    );
 
     let mut second = completed(1_001, "second@example.test");
     second.generation = 2;
+    assert!(
+        second
+            .terminal_result
+            .as_ref()
+            .unwrap()
+            .account
+            .account_capability
+            .is_none()
+    );
+    assert!(
+        second
+            .last_good
+            .as_ref()
+            .unwrap()
+            .account
+            .account_capability
+            .is_none()
+    );
     store.store(&second, 1_001).unwrap();
-    assert_eq!(store.load(&capability(), 1_001).unwrap(), Some(second));
+    let mut expected_second = second.clone();
+    let second_capability = expected_second.capability.clone();
+    for result in [
+        &mut expected_second.terminal_result,
+        &mut expected_second.last_good,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        result.account.account_capability = Some(second_capability.clone());
+    }
+    assert_eq!(
+        store.load(&capability(), 1_001).unwrap(),
+        Some(expected_second)
+    );
 
     let directory = temp.path().join("accounts");
     let file = directory.join("claude-account-123.json");
@@ -150,6 +214,66 @@ fn account_state_rejects_invalid_quota_authority_on_load_and_store_without_rewri
             path.exists(),
             "corruption must not become a missing-state success"
         );
+    }
+}
+
+#[test]
+fn account_state_rejects_conflicting_embedded_selectors_and_upgrades_legacy_none() {
+    let expected = capability();
+    let conflicting = UsageAccountCapability {
+        account_id: "different-account".to_owned(),
+        surface_id: expected.surface_id.clone(),
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let store = FileAccountStateStore::at(temp.path().join("accounts"));
+    let path = temp.path().join("accounts/claude-account-123.json");
+    let mut legacy = serde_json::to_value(completed(1_000, "legacy@example.test")).unwrap();
+    legacy["terminal_result"]["account"]
+        .as_object_mut()
+        .unwrap()
+        .remove("account_capability");
+    legacy["last_good"]["account"]
+        .as_object_mut()
+        .unwrap()
+        .remove("account_capability");
+    let legacy_bytes = serde_json::to_vec(&legacy).unwrap();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::set_permissions(path.parent().unwrap(), fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(&path, &legacy_bytes).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let loaded = store.load(&expected, 1_000).unwrap().unwrap();
+    assert_eq!(
+        loaded
+            .terminal_result
+            .as_ref()
+            .and_then(|view| view.account.account_capability.as_ref()),
+        Some(&expected)
+    );
+    assert_eq!(
+        loaded
+            .last_good
+            .as_ref()
+            .and_then(|view| view.account.account_capability.as_ref()),
+        Some(&expected)
+    );
+    assert_eq!(fs::read(&path).unwrap(), legacy_bytes);
+
+    for result_name in ["terminal_result", "last_good"] {
+        let mut conflicting_value =
+            serde_json::to_value(completed(1_000, "conflict@example.test")).unwrap();
+        conflicting_value[result_name]["account"]["account_capability"] =
+            serde_json::to_value(&conflicting).unwrap();
+        let bytes = serde_json::to_vec(&conflicting_value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        assert_eq!(
+            store.load(&expected, 1_000),
+            Err(StateStoreError::Corrupt),
+            "a conflicting selector in {result_name} must fail closed"
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
     }
 }
 
@@ -358,10 +482,12 @@ fn account_state_v3_migration_preserves_all_view_fields_and_backups_exact_preima
     }
     let mut expected = previous.clone();
     expected.schema_version = ACCOUNT_STATE_SCHEMA_VERSION;
+    let expected_capability = expected.capability.clone();
     for result in [&mut expected.terminal_result, &mut expected.last_good]
         .into_iter()
         .flatten()
     {
+        result.account.account_capability = Some(expected_capability.clone());
         for bucket in &mut result.buckets {
             bucket.used_percent = None;
             bucket.used_percent_origin = None;

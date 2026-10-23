@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::StoredAccountUsageSnapshot;
-use jackin_core::account_key_hash;
+use super::identity::{account_key_for_view, validate_identity_groups};
 use jackin_protocol::control::FocusedUsageView;
 use jackin_telemetry::ResultTelemetryExt as _;
 use jackin_usage_store_backend::{self, Connection, DbOperation, params};
@@ -14,6 +14,11 @@ pub(crate) async fn upsert_account_snapshot_rows(
     let rows = rows
         .into_iter()
         .map(|row| {
+            super::identity::validate_account_identity(
+                &row.provider,
+                &row.account_key_hash,
+                row.account_capability.as_ref(),
+            )?;
             row.quota_bucket.validate().map_err(|err| {
                 format!("validate typed quota bucket for snapshot row failed: {err}")
             })?;
@@ -23,98 +28,36 @@ pub(crate) async fn upsert_account_snapshot_rows(
             Ok((row, bucket_json))
         })
         .collect::<Result<Vec<_>, String>>()?;
+    validate_identity_groups(rows.iter().map(|(row, _)| {
+        (
+            row.provider.as_str(),
+            row.account_key_hash.as_str(),
+            row.account_capability.as_ref(),
+        )
+    }))?;
     jackin_diagnostics::incr_db_statement("begin");
     jackin_usage_store_backend::operation(DbOperation::Begin, conn.execute("BEGIN IMMEDIATE", ()))
         .await
         .map_err(|err| format!("begin telemetry snapshot transaction failed: {err}"))?;
-    for (row, bucket_json) in rows {
-        jackin_diagnostics::incr_db_statement("upsert_account_usage_snapshot");
-        if let Err(err) = jackin_usage_store_backend::operation(
-            DbOperation::Upsert,
-            conn.execute(
-            "
-            INSERT INTO account_usage_snapshots (
-                provider,
-                account_key_hash,
-                account_label,
-                source,
-                confidence,
-                window_kind,
-                used_amount,
-                used_unit,
-                limit_amount,
-                limit_unit,
-                resets_at,
-                fetched_at,
-                expires_at,
-                status,
-                last_error,
-                focused_provider,
-                plan_label,
-                used_label,
-                limit_label,
-                reset_label,
-                pace_label,
-                view_status,
-                updated_label,
-                status_bar_label,
-                quota_bucket_json
-            )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
-            ON CONFLICT(provider, account_key_hash, source, window_kind) DO UPDATE SET
-                account_label = excluded.account_label,
-                confidence = excluded.confidence,
-                resets_at = excluded.resets_at,
-                fetched_at = excluded.fetched_at,
-                expires_at = excluded.expires_at,
-                status = excluded.status,
-                last_error = excluded.last_error,
-                focused_provider = excluded.focused_provider,
-                plan_label = excluded.plan_label,
-                used_label = excluded.used_label,
-                limit_label = excluded.limit_label,
-                reset_label = excluded.reset_label,
-                pace_label = excluded.pace_label,
-                view_status = excluded.view_status,
-                updated_label = excluded.updated_label,
-                status_bar_label = excluded.status_bar_label,
-                quota_bucket_json = excluded.quota_bucket_json
-            ",
-            params![
-                row.provider,
-                row.account_key_hash,
-                row.account_label,
-                row.source,
-                row.confidence,
-                row.window_kind,
-                row.used_amount,
-                row.used_unit,
-                row.limit_amount,
-                row.limit_unit,
-                row.resets_at,
-                row.fetched_at,
-                row.expires_at,
-                row.status,
-                row.last_error,
-                row.focused_provider,
-                row.plan_label,
-                row.used_label,
-                row.limit_label,
-                row.reset_label,
-                row.pace_label,
-                row.view_status,
-                row.updated_label,
-                row.status_bar_label,
-                bucket_json,
-            ],
-            ),
+    if let Err(error) = validate_existing_identity_assignments(conn, &rows).await {
+        let rollback = jackin_usage_store_backend::operation(
+            DbOperation::Rollback,
+            conn.execute("ROLLBACK", ()),
         )
-        .await
-        {
-            let _rollback =
-                jackin_usage_store_backend::operation(DbOperation::Rollback, conn.execute("ROLLBACK", ()))
-                    .await
-                    .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError);
+        .await;
+        return match rollback {
+            Ok(_) => Err(error),
+            Err(rollback_error) => Err(format!("{error}; rollback failed: {rollback_error}")),
+        };
+    }
+    for (row, bucket_json) in rows {
+        if let Err(err) = execute_account_snapshot_row(conn, row, bucket_json).await {
+            let _rollback = jackin_usage_store_backend::operation(
+                DbOperation::Rollback,
+                conn.execute("ROLLBACK", ()),
+            )
+            .await
+            .record_telemetry_error(jackin_telemetry::schema::enums::ErrorType::DbError);
             return Err(format!("upsert telemetry account snapshot failed: {err}"));
         }
     }
@@ -151,6 +94,157 @@ pub(crate) async fn upsert_account_snapshot_rows(
         }
     }
     Ok(())
+}
+
+async fn execute_account_snapshot_row(
+    conn: &Connection,
+    row: StoredAccountUsageSnapshot,
+    bucket_json: String,
+) -> Result<u64, impl std::fmt::Display> {
+    jackin_diagnostics::incr_db_statement("upsert_account_usage_snapshot");
+    jackin_usage_store_backend::operation(
+        DbOperation::Upsert,
+        conn.execute(
+            "
+            INSERT INTO account_usage_snapshots (
+                provider,
+                account_key_hash,
+                account_label,
+                source,
+                confidence,
+                window_kind,
+                used_amount,
+                used_unit,
+                limit_amount,
+                limit_unit,
+                resets_at,
+                fetched_at,
+                expires_at,
+                status,
+                last_error,
+                focused_provider,
+                plan_label,
+                capability_account_id,
+                capability_surface_id,
+                used_label,
+                limit_label,
+                reset_label,
+                pace_label,
+                view_status,
+                updated_label,
+                status_bar_label,
+                quota_bucket_json
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+            ON CONFLICT(provider, account_key_hash, source, window_kind) DO UPDATE SET
+                account_label = excluded.account_label,
+                confidence = excluded.confidence,
+                resets_at = excluded.resets_at,
+                fetched_at = excluded.fetched_at,
+                expires_at = excluded.expires_at,
+                status = excluded.status,
+                last_error = excluded.last_error,
+                focused_provider = excluded.focused_provider,
+                plan_label = excluded.plan_label,
+                capability_account_id = excluded.capability_account_id,
+                capability_surface_id = excluded.capability_surface_id,
+                used_label = excluded.used_label,
+                limit_label = excluded.limit_label,
+                reset_label = excluded.reset_label,
+                pace_label = excluded.pace_label,
+                view_status = excluded.view_status,
+                updated_label = excluded.updated_label,
+                status_bar_label = excluded.status_bar_label,
+                quota_bucket_json = excluded.quota_bucket_json
+            ",
+            params![
+                row.provider,
+                row.account_key_hash,
+                row.account_label,
+                row.source,
+                row.confidence,
+                row.window_kind,
+                row.used_amount,
+                row.used_unit,
+                row.limit_amount,
+                row.limit_unit,
+                row.resets_at,
+                row.fetched_at,
+                row.expires_at,
+                row.status,
+                row.last_error,
+                row.focused_provider,
+                row.plan_label,
+                row.account_capability.as_ref().map(|capability| capability.account_id.as_str()),
+                row.account_capability.as_ref().map(|capability| capability.surface_id.as_str()),
+                row.used_label,
+                row.limit_label,
+                row.reset_label,
+                row.pace_label,
+                row.view_status,
+                row.updated_label,
+                row.status_bar_label,
+                bucket_json,
+            ],
+        ),
+    )
+    .await
+}
+
+async fn validate_existing_identity_assignments(
+    conn: &Connection,
+    rows: &[(StoredAccountUsageSnapshot, String)],
+) -> Result<(), String> {
+    let mut existing = Vec::new();
+    let account_keys = rows
+        .iter()
+        .map(|(row, _)| row.account_key_hash.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for account_key_hash in account_keys {
+        let mut stored = jackin_usage_store_backend::operation(
+            DbOperation::Select,
+            conn.query(
+                "SELECT provider, account_key_hash, capability_account_id,
+                        capability_surface_id
+                 FROM account_usage_snapshots WHERE account_key_hash = ?1",
+                [account_key_hash.as_str()],
+            ),
+        )
+        .await
+        .map_err(|error| format!("read snapshot identity before upsert failed: {error}"))?;
+        while let Some(row) = stored
+            .next()
+            .await
+            .map_err(|error| format!("read snapshot identity row before upsert failed: {error}"))?
+        {
+            let provider = super::row_string(&row, 0, "provider")?;
+            let account_key_hash = super::row_string(&row, 1, "account_key_hash")?;
+            let capability = super::identity::decode_account_capability(
+                &provider,
+                &account_key_hash,
+                super::row_opt_string(&row, 2, "capability_account_id")?,
+                super::row_opt_string(&row, 3, "capability_surface_id")?,
+            )?;
+            existing.push((provider, account_key_hash, capability));
+        }
+    }
+    let assignments = existing
+        .iter()
+        .map(|(provider, account_key_hash, capability)| {
+            (
+                provider.as_str(),
+                account_key_hash.as_str(),
+                capability.as_ref(),
+            )
+        })
+        .chain(rows.iter().map(|(row, _)| {
+            (
+                row.provider.as_str(),
+                row.account_key_hash.as_str(),
+                row.account_capability.as_ref(),
+            )
+        }));
+    validate_identity_groups(assignments)
 }
 
 #[cfg(test)]
@@ -193,20 +287,29 @@ async fn inject_requested_upsert_commit_failure(conn: &Connection) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccountUsageSnapshot> {
+pub(crate) fn account_snapshot_rows(
+    view: &FocusedUsageView,
+) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
     let provider = view.account.provider_label.clone();
     let account_label = view.account.account_label.clone();
-    let account_key_hash = account_key_hash(&provider, &account_label);
+    let account_key_hash = account_key_for_view(
+        &provider,
+        &account_label,
+        view.account.account_capability.as_ref(),
+    )?;
+    let account_capability = view.account.account_capability.clone();
     let source = jackin_usage_provider_core::usage_source_storage_label(view.source).to_owned();
     let confidence =
         jackin_usage_provider_core::usage_confidence_storage_label(view.confidence).to_owned();
     let fetched_at = view.fetched_at_epoch;
     let last_error = view.last_error.clone();
-    view.buckets
+    Ok(view
+        .buckets
         .iter()
         .map(|bucket| StoredAccountUsageSnapshot {
             provider: provider.clone(),
             account_key_hash: account_key_hash.clone(),
+            account_capability: account_capability.clone(),
             account_label: account_label.clone(),
             source: source.clone(),
             confidence: confidence.clone(),
@@ -233,5 +336,5 @@ pub(crate) fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccoun
             updated_label: view.updated_label.clone(),
             status_bar_label: view.status_bar_label.clone(),
         })
-        .collect()
+        .collect())
 }

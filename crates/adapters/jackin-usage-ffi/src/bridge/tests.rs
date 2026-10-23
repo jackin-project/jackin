@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::io;
+use std::process::{Child, ExitStatus, Output};
 
 use jackin_protocol::control::{
     CountQuota, CountQuotaPeriod, CountQuotaProvenance, CountQuotaUnit, MeterPercentPoints,
@@ -76,6 +78,168 @@ fn local_source_identity_kind_round_trips_in_projection_json() {
         decoded.providers[0].accounts[0].identity_kind,
         UsageIdentityKindV1::LocalSourceHandle
     );
+}
+
+#[test]
+fn broker_socket_alias_binds_reads_and_cleans_under_long_tmpdir() {
+    const CHILD_MARKER: &str = "JACKIN_FFI_ALIAS_LONG_TMPDIR_CHILD";
+    if std::env::var_os(CHILD_MARKER).is_none() {
+        let alias_root = if cfg!(target_os = "macos") {
+            std::path::Path::new("/private/tmp")
+        } else {
+            std::path::Path::new("/tmp")
+        };
+        let parent = tempfile::tempdir_in(alias_root).expect("TMPDIR fixture parent");
+        let long_tmpdir = parent.path().join(format!("tmp-{}", "t".repeat(160)));
+        std::fs::create_dir(&long_tmpdir).expect("long TMPDIR fixture");
+        let stdout_path = parent.path().join("long-tmpdir-child.stdout");
+        let stderr_path = parent.path().join("long-tmpdir-child.stderr");
+        let stdout = std::fs::File::create(&stdout_path).expect("child stdout log");
+        let stderr = std::fs::File::create(&stderr_path).expect("child stderr log");
+        let mut command =
+            std::process::Command::new(std::env::current_exe().expect("current test executable"));
+        command
+            .arg("bridge::tests::broker_socket_alias_binds_reads_and_cleans_under_long_tmpdir")
+            .arg("--exact")
+            .arg("--nocapture")
+            .env("TMPDIR", &long_tmpdir)
+            .env(CHILD_MARKER, "1")
+            .stdout(std::process::Stdio::from(stdout))
+            .stderr(std::process::Stdio::from(stderr));
+        let output = run_child_bounded(
+            &mut command,
+            &stdout_path,
+            &stderr_path,
+            Duration::from_secs(30),
+        )
+        .unwrap_or_else(|error| panic!("isolated long-TMPDIR regression failed: {error}"));
+        assert!(
+            output.status.success(),
+            "isolated long-TMPDIR regression failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+
+    use jackin_protocol::usage_broker::{UsageAccountCapability, UsageCoordinationErrorKind};
+    use jackin_usage::coordinator::{ProviderProbeOutcome, UsageProviderExecutor};
+    use jackin_usage::host::{UsageBrokerConfig, ensure_usage_broker_with_executor};
+
+    struct UnusedExecutor;
+
+    impl UsageProviderExecutor for UnusedExecutor {
+        fn probe(
+            &self,
+            _capability: &UsageAccountCapability,
+            _generation: u64,
+        ) -> ProviderProbeOutcome {
+            ProviderProbeOutcome::Failure {
+                kind: UsageCoordinationErrorKind::Unavailable,
+                message: "long-TMPDIR fixture does not run providers".to_owned(),
+                retry_at_epoch: None,
+            }
+        }
+    }
+
+    let injected_tmpdir = std::env::var_os("TMPDIR").expect("isolated TMPDIR");
+    assert!(injected_tmpdir.as_encoded_bytes().len() >= 120);
+    let data_dir = tempfile::tempdir().expect("tempdir under injected TMPDIR");
+    let full_socket = data_dir.path().join("usage-broker/run/usage-broker.sock");
+    let socket_limit = if cfg!(target_os = "macos") { 104 } else { 108 };
+    assert!(full_socket.as_os_str().as_encoded_bytes().len() >= socket_limit);
+
+    let mut config = UsageBrokerConfig::for_data_dir(data_dir.path().to_owned());
+    config.idle_exit = Duration::from_secs(2);
+    let client = ensure_usage_broker_with_executor(config, Arc::new(UnusedExecutor))
+        .expect("broker must bind through the fixed short alias");
+    client
+        .current_projection()
+        .expect("FFI broker client must connect and read projection");
+
+    let leader_path = data_dir.path().join("usage-broker/run/leader.pid");
+    drop(client);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while leader_path.exists() && Instant::now() < deadline {
+        std::thread::park_timeout(Duration::from_millis(20));
+    }
+    assert!(
+        !leader_path.exists(),
+        "broker cleanup must remove lease before fixture exit"
+    );
+}
+
+fn run_child_bounded(
+    command: &mut std::process::Command,
+    stdout_path: &std::path::Path,
+    stderr_path: &std::path::Path,
+    timeout: Duration,
+) -> Result<Output, String> {
+    let child = command
+        .spawn()
+        .map_err(|error| format!("spawn failed: {error}"))?;
+    let mut child = ChildReaper::new(child);
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                child.mark_reaped();
+                break status;
+            }
+            Ok(None) if Instant::now() >= deadline => {
+                child.terminate_and_reap();
+                return Err(format!("child exceeded {} seconds", timeout.as_secs()));
+            }
+            Ok(None) => std::thread::park_timeout(Duration::from_millis(20)),
+            Err(error) => {
+                child.terminate_and_reap();
+                return Err(format!("child status failed: {error}"));
+            }
+        }
+    };
+    let stdout =
+        std::fs::read(stdout_path).map_err(|error| format!("read child stdout: {error}"))?;
+    let stderr =
+        std::fs::read(stderr_path).map_err(|error| format!("read child stderr: {error}"))?;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+struct ChildReaper {
+    child: Option<Child>,
+}
+
+impl ChildReaper {
+    fn new(child: Child) -> Self {
+        Self { child: Some(child) }
+    }
+
+    fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+        self.child
+            .as_mut()
+            .expect("child remains until reaped")
+            .try_wait()
+    }
+
+    fn mark_reaped(&mut self) {
+        self.child.take();
+    }
+
+    fn terminate_and_reap(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            drop(child.kill());
+            drop(child.wait());
+        }
+    }
+}
+
+impl Drop for ChildReaper {
+    fn drop(&mut self) {
+        self.terminate_and_reap();
+    }
 }
 
 fn open_bridge(dir: &std::path::Path) -> UsageMenuBarBridge {

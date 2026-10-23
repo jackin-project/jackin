@@ -24,7 +24,10 @@ fn usage_broker_recovers_stale_guard_with_private_permissions() {
     assert!(connect_probe(&client));
     assert_eq!(fs::metadata(run_dir).unwrap().mode() & 0o777, 0o700);
     assert_eq!(
-        fs::metadata(config.socket_path()).unwrap().mode() & 0o777,
+        fs::metadata(config.prepare_socket_path().unwrap())
+            .unwrap()
+            .mode()
+            & 0o777,
         0o600
     );
     assert_eq!(fs::metadata(leader).unwrap().mode() & 0o777, 0o600);
@@ -49,7 +52,7 @@ fn broker_startup_failure_cleans_lease_and_socket_before_returning() {
 
     let run_dir = temp.path().join(BROKER_DIR).join(BROKER_RUN_DIR);
     assert!(!run_dir.join(BROKER_LEADER).exists());
-    assert!(!config.socket_path().exists());
+    assert!(!config.prepare_socket_path().unwrap().exists());
 }
 
 #[test]
@@ -389,7 +392,7 @@ fn saturated_join_waiters_do_not_block_refresh_or_current() {
     started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
     let mut waiters = Vec::new();
     for _ in 0..BROKER_CONNECTION_WORKERS * 2 {
-        let mut stream = UnixStream::connect(config.socket_path()).unwrap();
+        let mut stream = UnixStream::connect(config.prepare_socket_path().unwrap()).unwrap();
         let request = UsageBrokerRequest {
             protocol_version: USAGE_BROKER_PROTOCOL_VERSION.to_owned(),
             build_id: config.build_id.clone(),

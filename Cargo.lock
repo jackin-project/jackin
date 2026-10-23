@@ -2768,6 +2768,8 @@ dependencies = [
  "jackin-usage-discovery",
  "jackin-usage-host-credentials",
  "jackin-usage-provider-claude",
+ "jackin-usage-provider-core",
+ "jackin-usage-store-backend",
  "jackin-workflow",
  "jackin-workflow-spec",
  "nix 0.31.3",
@@ -8771,8 +8773,8 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.43"
-source = "git+https://github.com/tailrocks/velnor-new?rev=652daabd0a4c7c54c9e98f989b38eb52fee723c0#652daabd0a4c7c54c9e98f989b38eb52fee723c0"
+version = "0.1.45"
+source = "git+https://github.com/tailrocks/velnor-new?rev=308a6f47c68dbb149b6de4fa469dae6c65de0cbf#308a6f47c68dbb149b6de4fa469dae6c65de0cbf"
 dependencies = [
  "blake3",
  "serde",

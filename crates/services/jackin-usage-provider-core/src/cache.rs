@@ -75,6 +75,7 @@ impl UsageCache {
         if view.focused_provider.is_none() {
             view.focused_provider = focused_provider.map(str::to_owned);
         }
+        view.account.account_capability = Some(capability.clone());
         let cache_key = usage_cache_key_for_broker_account(agent, focused_provider, capability);
         self.snapshots.insert(cache_key, CachedUsage { view });
     }
@@ -114,12 +115,17 @@ impl UsageCache {
         if !capability_matches_surface(agent, focused_provider, capability) {
             return Some("usage unavailable".to_owned());
         }
-        Some(
+        let Some(cached) =
             cached_usage_for_capability(&self.snapshots, agent, focused_provider, capability)
-                .map_or_else(
-                    || "refreshing".to_owned(),
-                    |cached| cached.view.status_bar_label.clone(),
-                ),
+        else {
+            return Some("refreshing".to_owned());
+        };
+        Some(
+            if cached.view.account.account_capability.as_ref() == Some(capability) {
+                cached.view.status_bar_label.clone()
+            } else {
+                "refreshing".to_owned()
+            },
         )
     }
 
@@ -197,9 +203,12 @@ impl UsageCache {
         focused_provider: Option<&str>,
         capability: &jackin_protocol::usage_broker::UsageAccountCapability,
     ) -> Option<FocusedUsageView> {
-        let mut view =
-            cached_usage_for_capability(&self.snapshots, agent, focused_provider, capability)
-                .map(|cached| cached.view.clone())?;
+        let cached =
+            cached_usage_for_capability(&self.snapshots, agent, focused_provider, capability)?;
+        if cached.view.account.account_capability.as_ref() != Some(capability) {
+            return None;
+        }
+        let mut view = cached.view.clone();
         refresh_cached_updated_label(&mut view, now_epoch());
         if view.focused_agent.is_none() {
             view.focused_agent = Some(agent.to_owned());

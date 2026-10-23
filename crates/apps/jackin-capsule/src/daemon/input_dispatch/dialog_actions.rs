@@ -194,24 +194,43 @@ impl Multiplexer {
         &self,
         account_id: &str,
     ) -> Option<crate::usage::UsageRefreshTarget> {
-        let broker_account_id = self
+        let capability = self
             .usage
             .usage_cache
-            .broker_account_id_for_tab_id(account_id)?;
-        let session = self.session_supervisor.sessions.values().find(|session| {
-            session
-                .usage_capability
-                .as_ref()
-                .is_some_and(|capability| capability.account_id == broker_account_id)
-        })?;
-        Some(crate::usage::UsageRefreshTarget {
-            agent: session.agent.clone()?,
-            provider: session
-                .provider
-                .as_ref()
-                .map(|provider| provider.label.clone()),
-            capability: session.usage_capability.clone()?,
-        })
+            .broker_capability_for_tab_id(account_id)?;
+        self.session_supervisor
+            .sessions
+            .values()
+            .find_map(|session| {
+                if session.usage_capability.as_ref() != Some(&capability) {
+                    return None;
+                }
+                let agent = session.agent.as_deref()?;
+                if self
+                    .launch_env
+                    .launch_config
+                    .usage_capability_for_instance(agent)
+                    != Some(&capability)
+                {
+                    return None;
+                }
+                let provider = session
+                    .provider
+                    .as_ref()
+                    .map(|provider| provider.label.clone());
+                if !jackin_usage_provider_core::capability_matches_surface(
+                    agent,
+                    provider.as_deref(),
+                    &capability,
+                ) {
+                    return None;
+                }
+                Some(crate::usage::UsageRefreshTarget {
+                    agent: agent.to_owned(),
+                    provider,
+                    capability: capability.clone(),
+                })
+            })
     }
 }
 

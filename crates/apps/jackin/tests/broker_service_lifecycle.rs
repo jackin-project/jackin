@@ -2,16 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
+use anyhow::Context as _;
 use jackin_protocol::usage_broker::USAGE_BROKER_PROTOCOL_VERSION;
 use jackin_protocol::usage_monitor::{
     MonitorConfig, MonitorDispatchReadiness, MonitorOperation, MonitorProvider, MonitorPurpose,
     MonitorReply, MonitorScope, USAGE_MONITOR_SCHEMA_VERSION,
 };
 use jackin_usage::host::{UsageBrokerConfig, UsageDiscoveryScope, ensure_usage_monitor_process};
+use jackin_usage_broker::short_socket_alias;
 
 #[test]
 fn broker_service_lifecycle() {
@@ -23,7 +25,7 @@ fn broker_service_lifecycle() {
     fs::create_dir_all(&root).expect("workspace test state");
     let data_dir = root.join("data");
     let cleanup = FixtureBrokerCleanup(data_dir.clone());
-    let mut config = UsageBrokerConfig::for_data_dir(data_dir);
+    let mut config = UsageBrokerConfig::for_data_dir(data_dir.clone());
     config.service_executable = Some(PathBuf::from(env!("CARGO_BIN_EXE_jackin-usage-broker")));
     let scope = UsageDiscoveryScope::HostDesktop {
         config_root: root.join("config"),
@@ -115,7 +117,9 @@ fn broker_service_lifecycle() {
         "the local-only service publishes an empty canonical projection"
     );
     assert!(
-        client_socket(&client).exists(),
+        fixture_socket_path(&data_dir)
+            .expect("resolve default fixture socket endpoint")
+            .exists(),
         "local-only service remains available after activators return"
     );
     drop(client);
@@ -123,9 +127,56 @@ fn broker_service_lifecycle() {
     let _ignored = fs::remove_dir_all(&root);
 }
 
-fn client_socket(client: &jackin_usage::host::UsageBrokerClient) -> PathBuf {
-    let _ = client;
-    workspace_state_dir().join("data/usage-broker/run/usage-broker.sock")
+fn fixture_socket_path(data_dir: &Path) -> anyhow::Result<PathBuf> {
+    let canonical_data_dir = fs::canonicalize(data_dir)
+        .with_context(|| format!("canonicalize fixture data directory {}", data_dir.display()))?;
+    let full = canonical_data_dir.join("usage-broker/run/usage-broker.sock");
+    let alias = short_socket_alias(&full).map_err(|error| {
+        anyhow::anyhow!(
+            "default fixture socket alias failed ({:?}): {}",
+            error.kind,
+            error.message
+        )
+    })?;
+    Ok(alias.unwrap_or(full))
+}
+
+#[test]
+fn fixture_socket_path_uses_the_canonical_short_or_default_alias_endpoint() {
+    let short_root = tempfile::Builder::new()
+        .prefix("s")
+        .tempdir_in("/tmp")
+        .expect("short fixture root");
+    let short_data_dir = short_root.path().join("data");
+    fs::create_dir_all(&short_data_dir).expect("short data directory");
+    let short_canonical = fs::canonicalize(&short_data_dir).expect("canonical short directory");
+    let short_full = short_canonical.join("usage-broker/run/usage-broker.sock");
+    assert_eq!(short_socket_alias(&short_full).expect("short path"), None);
+    assert_eq!(
+        fixture_socket_path(&short_data_dir).expect("resolve short fixture socket endpoint"),
+        short_full
+    );
+
+    let long_root = tempfile::Builder::new()
+        .prefix("l")
+        .tempdir_in("/tmp")
+        .expect("long fixture root");
+    let long_data_dir = long_root
+        .path()
+        .join("a".repeat(55))
+        .join("b".repeat(55))
+        .join("data");
+    fs::create_dir_all(&long_data_dir).expect("long data directory");
+    let long_canonical = fs::canonicalize(&long_data_dir).expect("canonical long directory");
+    let long_full = long_canonical.join("usage-broker/run/usage-broker.sock");
+    let expected_alias = short_socket_alias(&long_full)
+        .expect("long default alias")
+        .expect("long fixture needs the default alias");
+    assert_ne!(expected_alias, long_full);
+    assert_eq!(
+        fixture_socket_path(&long_data_dir).expect("resolve long fixture socket endpoint"),
+        expected_alias
+    );
 }
 
 #[cfg(unix)]
@@ -146,8 +197,12 @@ fn broker_detaches_from_activating_session() {
     let cleanup = FixtureBrokerCleanup(data_dir.clone());
     let client =
         ensure_usage_monitor_process(config.clone(), &scope).expect("local-only broker starts");
-    let socket = data_dir.join("usage-broker/run/usage-broker.sock");
-    assert!(socket.exists(), "broker serves its socket");
+    assert!(
+        fixture_socket_path(&data_dir)
+            .expect("resolve detached broker socket endpoint")
+            .exists(),
+        "broker serves its socket"
+    );
 
     let pid = fixture_broker_pid(&cleanup.0).expect("fixture broker pid");
 
@@ -189,7 +244,7 @@ impl Drop for FixtureBrokerCleanup {
     }
 }
 
-fn fixture_broker_pid(data_dir: &std::path::Path) -> Option<i32> {
+fn fixture_broker_pid(data_dir: &Path) -> Option<i32> {
     let lease_bytes = fs::read(data_dir.join("usage-broker/run/leader.pid")).ok()?;
     let lease: serde_json::Value = serde_json::from_slice(&lease_bytes).ok()?;
     lease

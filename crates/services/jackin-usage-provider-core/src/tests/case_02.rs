@@ -4,35 +4,49 @@
 use super::*;
 
 #[test]
-fn broker_account_id_for_tab_id_recovers_broker_key() {
+fn broker_capability_for_tab_id_resolves_the_exact_full_tuple() {
     use jackin_protocol::usage_broker::UsageAccountCapability;
 
     let mut cache = UsageCache::default();
     let capability_a = UsageAccountCapability {
-        account_id: "broker-claude-a".to_owned(),
+        account_id: "shared-account".to_owned(),
         surface_id: "claude".to_owned(),
+    };
+    let capability_b = UsageAccountCapability {
+        account_id: "shared-account".to_owned(),
+        surface_id: "codex".to_owned(),
     };
     cache.insert_snapshot_for_capability_for_test(
         "claude",
         Some("Anthropic"),
         &capability_a,
-        account_snapshot_view("Anthropic", "a@example.com", Some("Max"), 100),
+        account_snapshot_view("Anthropic", "shared@example.com", Some("Max"), 100),
     );
-    cache.insert_snapshot_for_test(
+    cache.insert_snapshot_for_capability_for_test(
         "codex",
         Some("OpenAI"),
-        account_snapshot_view("OpenAI", "codex@example.com", Some("Pro 20x"), 150),
+        &capability_b,
+        account_snapshot_view("OpenAI", "shared@example.com", Some("Pro 20x"), 150),
     );
 
     assert_eq!(
-        cache.broker_account_id_for_tab_id(&usage_account_tab_id("Anthropic", "a@example.com")),
-        Some("broker-claude-a".to_owned())
+        cache.broker_capability_for_tab_id(&capability_a.opaque_identity_key()),
+        Some(capability_a.clone())
     );
     assert_eq!(
-        cache.broker_account_id_for_tab_id(&usage_account_tab_id("OpenAI", "codex@example.com")),
+        cache.broker_capability_for_tab_id(&capability_b.opaque_identity_key()),
+        Some(capability_b)
+    );
+    assert_eq!(
+        cache
+            .broker_capability_for_tab_id(&usage_account_tab_id("Anthropic", "shared@example.com")),
+        None,
+        "legacy label hashes remain display-only and cannot recover a broker selector"
+    );
+    assert_eq!(
+        cache.broker_capability_for_tab_id("capability-v1:sha256:unknown"),
         None
     );
-    assert_eq!(cache.broker_account_id_for_tab_id("sha256:unknown"), None);
 }
 
 #[test]

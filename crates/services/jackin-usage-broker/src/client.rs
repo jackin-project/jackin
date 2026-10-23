@@ -33,6 +33,7 @@ pub struct UsageBrokerClient {
     pub(crate) socket_path: PathBuf,
     pub(crate) build_id: String,
     pub(crate) host_data_dir: Option<PathBuf>,
+    initialization_error: Option<UsageCoordinationError>,
     pub(crate) subscriptions: Arc<Mutex<BTreeMap<UsageAccountCapability, u64>>>,
 }
 
@@ -47,6 +48,7 @@ impl Clone for UsageBrokerClient {
             socket_path: self.socket_path.clone(),
             build_id: self.build_id.clone(),
             host_data_dir: self.host_data_dir.clone(),
+            initialization_error: self.initialization_error.clone(),
             subscriptions: Arc::new(Mutex::new(subscriptions)),
         }
     }
@@ -59,6 +61,7 @@ impl UsageBrokerClient {
             socket_path,
             build_id,
             host_data_dir: None,
+            initialization_error: None,
             subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
@@ -67,6 +70,21 @@ impl UsageBrokerClient {
         let mut client = Self::at(socket_path, build_id);
         client.host_data_dir = Some(data_dir);
         client
+    }
+
+    pub(crate) fn at_host_with_initialization_error(
+        socket_path: PathBuf,
+        data_dir: PathBuf,
+        build_id: String,
+        error: UsageCoordinationError,
+    ) -> Self {
+        let mut client = Self::at_host(socket_path, data_dir, build_id);
+        client.initialization_error = Some(error);
+        client
+    }
+
+    pub(crate) fn initialization_result(&self) -> Result<(), UsageCoordinationError> {
+        self.initialization_error.clone().map_or(Ok(()), Err)
     }
 
     #[must_use]
@@ -355,6 +373,7 @@ impl UsageBrokerClient {
     }
 
     fn validate_socket_path(&self) -> Result<(), UsageCoordinationError> {
+        self.initialization_result()?;
         if self
             .socket_path
             .components()

@@ -11,6 +11,14 @@ pub use local_store::{
     MigrationReceipt, PreopenStatus, StoreError, StoreOperationGuard, acquire_store_operation,
 };
 
+mod fixtures;
+/// Connect to isolated synthetic database fixtures.
+///
+/// This constructor is available only to backend tests and dependents that explicitly enable the
+/// `test-support` feature. Its connections are for disposable fixtures, not managed stores.
+#[cfg(any(test, feature = "test-support"))]
+pub use fixtures::connect_without_rowid_fixture;
+
 pub async fn operation<T, E>(
     kind: DbOperation,
     future: impl Future<Output = Result<T, E>>,
