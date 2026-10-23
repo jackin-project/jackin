@@ -22,6 +22,9 @@ impl UsageCoordinator {
         })
     }
 
+    /// Earliest periodic due time among caller-selected capabilities. With an
+    /// installed catalog, selected capabilities pass through catalog admission; omitted
+    /// capabilities do not set this scheduler deadline.
     #[must_use]
     pub fn next_due_epoch_for_capabilities(
         &self,
@@ -52,6 +55,10 @@ impl UsageCoordinator {
         self.poll_due_filtered(now_epoch, None)
     }
 
+    /// Poll due accounts in the deduplicated caller-selected capability set. Empty
+    /// selections do no work, and omitted accounts are untouched by this call. Selected
+    /// accounts use the same catalog admission, single-flight refresh, and shared cooldown
+    /// path as `poll_due`.
     pub fn poll_due_for_capabilities(
         &self,
         capabilities: impl IntoIterator<Item = UsageAccountCapability>,
