@@ -7,6 +7,39 @@ use nix::sys::signal::{SigSet, Signal};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+use std::sync::{Arc, OnceLock};
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+use std::time::Instant;
+
 #[cfg(any(
     all(target_os = "linux", not(target_env = "uclibc")),
     target_os = "macos"
@@ -28,8 +61,386 @@ const SELECTIVE_PASS_BUDGET: usize = 256;
 const SELECTIVE_EINTR_BUDGET: usize = 16;
 const REAPER_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_millis(100);
 
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+pub(crate) const REAPER_TEST_EVENT_CAPACITY: usize = 256;
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReaperTestWaitStatus {
+    Exited(i32),
+    Signaled(i32),
+    StillAlive,
+    Other,
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReaperTestEventKind {
+    SigwaitSucceeded {
+        signal: i32,
+    },
+    PeekEintrInjected {
+        ordinal: usize,
+    },
+    Selected {
+        pid: i32,
+        managed: bool,
+    },
+    TargetedWaitResult {
+        pid: i32,
+        status: ReaperTestWaitStatus,
+    },
+    TargetedWaitError {
+        pid: i32,
+        errno: i32,
+    },
+    Reaped {
+        pid: i32,
+    },
+    PassDisposition {
+        failure_errno: Option<i32>,
+        requeue: bool,
+    },
+    BackoffStarted,
+    BackoffCompleted,
+    WakeAttempt {
+        process_pid: i32,
+        signal: i32,
+        succeeded: bool,
+        errno: Option<i32>,
+    },
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ReaperTestEvent {
+    pub(crate) elapsed: std::time::Duration,
+    pub(crate) kind: ReaperTestEventKind,
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+struct ReaperTestState {
+    started: Instant,
+    events: SyncSender<ReaperTestEvent>,
+    overflow: Arc<AtomicBool>,
+    injection_total: usize,
+    injection_remaining: AtomicUsize,
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+static REAPER_TEST_STATE: OnceLock<ReaperTestState> = OnceLock::new();
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+const REAPER_TEST_DIAGNOSTIC_UNRECORDED: i32 = i32::MIN;
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+struct ReaperTestDiagnosticState {
+    thread_entered: AtomicBool,
+    thread_sigchld_blocked: AtomicBool,
+    thread_mask_error: AtomicI32,
+    sigwait_entries: AtomicUsize,
+    sigwait_successes: AtomicUsize,
+    sigwait_errors: AtomicUsize,
+    last_sigwait_error: AtomicI32,
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+static REAPER_TEST_DIAGNOSTIC: ReaperTestDiagnosticState = ReaperTestDiagnosticState {
+    thread_entered: AtomicBool::new(false),
+    thread_sigchld_blocked: AtomicBool::new(false),
+    thread_mask_error: AtomicI32::new(REAPER_TEST_DIAGNOSTIC_UNRECORDED),
+    sigwait_entries: AtomicUsize::new(0),
+    sigwait_successes: AtomicUsize::new(0),
+    sigwait_errors: AtomicUsize::new(0),
+    last_sigwait_error: AtomicI32::new(REAPER_TEST_DIAGNOSTIC_UNRECORDED),
+};
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ReaperTestDiagnosticSnapshot {
+    pub(crate) thread_entered: bool,
+    pub(crate) thread_sigchld_blocked: Option<bool>,
+    pub(crate) thread_mask_error: Option<i32>,
+    pub(crate) sigwait_entries: usize,
+    pub(crate) sigwait_successes: usize,
+    pub(crate) sigwait_errors: usize,
+    pub(crate) last_sigwait_error: Option<i32>,
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+pub(crate) fn reaper_test_diagnostic_snapshot() -> ReaperTestDiagnosticSnapshot {
+    let thread_entered = REAPER_TEST_DIAGNOSTIC
+        .thread_entered
+        .load(Ordering::Acquire);
+    let thread_mask_error = REAPER_TEST_DIAGNOSTIC
+        .thread_mask_error
+        .load(Ordering::Relaxed);
+    let thread_mask_error =
+        (thread_mask_error != REAPER_TEST_DIAGNOSTIC_UNRECORDED).then_some(thread_mask_error);
+    let sigwait_entries = REAPER_TEST_DIAGNOSTIC
+        .sigwait_entries
+        .load(Ordering::Acquire);
+    let sigwait_successes = REAPER_TEST_DIAGNOSTIC
+        .sigwait_successes
+        .load(Ordering::Acquire);
+    let sigwait_errors = REAPER_TEST_DIAGNOSTIC
+        .sigwait_errors
+        .load(Ordering::Acquire);
+    let last_sigwait_error = REAPER_TEST_DIAGNOSTIC
+        .last_sigwait_error
+        .load(Ordering::Relaxed);
+    let last_sigwait_error =
+        (last_sigwait_error != REAPER_TEST_DIAGNOSTIC_UNRECORDED).then_some(last_sigwait_error);
+
+    ReaperTestDiagnosticSnapshot {
+        thread_entered,
+        thread_sigchld_blocked: (thread_entered && thread_mask_error.is_none()).then(|| {
+            REAPER_TEST_DIAGNOSTIC
+                .thread_sigchld_blocked
+                .load(Ordering::Relaxed)
+        }),
+        thread_mask_error,
+        sigwait_entries,
+        sigwait_successes,
+        sigwait_errors,
+        last_sigwait_error,
+    }
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+fn record_reaper_test_thread_entry() {
+    match SigSet::thread_get_mask() {
+        Ok(mask) => REAPER_TEST_DIAGNOSTIC
+            .thread_sigchld_blocked
+            .store(mask.contains(Signal::SIGCHLD), Ordering::Relaxed),
+        Err(error) => REAPER_TEST_DIAGNOSTIC
+            .thread_mask_error
+            .store(error as i32, Ordering::Relaxed),
+    }
+    REAPER_TEST_DIAGNOSTIC
+        .thread_entered
+        .store(true, Ordering::Release);
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+fn record_reaper_test_sigwait_error(error: nix::errno::Errno) {
+    REAPER_TEST_DIAGNOSTIC
+        .last_sigwait_error
+        .store(error as i32, Ordering::Relaxed);
+    REAPER_TEST_DIAGNOSTIC
+        .sigwait_errors
+        .fetch_add(1, Ordering::Release);
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+pub(crate) struct ReaperTestCapture {
+    receiver: Receiver<ReaperTestEvent>,
+    overflow: Arc<AtomicBool>,
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+impl ReaperTestCapture {
+    pub(crate) fn recv_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<ReaperTestEvent, std::sync::mpsc::RecvTimeoutError> {
+        self.receiver.recv_timeout(timeout)
+    }
+
+    pub(crate) fn try_recv(&self) -> Result<ReaperTestEvent, std::sync::mpsc::TryRecvError> {
+        self.receiver.try_recv()
+    }
+
+    pub(crate) fn overflowed(&self) -> bool {
+        self.overflow.load(Ordering::Acquire)
+    }
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+pub(crate) fn arm_reaper_test_capture(injected_peek_eintr: usize) -> ReaperTestCapture {
+    assert!(
+        injected_peek_eintr == 0 || injected_peek_eintr == SELECTIVE_EINTR_BUDGET + 1,
+        "isolated fixtures may arm only zero or one finite exhausted EINTR sequence"
+    );
+    let (events, receiver) = sync_channel(REAPER_TEST_EVENT_CAPACITY);
+    let overflow = Arc::new(AtomicBool::new(false));
+    let state = ReaperTestState {
+        started: Instant::now(),
+        events,
+        overflow: Arc::clone(&overflow),
+        injection_total: injected_peek_eintr,
+        injection_remaining: AtomicUsize::new(injected_peek_eintr),
+    };
+    assert!(
+        REAPER_TEST_STATE.set(state).is_ok(),
+        "one isolated fixture capture is allowed per worker process"
+    );
+    ReaperTestCapture { receiver, overflow }
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+fn record_reaper_test_event(kind: ReaperTestEventKind) {
+    let Some(state) = REAPER_TEST_STATE.get() else {
+        return;
+    };
+    let event = ReaperTestEvent {
+        elapsed: state.started.elapsed(),
+        kind,
+    };
+    if state.events.try_send(event).is_err() {
+        state.overflow.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "linux", not(target_env = "uclibc")),
+        target_os = "macos"
+    )
+))]
+fn injected_test_peek_eintr() -> Option<usize> {
+    let state = REAPER_TEST_STATE.get()?;
+    let mut remaining = state.injection_remaining.load(Ordering::Acquire);
+    loop {
+        if remaining == 0 {
+            return None;
+        }
+        match state.injection_remaining.compare_exchange_weak(
+            remaining,
+            remaining - 1,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                let ordinal = state.injection_total - remaining + 1;
+                record_reaper_test_event(ReaperTestEventKind::PeekEintrInjected { ordinal });
+                return Some(ordinal);
+            }
+            Err(current) => remaining = current,
+        }
+    }
+}
+
 fn wake_reaper() {
-    if nix::sys::signal::kill(Pid::this(), Signal::SIGCHLD).is_err() {
+    let process_pid = Pid::this();
+    let result = nix::sys::signal::kill(process_pid, Signal::SIGCHLD);
+    #[cfg(all(
+        test,
+        any(
+            all(target_os = "linux", not(target_env = "uclibc")),
+            target_os = "macos"
+        )
+    ))]
+    record_reaper_test_event(ReaperTestEventKind::WakeAttempt {
+        process_pid: process_pid.as_raw(),
+        signal: Signal::SIGCHLD as i32,
+        succeeded: result.is_ok(),
+        errno: result.as_ref().err().map(|error| *error as i32),
+    });
+    if result.is_err() {
         record_io_error();
     }
 }
@@ -51,16 +462,81 @@ pub fn install_sigchld_reaper() {
     let open =
         jackin_telemetry::stream::phase(jackin_telemetry::schema::enums::StreamOperation::Open);
     let reaper = jackin_telemetry::spawn::thread_stream_named("zombie-reaper".into(), move || {
+        #[cfg(all(
+            test,
+            any(
+                all(target_os = "linux", not(target_env = "uclibc")),
+                target_os = "macos"
+            )
+        ))]
+        record_reaper_test_thread_entry();
         let mut sigset = SigSet::empty();
         sigset.add(Signal::SIGCHLD);
         loop {
+            #[cfg(all(
+                test,
+                any(
+                    all(target_os = "linux", not(target_env = "uclibc")),
+                    target_os = "macos"
+                )
+            ))]
+            REAPER_TEST_DIAGNOSTIC
+                .sigwait_entries
+                .fetch_add(1, Ordering::Relaxed);
             match sigset.wait() {
-                Ok(_) => reap_zombies(),
+                Ok(signal) => {
+                    #[cfg(all(
+                        test,
+                        any(
+                            all(target_os = "linux", not(target_env = "uclibc")),
+                            target_os = "macos"
+                        )
+                    ))]
+                    REAPER_TEST_DIAGNOSTIC
+                        .sigwait_successes
+                        .fetch_add(1, Ordering::Relaxed);
+                    #[cfg(all(
+                        test,
+                        any(
+                            all(target_os = "linux", not(target_env = "uclibc")),
+                            target_os = "macos"
+                        )
+                    ))]
+                    record_reaper_test_event(ReaperTestEventKind::SigwaitSucceeded {
+                        signal: signal as i32,
+                    });
+                    let _ = signal;
+                    reap_zombies();
+                }
                 Err(nix::errno::Errno::EINTR) => {
+                    #[cfg(all(
+                        test,
+                        any(
+                            all(target_os = "linux", not(target_env = "uclibc")),
+                            target_os = "macos"
+                        )
+                    ))]
+                    record_reaper_test_sigwait_error(nix::errno::Errno::EINTR);
                     record_io_error();
                     let _retry = jackin_telemetry::record_retry_scheduled();
                 }
-                Err(_error) => {
+                Err(error) => {
+                    #[cfg(all(
+                        test,
+                        any(
+                            all(target_os = "linux", not(target_env = "uclibc")),
+                            target_os = "macos"
+                        )
+                    ))]
+                    record_reaper_test_sigwait_error(error);
+                    #[cfg(not(all(
+                        test,
+                        any(
+                            all(target_os = "linux", not(target_env = "uclibc")),
+                            target_os = "macos"
+                        )
+                    )))]
+                    let _ = error;
                     record_io_error();
                     let _retry = jackin_telemetry::record_retry_scheduled();
                     backoff_reaper_retry();
@@ -123,6 +599,11 @@ fn reap_zombies_selective() {
     let pass = jackin_process::coordinate_children(|owned_children| {
         run_selective_pass(owned_children, &mut observer, &mut SystemReaperWaitBackend)
     });
+    #[cfg(test)]
+    record_reaper_test_event(ReaperTestEventKind::PassDisposition {
+        failure_errno: pass.failure.map(|error| error as i32),
+        requeue: pass.requeue,
+    });
     let poisoned = jackin_process::take_registry_poisoned();
     if pass.failure.is_some() {
         record_io_error();
@@ -166,11 +647,34 @@ struct SystemReaperWaitBackend;
 ))]
 impl ReaperWaitBackend for SystemReaperWaitBackend {
     fn peek(&mut self) -> nix::Result<Option<Pid>> {
+        #[cfg(test)]
+        if injected_test_peek_eintr().is_some() {
+            return Err(nix::errno::Errno::EINTR);
+        }
         peek_exited_child()
     }
 
     fn reap(&mut self, pid: Pid) -> nix::Result<WaitStatus> {
-        waitpid(pid, Some(WaitPidFlag::WNOHANG))
+        let result = waitpid(pid, Some(WaitPidFlag::WNOHANG));
+        #[cfg(test)]
+        match &result {
+            Ok(status) => record_reaper_test_event(ReaperTestEventKind::TargetedWaitResult {
+                pid: pid.as_raw(),
+                status: match status {
+                    WaitStatus::Exited(_, code) => ReaperTestWaitStatus::Exited(*code),
+                    WaitStatus::Signaled(_, signal, _) => {
+                        ReaperTestWaitStatus::Signaled(*signal as i32)
+                    }
+                    WaitStatus::StillAlive => ReaperTestWaitStatus::StillAlive,
+                    _ => ReaperTestWaitStatus::Other,
+                },
+            }),
+            Err(error) => record_reaper_test_event(ReaperTestEventKind::TargetedWaitError {
+                pid: pid.as_raw(),
+                errno: *error as i32,
+            }),
+        }
+        result
     }
 }
 
@@ -214,7 +718,24 @@ struct NoopReaperObserver;
     all(target_os = "linux", not(target_env = "uclibc")),
     target_os = "macos"
 ))]
-impl ReaperObserver for NoopReaperObserver {}
+impl ReaperObserver for NoopReaperObserver {
+    fn selected(&mut self, pid: Pid, managed: bool) {
+        #[cfg(test)]
+        record_reaper_test_event(ReaperTestEventKind::Selected {
+            pid: pid.as_raw(),
+            managed,
+        });
+        #[cfg(not(test))]
+        let _ = (pid, managed);
+    }
+
+    fn reaped(&mut self, pid: Pid) {
+        #[cfg(test)]
+        record_reaper_test_event(ReaperTestEventKind::Reaped { pid: pid.as_raw() });
+        #[cfg(not(test))]
+        let _ = pid;
+    }
+}
 
 #[cfg(any(
     all(target_os = "linux", not(target_env = "uclibc")),
@@ -291,7 +812,23 @@ fn retry_interrupted<T>(mut operation: impl FnMut() -> nix::Result<T>) -> nix::R
     reason = "the dedicated PID 1 reaper waits between retrying a consumed signal or selective pass"
 )]
 fn backoff_reaper_retry() {
+    #[cfg(all(
+        test,
+        any(
+            all(target_os = "linux", not(target_env = "uclibc")),
+            target_os = "macos"
+        )
+    ))]
+    record_reaper_test_event(ReaperTestEventKind::BackoffStarted);
     std::thread::sleep(REAPER_RETRY_BACKOFF);
+    #[cfg(all(
+        test,
+        any(
+            all(target_os = "linux", not(target_env = "uclibc")),
+            target_os = "macos"
+        )
+    ))]
+    record_reaper_test_event(ReaperTestEventKind::BackoffCompleted);
 }
 
 #[cfg(all(
@@ -335,7 +872,7 @@ pub(crate) fn wait_for_child_exit(pid: u32, selector: TestChildSelector) -> std:
         )
     })?;
     let child_pid = Pid::from_raw(raw_pid);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let deadline = Instant::now() + std::time::Duration::from_secs(2);
     loop {
         #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
         let selected = {
@@ -370,7 +907,7 @@ pub(crate) fn wait_for_child_exit(pid: u32, selector: TestChildSelector) -> std:
         if selected {
             return Ok(());
         }
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,

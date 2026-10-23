@@ -1,10 +1,467 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-//! The smallest macOS-only non-reaping child selector.
+//! macOS-only non-reaping child selection and a fixed signal-action query.
 
-use std::io;
+use std::io::{self, Write as _};
 use std::mem::MaybeUninit;
+
+/// The observed disposition of the current process's `SIGCHLD` action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SigchldDisposition {
+    /// The platform default disposition is installed.
+    Default,
+    /// The signal is explicitly ignored.
+    Ignore,
+    /// A caught or otherwise opaque disposition is installed.
+    OpaqueCaught,
+}
+
+/// A read-only snapshot of the current process's `SIGCHLD` action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SigchldActionSnapshot {
+    /// A coarse classification that does not expose the handler value.
+    pub disposition: SigchldDisposition,
+    /// The raw platform action flags returned by `sigaction`.
+    pub flags: i32,
+}
+
+enum SigchldActionRequest<'a> {
+    Query,
+    Replace(&'a libc::sigaction),
+    InstallCaught(libc::sigaction),
+}
+
+extern "C" fn caught_sigchld_diagnostic_handler(
+    _signal: libc::c_int,
+    _info: *mut libc::siginfo_t,
+    _context: *mut libc::c_void,
+) {
+}
+
+#[expect(
+    unsafe_code,
+    reason = "audited fixed-SIGCHLD query and diagnostic set initialize exact pinned libc storage and read output only after success"
+)]
+fn call_sigchld_action(request: SigchldActionRequest<'_>) -> io::Result<libc::sigaction> {
+    let requested_action = match &request {
+        SigchldActionRequest::Query => std::ptr::null::<libc::sigaction>(),
+        SigchldActionRequest::Replace(action) => std::ptr::from_ref::<libc::sigaction>(*action),
+        SigchldActionRequest::InstallCaught(action) => {
+            std::ptr::from_ref::<libc::sigaction>(action)
+        }
+    };
+    let mut observed_storage = MaybeUninit::<libc::sigaction>::zeroed();
+
+    // SAFETY: SIGCHLD is fixed. The requested pointer is either null, a
+    // reference to a complete saved Apple sigaction, or a borrow of the
+    // complete diagnostic sigaction carried by `request`. The output pointer
+    // is writable storage of the exact pinned type. Neither pointer escapes.
+    let result = unsafe {
+        libc::sigaction(
+            libc::SIGCHLD,
+            requested_action,
+            observed_storage.as_mut_ptr(),
+        )
+    };
+    if result == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    if result != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("macOS sigaction returned unexpected value {result}"),
+        ));
+    }
+
+    // SAFETY: sigaction returned success for this typed output pointer and
+    // populated the old action. No output storage is read on an error path.
+    Ok(unsafe { observed_storage.assume_init() })
+}
+
+fn sigchld_disposition(action: &libc::sigaction) -> SigchldDisposition {
+    if action.sa_sigaction == libc::SIG_DFL {
+        SigchldDisposition::Default
+    } else if action.sa_sigaction == libc::SIG_IGN {
+        SigchldDisposition::Ignore
+    } else {
+        SigchldDisposition::OpaqueCaught
+    }
+}
+
+fn sigchld_snapshot(action: &libc::sigaction) -> SigchldActionSnapshot {
+    SigchldActionSnapshot {
+        disposition: sigchld_disposition(action),
+        flags: action.sa_flags,
+    }
+}
+
+fn sigchld_actions_match(left: &libc::sigaction, right: &libc::sigaction) -> bool {
+    left.sa_sigaction == right.sa_sigaction
+        && left.sa_mask == right.sa_mask
+        && left.sa_flags == right.sa_flags
+}
+
+/// Query the current process's fixed SIGCHLD action without changing it.
+///
+/// Handler values remain opaque: this function classifies only the platform
+/// default and ignore constants and never exposes or calls a handler.
+pub fn current_sigchld_action() -> io::Result<SigchldActionSnapshot> {
+    let action = call_sigchld_action(SigchldActionRequest::Query)?;
+    Ok(sigchld_snapshot(&action))
+}
+
+fn report_sigchld_treatment_action(
+    phase: &str,
+    action: &libc::sigaction,
+    setter_old_matches_query: Option<bool>,
+    full_action_match: bool,
+) {
+    let snapshot = sigchld_snapshot(action);
+    let _reported = writeln!(
+        io::stderr().lock(),
+        "PID1_SIGCHLD_TREATMENT phase={phase} disposition={:?} flags_raw={} flags_hex={:#010x} setter_old_matches_query={setter_old_matches_query:?} full_action_match={full_action_match}",
+        snapshot.disposition,
+        snapshot.flags,
+        snapshot.flags,
+    );
+}
+
+fn report_sigchld_treatment_error(phase: &str, error: &io::Error, full_action_match: bool) {
+    let _reported = writeln!(
+        io::stderr().lock(),
+        "PID1_SIGCHLD_TREATMENT phase={phase} query_error_kind={:?} query_error_raw_os_error={:?} error={error} full_action_match={full_action_match}",
+        error.kind(),
+        error.raw_os_error(),
+    );
+}
+
+fn include_restoration_error(primary: io::Error, restoration: io::Result<()>) -> io::Error {
+    match restoration {
+        Ok(()) => {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "PID1_SIGCHLD_TREATMENT phase=setup-restoration restored_exact=true primary_kind={:?} primary_raw_os_error={:?} primary_error={primary}",
+                primary.kind(),
+                primary.raw_os_error(),
+            );
+            primary
+        }
+        Err(restoration) => {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "PID1_SIGCHLD_TREATMENT phase=setup-and-restore-failure primary_kind={:?} primary_raw_os_error={:?} primary_error={primary} restoration_kind={:?} restoration_raw_os_error={:?} restoration_error={restoration}",
+                primary.kind(),
+                primary.raw_os_error(),
+                restoration.kind(),
+                restoration.raw_os_error(),
+            );
+            primary
+        }
+    }
+}
+
+/// A diagnostic-only owner for a caught SIGCHLD action in a fresh worker.
+///
+/// This changes the process-wide signal action. Use it only in an exclusively
+/// owned diagnostic worker whose SIGCHLD mask is blocked before any child
+/// threads exist. It is not a general signal-handler registration API.
+#[must_use = "restore the original SIGCHLD action before the diagnostic worker exits"]
+pub struct CaughtSigchldDiagnosticGuard {
+    saved_action: libc::sigaction,
+    installed_mask: libc::sigset_t,
+    installed_flags: libc::c_int,
+    armed: bool,
+}
+
+impl std::fmt::Debug for CaughtSigchldDiagnosticGuard {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CaughtSigchldDiagnosticGuard(REDACTED)")
+    }
+}
+
+impl CaughtSigchldDiagnosticGuard {
+    /// Install the diagnostic caught disposition from the observed default
+    /// action in a fresh, exclusively owned worker.
+    pub fn install_for_diagnostic_worker() -> io::Result<Self> {
+        let queried_action = call_sigchld_action(SigchldActionRequest::Query)?;
+        let queried_snapshot = sigchld_snapshot(&queried_action);
+        let expected_flags = libc::SA_RESTART | libc::SA_SIGINFO;
+        let no_cldwait = queried_action.sa_flags & libc::SA_NOCLDWAIT == 0;
+        if queried_snapshot.disposition != SigchldDisposition::Default
+            || queried_action.sa_flags != expected_flags
+            || !no_cldwait
+        {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "PID1_SIGCHLD_TREATMENT phase=precondition disposition={:?} flags_raw={} flags_hex={:#010x} expected_flags_raw={} no_cldwait_absent={no_cldwait}",
+                queried_snapshot.disposition,
+                queried_snapshot.flags,
+                queried_snapshot.flags,
+                expected_flags,
+            );
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "unsupported SIGCHLD diagnostic baseline: disposition={:?}, flags_raw={}, expected_flags_raw={}, NOCLDWAIT absent={no_cldwait}",
+                    queried_snapshot.disposition, queried_snapshot.flags, expected_flags
+                ),
+            ));
+        }
+
+        let installed_mask = queried_action.sa_mask;
+        let installed_flags = queried_action.sa_flags;
+        let requested_action = libc::sigaction {
+            sa_sigaction: caught_sigchld_diagnostic_handler as *const () as libc::sighandler_t,
+            sa_mask: installed_mask,
+            sa_flags: installed_flags,
+        };
+        let setter_old_action =
+            match call_sigchld_action(SigchldActionRequest::InstallCaught(requested_action)) {
+                Ok(action) => action,
+                Err(primary) => {
+                    return Err(Self::recover_failed_install(
+                        primary,
+                        queried_action,
+                        installed_mask,
+                        installed_flags,
+                    ));
+                }
+            };
+        let setter_old_matches_query = sigchld_actions_match(&queried_action, &setter_old_action);
+        let setter_old_snapshot = sigchld_snapshot(&setter_old_action);
+        let mut guard = Self {
+            saved_action: setter_old_action,
+            installed_mask,
+            installed_flags,
+            armed: true,
+        };
+
+        let readback = call_sigchld_action(SigchldActionRequest::Query);
+        let full_action_match = readback
+            .as_ref()
+            .is_ok_and(|action| guard.installed_action_matches(action));
+        match &readback {
+            Ok(action) => report_sigchld_treatment_action(
+                "install-readback",
+                action,
+                Some(setter_old_matches_query),
+                full_action_match,
+            ),
+            Err(error) => report_sigchld_treatment_error("install-readback", error, false),
+        }
+        let _reported = writeln!(
+            io::stderr().lock(),
+            "PID1_SIGCHLD_TREATMENT phase=setter-result prior_disposition={:?} prior_flags_raw={} prior_flags_hex={:#010x} setter_old_matches_query={setter_old_matches_query}",
+            setter_old_snapshot.disposition,
+            setter_old_snapshot.flags,
+            setter_old_snapshot.flags,
+        );
+
+        if setter_old_matches_query && full_action_match {
+            return Ok(guard);
+        }
+
+        let primary = if setter_old_matches_query {
+            match readback {
+                Err(error) => error,
+                Ok(action) => {
+                    let snapshot = sigchld_snapshot(&action);
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "installed SIGCHLD action failed complete readback (disposition={:?}, flags_raw={})",
+                            snapshot.disposition, snapshot.flags
+                        ),
+                    )
+                }
+            }
+        } else {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "SIGCHLD setter's complete prior action differed from the queried baseline (disposition={:?}, flags_raw={})",
+                    setter_old_snapshot.disposition, setter_old_snapshot.flags
+                ),
+            )
+        };
+        let restoration = guard.restore();
+        Err(include_restoration_error(primary, restoration))
+    }
+
+    fn recover_failed_install(
+        primary: io::Error,
+        queried_action: libc::sigaction,
+        installed_mask: libc::sigset_t,
+        installed_flags: libc::c_int,
+    ) -> io::Error {
+        let current = match call_sigchld_action(SigchldActionRequest::Query) {
+            Ok(action) => action,
+            Err(query_error) => {
+                let _reported = writeln!(
+                    io::stderr().lock(),
+                    "PID1_SIGCHLD_TREATMENT phase=install-error-readback-failure primary_kind={:?} primary_raw_os_error={:?} primary_error={primary} query_error_kind={:?} query_error_raw_os_error={:?} query_error={query_error}",
+                    primary.kind(),
+                    primary.raw_os_error(),
+                    query_error.kind(),
+                    query_error.raw_os_error(),
+                );
+                return primary;
+            }
+        };
+        if sigchld_actions_match(&current, &queried_action) {
+            let snapshot = sigchld_snapshot(&current);
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "PID1_SIGCHLD_TREATMENT phase=install-error-no-change disposition={:?} flags_raw={} flags_hex={:#010x} full_action_matches_query=true primary_kind={:?} primary_raw_os_error={:?}",
+                snapshot.disposition,
+                snapshot.flags,
+                snapshot.flags,
+                primary.kind(),
+                primary.raw_os_error(),
+            );
+            return primary;
+        }
+        if current.sa_sigaction
+            == caught_sigchld_diagnostic_handler as *const () as libc::sighandler_t
+            && current.sa_mask == installed_mask
+            && current.sa_flags == installed_flags
+        {
+            report_sigchld_treatment_action("install-error-readback", &current, None, true);
+            let mut guard = Self {
+                saved_action: queried_action,
+                installed_mask,
+                installed_flags,
+                armed: true,
+            };
+            let restoration = guard.restore();
+            return include_restoration_error(primary, restoration);
+        }
+
+        let snapshot = sigchld_snapshot(&current);
+        report_sigchld_treatment_action("install-error-readback", &current, None, false);
+        let _reported = writeln!(
+            io::stderr().lock(),
+            "PID1_SIGCHLD_TREATMENT phase=install-error-foreign-state disposition={:?} flags_raw={} refusing_overwrite=true primary_kind={:?} primary_raw_os_error={:?}",
+            snapshot.disposition,
+            snapshot.flags,
+            primary.kind(),
+            primary.raw_os_error(),
+        );
+        primary
+    }
+
+    /// Restore and verify the complete action observed by the successful
+    /// setter. Success means handler, mask and flags all match that action.
+    pub fn restore(&mut self) -> io::Result<()> {
+        if !self.armed {
+            return Ok(());
+        }
+
+        let current = call_sigchld_action(SigchldActionRequest::Query)?;
+        if !self.installed_action_matches(&current) {
+            let snapshot = sigchld_snapshot(&current);
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "current SIGCHLD action is not owned by the diagnostic guard (disposition={:?}, flags_raw={}); refusing to overwrite it",
+                    snapshot.disposition, snapshot.flags
+                ),
+            ));
+        }
+
+        let replaced_action =
+            call_sigchld_action(SigchldActionRequest::Replace(&self.saved_action))?;
+        if !self.installed_action_matches(&replaced_action) {
+            let displaced_snapshot = sigchld_snapshot(&replaced_action);
+            let rollback = self.restore_displaced_action(&replaced_action);
+            let primary = io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "SIGCHLD setter replaced a different action than the diagnostic handler (disposition={:?}, flags_raw={})",
+                    displaced_snapshot.disposition, displaced_snapshot.flags
+                ),
+            );
+            return Err(include_restoration_error(primary, rollback));
+        }
+
+        let restored = call_sigchld_action(SigchldActionRequest::Query)?;
+        if !sigchld_actions_match(&restored, &self.saved_action) {
+            let snapshot = sigchld_snapshot(&restored);
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "restored SIGCHLD action did not match the complete saved action (disposition={:?}, flags_raw={})",
+                    snapshot.disposition, snapshot.flags
+                ),
+            ));
+        }
+
+        self.armed = false;
+        Ok(())
+    }
+
+    fn installed_action_matches(&self, action: &libc::sigaction) -> bool {
+        action.sa_sigaction == caught_sigchld_diagnostic_handler as *const () as libc::sighandler_t
+            && action.sa_mask == self.installed_mask
+            && action.sa_flags == self.installed_flags
+    }
+
+    fn restore_displaced_action(&self, displaced: &libc::sigaction) -> io::Result<()> {
+        let current = call_sigchld_action(SigchldActionRequest::Query)?;
+        if !sigchld_actions_match(&current, &self.saved_action) {
+            let snapshot = sigchld_snapshot(&current);
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "current SIGCHLD action changed during restoration (disposition={:?}, flags_raw={}); refusing rollback",
+                    snapshot.disposition, snapshot.flags
+                ),
+            ));
+        }
+
+        let rollback_old = call_sigchld_action(SigchldActionRequest::Replace(displaced))?;
+        if !sigchld_actions_match(&rollback_old, &self.saved_action) {
+            let snapshot = sigchld_snapshot(&rollback_old);
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "SIGCHLD rollback replaced a different action (disposition={:?}, flags_raw={})",
+                    snapshot.disposition, snapshot.flags
+                ),
+            ));
+        }
+
+        let restored = call_sigchld_action(SigchldActionRequest::Query)?;
+        if sigchld_actions_match(&restored, displaced) {
+            Ok(())
+        } else {
+            let snapshot = sigchld_snapshot(&restored);
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "SIGCHLD rollback did not restore the displaced action (disposition={:?}, flags_raw={})",
+                    snapshot.disposition, snapshot.flags
+                ),
+            ))
+        }
+    }
+}
+
+impl Drop for CaughtSigchldDiagnosticGuard {
+    fn drop(&mut self) {
+        if self.armed
+            && let Err(error) = self.restore()
+        {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "PID1_SIGCHLD_TREATMENT phase=drop-restoration restored_exact=false error_kind={:?} raw_os_error={:?} error={error}",
+                error.kind(),
+                error.raw_os_error(),
+            );
+        }
+    }
+}
 
 /// Select one exited direct child without consuming its status.
 ///

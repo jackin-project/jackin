@@ -608,7 +608,7 @@ key = "clippy::unused_async_trait_impl@jackin-isolation"
 bound = 1
 [[family.entry]]
 key = "unsafe_code@jackin-process-directory"
-bound = 2
+bound = 3
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-usage-coordinator"
 bound = 1

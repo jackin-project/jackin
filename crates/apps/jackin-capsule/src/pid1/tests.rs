@@ -10,8 +10,129 @@ use std::io::{Read, Seek, SeekFrom};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+use std::io::{self, Write as IoWrite};
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+use std::path::{Path, PathBuf};
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+use std::process::ExitStatus;
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+use std::time::Instant;
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+use nix::sys::signal::SigmaskHow;
+
 const WORKER_ENV: &str = "JACKIN_PID1_TEST_WORKER";
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const FIXTURE_DIRECTORY_ENV: &str = "JACKIN_PID1_TEST_FIXTURE_DIRECTORY";
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const DIAGNOSTIC_PYTHON_ENV: &str = "JACKIN_PID1_DIAGNOSTIC_PYTHON";
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const DIAGNOSTIC_SCRIPT_ENV: &str = "JACKIN_PID1_DIAGNOSTIC_PREEXEC_SCRIPT";
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const DIAGNOSTIC_PREEXEC_PID_ENV: &str = "JACKIN_PID1_DIAGNOSTIC_PREEXEC_PID";
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const SIGWAIT_DIAGNOSTIC_WORKER: &str = "pid1::tests::worker_production_sigwait_requeue";
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const CAUGHT_SIGCHLD_DIAGNOSTIC_WORKER: &str =
+    "pid1::tests::worker_caught_sigchld_requeue_diagnostic";
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+const FIXTURE_REAPER_PID_ENV: &str = "JACKIN_PID1_TEST_REAPER_PID";
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+const FIXTURE_INTERMEDIATE_PID_ENV: &str = "JACKIN_PID1_TEST_INTERMEDIATE_PID";
 const MAX_WORKER_DIAGNOSTIC_BYTES: u64 = 64 * 1024;
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const FIXTURE_CHILD_DEADLINE: Duration = Duration::from_secs(5);
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const FIXTURE_PROOF_DEADLINE: Duration = Duration::from_secs(6);
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const FIXTURE_POLL_INTERVAL: Duration = Duration::from_millis(5);
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+const MAX_FIXTURE_RECORD_BYTES: u64 = 256;
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+struct PreexecDiagnosticRequest {
+    python: PathBuf,
+    script: PathBuf,
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn preexec_diagnostic_request(name: &str) -> io::Result<Option<PreexecDiagnosticRequest>> {
+    let python = std::env::var_os(DIAGNOSTIC_PYTHON_ENV);
+    let script = std::env::var_os(DIAGNOSTIC_SCRIPT_ENV);
+    match (python, script) {
+        (None, None) => Ok(None),
+        (Some(python), Some(script)) => {
+            if name != SIGWAIT_DIAGNOSTIC_WORKER && name != CAUGHT_SIGCHLD_DIAGNOSTIC_WORKER {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "pre-exec diagnostic request targets an unexpected PID 1 worker",
+                ));
+            }
+            let python = PathBuf::from(python);
+            let script = PathBuf::from(script);
+            if !python.is_absolute() || !script.is_absolute() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "pre-exec diagnostic paths must be absolute",
+                ));
+            }
+            Ok(Some(PreexecDiagnosticRequest { python, script }))
+        }
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "pre-exec diagnostic request requires both Python and script paths",
+        )),
+    }
+}
 
 fn run_worker(name: &str) {
     let executable = std::env::current_exe().expect("test executable path");
@@ -137,9 +258,1543 @@ fn worker_selected(name: &str) -> bool {
     all(target_os = "linux", not(target_env = "uclibc")),
     target_os = "macos"
 ))]
+fn sigwait_preexec_diagnostic_active() -> io::Result<bool> {
+    let python = std::env::var_os(DIAGNOSTIC_PYTHON_ENV);
+    let script = std::env::var_os(DIAGNOSTIC_SCRIPT_ENV);
+    let preexec_pid = std::env::var_os(DIAGNOSTIC_PREEXEC_PID_ENV);
+    match (python, script, preexec_pid) {
+        (None, None, None) => Ok(false),
+        (Some(python), Some(script), Some(preexec_pid)) => {
+            let worker = std::env::var(WORKER_ENV).map_err(|error| {
+                io::Error::other(format!("read pre-exec diagnostic worker role: {error}"))
+            })?;
+            if worker != SIGWAIT_DIAGNOSTIC_WORKER && worker != CAUGHT_SIGCHLD_DIAGNOSTIC_WORKER {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "pre-exec diagnostic is active for an unexpected PID 1 worker",
+                ));
+            }
+            if !PathBuf::from(python).is_absolute() || !PathBuf::from(script).is_absolute() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "pre-exec diagnostic paths must remain absolute in the worker",
+                ));
+            }
+            let preexec_pid = preexec_pid
+                .into_string()
+                .map_err(|_| io::Error::other("pre-exec PID marker is not UTF-8"))?
+                .parse::<u32>()
+                .map_err(|error| {
+                    io::Error::other(format!("invalid pre-exec PID marker: {error}"))
+                })?;
+            let worker_pid = std::process::id();
+            let matched = preexec_pid == worker_pid;
+            writeln!(
+                io::stderr().lock(),
+                "PID1_DIAGNOSTIC_EXEC_ID mode=preexec-python marker_pid={preexec_pid} rust_pid={worker_pid} matched={matched} worker={worker}"
+            )?;
+            if matched {
+                Ok(true)
+            } else {
+                Err(io::Error::other(format!(
+                    "pre-exec Python PID {preexec_pid} differs from Rust worker PID {worker_pid}"
+                )))
+            }
+        }
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "pre-exec diagnostic requires both paths and the PID marker",
+        )),
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn sigwait_fixture_diagnostic_active() -> io::Result<bool> {
+    let preexec_python_active = sigwait_preexec_diagnostic_active()?;
+    Ok(preexec_python_active || worker_selected(CAUGHT_SIGCHLD_DIAGNOSTIC_WORKER))
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
 fn wait_until_exited(pid: u32) {
     wait_for_child_exit(pid, TestChildSelector::Specific)
         .expect("known child exits before the selector deadline");
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+struct SigchldMaskGuard {
+    previous: SigSet,
+    armed: bool,
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl SigchldMaskGuard {
+    fn block_for_spawn() -> io::Result<Self> {
+        let mut mask = SigSet::empty();
+        mask.add(Signal::SIGCHLD);
+        let previous = mask
+            .thread_swap_mask(SigmaskHow::SIG_BLOCK)
+            .map_err(|error| io::Error::other(format!("block SIGCHLD for spawn: {error}")))?;
+        Ok(Self {
+            previous,
+            armed: true,
+        })
+    }
+
+    fn restore(&mut self) -> io::Result<()> {
+        if self.armed {
+            self.previous
+                .thread_set_mask()
+                .map_err(|error| io::Error::other(format!("restore SIGCHLD mask: {error}")))?;
+            self.armed = false;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl Drop for SigchldMaskGuard {
+    fn drop(&mut self) {
+        let restoration = if self.armed { self.restore() } else { Ok(()) };
+        if let Err(error) = restoration {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "failed to restore the fixture thread's SIGCHLD mask: {error}"
+            );
+        }
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn ensure_sigchld_blocked() -> io::Result<()> {
+    let mask = SigSet::thread_get_mask()
+        .map_err(|error| io::Error::other(format!("read inherited signal mask: {error}")))?;
+    if mask.contains(Signal::SIGCHLD) {
+        Ok(())
+    } else {
+        Err(io::Error::other(
+            "fixture worker did not inherit blocked SIGCHLD",
+        ))
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+struct FixtureTimer {
+    runtime: tokio::runtime::Runtime,
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl FixtureTimer {
+    fn new() -> io::Result<Self> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .map_err(|error| io::Error::other(format!("create fixture timer: {error}")))?;
+        Ok(Self { runtime })
+    }
+
+    fn deadline_after(timeout: Duration) -> io::Result<Instant> {
+        Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "fixture deadline overflow"))
+    }
+
+    fn wait_for_file(&self, path: &Path, deadline: Instant) -> io::Result<String> {
+        let path = path.to_path_buf();
+        self.runtime.block_on(async move {
+            loop {
+                match read_fixture_record(&path) {
+                    Ok(contents) => return Ok(contents),
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error),
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        format!(
+                            "fixture file {} did not appear before deadline",
+                            path.display()
+                        ),
+                    ));
+                }
+                tokio::time::sleep(FIXTURE_POLL_INTERVAL.min(remaining)).await;
+            }
+        })
+    }
+
+    fn wait_for_reaper_startup(
+        &self,
+        deadline: Instant,
+    ) -> io::Result<ReaperTestDiagnosticSnapshot> {
+        self.runtime.block_on(async {
+            loop {
+                let snapshot = reaper_test_diagnostic_snapshot();
+                if snapshot.thread_entered
+                    && (snapshot.thread_mask_error.is_some()
+                        || snapshot.thread_sigchld_blocked != Some(true)
+                        || snapshot.sigwait_errors > 0)
+                {
+                    emit_reaper_diagnostic("readiness-error", snapshot, 0, false);
+                    return Err(io::Error::other(format!(
+                        "production reaper startup diagnostic failed: {snapshot:?}"
+                    )));
+                }
+                if snapshot.thread_entered && snapshot.sigwait_entries > 0 {
+                    return Ok(snapshot);
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    emit_reaper_diagnostic("readiness-timeout", snapshot, 0, false);
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        format!("production reaper startup diagnostic timed out: {snapshot:?}"),
+                    ));
+                }
+                tokio::time::sleep(FIXTURE_POLL_INTERVAL.min(remaining)).await;
+            }
+        })
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    fn wait_for_registered_child(
+        &self,
+        child: &mut Child,
+        deadline: Instant,
+    ) -> io::Result<Option<ExitStatus>> {
+        self.runtime.block_on(async {
+            loop {
+                let child_pid = child.id();
+                let status = jackin_process::coordinate_children(|registry| {
+                    if !registry.contains(child_pid) {
+                        return Err(io::Error::other(
+                            "registered fixture child lost its owner reservation",
+                        ));
+                    }
+                    child.try_wait()
+                })?;
+                if let Some(status) = status {
+                    return Ok(Some(status));
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Ok(None);
+                }
+                tokio::time::sleep(FIXTURE_POLL_INTERVAL.min(remaining)).await;
+            }
+        })
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    fn wait_for_adoption(
+        &self,
+        intermediate_pid: u32,
+        expected_reaper_pid: u32,
+        deadline: Instant,
+    ) -> io::Result<u32> {
+        self.runtime.block_on(async {
+            loop {
+                let actual_parent = pid_to_u32(nix::unistd::getppid())?;
+                if actual_parent != intermediate_pid {
+                    if actual_parent == expected_reaper_pid {
+                        return Ok(actual_parent);
+                    }
+                    return Err(io::Error::other(format!(
+                        "grandchild PPID changed to unexpected process {actual_parent}"
+                    )));
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "grandchild did not observe the subreaper adoption before deadline",
+                    ));
+                }
+                tokio::time::sleep(FIXTURE_POLL_INTERVAL.min(remaining)).await;
+            }
+        })
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn fixture_directory() -> io::Result<PathBuf> {
+    std::env::var_os(FIXTURE_DIRECTORY_ENV)
+        .map(PathBuf::from)
+        .ok_or_else(|| io::Error::other("isolated worker fixture directory is missing"))
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn write_fixture_record(path: &Path, contents: &str) -> io::Result<()> {
+    if contents.len() as u64 > MAX_FIXTURE_RECORD_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "fixture rendezvous record exceeds its byte limit",
+        ));
+    }
+    let temporary = path.with_extension("pending");
+    let fd = nix::fcntl::open(
+        &temporary,
+        nix::fcntl::OFlag::O_WRONLY
+            | nix::fcntl::OFlag::O_CREAT
+            | nix::fcntl::OFlag::O_EXCL
+            | nix::fcntl::OFlag::O_CLOEXEC,
+        nix::sys::stat::Mode::from_bits_truncate(0o600),
+    )
+    .map_err(|error| io::Error::from_raw_os_error(error as i32))?;
+    let mut file = File::from(fd);
+    file.write_all(contents.as_bytes())?;
+    drop(file);
+    std::fs::rename(&temporary, path)
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+struct FixtureRelease {
+    path: PathBuf,
+    released: bool,
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl FixtureRelease {
+    fn new(directory: &Path, name: &str) -> Self {
+        Self {
+            path: directory.join(name),
+            released: false,
+        }
+    }
+
+    fn release(&mut self) -> io::Result<()> {
+        if !self.released {
+            write_fixture_record(&self.path, "release\n")?;
+            self.released = true;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl Drop for FixtureRelease {
+    fn drop(&mut self) {
+        let release = if self.released {
+            Ok(())
+        } else {
+            self.release()
+        };
+        if let Err(error) = release {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "failed to release fixture gate {}: {error}",
+                self.path.display()
+            );
+        }
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn read_fixture_record(path: &Path) -> io::Result<String> {
+    let fd = nix::fcntl::open(
+        path,
+        nix::fcntl::OFlag::O_RDONLY | nix::fcntl::OFlag::O_CLOEXEC,
+        nix::sys::stat::Mode::empty(),
+    )
+    .map_err(|error| io::Error::from_raw_os_error(error as i32))?;
+    let file = File::from(fd);
+    if file.metadata()?.len() > MAX_FIXTURE_RECORD_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "fixture rendezvous record exceeds its byte limit",
+        ));
+    }
+    let mut contents = String::new();
+    file.take(MAX_FIXTURE_RECORD_BYTES + 1)
+        .read_to_string(&mut contents)?;
+    if contents.len() as u64 > MAX_FIXTURE_RECORD_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "fixture rendezvous record exceeds its byte limit",
+        ));
+    }
+    Ok(contents)
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn fixture_pids(contents: &str) -> io::Result<Vec<u32>> {
+    contents
+        .lines()
+        .map(|line| {
+            line.parse::<u32>()
+                .map_err(|error| io::Error::other(format!("invalid fixture PID: {error}")))
+        })
+        .collect()
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+fn pid_to_u32(pid: Pid) -> io::Result<u32> {
+    u32::try_from(pid.as_raw())
+        .map_err(|error| io::Error::other(format!("native PID is outside u32 range: {error}")))
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn spawn_fixture_role(
+    name: &str,
+    directory: &Path,
+    extra_environment: &[(&str, String)],
+) -> io::Result<Child> {
+    let executable = std::env::current_exe()?;
+    let mut command = Command::new(executable);
+    command
+        .args(["--exact", name, "--nocapture"])
+        .env(WORKER_ENV, name)
+        .env(FIXTURE_DIRECTORY_ENV, directory)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    for (key, value) in extra_environment {
+        command.env(*key, value);
+    }
+    let mut mask = SigchldMaskGuard::block_for_spawn()?;
+    let child = command.spawn()?;
+    if let Err(error) = mask.restore() {
+        drop(child);
+        return Err(error);
+    }
+    Ok(child)
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+struct OwnedFixtureChild {
+    child: Child,
+    registration: Option<jackin_process::ChildRegistration>,
+    cleanup_enabled: bool,
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl OwnedFixtureChild {
+    fn unregistered(child: Child) -> Self {
+        Self {
+            child,
+            registration: None,
+            cleanup_enabled: true,
+        }
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    fn registered(child: Child, registration: jackin_process::ChildRegistration) -> Self {
+        Self {
+            child,
+            registration: Some(registration),
+            cleanup_enabled: true,
+        }
+    }
+
+    fn child_mut(&mut self) -> &mut Child {
+        &mut self.child
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    fn release_registration(&mut self) {
+        self.registration.take();
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    fn detach_without_wait(mut self) {
+        self.cleanup_enabled = false;
+    }
+
+    fn cleanup_bounded(&mut self) -> io::Result<()> {
+        if !self.cleanup_enabled {
+            return Ok(());
+        }
+        self.cleanup_enabled = false;
+        let result = if self.registration.is_some() {
+            #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+            {
+                self.cleanup_registered_bounded()
+            }
+            #[cfg(not(all(target_os = "linux", not(target_env = "uclibc"))))]
+            {
+                Err(io::Error::other(
+                    "registered fixture child cleanup is only supported on Linux",
+                ))
+            }
+        } else {
+            self.cleanup_unregistered_bounded()
+        };
+        self.registration.take();
+        result
+    }
+
+    fn cleanup_unregistered_bounded(&mut self) -> io::Result<()> {
+        let should_kill = matches!(self.child.try_wait(), Ok(None));
+        let kill_error = if should_kill {
+            self.child.kill().err()
+        } else {
+            None
+        };
+        let result = crate::util::poll_owned_child_until_timeout(
+            &mut self.child,
+            Duration::from_secs(2),
+            FIXTURE_POLL_INTERVAL,
+        );
+        match result {
+            Err(error) => Err(io::Error::other(format!(
+                "poll fixture child during bounded cleanup failed: {error}; kill error: {kill_error:?}"
+            ))),
+            Ok(crate::util::ChildPollOutcome::Exited(_)) => Ok(()),
+            Ok(crate::util::ChildPollOutcome::TimedOut) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!(
+                    "owned fixture child did not exit before cleanup deadline; kill error: {kill_error:?}"
+                ),
+            )),
+        }
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+    fn cleanup_registered_bounded(&mut self) -> io::Result<()> {
+        let child_pid = self.child.id();
+        let status_or_killed = jackin_process::coordinate_children(|registry| {
+            if !registry.contains(child_pid) {
+                return Err(io::Error::other(
+                    "registered fixture child lost its owner reservation before cleanup",
+                ));
+            }
+            match self.child.try_wait()? {
+                Some(status) => Ok(Some(status)),
+                None => self.child.kill().map(|()| None),
+            }
+        })?;
+        if status_or_killed.is_some() {
+            return Ok(());
+        }
+
+        let deadline = FixtureTimer::deadline_after(Duration::from_secs(2))?;
+        let timer = FixtureTimer::new()?;
+        match timer.wait_for_registered_child(&mut self.child, deadline)? {
+            Some(_) => Ok(()),
+            None => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "registered fixture child did not exit before bounded cleanup deadline",
+            )),
+        }
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl Drop for OwnedFixtureChild {
+    fn drop(&mut self) {
+        if let Err(error) = self.cleanup_bounded() {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "bounded fixture-child cleanup failed: {error}"
+            );
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+fn spawn_registered_fixture_role(
+    name: &str,
+    directory: &Path,
+    extra_environment: &[(&str, String)],
+) -> io::Result<OwnedFixtureChild> {
+    let executable = std::env::current_exe()?;
+    let mut command = Command::new(executable);
+    command
+        .args(["--exact", name, "--nocapture"])
+        .env(WORKER_ENV, name)
+        .env(FIXTURE_DIRECTORY_ENV, directory)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    for (key, value) in extra_environment {
+        command.env(*key, value);
+    }
+
+    let mut mask = SigchldMaskGuard::block_for_spawn()?;
+    let spawn_result = jackin_process::coordinate_children(|registry| {
+        let slot = registry
+            .prepare_registration()
+            .map_err(|error| io::Error::other(format!("reserve intermediate child: {error}")))?;
+        let child = command.spawn()?;
+        let registration = registry.register_prepared(child.id(), slot);
+        Ok(OwnedFixtureChild::registered(child, registration))
+    });
+    match spawn_result {
+        Ok(mut child) => {
+            if let Err(error) = mask.restore() {
+                let cleanup = child.cleanup_bounded();
+                return Err(io::Error::other(format!(
+                    "restore SIGCHLD mask after registered spawn: {error}; cleanup: {cleanup:?}"
+                )));
+            }
+            Ok(child)
+        }
+        Err(error) => {
+            mask.restore()?;
+            Err(error)
+        }
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn emit_reaper_diagnostic(
+    stage: &str,
+    snapshot: ReaperTestDiagnosticSnapshot,
+    causal_event_count: usize,
+    overflowed: bool,
+) {
+    let _reported = writeln!(
+        io::stderr().lock(),
+        "PID1_DIAGNOSTIC stage={stage} thread_entered={} thread_sigchld_blocked={:?} thread_mask_error={:?} sigwait_entries={} sigwait_successes={} sigwait_errors={} last_sigwait_error={:?} causal_event_count={causal_event_count} overflow={overflowed}",
+        snapshot.thread_entered,
+        snapshot.thread_sigchld_blocked,
+        snapshot.thread_mask_error,
+        snapshot.sigwait_entries,
+        snapshot.sigwait_successes,
+        snapshot.sigwait_errors,
+        snapshot.last_sigwait_error,
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn emit_sigchld_action_diagnostic(
+    phase: &str,
+    child_pid: Option<u32>,
+    reaper_snapshot: ReaperTestDiagnosticSnapshot,
+    causal_event_count: usize,
+    overflowed: bool,
+) -> io::Result<()> {
+    match jackin_process_directory::current_sigchld_action() {
+        Ok(action) => writeln!(
+            io::stderr().lock(),
+            "PID1_SIGCHLD_ACTION phase={phase} rust_pid={} worker_sigchld_mask=blocked child_pid={child_pid:?} disposition={:?} flags_raw={} flags_hex={:#010x} reaper_snapshot={reaper_snapshot:?} causal_event_count={causal_event_count} overflow={overflowed}",
+            std::process::id(),
+            action.disposition,
+            action.flags,
+            action.flags,
+        ),
+        Err(error) => {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "PID1_SIGCHLD_ACTION phase={phase} rust_pid={} worker_sigchld_mask=blocked child_pid={child_pid:?} query_error_kind={:?} query_error_raw_os_error={:?} query_error={error} reaper_snapshot={reaper_snapshot:?} causal_event_count={causal_event_count} overflow={overflowed}",
+                std::process::id(),
+                error.kind(),
+                error.raw_os_error(),
+            );
+            Err(error)
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn diagnose_sigchld_wait_failure(child_pid: u32, events: &ReaperEventLog) {
+    let reaper_snapshot = reaper_test_diagnostic_snapshot();
+    if let Err(error) = emit_sigchld_action_diagnostic(
+        "event-wait-failure",
+        Some(child_pid),
+        reaper_snapshot,
+        events.events.len(),
+        events.capture.overflowed(),
+    ) {
+        let _reported = writeln!(
+            io::stderr().lock(),
+            "PID1_SIGCHLD_ACTION_OBSERVATION phase=event-wait-failure query_error_before_child_peek error_kind={:?} raw_os_error={:?} error={error}",
+            error.kind(),
+            error.raw_os_error(),
+        );
+    }
+
+    let (
+        observation,
+        before,
+        after,
+        event_count_before,
+        event_count_after,
+        overflow_before,
+        overflow_after,
+    ) = jackin_process::coordinate_children(|_registry| {
+        let before = reaper_test_diagnostic_snapshot();
+        let event_count_before = events.events.len();
+        let overflow_before = events.capture.overflowed();
+        let observation = jackin_process_directory::peek_specific_exited_child(child_pid);
+        let after = reaper_test_diagnostic_snapshot();
+        let event_count_after = events.events.len();
+        let overflow_after = events.capture.overflowed();
+        (
+            observation,
+            before,
+            after,
+            event_count_before,
+            event_count_after,
+            overflow_before,
+            overflow_after,
+        )
+    });
+    let result = match &observation {
+        Ok(true) => "waitable=true".to_owned(),
+        Ok(false) => "waitable=false".to_owned(),
+        Err(error) => format!(
+            "waitable=error error_kind={:?} raw_os_error={:?} error={error}",
+            error.kind(),
+            error.raw_os_error(),
+        ),
+    };
+    let _reported = writeln!(
+        io::stderr().lock(),
+        "PID1_FAILURE_BOUNDARY child_pid={child_pid} peek_result={result} counters_before={before:?} counters_after={after:?} event_count_before={event_count_before} event_count_after={event_count_after} overflow_before={overflow_before} overflow_after={overflow_after}"
+    );
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+struct ReaperDiagnosticGuard {
+    causal_event_count: usize,
+    overflowed: bool,
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl ReaperDiagnosticGuard {
+    fn new(snapshot: ReaperTestDiagnosticSnapshot) -> Self {
+        let mut diagnostic = Self {
+            causal_event_count: 0,
+            overflowed: false,
+        };
+        diagnostic.report("startup", snapshot, 0, false);
+        diagnostic
+    }
+
+    fn report(
+        &mut self,
+        stage: &str,
+        snapshot: ReaperTestDiagnosticSnapshot,
+        causal_event_count: usize,
+        overflowed: bool,
+    ) {
+        self.causal_event_count = causal_event_count;
+        self.overflowed = overflowed;
+        emit_reaper_diagnostic(stage, snapshot, causal_event_count, overflowed);
+    }
+
+    fn update_events(&mut self, causal_event_count: usize, overflowed: bool) {
+        self.causal_event_count = causal_event_count;
+        self.overflowed = overflowed;
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl Drop for ReaperDiagnosticGuard {
+    fn drop(&mut self) {
+        emit_reaper_diagnostic(
+            "drop",
+            reaper_test_diagnostic_snapshot(),
+            self.causal_event_count,
+            self.overflowed,
+        );
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+struct ReaperEventLog {
+    capture: ReaperTestCapture,
+    events: Vec<ReaperTestEvent>,
+    reported: bool,
+    diagnostic: Option<ReaperDiagnosticGuard>,
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl ReaperEventLog {
+    fn new(capture: ReaperTestCapture) -> Self {
+        Self {
+            capture,
+            events: Vec::with_capacity(REAPER_TEST_EVENT_CAPACITY),
+            reported: false,
+            diagnostic: None,
+        }
+    }
+
+    fn with_diagnostic(capture: ReaperTestCapture, diagnostic: ReaperDiagnosticGuard) -> Self {
+        Self {
+            capture,
+            events: Vec::with_capacity(REAPER_TEST_EVENT_CAPACITY),
+            reported: false,
+            diagnostic: Some(diagnostic),
+        }
+    }
+
+    fn report_diagnostic(&mut self, stage: &str) {
+        if let Some(diagnostic) = &mut self.diagnostic {
+            diagnostic.report(
+                stage,
+                reaper_test_diagnostic_snapshot(),
+                self.events.len(),
+                self.capture.overflowed(),
+            );
+        }
+    }
+
+    fn update_diagnostic_events(&mut self, overflowed: bool) {
+        if let Some(diagnostic) = &mut self.diagnostic {
+            diagnostic.update_events(self.events.len(), overflowed);
+        }
+    }
+
+    fn wait_until(
+        &mut self,
+        deadline: Instant,
+        predicate: impl Fn(&[ReaperTestEvent]) -> bool,
+    ) -> io::Result<()> {
+        while !predicate(&self.events) {
+            if self.events.len() >= REAPER_TEST_EVENT_CAPACITY {
+                return Err(io::Error::other(
+                    "bounded PID 1 event observation reached its limit",
+                ));
+            }
+            if self.capture.overflowed() {
+                return Err(io::Error::other("bounded PID 1 event channel overflowed"));
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "production PID 1 event sequence did not complete before deadline",
+                ));
+            }
+            match self.capture.recv_timeout(remaining) {
+                Ok(event) => {
+                    self.events.push(event);
+                    self.update_diagnostic_events(self.capture.overflowed());
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "production PID 1 event sequence did not complete before deadline",
+                    ));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(io::Error::other(
+                        "production PID 1 event channel disconnected",
+                    ));
+                }
+            }
+        }
+        if self.capture.overflowed() {
+            return Err(io::Error::other("bounded PID 1 event channel overflowed"));
+        }
+        Ok(())
+    }
+
+    fn events(&self) -> &[ReaperTestEvent] {
+        &self.events
+    }
+
+    fn require_quiet(&mut self, quiet_period: Duration) -> io::Result<()> {
+        if self.events.len() >= REAPER_TEST_EVENT_CAPACITY {
+            return Err(io::Error::other(
+                "bounded PID 1 event observation reached its limit",
+            ));
+        }
+        match self.capture.recv_timeout(quiet_period) {
+            Ok(event) => {
+                self.events.push(event);
+                self.update_diagnostic_events(self.capture.overflowed());
+                Err(io::Error::other("unexpected extra production PID 1 event"))
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) if self.capture.overflowed() => Err(
+                io::Error::other("bounded PID 1 event channel overflowed during quiet period"),
+            ),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Ok(()),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(io::Error::other(
+                "production PID 1 event channel disconnected",
+            )),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        while self.events.len() < REAPER_TEST_EVENT_CAPACITY {
+            match self.capture.try_recv() {
+                Ok(event) => self.events.push(event),
+                Err(
+                    std::sync::mpsc::TryRecvError::Empty
+                    | std::sync::mpsc::TryRecvError::Disconnected,
+                ) => break,
+            }
+        }
+        let extra = self.capture.try_recv().ok();
+        let overflowed = self.capture.overflowed() || extra.is_some();
+        self.update_diagnostic_events(overflowed);
+        self.reported = true;
+        if overflowed {
+            eprintln!("PID1_EVENT overflow=true");
+        }
+        for event in &self.events {
+            eprintln!(
+                "PID1_EVENT elapsed_us={} kind={:?}",
+                event.elapsed.as_micros(),
+                event.kind
+            );
+        }
+        if let Some(event) = extra {
+            eprintln!(
+                "PID1_EVENT beyond_limit elapsed_us={} kind={:?}",
+                event.elapsed.as_micros(),
+                event.kind
+            );
+        }
+        if overflowed {
+            Err(io::Error::other("bounded PID 1 event channel overflowed"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+impl Drop for ReaperEventLog {
+    fn drop(&mut self) {
+        if !self.reported {
+            let _reported = self.flush();
+        }
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn reaper_completed_reap(events: &[ReaperTestEvent], pid: i32) -> bool {
+    let selected_index = events.iter().position(|event| {
+        event.kind
+            == (ReaperTestEventKind::Selected {
+                pid,
+                managed: false,
+            })
+    });
+    let wait_index = events.iter().position(|event| {
+        matches!(
+            event.kind,
+            ReaperTestEventKind::TargetedWaitResult {
+                pid: waited_pid,
+                status: ReaperTestWaitStatus::Exited(0),
+            } if waited_pid == pid
+        )
+    });
+    let reaped_index = events
+        .iter()
+        .position(|event| event.kind == (ReaperTestEventKind::Reaped { pid }));
+    let Some(selected_index) = selected_index else {
+        return false;
+    };
+    let Some(wait_index) = wait_index else {
+        return false;
+    };
+    let Some(reaped_index) = reaped_index else {
+        return false;
+    };
+    selected_index < wait_index
+        && wait_index < reaped_index
+        && events.iter().enumerate().any(|(index, event)| {
+            index > reaped_index
+                && event.kind
+                    == (ReaperTestEventKind::PassDisposition {
+                        failure_errno: None,
+                        requeue: false,
+                    })
+        })
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn assert_targeted_echild(pid: u32) -> io::Result<()> {
+    let raw_pid = i32::try_from(pid).map_err(|error| {
+        io::Error::other(format!("fixture PID is outside waitpid range: {error}"))
+    })?;
+    match waitpid(Pid::from_raw(raw_pid), Some(WaitPidFlag::WNOHANG)) {
+        Err(nix::errno::Errno::ECHILD) => Ok(()),
+        Err(error) => Err(io::Error::other(format!(
+            "targeted WNOHANG after production reap returned {error}"
+        ))),
+        Ok(status) => Err(io::Error::other(format!(
+            "targeted WNOHANG after production reap returned {status:?}"
+        ))),
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn run_sigwait_requeue_fixture(directory: &Path) -> io::Result<()> {
+    let diagnostic_mode = sigwait_fixture_diagnostic_active()?;
+    let diagnostic_timer = if diagnostic_mode {
+        Some(FixtureTimer::new()?)
+    } else {
+        None
+    };
+    let diagnostic_deadline = if diagnostic_mode {
+        Some(FixtureTimer::deadline_after(FIXTURE_PROOF_DEADLINE)?)
+    } else {
+        None
+    };
+    if let Err(error) = ensure_sigchld_blocked() {
+        if diagnostic_mode {
+            emit_reaper_diagnostic(
+                "fixture-mask-error",
+                reaper_test_diagnostic_snapshot(),
+                0,
+                false,
+            );
+        }
+        return Err(error);
+    }
+    #[cfg(target_os = "macos")]
+    if diagnostic_mode {
+        emit_sigchld_action_diagnostic(
+            "pre-reaper-install",
+            None,
+            reaper_test_diagnostic_snapshot(),
+            0,
+            false,
+        )?;
+    }
+    install_sigchld_reaper();
+    if !jackin_process::has_reaper_wakeup() {
+        if diagnostic_mode {
+            emit_reaper_diagnostic("install-error", reaper_test_diagnostic_snapshot(), 0, false);
+        }
+        return Err(io::Error::other(
+            "production PID 1 reaper did not install its wake callback",
+        ));
+    }
+    let startup_snapshot = match (&diagnostic_timer, diagnostic_deadline) {
+        (Some(timer), Some(deadline)) => Some(timer.wait_for_reaper_startup(deadline)?),
+        (None, None) => None,
+        _ => {
+            return Err(io::Error::other(
+                "incomplete pre-exec diagnostic timer state",
+            ));
+        }
+    };
+    let diagnostic_guard = startup_snapshot.map(ReaperDiagnosticGuard::new);
+    let capture = arm_reaper_test_capture(SELECTIVE_EINTR_BUDGET + 1);
+    let mut events = match diagnostic_guard {
+        Some(diagnostic) => ReaperEventLog::with_diagnostic(capture, diagnostic),
+        None => ReaperEventLog::new(capture),
+    };
+    let timer = match diagnostic_timer {
+        Some(timer) => timer,
+        None => FixtureTimer::new()?,
+    };
+    let deadline = match diagnostic_deadline {
+        Some(deadline) => deadline,
+        None => FixtureTimer::deadline_after(FIXTURE_PROOF_DEADLINE)?,
+    };
+    let mut child_release = FixtureRelease::new(directory, "causal-child.release");
+    let child = spawn_fixture_role("pid1::tests::worker_sigwait_causal_child", directory, &[])?;
+    let child_pid = child.id();
+    let ready = timer.wait_for_file(&directory.join("causal-child.ready"), deadline)?;
+    let ready_pids = fixture_pids(&ready)?;
+    if ready_pids.len() != 1 || ready_pids.first() != Some(&child_pid) {
+        return Err(io::Error::other(format!(
+            "causal child readiness PID {ready_pids:?} does not match spawned child {child_pid}"
+        )));
+    }
+    eprintln!(
+        "PID1_SIGWAIT_CHILD pid={child_pid} ready_pid={}",
+        ready_pids[0]
+    );
+    events.report_diagnostic("before-child-release");
+    #[cfg(target_os = "macos")]
+    if diagnostic_mode {
+        emit_sigchld_action_diagnostic(
+            "before-child-release",
+            Some(child_pid),
+            reaper_test_diagnostic_snapshot(),
+            events.events.len(),
+            events.capture.overflowed(),
+        )?;
+    }
+    child_release.release()?;
+    let reaper_pid = i32::try_from(child_pid).map_err(|error| {
+        io::Error::other(format!("causal child PID does not fit waitpid: {error}"))
+    })?;
+    let wait_result = events.wait_until(deadline, |observed| {
+        reaper_completed_reap(observed, reaper_pid)
+    });
+    if let Err(error) = wait_result {
+        #[cfg(target_os = "macos")]
+        if diagnostic_mode {
+            diagnose_sigchld_wait_failure(child_pid, &events);
+        }
+        return Err(error);
+    }
+    assert_sigwait_requeue_events(events.events(), reaper_pid);
+    assert_targeted_echild(child_pid)?;
+    events.require_quiet(Duration::from_millis(25))?;
+    events.flush()?;
+    assert_sigwait_requeue_events(events.events(), reaper_pid);
+    drop(child);
+    Ok(())
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn assert_sigwait_requeue_events(events: &[ReaperTestEvent], child_pid: i32) {
+    let mut index = 0;
+    let first_signal = events.get(index).map(|event| event.kind);
+    assert_eq!(
+        first_signal,
+        Some(ReaperTestEventKind::SigwaitSucceeded {
+            signal: Signal::SIGCHLD as i32,
+        })
+    );
+    index += 1;
+    for ordinal in 1..=SELECTIVE_EINTR_BUDGET + 1 {
+        assert_eq!(
+            events.get(index).map(|event| event.kind),
+            Some(ReaperTestEventKind::PeekEintrInjected { ordinal })
+        );
+        index += 1;
+    }
+    assert_eq!(
+        events.get(index).map(|event| event.kind),
+        Some(ReaperTestEventKind::PassDisposition {
+            failure_errno: Some(nix::errno::Errno::EINTR as i32),
+            requeue: true,
+        })
+    );
+    index += 1;
+    assert_eq!(
+        events.get(index).map(|event| event.kind),
+        Some(ReaperTestEventKind::BackoffStarted)
+    );
+    let backoff_started = events.get(index).map(|event| event.elapsed);
+    index += 1;
+    assert_eq!(
+        events.get(index).map(|event| event.kind),
+        Some(ReaperTestEventKind::BackoffCompleted)
+    );
+    let backoff_completed = events.get(index).map(|event| event.elapsed);
+    index += 1;
+    assert!(matches!(
+        events.get(index).map(|event| event.kind),
+        Some(ReaperTestEventKind::WakeAttempt {
+            process_pid,
+            signal,
+            succeeded: true,
+            errno: None,
+        }) if process_pid == std::process::id() as i32
+            && signal == Signal::SIGCHLD as i32
+    ));
+    index += 1;
+    assert_eq!(
+        events.get(index).map(|event| event.kind),
+        Some(ReaperTestEventKind::SigwaitSucceeded {
+            signal: Signal::SIGCHLD as i32,
+        })
+    );
+    index += 1;
+    assert_eq!(
+        events.get(index).map(|event| event.kind),
+        Some(ReaperTestEventKind::Selected {
+            pid: child_pid,
+            managed: false,
+        })
+    );
+    index += 1;
+    assert_eq!(
+        events.get(index).map(|event| event.kind),
+        Some(ReaperTestEventKind::TargetedWaitResult {
+            pid: child_pid,
+            status: ReaperTestWaitStatus::Exited(0),
+        })
+    );
+    index += 1;
+    assert_eq!(
+        events.get(index).map(|event| event.kind),
+        Some(ReaperTestEventKind::Reaped { pid: child_pid })
+    );
+    index += 1;
+    assert_eq!(
+        events.get(index).map(|event| event.kind),
+        Some(ReaperTestEventKind::PassDisposition {
+            failure_errno: None,
+            requeue: false,
+        })
+    );
+    index += 1;
+    assert_eq!(
+        index,
+        events.len(),
+        "unexpected production reaper event count"
+    );
+    assert!(
+        backoff_completed
+            .zip(backoff_started)
+            .is_some_and(|(end, start)| end.saturating_sub(start) >= REAPER_RETRY_BACKOFF),
+        "production retry backoff was shorter than its configured interval"
+    );
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn run_causal_child_fixture() -> io::Result<()> {
+    ensure_sigchld_blocked()?;
+    let directory = fixture_directory()?;
+    let timer = FixtureTimer::new()?;
+    let pid = std::process::id();
+    write_fixture_record(&directory.join("causal-child.ready"), &format!("{pid}\n"))?;
+    let deadline = FixtureTimer::deadline_after(FIXTURE_CHILD_DEADLINE)?;
+    let _release = timer.wait_for_file(&directory.join("causal-child.release"), deadline)?;
+    Ok(())
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+fn env_fixture_pid(name: &str) -> io::Result<u32> {
+    std::env::var(name)
+        .map_err(|error| io::Error::other(format!("read fixture PID {name}: {error}")))?
+        .parse::<u32>()
+        .map_err(|error| io::Error::other(format!("parse fixture PID {name}: {error}")))
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+fn run_subreaper_fixture(directory: &Path) -> io::Result<()> {
+    ensure_sigchld_blocked()?;
+    nix::sys::prctl::set_child_subreaper(true)
+        .map_err(|error| io::Error::other(format!("enable test subreaper: {error}")))?;
+    if !nix::sys::prctl::get_child_subreaper()
+        .map_err(|error| io::Error::other(format!("verify test subreaper: {error}")))?
+    {
+        return Err(io::Error::other("kernel did not enable test subreaper"));
+    }
+    eprintln!("PID1_SUBREAPER_ENABLED pid={}", std::process::id());
+    install_sigchld_reaper();
+    if !jackin_process::has_reaper_wakeup() {
+        return Err(io::Error::other(
+            "production PID 1 reaper did not install its wake callback",
+        ));
+    }
+    let mut events = ReaperEventLog::new(arm_reaper_test_capture(0));
+    let timer = FixtureTimer::new()?;
+    let deadline = FixtureTimer::deadline_after(FIXTURE_PROOF_DEADLINE)?;
+    let reaper_pid = std::process::id();
+    let extra_environment = [(FIXTURE_REAPER_PID_ENV, reaper_pid.to_string())];
+    let mut intermediate_release = FixtureRelease::new(directory, "intermediate.release");
+    let mut grandchild_release = FixtureRelease::new(directory, "grandchild.release");
+    let mut intermediate = spawn_registered_fixture_role(
+        "pid1::tests::worker_adoption_intermediate",
+        directory,
+        &extra_environment,
+    )?;
+    let intermediate_pid = intermediate.id();
+    let ready = timer.wait_for_file(&directory.join("intermediate.ready"), deadline)?;
+    let ready_pids = fixture_pids(&ready)?;
+    if ready_pids.len() != 3
+        || ready_pids.first() != Some(&intermediate_pid)
+        || ready_pids.get(2) != Some(&intermediate_pid)
+    {
+        return Err(io::Error::other(format!(
+            "intermediate readiness did not prove its grandchild's real initial PPID: {ready_pids:?}"
+        )));
+    }
+    let grandchild_pid = ready_pids[1];
+    let grandchild_ready = timer.wait_for_file(&directory.join("grandchild.ready"), deadline)?;
+    let grandchild_ready_pids = fixture_pids(&grandchild_ready)?;
+    if grandchild_ready_pids.len() != 2
+        || grandchild_ready_pids.first() != Some(&grandchild_pid)
+        || grandchild_ready_pids.get(1) != Some(&ready_pids[2])
+    {
+        return Err(io::Error::other(format!(
+            "grandchild's direct readiness record did not match the intermediate handoff: {grandchild_ready_pids:?}"
+        )));
+    }
+    intermediate_release.release()?;
+    let status = timer.wait_for_registered_child(intermediate.child_mut(), deadline)?;
+    let Some(status) = status else {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "registered intermediate did not exit before owner-wait deadline",
+        ));
+    };
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "registered intermediate exited unsuccessfully: {status}"
+        )));
+    }
+    intermediate.release_registration();
+
+    let adopted = timer.wait_for_file(&directory.join("grandchild.adopted"), deadline)?;
+    let adopted_pids = fixture_pids(&adopted)?;
+    if adopted_pids.len() != 3
+        || adopted_pids.first() != Some(&grandchild_pid)
+        || adopted_pids.get(1) != Some(&intermediate_pid)
+        || adopted_pids.get(2) != Some(&reaper_pid)
+    {
+        return Err(io::Error::other(format!(
+            "grandchild PPID transition did not match the live subreaper: {adopted_pids:?}"
+        )));
+    }
+    eprintln!(
+        "PID1_ADOPTION intermediate_pid={intermediate_pid} grandchild_pid={grandchild_pid} initial_ppid={} adopted_ppid={} subreaper_pid={reaper_pid}",
+        adopted_pids[1], adopted_pids[2]
+    );
+    grandchild_release.release()?;
+    let grandchild_raw = i32::try_from(grandchild_pid).map_err(|error| {
+        io::Error::other(format!("grandchild PID does not fit waitpid: {error}"))
+    })?;
+    events.wait_until(deadline, |observed| {
+        reaper_completed_reap(observed, grandchild_raw)
+    })?;
+    assert_targeted_echild(grandchild_pid)?;
+    events.flush()?;
+    Ok(())
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+fn run_intermediate_fixture() -> io::Result<()> {
+    ensure_sigchld_blocked()?;
+    let directory = fixture_directory()?;
+    let reaper_pid = env_fixture_pid(FIXTURE_REAPER_PID_ENV)?;
+    let intermediate_pid = std::process::id();
+    let extra_environment = [
+        (FIXTURE_INTERMEDIATE_PID_ENV, intermediate_pid.to_string()),
+        (FIXTURE_REAPER_PID_ENV, reaper_pid.to_string()),
+    ];
+    let child = spawn_fixture_role(
+        "pid1::tests::worker_adoption_grandchild",
+        &directory,
+        &extra_environment,
+    )?;
+    let grandchild = OwnedFixtureChild::unregistered(child);
+    let grandchild_pid = grandchild.id();
+    let timer = FixtureTimer::new()?;
+    let deadline = FixtureTimer::deadline_after(FIXTURE_CHILD_DEADLINE)?;
+    let ready = timer.wait_for_file(&directory.join("grandchild.ready"), deadline)?;
+    let ready_pids = fixture_pids(&ready)?;
+    if ready_pids.len() != 2
+        || ready_pids.first() != Some(&grandchild_pid)
+        || ready_pids.get(1) != Some(&intermediate_pid)
+    {
+        return Err(io::Error::other(format!(
+            "grandchild did not report its real direct parent PID: {ready_pids:?}"
+        )));
+    }
+    write_fixture_record(
+        &directory.join("intermediate.ready"),
+        &format!("{intermediate_pid}\n{grandchild_pid}\n{}\n", ready_pids[1]),
+    )?;
+    let _release = timer.wait_for_file(&directory.join("intermediate.release"), deadline)?;
+    if reaper_pid == intermediate_pid {
+        return Err(io::Error::other(
+            "intermediate and subreaper PIDs unexpectedly match",
+        ));
+    }
+    grandchild.detach_without_wait();
+    Ok(())
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+fn run_grandchild_fixture() -> io::Result<()> {
+    ensure_sigchld_blocked()?;
+    let directory = fixture_directory()?;
+    let expected_intermediate = env_fixture_pid(FIXTURE_INTERMEDIATE_PID_ENV)?;
+    let expected_reaper = env_fixture_pid(FIXTURE_REAPER_PID_ENV)?;
+    let pid = std::process::id();
+    let initial_parent = pid_to_u32(nix::unistd::getppid())?;
+    if initial_parent != expected_intermediate {
+        return Err(io::Error::other(format!(
+            "grandchild initial PPID {initial_parent} differs from intermediate {expected_intermediate}"
+        )));
+    }
+    write_fixture_record(
+        &directory.join("grandchild.ready"),
+        &format!("{pid}\n{initial_parent}\n"),
+    )?;
+    let timer = FixtureTimer::new()?;
+    let deadline = FixtureTimer::deadline_after(FIXTURE_CHILD_DEADLINE)?;
+    let adopted_parent =
+        timer.wait_for_adoption(expected_intermediate, expected_reaper, deadline)?;
+    write_fixture_record(
+        &directory.join("grandchild.adopted"),
+        &format!("{pid}\n{initial_parent}\n{adopted_parent}\n"),
+    )?;
+    let _release = timer.wait_for_file(&directory.join("grandchild.release"), deadline)?;
+    Ok(())
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn run_causal_worker(name: &str, directory: &Path) -> io::Result<()> {
+    let executable = std::env::current_exe()?;
+    let mut stdout_capture = tempfile::tempfile()?;
+    let mut stderr_capture = tempfile::tempfile()?;
+    let diagnostic = preexec_diagnostic_request(name)?;
+    let mut command = if let Some(request) = diagnostic {
+        let mut command = Command::new(request.python);
+        command
+            .args(["-I", "-S", "-B"])
+            .arg(request.script)
+            .arg(&executable)
+            .args(["--exact", name, "--nocapture"]);
+        command
+    } else {
+        let mut command = Command::new(&executable);
+        command.args(["--exact", name, "--nocapture"]);
+        command
+    };
+    command
+        .env(WORKER_ENV, name)
+        .env(FIXTURE_DIRECTORY_ENV, directory)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout_capture.try_clone()?))
+        .stderr(Stdio::from(stderr_capture.try_clone()?));
+    let mut mask = SigchldMaskGuard::block_for_spawn()?;
+    let child = command.spawn()?;
+    let mut child = OwnedFixtureChild::unregistered(child);
+    if let Err(error) = mask.restore() {
+        let cleanup = child.cleanup_bounded();
+        return Err(io::Error::other(format!(
+            "restore SIGCHLD mask after worker spawn: {error}; cleanup: {cleanup:?}"
+        )));
+    }
+    let outcome = crate::util::poll_owned_child_until_timeout(
+        child.child_mut(),
+        Duration::from_secs(8),
+        FIXTURE_POLL_INTERVAL,
+    );
+    match outcome {
+        Ok(crate::util::ChildPollOutcome::Exited(status)) => {
+            let diagnostics = worker_failure_diagnostics(
+                name,
+                &format!("completed with status {status}"),
+                &mut stdout_capture,
+                &mut stderr_capture,
+            );
+            eprintln!("{diagnostics}");
+            if status.success() {
+                Ok(())
+            } else {
+                Err(io::Error::other(format!(
+                    "isolated PID 1 fixture worker failed\n{diagnostics}"
+                )))
+            }
+        }
+        Ok(crate::util::ChildPollOutcome::TimedOut) => {
+            let cleanup = child.cleanup_bounded();
+            let diagnostics = worker_failure_diagnostics(
+                name,
+                "timed out after 8 seconds",
+                &mut stdout_capture,
+                &mut stderr_capture,
+            );
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!(
+                    "isolated PID 1 fixture worker exceeded its deadline: {cleanup:?}\n{diagnostics}"
+                ),
+            ))
+        }
+        Err(error) => {
+            let cleanup = child.cleanup_bounded();
+            let diagnostics = worker_failure_diagnostics(
+                name,
+                &format!("child polling failed: {error}; cleanup: {cleanup:?}"),
+                &mut stdout_capture,
+                &mut stderr_capture,
+            );
+            Err(io::Error::other(format!(
+                "isolated PID 1 fixture worker could not be supervised\n{diagnostics}"
+            )))
+        }
+    }
 }
 
 #[test]
@@ -283,8 +1938,7 @@ fn worker_reaps_unowned_with_live_owner() {
     all(target_os = "linux", not(target_env = "uclibc")),
     target_os = "macos"
 ))]
-static TEST_WAKE_SENDER: std::sync::OnceLock<std::sync::mpsc::SyncSender<()>> =
-    std::sync::OnceLock::new();
+static TEST_WAKE_SENDER: OnceLock<SyncSender<()>> = OnceLock::new();
 
 #[cfg(any(
     all(target_os = "linux", not(target_env = "uclibc")),
@@ -314,7 +1968,7 @@ fn worker_release_wakeup() {
     if !worker_selected("pid1::tests::worker_release_wakeup") {
         return;
     }
-    let (wake_tx, wake_rx) = std::sync::mpsc::sync_channel(1);
+    let (wake_tx, wake_rx) = sync_channel(1);
     TEST_WAKE_SENDER
         .set(wake_tx)
         .expect("isolated worker installs one local wake sender");
@@ -419,7 +2073,7 @@ fn worker_cross_thread_release_defers_wakeup() {
     if !worker_selected("pid1::tests::worker_cross_thread_release_defers_wakeup") {
         return;
     }
-    let (wake_tx, wake_rx) = std::sync::mpsc::sync_channel(1);
+    let (wake_tx, wake_rx) = sync_channel(1);
     TEST_WAKE_SENDER
         .set(wake_tx)
         .expect("isolated worker installs one local wake sender");
@@ -449,6 +2103,198 @@ fn worker_cross_thread_release_defers_wakeup() {
     wake_rx
         .recv_timeout(Duration::from_secs(2))
         .expect("last reservation wakes only after coordinate unlock");
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+fn run_fixture_worker_in_private_directory(name: &str) -> io::Result<()> {
+    let directory = tempfile::tempdir()?;
+    run_causal_worker(name, directory.path())
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+#[test]
+fn production_sigwait_requeues_eintr_exhaustion_and_reaps_child() -> io::Result<()> {
+    run_fixture_worker_in_private_directory("pid1::tests::worker_production_sigwait_requeue")
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn diagnostic_caught_sigchld_preserves_strict_production_requeue_sequence() -> io::Result<()> {
+    run_fixture_worker_in_private_directory(CAUGHT_SIGCHLD_DIAGNOSTIC_WORKER)
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+#[test]
+fn worker_production_sigwait_requeue() -> io::Result<()> {
+    if worker_selected("pid1::tests::worker_production_sigwait_requeue") {
+        let directory = fixture_directory()?;
+        run_sigwait_requeue_fixture(&directory)
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn worker_caught_sigchld_requeue_diagnostic() -> io::Result<()> {
+    if !worker_selected(CAUGHT_SIGCHLD_DIAGNOSTIC_WORKER) {
+        return Ok(());
+    }
+
+    ensure_sigchld_blocked()?;
+    let preexec_python_active = sigwait_preexec_diagnostic_active()?;
+    let execution_mode = if preexec_python_active {
+        "preexec-python"
+    } else {
+        "direct-rust"
+    };
+    writeln!(
+        io::stderr().lock(),
+        "PID1_DIAGNOSTIC_EXEC_ID mode={execution_mode} marker_verified={preexec_python_active} worker={CAUGHT_SIGCHLD_DIAGNOSTIC_WORKER} rust_pid={}",
+        std::process::id(),
+    )?;
+
+    let baseline = jackin_process_directory::current_sigchld_action()?;
+    let expected_flags = libc::SA_RESTART | libc::SA_SIGINFO;
+    let baseline_matches = baseline.disposition
+        == jackin_process_directory::SigchldDisposition::Default
+        && baseline.flags == expected_flags;
+    writeln!(
+        io::stderr().lock(),
+        "PID1_SIGCHLD_TREATMENT phase=worker-baseline disposition={:?} flags_raw={} flags_hex={:#010x} expected_flags_raw={} supported_default_baseline={baseline_matches}",
+        baseline.disposition,
+        baseline.flags,
+        baseline.flags,
+        expected_flags,
+    )?;
+    if !baseline_matches {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "unsupported caught SIGCHLD treatment baseline: disposition={:?}, flags_raw={}, expected_flags_raw={expected_flags}",
+                baseline.disposition, baseline.flags
+            ),
+        ));
+    }
+
+    let mut guard =
+        jackin_process_directory::CaughtSigchldDiagnosticGuard::install_for_diagnostic_worker()?;
+    let proof = (|| {
+        let caught = jackin_process_directory::current_sigchld_action()?;
+        let caught_matches = caught.disposition
+            == jackin_process_directory::SigchldDisposition::OpaqueCaught
+            && caught.flags == expected_flags;
+        let _reported = writeln!(
+            io::stderr().lock(),
+            "PID1_SIGCHLD_TREATMENT phase=worker-caught disposition={:?} flags_raw={} flags_hex={:#010x} expected_flags_raw={} coarse_action_match={caught_matches}; complete_match_was_verified_by_guard=true",
+            caught.disposition,
+            caught.flags,
+            caught.flags,
+            expected_flags,
+        );
+        if !caught_matches {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "caught SIGCHLD action did not match its opaque disposition and preserved flags",
+            ));
+        }
+        let directory = fixture_directory()?;
+        run_sigwait_requeue_fixture(&directory)
+    })();
+
+    let restoration = guard.restore();
+    match &restoration {
+        Ok(()) => {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "PID1_SIGCHLD_TREATMENT phase=worker-explicit-restore restored_exact=true"
+            );
+        }
+        Err(error) => {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "PID1_SIGCHLD_TREATMENT phase=worker-explicit-restore restored_exact=false error_kind={:?} raw_os_error={:?} error={error}",
+                error.kind(),
+                error.raw_os_error(),
+            );
+        }
+    }
+
+    match proof {
+        Ok(()) => restoration,
+        Err(primary) => {
+            if let Err(error) = &restoration {
+                let _reported = writeln!(
+                    io::stderr().lock(),
+                    "PID1_SIGCHLD_TREATMENT phase=proof-and-restore-failure primary_kind={:?} primary_raw_os_error={:?} restoration_kind={:?} restoration_raw_os_error={:?} restoration_error={error}",
+                    primary.kind(),
+                    primary.raw_os_error(),
+                    error.kind(),
+                    error.raw_os_error(),
+                );
+            }
+            Err(primary)
+        }
+    }
+}
+
+#[cfg(any(
+    all(target_os = "linux", not(target_env = "uclibc")),
+    target_os = "macos"
+))]
+#[test]
+fn worker_sigwait_causal_child() -> io::Result<()> {
+    if worker_selected("pid1::tests::worker_sigwait_causal_child") {
+        run_causal_child_fixture()
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+#[test]
+fn production_reaper_reaps_adopted_orphan_after_getppid_change() -> io::Result<()> {
+    run_fixture_worker_in_private_directory("pid1::tests::worker_production_subreaper")
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+#[test]
+fn worker_production_subreaper() -> io::Result<()> {
+    if worker_selected("pid1::tests::worker_production_subreaper") {
+        let directory = fixture_directory()?;
+        run_subreaper_fixture(&directory)
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+#[test]
+fn worker_adoption_intermediate() -> io::Result<()> {
+    if worker_selected("pid1::tests::worker_adoption_intermediate") {
+        run_intermediate_fixture()
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
+#[test]
+fn worker_adoption_grandchild() -> io::Result<()> {
+    if worker_selected("pid1::tests::worker_adoption_grandchild") {
+        run_grandchild_fixture()
+    } else {
+        Ok(())
+    }
 }
 
 mod selective_pass_faults;
