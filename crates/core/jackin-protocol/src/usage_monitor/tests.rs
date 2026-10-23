@@ -182,7 +182,7 @@ fn v4_monitor_control_shapes_are_tagged_and_secret_free() {
             ..
         }
     ));
-    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 4);
+    assert_eq!(USAGE_MONITOR_SCHEMA_VERSION, 5);
     assert_eq!(USAGE_STATUSLINE_INPUT_SCHEMA_VERSION, 2);
     assert_eq!(crate::usage_broker::USAGE_BROKER_PROTOCOL_VERSION, "v9");
     assert_eq!(

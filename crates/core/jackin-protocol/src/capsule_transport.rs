@@ -3,7 +3,15 @@
 
 use anyhow::{Context as _, Result, bail};
 #[cfg(unix)]
-use std::io::{Read, Write};
+use nix::errno::Errno;
+#[cfg(unix)]
+use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
+#[cfg(unix)]
+use nix::sys::socket::{MsgFlags, recv};
+#[cfg(unix)]
+use std::io::Write;
+#[cfg(unix)]
+use std::os::fd::{AsFd, AsRawFd};
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
@@ -127,18 +135,64 @@ fn write_all_until(stream: &mut UnixStream, bytes: &[u8], deadline: Instant) -> 
 }
 
 #[cfg(unix)]
+fn poll_timeout(timeout: Duration) -> PollTimeout {
+    let milliseconds = timeout.as_millis().saturating_add(u128::from(
+        !timeout.subsec_nanos().is_multiple_of(1_000_000),
+    ));
+    if milliseconds >= i32::MAX as u128 {
+        PollTimeout::MAX
+    } else {
+        PollTimeout::try_from(milliseconds as u32).unwrap_or(PollTimeout::MAX)
+    }
+}
+
+#[cfg(unix)]
 fn read_exact_until(stream: &mut UnixStream, bytes: &mut [u8], deadline: Instant) -> Result<()> {
     let mut offset = 0;
+    let mut terminal_readiness = false;
     while offset < bytes.len() {
-        stream.set_read_timeout(Some(remaining(deadline)?))?;
+        remaining(deadline)?;
         let remaining_bytes = bytes
             .get_mut(offset..)
             .context("Capsule transport ACK read offset exceeded buffer")?;
-        match stream.read(remaining_bytes) {
+        match recv(stream.as_raw_fd(), remaining_bytes, MsgFlags::MSG_DONTWAIT) {
             Ok(0) => bail!("Capsule transport ACK ended before all bytes arrived"),
             Ok(count) => offset += count,
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error.into()),
+            Err(Errno::EINTR) => {}
+            Err(Errno::EAGAIN) if terminal_readiness => {
+                bail!("Capsule transport ACK socket closed before all bytes arrived")
+            }
+            Err(Errno::EAGAIN) => {
+                let mut descriptors = [PollFd::new(stream.as_fd(), PollFlags::POLLIN)];
+                match poll(&mut descriptors, poll_timeout(remaining(deadline)?)) {
+                    Ok(0) => {
+                        remaining(deadline)?;
+                    }
+                    Ok(_) => {
+                        let readiness = descriptors[0]
+                            .revents()
+                            .context("Capsule transport ACK poll returned unknown flags")?;
+                        remaining(deadline)?;
+                        if readiness.contains(PollFlags::POLLNVAL) {
+                            bail!("Capsule transport ACK socket became invalid");
+                        }
+                        terminal_readiness =
+                            readiness.intersects(PollFlags::POLLHUP | PollFlags::POLLERR);
+                        if !readiness
+                            .intersects(PollFlags::POLLIN | PollFlags::POLLHUP | PollFlags::POLLERR)
+                        {
+                            bail!(
+                                "Capsule transport ACK poll returned unexpected flags: {readiness:?}"
+                            );
+                        }
+                    }
+                    Err(Errno::EINTR) => {
+                        remaining(deadline)?;
+                    }
+                    Err(error) => return Err(error).context("polling Capsule transport ACK"),
+                }
+            }
+            Err(error) => return Err(error).context("reading Capsule transport ACK"),
         }
     }
     Ok(())
@@ -209,3 +263,6 @@ where
         .context("flushing Capsule transport ACK")?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

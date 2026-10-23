@@ -174,7 +174,7 @@ fn mise_native_rust_option_routes_cargo_through_mbx() {
         .and_then(toml::Value::as_table)
         .expect("MBX tool configuration");
     assert!(
-        mbx.get("version").and_then(toml::Value::as_str) == Some("1.26.0")
+        mbx.get("version").and_then(toml::Value::as_str) == Some("1.27.0")
             && mbx.get("workflow").and_then(toml::Value::as_str)
                 == Some("release.yml@refs/heads/main"),
         "the native integration must pin the current MBX version and signer workflow"

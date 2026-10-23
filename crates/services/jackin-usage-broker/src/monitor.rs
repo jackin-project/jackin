@@ -7,6 +7,7 @@ mod lifecycle;
 mod observations;
 mod operations;
 mod quota;
+mod resetless;
 mod spend;
 mod statusline;
 mod storage;
@@ -20,8 +21,9 @@ use std::sync::{Condvar, Mutex};
 
 use evaluation::{
     evidence_is_relevant, field_age, is_current, model_status, quota_pause_reason,
-    quota_window_status, reconcile_all_monitors, refresh_all_goal_spend,
-    spend_decision_blocks_dispatch, spend_issue, spend_policy, upsert_evidence,
+    quota_window_status, reconcile_all_monitors, refresh_all_goal_spend, selected_broker_orphan,
+    spend_decision_blocks_dispatch, spend_issue, spend_policy, statusline_used_without_reset,
+    upsert_evidence,
 };
 use jackin_protocol::control::{Money, RawPercentPoints};
 use lifecycle::{
@@ -30,11 +32,16 @@ use lifecycle::{
 };
 use observations::{
     advance_account_reset_barriers, apply_statusline, apply_unbound_statusline,
-    latch_account_reset_barrier, max_option, parse_counter_id, sync_monitor_from_account,
-    sync_monitor_from_session, valid_bounded_text, valid_evidence_fingerprint, valid_identifier,
+    is_used_only_window, latch_account_reset_barrier, max_option, parse_counter_id,
+    sync_monitor_from_account, sync_monitor_from_session, update_broker_used_only,
+    update_broker_window, valid_bounded_text, valid_evidence_fingerprint, valid_identifier,
     valid_source_capability_id, validate_identifier, validate_observation,
 };
 use quota::{monitor_basis_points, monitor_source_used_points, monitor_window_used_points};
+use resetless::{
+    ResetAdmissionFence, ResetlessCandidate, advance_reset_admission_fence,
+    invalidate_reset_admission_fence, strict_resetless_candidates,
+};
 use validation::validate_store_state;
 #[cfg(test)]
 use validation::{spend_snapshot_preserves_history, spend_state_matches_account};
@@ -144,6 +151,8 @@ struct AccountObservations {
     sessions: BTreeMap<String, SessionObservation>,
     broker_windows: [ObservedWindow; 2],
     latest_reset_epochs: [Option<i64>; 2],
+    reset_admission_fences: [ResetAdmissionFence; 2],
+    used_only_admission_sequences: [Option<u64>; 2],
     reset_barriers: [Option<AccountResetBarrier>; 2],
     input_sequence: u64,
     spend: SpendAccountState,
@@ -173,6 +182,8 @@ struct ObservedQuotaPair {
     used_percentage_basis_points: i32,
     reset_at_epoch: i64,
     evidence_at_epoch: Option<i64>,
+    /// Source timestamps in [used, reset] order; receipt-only statusline fields use None.
+    source_times: [Option<i64>; 2],
     received_at_epoch: i64,
     input_sequence: u64,
     claude_code_version: Option<String>,
@@ -869,7 +880,12 @@ fn quota_readiness(
             field.is_some_and(|field| field.freshness == MonitorEvidenceFreshness::Current)
         });
     let all_quota_present = quota_fields.iter().all(Option::is_some);
-    if exhausted {
+    let reset_missing = issues
+        .iter()
+        .any(|item| item.code == MonitorIssueCode::MissingReset);
+    if reset_missing {
+        MonitorQuotaReadiness::Unknown
+    } else if exhausted {
         MonitorQuotaReadiness::Exhausted
     } else if has_stale_quota {
         MonitorQuotaReadiness::Stale
@@ -1031,6 +1047,8 @@ fn quota_window_issues(
 ) -> Vec<MonitorIssue> {
     let mut issues = Vec::new();
     let status = quota_window_status(monitor, account, window, index, now_epoch);
+    let resetless_orphan = selected_broker_orphan(monitor, account, &status, index, now_epoch)
+        || statusline_used_without_reset(monitor, account, &status, index, now_epoch);
     for (value, code, missing_code, message) in [
         (
             status.used_evidence.as_ref(),
@@ -1055,6 +1073,16 @@ fn quota_window_issues(
                 ),
             );
         }
+    }
+    if resetless_orphan {
+        push_issue(
+            &mut issues,
+            issue(
+                MonitorIssueCode::MissingReset,
+                "fresh utilization evidence has no reset paired to that observation",
+                None,
+            ),
+        );
     }
     if let Some(reset_at_epoch) = status.reset_at_epoch {
         let due_at = reset_at_epoch.saturating_add(MONITOR_RESET_GRACE_SECS);
@@ -1295,6 +1323,7 @@ fn observe_projection_account(
     }
 
     let proposed_sequence = state.next_input_sequence.saturating_add(1);
+    let resetless_candidates = strict_resetless_candidates(account, now_epoch, now_epoch);
     let windows = projection_windows(account, now_epoch, proposed_sequence);
     if windows.iter().all(Option::is_none) {
         return Ok(false);
@@ -1312,7 +1341,13 @@ fn observe_projection_account(
         .accounts
         .entry(destination_account_id.to_owned())
         .or_default();
-    if !update_broker_windows(account_state, windows, proposed_sequence) {
+    if !update_broker_windows(
+        account_state,
+        windows,
+        resetless_candidates,
+        proposed_sequence,
+        now_epoch,
+    ) {
         return Ok(false);
     }
     account_state.input_sequence = proposed_sequence;
@@ -1322,6 +1357,7 @@ fn observe_projection_account(
 }
 
 fn invalidate_local_source_projection(state: &mut StoreState, binding_id: &str, account_id: &str) {
+    let now_epoch = state.last_now_epoch;
     if let Some(account) = state.accounts.get_mut(account_id) {
         account.broker_windows = Default::default();
         account.latest_reset_epochs = std::array::from_fn(|index| {
@@ -1335,6 +1371,9 @@ fn invalidate_local_source_projection(state: &mut StoreState, binding_id: &str, 
                 )
             })
         });
+        for index in 0..account.reset_admission_fences.len() {
+            invalidate_reset_admission_fence(account, index, now_epoch);
+        }
         for barrier in &mut account.reset_barriers {
             if barrier
                 .as_ref()
@@ -1488,47 +1527,31 @@ fn projection_windows(
         if used_value.is_none() && reset_value.is_none() {
             continue;
         }
-        let paired = match (
-            used_value,
-            used_reset,
-            used_evidence_at,
-            reset_value,
-            reset_evidence_at,
-        ) {
-            (Some(used), Some(used_reset), Some(used_at), Some(reset), Some(reset_at))
-                if used_reset == reset =>
-            {
-                Some(ObservedQuotaPair {
-                    used_percentage_basis_points: used,
-                    reset_at_epoch: reset,
-                    evidence_at_epoch: Some(used_at.min(reset_at)),
-                    received_at_epoch,
-                    input_sequence,
-                    claude_code_version: None,
-                })
-            }
-            _ => None,
-        };
+        let used = used_value
+            .zip(used_evidence_at)
+            .map(|(value, evidence_at_epoch)| ObservedPercentage {
+                value,
+                reset_at_epoch: used_reset,
+                evidence_at_epoch: Some(evidence_at_epoch),
+                received_at_epoch,
+                input_sequence,
+                claude_code_version: None,
+            });
+        let reset = reset_value
+            .zip(reset_evidence_at)
+            .map(|(value, evidence_at_epoch)| Observed {
+                value,
+                evidence_at_epoch: Some(evidence_at_epoch),
+                received_at_epoch,
+                input_sequence,
+                claude_code_version: None,
+            });
+        let paired = used.as_ref().zip(reset.as_ref()).and_then(|(used, reset)| {
+            resetless::pair_from_observations(used, reset, resetless::PairSource::BrokerProjection)
+        });
         windows[index] = Some(ObservedWindow {
-            used: used_value
-                .zip(used_evidence_at)
-                .map(|(value, evidence_at_epoch)| ObservedPercentage {
-                    value,
-                    reset_at_epoch: used_reset,
-                    evidence_at_epoch: Some(evidence_at_epoch),
-                    received_at_epoch,
-                    input_sequence,
-                    claude_code_version: None,
-                }),
-            reset: reset_value
-                .zip(reset_evidence_at)
-                .map(|(value, evidence_at_epoch)| Observed {
-                    value,
-                    evidence_at_epoch: Some(evidence_at_epoch),
-                    received_at_epoch,
-                    input_sequence,
-                    claude_code_version: None,
-                }),
+            used,
+            reset,
             paired,
         });
     }
@@ -1627,7 +1650,9 @@ fn metric_group_time(
 fn update_broker_windows(
     account: &mut AccountObservations,
     input: [Option<ObservedWindow>; 2],
+    resetless_candidates: [Option<ResetlessCandidate>; 2],
     input_sequence: u64,
+    now_epoch: i64,
 ) -> bool {
     let mut changed = false;
     for (index, maybe_window) in input.into_iter().enumerate() {
@@ -1635,8 +1660,22 @@ fn update_broker_windows(
             continue;
         };
         if is_used_only_window(&window) {
-            let current = &mut account.broker_windows[index];
-            changed |= update_broker_used_only(current, &window, input_sequence);
+            let Some(candidate) = resetless_candidates[index].filter(|candidate| {
+                window.used.as_ref().is_some_and(|used| {
+                    used.value == candidate.value
+                        && used.evidence_at_epoch == Some(candidate.source_at_epoch)
+                })
+            }) else {
+                continue;
+            };
+            changed |= update_broker_used_only(
+                account,
+                index,
+                &window,
+                candidate,
+                input_sequence,
+                now_epoch,
+            );
             continue;
         }
         if window.reset.as_ref().is_some_and(|reset| {
@@ -1644,129 +1683,29 @@ fn update_broker_windows(
         }) {
             continue;
         }
-        if let Some(reset) = window.reset.as_ref().filter(|reset| {
-            account.latest_reset_epochs[index].is_none_or(|latest| reset.value > latest)
-        }) {
-            account.latest_reset_epochs[index] = Some(reset.value);
+        let window_changed =
+            update_broker_window(&mut account.broker_windows[index], &window, input_sequence);
+        if window_changed {
+            account.used_only_admission_sequences[index] = None;
             changed = true;
         }
-        let current = &mut account.broker_windows[index];
-        changed |= update_broker_window(current, &window, input_sequence);
-    }
-    changed
-}
-
-fn is_used_only_window(window: &ObservedWindow) -> bool {
-    window.reset.is_none()
-        && window.paired.is_none()
-        && window
-            .used
-            .as_ref()
-            .is_some_and(|used| used.reset_at_epoch.is_none())
-}
-
-fn update_broker_used_only(
-    current: &mut ObservedWindow,
-    next: &ObservedWindow,
-    input_sequence: u64,
-) -> bool {
-    let Some(mut used) = next.used.clone() else {
-        return false;
-    };
-    if used.reset_at_epoch.is_some() {
-        return false;
-    }
-    used.input_sequence = input_sequence;
-    used.reset_at_epoch = None;
-    current.used = Some(used);
-    current.paired = None;
-    true
-}
-
-fn update_broker_window(
-    current: &mut ObservedWindow,
-    next: &ObservedWindow,
-    input_sequence: u64,
-) -> bool {
-    let mut changed = false;
-    if let Some(next_reset) = &next.reset {
-        let mut next_reset = next_reset.clone();
-        next_reset.input_sequence = input_sequence;
-        match current.reset.as_ref() {
-            None => {
-                current.reset = Some(next_reset);
-                changed = true;
-            }
-            Some(previous) if next_reset.value > previous.value => {
-                current.reset = Some(next_reset);
-                changed = true;
-            }
-            Some(previous)
-                if next_reset.value == previous.value
-                    && source_observation_is_newer(&next_reset, previous) =>
-            {
-                current.reset = Some(next_reset);
-                changed = true;
-            }
-            _ => {}
-        }
-    }
-    if let Some(next_used) = &next.used {
-        let mut next_used = next_used.clone();
-        next_used.input_sequence = input_sequence;
-        let next_reset = next_used.reset_at_epoch;
-        let current_used = current.used.as_ref();
-        let reset_is_current = current
+        let accepted_reset = account.broker_windows[index]
             .reset
             .as_ref()
-            .is_none_or(|reset| next_reset.is_some_and(|candidate| candidate >= reset.value));
-        if reset_is_current {
-            match current_used {
-                None => {
-                    current.used = Some(next_used);
-                    changed = true;
-                }
-                Some(previous) if next_reset > previous.reset_at_epoch => {
-                    current.used = Some(next_used);
-                    changed = true;
-                }
-                Some(previous)
-                    if next_reset == previous.reset_at_epoch
-                        && next_used.value > previous.value =>
-                {
-                    current.used = Some(next_used);
-                    changed = true;
-                }
-                Some(previous)
-                    if next_reset == previous.reset_at_epoch
-                        && next_used.value == previous.value
-                        && next_used.evidence_at_epoch > previous.evidence_at_epoch =>
-                {
-                    current.used = Some(next_used);
-                    changed = true;
-                }
-                _ => {}
-            }
-        }
-    }
-    if let Some(next_pair) = &next.paired {
-        let pair_is_newer = current.paired.as_ref().is_none_or(|previous| {
-            next_pair.used_percentage_basis_points != previous.used_percentage_basis_points
-                || next_pair.reset_at_epoch != previous.reset_at_epoch
-                || next_pair.evidence_at_epoch > previous.evidence_at_epoch
-        });
-        if pair_is_newer {
-            let mut next_pair = next_pair.clone();
-            next_pair.input_sequence = input_sequence;
-            current.paired = Some(next_pair);
+            .filter(|reset| reset.input_sequence == input_sequence)
+            .cloned();
+        if let Some(reset) = accepted_reset
+            && account.latest_reset_epochs[index].is_none_or(|latest| reset.value >= latest)
+        {
+            account.latest_reset_epochs[index] = Some(
+                account.latest_reset_epochs[index]
+                    .map_or(reset.value, |latest| latest.max(reset.value)),
+            );
+            advance_reset_admission_fence(account, index, reset.value, &reset, now_epoch);
             changed = true;
         }
     }
     changed
-}
-
-fn source_observation_is_newer<T>(next: &Observed<T>, current: &Observed<T>) -> bool {
-    next.evidence_at_epoch > current.evidence_at_epoch
 }
 
 fn spend_input_matches_record(input: &SpendRecordInput, record: &SpendRecord) -> bool {

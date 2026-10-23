@@ -26,24 +26,24 @@ python3 session_cost.py explicit-session.jsonl explicit-worker.jsonl
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_measurement_tools.py
 ```
 
-A samples file is a JSON array of objects with `label` and `text` strings. File reads preserve CRLF and final-newline bytes before UTF-8 decoding. Offline request output contains the supplied content: retain it only where that content is authorized.
+A samples file is a JSON array of objects with <code>label</code> and <code>text</code> strings. File reads preserve CRLF and final-newline bytes before UTF-8 decoding. Offline request output contains the supplied content: retain it only where that content is authorized.
 
 ## Explicit network execution
 
-Only `count_tokens.py` and `image_tokens.py` accept `--execute`. That opt-in sends the prepared content to Anthropic using `ANTHROPIC_API_KEY`, or a named `--api-key-env` variable. It does not reuse Claude Code credentials. This refresh did **not** execute provider calls.
+Only <code>count_tokens.py</code> and <code>image_tokens.py</code> accept <code>--execute</code>. That opt-in sends the prepared content to Anthropic using <code>ANTHROPIC_API_KEY</code>, or a named <code>--api-key-env</code> variable. It does not reuse Claude Code credentials. This refresh did **not** execute provider calls.
 
-The [official token-counting documentation](https://platform.claude.com/docs/en/build-with-claude/token-counting) is the authority for endpoint support, rate limits and estimate semantics. Recheck the exact model before execution; the scripts deliberately have no default model or assumed tokenizer-family equality. An input-counting endpoint cannot calibrate hidden reasoning by subtraction.
+The [official token-counting documentation](https://platform.claude.com/docs/en/build-with-claude/token-counting) is the authority for endpoint support, rate limits, and estimate semantics. Recheck the exact model before execution; the scripts deliberately have no default model or assumed tokenizer-family equality. An input-counting endpoint cannot calibrate hidden reasoning by subtraction.
 
 ## Usage accounting
 
-The parser deduplicates response IDs within a session; when the session ID is absent it scopes the ID to the explicit file. Equal receipts repeat. Monotone cumulative streaming receipts replace earlier ones. Model conflicts, decreasing counts, missing response IDs, incomplete input/output receipts and inconsistent TTL breakdowns fail visibly.
+The parser deduplicates response IDs within a session; when the session ID is absent it scopes the ID to the explicit file. Equal receipts repeat. Monotone cumulative streaming receipts replace earlier ones. Model conflicts, decreasing counts, missing response IDs, incomplete input/output receipts, and inconsistent TTL breakdowns fail visibly.
 
-Cache writes are partitioned into five-minute, one-hour and **unknown TTL** classes. The aggregate is not added a second time. A supplied rate file must contain USD per million tokens for `input`, `cache_read`, `cache_write_5m`, `cache_write_1h` and `output`, keyed by the exact model string. Unknown TTL or unknown model means an unknown estimate, not zero. A real zero remains zero.
+Cache writes are partitioned into five-minute, one-hour, and **unknown TTL** classes. The aggregate is not added a second time. A supplied rate file must contain USD per million tokens for <code>input</code>, <code>cache_read</code>, <code>cache_write_5m</code>, <code>cache_write_1h</code>, and <code>output</code>, keyed by the exact model string. Unknown TTL or unknown model means an unknown estimate, not zero. A real zero remains zero.
 
-Output usage includes reasoning, prose and tool arguments as reported by the source. The script does not label a replay-count residual as measured thinking. Include all failed attempts, subagents, compaction and repair sessions in the explicit file list; missing files remain missing evidence. Provider invoices, API list-price estimates and subscription quotas are separate measurements.
+Output usage includes reasoning, prose, and tool arguments as reported by the source. The script does not label a replay-count residual as measured thinking. Include all failed attempts, subagents, compaction, and repair sessions in the explicit file list; missing files remain missing evidence. Provider invoices, API list-price estimates, and subscription quotas are separate measurements.
 
 ## Reproduction and provenance
 
-The <RepoFile path="docs/content/research/context/techniques/tools/coverage-inventory.tsv">coverage inventory</RepoFile> maps recovered topics to refreshed decisions. Product probes live under <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-23">the dated fixture directory</RepoFile>; each is component evidence with its own pins and configuration.
+The dated component methods and curated result data are documented in the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md">pinned reproduction method and provenance</RepoFile>. Each result is component evidence with its own source pins and configuration. The broader scope and remaining evidence limits are recorded in the [scope reconciliation](/research/context/tools/12-scope-and-reconciliation/).
 
-The earlier dossier's claim that these scripts reproduced every old number is withdrawn: the private transcripts and complete six-by-seven style corpus were not recovered. See [baseline reconciliation](/research/context/techniques/02-baseline-audit/) and the [scope ledger](/research/context/tools/12-scope-and-reconciliation/).
+The earlier dossier's claim that these scripts reproduced every old number is withdrawn: the private transcripts and complete six-by-seven style corpus were not recovered. See [baseline reconciliation](/research/context/techniques/02-baseline-audit/) and the [evidence ledger](/research/context/tools/07-evidence-and-claims/).
