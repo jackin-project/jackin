@@ -7,6 +7,9 @@ use std::collections::BTreeSet;
 const SEED: &str = "dependency-seed";
 const SEED_CONDITION: &str = "github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.ref_protected == true";
 
+#[path = "seed_authority.rs"]
+mod seed_authority;
+
 pub(super) fn assert_inventory(workflow: &Value, needs: &BTreeSet<String>) -> Result<()> {
     let jobs = workflow["jobs"].as_object().context("CI has jobs")?;
     let seed = jobs
@@ -27,21 +30,7 @@ pub(super) fn assert_inventory(workflow: &Value, needs: &BTreeSet<String>) -> Re
         "only the bounded protected-main dependency seed is outside Required"
     );
     let steps = seed["steps"].as_array().context("seed has steps")?;
-    ensure!(
-        !steps.iter().any(|step| {
-            step["env"].get("VELNOR_INTERNAL_OP").is_some()
-                || step["env"].get("VELNOR_TASK_EXECUTION_DIGEST").is_some()
-                || step["with"].get("digest").is_some()
-                || step["run"].as_str().is_some_and(|run| {
-                    run.contains("VELNOR_INTERNAL_OP")
-                        || run.contains("VELNOR_TASK_EXECUTION_DIGEST")
-                })
-                || step["uses"].as_str().is_some_and(|uses| {
-                    uses.contains("declared-task-") || uses.contains("upload-artifact")
-                })
-        }),
-        "optional dependency seed cannot own task execution or report artifacts"
-    );
+    seed_authority::assert_steps(&super::repository_root(), steps)?;
     assert_compile_lanes(steps)?;
     for (id, job) in jobs {
         if id != SEED {
@@ -189,7 +178,12 @@ mod tests {
 
     #[test]
     fn seed_exception_requires_protected_push_and_no_report_authority() -> Result<()> {
-        let (workflow, needs) = actual()?;
+        let (mut workflow, needs) = actual()?;
+        workflow["jobs"][SEED]["steps"]
+            .as_array_mut()
+            .context("seed steps")?
+            .push(json!({"name": "Synthetic inline run positive control", "run": "true"}));
+        assert_inventory(&workflow, &needs)?;
         for (key, value) in [
             ("if", json!("${{ always() }}")),
             ("runs-on", json!("self-hosted")),
@@ -241,12 +235,11 @@ mod tests {
             let steps = changed["jobs"][SEED]["steps"]
                 .as_array_mut()
                 .context("steps")?;
-            let manifest = steps
+            let inline = steps
                 .iter_mut()
-                .find(|step| step["name"] == "Verify Rust channel manifest")
-                .context("benign manifest-verification step")?;
-            let run = manifest["run"].as_str().context("manifest run")?;
-            manifest["run"] = json!(format!("{run}; {command}"));
+                .find(|step| step["name"] == "Synthetic inline run positive control")
+                .context("synthetic inline run step")?;
+            inline["run"] = json!(command);
             ensure!(
                 assert_inventory(&changed, &needs).is_err(),
                 "reject actual task/report protocol in benign step: {operation}"
@@ -257,14 +250,13 @@ mod tests {
         let steps = digest_only_run["jobs"][SEED]["steps"]
             .as_array_mut()
             .context("steps")?;
-        let manifest = steps
+        let inline = steps
             .iter_mut()
-            .find(|step| step["name"] == "Verify Rust channel manifest")
-            .context("benign manifest-verification step")?;
-        let run = manifest["run"].as_str().context("manifest run")?;
-        manifest["run"] = json!(format!(
-            "{run}; VELNOR_TASK_EXECUTION_DIGEST=b3-0000000000000000000000000000000000000000000000000000000000000000 true"
-        ));
+            .find(|step| step["name"] == "Synthetic inline run positive control")
+            .context("synthetic inline run step")?;
+        inline["run"] = json!(
+            "VELNOR_TASK_EXECUTION_DIGEST=b3-0000000000000000000000000000000000000000000000000000000000000000 true"
+        );
         ensure!(
             assert_inventory(&digest_only_run, &needs).is_err(),
             "run-level task digest is rejected without an operation marker"
@@ -289,11 +281,11 @@ mod tests {
         let steps = benign_message["jobs"][SEED]["steps"]
             .as_array_mut()
             .context("steps")?;
-        let manifest = steps
+        let inline = steps
             .iter_mut()
-            .find(|step| step["name"] == "Verify Rust channel manifest")
-            .context("benign manifest-verification step")?;
-        manifest["run"] = json!("printf '%s\n' 'upgrade velnor-actions or pin a catalogued Rust'");
+            .find(|step| step["name"] == "Synthetic inline run positive control")
+            .context("synthetic inline run step")?;
+        inline["run"] = json!("printf '%s\n' 'upgrade velnor-actions or pin a catalogued Rust'");
         assert_inventory(&benign_message, &needs)?;
         let mut dependent = workflow;
         dependent["jobs"]["rust-jackin-image"]["needs"]
@@ -309,6 +301,12 @@ mod tests {
     #[test]
     fn seed_exception_requires_all_compile_lanes_and_no_hidden_native_operation() -> Result<()> {
         let (workflow, needs) = actual()?;
+        let mut benign_inline = workflow.clone();
+        benign_inline["jobs"][SEED]["steps"]
+            .as_array_mut()
+            .context("seed steps")?
+            .push(json!({"name": "Synthetic inline run positive control", "run": "true"}));
+        assert_inventory(&benign_inline, &needs)?;
         let mut empty = workflow.clone();
         empty["jobs"][SEED]["steps"] = json!([]);
         ensure!(assert_inventory(&empty, &needs).is_err());

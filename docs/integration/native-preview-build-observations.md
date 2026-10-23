@@ -51,6 +51,15 @@ The reviewed `clippy::disallowed_methods@jackin-xtask` ratchet bound increases f
 budget changes. Their local reasons and the global runtime/render blocking ban
 remain in place; no alternative sleep spelling or broader suppression is used.
 
+The dependency-seed authority contract reads local composite action metadata
+through one function-local `clippy::disallowed_methods` expectation. This bounded
+filesystem work runs synchronously on the CI integration-test thread, never on a
+runtime or rendering thread. `File::open` with
+`Read::take(MAX_ACTION_METADATA_BYTES + 1)` bounds oversized and growing reads.
+The reviewed `clippy::disallowed_methods@jackin-xtask` ratchet bound increases
+from 11 to 12 for this one site; all other budgets and the runtime/render
+blocking prohibition remain unchanged.
+
 ## Preview optimization tradeoff
 
 Native preview leaves explicitly select Cargo's `preview` profile, which inherits
