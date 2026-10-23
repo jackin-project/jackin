@@ -12,6 +12,7 @@ use jackin_protocol::control::{
     UsageSource,
 };
 
+use super::identity::validate_stored_rows;
 use super::read::decode_stored_account_snapshot;
 use super::{AccountIdentitySummary, StoredAccountUsageSnapshot, block_on_store, open_store};
 
@@ -30,6 +31,7 @@ pub fn list_account_identities(path: &Path) -> Result<Vec<AccountIdentitySummary
             .or_insert_with(|| AccountIdentitySummary {
                 provider: row.provider.clone(),
                 account_key_hash: row.account_key_hash.clone(),
+                account_capability: row.account_capability.clone(),
                 account_label: row.account_label.clone(),
                 plan_label: row.plan_label.clone(),
                 remaining_percent: None,
@@ -85,7 +87,7 @@ pub fn load_all_account_usage_views(
     }
     let mut views = Vec::with_capacity(grouped.len());
     for (account_key_hash, rows) in grouped {
-        if let Some(view) = account_usage_view_from_rows(rows, now_epoch) {
+        if let Some(view) = account_usage_view_from_rows(rows, now_epoch)? {
             views.push(StoredAccountUsageView {
                 account_key_hash,
                 view,
@@ -107,23 +109,26 @@ pub fn load_all_account_usage_views(
     Ok(views)
 }
 
-pub(crate) fn account_usage_view_from_rows(
+fn account_usage_view_from_rows(
     mut matches: Vec<StoredAccountUsageSnapshot>,
     now_epoch: i64,
-) -> Option<FocusedUsageView> {
+) -> Result<Option<FocusedUsageView>, String> {
     if matches.is_empty() {
-        return None;
+        return Ok(None);
     }
+    validate_stored_rows(&matches)?;
     let latest = matches.iter().map(|r| r.fetched_at).max().unwrap_or(0);
     matches.retain(|r| r.fetched_at == latest);
     let selected_source = matches
         .iter()
-        .max_by_key(|row| durable_source_priority(&row.source))?
-        .source
-        .clone();
+        .max_by_key(|row| durable_source_priority(&row.source))
+        .map(|row| row.source.clone())
+        .ok_or_else(|| "snapshot identity group has no source row".to_owned())?;
     matches.retain(|row| row.source == selected_source);
     matches.sort_by(|a, b| a.window_kind.cmp(&b.window_kind));
-    let first = matches.first()?;
+    let first = matches
+        .first()
+        .ok_or_else(|| "snapshot identity group has no selected row".to_owned())?;
     let provider = first.provider.clone();
     let status = usage_status_from_storage(&first.view_status);
     let source = usage_source_from_storage(&first.source);
@@ -132,7 +137,7 @@ pub(crate) fn account_usage_view_from_rows(
         matches.iter().map(|row| row.quota_bucket.clone()).collect();
     buckets.sort_by(|a, b| a.label.cmp(&b.label));
     buckets.dedup_by(|a, b| a.label == b.label);
-    Some(FocusedUsageView {
+    Ok(Some(FocusedUsageView {
         focused_agent: None,
         focused_provider: first.focused_provider.clone().or(Some(provider.clone())),
         account: FocusedAccountHeader {
@@ -141,7 +146,7 @@ pub(crate) fn account_usage_view_from_rows(
             username: None,
             plan_label: first.plan_label.clone(),
             credential_origin: None,
-            account_capability: None,
+            account_capability: first.account_capability.clone(),
         },
         buckets,
         status,
@@ -160,7 +165,7 @@ pub(crate) fn account_usage_view_from_rows(
         },
         tabs: Vec::new(),
         last_error: first.last_error.clone(),
-    })
+    }))
 }
 
 pub(crate) fn durable_source_priority(source: &str) -> u8 {
@@ -239,7 +244,9 @@ pub(crate) fn load_all_account_snapshot_rows(
                     pace_label,
                     view_status,
                     updated_label,
-                    status_bar_label
+                    status_bar_label,
+                    capability_account_id,
+                    capability_surface_id
                 FROM account_usage_snapshots
                 ORDER BY provider, account_key_hash, source, window_kind
                 ",
@@ -256,6 +263,7 @@ pub(crate) fn load_all_account_snapshot_rows(
         {
             snapshots.push(decode_stored_account_snapshot(&row)?);
         }
+        validate_stored_rows(&snapshots)?;
         Ok(snapshots)
     })
 }

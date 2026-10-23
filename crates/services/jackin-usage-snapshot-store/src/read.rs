@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use super::StoredAccountUsageSnapshot;
+use super::identity;
 use jackin_protocol::control::QuotaBucketView;
 use jackin_usage_store_backend::Row;
 #[cfg(test)]
@@ -120,7 +121,9 @@ pub(crate) fn stored_account_snapshots(
                     pace_label,
                     view_status,
                     updated_label,
-                    status_bar_label
+                    status_bar_label,
+                    capability_account_id,
+                    capability_surface_id
                 FROM account_usage_snapshots
                 ORDER BY provider, account_key_hash, source, window_kind
                 ",
@@ -137,6 +140,7 @@ pub(crate) fn stored_account_snapshots(
         {
             snapshots.push(decode_stored_account_snapshot(&row)?);
         }
+        identity::validate_stored_rows(&snapshots)?;
         Ok(snapshots)
     })
 }
@@ -160,9 +164,12 @@ pub(crate) fn decode_quota_bucket(
 pub(super) fn decode_stored_account_snapshot(
     row: &Row,
 ) -> Result<StoredAccountUsageSnapshot, String> {
+    let provider = row_string(row, 0, "provider")?;
+    let (account_key_hash, account_capability) = decode_stored_account_identity(row, &provider)?;
     Ok(StoredAccountUsageSnapshot {
-        provider: row_string(row, 0, "provider")?,
-        account_key_hash: row_string(row, 1, "account_key_hash")?,
+        provider,
+        account_key_hash,
+        account_capability,
         account_label: row_string(row, 2, "account_label")?,
         source: row_string(row, 3, "source")?,
         confidence: row_string(row, 4, "confidence")?,
@@ -190,6 +197,26 @@ pub(super) fn decode_stored_account_snapshot(
         updated_label: row_string(row, 23, "updated_label")?,
         status_bar_label: row_string(row, 24, "status_bar_label")?,
     })
+}
+
+fn decode_stored_account_identity(
+    row: &Row,
+    provider: &str,
+) -> Result<
+    (
+        String,
+        Option<jackin_protocol::usage_broker::UsageAccountCapability>,
+    ),
+    String,
+> {
+    let account_key_hash = row_string(row, 1, "account_key_hash")?;
+    let account_capability = identity::decode_account_capability(
+        provider,
+        &account_key_hash,
+        row_opt_string(row, 25, "capability_account_id")?,
+        row_opt_string(row, 26, "capability_surface_id")?,
+    )?;
+    Ok((account_key_hash, account_capability))
 }
 
 #[cfg(test)]
