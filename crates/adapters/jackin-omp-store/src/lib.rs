@@ -5,6 +5,9 @@ mod capture;
 mod query;
 mod wal;
 
+#[cfg(all(unix, feature = "test-support"))]
+pub use capture::test_hooks::{CaptureHookGuard, CapturePhase, set_capture_hook};
+
 pub use capture::{OmpSelectedAccount, OmpSnapshot};
 pub use query::{OmpAccount, OmpSelector};
 
