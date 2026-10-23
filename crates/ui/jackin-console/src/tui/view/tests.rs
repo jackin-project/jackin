@@ -3,7 +3,9 @@
 
 use super::*;
 
-use crate::tui::model::{ConsoleManagerStageRoute, ConsoleStageModalFacts};
+use crate::tui::model::{
+    ConsoleManagerStageRoute, ConsoleStageModalFacts, console_usage_surface_painted,
+};
 
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
@@ -25,3 +27,4 @@ mod support_03;
 use support_03::*;
 mod case_01;
 mod case_02;
+mod case_03;

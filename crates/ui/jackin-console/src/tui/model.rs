@@ -77,17 +77,13 @@ impl<Manager, LaunchInput, RoleSelector, OpCache>
 impl<Manager, LaunchInput, RoleSelector, OpCache>
     ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>
 where
-    Manager: ConsoleManagerModalBlockPresence,
+    Manager: ConsoleManagerInputPresence,
 {
     #[must_use]
     pub fn base_surface_unblocked(&self) -> bool {
         match &self.stage {
             ConsoleAppStage::Manager(manager) => {
-                crate::tui::run::no_modal_blocks_base_surface(crate::tui::run::ModalBlockState {
-                    quit_confirm: self.quit_confirm.is_some(),
-                    list_modal: manager.list_modal_open(),
-                    editor_modal: manager.editor_modal_open(),
-                })
+                self.quit_confirm.is_none() && manager.allows_base_surface_input()
             }
         }
     }
