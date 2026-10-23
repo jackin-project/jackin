@@ -48,6 +48,66 @@ pub struct ConsoleInputDispatchFacts {
     pub stage_route: ConsoleManagerStageRoute,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsolePaintedInputOwner {
+    KeyboardHelp,
+    StatusPopup,
+    Usage,
+    Dispatch(ConsoleInputDispatchPlan),
+}
+
+impl ConsolePaintedInputOwner {
+    #[must_use]
+    pub const fn allows_manager_pointer_actions(self) -> bool {
+        match self {
+            Self::KeyboardHelp | Self::StatusPopup | Self::Usage => false,
+            Self::Dispatch(
+                ConsoleInputDispatchPlan::KeyboardHelp
+                | ConsoleInputDispatchPlan::InlineNewSessionPicker
+                | ConsoleInputDispatchPlan::InlineAccountPicker
+                | ConsoleInputDispatchPlan::LaunchAccountPicker
+                | ConsoleInputDispatchPlan::InlineAgentPicker
+                | ConsoleInputDispatchPlan::InlineRolePicker
+                | ConsoleInputDispatchPlan::Stage(
+                    ConsoleManagerStageRoute::CreatePrelude
+                    | ConsoleManagerStageRoute::Workflows
+                    | ConsoleManagerStageRoute::ConfirmDelete
+                    | ConsoleManagerStageRoute::ConfirmInstancePurge,
+                ),
+            ) => false,
+            Self::Dispatch(
+                ConsoleInputDispatchPlan::ListModal
+                | ConsoleInputDispatchPlan::EditorModal
+                | ConsoleInputDispatchPlan::SettingsErrorPopup
+                | ConsoleInputDispatchPlan::SettingsMountsModal
+                | ConsoleInputDispatchPlan::SettingsEnvDialog
+                | ConsoleInputDispatchPlan::SettingsAuthDialog
+                | ConsoleInputDispatchPlan::CreatePreludeModal
+                | ConsoleInputDispatchPlan::Stage(
+                    ConsoleManagerStageRoute::List
+                    | ConsoleManagerStageRoute::Editor
+                    | ConsoleManagerStageRoute::Settings,
+                ),
+            ) => true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConsolePaintedInputOwnerFacts {
+    pub dispatch: ConsoleInputDispatchFacts,
+    pub status_popup_painted: bool,
+    pub usage_surface_painted: bool,
+}
+
+#[must_use]
+pub const fn console_usage_surface_painted(
+    route: ConsoleManagerStageRoute,
+    usage_visible: bool,
+) -> bool {
+    matches!(route, ConsoleManagerStageRoute::List) && usage_visible
+}
+
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Seven orthogonal stage-modal-open flags (editor_modal, settings \
@@ -111,4 +171,27 @@ pub const fn console_input_dispatch_plan(
         return ConsoleInputDispatchPlan::CreatePreludeModal;
     }
     ConsoleInputDispatchPlan::Stage(facts.stage_route)
+}
+
+#[must_use]
+pub const fn console_painted_input_owner_plan(
+    facts: ConsolePaintedInputOwnerFacts,
+) -> ConsolePaintedInputOwner {
+    if facts.dispatch.keyboard_help_open {
+        return ConsolePaintedInputOwner::KeyboardHelp;
+    }
+    if facts.status_popup_painted {
+        return ConsolePaintedInputOwner::StatusPopup;
+    }
+    if facts.dispatch.list_modal_open {
+        return ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::ListModal);
+    }
+    if facts.usage_surface_painted {
+        return ConsolePaintedInputOwner::Usage;
+    }
+
+    let mut dispatch = facts.dispatch;
+    dispatch.keyboard_help_open = false;
+    dispatch.list_modal_open = false;
+    ConsolePaintedInputOwner::Dispatch(console_input_dispatch_plan(dispatch))
 }

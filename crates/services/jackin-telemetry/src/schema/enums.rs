@@ -20,6 +20,8 @@ bounded_values!(AgentStatusConfidence { Unknown => "unknown", Weak => "weak", St
 bounded_values!(AgentStatusSource { None => "none", VisibleScreen => "visible_screen", ShellIntegration => "shell_integration", ForegroundProcess => "foreground_process", Reported => "reported" });
 bounded_values!(AppMode { OneShot => "one_shot", Interactive => "interactive", Daemon => "daemon", Capsule => "capsule" });
 bounded_values!(AppScreenId { WorkspaceList => "workspace.list", WorkspaceEditor => "workspace.editor", Settings => "settings", WorkspaceCreate => "workspace.create", LaunchProgress => "launch.progress", Capsule => "capsule" });
+bounded_values!(AppleContainerAttachOutcomeReason { InspectionUncertain => "inspection_uncertain", Absent => "absent", StateUncertain => "state_uncertain", RecordingFailed => "recording_failed" });
+bounded_values!(AppleContainerState { Unknown => "unknown", Stopping => "stopping" });
 bounded_values!(AuthMode { Sync => "sync", ApiKey => "api_key", OauthToken => "oauth_token", Ignore => "ignore" });
 bounded_values!(BackgroundCycleName { BranchContext => "branch_context", PrContext => "pr_context", UsageAccount => "usage_account", ProviderProbe => "provider_probe", InstanceRefresh => "instance_refresh", AgentStatus => "agent_status" });
 bounded_values!(CacheName { RoleRepository => "role_repository", AgentBinary => "agent_binary", CapsuleBinary => "capsule_binary", DerivedImage => "derived_image", UsageSnapshot => "usage_snapshot" });

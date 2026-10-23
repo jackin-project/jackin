@@ -128,6 +128,9 @@ pub(crate) fn claim_existing_lease(
     if file.metadata().map_err(|_| unavailable())?.nlink() == 0 {
         return Ok(None);
     }
+    if path_matches_file(lease_path, file) != Ok(true) {
+        return Ok(None);
+    }
     let bytes = read_lease_bytes(file).map_err(|_| unavailable())?;
     let existing = serde_json::from_slice::<BrokerLease>(&bytes).ok();
     let replace = if let Some(existing) = existing {
@@ -141,8 +144,7 @@ pub(crate) fn claim_existing_lease(
             .saturating_sub(existing.renewed_at_epoch)
             >= i64::try_from(lease_duration.as_secs()).unwrap_or(i64::MAX)
     } else {
-        let pid = String::from_utf8_lossy(&bytes).trim().parse::<i32>().ok();
-        pid.is_some_and(|pid| kill(Pid::from_raw(pid), None).is_err())
+        legacy_pid_owner_is_dead_with(&bytes, |pid| kill(pid, None))
     };
     if !replace {
         return Ok(None);
@@ -156,6 +158,19 @@ pub(crate) fn claim_existing_lease(
     }
     write_lease(file, replacement).map_err(|_| unavailable())?;
     Ok(Some(replace))
+}
+
+pub(crate) fn legacy_pid_owner_is_dead_with<F>(body: &[u8], probe: F) -> bool
+where
+    F: FnOnce(Pid) -> Result<(), nix::errno::Errno>,
+{
+    let Ok(pid) = String::from_utf8_lossy(body).trim().parse::<i32>() else {
+        return false;
+    };
+    if pid <= 0 {
+        return false;
+    }
+    matches!(probe(Pid::from_raw(pid)), Err(nix::errno::Errno::ESRCH))
 }
 
 pub(crate) fn renew_lease(owner: &mut BrokerLeaseOwner) -> bool {
@@ -245,10 +260,11 @@ fn unlink_owned_socket_path(path: &Path, expected: BrokerSocketIdentity) -> Resu
 
 fn path_matches_file(path: &Path, file: &File) -> Result<bool, ()> {
     let descriptor = file.metadata().map_err(|_| ())?;
+    if !descriptor.is_file() || descriptor.nlink() == 0 {
+        return Ok(false);
+    }
     let entry = fs::symlink_metadata(path).map_err(|_| ())?;
-    Ok(!entry.file_type().is_symlink()
-        && entry.dev() == descriptor.dev()
-        && entry.ino() == descriptor.ino())
+    Ok(entry.is_file() && entry.dev() == descriptor.dev() && entry.ino() == descriptor.ino())
 }
 
 pub(crate) fn unlink_owned_path(path: &Path) -> Result<(), ()> {
@@ -325,6 +341,7 @@ pub(crate) fn validate_owned_file(file: &File, mode: u32) -> Result<(), UsageCoo
 }
 
 pub(crate) fn wait_for_leader(client: &UsageBrokerClient) -> Result<(), UsageCoordinationError> {
+    client.initialization_result()?;
     let started = Instant::now();
     while started.elapsed() < CONNECT_RETRY {
         if connect_probe(client) {

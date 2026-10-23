@@ -47,6 +47,7 @@ pub(super) fn view_with_buckets(
             username: None,
             plan_label: None,
             credential_origin: None,
+            account_capability: None,
         },
         buckets,
         status,

@@ -16,6 +16,14 @@ use crate::wal::{MAX_DATABASE_BYTES, MAX_WAL_BYTES, WalError, validate_database,
 use crate::{OmpAccount, OmpError, OmpSelector};
 
 #[cfg(unix)]
+#[path = "capture/retry.rs"]
+mod retry;
+#[cfg(unix)]
+use retry::{CaptureFence, MAX_CAPTURE_ATTEMPTS};
+#[cfg(unix)]
+pub(super) mod test_hooks;
+
+#[cfg(unix)]
 #[path = "capture/directory.rs"]
 mod directory;
 #[cfg(unix)]
@@ -112,26 +120,38 @@ impl OmpSnapshot {
     #[cfg(unix)]
     pub fn capture_from_root(root: &File) -> Result<Option<Self>, OmpError> {
         let deadline = Instant::now() + OPERATION_BUDGET;
-        Self::capture_from_root_inner(root, deadline, || {})
+        Self::capture_from_root_inner(root, deadline)
     }
 
     #[cfg(unix)]
-    fn capture_from_root_inner(
-        root: &File,
-        deadline: Instant,
-        after_first_pass: impl FnOnce(),
-    ) -> Result<Option<Self>, OmpError> {
+    fn capture_from_root_inner(root: &File, deadline: Instant) -> Result<Option<Self>, OmpError> {
+        check_deadline(deadline)?;
         let root_identity = secure_directory_identity(root, true)?;
-        let first = read_source_pair(root, root_identity, deadline)?;
-        after_first_pass();
-        let second = read_source_pair(root, root_identity, deadline)?;
-        match (first, second) {
-            (None, None) => Ok(None),
-            (Some(first), Some(second)) if first.same_capture(&second) => {
-                Self::from_captured_pair(first, deadline).map(Some)
+        let mut fence = CaptureFence::default();
+        for attempt in 0..MAX_CAPTURE_ATTEMPTS {
+            check_deadline(deadline)?;
+            let first = read_source_pair(root, root_identity, deadline, attempt, 0)?;
+            // Notify after each complete read, then fence it before another read begins.
+            notify_pair_read(attempt, 0, deadline);
+            fence.observe(first.as_ref())?;
+            let second = read_source_pair(root, root_identity, deadline, attempt, 1)?;
+            notify_pair_read(attempt, 1, deadline);
+            fence.observe(second.as_ref())?;
+            check_deadline(deadline)?;
+            match (first, second) {
+                (None, None) => return Ok(None),
+                (Some(_), None) | (None, Some(_)) => return Err(OmpError::Unavailable),
+                (Some(first), Some(second)) => {
+                    if first.same_capture(&second) {
+                        return Self::from_captured_pair(first, deadline).map(Some);
+                    }
+                    drop(first);
+                    drop(second);
+                }
             }
-            _ => Err(OmpError::Unavailable),
         }
+        check_deadline(deadline)?;
+        Err(OmpError::Unavailable)
     }
 
     pub fn capture_from_directory(
@@ -143,7 +163,7 @@ impl OmpSnapshot {
             let Some(root) = open_source_directory(source_directory.as_ref(), deadline)? else {
                 return Ok(None);
             };
-            Self::capture_from_root_inner(&root, deadline, || {})
+            Self::capture_from_root_inner(&root, deadline)
         }
         #[cfg(not(unix))]
         {
@@ -502,6 +522,7 @@ struct FileIdentity {
     device: nix::libc::dev_t,
     inode: u64,
     uid: u32,
+    gid: u32,
     mode: i64,
     links: nix::libc::nlink_t,
     size: i64,
@@ -516,6 +537,7 @@ impl FileIdentity {
             device: stat.st_dev,
             inode: stat.st_ino,
             uid: stat.st_uid,
+            gid: stat.st_gid,
             mode: i64::from(stat.st_mode),
             links: stat.st_nlink,
             size: stat.st_size,
@@ -556,6 +578,8 @@ fn read_source_pair(
     root: &File,
     expected_root: FileIdentity,
     deadline: Instant,
+    attempt: usize,
+    pass: usize,
 ) -> Result<Option<SourcePair>, OmpError> {
     use std::ffi::CString;
 
@@ -603,7 +627,13 @@ fn read_source_pair(
     reject_rollback_journal(&agent)?;
 
     let db_name = CString::new("agent.db").map_err(|_| OmpError::Unavailable)?;
-    let database = read_source_file(&agent, &db_name, MAX_DATABASE_BYTES, deadline)?;
+    let database = read_source_file(
+        &agent,
+        &db_name,
+        MAX_DATABASE_BYTES,
+        deadline,
+        Some((attempt, pass)),
+    )?;
     let Some(database) = database else {
         let wal_name = CString::new("agent.db-wal").map_err(|_| OmpError::Unavailable)?;
         if entry_identity(&agent, &wal_name)?.is_some() {
@@ -618,8 +648,9 @@ fn read_source_pair(
         }
         return Ok(None);
     };
+    notify_database_read(attempt, pass, deadline);
     let wal_name = CString::new("agent.db-wal").map_err(|_| OmpError::Unavailable)?;
-    let wal = read_source_file(&agent, &wal_name, MAX_WAL_BYTES, deadline)?;
+    let wal = read_source_file(&agent, &wal_name, MAX_WAL_BYTES, deadline, None)?;
     reject_rollback_journal(&agent)?;
 
     let agent_after = FileIdentity::from_stat(&fstat(&agent).map_err(|_| OmpError::Unavailable)?);
@@ -646,7 +677,11 @@ fn read_source_file(
     name: &std::ffi::CStr,
     limit: usize,
     deadline: Instant,
+    database_coordinates: Option<(usize, usize)>,
 ) -> Result<Option<CapturedFile>, OmpError> {
+    #[cfg(not(any(test, feature = "test-support")))]
+    let _ = database_coordinates;
+
     use nix::errno::Errno;
     use nix::fcntl::{AtFlags, OFlag, openat};
     use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
@@ -668,6 +703,14 @@ fn read_source_file(
     }
     if usize::try_from(entry.st_size).map_or(true, |size| size > limit) {
         return Err(OmpError::LimitExceeded);
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some((attempt, pass)) = database_coordinates {
+        test_hooks::notify(CapturePhase::BeforeDatabaseOpen {
+            attempt,
+            pass,
+            deadline,
+        });
     }
     let fd = openat(
         directory,
@@ -712,6 +755,33 @@ fn read_source_file(
     }
     Ok(Some(CapturedFile { identity, bytes }))
 }
+
+#[cfg(all(unix, any(test, feature = "test-support")))]
+use test_hooks::CapturePhase;
+
+#[cfg(all(unix, any(test, feature = "test-support")))]
+fn notify_pair_read(attempt: usize, pass: usize, deadline: Instant) {
+    test_hooks::notify(CapturePhase::AfterPairRead {
+        attempt,
+        pass,
+        deadline,
+    });
+}
+
+#[cfg(not(all(unix, any(test, feature = "test-support"))))]
+fn notify_pair_read(_attempt: usize, _pass: usize, _deadline: Instant) {}
+
+#[cfg(all(unix, any(test, feature = "test-support")))]
+fn notify_database_read(attempt: usize, pass: usize, deadline: Instant) {
+    test_hooks::notify(CapturePhase::AfterDatabaseRead {
+        attempt,
+        pass,
+        deadline,
+    });
+}
+
+#[cfg(not(all(unix, any(test, feature = "test-support"))))]
+fn notify_database_read(_attempt: usize, _pass: usize, _deadline: Instant) {}
 
 #[cfg(unix)]
 fn entry_identity(

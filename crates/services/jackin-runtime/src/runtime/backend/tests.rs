@@ -1,5 +1,7 @@
 use super::*;
-use crate::apple_container_client::{AppleContainerInfo, FakeAppleContainerClient};
+use crate::apple_container_client::{
+    AppleContainerInfo, AppleContainerStatus, FakeAppleContainerClient,
+};
 use crate::instance::{AppleContainerResources, DockerResources, NewInstanceManifest};
 use jackin_test_support::FakeRunner;
 use tempfile::tempdir;
@@ -28,6 +30,62 @@ fn test_manifest(container: &str, backend: Option<BackendResources>) -> Instance
     } else {
         InstanceManifest::new(input)
     }
+}
+
+fn provision_empty_account_admission(paths: &JackinPaths, container: &str) {
+    let config = jackin_config::AppConfig::default();
+    let workspace = jackin_config::WorkspaceConfig {
+        workdir: "/workspace".to_owned(),
+        mounts: vec![jackin_config::MountConfig {
+            src: paths.config_dir.display().to_string(),
+            dst: "/workspace".to_owned(),
+            readonly: false,
+            isolation: jackin_core::MountIsolation::Shared,
+        }],
+        ..jackin_config::WorkspaceConfig::default()
+    };
+    std::fs::create_dir_all(&paths.config_dir).unwrap();
+    std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+    std::fs::write(
+        paths.config_dir.join("config.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        paths.workspaces_dir.join("workspace.toml"),
+        toml::to_string(&workspace).unwrap(),
+    )
+    .unwrap();
+    std::fs::File::create(paths.config_file.with_file_name("config.lock")).unwrap();
+    let snapshot = jackin_config::load_read_only_config_snapshot(paths).unwrap();
+    assert!(
+        snapshot.diagnostics.is_empty(),
+        "invalid admission fixture: {:?}",
+        snapshot.diagnostics
+    );
+    assert_eq!(
+        snapshot.config.workspaces["workspace"].workdir, "/workspace",
+        "admission fixture must load the configured workspace used by its manifest"
+    );
+
+    let root = paths.data_dir.join(container);
+    std::fs::create_dir_all(&root).unwrap();
+    let manifest = test_manifest(container, None);
+    manifest.write(&root).unwrap();
+    let workspace = manifest
+        .workspace_name
+        .as_deref()
+        .map(jackin_core::WorkspaceName::parse)
+        .transpose()
+        .unwrap();
+    let digest = crate::runtime::launch::account_configuration_fingerprint(
+        &snapshot.config,
+        workspace.as_ref(),
+        &manifest.role_key,
+        &manifest.admitted_instances,
+    )
+    .unwrap();
+    std::fs::write(root.join("account-admission.sha256"), digest).unwrap();
 }
 
 #[test]
@@ -64,17 +122,73 @@ async fn apple_backend_eject_and_purge_use_apple_client() {
     let paths = JackinPaths::for_tests(temp.path());
     let client = FakeAppleContainerClient::new();
     client.containers.lock().unwrap().push(AppleContainerInfo {
-        name: "jk-agent-smith".to_owned(),
-        status: "running".to_owned(),
+        id: "jk-agent-smith".to_owned(),
+        status: AppleContainerStatus::Running,
     });
     let backend = AppleContainerBackend::new(client);
 
     backend.eject(&paths, "jk-agent-smith").await.unwrap();
+    let after_eject = backend
+        .client
+        .inspect_container("jk-agent-smith")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after_eject.status, AppleContainerStatus::Stopped);
     let err = backend
         .ensure_absent_for_purge(&paths, "jk-agent-smith")
         .await
         .unwrap_err();
     assert!(err.to_string().contains("still exists"), "got: {err}");
+}
+
+#[tokio::test]
+async fn apple_backend_reconnect_uses_injected_client_after_admission_and_abstains_on_unknown() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let name = "jk-agent-smith";
+    provision_empty_account_admission(&paths, name);
+    let client = FakeAppleContainerClient::new();
+    client.containers.lock().unwrap().push(AppleContainerInfo {
+        id: name.to_owned(),
+        status: AppleContainerStatus::Unknown,
+    });
+    let backend = AppleContainerBackend::new(client);
+    let mut runner = FakeRunner::default();
+
+    let error = backend
+        .reconnect(&paths, name, None, &mut runner)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("uncertain lifecycle state"));
+    assert_eq!(
+        *backend.client.inspect_calls.lock().unwrap(),
+        vec![name.to_owned()]
+    );
+    assert!(backend.client.start_calls.lock().unwrap().is_empty());
+    assert!(runner.recorded.is_empty());
+}
+
+#[tokio::test]
+async fn apple_backend_reconnect_keeps_account_admission_as_a_precondition() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let name = "jk-agent-smith";
+    let client = FakeAppleContainerClient::new();
+    client.containers.lock().unwrap().push(AppleContainerInfo {
+        id: name.to_owned(),
+        status: AppleContainerStatus::Running,
+    });
+    let backend = AppleContainerBackend::new(client);
+    let mut runner = FakeRunner::default();
+
+    let result = backend.reconnect(&paths, name, None, &mut runner).await;
+
+    assert!(result.is_err());
+    assert!(backend.client.inspect_calls.lock().unwrap().is_empty());
+    assert!(backend.client.start_calls.lock().unwrap().is_empty());
+    assert!(runner.recorded.is_empty());
 }
 
 #[tokio::test]

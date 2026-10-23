@@ -119,6 +119,7 @@ pub(crate) fn usage_provider_tabs_from_rows(
             plan_label: row.plan_label.clone(),
             source_label: Some(format!("{} · {}", row.view_status, row.source)),
             active: false,
+            account_capability: None,
         })
         .collect();
     tabs.sort_by(|left, right| {

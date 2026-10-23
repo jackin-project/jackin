@@ -185,3 +185,73 @@ fn stale_generation_cannot_read_or_replace_newer_cached_credential() {
         Some(r#"{"claudeAiOauth":{"accessToken":"generation-42"}}"#)
     );
 }
+
+#[test]
+fn revoked_generation_cannot_replace_cache_or_clear_newer_generation() {
+    let _serial = serialized_bootstrap();
+    clear_bootstrapped_claude_credential();
+    let service = "Claude Code-credentials-selected";
+    let outcome = bootstrap_claude_credential_with(service, true, || ClaudeKeychainRead::Payload {
+        json: valid_payload("old-token"),
+    })
+    .expect("valid bootstrap");
+    let ClaudeCredentialBootstrapOutcome::Acquired(lease) = outcome else {
+        panic!("valid fixture credential should acquire a lease")
+    };
+    let old_generation = lease.generation();
+
+    let timeout = std::time::Duration::from_secs(5);
+    let (write_ready_tx, write_ready_rx) = std::sync::mpsc::sync_channel(1);
+    let (write_release_tx, write_release_rx) = std::sync::mpsc::sync_channel(1);
+    let (write_done_tx, write_done_rx) = std::sync::mpsc::sync_channel(1);
+    let delayed_lease = lease.clone();
+    let delayed_write = std::thread::spawn(move || {
+        write_ready_tx
+            .send(())
+            .expect("signal before the stale cache write");
+        let replacement = write_release_rx
+            .recv_timeout(timeout)
+            .map(|()| replace_if_exact(&delayed_lease, valid_payload("stale-token")));
+        write_done_tx
+            .send(replacement)
+            .expect("report the stale cache write result");
+        drop(delayed_lease);
+    });
+
+    let write_ready = write_ready_rx.recv_timeout(timeout);
+    let newer_generation =
+        overwrite_cached_generation_for_test(service, valid_payload("newer-session-token"));
+    let stale_reread_admitted = begin_unauthorized_reread(&lease);
+    let write_released = write_release_tx.send(());
+    let replacement_result = write_done_rx.recv_timeout(timeout);
+    let worker_joined = delayed_write.join();
+
+    drop(lease);
+    let newer_payload_after_drop =
+        cached_claude_keychain_payload(service).map(|payload| payload.to_string());
+    clear_bootstrapped_claude_credential();
+
+    assert!(
+        write_ready.is_ok(),
+        "stale cache write pauses before its generation check"
+    );
+    assert!(
+        newer_generation > old_generation,
+        "test cache replacement uses a newer global generation"
+    );
+    assert!(
+        !stale_reread_admitted,
+        "old lease cannot begin a reread after generation replacement"
+    );
+    assert!(write_released.is_ok(), "release the delayed cache write");
+    assert!(
+        matches!(replacement_result, Ok(Ok(false))),
+        "old lease cannot replace the newer global cache entry"
+    );
+    assert!(worker_joined.is_ok(), "delayed lease clone is dropped");
+    assert_eq!(
+        newer_payload_after_drop.as_deref(),
+        Some(r#"{"claudeAiOauth":{"accessToken":"newer-session-token"}}"#),
+        "dropping the final old lease must preserve the newer credential"
+    );
+}

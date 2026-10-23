@@ -55,13 +55,14 @@ and no real account, Keychain grant, or provider request has been verified.
 Experimental collection does not establish Anthropic support or provider
 readiness.
 
-### Candidate durable monitor schema 4
+### Candidate durable monitor schema 5
 
-The candidate durable monitor store advances to schema 4 to persist a
-monotonic historical correction horizon for account spend. When a closed-period
-correction can no longer be applied from retained receipts, the horizon keeps
-affected goal accounting incomplete or unknown; later receipts or clock
-rollback cannot clear that protection.
+Schema 4 introduced a monotonic historical correction horizon for account
+spend. When a closed-period correction can no longer be applied from retained
+receipts, the horizon keeps affected goal accounting incomplete or unknown;
+later receipts or clock rollback cannot clear that protection. Schema 5 adds
+reset-admission fences and used-only admission sequence markers for resetless
+broker observations.
 
 The V1, V2, and V3 migrations carry forward existing policy revisions and
 origins, baselines and cumulative estimates, quota-pause latches, and
@@ -84,8 +85,21 @@ Migration does not invent a baseline, zero spend, approval, or quota evidence.
 Invalid and unsupported future schemas fail closed before stored state is
 replaced.
 
-The current source versions are independent: broker wire protocol v8, durable
-monitor-store schema 4, normalized statusline input schema v2, durable account-
+The V4-to-V5 migration preserves policy revisions and origins, spend baselines
+and estimates, quota-pause and unknown/incomplete latches, and each account's
+reset high-water mark and retained history. It seeds both reset-admission
+fences as unknown after the store's `last_now_epoch` and initializes absent
+used-only admission sequence markers to `null`; it does not infer reset
+evidence from a statusline receipt. The migrated state is validated before
+atomic save. Receipt-only statusline pairs keep `[null, null]` source times and
+remain distinct from source-bearing broker pairs. A resetless broker
+observation can update used quota evidence only when its source, receipt, and
+input sequence clear the stored fences; it does not create a reset or a paired
+quota value. Malformed and unsupported future snapshots fail closed without
+rewriting the stored bytes.
+
+The current source versions are independent: broker wire protocol v9, durable
+monitor-store schema 5, normalized statusline input schema v2, durable account-
 state envelope schema 3, and durable projection-envelope schema 3. The broker
 migrates a v2 projection envelope by
 canonicalizing its serialized provider IDs and persisting v3 before exposing

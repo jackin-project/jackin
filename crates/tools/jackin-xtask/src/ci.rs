@@ -354,7 +354,21 @@ fn run_step(root: &Path, step: &Step) -> Result<()> {
     emit(&format!("==> {}", display_step(step)));
     let mut cmd = crate::cmd::command(&step.program);
     cmd.args(&step.args).current_dir(root).envs(&step.env);
-    crate::cmd::run(&mut cmd).with_context(|| format!("step {}", step.name))
+    let display = crate::cmd::display_command(&cmd);
+    let output = crate::cmd::output_raw(&mut cmd).with_context(|| format!("step {}", step.name))?;
+    if output.success {
+        return Ok(());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(anyhow::anyhow!(
+        "{display} failed with code {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.code,
+        stdout,
+        stderr
+    ))
+    .with_context(|| format!("step {}", step.name))
 }
 
 fn output_step(root: &Path, step: &Step) -> Result<String> {

@@ -4,9 +4,10 @@
 use termrock::scroll::{ScrollAxes, ScrollAxis, ScrollDelta, mouse_scroll_delta};
 
 use super::{
-    FileBrowserState, ListModalScrollTarget, MOUSE_VERTICAL_SCROLL_STEP, ManagerStage,
-    ManagerState, Modal, MouseEvent, Rect, SettingsModal, SettingsModalScrollTarget,
-    SharedModalScrollTarget, modal_overlay, point_in_rect, scroll_selection_at_position,
+    ConsoleInputDispatchPlan, ConsolePaintedInputOwner, FileBrowserState, ListModalScrollTarget,
+    MOUSE_VERTICAL_SCROLL_STEP, ManagerStage, ManagerState, Modal, MouseEvent, Rect, SettingsModal,
+    SettingsModalScrollTarget, SharedModalScrollTarget, modal_overlay, point_in_rect,
+    scroll_selection_at_position,
 };
 
 fn modal_vertical_scroll_delta(mouse: MouseEvent) -> Option<i16> {
@@ -26,14 +27,18 @@ fn modal_vertical_scroll_delta(mouse: MouseEvent) -> Option<i16> {
 
 pub fn try_scroll_file_browser_modal(
     state: &mut ManagerState<'_>,
+    owner: ConsolePaintedInputOwner,
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
     let Some(delta) = modal_vertical_scroll_delta(mouse) else {
         return false;
     };
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
+    match (owner, &mut state.stage) {
+        (
+            ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::EditorModal),
+            ManagerStage::Editor(editor),
+        ) => {
             let Some(modal @ Modal::FileBrowser { .. }) = editor.modal.as_ref() else {
                 return false;
             };
@@ -43,7 +48,10 @@ pub fn try_scroll_file_browser_modal(
             };
             scroll_file_browser_state_at(state, area, mouse, delta)
         }
-        ManagerStage::CreatePrelude(prelude) => {
+        (
+            ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::CreatePreludeModal),
+            ManagerStage::CreatePrelude(prelude),
+        ) => {
             let Some(modal @ Modal::FileBrowser { .. }) = prelude.modal.as_ref() else {
                 return false;
             };
@@ -53,23 +61,30 @@ pub fn try_scroll_file_browser_modal(
             };
             scroll_file_browser_state_at(state, area, mouse, delta)
         }
-        ManagerStage::Settings(settings) => {
+        (
+            ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::SettingsMountsModal),
+            ManagerStage::Settings(settings),
+        ) => {
             let area = modal_overlay::file_browser_overlay_rect(term_size);
             if let Some(SettingsModal::MountFileBrowser { state }) =
                 settings.mounts.modals.current_mut()
             {
                 return scroll_file_browser_state_at(state, area, mouse, delta);
             }
+            false
+        }
+        (
+            ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::SettingsAuthDialog),
+            ManagerStage::Settings(settings),
+        ) => {
+            let area = modal_overlay::file_browser_overlay_rect(term_size);
             if let Some(SettingsModal::AuthSourceFolderPicker { state }) = settings.auth.modal_mut()
             {
                 return scroll_file_browser_state_at(state, area, mouse, delta);
             }
             false
         }
-        ManagerStage::List
-        | ManagerStage::Workflows(_)
-        | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => false,
+        _ => false,
     }
 }
 
@@ -84,6 +99,7 @@ pub fn scroll_file_browser_state_at(
 
 pub fn try_scroll_picker_modal(
     state: &mut ManagerState<'_>,
+    owner: ConsolePaintedInputOwner,
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
@@ -91,15 +107,22 @@ pub fn try_scroll_picker_modal(
         return false;
     };
 
-    if let Some(modal) = state.list_modal.as_ref() {
+    if owner == ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::ListModal)
+        && matches!(&state.stage, ManagerStage::List)
+    {
+        let Some(modal) = state.list_modal.as_ref() else {
+            return false;
+        };
         let area = modal.rect(term_size);
-        if point_in_rect(mouse.column, mouse.row, area) {
-            return scroll_list_modal_selection(state, delta);
-        }
+        return point_in_rect(mouse.column, mouse.row, area)
+            && scroll_list_modal_selection(state, delta);
     }
 
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
+    match (owner, &mut state.stage) {
+        (
+            ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::EditorModal),
+            ManagerStage::Editor(editor),
+        ) => {
             let Some(modal) = editor.modal.as_ref() else {
                 return false;
             };
@@ -109,7 +132,10 @@ pub fn try_scroll_picker_modal(
             }
             scroll_modal_selection(editor.modal.as_mut(), delta)
         }
-        ManagerStage::CreatePrelude(prelude) => {
+        (
+            ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::CreatePreludeModal),
+            ManagerStage::CreatePrelude(prelude),
+        ) => {
             let Some(modal) = prelude.modal.as_ref() else {
                 return false;
             };
@@ -119,22 +145,34 @@ pub fn try_scroll_picker_modal(
             }
             scroll_modal_selection(prelude.modal.as_mut(), delta)
         }
-        ManagerStage::Settings(settings) => {
+        (
+            ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::SettingsMountsModal),
+            ManagerStage::Settings(settings),
+        ) => {
             if let Some(modal) = settings.mounts.modals.current_mut() {
                 return scroll_global_mount_modal_selection(modal, mouse, term_size, delta);
             }
+            false
+        }
+        (
+            ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::SettingsEnvDialog),
+            ManagerStage::Settings(settings),
+        ) => {
             if let Some(modal) = settings.env.modals.current_mut() {
                 return scroll_settings_env_modal_selection(modal, mouse, term_size, delta);
             }
+            false
+        }
+        (
+            ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::SettingsAuthDialog),
+            ManagerStage::Settings(settings),
+        ) => {
             if let Some(modal) = settings.auth.modal_mut() {
                 return scroll_settings_auth_modal_selection(modal, mouse, term_size, delta);
             }
             false
         }
-        ManagerStage::List
-        | ManagerStage::Workflows(_)
-        | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => false,
+        _ => false,
     }
 }
 

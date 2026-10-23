@@ -607,6 +607,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
+ "zeroize",
 ]
 
 [[package]]
@@ -1023,6 +1024,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmov"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
+
+[[package]]
 name = "cms"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1351,6 +1358,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctutils"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
+dependencies = [
+ "cmov",
+]
+
+[[package]]
 name = "darling"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1546,6 +1562,8 @@ dependencies = [
  "block-buffer 0.12.1",
  "const-oid 0.10.2",
  "crypto-common 0.2.2",
+ "ctutils",
+ "zeroize",
 ]
 
 [[package]]
@@ -2175,6 +2193,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hmac"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
+dependencies = [
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "home"
 version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2741,6 +2768,8 @@ dependencies = [
  "jackin-usage-discovery",
  "jackin-usage-host-credentials",
  "jackin-usage-provider-claude",
+ "jackin-usage-provider-core",
+ "jackin-usage-store-backend",
  "jackin-workflow",
  "jackin-workflow-spec",
  "nix 0.31.3",
@@ -3127,6 +3156,7 @@ dependencies = [
  "jackin-instance-agents",
  "jackin-instance-credentials",
  "jackin-manifest",
+ "jackin-omp-store",
  "jackin-telemetry",
  "nix 0.31.3",
  "rusqlite",
@@ -3270,9 +3300,11 @@ dependencies = [
  "anyhow",
  "jackin-core",
  "jackin-telemetry",
+ "nix 0.31.3",
  "serde",
  "serde_json",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]
@@ -3365,7 +3397,6 @@ dependencies = [
  "jackin-runtime-launch-trust",
  "jackin-runtime-naming",
  "jackin-runtime-prewarm-trigger",
- "jackin-runtime-process-telemetry",
  "jackin-runtime-progress",
  "jackin-runtime-prune-output",
  "jackin-runtime-reactive-daemon",
@@ -3412,10 +3443,16 @@ dependencies = [
 name = "jackin-runtime-apple-container-attach-outcome"
 version = "0.6.4"
 dependencies = [
+ "anyhow",
  "jackin-core",
+ "jackin-runtime-apple-container-client",
  "jackin-runtime-apple-container-running",
  "jackin-runtime-isolation",
  "jackin-runtime-launch-attach-outcome",
+ "jackin-telemetry",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3435,6 +3472,7 @@ dependencies = [
  "jackin-process",
  "jackin-runtime-identity",
  "jackin-runtime-process-telemetry",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -3452,6 +3490,7 @@ dependencies = [
 name = "jackin-runtime-apple-container-running"
 version = "0.6.4"
 dependencies = [
+ "anyhow",
  "jackin-runtime-apple-container-client",
 ]
 
@@ -4600,12 +4639,17 @@ name = "jackin-usage-host-accounts"
 version = "0.6.4"
 dependencies = [
  "chrono",
+ "getrandom 0.4.3",
+ "hmac",
  "jackin-core",
  "jackin-protocol",
  "jackin-usage-host-presentation",
  "jackin-usage-provider-core",
+ "rustix 1.1.5",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
+ "zeroize",
 ]
 
 [[package]]
@@ -7748,7 +7792,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",
@@ -8734,8 +8778,8 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.41"
-source = "git+https://github.com/tailrocks/velnor-new?rev=90e7d4dda2925dc22308ec48f6c09c1876dc4997#90e7d4dda2925dc22308ec48f6c09c1876dc4997"
+version = "0.1.48"
+source = "git+https://github.com/tailrocks/velnor-new?rev=9191feacdb538a8df8299b73eaf2ece63f2645d7#9191feacdb538a8df8299b73eaf2ece63f2645d7"
 dependencies = [
  "blake3",
  "serde",

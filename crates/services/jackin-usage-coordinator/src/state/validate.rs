@@ -50,6 +50,19 @@ pub(crate) fn validate_envelope(
     if envelope.schema_version != ACCOUNT_STATE_SCHEMA_VERSION || &envelope.capability != expected {
         return Err(StateStoreError::Corrupt);
     }
+    if envelope
+        .terminal_result
+        .iter()
+        .chain(envelope.last_good.iter())
+        .any(|view| {
+            view.account
+                .account_capability
+                .as_ref()
+                .is_some_and(|capability| capability != expected)
+        })
+    {
+        return Err(StateStoreError::Corrupt);
+    }
     let future_limit = now_epoch.saturating_add(MAX_CLOCK_SKEW_SECS);
     if [
         envelope.provider_invoked_at_epoch,
@@ -79,12 +92,23 @@ pub(crate) fn validate_envelope(
             bucket.validate().map_err(|_| StateStoreError::Corrupt)?;
         }
     }
-    Ok(sanitize_envelope(envelope))
+    // A legacy None is recoverable only because this envelope's selector was
+    // validated above. Conflicting Some selectors are rejected before stamping.
+    Ok(sanitize_envelope(envelope, expected))
 }
 
-pub(crate) fn sanitize_envelope(mut envelope: AccountStateEnvelope) -> AccountStateEnvelope {
-    envelope.terminal_result = envelope.terminal_result.map(sanitize_usage_view);
-    envelope.last_good = envelope.last_good.map(sanitize_usage_view);
+pub(crate) fn sanitize_envelope(
+    mut envelope: AccountStateEnvelope,
+    expected: &UsageAccountCapability,
+) -> AccountStateEnvelope {
+    envelope.terminal_result = envelope.terminal_result.map(|mut view| {
+        view.account.account_capability = Some(expected.clone());
+        sanitize_usage_view(view)
+    });
+    envelope.last_good = envelope.last_good.map(|mut view| {
+        view.account.account_capability = Some(expected.clone());
+        sanitize_usage_view(view)
+    });
     if let Some(error) = &mut envelope.terminal_error {
         error.message = sanitize_text(&error.message);
     }

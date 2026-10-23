@@ -128,7 +128,7 @@ key = "clippy::disallowed_methods@jackin-usage-provider-codex"
 bound = 2
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-xtask"
-bound = 11
+bound = 12
 [[family.entry]]
 key = "clippy::excessive_nesting@jackin-capsule"
 bound = 8
@@ -613,6 +613,9 @@ bound = 1
 key = "unsafe_code@jackin-process-directory"
 bound = 3
 [[family.entry]]
+key = "unsafe_code@jackin-usage-host-accounts"
+bound = 6
+[[family.entry]]
 key = "clippy::too_many_lines@jackin-usage-coordinator"
 bound = 1
 [[family.entry]]
@@ -674,7 +677,7 @@ key = "crates/ui/jackin-console/README.md"
 bound = 2779
 [[family.entry]]
 key = "crates/core/jackin-core/README.md"
-bound = 5624
+bound = 5567
 [[family.entry]]
 key = "crates/tools/jackin-dev/README.md"
 bound = 1198
@@ -740,19 +743,19 @@ key = "crates/services/jackin-runtime-apple-container-attach/README.md"
 bound = 779
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-attach-outcome/README.md"
-bound = 898
+bound = 829
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-check-dns/README.md"
 bound = 692
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-client/README.md"
-bound = 1310
+bound = 1090
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-probe-version/README.md"
 bound = 765
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-running/README.md"
-bound = 789
+bound = 784
 [[family.entry]]
 key = "crates/services/jackin-runtime-apple-container-session-contract/README.md"
 bound = 775
@@ -1203,8 +1206,9 @@ bound = 8
 key = "jackin-manifest"
 bound = 5
 [[family.entry]]
+# B2.1 adds the versioned credential_update_v2 transcript API.
 key = "jackin-protocol"
-bound = 10
+bound = 11
 [[family.entry]]
 key = "jackin-runtime"
 bound = 7

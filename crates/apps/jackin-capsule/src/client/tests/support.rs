@@ -24,6 +24,7 @@ pub(super) fn account(
         status: status.to_owned(),
         last_error: None,
         quota_bucket: None,
+        account_capability: None,
     }
 }
 
