@@ -145,10 +145,10 @@ pub(super) fn run_in_pty_until_file(
         let stop_requested = sentinel
             .stop_after
             .is_some_and(|completed| completed.load(Ordering::Acquire));
-        if stop_requested
-            || std::fs::read_to_string(sentinel.path)
-                .is_ok_and(|contents| contents.contains(sentinel.text))
-        {
+        let report_reached = sentinel.text.is_some_and(|text| {
+            std::fs::read_to_string(sentinel.path).is_ok_and(|contents| contents.contains(text))
+        });
+        if stop_requested || report_reached {
             drop(child.kill());
             let status = child.wait().expect("script must finish");
             done.store(true, Ordering::Relaxed);
@@ -198,7 +198,8 @@ pub(super) fn run_in_pty_until_file(
     };
     let diagnostics = diagnostics_snapshot(home);
     panic!(
-        "timed out waiting for sentinel file {}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+        "timed out waiting for PTY completion condition (report marker {:?} in {})\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+        sentinel.text,
         sentinel.path.display(),
         diagnostics,
         transcript_excerpt(&String::from_utf8_lossy(&output.stdout)),
@@ -331,7 +332,7 @@ pub(super) struct PtyScriptStep {
 #[derive(Clone, Copy)]
 pub(super) struct PtyFileSentinel<'a> {
     pub(super) path: &'a Path,
-    pub(super) text: &'a str,
+    pub(super) text: Option<&'a str>,
     pub(super) timeout: Duration,
     pub(super) accept_early_exit_after: Option<&'a AtomicBool>,
     pub(super) stop_after: Option<&'a AtomicBool>,

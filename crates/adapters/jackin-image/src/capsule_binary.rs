@@ -214,7 +214,6 @@ fn local_capsule_only_message(version: &str) -> String {
     )
 }
 
-/// Each preview source has its own immutable `preview-<full source SHA>` release.
 fn download_url(
     version: &str,
     arch: &str,
@@ -227,12 +226,7 @@ fn download_url(
     );
     let target = linux_target(arch);
     let asset = format!("{ASSET_PREFIX}-{target}.tar.gz");
-    let tag = match channel {
-        ReleaseChannel::Preview | ReleaseChannel::Stable => {
-            crate::release_evidence::release_tag(version, source)?
-        }
-        ReleaseChannel::LocalOnly => anyhow::bail!(local_capsule_only_message(version)),
-    };
+    let tag = crate::release_evidence::release_tag(version, source)?;
     Ok(format!(
         "https://github.com/jackin-project/jackin/releases/download/{tag}/{asset}"
     ))

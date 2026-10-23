@@ -37,6 +37,23 @@ fn tests_partition_runs_the_pre_commit_snapshot_fixture() {
 }
 
 #[test]
+fn lint_partition_uses_native_jactionlint() {
+    let args = CiArgs {
+        fast: true,
+        e2e: false,
+        e2e_capsule: None,
+        e2e_filter: None,
+        base: "origin/main".to_owned(),
+        only: vec!["lint".to_owned()],
+    };
+
+    assert_eq!(
+        step_names(&args).unwrap().first().map(String::as_str),
+        Some("jactionlint")
+    );
+}
+
+#[test]
 fn parse_capsule_export_accepts_single_quoted_path() {
     let temp = tempfile::tempdir().expect("tempdir");
     let capsule = temp.path().join("jackin-capsule");
@@ -213,45 +230,4 @@ jobs:
         .expect_err("aliased forbidden environment must be rejected");
 }
 
-#[test]
-fn jactionlint_uses_the_generated_ci_flags_and_repository_scope() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let workflows = temp.path().join(".github/workflows");
-    fs::create_dir_all(&workflows).unwrap();
-    for name in ["z.yml", "a.yml", "README.md"] {
-        fs::write(workflows.join(name), "").unwrap();
-    }
-    fs::write(
-        temp.path().join(".github/jactionlint.yaml"),
-        "profile: correctness\n",
-    )
-    .unwrap();
-    let actual = super::workflow_lint::jactionlint_args(temp.path()).unwrap();
-    let expected = [
-        "--strict-exit",
-        "--no-online",
-        "--shellcheck=shellcheck",
-        "--pyflakes=",
-    ];
-    assert_eq!(actual, expected.map(std::ffi::OsString::from));
-}
-
-#[test]
-fn jactionlint_refuses_missing_workflows_or_generated_config() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let missing = super::workflow_lint::jactionlint_args(temp.path())
-        .expect_err("missing workflows must reject");
-    assert!(missing.to_string().contains("does not exist"));
-    fs::create_dir_all(temp.path().join(".github/workflows")).unwrap();
-    let empty = super::workflow_lint::jactionlint_args(temp.path())
-        .expect_err("empty workflows must reject");
-    assert!(empty.to_string().contains("no workflow files found"));
-    fs::write(temp.path().join(".github/workflows/ci.yml"), "").unwrap();
-    let unconfigured = super::workflow_lint::jactionlint_args(temp.path())
-        .expect_err("a missing generated config must reject");
-    assert!(
-        unconfigured
-            .to_string()
-            .contains("jactionlint.yaml does not exist")
-    );
-}
+mod case_01;

@@ -38,11 +38,15 @@ The package name is required because the repository root is a Cargo workspace.
 </Tabs>
 
 Homebrew installs prebuilt GitHub Release binaries. Preview upgrades use
-`brew update` followed by `brew upgrade jackin-preview`. Each preview source
-commit has its own immutable `preview-<full source SHA>` tag and release, and
-native verification accepts only that complete signed generation. Stable versions use
-permanent version tags and the `jackin` formula, which remains disabled until
-the first verified stable release is promoted to the tap.
+`brew update` followed by `brew upgrade jackin-preview`. Each native preview
+uses an immutable prerelease tagged `preview-<full-source-sha>`; its version
+remains `<package-version>-preview.<main-commit-count>+<source-sha7>`. The tap
+formula changes only after the matching signed release receipt and assets pass
+verification. Stable versions keep permanent `v<version>` tags and the `jackin`
+formula; stable release behavior is unchanged. See
+<RepoFile path="docs/integration/immutable-preview-publication.md">Preview publication and migration</RepoFile>
+for rollout requirements. A configured workflow does not prove that a preview
+has been published or installed successfully.
 
 ## Verify installation
 
