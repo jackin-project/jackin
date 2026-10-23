@@ -3126,6 +3126,7 @@ dependencies = [
  "jackin-instance-agents",
  "jackin-instance-credentials",
  "jackin-manifest",
+ "jackin-omp-store",
  "jackin-telemetry",
  "nix 0.31.3",
  "rusqlite",
