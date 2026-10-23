@@ -573,6 +573,7 @@ jobs:
       - rust-jackin-test-support
       - rust-jackin-tui
       - rust-jackin-usage
+      - rust-jackin-usage-broker
       - rust-jackin-usage-ffi
       - rust-jackin-workflow
       - rust-jackin-workflow-spec
@@ -602,14 +603,14 @@ jobs:
         env:
           VELNOR_INTERNAL_OP: write-request-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"check-dependency-usage\",\"check-repository-links\",\"check-repository-policy\",\"jactionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-process-directory\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-workflow\",\"rust-jackin-workflow-spec\",\"rust-jackin-xtask\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"check-dependency-usage\",\"check-repository-links\",\"check-repository-policy\",\"jactionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-process-directory\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-broker\",\"rust-jackin-usage-ffi\",\"rust-jackin-workflow\",\"rust-jackin-workflow-spec\",\"rust-jackin-xtask\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: *r17
       - name: Merge reports
         env:
           VELNOR_INTERNAL_OP: merge-v1
           VELNOR_NEEDS_JSON: ${{ toJSON(needs) }}
-          VELNOR_NEEDS_EXPECTED: "[\"check-dependency-usage\",\"check-repository-links\",\"check-repository-policy\",\"jactionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-process-directory\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-ffi\",\"rust-jackin-workflow\",\"rust-jackin-workflow-spec\",\"rust-jackin-xtask\"]"
+          VELNOR_NEEDS_EXPECTED: "[\"check-dependency-usage\",\"check-repository-links\",\"check-repository-policy\",\"jactionlint\",\"plan\",\"rust-jackin\",\"rust-jackin-agent-status\",\"rust-jackin-capsule\",\"rust-jackin-config\",\"rust-jackin-console\",\"rust-jackin-core\",\"rust-jackin-dev\",\"rust-jackin-diagnostics\",\"rust-jackin-docker\",\"rust-jackin-env\",\"rust-jackin-host\",\"rust-jackin-image\",\"rust-jackin-instance\",\"rust-jackin-isolation\",\"rust-jackin-launch\",\"rust-jackin-manifest\",\"rust-jackin-otlp-testbed\",\"rust-jackin-process\",\"rust-jackin-process-directory\",\"rust-jackin-protocol\",\"rust-jackin-runtime\",\"rust-jackin-telemetry\",\"rust-jackin-test-support\",\"rust-jackin-tui\",\"rust-jackin-usage\",\"rust-jackin-usage-broker\",\"rust-jackin-usage-ffi\",\"rust-jackin-workflow\",\"rust-jackin-workflow-spec\",\"rust-jackin-xtask\"]"
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/merge-v1-request.json
         run: *r17
       - name: Publish final report
@@ -2261,6 +2262,70 @@ jobs:
         with:
           if-no-files-found: error
           name: velnor-crate-r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}-rust-jackin-usage
+          overwrite: "true"
+          path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
+          retention-days: "30"
+      - *s22
+  rust-jackin-usage-broker:
+    name: Rust / jackin-usage-broker
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    env: *m22
+    needs:
+      - plan
+    if: "!contains(needs.plan.outputs.not_affected_jobs, ',rust-jackin-usage-broker,')"
+    steps:
+      - *s7
+      - *s2
+      - *s26
+      - *s27
+      - *s8
+      - *s3
+      - *s4
+      - *s9
+      - *s28
+      - *s24
+      - *s10
+      - *s11
+      - *s12
+      - *s13
+      - *s14
+      - *s15
+      - *s16
+      - *s17
+      - *s18
+      - *s19
+      - name: Build test executables
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-85571be87c94281eb044d715f50c970cb2b295c4f86182f80d6b2d2c0369698e"}
+      - name: Format
+        background: true
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-db8554c2a1d881b0045c80a3cb61495ead86c3bfc67eeed02b07466f17cee2bd"}
+      - name: Clippy
+        background: true
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-d79b50ad3d5c93143b8a94e4a99b8cd4fa5b00a7c5808f439765ea361008c677"}
+      - name: Unit and integration tests
+        background: true
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-4937c30435f99589220150e8cfc47697eb294cf4b3cc5325bb585ae27480ec1b"}
+      - name: Doctests
+        background: true
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-61b131b65c284b273a1db16c21bbcedce47af0d6953a0d30e021807517328040"}
+      - name: Documentation
+        background: true
+        uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
+        with: {"digest": "b3-269cb5229d477ae2d214d62a1083e09b96d65b1890cdb08b9169183d014371b7"}
+      - name: Wait for parallel checks
+        wait-all:
+      - name: Upload crate reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          if-no-files-found: error
+          name: velnor-crate-r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}-rust-jackin-usage-broker
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"

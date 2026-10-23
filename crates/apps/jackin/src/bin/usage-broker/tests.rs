@@ -120,6 +120,7 @@ fn explicit_auth_holds_foreground_service_and_reports_only_safe_readiness() {
             assert_eq!(request.config_root, PathBuf::from("/tmp/config"));
             assert_eq!(request.operator_home, PathBuf::from("/tmp/home"));
             assert_eq!(request.build_id, "test-build");
+            assert_eq!(request.socket_alias_root, None);
             on_ready(test_ready());
             Ok(ForegroundBootstrapOutcome::Acquired)
         },
@@ -211,6 +212,39 @@ fn foreground_bootstrap_arguments_are_complete_and_strict() {
 
     let unknown = prepare_auth_args(&["--unexpected"]);
     assert_eq!(parse_prepare_auth_args(&unknown).unwrap_err().0, 3);
+}
+
+#[test]
+fn socket_alias_root_argument_is_optional_and_propagated_to_foreground_bootstrap() {
+    let args = prepare_auth_args(&["--socket-alias-root", "/tmp/private-aliases"]);
+    let request = parse_prepare_auth_args(&args).expect("valid custom alias root");
+    assert_eq!(
+        request.socket_alias_root,
+        Some(PathBuf::from("/tmp/private-aliases"))
+    );
+}
+
+#[test]
+fn socket_alias_root_argument_rejects_missing_duplicate_and_invalid_values() {
+    let base = vec!["jackin-usage-broker".to_owned()];
+    let mut missing = base.clone();
+    missing.push("--socket-alias-root".to_owned());
+    parse_socket_alias_root_argument(&missing).unwrap_err();
+
+    let mut duplicate = base.clone();
+    duplicate.extend([
+        "--socket-alias-root".to_owned(),
+        "/tmp/first".to_owned(),
+        "--socket-alias-root".to_owned(),
+        "/tmp/second".to_owned(),
+    ]);
+    parse_socket_alias_root_argument(&duplicate).unwrap_err();
+
+    for value in ["", "relative/path"] {
+        let mut invalid = base.clone();
+        invalid.extend(["--socket-alias-root".to_owned(), value.to_owned()]);
+        parse_socket_alias_root_argument(&invalid).unwrap_err();
+    }
 }
 
 #[test]

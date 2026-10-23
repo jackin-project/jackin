@@ -4,6 +4,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
+use std::process::Command;
 
 use jackin_protocol::usage_broker::UsageCoordinationErrorKind;
 use jackin_usage_discovery::UsageDiscoveryScope;
@@ -16,6 +17,25 @@ fn host_scope(root: &Path) -> UsageDiscoveryScope {
         config_root: root.join("config"),
         operator_home: root.join("home"),
     }
+}
+
+#[test]
+fn explicit_socket_alias_root_is_forwarded_as_one_argument() {
+    let alias_root = Path::new("/tmp/private socket aliases");
+    let mut command = Command::new("jackin-usage-broker");
+    super::add_socket_alias_root(&mut command, Some(alias_root));
+
+    let mut args = command.get_args();
+    assert_eq!(
+        args.next(),
+        Some(std::ffi::OsStr::new("--socket-alias-root"))
+    );
+    assert_eq!(args.next(), Some(alias_root.as_os_str()));
+    assert_eq!(args.next(), None);
+
+    let mut default_command = Command::new("jackin-usage-broker");
+    super::add_socket_alias_root(&mut default_command, None);
+    assert_eq!(default_command.get_args().next(), None);
 }
 
 fn nonexecutable_config(root: &Path) -> UsageBrokerConfig {
