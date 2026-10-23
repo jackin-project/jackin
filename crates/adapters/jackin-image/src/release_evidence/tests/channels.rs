@@ -40,12 +40,17 @@ fn stable_and_preview_have_disjoint_tag_workflow_and_event_authority() {
 #[test]
 fn superseded_preview_and_version_tag_aliases_are_not_admitted() {
     let current = receipt();
+    assert_eq!(
+        release_tag(&current.version.value, &current.source.commit_sha).unwrap(),
+        format!("preview-{}", current.source.commit_sha)
+    );
+    release_tag(&current.version.value, &"f".repeat(40)).unwrap_err();
     assert!(policy::validate_receipt(&current, "0.6.4-preview.2+abcdef0").is_err());
     let mut legacy = current.clone();
     legacy.tag = format!("v{}", legacy.version.value);
     assert!(policy::validate_receipt(&legacy, &legacy.version.value).is_err());
     let mut stable = channel_receipt(PackageReleaseChannel::Stable);
-    stable.tag = "preview".into();
+    stable.tag = format!("preview-{}", stable.source.commit_sha);
     assert!(policy::validate_receipt(&stable, "0.6.4").is_err());
     for tag in [
         "preview".to_owned(),

@@ -4,10 +4,11 @@
 //! Public observations supplement already authenticated receipt bytes; they never
 //! replace Sigstore verification or select a different requested helper version.
 //! Historical repository, exact-attempt build evidence and source ancestry are
-//! admitted once per pin. Release lifecycle, recovery envelope, inventory and tag
-//! facts remain fresh at every execution and installation boundary; a new download
-//! must admit its own pin. Each preview source has its own immutable
-//! `preview-<source>` release, so no release ID or publication journal is pinned.
+//! admitted once per pin. Release lifecycle, recovery envelope, inventory and
+//! source-bound tag facts remain fresh at every execution and installation
+//! boundary; a new download must admit its own pin. Each preview source has its
+//! own immutable `preview-<source>` release, so no release ID or publication
+//! journal is pinned.
 //! Repository ownership/privacy/default-branch admission is invocation-local, not
 //! an immutability claim. Rechecks require the initially pinned positive release
 //! ID and complete snapshot; moving a repository does not revoke verified bytes.
@@ -24,6 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use velnor_actions_contract::package_release::{PackageReleaseChannel, PackageReleaseReceipt};
 
 const API: &str = "https://api.github.com/repos/jackin-project/jackin";
+const RECOVERY_ENVELOPE_LIMIT: usize = 110 * 1024;
 
 #[derive(Debug)]
 pub(super) struct PublicationPin {
@@ -150,21 +152,11 @@ struct AnnotatedTag {
     object: Object,
 }
 
-/// Velnor's canonical release body and preview tag message: the exact signed
-/// receipt and its bundle, so a release cannot carry another generation's evidence.
-fn recovery_envelope(raw: &[u8], bundle: &[u8]) -> String {
-    format!(
-        "velnor-package-release-recovery-v1\nreceipt_sha256={}\nreceipt={}\nbundle={}\n",
-        digest(raw),
-        URL_SAFE_NO_PAD.encode(raw),
-        URL_SAFE_NO_PAD.encode(bundle),
-    )
-}
-
 async fn tag(
     transport: &impl Transport,
     receipt: &PackageReleaseReceipt,
-    envelope: &str,
+    raw: &[u8],
+    bundle: &[u8],
 ) -> Result<Tag> {
     let reference: Reference = read(transport, &format!("git/ref/tags/{}", receipt.tag)).await?;
     ensure!(
@@ -172,21 +164,27 @@ async fn tag(
             && hex_sha(&reference.object.sha, 40),
         "release tag reference mismatch"
     );
-    ensure!(
-        reference.object.kind == "tag",
-        "unsupported release tag object"
-    );
-    let annotated: AnnotatedTag =
-        read(transport, &format!("git/tags/{}", reference.object.sha)).await?;
-    ensure!(
-        annotated.sha == reference.object.sha
-            && annotated.tag == receipt.tag
-            && annotated.object.kind == "commit"
-            && (receipt.channel == PackageReleaseChannel::Stable
-                || annotated.message.as_deref() == Some(envelope)),
-        "release annotated tag mismatch"
-    );
-    let source_sha = annotated.object.sha;
+    let source_sha = match reference.object.kind.as_str() {
+        "tag" => {
+            let annotated: AnnotatedTag =
+                read(transport, &format!("git/tags/{}", reference.object.sha)).await?;
+            ensure!(
+                annotated.sha == reference.object.sha
+                    && annotated.tag == receipt.tag
+                    && annotated.object.kind == "commit",
+                "release annotated tag mismatch"
+            );
+            if receipt.channel == PackageReleaseChannel::Preview {
+                let expected_message = recovery_envelope(raw, bundle)?;
+                ensure!(
+                    annotated.message.as_deref() == Some(expected_message.as_str()),
+                    "preview annotated tag recovery envelope mismatch"
+                );
+            }
+            annotated.object.sha
+        }
+        _ => anyhow::bail!("unsupported release tag object"),
+    };
     ensure!(
         source_sha == receipt.source.commit_sha,
         "release tag no longer selects signed source"
@@ -264,14 +262,18 @@ async fn observe(
         release.id > 0 && release.tag_name == receipt.tag && release.draft == Some(false),
         "release identity or draft state mismatch"
     );
-    let envelope = recovery_envelope(raw, bundle);
     match receipt.channel {
-        PackageReleaseChannel::Preview => ensure!(
-            release.prerelease == Some(true)
-                && release.immutable == Some(true)
-                && release.body.as_deref() == Some(envelope.as_str()),
-            "preview must be its source's immutable prerelease carrying the signed receipt"
-        ),
+        PackageReleaseChannel::Preview => {
+            ensure!(
+                release.prerelease == Some(true) && release.immutable == Some(true),
+                "preview release must be permanent and immutable"
+            );
+            let expected_body = recovery_envelope(raw, bundle)?;
+            ensure!(
+                release.body.as_deref() == Some(expected_body.as_str()),
+                "preview release body recovery envelope mismatch"
+            );
+        }
         PackageReleaseChannel::Stable => ensure!(
             release.prerelease == Some(false) && release.immutable == Some(true),
             "stable release must be permanent and immutable"
@@ -284,17 +286,44 @@ async fn observe(
     )
     .await?;
     let assets = assets(rows, &expected)?;
-    let tag = tag(transport, receipt, &envelope).await?;
+    let tag = tag(transport, receipt, raw, bundle).await?;
     let final_release: Release = read(transport, &format!("releases/tags/{}", receipt.tag)).await?;
     ensure!(
         final_release == release,
-        "release body or lifecycle changed during observation"
+        "release lifecycle changed during observation"
     );
-    let final_tag = self::tag(transport, receipt, &envelope).await?;
+    let final_tag = self::tag(transport, receipt, raw, bundle).await?;
     ensure!(final_tag == tag, "release tag changed during observation");
     Ok(Snapshot {
         release,
         assets,
         tag,
     })
+}
+
+pub(super) fn recovery_envelope(receipt: &[u8], bundle: &[u8]) -> Result<String> {
+    let digest = digest(receipt);
+    let header = format!("velnor-package-release-recovery-v1\nreceipt_sha256={digest}\nreceipt=");
+    let middle = "\nbundle=";
+    let encoded_receipt_len = unpadded_base64_len(receipt.len());
+    let encoded_bundle_len = unpadded_base64_len(bundle.len());
+    ensure!(
+        header.len() + encoded_receipt_len + middle.len() + encoded_bundle_len
+            < RECOVERY_ENVELOPE_LIMIT,
+        "preview recovery envelope exceeds native limit"
+    );
+    Ok(format!(
+        "velnor-package-release-recovery-v1\nreceipt_sha256={digest}\nreceipt={}\nbundle={}\n",
+        URL_SAFE_NO_PAD.encode(receipt),
+        URL_SAFE_NO_PAD.encode(bundle),
+    ))
+}
+
+fn unpadded_base64_len(bytes: usize) -> usize {
+    (bytes / 3) * 4
+        + match bytes % 3 {
+            1 => 2,
+            2 => 3,
+            _ => 0,
+        }
 }

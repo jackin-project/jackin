@@ -42,11 +42,7 @@ struct FileCountingProvider {
 }
 
 impl UsageProviderExecutor for FileCountingProvider {
-    fn probe(
-        &self,
-        _capability: &UsageAccountCapability,
-        _generation: u64,
-    ) -> ProviderProbeOutcome {
+    fn probe(&self, capability: &UsageAccountCapability, _generation: u64) -> ProviderProbeOutcome {
         let call = PROCESS_CALLS.fetch_add(1, Ordering::SeqCst);
         if fs::write(
             self.root
@@ -65,7 +61,7 @@ impl UsageProviderExecutor for FileCountingProvider {
             wait_until(Duration::from_secs(10), || release.exists());
         }
         std::thread::park_timeout(Duration::from_millis(100));
-        match quota_view() {
+        match quota_view(&capability.surface_id) {
             Ok(view) => ProviderProbeOutcome::success(view),
             Err(error) => ProviderProbeOutcome::Failure {
                 kind: UsageCoordinationErrorKind::ProviderUnavailable,
@@ -83,16 +79,29 @@ fn capability() -> UsageAccountCapability {
     }
 }
 
-fn quota_view() -> Result<FocusedUsageView> {
+fn owner_recovery_capability() -> UsageAccountCapability {
+    UsageAccountCapability {
+        account_id: "shared-account".to_owned(),
+        surface_id: "codex".to_owned(),
+    }
+}
+
+fn quota_view(surface_id: &str) -> Result<FocusedUsageView> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let mut view = FocusedUsageView::unavailable("claude", i64::try_from(now).unwrap_or(i64::MAX));
+    let mut view =
+        FocusedUsageView::unavailable(surface_id, i64::try_from(now).unwrap_or(i64::MAX));
     view.status = UsageSnapshotStatus::Fresh;
     view.source = UsageSource::ProviderApi;
     view.confidence = UsageConfidence::Authoritative;
-    view.account.provider_label = "Claude".to_owned();
+    view.account.provider_label = match surface_id {
+        "claude" => "Claude",
+        "codex" => "Codex",
+        other => other,
+    }
+    .to_owned();
     view.account.account_label = "shared@example.test".to_owned();
     view.buckets = vec![QuotaBucketView {
         label: "Weekly".to_owned(),
@@ -123,6 +132,11 @@ fn usage_broker_child() -> Result<()> {
     };
     let root = PathBuf::from(std::env::var_os(ROOT_ENV).context("missing broker E2E root")?);
     let mode = std::env::var(MODE_ENV).unwrap_or_else(|_| "standard".to_owned());
+    let capability = if matches!(mode.as_str(), "owner" | "recovery") {
+        owner_recovery_capability()
+    } else {
+        capability()
+    };
     let expected = std::env::var(EXPECTED_ENV)
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
@@ -137,7 +151,7 @@ fn usage_broker_child() -> Result<()> {
             executor,
         )
         .test_result()?;
-        let state = client.refresh(capability(), 0, true).test_result()?;
+        let state = client.refresh(capability, 0, true).test_result()?;
         assert_eq!(state.generation, 1);
         wait_until(Duration::from_secs(10), || {
             entries_with_prefix(&root, "provider-call-") == 1
@@ -171,7 +185,7 @@ fn usage_broker_child() -> Result<()> {
             Err(error) => return Err(error).test_result(),
         }
     };
-    let mut state = client.refresh(capability(), 0, true).test_result()?;
+    let mut state = client.refresh(capability.clone(), 0, true).test_result()?;
     if mode == "recovery" && state.generation == 1 {
         assert_eq!(state.phase, UsageRefreshPhase::Failed);
         let error = state
@@ -184,14 +198,14 @@ fn usage_broker_child() -> Result<()> {
             .context("recovered owner state lacked a retry deadline")?;
         wait_until(Duration::from_secs(10), || epoch_now() >= retry_at);
         state = client
-            .refresh(capability(), state.generation, true)
+            .refresh(capability.clone(), state.generation, true)
             .test_result()?;
     }
     if mode == "recovery" {
         assert_eq!(state.generation, 2);
     }
     let terminal = client
-        .join(capability(), state.generation, Duration::from_secs(5))
+        .join(capability, state.generation, Duration::from_secs(5))
         .test_result()?;
     assert_eq!(terminal.generation, if mode == "recovery" { 2 } else { 1 });
     assert_eq!(terminal.phase, UsageRefreshPhase::Completed);

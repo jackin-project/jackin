@@ -14,34 +14,37 @@ fn capsule_resolution_future_stays_within_launch_stack_budget() {
     );
 }
 
-const PREVIEW_SOURCE: &str = "bf7df07111111111111111111111111111111111";
-
 #[test]
-fn preview_url_uses_the_immutable_source_tag_and_canonical_target() {
+fn preview_url_uses_full_source_tag_and_canonical_target() {
     let version = "0.6.0-preview.411+bf7df07";
+    let source = format!("bf7df07{}", "a".repeat(33));
     for (arch, target) in [
         ("amd64", "x86_64-unknown-linux-gnu"),
         ("arm64", "aarch64-unknown-linux-gnu"),
     ] {
         assert_eq!(
-            download_url(version, arch, ReleaseChannel::Preview, PREVIEW_SOURCE).unwrap(),
+            download_url(version, arch, ReleaseChannel::Preview, &source).unwrap(),
             format!(
-                "https://github.com/jackin-project/jackin/releases/download/preview-{PREVIEW_SOURCE}/jackin-capsule-{target}.tar.gz"
+                "https://github.com/jackin-project/jackin/releases/download/preview-{source}/jackin-capsule-{target}.tar.gz"
             )
         );
     }
 }
 
 #[test]
-fn preview_url_rejects_sources_its_version_does_not_abbreviate() {
+fn preview_url_rejects_noncanonical_or_mismatched_full_source_sha() {
     let version = "0.6.0-preview.411+bf7df07";
-    for source in [
-        "f".repeat(40),
-        "bf7df07".to_owned(),
-        PREVIEW_SOURCE.to_uppercase(),
-        format!("{PREVIEW_SOURCE}0"),
+    let source = format!("bf7df07{}", "a".repeat(33));
+    for invalid_source in [
+        format!("c{}", "a".repeat(39)),
+        source[..7].to_owned(),
+        source.to_ascii_uppercase(),
+        format!("{source}a"),
     ] {
-        download_url(version, "amd64", ReleaseChannel::Preview, &source).unwrap_err();
+        assert!(
+            download_url(version, "amd64", ReleaseChannel::Preview, &invalid_source).is_err(),
+            "accepted invalid preview source {invalid_source:?}"
+        );
     }
 }
 
@@ -131,12 +134,13 @@ fn cleanup_and_failure_messages_name_actionable_local_recovery() {
         .contains("manual cleanup")
     );
     let version = "0.6.0-preview.411+bf7df07";
+    let source = format!("bf7df07{}", "a".repeat(33));
     let message = download_failure_message(
         version,
-        PREVIEW_SOURCE,
-        &download_url(version, "amd64", ReleaseChannel::Preview, PREVIEW_SOURCE).unwrap(),
+        &source,
+        &download_url(version, "amd64", ReleaseChannel::Preview, &source).unwrap(),
     );
-    assert!(message.contains(&format!("releases/tag/preview-{PREVIEW_SOURCE}")));
+    assert!(message.contains(&format!("releases/tag/preview-{source}")));
     assert!(message.contains("JACKIN_CAPSULE_BIN"));
 }
 
@@ -191,18 +195,18 @@ fn archive_rejects_noncanonical_members_and_requires_one_executable() {
 #[test]
 fn stable_helpers_use_permanent_tags_and_reject_mixed_channel_arguments() {
     assert_eq!(
-        download_url("0.6.4", "amd64", ReleaseChannel::Stable, PREVIEW_SOURCE).unwrap(),
+        download_url("0.6.4", "amd64", ReleaseChannel::Stable, &"a".repeat(40)).unwrap(),
         "https://github.com/jackin-project/jackin/releases/download/v0.6.4/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"
     );
-    download_url("0.6.4", "arm64", ReleaseChannel::Preview, PREVIEW_SOURCE).unwrap_err();
+    download_url("0.6.4", "arm64", ReleaseChannel::Preview, &"a".repeat(40)).unwrap_err();
     download_url(
         "0.6.4-preview.1+abcdef0",
         "arm64",
         ReleaseChannel::Stable,
-        PREVIEW_SOURCE,
+        &"a".repeat(40),
     )
     .unwrap_err();
-    download_url("dev", "arm64", ReleaseChannel::LocalOnly, PREVIEW_SOURCE).unwrap_err();
+    download_url("dev", "arm64", ReleaseChannel::LocalOnly, &"a".repeat(40)).unwrap_err();
 }
 
 #[test]

@@ -181,7 +181,7 @@ impl UsageProviderExecutor for GateProvider {
                 wait_until(Duration::from_secs(30), || {
                     self.root.join("release").exists()
                 });
-                match quota_view() {
+                match quota_view(&capability.surface_id) {
                     Ok(view) => ProviderProbeOutcome::success(view),
                     Err(error) => ProviderProbeOutcome::Failure {
                         kind: UsageCoordinationErrorKind::ProviderUnavailable,
@@ -366,7 +366,7 @@ fn usage_broker_failure_and_rate_deadline_are_identical_for_all_waiters() -> Res
     let mut seeded = AccountStateEnvelope::idle(capability());
     seeded.generation = 1;
     seeded.phase = UsageRefreshPhase::Completed;
-    seeded.terminal_result = Some(quota_view()?);
+    seeded.terminal_result = Some(quota_view(&capability().surface_id)?);
     seeded.last_good = seeded.terminal_result.clone();
     seeded.completed_at_epoch = Some(now);
     store.store(&seeded, now)?;
@@ -649,6 +649,61 @@ fn require_docker() -> Result<()> {
     ensure!(
         !operating_system.trim().is_empty(),
         "Docker daemon reported an empty operating system"
+    );
+
+    let inspection = jackin_process::exec_sync(
+        &jackin_process::ExecRequest::new(
+            "docker",
+            ["image", "inspect", "--format", "{{.Id}}", CAPSULE_IMAGE],
+        )
+        .timeout(Duration::from_secs(20)),
+    )
+    .context("checking the usage broker E2E capsule image")?;
+    if inspection.success {
+        ensure!(
+            !String::from_utf8_lossy(&inspection.stdout)
+                .trim()
+                .is_empty(),
+            "Docker reported an empty image ID for {CAPSULE_IMAGE}"
+        );
+        return Ok(());
+    }
+
+    let inspection_error = format!(
+        "{}{}",
+        String::from_utf8_lossy(&inspection.stdout),
+        String::from_utf8_lossy(&inspection.stderr)
+    );
+    ensure!(
+        !inspection.timed_out,
+        "Docker image inspection timed out for {CAPSULE_IMAGE}: {inspection_error}"
+    );
+    ensure!(
+        inspection_error
+            .to_ascii_lowercase()
+            .contains("no such image"),
+        "Docker image inspection failed for {CAPSULE_IMAGE} (exit {:?}): {inspection_error}",
+        inspection.code
+    );
+
+    let pull = jackin_process::exec_sync(
+        &jackin_process::ExecRequest::new("docker", ["pull", CAPSULE_IMAGE])
+            .timeout(Duration::from_secs(300)),
+    )
+    .context("pulling the missing usage broker E2E capsule image")?;
+    let pull_output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&pull.stdout),
+        String::from_utf8_lossy(&pull.stderr)
+    );
+    ensure!(
+        !pull.timed_out,
+        "Docker pull timed out for {CAPSULE_IMAGE}: {pull_output}"
+    );
+    ensure!(
+        pull.success,
+        "Docker pull failed for {CAPSULE_IMAGE} (exit {:?}): {pull_output}",
+        pull.code
     );
     Ok(())
 }

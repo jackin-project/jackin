@@ -763,12 +763,111 @@ fn workflow_evaluation_deadline() {
 fn workflow_evaluation_memory_cap() {
     let mut limits = EvalLimits::defaults();
     limits.memory_bytes = 1;
-    expect_error(
+    let error = expect_error(
         evaluate_fixture(&fixture_repair_text(), &limits),
         ErrorCode::EvaluationLimit,
         "",
         "memory cap",
     );
+    let diagnostic = error.diagnostics.first().expect("one helper diagnostic");
+    assert!(diagnostic.message.contains("evaluation helper died"));
+    assert!(diagnostic.message.contains("code=Some(2)"));
+    assert!(diagnostic.message.contains("cannot set the memory cap"));
+    assert!(!diagnostic.message.contains("writing stdin to child"));
+    assert!(!diagnostic.action.contains("reinstall"));
+}
+
+#[cfg(unix)]
+#[test]
+fn workflow_non_cap_early_close_does_not_claim_memory_cap() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let scratch = tempfile::tempdir().unwrap();
+    let helper = scratch.path().join("early-close-helper");
+    std::fs::write(
+        &helper,
+        "#!/bin/sh\nexec 0<&-\nprintf 'non-cap-fixture-diagnostic' >&2\nexit 23\n",
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&helper).unwrap().permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&helper, permissions).unwrap();
+
+    let large_source = format!("padding = \"{}\"\n", "x".repeat(1024 * 1024));
+    let bundle = fixture_bundle(&large_source);
+    let mut limits = EvalLimits::defaults();
+    limits.deadline = Duration::from_secs(2);
+    let error = expect_error(
+        evaluate_bounded(&bundle, "repair.pkl", &helper, &limits),
+        ErrorCode::EvaluationLimit,
+        "",
+        "non-cap-fixture-diagnostic",
+    );
+    let diagnostic = error.diagnostics.first().expect("one helper diagnostic");
+    assert!(diagnostic.message.contains("code=Some(23)"));
+    assert!(diagnostic.message.contains("stdin delivery failed"));
+    assert!(!diagnostic.message.contains("memory cap"));
+    assert!(
+        diagnostic
+            .action
+            .contains("inspect the helper's reported cause")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn workflow_zero_exit_after_partial_delivery_does_not_accept_response() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let scratch = tempfile::tempdir().unwrap();
+    let helper = scratch.path().join("zero-exit-helper");
+    std::fs::write(
+        &helper,
+        "#!/bin/sh\nexec 0<&-\nprintf '{\"ok\":true,\"value\":{}}'\nexit 0\n",
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&helper).unwrap().permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&helper, permissions).unwrap();
+
+    let large_source = format!("padding = \"{}\"\n", "x".repeat(1024 * 1024));
+    let bundle = fixture_bundle(&large_source);
+    let mut limits = EvalLimits::defaults();
+    limits.deadline = Duration::from_secs(2);
+    let error = expect_error(
+        evaluate_bounded(&bundle, "repair.pkl", &helper, &limits),
+        ErrorCode::EvaluationLimit,
+        "",
+        "request delivery completed",
+    );
+    let diagnostic = error.diagnostics.first().expect("one helper diagnostic");
+    assert!(diagnostic.message.contains("code=Some(0)"));
+    assert!(diagnostic.message.contains("stdin delivery failed"));
+    assert!(!diagnostic.message.contains("memory cap"));
+}
+
+#[test]
+fn workflow_missing_helper_keeps_install_guidance_without_memory_claim() {
+    let scratch = tempfile::tempdir().unwrap();
+    let helper = scratch.path().join("missing-evaluation-helper");
+    assert!(!helper.exists());
+    let mut limits = EvalLimits::defaults();
+    limits.deadline = Duration::from_secs(2);
+    let error = expect_error(
+        evaluate_bounded(
+            &fixture_bundle(&fixture_repair_text()),
+            "repair.pkl",
+            &helper,
+            &limits,
+        ),
+        ErrorCode::EvaluationLimit,
+        "",
+        "cannot run the evaluation helper",
+    );
+    let diagnostic = error.diagnostics.first().expect("one helper diagnostic");
+    assert!(diagnostic.action.contains("reinstall jackin"));
+    assert!(!diagnostic.message.contains("memory cap"));
+    assert!(!diagnostic.action.contains("memory cap"));
 }
 
 #[test]

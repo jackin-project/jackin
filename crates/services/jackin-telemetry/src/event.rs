@@ -245,7 +245,10 @@ macro_rules! emit_schema_event {
 
 include!("event_emit.rs");
 
-fn event_enabled(def: &EventDef) -> bool {
+/// Return whether the current tracing subscriber is interested in this event's level and target.
+/// It does not validate the event definition or fields, and grants no authority to emit.
+#[must_use]
+pub fn event_enabled(def: &EventDef) -> bool {
     match def.severity {
         Severity::Trace => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::TRACE),
         Severity::Debug => tracing::enabled!(target: TELEMETRY_TARGET, tracing::Level::DEBUG),

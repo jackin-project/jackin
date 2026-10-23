@@ -96,4 +96,5 @@ fn non_linux_exec_bindings_are_rejected_explicitly() {
     assert!(message.contains("peer authentication is unavailable"));
 }
 
+mod case_01;
 mod coordination_tests;
