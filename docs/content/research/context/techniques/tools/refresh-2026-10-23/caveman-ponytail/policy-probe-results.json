@@ -1,0 +1,7 @@
+{
+  "claude_distinct_projects_keep_modes": true,
+  "claude_same_project_other_session_reads_ultra": true,
+  "codex_shared_plugin_data_other_session_reads_lite": true,
+  "ponytail_injection_bytes": 2861,
+  "caveman_injection_bytes": 4961
+}

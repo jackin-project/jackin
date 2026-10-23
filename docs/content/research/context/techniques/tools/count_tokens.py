@@ -1,54 +1,62 @@
-
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-"""Real Anthropic tokenizer via /v1/messages/count_tokens, authed with the local
-Claude Code OAuth session credential (read-only; the token is never printed).
+"""Prepare Anthropic token-count requests, offline unless --execute is specified.
 
-Usage:
-  count_tokens.py [--model MODEL] samples <file.json>  # [{"label","text"}, ...] -> TSV
-  count_tokens.py [--model MODEL] file <label> <path>  # count a file's contents
-  count_tokens.py [--model MODEL] text <label> <text>   # count a literal string
-Token count returned is for the content wrapped in a single user message; a fixed
-per-message overhead (~7 tokens, calibrated by the 'floor' label) applies to all rows.
+python3 count_tokens.py --model EXACT_MODEL file sample.txt
+python3 count_tokens.py --model EXACT_MODEL text 'public fixture'
+
+--execute uses ANTHROPIC_API_KEY or the explicit --api-key-env variable.
+No agent OAuth store is opened. Counts include framing and are estimates.
 """
-import json, sys, urllib.request, urllib.error, time
-DEFAULT_MODEL = "claude-opus-4-8"
-_cred = json.load(open('/home/agent/.claude/.credentials.json'))
-_tok = (_cred.get('claudeAiOauth') or {}).get('accessToken')
-H = {"Authorization": f"Bearer {_tok}", "anthropic-version": "2023-06-01",
-     "anthropic-beta": "oauth-2025-04-20", "content-type": "application/json"}
-def count(text, model):
-    body = json.dumps({"model": model, "messages": [{"role": "user", "content": text}]}).encode()
-    req = urllib.request.Request("https://api.anthropic.com/v1/messages/count_tokens",
-                                 data=body, headers=H, method="POST")
-    for attempt in range(4):
-        try:
-            r = urllib.request.urlopen(req, timeout=30)
-            return json.load(r)["input_tokens"]
-        except urllib.error.HTTPError as e:
-            if e.code in (429, 529) and attempt < 3:
-                time.sleep(2 * (attempt + 1)); continue
-            raise
-    raise RuntimeError("unreachable")
+import argparse
+import json
+import os
+from pathlib import Path
+import urllib.request
+
+
+def body(model, content):
+    return {"model": model, "messages": [{"role": "user", "content": content}]}
+
+
+def count(request_body, key_env):
+    key = os.environ.get(key_env)
+    if not key:
+        raise ValueError(f"set the explicitly selected API-key variable {key_env}")
+    request = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages/count_tokens",
+        data=json.dumps(request_body).encode("utf-8"),
+        headers={"x-api-key": key, "anthropic-version": "2023-06-01",
+                 "content-type": "application/json"}, method="POST")
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)
+
+
 def main():
-    args = sys.argv[1:]
-    model = DEFAULT_MODEL
-    if args[:1] == ["--model"]:
-        model = args[1]
-        args = args[2:]
-    mode = args[0]
-    if mode == "samples":
-        rows = json.load(open(args[1]))
-        print("label\ttokens\tchars\tbytes\ttok/100char")
-        for r in rows:
-            t = r["text"]; n = count(t, model); c = len(t); b = len(t.encode())
-            print(f"{r['label']}\t{n}\t{c}\t{b}\t{100*n/max(c,1):.1f}")
-            time.sleep(0.1)
-    elif mode == "file":
-        t = open(args[2]).read(); n = count(t, model)
-        print(f"{args[1]}\t{n}\t{len(t)}\t{len(t.encode())}")
-    elif mode == "text":
-        t = args[2]; print(f"{args[1]}\t{count(t, model)}\t{len(t)}")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--api-key-env", default="ANTHROPIC_API_KEY")
+    parser.add_argument("mode", choices=["file", "text", "samples"])
+    parser.add_argument("value")
+    args = parser.parse_args()
+    if args.mode == "samples":
+        samples = json.loads(Path(args.value).read_text(encoding="utf-8"))
+    else:
+        text = (Path(args.value).read_bytes().decode("utf-8")
+                if args.mode == "file" else args.value)
+        samples = [{"label": args.value if args.mode == "file" else "text", "text": text}]
+    output = []
+    for sample in samples:
+        request_body = body(args.model, sample["text"])
+        row = {"label": sample["label"], "model": args.model,
+               "characters": len(sample["text"]), "bytes": len(sample["text"].encode("utf-8"))}
+        row["response" if args.execute else "request"] = (
+            count(request_body, args.api_key_env) if args.execute else request_body)
+        output.append(row)
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+
+
 if __name__ == "__main__":
     main()
