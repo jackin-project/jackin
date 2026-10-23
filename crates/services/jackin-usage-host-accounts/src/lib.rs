@@ -1,4 +1,6 @@
 mod catalog;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod catalog_revision;
 mod identity;
 mod lifecycle;
 mod materialize;
@@ -8,6 +10,11 @@ pub(crate) use catalog::lifecycle_rank;
 pub use catalog::{
     AccountCatalog, AccountCatalogEntry, HostAccountDescriptor, load_selected_accounts,
     save_selected_accounts, selected_accounts_path,
+};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub use catalog_revision::{
+    CatalogAuthorityError, CatalogAuthorityStore, CatalogRevision, CatalogRevisionAuthority,
+    CatalogRevisionLease, InitializationIntent, RevisionDomain,
 };
 pub use identity::{CanonicalAccountIdentity, CanonicalAccountSubject, CanonicalIdentityGraph};
 pub use lifecycle::{AccountLifecycle, AccountProvenance};
