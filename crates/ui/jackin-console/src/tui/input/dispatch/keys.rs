@@ -16,8 +16,8 @@ use super::super::save::begin_editor_save;
 use super::{handle_confirm_delete_key, handle_confirm_instance_purge_key, handle_keyboard_help};
 use crate::tui::effect::{ConsoleEffect, FileBrowserEffectContext};
 use crate::tui::model::{
-    ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsoleManagerStageRoute,
-    CreatePreludeCompletionStatus, console_input_dispatch_plan, create_prelude_completion_status,
+    ConsoleInputDispatchPlan, ConsoleManagerInputPresence, ConsoleManagerStageRoute,
+    ConsolePaintedInputOwner, CreatePreludeCompletionStatus, create_prelude_completion_status,
 };
 use crossterm::event::KeyEvent;
 use jackin_config::AppConfig;
@@ -46,30 +46,26 @@ pub fn handle_key(
     key: KeyEvent,
     validate_auth_source_folder: &ValidateAuthSourceFolder,
 ) -> anyhow::Result<InputOutcome> {
-    if state.usage.visible {
-        crate::tui::screens::usage::handle_key(state, key);
-        return Ok(InputOutcome::Continue);
+    let input_owner = state.painted_input_owner();
+    if !state.allows_base_surface_input() {
+        state.clear_pointer_state();
     }
-    let stage_modal_facts = state.stage.modal_facts();
-    let dispatch_plan = console_input_dispatch_plan(ConsoleInputDispatchFacts {
-        keyboard_help_open: state.keyboard_help.is_some(),
-        list_modal_open: state.list_modal.is_some(),
-        inline_new_session_picker_open: state.inline_new_session_picker.is_some(),
-        inline_account_picker_open: state.inline_account_picker.is_some(),
-        launch_account_picker_open: state.launch_account_picker.is_some(),
-        inline_agent_picker_open: state.inline_agent_picker.is_some(),
-        inline_role_picker_open: state.inline_role_picker.is_some(),
-        editor_modal_open: stage_modal_facts.editor_modal_open,
-        settings_error_popup_open: stage_modal_facts.settings_error_popup_open,
-        settings_mounts_modal_open: stage_modal_facts.settings_mounts_modal_open,
-        settings_env_modal_open: stage_modal_facts.settings_env_modal_open,
-        settings_auth_modal_open: stage_modal_facts.settings_auth_modal_open,
-        create_prelude_modal_open: stage_modal_facts.create_prelude_modal_open,
-        stage_route: state.stage.route(),
-    });
+    let dispatch_plan = match input_owner {
+        ConsolePaintedInputOwner::KeyboardHelp => {
+            return Ok(handle_painted_keyboard_help(state, key));
+        }
+        ConsolePaintedInputOwner::StatusPopup => return Ok(InputOutcome::Continue),
+        ConsolePaintedInputOwner::Usage => {
+            crate::tui::screens::usage::handle_key(state, key);
+            return Ok(InputOutcome::Continue);
+        }
+        ConsolePaintedInputOwner::Dispatch(plan) => plan,
+    };
 
     match dispatch_plan {
-        ConsoleInputDispatchPlan::KeyboardHelp => return Ok(handle_keyboard_help(state, key)),
+        ConsoleInputDispatchPlan::KeyboardHelp => {
+            return Ok(handle_painted_keyboard_help(state, key));
+        }
         ConsoleInputDispatchPlan::ListModal => return Ok(handle_list_modal(state, key)),
         ConsoleInputDispatchPlan::InlineNewSessionPicker => {
             return Ok(handle_new_session_picker(state, key));
@@ -95,6 +91,7 @@ pub fn handle_key(
         ConsoleInputDispatchPlan::Stage(route) => {
             if crate::tui::run::should_open_keyboard_help(key) {
                 state.keyboard_help = Some(termrock::widgets::KeyboardHelpState::modal());
+                state.clear_pointer_state();
                 return Ok(InputOutcome::Continue);
             }
             let outcome = match route {
@@ -110,6 +107,9 @@ pub fn handle_key(
                 ConsoleManagerStageRoute::Workflows => {
                     let export_dir = paths.data_dir.join("workflow-exports");
                     crate::tui::screens::workflows::screen::handle_key(state, key, &export_dir);
+                    if !state.allows_base_surface_input() {
+                        state.clear_pointer_state();
+                    }
                     return Ok(InputOutcome::Continue);
                 }
                 ConsoleManagerStageRoute::CreatePrelude => {
@@ -122,6 +122,9 @@ pub fn handle_key(
                     Ok(handle_confirm_instance_purge_key(state, key))
                 }
             }?;
+            if !state.allows_base_surface_input() {
+                state.clear_pointer_state();
+            }
             state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
             return Ok(outcome);
         }
@@ -367,4 +370,17 @@ pub fn handle_key(
     }
 
     Ok(InputOutcome::Continue)
+}
+
+fn handle_painted_keyboard_help(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    if matches!(key.code, KeyCode::Char('q' | 'Q'))
+        && (key.modifiers - KeyModifiers::SHIFT).is_empty()
+    {
+        state.keyboard_help = None;
+        InputOutcome::Continue
+    } else {
+        handle_keyboard_help(state, key)
+    }
 }

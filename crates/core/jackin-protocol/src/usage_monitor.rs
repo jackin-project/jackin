@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::control::Money;
 
-pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 4;
+pub const USAGE_MONITOR_SCHEMA_VERSION: u16 = 5;
 
 pub const USAGE_STATUSLINE_INPUT_SCHEMA_VERSION: u16 = 2;
 
