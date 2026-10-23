@@ -5,15 +5,16 @@ mod dispatch;
 mod manager;
 mod presence;
 pub use dispatch::{
-    ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsoleStageModalFacts,
-    console_input_dispatch_plan,
+    ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsolePaintedInputOwner,
+    ConsolePaintedInputOwnerFacts, ConsoleStageModalFacts, console_input_dispatch_plan,
+    console_painted_input_owner_plan, console_usage_surface_painted,
 };
 pub use manager::{
     ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleManagerStageState, apply_manager_stage,
 };
 pub use presence::{
     ConsoleAnimationTick, ConsoleCreatePreludeModalPresence, ConsoleEditorFooterHeight,
-    ConsoleEditorModalPresence, ConsoleManagerModalBlockPresence, ConsolePendingDriftCheck,
+    ConsoleEditorModalPresence, ConsoleManagerInputPresence, ConsolePendingDriftCheck,
     ConsolePendingIsolationCleanup, ConsolePendingOpCommit, ConsolePendingOpCommitOrigin,
     ConsolePendingOpCommitResolution, ConsolePendingRoleLoad, ConsoleSettingsFooterHeight,
     ConsoleSettingsModalPresence,
