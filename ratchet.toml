@@ -155,7 +155,7 @@ key = "clippy::exit@jackin"
 bound = 2
 [[family.entry]]
 key = "clippy::exit@jackin-capsule"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::expect_used@jackin"
 bound = 10
@@ -255,6 +255,9 @@ bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin"
 bound = 4
+[[family.entry]]
+key = "clippy::print_stderr@jackin-capsule"
+bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-dev"
 bound = 1

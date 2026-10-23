@@ -71,6 +71,9 @@ pub async fn run_daemon(
     launch_config: CapsuleConfig,
     telemetry: &mut crate::telemetry::FlushGuard,
 ) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    crate::pid1::require_darwin_reaper_active()?;
+    #[cfg(not(target_os = "macos"))]
     crate::pid1::install_sigchld_reaper();
     run_daemon_loop(
         initial_agent,

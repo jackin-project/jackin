@@ -1165,6 +1165,36 @@ impl ReaperEventLog {
         &self.events
     }
 
+    #[cfg(target_os = "macos")]
+    fn drain_available(&mut self) -> io::Result<()> {
+        while self.events.len() < REAPER_TEST_EVENT_CAPACITY {
+            match self.capture.try_recv() {
+                Ok(event) => {
+                    self.events.push(event);
+                    self.update_diagnostic_events(self.capture.overflowed());
+                }
+                Err(
+                    std::sync::mpsc::TryRecvError::Empty
+                    | std::sync::mpsc::TryRecvError::Disconnected,
+                ) => break,
+            }
+        }
+        let extra = if self.events.len() == REAPER_TEST_EVENT_CAPACITY {
+            self.capture.try_recv().ok()
+        } else {
+            None
+        };
+        let overflowed = self.capture.overflowed() || extra.is_some();
+        self.update_diagnostic_events(overflowed);
+        if overflowed {
+            Err(io::Error::other(
+                "bounded PID 1 event observation overflowed while draining",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     fn require_quiet(&mut self, quiet_period: Duration) -> io::Result<()> {
         if self.events.len() >= REAPER_TEST_EVENT_CAPACITY {
             return Err(io::Error::other(
@@ -2298,3 +2328,1236 @@ fn worker_adoption_grandchild() -> io::Result<()> {
 }
 
 mod selective_pass_faults;
+
+#[cfg(target_os = "macos")]
+const DARWIN_FIXTURE_ROLE_ENV: &str = "JACKIN_PID1_TEST_DARWIN_FIXTURE_ROLE";
+#[cfg(target_os = "macos")]
+const DARWIN_GATED_CHILD_WORKER: &str = "pid1::tests::worker_darwin_tokio_gated_child";
+#[cfg(target_os = "macos")]
+const DARWIN_COEXIST_WORKER: &str =
+    "pid1::tests::worker_darwin_tokio_reaper_coexists_with_registered_child_wait";
+#[cfg(target_os = "macos")]
+const DARWIN_EINTR_WORKER: &str =
+    "pid1::tests::worker_darwin_tokio_reaper_requeues_real_eintr_exhaustion";
+#[cfg(target_os = "macos")]
+const DARWIN_HANDOFF_WORKER: &str =
+    "pid1::tests::worker_darwin_tokio_registered_child_timeout_and_cancel_handoff";
+#[cfg(target_os = "macos")]
+const DARWIN_MASK_WORKER: &str =
+    "pid1::tests::worker_darwin_tokio_reaper_rejects_blocked_startup_mask";
+#[cfg(target_os = "macos")]
+const DARWIN_FATAL_WORKER: &str =
+    "pid1::tests::worker_darwin_tokio_reaper_fails_closed_after_registered_worker_panic";
+
+#[cfg(target_os = "macos")]
+fn run_darwin_ordinary_worker(name: &str, expected_exit: i32) -> io::Result<String> {
+    let executable = std::env::current_exe()?;
+    let directory = tempfile::tempdir()?;
+    let mut stdout_capture = tempfile::tempfile()?;
+    let mut stderr_capture = tempfile::tempfile()?;
+    let mut child = Command::new(executable)
+        .args(["--exact", name, "--nocapture"])
+        .env(WORKER_ENV, name)
+        .env(FIXTURE_DIRECTORY_ENV, directory.path())
+        .env_remove(DIAGNOSTIC_PYTHON_ENV)
+        .env_remove(DIAGNOSTIC_SCRIPT_ENV)
+        .env_remove(DIAGNOSTIC_PREEXEC_PID_ENV)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout_capture.try_clone()?))
+        .stderr(Stdio::from(stderr_capture.try_clone()?))
+        .spawn()?;
+    let outcome = crate::util::poll_owned_child_until_timeout(
+        &mut child,
+        Duration::from_secs(8),
+        FIXTURE_POLL_INTERVAL,
+    );
+    match outcome {
+        Ok(crate::util::ChildPollOutcome::Exited(status)) => {
+            let diagnostics = worker_failure_diagnostics(
+                name,
+                &format!("completed with status {status}"),
+                &mut stdout_capture,
+                &mut stderr_capture,
+            );
+            eprintln!("{diagnostics}");
+            if status.code() != Some(expected_exit) {
+                return Err(io::Error::other(format!(
+                    "isolated Darwin SIGCHLD worker {name} exited with {:?}, expected {expected_exit}\n{diagnostics}",
+                    status.code()
+                )));
+            }
+            Ok(diagnostics)
+        }
+        Ok(crate::util::ChildPollOutcome::TimedOut) => {
+            stop_known_child(&mut child);
+            let diagnostics = worker_failure_diagnostics(
+                name,
+                "timed out after 8 seconds",
+                &mut stdout_capture,
+                &mut stderr_capture,
+            );
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("isolated Darwin SIGCHLD worker timed out\n{diagnostics}"),
+            ))
+        }
+        Err(error) => {
+            stop_known_child(&mut child);
+            let diagnostics = worker_failure_diagnostics(
+                name,
+                &format!("child polling failed: {error}"),
+                &mut stdout_capture,
+                &mut stderr_capture,
+            );
+            Err(io::Error::other(format!(
+                "isolated Darwin SIGCHLD worker could not be supervised\n{diagnostics}"
+            )))
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn check_darwin_worker_baseline() -> io::Result<()> {
+    for key in [
+        DIAGNOSTIC_PYTHON_ENV,
+        DIAGNOSTIC_SCRIPT_ENV,
+        DIAGNOSTIC_PREEXEC_PID_ENV,
+    ] {
+        if std::env::var_os(key).is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("ordinary Darwin worker inherited diagnostic variable {key}"),
+            ));
+        }
+    }
+    let action = jackin_process_directory::current_sigchld_action()?;
+    if action.disposition != jackin_process_directory::SigchldDisposition::Default {
+        return Err(io::Error::other(format!(
+            "ordinary Darwin worker did not start with default SIGCHLD action: {:?}",
+            action.disposition
+        )));
+    }
+    let eligibility = jackin_process_directory::tokio_sigchld_eligibility()?;
+    if eligibility != jackin_process_directory::TokioSigchldEligibility::Eligible {
+        return Err(io::Error::other(format!(
+            "ordinary Darwin worker has ineligible SIGCHLD action: {eligibility:?}"
+        )));
+    }
+    let mask = SigSet::thread_get_mask()
+        .map_err(|error| io::Error::other(format!("query ordinary worker mask: {error}")))?;
+    if mask.contains(Signal::SIGCHLD) {
+        return Err(io::Error::other(
+            "ordinary Darwin worker started with SIGCHLD blocked",
+        ));
+    }
+    writeln!(
+        io::stderr().lock(),
+        "PID1_DARWIN_TOKIO_EXEC backend=tokio-unix-signal worker_pid={} disposition=Default sigchld_blocked=false diagnostic_preexec=false",
+        std::process::id()
+    )?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn start_darwin_reaper_for_test() -> io::Result<()> {
+    check_darwin_worker_baseline()?;
+    prepare_darwin_reaper()
+        .map_err(|error| io::Error::other(format!("prepare Darwin reaper: {error:#}")))?;
+    activate_darwin_reaper();
+    require_darwin_reaper_active()
+        .map_err(|error| io::Error::other(format!("require active Darwin reaper: {error:#}")))?;
+    writeln!(
+        io::stderr().lock(),
+        "PID1_DARWIN_TOKIO phase=active worker_pid={}",
+        std::process::id()
+    )?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_darwin_gated_child(directory: &Path, role: &str) -> io::Result<Child> {
+    let executable = std::env::current_exe()?;
+    Command::new(executable)
+        .args(["--exact", DARWIN_GATED_CHILD_WORKER, "--nocapture"])
+        .env(WORKER_ENV, DARWIN_GATED_CHILD_WORKER)
+        .env(FIXTURE_DIRECTORY_ENV, directory)
+        .env(DARWIN_FIXTURE_ROLE_ENV, role)
+        .env_remove(DIAGNOSTIC_PYTHON_ENV)
+        .env_remove(DIAGNOSTIC_SCRIPT_ENV)
+        .env_remove(DIAGNOSTIC_PREEXEC_PID_ENV)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+}
+
+#[cfg(target_os = "macos")]
+fn run_darwin_gated_child() -> io::Result<()> {
+    let directory = fixture_directory()?;
+    let role = std::env::var(DARWIN_FIXTURE_ROLE_ENV)
+        .map_err(|error| io::Error::other(format!("read Darwin fixture role: {error}")))?;
+    if !matches!(
+        role.as_str(),
+        "managed" | "unowned" | "success" | "timeout" | "cancel"
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unknown Darwin fixture role",
+        ));
+    }
+    let pid = std::process::id();
+    write_fixture_record(
+        &directory.join(format!("darwin-{role}.ready")),
+        &format!("{pid}\n"),
+    )?;
+    let timer = FixtureTimer::new()?;
+    let deadline = FixtureTimer::deadline_after(FIXTURE_CHILD_DEADLINE)?;
+    let release_path = directory.join(format!("darwin-{role}.release"));
+    let disposition = match timer.wait_for_file(&release_path, deadline) {
+        Ok(_) => "released\n",
+        Err(error) if error.kind() == io::ErrorKind::TimedOut => "expired\n",
+        Err(error) => return Err(error),
+    };
+    write_fixture_record(
+        &directory.join(format!("darwin-{role}.disposition")),
+        disposition,
+    )
+}
+
+#[cfg(target_os = "macos")]
+async fn read_darwin_fixture_record(path: PathBuf, deadline: Instant) -> io::Result<String> {
+    loop {
+        match read_fixture_record(&path) {
+            Ok(contents) => return Ok(contents),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!(
+                    "Darwin fixture record {} missed its deadline",
+                    path.display()
+                ),
+            ));
+        }
+        tokio::time::sleep(FIXTURE_POLL_INTERVAL.min(remaining)).await;
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn assert_darwin_fixture_disposition(
+    directory: &Path,
+    role: &str,
+    expected: &str,
+    deadline: Instant,
+) -> io::Result<()> {
+    let observed = read_darwin_fixture_record(
+        directory.join(format!("darwin-{role}.disposition")),
+        deadline,
+    )
+    .await?;
+    if observed == expected {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "Darwin fixture {role} disposition was {observed:?}, expected {expected:?}"
+        )))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn assert_darwin_cancel_fixture_has_no_disposition(directory: &Path) -> io::Result<()> {
+    let path = directory.join("darwin-cancel.disposition");
+    match read_fixture_record(&path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Ok(contents) => Err(io::Error::other(format!(
+            "cancelled Darwin fixture wrote an unexpected disposition {contents:?}"
+        ))),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn wait_darwin_worker_pending(
+    pending: tokio::sync::oneshot::Receiver<()>,
+    deadline: Instant,
+) -> io::Result<()> {
+    match tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), pending).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(_)) => Err(io::Error::other(
+            "managed process task lost its Pending observer",
+        )),
+        Err(_) => Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "managed process task did not reach its first Pending poll",
+        )),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_observed_darwin_exec(
+    request: jackin_process::ExecRequest,
+) -> (
+    tokio::task::JoinHandle<anyhow::Result<jackin_process::ExecResult>>,
+    tokio::sync::oneshot::Receiver<()>,
+) {
+    use std::future::Future as _;
+
+    let (pending_sender, pending_receiver) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        let mut future = Box::pin(crate::process_telemetry::exec_async_as(
+            &request,
+            jackin_telemetry::schema::enums::ProcessExecutableName::JackinCapsule,
+        ));
+        let mut pending_sender = Some(pending_sender);
+        std::future::poll_fn(move |context| match future.as_mut().poll(context) {
+            std::task::Poll::Pending => {
+                if let Some(sender) = pending_sender.take() {
+                    let _sent = sender.send(());
+                }
+                std::task::Poll::Pending
+            }
+            std::task::Poll::Ready(result) => std::task::Poll::Ready(result),
+        })
+        .await
+    });
+    (task, pending_receiver)
+}
+
+#[cfg(target_os = "macos")]
+fn darwin_exec_request(
+    directory: &Path,
+    role: &str,
+    timeout: Option<Duration>,
+) -> io::Result<jackin_process::ExecRequest> {
+    use std::ffi::OsString;
+
+    let executable = std::env::current_exe()?;
+    let environment = [
+        (
+            OsString::from(WORKER_ENV),
+            OsString::from(DARWIN_GATED_CHILD_WORKER),
+        ),
+        (
+            OsString::from(FIXTURE_DIRECTORY_ENV),
+            directory.as_os_str().to_os_string(),
+        ),
+        (
+            OsString::from(DARWIN_FIXTURE_ROLE_ENV),
+            OsString::from(role),
+        ),
+    ];
+    let mut request = jackin_process::ExecRequest::new(
+        executable,
+        ["--exact", DARWIN_GATED_CHILD_WORKER, "--nocapture"],
+    )
+    .envs(environment)
+    .env_remove([
+        DIAGNOSTIC_PYTHON_ENV,
+        DIAGNOSTIC_SCRIPT_ENV,
+        DIAGNOSTIC_PREEXEC_PID_ENV,
+    ])
+    .stdout_mode(jackin_process::StdioMode::Null)
+    .stderr_mode(jackin_process::StdioMode::Null)
+    .retry(jackin_process::RetryPolicy::none());
+    if let Some(timeout) = timeout {
+        request = request.timeout(timeout);
+    }
+    Ok(request)
+}
+
+#[cfg(target_os = "macos")]
+struct DarwinManagedTask {
+    task: Option<tokio::task::JoinHandle<anyhow::Result<jackin_process::ExecResult>>>,
+    pending: Option<tokio::sync::oneshot::Receiver<()>>,
+    gate: FixtureRelease,
+    role: String,
+}
+
+#[cfg(target_os = "macos")]
+impl DarwinManagedTask {
+    fn spawn(directory: &Path, role: &str, timeout: Option<Duration>) -> io::Result<Self> {
+        let request = darwin_exec_request(directory, role, timeout)?;
+        let (task, pending) = spawn_observed_darwin_exec(request);
+        Ok(Self {
+            task: Some(task),
+            pending: Some(pending),
+            gate: FixtureRelease::new(directory, &format!("darwin-{role}.release")),
+            role: role.to_owned(),
+        })
+    }
+
+    async fn wait_started(&mut self, directory: &Path, deadline: Instant) -> io::Result<u32> {
+        let pending = self
+            .pending
+            .take()
+            .ok_or_else(|| io::Error::other("managed process Pending observer was consumed"))?;
+        wait_darwin_worker_pending(pending, deadline).await?;
+        let ready = read_darwin_fixture_record(
+            directory.join(format!("darwin-{}.ready", self.role)),
+            deadline,
+        )
+        .await?;
+        let pids = fixture_pids(&ready)?;
+        if pids.len() != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("managed fixture recorded unexpected PIDs: {pids:?}"),
+            ));
+        }
+        let pid = pids[0];
+        let registered = jackin_process::coordinate_children(|registry| registry.contains(pid));
+        if !registered {
+            return Err(io::Error::other(format!(
+                "managed fixture PID {pid} has no live reservation"
+            )));
+        }
+        if self
+            .task
+            .as_ref()
+            .is_none_or(tokio::task::JoinHandle::is_finished)
+        {
+            return Err(io::Error::other(
+                "managed process task finished while its fixture gate remained closed",
+            ));
+        }
+        Ok(pid)
+    }
+
+    fn release(&mut self) -> io::Result<()> {
+        self.gate.release()
+    }
+
+    async fn take_result(&mut self, deadline: Instant) -> io::Result<jackin_process::ExecResult> {
+        let joined = {
+            let task = self
+                .task
+                .as_mut()
+                .ok_or_else(|| io::Error::other("managed process task result was already taken"))?;
+            tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), task).await
+        };
+        match joined {
+            Ok(joined) => {
+                drop(self.task.take());
+                match joined {
+                    Ok(Ok(result)) => Ok(result),
+                    Ok(Err(error)) => Err(io::Error::other(format!(
+                        "managed Capsule exec failed: {error:#}"
+                    ))),
+                    Err(error) => Err(io::Error::other(format!(
+                        "managed Capsule task failed: {error}"
+                    ))),
+                }
+            }
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "managed Capsule exec missed its proof deadline",
+            )),
+        }
+    }
+
+    async fn cancel_and_join(&mut self) -> io::Result<()> {
+        let joined = {
+            let task = self
+                .task
+                .as_mut()
+                .ok_or_else(|| io::Error::other("managed process task was already consumed"))?;
+            task.abort();
+            tokio::time::timeout(Duration::from_secs(1), task).await
+        };
+        match joined {
+            Ok(Err(error)) if error.is_cancelled() => {
+                drop(self.task.take());
+                Ok(())
+            }
+            Ok(Ok(_)) => {
+                drop(self.task.take());
+                Err(io::Error::other(
+                    "managed process completed before cancellation was observed",
+                ))
+            }
+            Ok(Err(error)) => {
+                drop(self.task.take());
+                Err(io::Error::other(format!(
+                    "managed process cancellation failed: {error}"
+                )))
+            }
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "managed process task did not join after cancellation",
+            )),
+        }
+    }
+
+    async fn cleanup(&mut self) -> io::Result<()> {
+        let release = self.gate.release();
+        let joined = if let Some(task) = self.task.as_mut() {
+            task.abort();
+            Some(tokio::time::timeout(Duration::from_secs(1), task).await)
+        } else {
+            None
+        };
+        let task_cleanup = match joined {
+            Some(Ok(Ok(_))) => {
+                drop(self.task.take());
+                Ok(())
+            }
+            Some(Ok(Err(error))) if error.is_cancelled() => {
+                drop(self.task.take());
+                Ok(())
+            }
+            Some(Ok(Err(error))) => {
+                drop(self.task.take());
+                Err(io::Error::other(format!(
+                    "join managed fixture cleanup: {error}"
+                )))
+            }
+            Some(Err(_)) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "managed fixture cleanup did not join",
+            )),
+            None => Ok(()),
+        };
+        release.and(task_cleanup)
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for DarwinManagedTask {
+    fn drop(&mut self) {
+        let _released = self.gate.release();
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+struct DarwinFixtureChild {
+    child: Child,
+    gate: FixtureRelease,
+    cleanup_enabled: bool,
+}
+
+#[cfg(target_os = "macos")]
+impl DarwinFixtureChild {
+    fn spawn(directory: &Path, role: &str) -> io::Result<Self> {
+        let child = spawn_darwin_gated_child(directory, role)?;
+        Ok(Self {
+            child,
+            gate: FixtureRelease::new(directory, &format!("darwin-{role}.release")),
+            cleanup_enabled: true,
+        })
+    }
+
+    fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    fn release(&mut self) -> io::Result<()> {
+        self.gate.release()
+    }
+
+    fn cleanup_bounded(&mut self) -> io::Result<()> {
+        if !self.cleanup_enabled {
+            return Ok(());
+        }
+        self.cleanup_enabled = false;
+        let release = self.gate.release();
+        let pid = self.child.id();
+        let disposition = jackin_process::coordinate_children(|registry| {
+            if registry.contains(pid) {
+                return Err(io::Error::other(
+                    "unmanaged Darwin fixture unexpectedly has a child reservation",
+                ));
+            }
+            match self.child.try_wait() {
+                Ok(Some(_)) => Ok(false),
+                Err(error) if error.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => {
+                    Ok(false)
+                }
+                Err(error) => Err(error),
+                Ok(None) => match self.child.kill() {
+                    Ok(()) => Ok(true),
+                    Err(error) if error.raw_os_error() == Some(nix::errno::Errno::ESRCH as i32) => {
+                        Ok(true)
+                    }
+                    Err(error) => Err(error),
+                },
+            }
+        });
+        let should_poll = match disposition {
+            Ok(should_poll) => should_poll,
+            Err(error) => {
+                return Err(io::Error::other(format!(
+                    "coordinate bounded unmanaged fixture cleanup: {error}; gate release: {release:?}"
+                )));
+            }
+        };
+        if !should_poll {
+            return release;
+        }
+        let poll = match crate::util::poll_owned_child_until_timeout(
+            &mut self.child,
+            Duration::from_secs(2),
+            FIXTURE_POLL_INTERVAL,
+        ) {
+            Ok(crate::util::ChildPollOutcome::Exited(_)) => Ok(()),
+            Ok(crate::util::ChildPollOutcome::TimedOut) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "unmanaged Darwin fixture did not exit during bounded cleanup",
+            )),
+            Err(error) if error.raw_os_error() == Some(nix::errno::Errno::ECHILD as i32) => Ok(()),
+            Err(error) => Err(io::Error::other(format!(
+                "poll unmanaged Darwin fixture during cleanup: {error}"
+            ))),
+        };
+        release.and(poll)
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for DarwinFixtureChild {
+    fn drop(&mut self) {
+        if let Err(error) = self.cleanup_bounded() {
+            let _reported = writeln!(
+                io::stderr().lock(),
+                "bounded Darwin fixture cleanup failed: {error}"
+            );
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn assert_darwin_exec_success(result: &jackin_process::ExecResult) -> io::Result<()> {
+    if result.success && !result.timed_out && result.code == Some(0) {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "managed Darwin fixture had unexpected result: {result:?}"
+        )))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_darwin_registry_released(pid: u32) -> io::Result<()> {
+    if jackin_process::coordinate_children(|registry| registry.contains(pid)) {
+        return Err(io::Error::other(format!(
+            "Darwin fixture PID {pid} retained its reservation after disposition"
+        )));
+    }
+    assert_targeted_echild(pid)
+}
+
+#[cfg(target_os = "macos")]
+async fn wait_darwin_pid_absent(pid: u32, deadline: Instant) -> io::Result<()> {
+    let raw_pid = i32::try_from(pid)
+        .map_err(|error| io::Error::other(format!("fixture PID does not fit i32: {error}")))?;
+    loop {
+        match nix::sys::signal::kill(Pid::from_raw(raw_pid), None) {
+            Err(nix::errno::Errno::ESRCH) => return ensure_darwin_registry_released(pid),
+            Ok(()) | Err(nix::errno::Errno::EINTR) => {}
+            Err(error) => {
+                return Err(io::Error::other(format!(
+                    "no-signal process observation for fixture PID {pid} failed: {error}"
+                )));
+            }
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("cancelled fixture PID {pid} remained present"),
+            ));
+        }
+        tokio::time::sleep(FIXTURE_POLL_INTERVAL.min(remaining)).await;
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn darwin_tokio_reaped(events: &[ReaperTestEvent], pid: i32) -> bool {
+    let notification = events.iter().position(|event| {
+        event.kind
+            == (ReaperTestEventKind::TokioNotificationReceived {
+                signal: Signal::SIGCHLD as i32,
+            })
+    });
+    let selected = events.iter().position(|event| {
+        event.kind
+            == (ReaperTestEventKind::Selected {
+                pid,
+                managed: false,
+            })
+    });
+    notification
+        .zip(selected)
+        .is_some_and(|(notification, selected)| {
+            notification < selected && reaper_completed_reap(events, pid)
+        })
+}
+
+#[cfg(target_os = "macos")]
+fn assert_darwin_reaper_did_not_wait_managed(
+    events: &[ReaperTestEvent],
+    managed_pid: i32,
+) -> io::Result<()> {
+    let waited = events.iter().any(|event| {
+        matches!(
+            event.kind,
+            ReaperTestEventKind::TargetedWaitResult { pid, .. }
+                | ReaperTestEventKind::TargetedWaitError { pid, .. }
+                | ReaperTestEventKind::Reaped { pid }
+                if pid == managed_pid
+        )
+    });
+    if waited {
+        return Err(io::Error::other(format!(
+            "selective reaper waited on registered Capsule PID {managed_pid}"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn assert_darwin_event_prefix(
+    events: &[ReaperTestEvent],
+    expected: impl IntoIterator<Item = ReaperTestEventKind>,
+) -> io::Result<()> {
+    for (index, expected) in expected.into_iter().enumerate() {
+        let observed = events.get(index).map(|event| event.kind);
+        if observed != Some(expected) {
+            return Err(io::Error::other(format!(
+                "Darwin Tokio reaper event {index} was {observed:?}, expected {expected:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn assert_darwin_tokio_requeue_events(
+    events: &[ReaperTestEvent],
+    child_pid: i32,
+) -> io::Result<()> {
+    let mut expected = Vec::with_capacity(SELECTIVE_EINTR_BUDGET + 10);
+    expected.push(ReaperTestEventKind::TokioNotificationReceived {
+        signal: Signal::SIGCHLD as i32,
+    });
+    for ordinal in 1..=SELECTIVE_EINTR_BUDGET + 1 {
+        expected.push(ReaperTestEventKind::PeekEintrInjected { ordinal });
+    }
+    expected.extend([
+        ReaperTestEventKind::PassDisposition {
+            failure_errno: Some(nix::errno::Errno::EINTR as i32),
+            requeue: true,
+        },
+        ReaperTestEventKind::BackoffStarted,
+        ReaperTestEventKind::BackoffCompleted,
+    ]);
+    assert_darwin_event_prefix(events, expected)?;
+
+    let wake_index = SELECTIVE_EINTR_BUDGET + 5;
+    let wake = events.get(wake_index).map(|event| event.kind);
+    if !matches!(
+        wake,
+        Some(ReaperTestEventKind::WakeAttempt {
+            process_pid,
+            signal,
+            succeeded: true,
+            errno: None,
+        }) if process_pid == std::process::id() as i32
+            && signal == Signal::SIGCHLD as i32
+    ) {
+        return Err(io::Error::other(format!(
+            "Darwin retry self-wake was not a successful SIGCHLD from this worker: {wake:?}"
+        )));
+    }
+
+    let signal_index = wake_index + 1;
+    let final_events = [
+        ReaperTestEventKind::TokioNotificationReceived {
+            signal: Signal::SIGCHLD as i32,
+        },
+        ReaperTestEventKind::Selected {
+            pid: child_pid,
+            managed: false,
+        },
+        ReaperTestEventKind::TargetedWaitResult {
+            pid: child_pid,
+            status: ReaperTestWaitStatus::Exited(0),
+        },
+        ReaperTestEventKind::Reaped { pid: child_pid },
+        ReaperTestEventKind::PassDisposition {
+            failure_errno: None,
+            requeue: false,
+        },
+    ];
+    assert_darwin_event_prefix(&events[signal_index..], final_events)?;
+    if events.len() != signal_index + final_events.len() {
+        return Err(io::Error::other(format!(
+            "Darwin EINTR requeue proof observed {} events, expected {}",
+            events.len(),
+            signal_index + final_events.len()
+        )));
+    }
+    let backoff_started = events[SELECTIVE_EINTR_BUDGET + 3].elapsed;
+    let backoff_completed = events[SELECTIVE_EINTR_BUDGET + 4].elapsed;
+    if backoff_completed.saturating_sub(backoff_started) < REAPER_RETRY_BACKOFF {
+        return Err(io::Error::other(
+            "Darwin production retry backoff was shorter than 100 ms",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn combine_darwin_proof_and_cleanup(
+    role: &str,
+    proof: io::Result<()>,
+    cleanup: io::Result<()>,
+) -> io::Result<()> {
+    match (proof, cleanup) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(primary), Ok(())) => Err(primary),
+        (Ok(()), Err(cleanup)) => Err(io::Error::other(format!(
+            "{role} passed but owned cleanup failed: {cleanup}"
+        ))),
+        (Err(primary), Err(cleanup)) => Err(io::Error::other(format!(
+            "{role} proof failed: {primary}; bounded owned cleanup also failed: {cleanup}"
+        ))),
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn prove_darwin_coexistence(directory: &Path) -> io::Result<()> {
+    start_darwin_reaper_for_test()?;
+    let capture = arm_reaper_test_capture(0);
+    let mut events = ReaperEventLog::new(capture);
+    let mut managed = DarwinManagedTask::spawn(directory, "managed", None)?;
+    let proof = async {
+        let deadline = FixtureTimer::deadline_after(FIXTURE_PROOF_DEADLINE)?;
+        let managed_pid = managed.wait_started(directory, deadline).await?;
+        let mut unowned = DarwinFixtureChild::spawn(directory, "unowned")?;
+        let ready =
+            read_darwin_fixture_record(directory.join("darwin-unowned.ready"), deadline).await?;
+        let ready_pids = fixture_pids(&ready)?;
+        if ready_pids.len() != 1 || ready_pids[0] != unowned.id() {
+            return Err(io::Error::other(format!(
+                "unowned Darwin fixture readiness {:?} did not match child {}",
+                ready_pids,
+                unowned.id()
+            )));
+        }
+        let unowned_pid = unowned.id();
+        unowned.release()?;
+        let raw_pid = i32::try_from(unowned_pid)
+            .map_err(|error| io::Error::other(format!("unowned PID does not fit i32: {error}")))?;
+        events.wait_until(deadline, |observed| darwin_tokio_reaped(observed, raw_pid))?;
+        assert_targeted_echild(unowned_pid)?;
+        assert_darwin_fixture_disposition(directory, "unowned", "released\n", deadline).await?;
+
+        let managed_raw_pid = i32::try_from(managed_pid)
+            .map_err(|error| io::Error::other(format!("managed PID does not fit i32: {error}")))?;
+        if managed
+            .task
+            .as_ref()
+            .is_none_or(tokio::task::JoinHandle::is_finished)
+        {
+            return Err(io::Error::other(
+                "registered Capsule task finished before its gate was released",
+            ));
+        }
+        if !jackin_process::coordinate_children(|registry| registry.contains(managed_pid)) {
+            return Err(io::Error::other(
+                "managed Capsule reservation disappeared while its gate was closed",
+            ));
+        }
+        assert_darwin_reaper_did_not_wait_managed(events.events(), managed_raw_pid)?;
+
+        managed.release()?;
+        let result = managed.take_result(deadline).await?;
+        assert_darwin_exec_success(&result)?;
+        assert_darwin_fixture_disposition(directory, "managed", "released\n", deadline).await?;
+        ensure_darwin_registry_released(managed_pid)?;
+        assert_darwin_reaper_did_not_wait_managed(events.events(), managed_raw_pid)?;
+        events.flush()?;
+        assert_darwin_reaper_did_not_wait_managed(events.events(), managed_raw_pid)?;
+        Ok(())
+    }
+    .await;
+    let cleanup = managed.cleanup().await;
+    combine_darwin_proof_and_cleanup("managed/unmanaged Tokio fanout", proof, cleanup)
+}
+
+#[cfg(target_os = "macos")]
+async fn prove_darwin_eintr_requeue(directory: &Path) -> io::Result<()> {
+    start_darwin_reaper_for_test()?;
+    let capture = arm_reaper_test_capture(SELECTIVE_EINTR_BUDGET + 1);
+    let mut events = ReaperEventLog::new(capture);
+    let deadline = FixtureTimer::deadline_after(FIXTURE_PROOF_DEADLINE)?;
+    let mut child = DarwinFixtureChild::spawn(directory, "unowned")?;
+    let ready =
+        read_darwin_fixture_record(directory.join("darwin-unowned.ready"), deadline).await?;
+    let ready_pids = fixture_pids(&ready)?;
+    if ready_pids.len() != 1 || ready_pids[0] != child.id() {
+        return Err(io::Error::other(format!(
+            "EINTR fixture readiness {:?} did not match child {}",
+            ready_pids,
+            child.id()
+        )));
+    }
+    let child_pid = child.id();
+    let raw_pid = i32::try_from(child_pid)
+        .map_err(|error| io::Error::other(format!("EINTR child PID does not fit i32: {error}")))?;
+    child.release()?;
+    events.wait_until(deadline, |observed| {
+        reaper_completed_reap(observed, raw_pid)
+    })?;
+    assert_darwin_tokio_requeue_events(events.events(), raw_pid)?;
+    assert_targeted_echild(child_pid)?;
+    assert_darwin_fixture_disposition(directory, "unowned", "released\n", deadline).await?;
+    events.require_quiet(Duration::from_millis(25))?;
+    events.flush()?;
+    assert_darwin_tokio_requeue_events(events.events(), raw_pid)
+}
+
+#[cfg(target_os = "macos")]
+async fn prove_darwin_timeout_and_cancel(directory: &Path) -> io::Result<()> {
+    start_darwin_reaper_for_test()?;
+    let capture = arm_reaper_test_capture(0);
+    let mut events = ReaperEventLog::new(capture);
+
+    let mut success_raw_pid = None;
+    let mut success = DarwinManagedTask::spawn(directory, "success", None)?;
+    let success_proof = async {
+        let deadline = FixtureTimer::deadline_after(FIXTURE_PROOF_DEADLINE)?;
+        let pid = success.wait_started(directory, deadline).await?;
+        success.release()?;
+        let result = success.take_result(deadline).await?;
+        assert_darwin_exec_success(&result)?;
+        assert_darwin_fixture_disposition(directory, "success", "released\n", deadline).await?;
+        ensure_darwin_registry_released(pid)?;
+        let raw_pid = i32::try_from(pid)
+            .map_err(|error| io::Error::other(format!("success PID does not fit i32: {error}")))?;
+        events.drain_available()?;
+        assert_darwin_reaper_did_not_wait_managed(events.events(), raw_pid)?;
+        success_raw_pid = Some(raw_pid);
+        Ok(())
+    }
+    .await;
+    combine_darwin_proof_and_cleanup(
+        "successful managed wait",
+        success_proof,
+        success.cleanup().await,
+    )?;
+    let success_raw_pid = success_raw_pid.ok_or_else(|| {
+        io::Error::other("successful managed wait did not retain its observed PID")
+    })?;
+
+    let mut timeout_raw_pid = None;
+    let mut timed = DarwinManagedTask::spawn(directory, "timeout", Some(Duration::from_secs(1)))?;
+    let timed_proof = async {
+        let deadline = FixtureTimer::deadline_after(FIXTURE_PROOF_DEADLINE)?;
+        let pid = timed.wait_started(directory, deadline).await?;
+        let result = timed.take_result(deadline).await?;
+        if !result.timed_out || result.success || result.code.is_some() {
+            return Err(io::Error::other(format!(
+                "bounded Capsule timeout returned an unexpected result: {result:?}"
+            )));
+        }
+        ensure_darwin_registry_released(pid)?;
+        let raw_pid = i32::try_from(pid)
+            .map_err(|error| io::Error::other(format!("timeout PID does not fit i32: {error}")))?;
+        events.drain_available()?;
+        assert_darwin_reaper_did_not_wait_managed(events.events(), raw_pid)?;
+        timeout_raw_pid = Some(raw_pid);
+        Ok(())
+    }
+    .await;
+    combine_darwin_proof_and_cleanup(
+        "managed request timeout",
+        timed_proof,
+        timed.cleanup().await,
+    )?;
+    let timeout_raw_pid = timeout_raw_pid
+        .ok_or_else(|| io::Error::other("managed timeout did not retain its observed PID"))?;
+
+    let mut cancelled = DarwinManagedTask::spawn(directory, "cancel", None)?;
+    let cancelled_proof = async {
+        let deadline = FixtureTimer::deadline_after(FIXTURE_PROOF_DEADLINE)?;
+        let pid = cancelled.wait_started(directory, deadline).await?;
+        cancelled.cancel_and_join().await?;
+        wait_darwin_pid_absent(pid, deadline).await?;
+        assert_darwin_cancel_fixture_has_no_disposition(directory)?;
+        Ok(())
+    }
+    .await;
+    combine_darwin_proof_and_cleanup(
+        "managed cancellation handoff",
+        cancelled_proof,
+        cancelled.cleanup().await,
+    )?;
+
+    events.flush()?;
+    assert_darwin_reaper_did_not_wait_managed(events.events(), success_raw_pid)?;
+    assert_darwin_reaper_did_not_wait_managed(events.events(), timeout_raw_pid)
+}
+
+#[cfg(target_os = "macos")]
+fn prove_darwin_blocked_startup_mask() -> io::Result<()> {
+    check_darwin_worker_baseline()?;
+    let action_before = jackin_process_directory::current_sigchld_action()?;
+    let eligibility_before = jackin_process_directory::tokio_sigchld_eligibility()?;
+    let capture = arm_reaper_test_capture(0);
+    let mut events = ReaperEventLog::new(capture);
+    let mut mask = SigchldMaskGuard::block_for_spawn()?;
+    let blocked_result = (|| {
+        let Err(error) = prepare_darwin_reaper() else {
+            return Err(io::Error::other(
+                "blocked startup mask unexpectedly passed preparation",
+            ));
+        };
+        if !format!("{error:#}").contains("initiating thread blocks SIGCHLD") {
+            return Err(io::Error::other(format!(
+                "blocked-mask preflight failed for another reason: {error:#}"
+            )));
+        }
+        if !SigSet::thread_get_mask()
+            .map_err(|error| io::Error::other(format!("read blocked worker mask: {error}")))?
+            .contains(Signal::SIGCHLD)
+        {
+            return Err(io::Error::other(
+                "blocked-mask fixture did not retain its SIGCHLD block during preflight",
+            ));
+        }
+        if DARWIN_REAPER_STATE.load(Ordering::Acquire) != DARWIN_REAPER_UNPREPARED
+            || jackin_process::has_reaper_wakeup()
+        {
+            return Err(io::Error::other(
+                "blocked-mask preflight changed owner state or published a callback",
+            ));
+        }
+        let action_after = jackin_process_directory::current_sigchld_action()?;
+        let eligibility_after = jackin_process_directory::tokio_sigchld_eligibility()?;
+        if action_after != action_before || eligibility_after != eligibility_before {
+            return Err(io::Error::other(
+                "blocked-mask preflight changed SIGCHLD action eligibility",
+            ));
+        }
+        Ok(())
+    })();
+    let restore = mask.restore();
+    let proof =
+        combine_darwin_proof_and_cleanup("blocked startup-mask preflight", blocked_result, restore);
+    let unblocked = SigSet::thread_get_mask()
+        .map_err(|error| io::Error::other(format!("read restored worker mask: {error}")))
+        .map(|mask| !mask.contains(Signal::SIGCHLD));
+    proof?;
+    if !unblocked? {
+        return Err(io::Error::other(
+            "blocked-mask fixture did not restore the SIGCHLD mask",
+        ));
+    }
+    writeln!(
+        io::stderr().lock(),
+        "PID1_DARWIN_TOKIO phase=blocked-mask-preflight-rejected worker_pid={} action_unchanged=true callback_absent=true registration_attempted=false mask_restored=true",
+        std::process::id()
+    )?;
+    events.require_quiet(Duration::from_millis(25))?;
+    events.flush()?;
+    if !events.events().is_empty() {
+        return Err(io::Error::other(
+            "blocked-mask startup unexpectedly registered a Tokio listener",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn marker_pid(diagnostics: &str, prefix: &str, field: &str) -> io::Result<u32> {
+    let line = diagnostics
+        .lines()
+        .find(|line| line.contains(prefix))
+        .ok_or_else(|| io::Error::other(format!("missing worker marker {prefix:?}")))?;
+    let value = line
+        .split_whitespace()
+        .find_map(|part| part.strip_prefix(&format!("{field}=")))
+        .ok_or_else(|| io::Error::other(format!("marker {prefix:?} has no {field} field")))?;
+    value
+        .parse::<u32>()
+        .map_err(|error| io::Error::other(format!("invalid marker PID {value:?}: {error}")))
+}
+
+#[cfg(target_os = "macos")]
+fn assert_darwin_fatal_markers(diagnostics: &str) -> io::Result<()> {
+    let backend = marker_pid(diagnostics, "backend=tokio-unix-signal", "worker_pid")?;
+    let registered = marker_pid(diagnostics, "phase=registered", "process_pid")?;
+    let polled = marker_pid(diagnostics, "phase=polled", "worker_pid")?;
+    let injected = marker_pid(diagnostics, "phase=injected-fatal", "worker_pid")?;
+    let fatal = marker_pid(diagnostics, "PID1_DARWIN_TOKIO_FATAL", "pid")?;
+    if backend == registered && registered == polled && polled == injected && injected == fatal {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "post-registration fatal markers came from different PIDs: backend={backend}, registered={registered}, polled={polled}, injected={injected}, fatal={fatal}"
+        )))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn assert_darwin_active_markers(diagnostics: &str) -> io::Result<()> {
+    let backend = marker_pid(diagnostics, "backend=tokio-unix-signal", "worker_pid")?;
+    let registered = marker_pid(diagnostics, "phase=registered", "process_pid")?;
+    let polled = marker_pid(diagnostics, "phase=polled", "worker_pid")?;
+    let active = marker_pid(diagnostics, "phase=active", "worker_pid")?;
+    if backend == registered && registered == polled && polled == active {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "Tokio backend/readiness/active markers came from different PIDs: backend={backend}, registered={registered}, polled={polled}, active={active}"
+        )))
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn darwin_tokio_reaper_coexists_with_registered_child_wait() -> io::Result<()> {
+    let diagnostics = run_darwin_ordinary_worker(DARWIN_COEXIST_WORKER, 0)?;
+    assert_darwin_active_markers(&diagnostics)?;
+    if diagnostics.contains("backend=tokio-unix-signal")
+        && diagnostics.contains("TokioNotificationReceived")
+        && diagnostics.contains("Selected { pid:")
+    {
+        Ok(())
+    } else {
+        Err(io::Error::other(
+            "ordinary coexistence worker omitted its Tokio backend or selective-reap evidence",
+        ))
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test(flavor = "current_thread")]
+async fn worker_darwin_tokio_reaper_coexists_with_registered_child_wait() -> io::Result<()> {
+    if !worker_selected(DARWIN_COEXIST_WORKER) {
+        return Ok(());
+    }
+    let directory = fixture_directory()?;
+    prove_darwin_coexistence(&directory).await
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn darwin_tokio_reaper_requeues_real_eintr_exhaustion() -> io::Result<()> {
+    let diagnostics = run_darwin_ordinary_worker(DARWIN_EINTR_WORKER, 0)?;
+    assert_darwin_active_markers(&diagnostics)?;
+    if diagnostics.contains("TokioNotificationReceived")
+        && diagnostics.contains("PeekEintrInjected { ordinal: 17 }")
+        && diagnostics.contains("requeue: true")
+        && diagnostics.contains("WakeAttempt")
+    {
+        Ok(())
+    } else {
+        Err(io::Error::other(
+            "ordinary EINTR worker omitted the Tokio requeue/self-wake evidence",
+        ))
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test(flavor = "current_thread")]
+async fn worker_darwin_tokio_reaper_requeues_real_eintr_exhaustion() -> io::Result<()> {
+    if !worker_selected(DARWIN_EINTR_WORKER) {
+        return Ok(());
+    }
+    let directory = fixture_directory()?;
+    prove_darwin_eintr_requeue(&directory).await
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn darwin_tokio_registered_child_timeout_and_cancel_handoff() -> io::Result<()> {
+    let diagnostics = run_darwin_ordinary_worker(DARWIN_HANDOFF_WORKER, 0)?;
+    assert_darwin_active_markers(&diagnostics)?;
+    if diagnostics.contains("TokioNotificationReceived") {
+        Ok(())
+    } else {
+        Err(io::Error::other(
+            "ordinary timeout/cancellation worker omitted a real Tokio notification",
+        ))
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test(flavor = "current_thread")]
+async fn worker_darwin_tokio_registered_child_timeout_and_cancel_handoff() -> io::Result<()> {
+    if !worker_selected(DARWIN_HANDOFF_WORKER) {
+        return Ok(());
+    }
+    let directory = fixture_directory()?;
+    prove_darwin_timeout_and_cancel(&directory).await
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn darwin_tokio_reaper_rejects_blocked_startup_mask() -> io::Result<()> {
+    let diagnostics = run_darwin_ordinary_worker(DARWIN_MASK_WORKER, 0)?;
+    let backend = marker_pid(&diagnostics, "backend=tokio-unix-signal", "worker_pid")?;
+    let blocked = marker_pid(
+        &diagnostics,
+        "phase=blocked-mask-preflight-rejected",
+        "worker_pid",
+    )?;
+    if backend == blocked {
+        Ok(())
+    } else {
+        Err(io::Error::other(
+            "blocked-mask preflight did not preserve the ordinary worker identity",
+        ))
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn worker_darwin_tokio_reaper_rejects_blocked_startup_mask() -> io::Result<()> {
+    if worker_selected(DARWIN_MASK_WORKER) {
+        prove_darwin_blocked_startup_mask()
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn darwin_tokio_reaper_fails_closed_after_registered_worker_panic() -> io::Result<()> {
+    let diagnostics = run_darwin_ordinary_worker(DARWIN_FATAL_WORKER, 1)?;
+    assert_darwin_fatal_markers(&diagnostics)
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn worker_darwin_tokio_reaper_fails_closed_after_registered_worker_panic() -> io::Result<()> {
+    if !worker_selected(DARWIN_FATAL_WORKER) {
+        return Ok(());
+    }
+    check_darwin_worker_baseline()?;
+    inject_darwin_worker_panic_after_poll();
+    prepare_darwin_reaper().map_err(|error| {
+        io::Error::other(format!("fatal worker returned an early error: {error:#}"))
+    })?;
+    Err(io::Error::other(
+        "prepare returned despite the post-registration fatal worker injection",
+    ))
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn worker_darwin_tokio_gated_child() -> io::Result<()> {
+    if worker_selected(DARWIN_GATED_CHILD_WORKER) {
+        run_darwin_gated_child()
+    } else {
+        Ok(())
+    }
+}

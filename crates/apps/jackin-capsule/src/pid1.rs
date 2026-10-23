@@ -7,6 +7,9 @@ use nix::sys::signal::{SigSet, Signal};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 
+#[cfg(target_os = "macos")]
+use tokio::signal::unix::{Signal as TokioSignal, SignalKind};
+
 #[cfg(all(
     test,
     any(
@@ -14,23 +17,30 @@ use nix::unistd::Pid;
         target_os = "macos"
     )
 ))]
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
+use std::sync::Arc;
+#[cfg(any(
+    target_os = "macos",
+    all(test, target_os = "linux", not(target_env = "uclibc"))
+))]
+use std::sync::OnceLock;
+#[cfg(any(
+    target_os = "macos",
+    all(test, target_os = "linux", not(target_env = "uclibc"))
+))]
+use std::sync::atomic::Ordering;
 #[cfg(all(
     test,
     any(
         all(target_os = "linux", not(target_env = "uclibc")),
         target_os = "macos"
     )
+))]
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize};
+#[cfg(any(
+    target_os = "macos",
+    all(test, target_os = "linux", not(target_env = "uclibc"))
 ))]
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
-#[cfg(all(
-    test,
-    any(
-        all(target_os = "linux", not(target_env = "uclibc")),
-        target_os = "macos"
-    )
-))]
-use std::sync::{Arc, OnceLock};
 #[cfg(all(
     test,
     any(
@@ -60,6 +70,47 @@ const SELECTIVE_PASS_BUDGET: usize = 256;
 ))]
 const SELECTIVE_EINTR_BUDGET: usize = 16;
 const REAPER_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_millis(100);
+
+#[cfg(target_os = "macos")]
+const DARWIN_REAPER_STARTUP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+#[cfg(target_os = "macos")]
+const DARWIN_REAPER_UNPREPARED: u8 = 0;
+#[cfg(target_os = "macos")]
+const DARWIN_REAPER_PREPARING: u8 = 1;
+#[cfg(target_os = "macos")]
+const DARWIN_REAPER_REGISTRATION_ATTEMPTED: u8 = 2;
+#[cfg(target_os = "macos")]
+const DARWIN_REAPER_WORKER_READY: u8 = 3;
+#[cfg(target_os = "macos")]
+const DARWIN_REAPER_ACTIVATING: u8 = 4;
+#[cfg(target_os = "macos")]
+const DARWIN_REAPER_ACTIVE: u8 = 5;
+
+#[cfg(target_os = "macos")]
+static DARWIN_REAPER_STATE: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(DARWIN_REAPER_UNPREPARED);
+#[cfg(all(target_os = "macos", test))]
+static DARWIN_TEST_PANIC_AFTER_POLL: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+enum DarwinReaperPhase {
+    ListenerPolledReady,
+    Active,
+}
+
+#[cfg(target_os = "macos")]
+struct DarwinReaperOwner {
+    _worker: std::thread::JoinHandle<()>,
+    activation: Option<tokio::sync::oneshot::Sender<()>>,
+    acknowledgements: Receiver<DarwinReaperPhase>,
+}
+
+#[cfg(target_os = "macos")]
+type DarwinReaperOwnerSlot = std::sync::Mutex<Option<DarwinReaperOwner>>;
+
+#[cfg(target_os = "macos")]
+static DARWIN_REAPER_OWNER: OnceLock<DarwinReaperOwnerSlot> = OnceLock::new();
 
 #[cfg(all(
     test,
@@ -95,6 +146,12 @@ pub(crate) enum ReaperTestWaitStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReaperTestEventKind {
     SigwaitSucceeded {
+        signal: i32,
+    },
+    #[cfg(target_os = "macos")]
+    TokioListenerPolledReady,
+    #[cfg(target_os = "macos")]
+    TokioNotificationReceived {
         signal: i32,
     },
     PeekEintrInjected {
@@ -443,6 +500,384 @@ fn wake_reaper() {
     if result.is_err() {
         record_io_error();
     }
+}
+
+#[cfg(target_os = "macos")]
+fn darwin_reaper_preflight() -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !jackin_process::has_reaper_wakeup(),
+        "SIGCHLD reaper wake callback is already installed"
+    );
+    let eligibility = jackin_process_directory::tokio_sigchld_eligibility()?;
+    anyhow::ensure!(
+        eligibility == jackin_process_directory::TokioSigchldEligibility::Eligible,
+        "SIGCHLD action is not eligible for Tokio observation: {eligibility:?}"
+    );
+    let mask = SigSet::thread_get_mask()
+        .map_err(|error| anyhow::anyhow!("query initiating SIGCHLD mask: {error}"))?;
+    anyhow::ensure!(
+        !mask.contains(Signal::SIGCHLD),
+        "initiating thread blocks SIGCHLD"
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn claim_darwin_reaper_preparation() -> anyhow::Result<()> {
+    if let Err(state) = DARWIN_REAPER_STATE.compare_exchange(
+        DARWIN_REAPER_UNPREPARED,
+        DARWIN_REAPER_PREPARING,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    ) {
+        if state >= DARWIN_REAPER_REGISTRATION_ATTEMPTED {
+            darwin_reaper_fatal("duplicate prepare after registration was attempted");
+        }
+        anyhow::bail!("Darwin SIGCHLD owner preparation is already in progress");
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn darwin_reaper_owner_slot() -> &'static DarwinReaperOwnerSlot {
+    DARWIN_REAPER_OWNER.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_darwin_owner_slot_empty(slot: &DarwinReaperOwnerSlot) -> anyhow::Result<()> {
+    let existing = slot
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Darwin SIGCHLD owner lock is poisoned"))?
+        .is_some();
+    if existing {
+        DARWIN_REAPER_STATE.store(DARWIN_REAPER_UNPREPARED, Ordering::Release);
+        anyhow::bail!("Darwin SIGCHLD owner already exists");
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn reset_darwin_reaper_before_registration() {
+    DARWIN_REAPER_STATE.store(DARWIN_REAPER_UNPREPARED, Ordering::Release);
+}
+
+#[cfg(target_os = "macos")]
+#[expect(
+    clippy::exit,
+    reason = "irreversible SIGCHLD registration requires process-fatal worker failure even while main is blocked"
+)]
+fn darwin_reaper_fatal(message: &str) -> ! {
+    use std::io::Write as _;
+
+    let _reported = writeln!(
+        std::io::stderr().lock(),
+        "PID1_DARWIN_TOKIO_FATAL pid={} error={message}",
+        std::process::id()
+    );
+    std::process::exit(1)
+}
+
+#[cfg(target_os = "macos")]
+struct DarwinRegistrationFatalGuard {
+    armed: bool,
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for DarwinRegistrationFatalGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            darwin_reaper_fatal("startup failed after Tokio SIGCHLD registration was attempted");
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+struct DarwinWorkerFatalGuard;
+
+#[cfg(target_os = "macos")]
+impl Drop for DarwinWorkerFatalGuard {
+    fn drop(&mut self) {
+        darwin_reaper_fatal("dedicated Tokio signal worker returned or unwound");
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[cfg_attr(
+    test,
+    expect(
+        clippy::print_stderr,
+        reason = "isolated Darwin qualification requires the actual post-registration PID before fatal startup failure"
+    )
+)]
+fn register_darwin_signal_listener(
+    runtime: &tokio::runtime::Runtime,
+) -> anyhow::Result<(TokioSignal, DarwinRegistrationFatalGuard)> {
+    DARWIN_REAPER_STATE.store(DARWIN_REAPER_REGISTRATION_ATTEMPTED, Ordering::Release);
+    let fatal_guard = DarwinRegistrationFatalGuard { armed: true };
+    let listener = {
+        let _entered = runtime.enter();
+        tokio::signal::unix::signal(SignalKind::child())?
+    };
+    #[cfg(test)]
+    eprintln!(
+        "PID1_DARWIN_TOKIO phase=registered process_pid={}",
+        std::process::id()
+    );
+    Ok((listener, fatal_guard))
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_darwin_reaper_worker(
+    runtime: tokio::runtime::Runtime,
+    listener: TokioSignal,
+    activation: tokio::sync::oneshot::Receiver<()>,
+    acknowledgements: SyncSender<DarwinReaperPhase>,
+) -> anyhow::Result<std::thread::JoinHandle<()>> {
+    Ok(jackin_telemetry::spawn::thread_stream_named(
+        "zombie-reaper".into(),
+        move || {
+            let _fatal_guard = DarwinWorkerFatalGuard;
+            let result = runtime.block_on(run_darwin_reaper_worker(
+                listener,
+                activation,
+                acknowledgements,
+            ));
+            match result {
+                Ok(()) => darwin_reaper_fatal("dedicated Tokio signal worker returned"),
+                Err(error) => {
+                    darwin_reaper_fatal(&format!("dedicated Tokio worker failed: {error:#}"))
+                }
+            }
+        },
+    )?)
+}
+
+#[cfg(target_os = "macos")]
+fn publish_darwin_reaper_owner(
+    slot: &DarwinReaperOwnerSlot,
+    worker: std::thread::JoinHandle<()>,
+    activation: tokio::sync::oneshot::Sender<()>,
+    acknowledgements: Receiver<DarwinReaperPhase>,
+) {
+    let mut slot = slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if slot.is_some() {
+        darwin_reaper_fatal("owner slot was occupied after registration");
+    }
+    *slot = Some(DarwinReaperOwner {
+        _worker: worker,
+        activation: Some(activation),
+        acknowledgements,
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn wait_for_darwin_listener_ready(slot: &DarwinReaperOwnerSlot) {
+    let mut slot = slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let owner = slot
+        .as_mut()
+        .unwrap_or_else(|| darwin_reaper_fatal("published owner disappeared before readiness"));
+    match owner
+        .acknowledgements
+        .recv_timeout(DARWIN_REAPER_STARTUP_DEADLINE)
+    {
+        Ok(DarwinReaperPhase::ListenerPolledReady) => {}
+        Ok(DarwinReaperPhase::Active) => {
+            darwin_reaper_fatal("worker became active before main published the wake callback");
+        }
+        Err(error) => darwin_reaper_fatal(&format!("listener readiness failed: {error}")),
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn run_darwin_reaper_worker(
+    mut signal: TokioSignal,
+    activation: tokio::sync::oneshot::Receiver<()>,
+    acknowledgements: SyncSender<DarwinReaperPhase>,
+) -> anyhow::Result<()> {
+    use std::future::poll_fn;
+    use std::task::Poll;
+
+    let listener_polled = poll_fn(|context| match signal.poll_recv(context) {
+        Poll::Pending => Poll::Ready(true),
+        Poll::Ready(Some(())) => {
+            #[cfg(test)]
+            record_reaper_test_event(ReaperTestEventKind::TokioNotificationReceived {
+                signal: Signal::SIGCHLD as i32,
+            });
+            Poll::Ready(true)
+        }
+        Poll::Ready(None) => Poll::Ready(false),
+    })
+    .await;
+    anyhow::ensure!(
+        listener_polled,
+        "Tokio SIGCHLD stream ended during readiness poll"
+    );
+    #[cfg(test)]
+    {
+        record_reaper_test_event(ReaperTestEventKind::TokioListenerPolledReady);
+        eprintln!(
+            "PID1_DARWIN_TOKIO phase=polled worker_pid={}",
+            std::process::id()
+        );
+        if DARWIN_TEST_PANIC_AFTER_POLL.swap(false, Ordering::AcqRel) {
+            eprintln!(
+                "PID1_DARWIN_TOKIO phase=injected-fatal worker_pid={}",
+                std::process::id()
+            );
+            panic!("injected failure after Tokio SIGCHLD listener poll");
+        }
+    }
+    acknowledgements
+        .send(DarwinReaperPhase::ListenerPolledReady)
+        .map_err(|_| anyhow::anyhow!("SIGCHLD readiness receiver was lost"))?;
+
+    let mut activation = activation;
+    loop {
+        tokio::select! {
+            result = &mut activation => {
+                result.map_err(|_| anyhow::anyhow!("SIGCHLD activation sender was lost"))?;
+                break;
+            }
+            notification = signal.recv() => {
+                if notification.is_none() {
+                    anyhow::bail!("Tokio SIGCHLD stream ended before activation");
+                }
+                #[cfg(test)]
+                record_reaper_test_event(ReaperTestEventKind::TokioNotificationReceived {
+                    signal: Signal::SIGCHLD as i32,
+                });
+            }
+        }
+    }
+
+    // The initial selective pass closes the gap before callback publication
+    // and coalesced notifications received while startup was gated.
+    reap_zombies();
+    DARWIN_REAPER_STATE.store(DARWIN_REAPER_ACTIVE, Ordering::Release);
+    acknowledgements
+        .send(DarwinReaperPhase::Active)
+        .map_err(|_| anyhow::anyhow!("SIGCHLD active receiver was lost"))?;
+
+    loop {
+        if signal.recv().await.is_none() {
+            anyhow::bail!("Tokio SIGCHLD stream ended while the owner was active");
+        }
+        #[cfg(test)]
+        record_reaper_test_event(ReaperTestEventKind::TokioNotificationReceived {
+            signal: Signal::SIGCHLD as i32,
+        });
+        reap_zombies();
+    }
+}
+
+/// Prepare the process-lifetime Darwin SIGCHLD owner before daemon setup.
+///
+/// This read-only preflight assumes the Capsule daemon startup path is the
+/// first application SIGCHLD observer in this process. Tokio keeps its signal
+/// registration for the process lifetime, so failures after that attempt exit.
+#[cfg(target_os = "macos")]
+pub fn prepare_darwin_reaper() -> anyhow::Result<()> {
+    claim_darwin_reaper_preparation()?;
+    let owner_slot = darwin_reaper_owner_slot();
+    ensure_darwin_owner_slot_empty(owner_slot)?;
+    if let Err(error) = darwin_reaper_preflight() {
+        reset_darwin_reaper_before_registration();
+        return Err(error);
+    }
+
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            reset_darwin_reaper_before_registration();
+            return Err(error.into());
+        }
+    };
+    let (activation_sender, activation_receiver) = tokio::sync::oneshot::channel();
+    let (acknowledgements_sender, acknowledgements_receiver) = sync_channel(2);
+
+    let (listener, mut fatal_guard) = register_darwin_signal_listener(&runtime)?;
+    let worker = spawn_darwin_reaper_worker(
+        runtime,
+        listener,
+        activation_receiver,
+        acknowledgements_sender,
+    )?;
+    publish_darwin_reaper_owner(
+        owner_slot,
+        worker,
+        activation_sender,
+        acknowledgements_receiver,
+    );
+    wait_for_darwin_listener_ready(owner_slot);
+    DARWIN_REAPER_STATE.store(DARWIN_REAPER_WORKER_READY, Ordering::Release);
+    fatal_guard.armed = false;
+    Ok(())
+}
+
+/// Activate the prepared Darwin owner after daemon configuration is ready.
+#[cfg(target_os = "macos")]
+pub fn activate_darwin_reaper() {
+    if DARWIN_REAPER_STATE
+        .compare_exchange(
+            DARWIN_REAPER_WORKER_READY,
+            DARWIN_REAPER_ACTIVATING,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+        .is_err()
+    {
+        darwin_reaper_fatal("activation did not follow worker readiness");
+    }
+    let owner_slot = DARWIN_REAPER_OWNER
+        .get()
+        .unwrap_or_else(|| darwin_reaper_fatal("prepared owner slot is missing"));
+    let mut slot = owner_slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let owner = slot
+        .as_mut()
+        .unwrap_or_else(|| darwin_reaper_fatal("prepared owner is missing"));
+    if jackin_process::install_reaper_wakeup(wake_reaper).is_err() {
+        darwin_reaper_fatal("existing SIGCHLD wake callback could not be published");
+    }
+    let activation = owner
+        .activation
+        .take()
+        .unwrap_or_else(|| darwin_reaper_fatal("activation was already sent"));
+    if activation.send(()).is_err() {
+        darwin_reaper_fatal("dedicated worker lost its activation receiver");
+    }
+    match owner
+        .acknowledgements
+        .recv_timeout(DARWIN_REAPER_STARTUP_DEADLINE)
+    {
+        Ok(DarwinReaperPhase::Active)
+            if DARWIN_REAPER_STATE.load(Ordering::Acquire) == DARWIN_REAPER_ACTIVE => {}
+        Ok(_) => darwin_reaper_fatal("worker returned an unexpected activation phase"),
+        Err(error) => darwin_reaper_fatal(&format!("owner activation failed: {error}")),
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn require_darwin_reaper_active() -> anyhow::Result<()> {
+    anyhow::ensure!(
+        DARWIN_REAPER_STATE.load(Ordering::Acquire) == DARWIN_REAPER_ACTIVE,
+        "daemon startup requires the active Darwin Tokio SIGCHLD owner"
+    );
+    Ok(())
+}
+
+#[cfg(all(target_os = "macos", test))]
+fn inject_darwin_worker_panic_after_poll() {
+    DARWIN_TEST_PANIC_AFTER_POLL.store(true, Ordering::Release);
 }
 
 /// Start the process-lifetime SIGCHLD reaper.
