@@ -8,6 +8,7 @@ use super::{
     render_usage_surface, reserved_footer_height, settings_error_area, status_overlay_area,
     workspace_frame_areas, workspace_header_title,
 };
+use crate::tui::model::console_usage_surface_painted;
 use ratatui::{Frame, layout::Rect};
 
 pub fn render(
@@ -48,20 +49,22 @@ pub fn render(
             render_list_body: show_list_body,
         } => {
             let areas = workspace_frame_areas(area);
+            let usage_surface_painted =
+                console_usage_surface_painted(state.stage.route(), state.usage.visible);
 
-            if state.usage.visible {
+            if usage_surface_painted {
                 render_usage_surface(frame, area, state);
             } else {
                 render_header(frame, areas.header, workspace_header_title());
             }
 
-            if show_list_body && !state.usage.visible {
+            if show_list_body && !usage_surface_painted {
                 crate::tui::screens::workspaces::view::list::render_list_body(
                     frame, areas.body, state, config, cwd,
                 );
             }
 
-            if !state.usage.visible {
+            if !usage_surface_painted {
                 render_footer(
                     frame,
                     areas.footer,

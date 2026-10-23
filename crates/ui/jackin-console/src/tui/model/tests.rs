@@ -6,7 +6,7 @@ use super::launch_prompt::LaunchAgentPromptManagerState;
 use super::launch_prompt::LaunchRolePromptManagerState;
 use super::stage::ConsoleEditorFooterHeight;
 use super::stage::ConsoleEditorModalPresence;
-use super::stage::ConsoleManagerModalBlockPresence;
+use super::stage::ConsoleManagerInputPresence;
 use super::stage::ConsolePendingDriftCheck;
 use super::stage::ConsolePendingIsolationCleanup;
 use super::stage::ConsolePendingOpCommit;
@@ -43,7 +43,8 @@ use super::{
     CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
     CreatePreludeWorkdirCancelPlan, CreatePreludeWorkdirPickPlan, apply_manager_stage,
     clear_pending_launch_plan, clear_pending_launch_role_plan, console_input_dispatch_plan,
-    create_prelude_completion_status, create_prelude_file_browser_plan, create_prelude_key_plan,
+    console_usage_surface_painted, create_prelude_completion_status,
+    create_prelude_file_browser_plan, create_prelude_key_plan,
     create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
     create_prelude_text_input_name_plan, create_prelude_wizard_state,
     create_prelude_workdir_cancel_plan, create_prelude_workdir_pick_plan,
@@ -58,3 +59,4 @@ mod case_02;
 mod case_03;
 mod case_04;
 mod case_05;
+mod case_06;

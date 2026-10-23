@@ -19,6 +19,7 @@ use crate::tui::layout::{
     horizontal_split_pane_dims, is_horizontally_scrollable, point_in_rect,
     scroll_selection_at_position, split_seam_column,
 };
+use crate::tui::model::{ConsoleInputDispatchPlan, ConsolePaintedInputOwner};
 use crate::tui::run::{ConsoleClickStageFacts, ConsoleClickabilityFacts, console_clickable_at};
 use crate::tui::screens::editor::update::{
     editor_auth_row_index_at_position, editor_mount_hover_target_at_position,
@@ -92,42 +93,36 @@ pub fn handle_mouse_with_config(
     term_size: Rect,
     config: Option<&jackin_config::AppConfig>,
 ) -> super::InputOutcome {
+    let input_owner = state.painted_input_owner();
+    if !input_owner.allows_manager_pointer_actions() {
+        state.clear_pointer_state();
+        return super::InputOutcome::Continue;
+    }
+    let list_modal_painted = matches!(
+        input_owner,
+        ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::ListModal)
+    );
+
     if term_size.width < MIN_DRAGGABLE_WIDTH {
         return super::InputOutcome::Continue;
     }
 
     if matches!(mouse.kind, MouseEventKind::Moved) {
-        update_hover(state, mouse, term_size);
+        if list_modal_painted {
+            state.clear_pointer_state();
+            update_container_info_hover(state, mouse, term_size);
+        } else if owner_is_modal(input_owner) {
+            state.clear_pointer_state();
+        } else {
+            update_hover(state, mouse, term_size);
+            if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() {
+                info.set_hovered_row(None);
+            }
+        }
         return super::InputOutcome::Continue;
     }
 
-    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
-        && try_copy_container_info_value(state, mouse, term_size)
-    {
-        return super::InputOutcome::Continue;
-    }
-
-    let container_info_rect = state
-        .list_modal
-        .as_ref()
-        .and_then(|modal| modal.container_info_rect(term_size));
-    if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut()
-        && let Some(rect) = container_info_rect
-        && info.scroll.handle_mouse(
-            mouse.kind.into(),
-            mouse.modifiers.into(),
-            termrock::scroll::dialog_scroll_axes(info.content_width(), info.content_height(), rect),
-        )
-    {
-        info.clamp_scroll(rect);
-        return super::InputOutcome::Continue;
-    }
-
-    if try_scroll_picker_modal(state, mouse, term_size) {
-        return super::InputOutcome::Continue;
-    }
-
-    if try_scroll_file_browser_modal(state, mouse, term_size) {
+    if handle_modal_pointer_event(state, input_owner, mouse, term_size) {
         return super::InputOutcome::Continue;
     }
 
@@ -201,12 +196,6 @@ pub fn handle_mouse_with_config(
         return super::InputOutcome::Continue;
     }
 
-    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
-        && try_open_file_browser_git_url(state, mouse, term_size)
-    {
-        return super::InputOutcome::Continue;
-    }
-
     if !matches!(state.stage, ManagerStage::List) {
         return super::InputOutcome::Continue;
     }
@@ -249,6 +238,61 @@ pub fn handle_mouse_with_config(
     super::InputOutcome::Continue
 }
 
+fn handle_modal_pointer_event(
+    state: &mut ManagerState<'_>,
+    owner: ConsolePaintedInputOwner,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    let list_modal_painted = matches!(
+        owner,
+        ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::ListModal)
+    );
+
+    if list_modal_painted
+        && matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+        && try_copy_container_info_value(state, mouse, term_size)
+    {
+        return true;
+    }
+
+    let container_info_rect = list_modal_painted
+        .then(|| {
+            state
+                .list_modal
+                .as_ref()
+                .and_then(|modal| modal.container_info_rect(term_size))
+        })
+        .flatten();
+    if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut()
+        && let Some(rect) = container_info_rect
+        && info.scroll.handle_mouse(
+            mouse.kind.into(),
+            mouse.modifiers.into(),
+            termrock::scroll::dialog_scroll_axes(info.content_width(), info.content_height(), rect),
+        )
+    {
+        info.clamp_scroll(rect);
+        return true;
+    }
+
+    if try_scroll_picker_modal(state, owner, mouse, term_size) {
+        return true;
+    }
+
+    if try_scroll_file_browser_modal(state, owner, mouse, term_size) {
+        return true;
+    }
+
+    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+        && try_open_file_browser_git_url(state, mouse, term_size)
+    {
+        return true;
+    }
+
+    owner_is_modal(owner)
+}
+
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     update_manager(state, message);
 }
@@ -260,6 +304,24 @@ pub fn clickable_at(
     term_size: Rect,
     config: Option<&jackin_config::AppConfig>,
 ) -> bool {
+    let input_owner = state.painted_input_owner();
+    if !input_owner.allows_manager_pointer_actions() {
+        return false;
+    }
+    let list_modal_painted = matches!(
+        input_owner,
+        ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::ListModal)
+    );
+    let settings_modal_painted = matches!(
+        input_owner,
+        ConsolePaintedInputOwner::Dispatch(
+            ConsoleInputDispatchPlan::SettingsErrorPopup
+                | ConsoleInputDispatchPlan::SettingsMountsModal
+                | ConsoleInputDispatchPlan::SettingsEnvDialog
+                | ConsoleInputDispatchPlan::SettingsAuthDialog
+        )
+    );
+
     let stage = match &state.stage {
         ManagerStage::Editor(editor) => ConsoleClickStageFacts::Editor {
             modal_open: editor.modal.is_some(),
@@ -270,8 +332,8 @@ pub fn clickable_at(
                 .is_some(),
         },
         ManagerStage::Settings(settings) => ConsoleClickStageFacts::Settings {
-            mounts_modal_open: settings.mounts.modals.is_open(),
-            env_modal_open: settings.env.modals.is_open(),
+            mounts_modal_open: settings_modal_painted || settings.mounts.modals.is_open(),
+            env_modal_open: settings_modal_painted || settings.env.modals.is_open(),
             tab_target: settings_tab_at_position(mouse.row, mouse.column).is_some(),
             trust_target: settings_trust_clickable_at_position(
                 settings.active_tab,
@@ -282,16 +344,17 @@ pub fn clickable_at(
             ),
         },
         ManagerStage::List => ConsoleClickStageFacts::List {
-            list_modal_open: state.list_modal.is_some(),
-            workspace_list_target: workspace_list_clickable_at_position(
-                mouse.column,
-                mouse.row,
-                term_size,
-                state.list_split_pct,
-                state.list_modal.is_some(),
-                state.visual_rows_vec().as_slice(),
-                |row| state.index_of_row(row).is_some(),
-            ),
+            list_modal_open: list_modal_painted,
+            workspace_list_target: !list_modal_painted
+                && workspace_list_clickable_at_position(
+                    mouse.column,
+                    mouse.row,
+                    term_size,
+                    state.list_split_pct,
+                    list_modal_painted,
+                    state.visual_rows_vec().as_slice(),
+                    |row| state.index_of_row(row).is_some(),
+                ),
         },
         ManagerStage::CreatePrelude(_)
         | ManagerStage::Workflows(_)
@@ -302,9 +365,26 @@ pub fn clickable_at(
     console_clickable_at(ConsoleClickabilityFacts {
         pointer_supported: term_size.width >= MIN_DRAGGABLE_WIDTH,
         file_browser_url_target: file_browser_url_row_at(state, mouse, term_size),
-        container_info_copy_target: container_info_copyable_row_at(state, mouse, term_size),
+        container_info_copy_target: list_modal_painted
+            && container_info_copyable_row_at(state, mouse, term_size),
         stage,
     })
+}
+
+fn owner_is_modal(owner: ConsolePaintedInputOwner) -> bool {
+    matches!(
+        owner,
+        ConsolePaintedInputOwner::Dispatch(
+            ConsoleInputDispatchPlan::KeyboardHelp
+                | ConsoleInputDispatchPlan::ListModal
+                | ConsoleInputDispatchPlan::EditorModal
+                | ConsoleInputDispatchPlan::SettingsErrorPopup
+                | ConsoleInputDispatchPlan::SettingsMountsModal
+                | ConsoleInputDispatchPlan::SettingsEnvDialog
+                | ConsoleInputDispatchPlan::SettingsAuthDialog
+                | ConsoleInputDispatchPlan::CreatePreludeModal
+        )
+    )
 }
 
 fn try_open_file_browser_git_url(
