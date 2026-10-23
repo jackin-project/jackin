@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::resetless::{
+    ResetAdmissionFence, broker_orphan_is_admissible, valid_broker_observed_window,
+    valid_reset_fence, valid_statusline_observed_window,
+};
 use super::{
     BTreeSet, MAX_ACCOUNTS, MAX_BINDINGS, MAX_EVENTS_PER_MONITOR, MAX_EVIDENCE_FINGERPRINTS,
     MAX_EVIDENCE_PER_MONITOR, MAX_GOALS, MAX_IDEMPOTENCY_KEY_LENGTH, MAX_MODEL_LENGTH,
@@ -64,9 +68,47 @@ fn validate_accounts(state: &StoreState) -> Result<(), MonitorIssue> {
             return Err(store_unavailable());
         }
         if account.input_sequence > state.next_input_sequence
+            || account
+                .latest_reset_epochs
+                .iter()
+                .flatten()
+                .any(|reset| *reset < 0)
             || !account_spend_matches_account(&account.spend, account_id)
         {
             return Err(store_unavailable());
+        }
+        for index in 0..2 {
+            let retained_reset = account.broker_windows[index]
+                .used
+                .iter()
+                .filter_map(|used| used.reset_at_epoch)
+                .chain(
+                    account.broker_windows[index]
+                        .reset
+                        .iter()
+                        .map(|reset| reset.value),
+                )
+                .chain(
+                    account.broker_windows[index]
+                        .paired
+                        .iter()
+                        .map(|pair| pair.reset_at_epoch),
+                )
+                .chain(account.sessions.values().flat_map(|session| {
+                    let window = &session.windows[index];
+                    window
+                        .used
+                        .iter()
+                        .filter_map(|used| used.reset_at_epoch)
+                        .chain(window.reset.iter().map(|reset| reset.value))
+                        .chain(window.paired.iter().map(|pair| pair.reset_at_epoch))
+                }))
+                .max();
+            if retained_reset.is_some_and(|reset| {
+                account.latest_reset_epochs[index].is_none_or(|latest| reset > latest)
+            }) {
+                return Err(store_unavailable());
+            }
         }
         for barrier in account.reset_barriers.iter().flatten() {
             if !(9_500..=10_000).contains(&barrier.prior_used_percentage_basis_points)
@@ -112,7 +154,11 @@ fn validate_accounts(state: &StoreState) -> Result<(), MonitorIssue> {
                 return Err(store_unavailable());
             }
             for window in &session.windows {
-                if window
+                if !valid_statusline_observed_window(
+                    window,
+                    account.input_sequence,
+                    state.last_now_epoch,
+                ) || window
                     .used
                     .as_ref()
                     .is_some_and(|used| used.input_sequence > account.input_sequence)
@@ -125,15 +171,39 @@ fn validate_accounts(state: &StoreState) -> Result<(), MonitorIssue> {
                 }
             }
         }
-        for window in &account.broker_windows {
-            if window
-                .used
-                .as_ref()
-                .is_some_and(|used| used.input_sequence > account.input_sequence)
+        for (index, window) in account.broker_windows.iter().enumerate() {
+            if !valid_broker_observed_window(window, account.input_sequence, state.last_now_epoch)
+                || window
+                    .used
+                    .as_ref()
+                    .is_some_and(|used| used.input_sequence > account.input_sequence)
                 || window
                     .reset
                     .as_ref()
                     .is_some_and(|reset| reset.input_sequence > account.input_sequence)
+                || window
+                    .paired
+                    .as_ref()
+                    .is_some_and(|pair| pair.input_sequence > account.input_sequence)
+                || !valid_reset_fence(
+                    &account.reset_admission_fences[index],
+                    account.latest_reset_epochs[index],
+                    account.input_sequence,
+                    state.last_now_epoch,
+                )
+                || (account.used_only_admission_sequences[index].is_some()
+                    && !broker_orphan_is_admissible(account, index, state.last_now_epoch))
+                || (matches!(
+                    &account.reset_admission_fences[index],
+                    ResetAdmissionFence::KnownNone
+                ) && (window.reset.is_some()
+                    || account
+                        .sessions
+                        .values()
+                        .any(|session| session.windows[index].reset.is_some())
+                    || account.reset_barriers[index]
+                        .as_ref()
+                        .is_some_and(|barrier| barrier.prior_reset_at_epoch.is_some())))
             {
                 return Err(store_unavailable());
             }
@@ -160,7 +230,11 @@ fn validate_unbound_sessions(state: &StoreState) -> Result<(), MonitorIssue> {
                     || !valid_bounded_text(&model.value, MAX_MODEL_LENGTH)
             })
             || session.windows.iter().any(|window| {
-                window
+                !valid_statusline_observed_window(
+                    window,
+                    state.next_input_sequence,
+                    state.last_now_epoch,
+                ) || window
                     .used
                     .as_ref()
                     .is_some_and(|used| used.input_sequence > state.next_input_sequence)

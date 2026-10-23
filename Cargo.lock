@@ -3297,6 +3297,7 @@ dependencies = [
  "anyhow",
  "jackin-core",
  "jackin-telemetry",
+ "nix 0.31.3",
  "serde",
  "serde_json",
  "tokio",
@@ -8774,8 +8775,8 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "velnor-actions-contract"
-version = "0.1.45"
-source = "git+https://github.com/tailrocks/velnor-new?rev=308a6f47c68dbb149b6de4fa469dae6c65de0cbf#308a6f47c68dbb149b6de4fa469dae6c65de0cbf"
+version = "0.1.46"
+source = "git+https://github.com/tailrocks/velnor-new?rev=5156565ff6a4c4bea605cd324633f0e18b6c12f0#5156565ff6a4c4bea605cd324633f0e18b6c12f0"
 dependencies = [
  "blake3",
  "serde",

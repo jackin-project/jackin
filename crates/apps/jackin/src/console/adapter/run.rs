@@ -14,7 +14,9 @@ use jackin_console::tui::components::status_popup::{
 };
 use jackin_console::tui::message::PromptOutcome;
 use jackin_console::tui::message::launch_prompt_should_probe_agents;
-use jackin_console::tui::model::{clear_pending_launch_role_plan, take_pending_launch_plan};
+use jackin_console::tui::model::{
+    ConsolePaintedInputOwner, clear_pending_launch_role_plan, take_pending_launch_plan,
+};
 use jackin_console::tui::prompts::{
     ConcreteAgentPickerChoices as AgentPickerChoices,
     ConcreteLaunchPromptDispatch as LaunchPromptDispatch,
@@ -199,14 +201,6 @@ pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_telemetry::schema:
     }
 }
 
-pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
-    use crate::console::adapter::state::ManagerStage;
-    let ConsoleStage::Manager(ms) = &state.stage;
-    state.quit_confirm.is_none()
-        && ms.list_modal.is_none()
-        && !matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some())
-}
-
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -306,6 +300,7 @@ struct ConsoleMouseState {
     pointer_shape: termrock::osc::PointerShape,
     chrome_regions: Vec<termrock::interaction::HitRegion<ConsoleChromeHover>>,
     chrome_hover: Option<ConsoleChromeHover>,
+    last_painted_owner: Option<(bool, ConsolePaintedInputOwner)>,
 }
 
 impl ConsoleMouseState {
@@ -315,6 +310,7 @@ impl ConsoleMouseState {
             pointer_shape: termrock::osc::PointerShape::Default,
             chrome_regions: Vec::new(),
             chrome_hover: None,
+            last_painted_owner: None,
         }
     }
 }
@@ -442,6 +438,71 @@ struct DrawConsoleContext<'a> {
     jank_monitor: &'a mut jackin_telemetry::ui::JankMonitor,
 }
 
+fn paint_console_debug_chrome(
+    frame: &mut ratatui::Frame<'_>,
+    debug_bar_area: Option<ratatui::layout::Rect>,
+    mouse_state: &mut ConsoleMouseState,
+) {
+    mouse_state.chrome_regions.clear();
+    if let Some(bar_area) = debug_bar_area {
+        let invocation_id = jackin_telemetry::identity::current_invocation()
+            .map(|invocation_id| invocation_id.to_string());
+        let invocation_id = debug_invocation_id_label(invocation_id.as_deref());
+        let chip_row = debug_chip_row(bar_area);
+        let content = format!(" {invocation_id} ");
+        let slots = [
+            termrock::widgets::StatusSlot::new(ConsoleChromeHover::DebugChip, &content)
+                .priority(1)
+                .min_width(0)
+                .enabled(true)
+                .style(
+                    ratatui::style::Style::default()
+                        .bg(termrock::style::DesignSystem::default()
+                            .style(termrock::style::Role::Danger)
+                            .fg
+                            .unwrap_or_default())
+                        .fg(termrock::style::DesignSystem::default()
+                            .style(termrock::style::Role::Text)
+                            .fg
+                            .unwrap_or_default())
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                )
+                .hover_style(
+                    ratatui::style::Style::default()
+                        .bg(termrock::style::DesignSystem::default()
+                            .style(termrock::style::Role::Text)
+                            .fg
+                            .unwrap_or_default())
+                        .fg(termrock::style::DesignSystem::default()
+                            .style(termrock::style::Role::Danger)
+                            .fg
+                            .unwrap_or_default())
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
+        ];
+        let mut status_state = termrock::widgets::StatusBarState::new();
+        status_state.hovered = (mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip))
+            .then_some(ConsoleChromeHover::DebugChip);
+        let theme = termrock::style::DesignSystem::default().with_role(
+            termrock::style::Role::StatusBar,
+            ratatui::style::Style::default()
+                .bg(termrock::style::DesignSystem::default()
+                    .style(termrock::style::Role::Text)
+                    .fg
+                    .unwrap_or_default())
+                .fg(jackin_tui::tokens::INK),
+        );
+        frame.render_stateful_widget(
+            &termrock::widgets::StatusBar::new(&[], &slots, &theme),
+            chip_row,
+            &mut status_state,
+        );
+        for region in status_state.regions {
+            mouse_state.chrome_regions.push(region);
+        }
+    }
+}
+
 fn draw_console_frame<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -455,13 +516,41 @@ where
     let (main_area, debug_bar_area) =
         split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
     {
+        let mut ignored_redraw = false;
+        let quit_confirm_open = state.quit_confirm.is_some();
+        let base_surface_unblocked = state.base_surface_unblocked();
         let ConsoleStage::Manager(ms) = &mut state.stage;
-        if *context.container_info_overlay_active
-            && !matches!(
+        let input_owner = ms.painted_input_owner();
+        let painted_owner = (quit_confirm_open, input_owner);
+        if context.mouse_state.last_painted_owner != Some(painted_owner) {
+            ms.clear_pointer_state();
+            reset_modal_mouse_state(context.mouse_state, &mut ignored_redraw);
+        }
+        context.mouse_state.last_painted_owner = Some(painted_owner);
+        let manager_pointer_actions_enabled = input_owner.allows_manager_pointer_actions();
+        if quit_confirm_open {
+            ms.clear_pointer_state();
+            reset_modal_mouse_state(context.mouse_state, &mut ignored_redraw);
+        } else if !manager_pointer_actions_enabled {
+            ms.clear_pointer_state();
+            if !base_surface_unblocked {
+                reset_modal_mouse_state(context.mouse_state, &mut ignored_redraw);
+            }
+        } else if !base_surface_unblocked {
+            context.mouse_state.chrome_hover = None;
+        }
+        let container_info_painted = !quit_confirm_open
+            && matches!(
+                input_owner,
+                ConsolePaintedInputOwner::Dispatch(
+                    jackin_console::tui::model::ConsoleInputDispatchPlan::ListModal
+                )
+            )
+            && matches!(
                 ms.list_modal,
                 Some(crate::console::adapter::state::Modal::ContainerInfo { .. })
-            )
-        {
+            );
+        if *context.container_info_overlay_active && !container_info_painted {
             terminal.clear()?;
             *context.container_info_overlay_active = false;
         }
@@ -504,66 +593,7 @@ where
                 &termrock::style::DesignSystem::default(),
             );
         }
-        context.mouse_state.chrome_regions.clear();
-        if let Some(bar_area) = debug_bar_area {
-            let invocation_id = jackin_telemetry::identity::current_invocation()
-                .map(|invocation_id| invocation_id.to_string());
-            let invocation_id = debug_invocation_id_label(invocation_id.as_deref());
-            let chip_row = debug_chip_row(bar_area);
-            let content = format!(" {invocation_id} ");
-            let slots =
-                [
-                    termrock::widgets::StatusSlot::new(ConsoleChromeHover::DebugChip, &content)
-                        .priority(1)
-                        .min_width(0)
-                        .enabled(true)
-                        .style(
-                            ratatui::style::Style::default()
-                                .bg(termrock::style::DesignSystem::default()
-                                    .style(termrock::style::Role::Danger)
-                                    .fg
-                                    .unwrap_or_default())
-                                .fg(termrock::style::DesignSystem::default()
-                                    .style(termrock::style::Role::Text)
-                                    .fg
-                                    .unwrap_or_default())
-                                .add_modifier(ratatui::style::Modifier::BOLD),
-                        )
-                        .hover_style(
-                            ratatui::style::Style::default()
-                                .bg(termrock::style::DesignSystem::default()
-                                    .style(termrock::style::Role::Text)
-                                    .fg
-                                    .unwrap_or_default())
-                                .fg(termrock::style::DesignSystem::default()
-                                    .style(termrock::style::Role::Danger)
-                                    .fg
-                                    .unwrap_or_default())
-                                .add_modifier(ratatui::style::Modifier::BOLD),
-                        ),
-                ];
-            let mut status_state = termrock::widgets::StatusBarState::new();
-            status_state.hovered = (context.mouse_state.chrome_hover
-                == Some(ConsoleChromeHover::DebugChip))
-            .then_some(ConsoleChromeHover::DebugChip);
-            let theme = termrock::style::DesignSystem::default().with_role(
-                termrock::style::Role::StatusBar,
-                ratatui::style::Style::default()
-                    .bg(termrock::style::DesignSystem::default()
-                        .style(termrock::style::Role::Text)
-                        .fg
-                        .unwrap_or_default())
-                    .fg(jackin_tui::tokens::INK),
-            );
-            frame.render_stateful_widget(
-                &termrock::widgets::StatusBar::new(&[], &slots, &theme),
-                chip_row,
-                &mut status_state,
-            );
-            for region in status_state.regions {
-                context.mouse_state.chrome_regions.push(region);
-            }
-        }
+        paint_console_debug_chrome(frame, debug_bar_area, context.mouse_state);
     });
     if let Some(operation) = render_operation {
         operation.complete(
@@ -584,8 +614,16 @@ where
         .record_frame(screen, render_started.elapsed().as_secs_f64());
 
     let ConsoleStage::Manager(ms) = &state.stage;
-    if let Some(modal @ crate::console::adapter::state::Modal::ContainerInfo { state: info }) =
-        ms.list_modal.as_ref()
+    let container_info_painted = state.quit_confirm.is_none()
+        && matches!(
+            ms.painted_input_owner(),
+            ConsolePaintedInputOwner::Dispatch(
+                jackin_console::tui::model::ConsoleInputDispatchPlan::ListModal
+            )
+        );
+    if container_info_painted
+        && let Some(modal @ crate::console::adapter::state::Modal::ContainerInfo { state: info }) =
+            ms.list_modal.as_ref()
     {
         let rect = modal.rect(main_area);
         let overlay =
@@ -881,7 +919,7 @@ async fn handle_key_event<B, H, R>(
     state: &mut ConsoleState,
     key: crossterm::event::KeyEvent,
     inputs: &mut ConsoleLoopInputs<'_, H, R>,
-    mouse_state: &ConsoleMouseState,
+    mouse_state: &mut ConsoleMouseState,
     needs_redraw: &mut bool,
 ) -> anyhow::Result<ConsoleLoopFlow>
 where
@@ -894,7 +932,8 @@ where
 
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    if matches!(key.code, KeyCode::Esc)
+    if state.base_surface_unblocked()
+        && matches!(key.code, KeyCode::Esc)
         && key.modifiers.is_empty()
         && mouse_state
             .last_event_at
@@ -909,16 +948,28 @@ where
     if let Some(plan) = state.handle_quit_confirm_key(key) {
         match plan {
             QuitConfirmPlan::Exit => return Ok(ConsoleLoopFlow::Exit(None)),
-            QuitConfirmPlan::Dismiss | QuitConfirmPlan::Continue => {}
+            QuitConfirmPlan::Dismiss => {
+                let ConsoleStage::Manager(manager) = &mut state.stage;
+                manager.clear_pointer_state();
+                reset_modal_mouse_state(mouse_state, needs_redraw);
+            }
+            QuitConfirmPlan::Continue => {}
         }
         return Ok(ConsoleLoopFlow::Continue);
     }
 
-    if should_open_quit_confirm(key, quit_intercept_state_for_console(state)) {
+    if should_intercept_root_quit(state, key) {
         state.open_quit_confirm();
+        let ConsoleStage::Manager(manager) = &mut state.stage;
+        manager.clear_pointer_state();
+        reset_modal_mouse_state(mouse_state, needs_redraw);
         return Ok(ConsoleLoopFlow::Continue);
     }
 
+    let owner_before = {
+        let ConsoleStage::Manager(manager) = &state.stage;
+        manager.painted_input_owner()
+    };
     let outcome = {
         let ConsoleStage::Manager(ms) = &mut state.stage;
         crate::console::adapter::handle_key(ms, inputs.config, inputs.paths, inputs.cwd, key)?
@@ -943,13 +994,33 @@ where
             });
         }
     }
+    let ConsoleStage::Manager(manager) = &mut state.stage;
+    if owner_before != manager.painted_input_owner() {
+        manager.clear_pointer_state();
+        reset_modal_mouse_state(mouse_state, needs_redraw);
+    }
     handle_input_outcome(terminal, state, outcome, inputs, needs_redraw).await
 }
 
+fn should_intercept_root_quit(state: &ConsoleState, key: crossterm::event::KeyEvent) -> bool {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    let ConsoleStage::Manager(manager) = &state.stage;
+    let workflows_owns_bare_q = matches!(
+        &manager.stage,
+        jackin_console::tui::state::ManagerStage::Workflows(_)
+    ) && matches!(key.code, KeyCode::Char('q'))
+        && (key.modifiers - KeyModifiers::SHIFT).is_empty();
+
+    state.base_surface_unblocked()
+        && !workflows_owns_bare_q
+        && should_open_quit_confirm(key, quit_intercept_state_for_console(state))
+}
+
 fn reset_modal_mouse_state(mouse_state: &mut ConsoleMouseState, needs_redraw: &mut bool) {
-    if mouse_state.chrome_hover.is_some() {
+    let hover_changed = mouse_state.chrome_hover.is_some();
+    if hover_changed {
         mouse_state.chrome_hover = None;
-        *needs_redraw = true;
     }
     if mouse_state.pointer_shape != termrock::osc::PointerShape::Default {
         mouse_state.pointer_shape = termrock::osc::PointerShape::Default;
@@ -958,6 +1029,7 @@ fn reset_modal_mouse_state(mouse_state: &mut ConsoleMouseState, needs_redraw: &m
         let _unused = std::io::Write::write_all(&mut out, &seq);
         drop(std::io::Write::flush(&mut out));
     }
+    *needs_redraw |= hover_changed;
 }
 
 fn update_console_pointer_shape(
@@ -967,28 +1039,19 @@ fn update_console_pointer_shape(
     term_size: ratatui::layout::Rect,
     mouse_state: &mut ConsoleMouseState,
     needs_redraw: &mut bool,
-    no_modal_open: bool,
+    base_surface_unblocked: bool,
 ) {
-    let next_chrome_hover = if no_modal_open {
-        mouse_state
-            .chrome_regions
-            .iter()
-            .find(|region| {
-                region
-                    .area
-                    .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
-            })
-            .map(|region| region.id)
-    } else {
-        None
-    };
+    let next_chrome_hover = console_chrome_hover_at(mouse_state, mouse, base_surface_unblocked);
     if next_chrome_hover != mouse_state.chrome_hover {
         mouse_state.chrome_hover = next_chrome_hover;
         *needs_redraw = true;
     }
-    let next_pointer_shape = console_pointer_shape(
+    let next_pointer_shape = console_pointer_shape_at(
+        ms,
+        config,
+        mouse,
+        term_size,
         mouse_state.chrome_hover.is_some(),
-        crate::console::adapter::input::clickable_at(ms, mouse, term_size, Some(config)),
     );
     if next_pointer_shape != mouse_state.pointer_shape {
         mouse_state.pointer_shape = next_pointer_shape;
@@ -997,6 +1060,38 @@ fn update_console_pointer_shape(
         drop(std::io::Write::write_all(&mut out, &seq));
         drop(std::io::Write::flush(&mut out));
     }
+}
+
+fn console_chrome_hover_at(
+    mouse_state: &ConsoleMouseState,
+    mouse: crossterm::event::MouseEvent,
+    base_surface_unblocked: bool,
+) -> Option<ConsoleChromeHover> {
+    if !base_surface_unblocked {
+        return None;
+    }
+    mouse_state
+        .chrome_regions
+        .iter()
+        .find(|region| {
+            region
+                .area
+                .contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+        })
+        .map(|region| region.id)
+}
+
+fn console_pointer_shape_at(
+    ms: &jackin_console::tui::state::ManagerState<'_>,
+    config: &AppConfig,
+    mouse: crossterm::event::MouseEvent,
+    term_size: ratatui::layout::Rect,
+    chrome_hovered: bool,
+) -> termrock::osc::PointerShape {
+    console_pointer_shape(
+        chrome_hovered,
+        crate::console::adapter::input::clickable_at(ms, mouse, term_size, Some(config)),
+    )
 }
 
 fn handle_mouse_event<H, R>(
@@ -1008,32 +1103,48 @@ fn handle_mouse_event<H, R>(
     needs_redraw: &mut bool,
 ) -> anyhow::Result<ConsoleLoopFlow> {
     mouse_state.last_event_at = Some(std::time::Instant::now());
-    let no_modal_open = no_modal_open(state);
-    let modal_plan = {
+    let base_surface_unblocked = state.base_surface_unblocked();
+    let (modal_plan, list_modal_painted) = {
         let (main_area, _) = split_debug_area(term_size, jackin_diagnostics::is_debug_mode());
         let quit_confirm_rect = state
             .quit_confirm_state()
             .map(|confirm| quit_confirm_area(main_area, confirm));
         let ConsoleStage::Manager(ms) = &state.stage;
-        let list_modal_rect = ms.list_modal.as_ref().map(|modal| modal.rect(main_area));
-        modal_mouse_layer_plan(
-            mouse,
-            ConsoleModalMouseLayerFacts {
-                quit_confirm_rect,
-                list_modal_rect,
-                list_modal_container_info: matches!(
-                    ms.list_modal,
-                    Some(crate::console::adapter::state::Modal::ContainerInfo { .. })
-                ),
-                startup_error_modal_active: startup_error_modal_active_for_console(
-                    state,
-                    inputs.startup_error_pending,
-                ),
-            },
+        let list_modal_painted = state.quit_confirm.is_none()
+            && matches!(
+                ms.painted_input_owner(),
+                ConsolePaintedInputOwner::Dispatch(
+                    jackin_console::tui::model::ConsoleInputDispatchPlan::ListModal
+                )
+            );
+        let list_modal_rect = list_modal_painted
+            .then(|| ms.list_modal.as_ref().map(|modal| modal.rect(main_area)))
+            .flatten();
+        (
+            modal_mouse_layer_plan(
+                mouse,
+                ConsoleModalMouseLayerFacts {
+                    quit_confirm_rect,
+                    list_modal_rect,
+                    list_modal_container_info: list_modal_painted
+                        && matches!(
+                            ms.list_modal,
+                            Some(crate::console::adapter::state::Modal::ContainerInfo { .. })
+                        ),
+                    startup_error_modal_active: list_modal_painted
+                        && startup_error_modal_active_for_console(
+                            state,
+                            inputs.startup_error_pending,
+                        ),
+                },
+            ),
+            list_modal_painted,
         )
     };
     if modal_plan.dismiss_quit_confirm {
         state.dismiss_quit_confirm();
+        let ConsoleStage::Manager(manager) = &mut state.stage;
+        manager.clear_pointer_state();
     }
     if modal_plan.dismiss_list_modal {
         let ConsoleStage::Manager(ms) = &mut state.stage;
@@ -1041,48 +1152,61 @@ fn handle_mouse_event<H, R>(
             ms,
             crate::console::adapter::ManagerMessage::DismissListModal,
         );
+        ms.clear_pointer_state();
     }
 
-    if modal_plan.consumed {
+    let dispatch_painted_list_modal = list_modal_painted && !modal_plan.dismiss_list_modal;
+    if modal_plan.consumed && !dispatch_painted_list_modal {
         if startup_error_dismissed(state, inputs.startup_error_pending) {
             return Ok(ConsoleLoopFlow::Exit(None));
         }
+        let ConsoleStage::Manager(manager) = &mut state.stage;
+        manager.clear_pointer_state();
         reset_modal_mouse_state(mouse_state, needs_redraw);
         return Ok(ConsoleLoopFlow::Continue);
     }
 
-    let ConsoleStage::Manager(ms) = &mut state.stage;
-    let debug_chip_hovered = mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip);
-    let active_run = jackin_diagnostics::active_run();
-    if debug_chip_activation_allowed(
-        mouse,
-        no_modal_open,
-        debug_chip_hovered,
-        active_run.is_some(),
-    ) && let Some(run) = active_run
     {
-        crate::console::adapter::update_manager(
-            ms,
-            crate::console::adapter::ManagerMessage::OpenListContainerInfo {
-                state: jackin_console::tui::components::container_info::debug_run_info_state(
-                    env!("JACKIN_VERSION"),
-                    run.run_id(),
-                ),
-            },
-        );
-    }
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        let debug_chip_hovered = mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip);
+        let active_run = jackin_diagnostics::active_run();
+        if debug_chip_activation_allowed(
+            mouse,
+            base_surface_unblocked,
+            debug_chip_hovered,
+            active_run.is_some(),
+        ) && let Some(run) = active_run
+        {
+            crate::console::adapter::update_manager(
+                ms,
+                crate::console::adapter::ManagerMessage::OpenListContainerInfo {
+                    state: jackin_console::tui::components::container_info::debug_run_info_state(
+                        env!("JACKIN_VERSION"),
+                        run.run_id(),
+                    ),
+                },
+            );
+        }
 
-    let _outcome = crate::console::adapter::input::handle_mouse_with_config(
-        ms,
-        mouse,
-        term_size,
-        Some(inputs.config),
-    );
-    for effect in ms.drain_effects() {
-        *needs_redraw |= jackin_telemetry::ui::in_pending_action_scope(|| {
-            crate::console::effects::execute_manager_effect(ms, inputs.config, inputs.paths, effect)
-        });
+        let _outcome = crate::console::adapter::input::handle_mouse_with_config(
+            ms,
+            mouse,
+            term_size,
+            Some(inputs.config),
+        );
+        for effect in ms.drain_effects() {
+            *needs_redraw |= jackin_telemetry::ui::in_pending_action_scope(|| {
+                crate::console::effects::execute_manager_effect(
+                    ms,
+                    inputs.config,
+                    inputs.paths,
+                    effect,
+                )
+            });
+        }
     }
+    let pointer_chrome_allowed = state.base_surface_unblocked();
+    let ConsoleStage::Manager(ms) = &state.stage;
     update_console_pointer_shape(
         ms,
         inputs.config,
@@ -1090,7 +1214,7 @@ fn handle_mouse_event<H, R>(
         term_size,
         mouse_state,
         needs_redraw,
-        no_modal_open,
+        pointer_chrome_allowed,
     );
     Ok(ConsoleLoopFlow::Continue)
 }
@@ -1227,7 +1351,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         &mut state,
                         key,
                         &mut inputs,
-                        &mouse_state,
+                        &mut mouse_state,
                         &mut needs_redraw,
                     )
                     .await?

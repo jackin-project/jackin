@@ -81,7 +81,6 @@ pub trait ConsoleCreatePreludeModalPresence {
     fn create_prelude_modal_open(&self) -> bool;
 }
 
-pub trait ConsoleManagerModalBlockPresence {
-    fn list_modal_open(&self) -> bool;
-    fn editor_modal_open(&self) -> bool;
+pub trait ConsoleManagerInputPresence {
+    fn allows_base_surface_input(&self) -> bool;
 }

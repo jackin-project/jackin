@@ -18,6 +18,9 @@ publish = false
 name = "jackin_protocol"
 path = "src/lib.rs"
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["poll", "socket"] }
+
 [dependencies]
 anyhow = { workspace = true }
 jackin-core = { workspace = true }

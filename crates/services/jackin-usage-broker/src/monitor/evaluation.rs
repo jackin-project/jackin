@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::resetless::{
+    PairSource, broker_orphan_is_admissible, evidence_matches_reset, evidence_matches_used,
+    exact_observed_pair_for_source,
+};
 use super::{
     AccountObservations, BTreeMap, DECISION_MAX_PARALLEL, DurableGoalSpend, DurableMonitor,
     EvidenceInput, MAX_EVIDENCE_PER_MONITOR, MAX_FUTURE_SKEW_SECS, MONITOR_EVIDENCE_TTL_SECS,
@@ -530,7 +534,16 @@ fn evaluate_quota_window(
     evaluation: &mut MonitorEvaluation,
 ) {
     let status = quota_window_status(monitor, account, window, index, now_epoch);
-    let used_fresh = append_quota_freshness_issues(&status, now_epoch, evaluation);
+    let selected_orphan = selected_broker_orphan(monitor, account, &status, index, now_epoch);
+    let statusline_resetless_used =
+        statusline_used_without_reset(monitor, account, &status, index, now_epoch);
+    let used_fresh = append_quota_freshness_issues(
+        &status,
+        selected_orphan,
+        statusline_resetless_used,
+        now_epoch,
+        evaluation,
+    );
     append_quota_usage_actions(
         monitor, account, index, &status, used_fresh, now_epoch, evaluation,
     );
@@ -539,15 +552,185 @@ fn evaluate_quota_window(
     );
 }
 
+pub(super) fn selected_broker_orphan(
+    monitor: &DurableMonitor,
+    account: Option<&AccountObservations>,
+    status: &MonitorQuotaWindowStatus,
+    index: usize,
+    now_epoch: i64,
+) -> bool {
+    let (Some(account), Some(field)) = (account, status.used_evidence.as_ref()) else {
+        return false;
+    };
+    let Some(used) = account.broker_windows[index].used.as_ref() else {
+        return false;
+    };
+    let Some(evidence) = monitor
+        .evidence
+        .iter()
+        .find(|evidence| evidence.sequence == field.evidence_sequence)
+    else {
+        return false;
+    };
+    if evidence.source != MonitorEvidenceSource::BrokerProjection || evidence.session_id.is_some() {
+        return false;
+    }
+    let window = if index == 0 {
+        MonitorQuotaWindow::FiveHour
+    } else {
+        MonitorQuotaWindow::SevenDay
+    };
+    used.reset_at_epoch.is_none()
+        && broker_orphan_is_admissible(account, index, now_epoch)
+        && evidence.source == MonitorEvidenceSource::BrokerProjection
+        && evidence_matches_used(evidence, monitor.account_id.as_deref(), None, used, window)
+}
+
+pub(super) fn statusline_used_without_reset(
+    monitor: &DurableMonitor,
+    account: Option<&AccountObservations>,
+    status: &MonitorQuotaWindowStatus,
+    index: usize,
+    now_epoch: i64,
+) -> bool {
+    let Some(account) = account else {
+        return false;
+    };
+    if status_has_current_exact_pair(monitor, account, status, index, now_epoch) {
+        return false;
+    }
+    let window = if index == 0 {
+        MonitorQuotaWindow::FiveHour
+    } else {
+        MonitorQuotaWindow::SevenDay
+    };
+    monitor.evidence.iter().any(|evidence| {
+        if evidence.source != MonitorEvidenceSource::Statusline
+            || !evidence_is_relevant(evidence, monitor)
+        {
+            return false;
+        }
+        let Some(session_id) = evidence.session_id.as_deref() else {
+            return false;
+        };
+        let Some(used) = account
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.windows[index].used.as_ref())
+        else {
+            return false;
+        };
+        used.reset_at_epoch.is_none()
+            && is_current(evidence, now_epoch)
+            && evidence_matches_used(
+                evidence,
+                monitor.account_id.as_deref(),
+                Some(session_id),
+                used,
+                window,
+            )
+    })
+}
+
+fn status_has_current_exact_pair(
+    monitor: &DurableMonitor,
+    account: &AccountObservations,
+    status: &MonitorQuotaWindowStatus,
+    index: usize,
+    now_epoch: i64,
+) -> bool {
+    let (Some(used_field), Some(reset_field)) = (
+        status.used_evidence.as_ref(),
+        status.reset_evidence.as_ref(),
+    ) else {
+        return false;
+    };
+    if used_field.freshness != MonitorEvidenceFreshness::Current
+        || reset_field.freshness != MonitorEvidenceFreshness::Current
+    {
+        return false;
+    }
+    let (Some(used_evidence), Some(reset_evidence)) = (
+        monitor
+            .evidence
+            .iter()
+            .find(|evidence| evidence.sequence == used_field.evidence_sequence),
+        monitor
+            .evidence
+            .iter()
+            .find(|evidence| evidence.sequence == reset_field.evidence_sequence),
+    ) else {
+        return false;
+    };
+    if used_evidence.source != reset_evidence.source
+        || used_evidence.account_id != reset_evidence.account_id
+        || used_evidence.session_id != reset_evidence.session_id
+        || !is_current(used_evidence, now_epoch)
+        || !is_current(reset_evidence, now_epoch)
+    {
+        return false;
+    }
+    let session_id = used_evidence.session_id.as_deref();
+    let pair_source = match used_evidence.source {
+        MonitorEvidenceSource::BrokerProjection if session_id.is_none() => {
+            PairSource::BrokerProjection
+        }
+        MonitorEvidenceSource::Statusline if session_id.is_some() => PairSource::Statusline,
+        _ => return false,
+    };
+    let stored_window = match used_evidence.source {
+        MonitorEvidenceSource::BrokerProjection if session_id.is_none() => {
+            account.broker_windows.get(index)
+        }
+        MonitorEvidenceSource::Statusline => session_id
+            .and_then(|session_id| account.sessions.get(session_id))
+            .and_then(|session| session.windows.get(index)),
+        _ => None,
+    };
+    let Some(stored_window) = stored_window else {
+        return false;
+    };
+    let (Some(used), Some(reset), Some(pair)) = (
+        stored_window.used.as_ref(),
+        stored_window.reset.as_ref(),
+        exact_observed_pair_for_source(stored_window, pair_source),
+    ) else {
+        return false;
+    };
+    let quota_window = if index == 0 {
+        MonitorQuotaWindow::FiveHour
+    } else {
+        MonitorQuotaWindow::SevenDay
+    };
+    pair.used_percentage_basis_points == status.used_percentage_basis_points.unwrap_or(-1)
+        && Some(pair.reset_at_epoch) == status.reset_at_epoch
+        && evidence_matches_used(
+            used_evidence,
+            monitor.account_id.as_deref(),
+            session_id,
+            used,
+            quota_window,
+        )
+        && evidence_matches_reset(
+            reset_evidence,
+            monitor.account_id.as_deref(),
+            session_id,
+            reset,
+            quota_window,
+        )
+}
+
 fn append_quota_freshness_issues(
     status: &MonitorQuotaWindowStatus,
+    selected_orphan: bool,
+    statusline_resetless_used: bool,
     now_epoch: i64,
     evaluation: &mut MonitorEvaluation,
 ) -> bool {
     let reset_elapsed = status
         .reset_at_epoch
         .is_some_and(|reset| reset <= now_epoch);
-    let used_fresh = !reset_elapsed
+    let used_fresh = (selected_orphan || !reset_elapsed)
         && status
             .used_evidence
             .as_ref()
@@ -571,7 +754,31 @@ fn append_quota_freshness_issues(
             ),
         );
     }
-    if !reset_fresh {
+    if selected_orphan || statusline_resetless_used {
+        evaluation.any_unknown = true;
+        push_issue(
+            &mut evaluation.issues,
+            issue(
+                MonitorIssueCode::MissingReset,
+                "fresh utilization evidence has no reset paired to that observation",
+                None,
+            ),
+        );
+        if status
+            .reset_evidence
+            .as_ref()
+            .is_some_and(|field| field.freshness != MonitorEvidenceFreshness::Current)
+        {
+            push_issue(
+                &mut evaluation.issues,
+                issue(
+                    MonitorIssueCode::QuotaStale,
+                    "the retained reset evidence is stale",
+                    status.reset_at_epoch,
+                ),
+            );
+        }
+    } else if !reset_fresh {
         evaluation.any_unknown = true;
         push_issue(
             &mut evaluation.issues,
@@ -623,7 +830,32 @@ fn append_quota_usage_actions(
 
     let reason = quota_pause_reason(used);
     let used_reset = observed_reset_for_used(monitor, account, status, index);
-    latch_monitor_reset_barrier(monitor, index, used, used_reset, status, reason, now_epoch);
+    let barrier_reset = [
+        used_reset,
+        status.reset_at_epoch,
+        account.and_then(|account| account.latest_reset_epochs[index]),
+        account.and_then(|account| {
+            account.broker_windows[index]
+                .reset
+                .as_ref()
+                .map(|reset| reset.value)
+        }),
+        monitor.reset_barriers[index]
+            .as_ref()
+            .and_then(|barrier| barrier.prior_reset_at_epoch),
+    ]
+    .into_iter()
+    .flatten()
+    .max();
+    latch_monitor_reset_barrier(
+        monitor,
+        index,
+        used,
+        barrier_reset,
+        status,
+        reason,
+        now_epoch,
+    );
     push_action(&mut evaluation.actions, MonitorAction::Pause { reason });
     push_issue(
         &mut evaluation.issues,
@@ -708,8 +940,16 @@ fn append_quota_barrier_actions(
     if let Some(barrier) = monitor.reset_barriers[index].as_ref() {
         let due = barrier
             .prior_reset_at_epoch
-            .map(|reset| reset.saturating_add(MONITOR_RESET_GRACE_SECS))
-            .is_some_and(|due| now_epoch >= due);
+            .map_or_else(
+                || {
+                    barrier
+                        .started_at_epoch
+                        .saturating_add(MONITOR_RESET_GRACE_SECS)
+                },
+                |reset| reset.saturating_add(MONITOR_RESET_GRACE_SECS),
+            )
+            .max(barrier.started_at_epoch)
+            <= now_epoch;
         let active_threshold_reason = status
             .used_percentage_basis_points
             .filter(|used| used_fresh && *used >= 9_500)
@@ -980,7 +1220,13 @@ pub(super) fn quota_window_status(
                 window: evidence_window,
                 used_percentage_basis_points,
             } if evidence_window == window => {
-                if evidence_is_effective_used(evidence, account, index) {
+                if evidence_is_effective_used(
+                    evidence,
+                    account,
+                    monitor.account_id.as_deref(),
+                    index,
+                    now_epoch,
+                ) {
                     used_candidates.push((evidence, used_percentage_basis_points));
                 }
             }
@@ -988,7 +1234,12 @@ pub(super) fn quota_window_status(
                 window: evidence_window,
                 reset_at_epoch,
             } if evidence_window == window
-                && evidence_is_effective_reset(evidence, account, index) =>
+                && evidence_is_effective_reset(
+                    evidence,
+                    account,
+                    monitor.account_id.as_deref(),
+                    index,
+                ) =>
             {
                 reset_candidates.push((evidence, reset_at_epoch));
             }
@@ -1080,61 +1331,105 @@ fn choose_reset_candidate(
 fn evidence_is_effective_used(
     evidence: &MonitorEvidence,
     account: Option<&AccountObservations>,
+    account_id: Option<&str>,
     index: usize,
+    now_epoch: i64,
 ) -> bool {
     let Some(account) = account else {
         return true;
     };
-    let Some(latest_reset) = account.latest_reset_epochs[index] else {
-        return true;
+    let latest_reset = account.latest_reset_epochs[index];
+    let window = if index == 0 {
+        MonitorQuotaWindow::FiveHour
+    } else {
+        MonitorQuotaWindow::SevenDay
     };
-    if evidence.source == MonitorEvidenceSource::BrokerProjection {
-        return account.broker_windows[index]
-            .used
-            .as_ref()
-            .is_some_and(|used| {
-                used.reset_at_epoch
-                    .is_some_and(|reset| reset >= latest_reset)
-            });
+    match evidence.source {
+        MonitorEvidenceSource::BrokerProjection => {
+            let Some(used) = account.broker_windows[index].used.as_ref() else {
+                return false;
+            };
+            if !evidence_matches_used(evidence, account_id, None, used, window) {
+                return false;
+            }
+            match used.reset_at_epoch {
+                Some(reset) => latest_reset.is_none_or(|latest| reset >= latest),
+                None => broker_orphan_is_admissible(account, index, now_epoch),
+            }
+        }
+        MonitorEvidenceSource::Statusline => {
+            let Some(session_id) = evidence.session_id.as_deref() else {
+                return false;
+            };
+            let Some(used) = account
+                .sessions
+                .get(session_id)
+                .and_then(|session| session.windows[index].used.as_ref())
+            else {
+                return false;
+            };
+            if !evidence_matches_used(evidence, account_id, Some(session_id), used, window) {
+                return false;
+            }
+            match (latest_reset, used.reset_at_epoch) {
+                (Some(latest), Some(reset)) => reset >= latest,
+                (Some(latest), None) => account
+                    .sessions
+                    .get(session_id)
+                    .and_then(|session| session.windows.get(index))
+                    .and_then(|stored| stored.reset.as_ref())
+                    .is_some_and(|reset| {
+                        reset.value == latest
+                            && used.input_sequence > reset.input_sequence
+                            && used.received_at_epoch > reset.received_at_epoch
+                            && used.evidence_at_epoch.is_none()
+                    }),
+                (None, _) => true,
+            }
+        }
+        _ => false,
     }
-    let Some(session_id) = evidence.session_id.as_deref() else {
-        return true;
-    };
-    account
-        .sessions
-        .get(session_id)
-        .and_then(|session| session.windows[index].used.as_ref())
-        .is_some_and(|used| {
-            used.reset_at_epoch
-                .is_some_and(|reset| reset >= latest_reset)
-        })
 }
 
 fn evidence_is_effective_reset(
     evidence: &MonitorEvidence,
     account: Option<&AccountObservations>,
+    account_id: Option<&str>,
     index: usize,
 ) -> bool {
     let Some(account) = account else {
         return true;
     };
-    let Some(latest_reset) = account.latest_reset_epochs[index] else {
-        return true;
+    let latest_reset = account.latest_reset_epochs[index];
+    let window = if index == 0 {
+        MonitorQuotaWindow::FiveHour
+    } else {
+        MonitorQuotaWindow::SevenDay
     };
-    if evidence.source == MonitorEvidenceSource::BrokerProjection {
-        return account.broker_windows[index]
-            .reset
-            .as_ref()
-            .is_some_and(|reset| reset.value >= latest_reset);
+    match evidence.source {
+        MonitorEvidenceSource::BrokerProjection => {
+            let Some(reset) = account.broker_windows[index].reset.as_ref() else {
+                return false;
+            };
+            evidence_matches_reset(evidence, account_id, None, reset, window)
+                && latest_reset.is_none_or(|latest| reset.value >= latest)
+        }
+        MonitorEvidenceSource::Statusline => {
+            let Some(session_id) = evidence.session_id.as_deref() else {
+                return false;
+            };
+            let Some(reset) = account
+                .sessions
+                .get(session_id)
+                .and_then(|session| session.windows[index].reset.as_ref())
+            else {
+                return false;
+            };
+            evidence_matches_reset(evidence, account_id, Some(session_id), reset, window)
+                && latest_reset.is_none_or(|latest| reset.value >= latest)
+        }
+        _ => false,
     }
-    let Some(session_id) = evidence.session_id.as_deref() else {
-        return true;
-    };
-    account
-        .sessions
-        .get(session_id)
-        .and_then(|session| session.windows[index].reset.as_ref())
-        .is_some_and(|reset| reset.value >= latest_reset)
 }
 
 pub(super) fn evidence_is_relevant(evidence: &MonitorEvidence, monitor: &DurableMonitor) -> bool {

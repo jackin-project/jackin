@@ -131,13 +131,9 @@ pub(super) struct TestManager {
     pub(super) editor_modal_open: bool,
 }
 
-impl ConsoleManagerModalBlockPresence for TestManager {
-    fn list_modal_open(&self) -> bool {
-        self.list_modal_open
-    }
-
-    fn editor_modal_open(&self) -> bool {
-        self.editor_modal_open
+impl ConsoleManagerInputPresence for TestManager {
+    fn allows_base_surface_input(&self) -> bool {
+        !self.list_modal_open && !self.editor_modal_open
     }
 }
 

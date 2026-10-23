@@ -1348,6 +1348,74 @@ fn isolated_monitor_cli_stays_local_and_fails_closed_until_evidence_is_safe() ->
 }
 
 #[test]
+fn resetless_high_statusline_is_risk_only_and_keeps_the_account_barrier() -> Result<()> {
+    let mut fixture = OfflineFixture::new()?;
+    let started = fixture.run(&["service", "start"], None)?;
+    fixture.service_running = true;
+    expect_exit(&started, 0)?;
+    ensure!(json_output(&started)?["status"]["running"] == true);
+
+    let binding = fixture.bind_fixture_account("resetless-risk-account")?;
+    let (fresh, _) = fresh_statusline()?;
+    let mut observation: Value = serde_json::from_slice(&fresh)?;
+    observation["session_id"] = Value::String("resetless-risk-session".to_owned());
+    observation["rate_limits"]["five_hour"]["used_percentage"] = Value::from(95.0);
+    observation["rate_limits"]["five_hour"]
+        .as_object_mut()
+        .context("five-hour statusline window was not an object")?
+        .remove("resets_at");
+    let bytes = serde_json::to_vec(&observation)?;
+    let ingest = fixture.run_owned(OfflineFixture::bound_ingest_args(&binding), Some(&bytes))?;
+    expect_exit(&ingest, 0)?;
+    ensure!(json_output(&ingest)?["result"] == "ingested");
+
+    let state = fixture.persisted_monitor_state()?;
+    let account = state["accounts"][binding.account_id.as_str()]
+        .as_object()
+        .context("persisted account observations were missing")?;
+    let account_barrier = &account["reset_barriers"][0];
+    ensure!(account_barrier["source"] == "statusline");
+    ensure!(account_barrier["session_id"] == "resetless-risk-session");
+    ensure!(account_barrier["prior_used_percentage_basis_points"] == 9500);
+    ensure!(account_barrier["prior_reset_at_epoch"].is_null());
+
+    let observe = OfflineFixture::monitor_observe_bound_args(&binding, "resetless-risk-observer");
+    let started = fixture.run_owned(observe, None)?;
+    expect_exit(&started, 0)?;
+    let monitor_id_value = monitor_id(&json_output(&started)?)?;
+    let status_args = OfflineFixture::monitor_args("status", &monitor_id_value);
+    let status_output = fixture.run_owned(status_args, None)?;
+    expect_exit(&status_output, 2)?;
+    let status_reply = json_output(&status_output)?;
+    let status = status_object(&status_reply)?;
+    ensure!(status["five_hour"]["used_percentage_basis_points"] == 9500);
+    ensure!(status["five_hour"]["reset_at_epoch"].is_null());
+    ensure!(status["readiness"]["quota"] == "unknown");
+    ensure!(status["readiness"]["dispatch"] != "ready");
+    ensure!(!runnable(status)?);
+    ensure_issue(status, "missing_reset")?;
+
+    let final_state = fixture.persisted_monitor_state()?;
+    let monitor = &final_state["monitors"][monitor_id_value.as_str()];
+    let monitor_barrier = &monitor["reset_barriers"][0];
+    ensure!(monitor_barrier.is_object());
+    ensure!(monitor_barrier["prior_reset_at_epoch"].is_null());
+    ensure!(monitor_barrier["prior_used_percentage_basis_points"] == 9500);
+    let account_barrier =
+        &final_state["accounts"][binding.account_id.as_str()]["reset_barriers"][0];
+    ensure!(account_barrier["source"] == "statusline");
+    ensure!(account_barrier["session_id"] == "resetless-risk-session");
+    ensure!(account_barrier["prior_reset_at_epoch"].is_null());
+    ensure!(account_barrier["prior_used_percentage_basis_points"] == 9500);
+    ensure!(
+        account_barrier == &state["accounts"][binding.account_id.as_str()]["reset_barriers"][0],
+        "the observation-only monitor preserves the original account risk barrier"
+    );
+    fixture.assert_no_external_activity()?;
+    Ok(())
+}
+
+#[test]
 fn statusline_size_limit_rejects_oversized_input_before_broker_access() -> Result<()> {
     let fixture = OfflineFixture::new()?;
     let mut oversized = vec![b' '; STATUSLINE_MAX_BYTES + 1];
