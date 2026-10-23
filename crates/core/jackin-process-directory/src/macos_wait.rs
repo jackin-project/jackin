@@ -26,6 +26,24 @@ pub struct SigchldActionSnapshot {
     pub flags: i32,
 }
 
+/// The result of checking whether the current macOS `SIGCHLD` action is a
+/// supported precondition for Tokio's child-signal observer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokioSigchldEligibility {
+    /// The action is default, has only supported flags, and has an empty mask.
+    Eligible,
+    /// The signal is explicitly ignored.
+    Ignore,
+    /// A caught or otherwise opaque disposition is installed.
+    ForeignCaught,
+    /// `SA_NOCLDWAIT` is set, so child exit status may not remain waitable.
+    NoChildWait,
+    /// The action contains flags outside the supported symbolic subset.
+    UnsupportedFlags,
+    /// The action's signal mask is nonempty.
+    NonEmptyActionMask,
+}
+
 enum SigchldActionRequest<'a> {
     Query,
     Replace(&'a libc::sigaction),
@@ -96,6 +114,40 @@ fn sigchld_snapshot(action: &libc::sigaction) -> SigchldActionSnapshot {
     }
 }
 
+/// Classify a typed action summary without querying or changing process state.
+///
+/// Checks run in this order: disposition, `SA_NOCLDWAIT`, unsupported flags,
+/// then action mask. This order makes the first unsafe condition the reported
+/// result when an action has more than one unsupported property.
+pub(super) fn classify_tokio_sigchld_eligibility(
+    disposition: SigchldDisposition,
+    flags: libc::c_int,
+    action_mask: libc::sigset_t,
+) -> TokioSigchldEligibility {
+    match disposition {
+        SigchldDisposition::Default => {}
+        SigchldDisposition::Ignore => return TokioSigchldEligibility::Ignore,
+        SigchldDisposition::OpaqueCaught => return TokioSigchldEligibility::ForeignCaught,
+    }
+
+    if flags & libc::SA_NOCLDWAIT != 0 {
+        return TokioSigchldEligibility::NoChildWait;
+    }
+
+    let supported_flags = libc::SA_RESTART | libc::SA_SIGINFO;
+    if flags & !supported_flags != 0 {
+        return TokioSigchldEligibility::UnsupportedFlags;
+    }
+
+    // On the pinned Apple libc ABI, sigset_t is u32 and the SDK's sigemptyset
+    // macro stores zero. Keep this typed mask check inside this macOS module.
+    if action_mask != 0 {
+        return TokioSigchldEligibility::NonEmptyActionMask;
+    }
+
+    TokioSigchldEligibility::Eligible
+}
+
 fn sigchld_actions_match(left: &libc::sigaction, right: &libc::sigaction) -> bool {
     left.sa_sigaction == right.sa_sigaction
         && left.sa_mask == right.sa_mask
@@ -109,6 +161,21 @@ fn sigchld_actions_match(left: &libc::sigaction, right: &libc::sigaction) -> boo
 pub fn current_sigchld_action() -> io::Result<SigchldActionSnapshot> {
     let action = call_sigchld_action(SigchldActionRequest::Query)?;
     Ok(sigchld_snapshot(&action))
+}
+
+/// Query whether the current process's macOS `SIGCHLD` action is eligible for
+/// a Tokio child-signal observer.
+///
+/// This read-only query does not register a Tokio signal observer and does not
+/// inspect or change the calling thread's signal mask. Callers must check that
+/// mask separately before registration.
+pub fn tokio_sigchld_eligibility() -> io::Result<TokioSigchldEligibility> {
+    let action = call_sigchld_action(SigchldActionRequest::Query)?;
+    Ok(classify_tokio_sigchld_eligibility(
+        sigchld_disposition(&action),
+        action.sa_flags,
+        action.sa_mask,
+    ))
 }
 
 fn report_sigchld_treatment_action(

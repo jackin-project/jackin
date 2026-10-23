@@ -20,7 +20,8 @@ pub use unix::current_dir;
 #[cfg(target_os = "macos")]
 pub use macos_wait::{
     CaughtSigchldDiagnosticGuard, SigchldActionSnapshot, SigchldDisposition,
-    current_sigchld_action, peek_exited_child, peek_specific_exited_child,
+    TokioSigchldEligibility, current_sigchld_action, peek_exited_child, peek_specific_exited_child,
+    tokio_sigchld_eligibility,
 };
 
 #[cfg(test)]
