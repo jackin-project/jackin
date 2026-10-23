@@ -1,60 +1,103 @@
 ---
 title: "09 — Ponytail: current design"
-description: "Ponytail 4.10.0: implementation-selection policy, host activation, quality conflicts, and native Jackin adaptation."
+description: "Ponytail 5.3.2: delivered policy, default code map, activation and session-state probes, telemetry, evidence, and a distinct Jackin adaptation."
 ---
 
 ## Summary
 
-Cutoff: **2026-09-23 UTC**. Reviewed release: [Ponytail v4.10.0](https://github.com/DietrichGebert/ponytail/releases/tag/v4.10.0). Ponytail is primarily a behavioral intervention: it changes what the agent chooses to build. It is not a byte compressor or a Rust dependency. Its reuse-first principle is valuable; its complete minimal-code policy is not an appropriate universal Jackin default.
+Evidence cutoff: **2026-10-23T15:31:31Z**; sources accessed on **2026-10-23 UTC**. Reviewed stable release: [Ponytail v5.3.2](https://github.com/DietrichGebert/ponytail/releases/tag/v5.3.2), commit `16352ac229eb08a9598dcae48fe9f2b342567d86`, and the published `@dietrichgebert/ponytail` 5.3.2 npm package, published **2026-10-16T23:06:18.715Z** under MIT. The delivered skill file was byte-identical to the tagged source. Default-branch commit `09c434ab73ca43761c5d8b0c5d341926c2fba710` contains later benchmark cleanup work and is outside this release's behavior.
+
+Ponytail changes the implementation the agent chooses and now also supplies a default code map and Claude-specific metrics UI. Its current policy explicitly demands complete affected callers/tests/configuration and preserves validation, security, accessibility and errors. The older portrayal of an unconditional one-line/minimal-file policy is stale. Remaining preferences for the shortest complete diff, preserving structure and a small self-check still need to yield to Jackin's architectural and testing obligations. A native Jackin adaptation and the full upstream plugin are different treatments.
 
 ## Question and scope
 
-Which policy should Jackin borrow without reducing necessary architectural work, testing, or requirement coverage?
+Can reuse-first coding guidance reduce unnecessary implementation and repeated agent work without incomplete fixes, missed callers, poor architecture or inadequate tests? Which parts require a runtime, and does their state remain isolated across simultaneous agents and worktrees?
 
 ## Method
 
-Read the current policy and release, and distinguish installed skills from active instructions. Treat an adapted Jackin policy as a new treatment rather than inheriting upstream benchmark results.
+Inspect the effective skill, instruction generator, hook declarations, activation scripts, map, metrics, importer and uninstall behavior at the release commit. Fetch the published npm archive and compare its policy to source. Run selected upstream Node tests and isolated state/activation probes. No paid model trial or host-global installation was performed. The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md">execution record</RepoFile> preserves commands, source identities, package hashes, result JSON and environment failures separately from successful reruns.
 
 ## Findings
 
-### The actual intervention
+### Four independently selectable interventions
 
-The current [AGENTS.md](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/AGENTS.md) prioritizes avoiding unnecessary work, reusing project code, standard-library and platform functionality, and existing dependencies before implementing new code. This can reduce the entire sequence of agent actions rather than merely shortening a final explanation.
+| Surface | What executes and what it changes | Evidence needed |
+|---|---|---|
+| Delivered skill | Natural-language policy for scope, reuse, implementation and response style | Complete task outcomes under the exact text and fixed model/effort |
+| Host hooks | Node activation and mode changes; inserts generated instructions at host events | Actual host event firing, ordering, repeated instruction cost and state scope |
+| Code map | Local file enumeration plus regex symbol extraction, enabled by default at activation | Retrieval recall, misleading omissions, cost and overlap with native search |
+| Claude Band and metrics | Transcript metadata, local CSV/HTML board, optional webhook/import | Exposure, attribution, concurrency and billing interpretation |
 
-The same file biases toward minimal diffs, few files, and one-line solutions. It prescribes a very small testing obligation and exempts trivial one-liners. These are product choices, not general proofs of maintainability or correctness. Jackin's root-cause fixes, architecture changes, performance requirements, and repository testing standards must outrank them.
+These surfaces are present in the [release skill](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/skills/ponytail/SKILL.md), [activation script](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/ponytail-activate.js), [map implementation](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/ponytail-map.js), and [Band registration](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/band/register.tsx). Calling the current package only a text compressor obscures both its behavioral effects and its executable additions.
 
-### Activation and footprint
+### What the current policy actually says
 
-The [release](https://github.com/DietrichGebert/ponytail/releases/tag/v4.10.0) adds native Cursor hooks and a Grok Build adapter, alongside host-detection corrections. Agent adapters, hooks, and instruction assets are distinct installation paths. A discoverable skill may never activate; repeatedly injected instructions create overhead. Grok Build support does not prove every Grok CLI/version combination works.
+The effective policy prioritizes avoiding unnecessary work, project reuse, platform/standard-library facilities and existing dependencies before new code. It asks for the complete behavior change, including callers, tests, fixtures, configuration and exports. Shared root causes should be fixed in the appropriate shared place. Existing validations, security, accessibility and error handling are protected. Those clauses materially strengthen the older policy and should be credited.
 
-The [package metadata](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/package.json) describes a JavaScript/plugin package under MIT. Jackin can deliver a reviewed instruction asset without making the upstream installer or hook process mandatory. Preserve license notices when copying material.
+The policy also favors the shortest complete diff, existing structure, short comments, and one small test or self-check for nontrivial logic; vague tasks begin with the smallest core. The small-test instruction is a **minimum, not an explicit prohibition on additional tests**. Nevertheless, leaving the quantity and adequacy of tests to that phrase is weaker than Jackin's required checks and may anchor a model toward insufficient verification. Existing structure can be inappropriate for a necessary migration. A small-looking patch can omit a required cleanup. These are hypotheses to test, not observed failures of every current run.
 
-### Evidence
+Repository and user requirements must govern scope, architecture and testing. Judge success by accepted behavior, complete migration and maintainability; changed-line counts alone can reward incomplete work or moving code into a command string. The actual skill must be evaluated independently from any safer rewrite proposed by Jackin.
 
-JetBrains supplies an independent policy experiment, but not a release-matched evaluation of 4.10.0 or a rewritten Jackin policy. An observed lack of significant quality difference is not proof of security equivalence or universal safety. See the [eligibility ledger](/research/context/tools/07-evidence-and-claims/); superseded-version percentages are not carried into this current comparison.
+### Activation, instruction cost, and the map
+
+The [shared Claude/Codex declaration](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/claude-codex-hooks.json) registers SessionStart for startup/resume/clear/compact, SubagentStart, and UserPromptSubmit. Activation builds text from the delivered skill body, removing frontmatter and mode rows; root AGENTS.md is not a substitute for examining that output. Full mode is the default; other modes change the behavioral treatment. Discoverability in a skill listing is different from confirmed instruction injection.
+
+With the map disabled, local activation emitted **2,861 bytes / 639 o200k_base estimated tokens**. The source skill file was **3,496 bytes / 802 tokens**. Eleven isolated Node activation processes took 57.55 ms initially and 41.95–58.53 ms subsequently. This measures local startup and output generation, not provider billing, model activation reliability, the map's cost, or full host startup. Repeated subagent and user-prompt events can change total overhead; inspect actual model-facing requests.
+
+The default map has a **2,000-character output budget**, considers at most **4,000 files**, and has a **one-second activation timeout**. It uses `git ls-files` or a bounded-depth directory walk, favors shared areas, excludes many test/generated/vendor files, and extracts apparent symbols with regexes. Some path characters, including non-ASCII names and spaces, fall outside its allowed-path pattern. It reads a selected file in full before slicing to the first 65,536 characters; that is not a 64 KiB file-I/O bound. A short map can be useful orientation but is incomplete by design and has no exact-original retrieval protocol. An empty map or missing symbol does not establish absence. The timeout falls back to activation without a map.
+
+### State isolation and concurrent sessions
+
+The [runtime](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/ponytail-runtime.js) chooses state directories from host configuration and keys Claude project state by a normalized project-path hash. It also keeps a shared flag. The key does not include a session identifier.
+
+| Isolated local probe | Observed result | Consequence |
+|---|---|---|
+| Claude, different project paths, same config directory | Each retained its selected mode | Project-path separation worked for this setup |
+| Claude, same project, different session labels | A mode change was visible to the other session | Concurrent agents in one project do not have independent modes through this state path |
+| Codex, shared `PLUGIN_DATA`, no project root | A mode change was visible to another session | Isolation depends on the host's plugin-data scope and supplied project information |
+
+The last result is conditional: it does not assert that every real Codex installation shares that directory. It demonstrates the behavior of the delivered code under a realistic boundary Jackin must control. Separate worktree paths may help project isolation, but multiple agents within a worktree remain relevant. The shared flag used by the status display explicitly reflects the last switch and can cross sessions.
+
+Compaction activation preserves the current live mode or off; other start sources consult the configured default. Resume/clear behavior therefore deserves a real host test rather than assuming every event preserves a user toggle. Cursor's always-on rule is a different activation path and cannot be made absent solely by changing a runtime flag. Jackin should generate explicit effective state and avoid duplicate native-plus-upstream injection.
+
+### Installation, uninstall, telemetry, and maintenance
+
+The package contains JavaScript and host adapters under MIT; it does not expose a Rust transformation API. Reusing a short policy needs no Node daemon. The full plugin can write mode flags, install a statusline helper and supply native host configuration. Its [uninstaller](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/scripts/uninstall.js) removes owned script/config fragments and preserves malformed JSON with a warning; plugin-manager removal remains host-specific. A Jackin integration should own generated configuration and restoration directly rather than relying on several independent installers.
+
+The [plugin configuration](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/.claude-plugin/plugin.json) enables the local ledger by default, leaves the webhook URL empty, and defaults name inclusion on. Names may derive from the initial prompt. The [metrics code](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/band/metrics.ts) restricts remote webhooks to HTTPS, permitting HTTP for localhost, and supports a bearer token. No default external webhook was found. Local persistence still matters for prompt privacy and cleanup.
+
+The optional [history importer](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/hooks/ponytail-band-import.js) scans prior Claude JSONL sessions and applies a price table. A displayed estimate is not proof of API charge, subscription usage or cache billing. The inspected Band CSV path performs read/modify/write without an evident cross-process lock; concurrent lost updates are a source-level risk, **not a reproduced defect** in this review. Upstream remains active, including a later benchmark-process cleanup fix, but maintenance activity is not evidence of policy quality.
+
+### Executed checks and benchmark evidence
+
+Selected release tests for hooks, behavior, maps, uninstall, activation-map behavior, commands and Band import reported **22 passing Node tests**, exit zero, with Node 24.19.0. Some test files wrap multiple internal assertions. Initial sandbox child-process failures were environmental; isolated reruns passed and both logs are retained. Package/source comparison, emitted-text counts and the three state probes above were also executed. No current accepted-task result was generated here.
+
+The [JetBrains July 28 study](https://blog.jetbrains.com/ai/2026/07/ponytail-skill-claude-tested/) used **Ponytail 4.8.4**, Claude Code 2.1.201, Sonnet 5 at medium effort, and 80 paired SkillsBench tasks. It reported median cost 10.3% lower, mixed quality differences and a weaker code-length signal; its bootstrap cost interval touched zero despite a significant directional test. It audited injected policy text, omitted the first-run nudge/subagent reinjection and appended the policy after the task. JetBrains sells agent tooling. This historical controlled result does not establish 5.3.2, the map/Band bundle, architectural quality or security equivalence.
+
+The author's [October 7 report](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/benchmarks/results/2026-10-07-agentic.md) compared Ponytail 5, 4.13 and no policy on 39 tasks, five repetitions, using Claude Code 2.1.288/Opus 5.5 at default effort. It reports 26% lower geometric-mean task cost and 53% less code versus baseline. Bash was disabled; only 18 surgical tasks had hidden executable checks, with 86/90 baseline and 87/90 Ponytail-5 passes. Other tasks used size/judgment measures; timeout exclusions and one manual judge correction matter. The harness/report are public, but complete raw runs were not found in the tagged checkout. This is first-party, not release-matched evidence for the full current plugin.
+
+The [benchmark harness documentation](https://github.com/DietrichGebert/ponytail/blob/16352ac229eb08a9598dcae48fe9f2b342567d86/benchmarks/agentic/README.md) discloses and supersedes an earlier experiment whose global SessionStart hook contaminated all arms. Current isolation settings address that specific design defect; they do not retrospectively validate the withdrawn results. Keep task failures and all incurred costs in a Jackin comparison. See [the evidence ledger](/research/context/tools/07-evidence-and-claims/) for eligibility and uncertainty.
 
 ## Implications for jackin❯
 
-**Best part:** discourage speculative scope and unnecessary reimplementation after understanding the real execution path.
+**Default candidate:** native, role-aware guidance to avoid speculative work and reuse suitable mechanisms, while requiring complete architecture, tests and migrations. The following is an independently authored proposal, not a quotation or a benchmarked upstream treatment:
 
-**Integration choice:** a short, role-aware Jackin instruction block, with an independently evaluated option to use the actual upstream skill. Do not install a runtime merely to deliver text.
+> Understand the affected behavior and every place the change must reach. Reuse existing mechanisms when they meet the requirements. Choose the simplest maintainable implementation that satisfies correctness, performance, security, accessibility and all required tests. Fix architectural causes when necessary. Keep routine narration brief and report failures, uncertainty and remaining work.
 
-Proposed Jackin policy, not a quotation or benchmarked upstream treatment:
+**Experimental treatments:** (1) exact upstream policy with map/metrics disabled, (2) the complete pinned plugin, (3) the Jackin adaptation, and optionally (4) map alone. Compare each to native behavior at the same model/effort. Mixing them under one Ponytail label would prevent attribution. A host supporting hooks does not establish that a package's event/configuration adapter is correct.
 
-> Understand the affected behavior before changing it. Reuse existing mechanisms when they satisfy the requirements. Choose the simplest maintainable implementation that meets all correctness, performance, security, and testing obligations. Do not minimize line count or patch size at the expense of the right architecture. Keep routine narration brief without hiding failures or uncertainty.
+**Reuse and contribution:** retain MIT notices for copied material. Deliver text through the existing Jackin configuration layer; do not install a runtime only for instruction delivery. If adopting the full plugin, use capsule-scoped paths and session-qualified state, preserve on/off across context changes deliberately, and contribute session keys and an atomic ledger if upstream accepts the contract. The observed issues are narrow enough that a permanent fork is not yet justified.
 
-**Default decision:** this restrained policy is a candidate for implementer roles, not permission to skip tests or refuse a necessary refactor. Keep reviewer and verifier evidence complete. Activation should be explicit in generated configuration and inspectable by the operator.
+## Limitations and smallest decisive next experiment
 
-## Limitations and unknowns
+There was no native agent permission, subscription, long-session, model-quality, map-recall or concurrent ledger test. Local hook success does not demonstrate the exact bytes consumed by a real hosted model. A short map can also duplicate an existing native outline and increase context.
 
-Policy effects depend on the model, reasoning setting, task, and repository instructions. Fewer changed lines can be either a better design or an incomplete solution. Do not treat line count as the primary quality metric. No current six-way paired trial was performed here.
-
-## Sources
-
-Current release, policy, and package metadata are linked inline; independent-study admissibility is documented separately.
+The smallest decisive next trial pairs native behavior, the exact map-disabled skill and the Jackin adaptation on a few tasks that require **multi-file architecture changes, migration cleanup, accessibility/security preservation and the complete prescribed test suite**. Fix model, effort, authentication and cache conditions; inspect activation, all edits, omitted callers, actual tests and follow-up repair. Include simultaneous sessions in one worktree and compact/resume. Promote only a treatment that preserves accepted outcomes and improves total cost or latency, rather than one that merely changes fewer lines.
 
 ## Related work
 
 - [Caveman](/research/context/tools/01-caveman-design/)
 - [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Composition](/research/context/tools/06-combining/)
+- [Release register](/research/context/tools/08-current-release-register/)
 - [Jackin integration](/research/context/tools/11-jackin-integration/)

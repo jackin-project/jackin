@@ -1,0 +1,514 @@
+TAP version 13
+# Subtest: validateSessionId accepts realistic ids
+ok 1 - validateSessionId accepts realistic ids
+  ---
+  duration_ms: 2.121808
+  type: 'test'
+  ...
+# Subtest: validateSessionId rejects traversal and junk
+ok 2 - validateSessionId rejects traversal and junk
+  ---
+  duration_ms: 3.050922
+  type: 'test'
+  ...
+# Subtest: session paths return null for rejected ids and never escape the dir
+ok 3 - session paths return null for rejected ids and never escape the dir
+  ---
+  duration_ms: 1.241426
+  type: 'test'
+  ...
+# Subtest: writeSessionMode writes the session file and mirrors to legacy
+ok 4 - writeSessionMode writes the session file and mirrors to legacy
+  ---
+  duration_ms: 13.053885
+  type: 'test'
+  ...
+# Subtest: off is durable in the session file but NEVER literal in the legacy mirror
+ok 5 - off is durable in the session file but NEVER literal in the legacy mirror
+  ---
+  duration_ms: 14.325903
+  type: 'test'
+  ...
+# Subtest: writeSessionMode('off') is equivalent to writing null
+ok 6 - writeSessionMode('off') is equivalent to writing null
+  ---
+  duration_ms: 1.378834
+  type: 'test'
+  ...
+# Subtest: writeSessionMode ignores values outside VALID_MODES
+ok 7 - writeSessionMode ignores values outside VALID_MODES
+  ---
+  duration_ms: 0.569251
+  type: 'test'
+  ...
+# Subtest: parallel sessions keep independent modes; legacy mirror is last-write-wins
+ok 8 - parallel sessions keep independent modes; legacy mirror is last-write-wins
+  ---
+  duration_ms: 2.905336
+  type: 'test'
+  ...
+# Subtest: no session id degrades to the legacy machine-wide file
+ok 9 - no session id degrades to the legacy machine-wide file
+  ---
+  duration_ms: 4.519311
+  type: 'test'
+  ...
+# Subtest: a pre-upgrade legacy flag is honored until the session writes its own
+ok 10 - a pre-upgrade legacy flag is honored until the session writes its own
+  ---
+  duration_ms: 5.885656
+  type: 'test'
+  ...
+# Subtest: a legacy flag holding the literal off reads as off, not as a mode
+ok 11 - a legacy flag holding the literal off reads as off, not as a mode
+  ---
+  duration_ms: 30.601459
+  type: 'test'
+  ...
+# Subtest: readSessionModeRaw does not fall back to legacy for a valid session
+ok 12 - readSessionModeRaw does not fall back to legacy for a valid session
+  ---
+  duration_ms: 6.594187
+  type: 'test'
+  ...
+# Subtest: prev is scoped per session
+ok 13 - prev is scoped per session
+  ---
+  duration_ms: 2.105598
+  type: 'test'
+  ...
+# Subtest: prev falls back to the legacy path without a session id
+ok 14 - prev falls back to the legacy path without a session id
+  ---
+  duration_ms: 0.887632
+  type: 'test'
+  ...
+# Subtest: a session with no prev of its own does NOT borrow the legacy one
+ok 15 - a session with no prev of its own does NOT borrow the legacy one
+  ---
+  duration_ms: 2.029067
+  type: 'test'
+  ...
+# Subtest: clearing a session prev does not delete the machine-wide one
+ok 16 - clearing a session prev does not delete the machine-wide one
+  ---
+  duration_ms: 1.327376
+  type: 'test'
+  ...
+# Subtest: recordModeChange tags entries with the session id
+ok 17 - recordModeChange tags entries with the session id
+  ---
+  duration_ms: 2.915047
+  type: 'test'
+  ...
+# Subtest: recordModeChange omits session_id entirely when unknown
+ok 18 - recordModeChange omits session_id entirely when unknown
+  ---
+  duration_ms: 7.456031
+  type: 'test'
+  ...
+# Subtest: recordModeChange compares against the same session, not the shared mirror
+ok 19 - recordModeChange compares against the same session, not the shared mirror
+  ---
+  duration_ms: 0.885248
+  type: 'test'
+  ...
+# Subtest: durable off does not log a phantom off -> null transition
+ok 20 - durable off does not log a phantom off -> null transition
+  ---
+  duration_ms: 9.138903
+  type: 'test'
+  ...
+# Subtest: recordModeChange never writes 'off' as a mode value
+ok 21 - recordModeChange never writes 'off' as a mode value
+  ---
+  duration_ms: 3.761535
+  type: 'test'
+  ...
+# Subtest: gcSessionStore removes stale files and keeps fresh ones
+ok 22 - gcSessionStore removes stale files and keeps fresh ones
+  ---
+  duration_ms: 6.671404
+  type: 'test'
+  ...
+# Subtest: gcSessionStore honors maxDeletes and a missing directory
+ok 23 - gcSessionStore honors maxDeletes and a missing directory
+  ---
+  duration_ms: 5.581251
+  type: 'test'
+  ...
+# Subtest: gcSessionStore refuses to follow a symlink out of the sessions dir
+ok 24 - gcSessionStore refuses to follow a symlink out of the sessions dir
+  ---
+  duration_ms: 0.675301
+  type: 'test'
+  ...
+# Subtest: CAVEMAN_SESSION_TTL_MS overrides the sweep age
+ok 25 - CAVEMAN_SESSION_TTL_MS overrides the sweep age
+  ---
+  duration_ms: 0.721741
+  type: 'test'
+  ...
+# Subtest: canonicalMode maps legacy levels, passes new ids, rejects the rest
+ok 26 - canonicalMode maps legacy levels, passes new ids, rejects the rest
+  ---
+  duration_ms: 0.537963
+  type: 'test'
+  ...
+# Subtest: legacy session file, mirror and prev all read back as the new id
+ok 27 - legacy session file, mirror and prev all read back as the new id
+  ---
+  duration_ms: 0.712156
+  type: 'test'
+  ...
+# Subtest: writers accept legacy input but store only new ids
+ok 28 - writers accept legacy input but store only new ids
+  ---
+  duration_ms: 1.519837
+  type: 'test'
+  ...
+# Subtest: a legacy-to-new rewrite of the same mode is not a logged transition
+ok 29 - a legacy-to-new rewrite of the same mode is not a logged transition
+  ---
+  duration_ms: 0.485273
+  type: 'test'
+  ...
+# Subtest: getDefaultMode maps a legacy CAVEMAN_DEFAULT_MODE and defaults to caveman
+ok 30 - getDefaultMode maps a legacy CAVEMAN_DEFAULT_MODE and defaults to caveman
+  ---
+  duration_ms: 1.457573
+  type: 'test'
+  ...
+# Subtest: loadRuleset returns the whole skill body; thesisLine falls back without a file
+ok 31 - loadRuleset returns the whole skill body; thesisLine falls back without a file
+  ---
+  duration_ms: 1.425805
+  type: 'test'
+  ...
+# Subtest: .codex/hooks.json manifest is valid and points at the hook script
+ok 32 - .codex/hooks.json manifest is valid and points at the hook script
+  ---
+  duration_ms: 1.438304
+  type: 'test'
+  ...
+# Subtest: hand-copied fallback whitelist stays equal to caveman-config VALID_MODES
+ok 33 - hand-copied fallback whitelist stays equal to caveman-config VALID_MODES
+  ---
+  duration_ms: 0.967332
+  type: 'test'
+  ...
+# Subtest: default resolution with no config emits the caveman skill
+ok 34 - default resolution with no config emits the caveman skill
+  ---
+  duration_ms: 112.15136
+  type: 'test'
+  ...
+# Subtest: CAVEMAN_DEFAULT_MODE wins over config files and selects its mode
+ok 35 - CAVEMAN_DEFAULT_MODE wins over config files and selects its mode
+  ---
+  duration_ms: 105.960728
+  type: 'test'
+  ...
+# Subtest: repo-local .caveman.json defaultMode is honored (legacy value maps forward)
+ok 36 - repo-local .caveman.json defaultMode is honored (legacy value maps forward)
+  ---
+  duration_ms: 64.985309
+  type: 'test'
+  ...
+# Subtest: user config defaultMode is honored when no repo config or env is set
+ok 37 - user config defaultMode is honored when no repo config or env is set
+  ---
+  duration_ms: 90.369136
+  type: 'test'
+  ...
+# Subtest: user config defaultMode "off" silences the hook (no forced injection)
+ok 38 - user config defaultMode "off" silences the hook (no forced injection)
+  ---
+  duration_ms: 60.663367
+  type: 'test'
+  ...
+# Subtest: off injects nothing
+ok 39 - off injects nothing
+  ---
+  duration_ms: 54.629205
+  type: 'test'
+  ...
+# Subtest: independent-skill modes inject only a one-line pointer
+ok 40 - independent-skill modes inject only a one-line pointer
+  ---
+  duration_ms: 162.267009
+  type: 'test'
+  ...
+# Subtest: degraded loader still resolves the mode and names it
+ok 41 - degraded loader still resolves the mode and names it
+  ---
+  duration_ms: 76.296081
+  type: 'test'
+  ...
+# Subtest: manual startup policy injects nothing, intact or degraded
+ok 42 - manual startup policy injects nothing, intact or degraded
+  ---
+  duration_ms: 207.442566
+  type: 'test'
+  ...
+# Subtest: CAVEMAN_DEFAULT_MODE with stray whitespace is rejected, not trimmed
+ok 43 - CAVEMAN_DEFAULT_MODE with stray whitespace is rejected, not trimmed
+  ---
+  duration_ms: 71.115399
+  type: 'test'
+  ...
+# Subtest: legacy wenyan default resolves to the megacave skill
+ok 44 - legacy wenyan default resolves to the megacave skill
+  ---
+  duration_ms: 114.942635
+  type: 'test'
+  ...
+# Subtest: invalid JSON in the user config is skipped, not fatal
+ok 45 - invalid JSON in the user config is skipped, not fatal
+  ---
+  duration_ms: 71.084647
+  type: 'test'
+  ...
+# Subtest: symlinked repo config is refused, symmetric with the real resolver
+ok 46 - symlinked repo config is refused, symmetric with the real resolver
+  ---
+  duration_ms: 103.370342
+  type: 'test'
+  ...
+# Subtest: exit code is 0 and output is non-empty exactly once under pipe (SIGPIPE-free flush)
+ok 47 - exit code is 0 and output is non-empty exactly once under pipe (SIGPIPE-free flush)
+  ---
+  duration_ms: 129.215473
+  type: 'test'
+  ...
+# Subtest: sdk-cli session starts off and explicit /caveman still activates
+ok 48 - sdk-cli session starts off and explicit /caveman still activates
+  ---
+  duration_ms: 323.213116
+  type: 'test'
+  ...
+# Subtest: sdk-ts session starts off and explicit /caveman still activates
+ok 49 - sdk-ts session starts off and explicit /caveman still activates
+  ---
+  duration_ms: 179.845528
+  type: 'test'
+  ...
+# Subtest: sdk-py session starts off and explicit /caveman still activates
+ok 50 - sdk-py session starts off and explicit /caveman still activates
+  ---
+  duration_ms: 211.527927
+  type: 'test'
+  ...
+# Subtest: headless fork with no stored state also starts off
+ok 51 - headless fork with no stored state also starts off
+  ---
+  duration_ms: 83.988966
+  type: 'test'
+  ...
+# Subtest: cli session still gets the ruleset
+ok 52 - cli session still gets the ruleset
+  ---
+  duration_ms: 62.007663
+  type: 'test'
+  ...
+# Subtest: claude-vscode session still gets the ruleset
+ok 53 - claude-vscode session still gets the ruleset
+  ---
+  duration_ms: 128.973897
+  type: 'test'
+  ...
+# Subtest: claude-desktop session still gets the ruleset
+ok 54 - claude-desktop session still gets the ruleset
+  ---
+  duration_ms: 63.389052
+  type: 'test'
+  ...
+# Subtest: explicit CAVEMAN_DEFAULT_MODE opts a headless session back in
+ok 55 - explicit CAVEMAN_DEFAULT_MODE opts a headless session back in
+  ---
+  duration_ms: 65.259929
+  type: 'test'
+  ...
+# Subtest: copilot: ultracave default emits the ultracave skill under additionalContext
+ok 56 - copilot: ultracave default emits the ultracave skill under additionalContext
+  ---
+  duration_ms: 127.555708
+  type: 'test'
+  ...
+# Subtest: cursor: default mode emits the caveman skill under additional_context
+ok 57 - cursor: default mode emits the caveman skill under additional_context
+  ---
+  duration_ms: 144.407645
+  type: 'test'
+  ...
+# Subtest: a legacy configured level resolves to its v3 skill
+ok 58 - a legacy configured level resolves to its v3 skill
+  ---
+  duration_ms: 111.754946
+  type: 'test'
+  ...
+# Subtest: cursor: defaultMode off prints {}
+ok 59 - cursor: defaultMode off prints {}
+  ---
+  duration_ms: 54.017217
+  type: 'test'
+  ...
+# Subtest: copilot: defaultMode off prints {}
+ok 60 - copilot: defaultMode off prints {}
+  ---
+  duration_ms: 53.500616
+  type: 'test'
+  ...
+# Subtest: cursor: defaultMode manual prints {}
+ok 61 - cursor: defaultMode manual prints {}
+  ---
+  duration_ms: 49.499101
+  type: 'test'
+  ...
+# Subtest: copilot: defaultMode manual prints {}
+ok 62 - copilot: defaultMode manual prints {}
+  ---
+  duration_ms: 109.574004
+  type: 'test'
+  ...
+# Subtest: cursor: defaultMode commit prints {}
+ok 63 - cursor: defaultMode commit prints {}
+  ---
+  duration_ms: 56.032202
+  type: 'test'
+  ...
+# Subtest: copilot: defaultMode commit prints {}
+ok 64 - copilot: defaultMode commit prints {}
+  ---
+  duration_ms: 84.138714
+  type: 'test'
+  ...
+# Subtest: repo-local off is found from the host payload, not the hook cwd
+ok 65 - repo-local off is found from the host payload, not the hook cwd
+  ---
+  duration_ms: 153.261105
+  type: 'test'
+  ...
+# Subtest: unknown host prints {}
+ok 66 - unknown host prints {}
+  ---
+  duration_ms: 146.396997
+  type: 'test'
+  ...
+# Subtest: writes no caveman state anywhere
+ok 67 - writes no caveman state anywhere
+  ---
+  duration_ms: 114.517726
+  type: 'test'
+  ...
+# Subtest: returns on the first complete JSON object while the writer stays open
+ok 68 - returns on the first complete JSON object while the writer stays open
+  ---
+  duration_ms: 141.204679
+  type: 'test'
+  ...
+# Subtest: watchdog answers when no payload ever arrives
+ok 69 - watchdog answers when no payload ever arrives
+  ---
+  duration_ms: 2050.16552
+  type: 'test'
+  ...
+# Subtest: Cursor plugin manifest wires the shared hook, and no hooks/hooks.json exists for Claude Code to load
+ok 70 - Cursor plugin manifest wires the shared hook, and no hooks/hooks.json exists for Claude Code to load
+  ---
+  duration_ms: 54.277413
+  type: 'test'
+  ...
+# Subtest: owned install reads its pinned skill before the host skills folder
+ok 71 - owned install reads its pinned skill before the host skills folder
+  ---
+  duration_ms: 55.939312
+  type: 'test'
+  ...
+# Subtest: subagent inherits this session's caveman skill
+ok 72 - subagent inherits this session's caveman skill
+  ---
+  duration_ms: 194.769399
+  type: 'test'
+  ...
+# Subtest: subagent inherits this session's ultracave skill
+ok 73 - subagent inherits this session's ultracave skill
+  ---
+  duration_ms: 163.324823
+  type: 'test'
+  ...
+# Subtest: subagent inherits this session's megacave skill
+ok 74 - subagent inherits this session's megacave skill
+  ---
+  duration_ms: 109.097874
+  type: 'test'
+  ...
+# Subtest: deactivation does not leak into subagents
+ok 75 - deactivation does not leak into subagents
+  ---
+  duration_ms: 188.452354
+  type: 'test'
+  ...
+# Subtest: a session that never activated injects nothing
+ok 76 - a session that never activated injects nothing
+  ---
+  duration_ms: 49.205758
+  type: 'test'
+  ...
+# Subtest: another window's mode does not reach a session that stored off
+ok 77 - another window's mode does not reach a session that stored off
+  ---
+  duration_ms: 174.369046
+  type: 'test'
+  ...
+# Subtest: a session with no stored state falls back to the legacy mirror, like its parent thread
+ok 78 - a session with no stored state falls back to the legacy mirror, like its parent thread
+  ---
+  duration_ms: 198.450069
+  type: 'test'
+  ...
+# Subtest: caveman:cavecrew-investigator keeps its own voice
+ok 79 - caveman:cavecrew-investigator keeps its own voice
+  ---
+  duration_ms: 144.891787
+  type: 'test'
+  ...
+# Subtest: cavecrew-builder keeps its own voice
+ok 80 - cavecrew-builder keeps its own voice
+  ---
+  duration_ms: 144.998617
+  type: 'test'
+  ...
+# Subtest: one-shot modes are not pushed into subagents
+ok 81 - one-shot modes are not pushed into subagents
+  ---
+  duration_ms: 197.570009
+  type: 'test'
+  ...
+# Subtest: repo-local defaultMode off opts the project out (\#634)
+ok 82 - repo-local defaultMode off opts the project out (\#634)
+  ---
+  duration_ms: 63.36122
+  type: 'test'
+  ...
+# Subtest: subagent path writes nothing
+ok 83 - subagent path writes nothing
+  ---
+  duration_ms: 113.924625
+  type: 'test'
+  ...
+# Subtest: returns on the first complete payload while the host holds stdin open
+ok 84 - returns on the first complete payload while the host holds stdin open
+  ---
+  duration_ms: 110.528261
+  type: 'test'
+  ...
+1..84
+# tests 84
+# suites 0
+# pass 84
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3599.626006

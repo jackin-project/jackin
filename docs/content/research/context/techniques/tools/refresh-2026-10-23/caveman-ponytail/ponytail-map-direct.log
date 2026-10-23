@@ -1,0 +1,211 @@
+✖ SessionStart preserves instructions when the optional map is blocked (1069.856194ms)
+✖ SessionStart preserves instructions when the optional map is failed (110.734897ms)
+✖ SessionStart preserves instructions when the optional map is oversized (127.809605ms)
+✖ SessionStart preserves instructions when the optional map is successful (141.710504ms)
+✖ SessionStart preserves instructions when the optional map is disabled (70.908438ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 0
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1530.595222
+
+✖ failing tests:
+
+test at tests/activation-map.test.js:11:3
+✖ SessionStart preserves instructions when the optional map is blocked (1069.856194ms)
+  AssertionError [ERR_ASSERTION]: optional mapping must finish before the hook timeout
+  + actual - expected
+
+  + Error: spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM
+  +     at Object.spawnSync (node:internal/child_process:1160:20)
+  +     at spawnSync (node:child_process:928:24)
+  +     at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:33:20)
+  +     at Test.runInAsyncScope (node:async_hooks:227:14)
+  +     at Test.run (node:internal/test_runner/test:1382:25)
+  +     at Test.start (node:internal/test_runner/test:1242:17)
+  +     at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+  +   code: 'EPERM',
+  +   errno: -1,
+  +   path: '/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node',
+  +   spawnargs: [
+  +     '/tmp/ponytail activation 9TMY9y/plugin/hooks/ponytail-activate.js'
+  +   ],
+  +   syscall: 'spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node'
+  + }
+  - undefined
+
+      at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:49:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [Error],
+    expected: undefined,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/activation-map.test.js:11:3
+✖ SessionStart preserves instructions when the optional map is failed (110.734897ms)
+  AssertionError [ERR_ASSERTION]: optional mapping must finish before the hook timeout
+  + actual - expected
+
+  + Error: spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM
+  +     at Object.spawnSync (node:internal/child_process:1160:20)
+  +     at spawnSync (node:child_process:928:24)
+  +     at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:33:20)
+  +     at Test.runInAsyncScope (node:async_hooks:227:14)
+  +     at Test.run (node:internal/test_runner/test:1382:25)
+  +     at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+  +     at Test.postRun (node:internal/test_runner/test:1522:19)
+  +     at Test.run (node:internal/test_runner/test:1447:12)
+  +     at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+  +   code: 'EPERM',
+  +   errno: -1,
+  +   path: '/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node',
+  +   spawnargs: [
+  +     '/tmp/ponytail activation Vscd7t/plugin/hooks/ponytail-activate.js'
+  +   ],
+  +   syscall: 'spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node'
+  + }
+  - undefined
+
+      at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:49:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [Error],
+    expected: undefined,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/activation-map.test.js:11:3
+✖ SessionStart preserves instructions when the optional map is oversized (127.809605ms)
+  AssertionError [ERR_ASSERTION]: optional mapping must finish before the hook timeout
+  + actual - expected
+
+  + Error: spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM
+  +     at Object.spawnSync (node:internal/child_process:1160:20)
+  +     at spawnSync (node:child_process:928:24)
+  +     at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:33:20)
+  +     at Test.runInAsyncScope (node:async_hooks:227:14)
+  +     at Test.run (node:internal/test_runner/test:1382:25)
+  +     at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+  +     at Test.postRun (node:internal/test_runner/test:1522:19)
+  +     at Test.run (node:internal/test_runner/test:1447:12)
+  +     at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+  +   code: 'EPERM',
+  +   errno: -1,
+  +   path: '/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node',
+  +   spawnargs: [
+  +     '/tmp/ponytail activation L0igzs/plugin/hooks/ponytail-activate.js'
+  +   ],
+  +   syscall: 'spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node'
+  + }
+  - undefined
+
+      at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:49:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [Error],
+    expected: undefined,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/activation-map.test.js:11:3
+✖ SessionStart preserves instructions when the optional map is successful (141.710504ms)
+  AssertionError [ERR_ASSERTION]: optional mapping must finish before the hook timeout
+  + actual - expected
+
+  + Error: spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM
+  +     at Object.spawnSync (node:internal/child_process:1160:20)
+  +     at spawnSync (node:child_process:928:24)
+  +     at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:33:20)
+  +     at Test.runInAsyncScope (node:async_hooks:227:14)
+  +     at Test.run (node:internal/test_runner/test:1382:25)
+  +     at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+  +     at Test.postRun (node:internal/test_runner/test:1522:19)
+  +     at Test.run (node:internal/test_runner/test:1447:12)
+  +     at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+  +   code: 'EPERM',
+  +   errno: -1,
+  +   path: '/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node',
+  +   spawnargs: [
+  +     '/tmp/ponytail activation ZJ61vA/plugin/hooks/ponytail-activate.js'
+  +   ],
+  +   syscall: 'spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node'
+  + }
+  - undefined
+
+      at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:49:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [Error],
+    expected: undefined,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/activation-map.test.js:11:3
+✖ SessionStart preserves instructions when the optional map is disabled (70.908438ms)
+  AssertionError [ERR_ASSERTION]: optional mapping must finish before the hook timeout
+  + actual - expected
+
+  + Error: spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM
+  +     at Object.spawnSync (node:internal/child_process:1160:20)
+  +     at spawnSync (node:child_process:928:24)
+  +     at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:33:20)
+  +     at Test.runInAsyncScope (node:async_hooks:227:14)
+  +     at Test.run (node:internal/test_runner/test:1382:25)
+  +     at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+  +     at Test.postRun (node:internal/test_runner/test:1522:19)
+  +     at Test.run (node:internal/test_runner/test:1447:12)
+  +     at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+  +   code: 'EPERM',
+  +   errno: -1,
+  +   path: '/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node',
+  +   spawnargs: [
+  +     '/tmp/ponytail activation 0eeXQR/plugin/hooks/ponytail-activate.js'
+  +   ],
+  +   syscall: 'spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node'
+  + }
+  - undefined
+
+      at TestContext.<anonymous> (/workspace/scratch/651942f29986/research-execution/caveman-ponytail/ponytail/tests/activation-map.test.js:49:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [Error],
+    expected: undefined,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

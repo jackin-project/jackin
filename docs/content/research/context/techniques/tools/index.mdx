@@ -1,39 +1,49 @@
 ---
-title: "tools/ — runnable measurement instruments"
-description: "Checked-in scripts for reproducing token counts, image costs, and session-cost calculations used by the techniques dossier."
+title: "Measurement instruments"
+description: "Explicit-input, offline-first instruments for token-count requests and auditable Claude usage accounting."
 ---
 
-The dossier's measurements were made with the real Anthropic tokenizer and this machine's real
-session billing. These scripts make every such number reproducible without copy-pasting snippets out
-of the report prose.
+**Research state:** Current
 
-| Script | What it measures | Example |
+Verified **2026-10-23**, source cutoff **2026-10-23T15:31:31Z**. These research scripts prepare requests and analyze explicitly supplied files. They do not discover private transcripts, read agent OAuth stores, launch agents, or establish accepted-task savings.
+
+## Instruments and scope
+
+| Instrument | Input and result | Limit |
 |---|---|---|
-| `count_tokens.py` | Real token count of any text / file / labeled sample set | `python3 count_tokens.py --model claude-fable-5 samples reg.json` |
-| `image_tokens.py` | Visual-token cost of images by size, across model families | `python3 image_tokens.py 280x280 2000x2000` |
-| `session_cost.py` | Token-class + dollar decomposition of a session transcript | `python3 session_cost.py` |
+| <RepoFile path="docs/content/research/context/techniques/tools/count_tokens.py">count_tokens.py</RepoFile> | Explicit model plus UTF-8 text, file, or labeled JSON samples; emits an offline request by default | A provider input-count estimate includes framing; it is not an output-token receipt or an invoice |
+| <RepoFile path="docs/content/research/context/techniques/tools/image_tokens.py">image_tokens.py</RepoFile> | Explicit model and synthetic PNG dimensions; prepares image-count requests | Measures neither OCR accuracy nor exact-text preservation; no inherited universal pixel formula |
+| <RepoFile path="docs/content/research/context/techniques/tools/session_cost.py">session_cost.py</RepoFile> | One or more explicit Claude JSONL paths; disjoint token classes grouped by exact model | Does not parse Codex/OpenAI receipts, discover subagents, or convert subscription usage into dollars |
+| <RepoFile path="docs/content/research/context/techniques/tools/test_measurement_tools.py">Accounting regressions</RepoFile> | Synthetic receipts, duplicate/streaming records, cache TTLs, zero costs, CRLF text, PNG headers | Offline unit evidence for the instruments, not provider or agent qualification |
 
-## Auth (read-only, secret-safe)
+Run from this directory:
 
-All three call the free `POST /v1/messages/count_tokens` endpoint, authenticated with the Claude
-Code OAuth credential already on the machine (`~/.claude/.credentials.json` → `claudeAiOauth.accessToken`,
-scope `user:inference`). **The token is read at runtime and never printed.** `count_tokens` bills no
-inference, so re-running these is free. No `ANTHROPIC_API_KEY` is required or used.
-
-Note: `count_tokens` accepts `claude-fable-5` directly (live probe HTTP 200; the token-counting docs list it as supported — "All active models support token counting"). Some recorded measurements used `claude-opus-4-8` as a tokenizer-equivalent proxy while the endpoint rejected the Fable identifier; the proxy remains valid but is no longer required.
-
-## Two traps these encode
-
-- **Tokenizer envelope ≈ 6–7 tokens** per message (a 1-char message counts 7). Subtract it when
- comparing tiny strings; negligible for files.
-- **Transcript usage must be deduplicated by `message.id`.** Claude Code repeats the same
- `usage` object on every JSONL line of one API response (up to ~6 lines), so naively summing lines
- overcounts spend ~3×. `session_cost.py` dedups first.
-
-## count_tokens.py modes
-
+```sh
+python3 count_tokens.py --model EXACT_MODEL text 'public fixture'
+python3 count_tokens.py --model EXACT_MODEL file fixture.txt
+python3 image_tokens.py --model EXACT_MODEL 280x280 1000x1000
+python3 session_cost.py explicit-session.jsonl explicit-worker.jsonl
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_measurement_tools.py
 ```
-count_tokens.py [--model MODEL] text &lt;label&gt; "&lt;string&gt;" # one string
-count_tokens.py [--model MODEL] file &lt;label&gt; &lt;path&gt; # a file's contents
-count_tokens.py [--model MODEL] samples &lt;file.json&gt; # [{"label","text"},...] -> TSV
-```
+
+A samples file is a JSON array of objects with `label` and `text` strings. File reads preserve CRLF and final-newline bytes before UTF-8 decoding. Offline request output contains the supplied content: retain it only where that content is authorized.
+
+## Explicit network execution
+
+Only `count_tokens.py` and `image_tokens.py` accept `--execute`. That opt-in sends the prepared content to Anthropic using `ANTHROPIC_API_KEY`, or a named `--api-key-env` variable. It does not reuse Claude Code credentials. This refresh did **not** execute provider calls.
+
+The [official token-counting documentation](https://platform.claude.com/docs/en/build-with-claude/token-counting) is the authority for endpoint support, rate limits and estimate semantics. Recheck the exact model before execution; the scripts deliberately have no default model or assumed tokenizer-family equality. An input-counting endpoint cannot calibrate hidden reasoning by subtraction.
+
+## Usage accounting
+
+The parser deduplicates response IDs within a session; when the session ID is absent it scopes the ID to the explicit file. Equal receipts repeat. Monotone cumulative streaming receipts replace earlier ones. Model conflicts, decreasing counts, missing response IDs, incomplete input/output receipts and inconsistent TTL breakdowns fail visibly.
+
+Cache writes are partitioned into five-minute, one-hour and **unknown TTL** classes. The aggregate is not added a second time. A supplied rate file must contain USD per million tokens for `input`, `cache_read`, `cache_write_5m`, `cache_write_1h` and `output`, keyed by the exact model string. Unknown TTL or unknown model means an unknown estimate, not zero. A real zero remains zero.
+
+Output usage includes reasoning, prose and tool arguments as reported by the source. The script does not label a replay-count residual as measured thinking. Include all failed attempts, subagents, compaction and repair sessions in the explicit file list; missing files remain missing evidence. Provider invoices, API list-price estimates and subscription quotas are separate measurements.
+
+## Reproduction and provenance
+
+The <RepoFile path="docs/content/research/context/techniques/tools/coverage-inventory.tsv">coverage inventory</RepoFile> maps recovered topics to refreshed decisions. Product probes live under <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-23">the dated fixture directory</RepoFile>; each is component evidence with its own pins and configuration.
+
+The earlier dossier's claim that these scripts reproduced every old number is withdrawn: the private transcripts and complete six-by-seven style corpus were not recovered. See [baseline reconciliation](/research/context/techniques/02-baseline-audit/) and the [scope ledger](/research/context/tools/12-scope-and-reconciliation/).

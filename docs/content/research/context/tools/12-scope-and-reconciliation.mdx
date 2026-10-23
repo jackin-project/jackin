@@ -1,0 +1,73 @@
+---
+title: "12 — Scope recovery and claim reconciliation"
+description: "Recovered research scope, missing evidence, ownership, and dispositions for the context-optimization refresh."
+---
+
+**Research state:** Incomplete
+
+Research execution started **2026-10-23**. The frozen source cutoff is **2026-10-23T15:31:31Z**. Accesses after that time may verify the frozen snapshot; newer releases are recorded separately rather than silently substituted.
+
+## Summary
+
+This investigation covers the complete tools, techniques, engine design, and measurement scripts. It reassesses earlier decisions from source and executable evidence. A product release, a source inspection, a passing component test, and an accepted-agent-task experiment are different evidence classes.
+
+## Question and scope
+
+What did the earlier research actually cover, which evidence can be recovered, and what must change throughout the active documentation?
+
+## Method
+
+The baseline is Jackin commit [`fb9a51ca4eb2e51b92abe1c994ac5e469458cd95`](https://github.com/jackin-project/jackin/tree/fb9a51ca4eb2e51b92abe1c994ac5e469458cd95). The section inventory links every recovered chapter/topic to its workstream and current destination. Material claims receive the explicit dispositions **confirmed**, **changed**, **fixed**, **withdrawn**, **contradicted**, or **unverified**; inspection alone does not promote a performance claim.
+
+<RepoFile path="docs/content/research/context/techniques/tools/coverage-inventory.tsv">Coverage inventory</RepoFile> records baseline locations, topic identifiers, owners, and dispositions. The [evidence ledger](/research/context/tools/07-evidence-and-claims/) records study eligibility. The [release register](/research/context/tools/08-current-release-register/) records exact component identities.
+
+## Findings
+
+### Recovered and missing material
+
+| Material | Recovery and disposition |
+|---|---|
+| Current context corpus | All 55 MDX pages and three Python measurement tools located under `docs/content/research/context`; each is included in the inventory. Counts are checked against the baseline tree rather than inferred from navigation. |
+| Historical PR #1105 | [PR metadata and discussion](https://github.com/jackin-project/jackin/pull/1105) recovered. Merged on 2026-09-27; final head `130d4e38e3e6ebd0f371930ea9b0fb8807b2e946`, merge commit `49708bdb0c9848e19e913013e0b7c3de954c3ea0`. Its old draft/pending-CI prose is not its current state. |
+| Original research brief | [Exact requested revision](https://github.com/jackin-project/jackin/blob/485bcd913db426f396868bb0e5be3f122f4902c9/prompts/research/context-tools.md) recovered. [October 14 cleanup](https://github.com/jackin-project/jackin/commit/c8a3264a) deliberately removed the prompt; this refresh does not restore it. |
+| Earlier chat content | Unavailable: Personal Context reports disabled. No claim is made to have reread inaccessible conversations. |
+| `report-source.md` and `context-optimizers-deep-research.pdf` | Not recovered from Git history or two filename/title searches. Absence from these searches is not proof that no copy exists. Their claims can only be reconstructed where the repository quotes or links them. |
+| Earlier local transcripts and complete style samples | Not present in the recovered repository. The old six-sample reproduction section preserves only one abridged example and omits original non-English text. Its assertion of a complete reproduction pack is unsupported. |
+| Earlier CI/test statements | Being checked against the run/job and exact head they describe. A green job is not evidence for commands absent from its logs. |
+
+### Actual parallel work
+
+The execution environment supports four concurrent agents including the coordinator. The six product workstreams therefore run in three real delegated pairs, followed by parallel specialist work. No simulated reviewer is counted as an agent. Delegation inherits the active model and reasoning effort; no model/effort override was supplied.
+
+| Actual agent | Product workstreams | Following specialist work |
+|---|---|---|
+| `/root/caveman_ponytail` | Caveman; Ponytail | Provider economics, subscriptions, native features, caching, delegation |
+| `/root/rtk_leanctx` | RTK; LeanCTX | Adjacent tools, Rust reuse, retrieval, infrastructure, literature |
+| `/root/headroom_lemoncrow` | Headroom; LemonCrow | Independent evidence, quality, multimodal treatment, recovery/security |
+| `/root` | Scope recovery and integration | Current Jackin architecture, measurement tools, evaluation, reconciliation, delivery |
+
+Cross-reviews are assigned to findings the reviewer did not author. Their executed work and dispositions belong in the final verification record, not inferred from the existence of a delegation request.
+
+### Scope boundaries
+
+All six products are decomposed into instructions, shell filtering, native observations, retrieval, history/memory, provider proxy, local inference, and representation. Techniques include baseline behavior, token-class economics, output/style, precise reads/edits, schemas, caching, delegation, multimodal context, quotas, latency, fleets, online quality, effort and model routing. The last two remain separate interventions with an unchanged main comparison policy.
+
+Jackin integration covers configuration and role ownership, images and agent homes, hooks/MCP, execution/editing/approvals, usage/authentication, session lifecycle, worktrees, state retention and cleanup. Each proposed capability needs an owner and a measured interception boundary.
+
+## Implications for jackin❯
+
+The deliverable is a coherent research decision and implementation/evaluation plan. This branch does not activate optimizers, change production dependencies, rewrite model policy, install host-global agent configuration, or run paid/subscription task benchmarks.
+
+## Limitations and unknowns
+
+The inventory currently marks work in progress. Final dispositions must be checked against completed chapter reviews and executable receipts. Missing private transcripts cannot be replaced with estimates presented as measurements.
+
+## Sources
+
+The baseline tree, historical PR, exact brief, and deletion commit are linked above. Current claims are supported at their product or technique destination rather than by the old brief itself.
+
+## Related work
+
+- [Tools and decision](/research/context/tools/)
+- [Techniques](/research/context/techniques/)
+- [Engine design](/research/context/engine/)

@@ -1,0 +1,184 @@
+✖ sdk-cli session starts off and explicit /caveman still activates (44.552598ms)
+✖ sdk-ts session starts off and explicit /caveman still activates (37.466137ms)
+✖ sdk-py session starts off and explicit /caveman still activates (41.499624ms)
+✖ headless fork with no stored state also starts off (39.134118ms)
+✖ cli session still gets the ruleset (92.689878ms)
+✖ claude-vscode session still gets the ruleset (162.573311ms)
+✖ claude-desktop session still gets the ruleset (46.482124ms)
+✖ explicit CAVEMAN_DEFAULT_MODE opts a headless session back in (47.202063ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 0
+ℹ fail 8
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 526.136664
+
+✖ failing tests:
+
+test at tests/hooks/headless-entrypoint.test.mjs:39:3
+✖ sdk-cli session starts off and explicit /caveman still activates (44.552598ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  '' !== 'OK'
+
+      at TestContext.<anonymous> (file:///workspace/scratch/651942f29986/research-execution/caveman-ponytail/caveman/tests/hooks/headless-entrypoint.test.mjs:41:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: 'OK',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/hooks/headless-entrypoint.test.mjs:39:3
+✖ sdk-ts session starts off and explicit /caveman still activates (37.466137ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  '' !== 'OK'
+
+      at TestContext.<anonymous> (file:///workspace/scratch/651942f29986/research-execution/caveman-ponytail/caveman/tests/hooks/headless-entrypoint.test.mjs:41:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: 'OK',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/hooks/headless-entrypoint.test.mjs:39:3
+✖ sdk-py session starts off and explicit /caveman still activates (41.499624ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  '' !== 'OK'
+
+      at TestContext.<anonymous> (file:///workspace/scratch/651942f29986/research-execution/caveman-ponytail/caveman/tests/hooks/headless-entrypoint.test.mjs:41:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: 'OK',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/hooks/headless-entrypoint.test.mjs:49:1
+✖ headless fork with no stored state also starts off (39.134118ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  '' !== 'OK'
+
+      at TestContext.<anonymous> (file:///workspace/scratch/651942f29986/research-execution/caveman-ponytail/caveman/tests/hooks/headless-entrypoint.test.mjs:51:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: 'OK',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/hooks/headless-entrypoint.test.mjs:56:3
+✖ cli session still gets the ruleset (92.689878ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /CAVEMAN MODE ACTIVE/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (file:///workspace/scratch/651942f29986/research-execution/caveman-ponytail/caveman/tests/hooks/headless-entrypoint.test.mjs:58:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /CAVEMAN MODE ACTIVE/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at tests/hooks/headless-entrypoint.test.mjs:56:3
+✖ claude-vscode session still gets the ruleset (162.573311ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /CAVEMAN MODE ACTIVE/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (file:///workspace/scratch/651942f29986/research-execution/caveman-ponytail/caveman/tests/hooks/headless-entrypoint.test.mjs:58:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /CAVEMAN MODE ACTIVE/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at tests/hooks/headless-entrypoint.test.mjs:56:3
+✖ claude-desktop session still gets the ruleset (46.482124ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /CAVEMAN MODE ACTIVE/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (file:///workspace/scratch/651942f29986/research-execution/caveman-ponytail/caveman/tests/hooks/headless-entrypoint.test.mjs:58:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /CAVEMAN MODE ACTIVE/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at tests/hooks/headless-entrypoint.test.mjs:63:1
+✖ explicit CAVEMAN_DEFAULT_MODE opts a headless session back in (47.202063ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /CAVEMAN MODE ACTIVE — mode: ultracave/. Input:
+
+  ''
+
+      at TestContext.<anonymous> (file:///workspace/scratch/651942f29986/research-execution/caveman-ponytail/caveman/tests/hooks/headless-entrypoint.test.mjs:65:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /CAVEMAN MODE ACTIVE — mode: ultracave/,
+    operator: 'match',
+    diff: 'simple'
+  }

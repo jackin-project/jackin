@@ -1,0 +1,126 @@
+{
+  "accessed": "2026-10-23",
+  "cutoff": "2026-10-23T15:31:31Z",
+  "releases": [
+    {
+      "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/v4.0.1",
+      "tag_name": "v4.0.1",
+      "published_at": "2026-10-13T18:34:04Z",
+      "created_at": "2026-10-13T18:34:01Z",
+      "updated_at": "2026-10-13T18:34:32Z",
+      "target_commitish": "main",
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "caveman-browser-1.3.0.zip",
+          "size": 179862,
+          "digest": "sha256:b56fe25d304e66a176f3489785fd9c170ed22d1e8b913cd4ef1ee0870d1703bd",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/v4.0.1/caveman-browser-1.3.0.zip"
+        },
+        {
+          "name": "caveman-browser-firefox-1.3.0.zip",
+          "size": 180101,
+          "digest": "sha256:e1eb4488e6a440f59e3d829a21c00501a1f7c17fda51505a61af7a335446800f",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/v4.0.1/caveman-browser-firefox-1.3.0.zip"
+        },
+        {
+          "name": "caveman.skill",
+          "size": 4410,
+          "digest": "sha256:765cf6fa6feaaabe0abb46936eeff8aff935e5ec49c11a2ea96a6f3775669e10",
+          "browser_download_url": "https://github.com/JuliusBrussee/caveman/releases/download/v4.0.1/caveman.skill"
+        }
+      ]
+    },
+    {
+      "html_url": "https://github.com/DietrichGebert/ponytail/releases/tag/v5.3.2",
+      "tag_name": "v5.3.2",
+      "published_at": "2026-10-16T23:15:15Z",
+      "created_at": "2026-10-16T23:04:13Z",
+      "updated_at": "2026-10-16T23:15:15Z",
+      "target_commitish": "main",
+      "prerelease": false,
+      "assets": []
+    }
+  ],
+  "observations": [
+    {
+      "url": "https://api.github.com/repos/JuliusBrussee/caveman",
+      "data": {
+        "full_name": "JuliusBrussee/caveman",
+        "html_url": "https://github.com/JuliusBrussee/caveman",
+        "archived": false,
+        "disabled": false,
+        "pushed_at": "2026-10-23T07:21:57Z",
+        "updated_at": "2026-10-23T15:32:36Z",
+        "default_branch": "main",
+        "language": "Go",
+        "license": {
+          "key": "apache-2.0",
+          "name": "Apache License 2.0",
+          "spdx_id": "Apache-2.0",
+          "url": "https://api.github.com/licenses/apache-2.0",
+          "node_id": "MDc6TGljZW5zZTI="
+        }
+      }
+    },
+    {
+      "url": "https://api.github.com/repos/DietrichGebert/ponytail",
+      "data": {
+        "full_name": "DietrichGebert/ponytail",
+        "html_url": "https://github.com/DietrichGebert/ponytail",
+        "archived": false,
+        "disabled": false,
+        "pushed_at": "2026-10-18T01:55:14Z",
+        "updated_at": "2026-10-23T15:34:01Z",
+        "default_branch": "main",
+        "language": "JavaScript",
+        "license": {
+          "key": "mit",
+          "name": "MIT License",
+          "spdx_id": "MIT",
+          "url": "https://api.github.com/licenses/mit",
+          "node_id": "MDc6TGljZW5zZTEz"
+        }
+      }
+    },
+    {
+      "url": "https://api.github.com/repos/JuliusBrussee/caveman/releases/tags/bin-v4.0.1",
+      "data": {
+        "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/bin-v4.0.1",
+        "updated_at": "2026-10-13T18:21:34Z"
+      }
+    },
+    {
+      "url": "https://api.github.com/repos/JuliusBrussee/caveman/commits/main",
+      "data": {
+        "html_url": "https://github.com/JuliusBrussee/caveman/commit/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+        "sha": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+        "commit": {
+          "tree": {
+            "sha": "03e383d0a2153167c1199a22bba3ad83e8d75d31",
+            "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/trees/03e383d0a2153167c1199a22bba3ad83e8d75d31"
+          },
+          "committer": {
+            "date": "2026-10-23T04:57:51Z"
+          }
+        }
+      }
+    },
+    {
+      "url": "https://api.github.com/repos/DietrichGebert/ponytail/commits/main",
+      "data": {
+        "html_url": "https://github.com/DietrichGebert/ponytail/commit/09c434ab73ca43761c5d8b0c5d341926c2fba710",
+        "sha": "09c434ab73ca43761c5d8b0c5d341926c2fba710",
+        "commit": {
+          "tree": {
+            "sha": "d9b8df03066ea55bb9dea5df3a39000e42478847",
+            "url": "https://api.github.com/repos/DietrichGebert/ponytail/git/trees/d9b8df03066ea55bb9dea5df3a39000e42478847"
+          },
+          "committer": {
+            "date": "2026-10-18T01:55:14Z"
+          }
+        }
+      }
+    }
+  ]
+}

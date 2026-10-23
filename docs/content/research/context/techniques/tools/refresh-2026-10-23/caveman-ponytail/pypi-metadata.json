@@ -1,0 +1,37 @@
+{
+  "accessed": "2026-10-23T15:39:50.368258+00:00",
+  "packages": {
+    "caveman-sdk": {
+      "version": "1.2.0",
+      "license": "Apache-2.0",
+      "files": [
+        {
+          "name": "caveman_sdk-1.2.0-py3-none-any.whl",
+          "uploaded": "2026-09-30T22:27:38.070979Z",
+          "sha256": "86a930a7f525756d307b741115962e0ef3211369ed3c590ca5d87b88db1d6e74"
+        },
+        {
+          "name": "caveman_sdk-1.2.0.tar.gz",
+          "uploaded": "2026-09-30T22:27:39.368038Z",
+          "sha256": "6bb4b61015c860c4161bce68efb5d4fde51d8402e67328883859e1eb72642a17"
+        }
+      ]
+    },
+    "caveman-middleware": {
+      "version": "1.0.0",
+      "license": "Apache-2.0",
+      "files": [
+        {
+          "name": "caveman_middleware-1.0.0-py3-none-any.whl",
+          "uploaded": "2026-09-30T22:34:39.874597Z",
+          "sha256": "3fe070982fadce8a8d382d7ac6aafd16d8caa82a204bf5cd48178b8bc2ffb24c"
+        },
+        {
+          "name": "caveman_middleware-1.0.0.tar.gz",
+          "uploaded": "2026-09-30T22:34:41.213044Z",
+          "sha256": "0886e93d9684ab76a3627c13e518aa6b93dfdab602a90ed52d017d7fe3913faf"
+        }
+      ]
+    }
+  }
+}

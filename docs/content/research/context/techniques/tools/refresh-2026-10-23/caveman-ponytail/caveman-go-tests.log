@@ -1,0 +1,20 @@
+go: downloading golang.org/x/net v0.60.0
+go: downloading gopkg.in/yaml.v3 v3.0.1
+go: downloading golang.org/x/sys v0.48.0
+go: downloading modernc.org/sqlite v1.59.0
+go: downloading github.com/tiktoken-go/tokenizer v0.8.1
+go: downloading github.com/klauspost/compress v1.20.1
+go: downloading github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
+go: downloading golang.org/x/text v0.42.0
+go: downloading github.com/dlclark/regexp2/v2 v2.5.1
+go: downloading modernc.org/libc v1.75.7
+go: downloading github.com/dustin/go-humanize v1.0.1
+go: downloading github.com/google/uuid v1.6.0
+go: downloading modernc.org/mathutil v1.7.1
+go: downloading modernc.org/memory v1.12.1
+go: downloading github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec
+ok  	github.com/JuliusBrussee/caveman/engine	0.146s
+ok  	github.com/JuliusBrussee/caveman/engine/ccr	2.095s
+ok  	github.com/JuliusBrussee/caveman/engine/tokens	0.031s
+ok  	github.com/JuliusBrussee/caveman/engine/pixel	9.073s
+ok  	github.com/JuliusBrussee/caveman/proxy/internal/config	0.032s

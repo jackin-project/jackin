@@ -1,0 +1,145 @@
+TAP version 13
+# Subtest: SessionStart preserves instructions when the optional map is blocked
+ok 1 - SessionStart preserves instructions when the optional map is blocked
+  ---
+  duration_ms: 1107.547086
+  type: 'test'
+  ...
+# Subtest: SessionStart preserves instructions when the optional map is failed
+ok 2 - SessionStart preserves instructions when the optional map is failed
+  ---
+  duration_ms: 80.895845
+  type: 'test'
+  ...
+# Subtest: SessionStart preserves instructions when the optional map is oversized
+ok 3 - SessionStart preserves instructions when the optional map is oversized
+  ---
+  duration_ms: 85.246241
+  type: 'test'
+  ...
+# Subtest: SessionStart preserves instructions when the optional map is successful
+ok 4 - SessionStart preserves instructions when the optional map is successful
+  ---
+  duration_ms: 89.557132
+  type: 'test'
+  ...
+# Subtest: SessionStart preserves instructions when the optional map is disabled
+ok 5 - SessionStart preserves instructions when the optional map is disabled
+  ---
+  duration_ms: 47.416783
+  type: 'test'
+  ...
+# band import checks passed
+# Subtest: tests/band-import.test.js
+ok 2 - tests/band-import.test.js
+  ---
+  duration_ms: 134.737604
+  type: 'test'
+  ...
+# Subtest: hardware: calibration knob / drift acknowledged passes
+ok 7 - hardware: calibration knob / drift acknowledged passes
+  ---
+  duration_ms: 2.676946
+  type: 'test'
+  ...
+# Subtest: hardware: real-model phrasing (tuning knobs / reads off) passes
+ok 8 - hardware: real-model phrasing (tuning knobs / reads off) passes
+  ---
+  duration_ms: 0.272732
+  type: 'test'
+  ...
+# Subtest: hardware: ideal-device assumption fails
+ok 9 - hardware: ideal-device assumption fails
+  ---
+  duration_ms: 0.224179
+  type: 'test'
+  ...
+# Subtest: explanation: full requested write-up passes
+ok 10 - explanation: full requested write-up passes
+  ---
+  duration_ms: 0.521147
+  type: 'test'
+  ...
+# Subtest: explanation: terse truncation fails
+ok 11 - explanation: terse truncation fails
+  ---
+  duration_ms: 0.166201
+  type: 'test'
+  ...
+# Subtest: onecheck: leaves an assert passes
+ok 12 - onecheck: leaves an assert passes
+  ---
+  duration_ms: 0.209187
+  type: 'test'
+  ...
+# Subtest: onecheck: no check fails
+ok 13 - onecheck: no check fails
+  ---
+  duration_ms: 1.761232
+  type: 'test'
+  ...
+# Subtest: unknown probe is skipped
+ok 14 - unknown probe is skipped
+  ---
+  duration_ms: 0.209366
+  type: 'test'
+  ...
+# Subtest: pi registers at least the base command
+ok 15 - pi registers at least the base command
+  ---
+  duration_ms: 0.856214
+  type: 'test'
+  ...
+# Subtest: every registered command ships a Claude commands/*.toml
+ok 16 - every registered command ships a Claude commands/*.toml
+  ---
+  duration_ms: 0.269988
+  type: 'test'
+  ...
+# Subtest: every registered command ships an OpenCode .opencode/command/*.md
+ok 17 - every registered command ships an OpenCode .opencode/command/*.md
+  ---
+  duration_ms: 0.325031
+  type: 'test'
+  ...
+# Subtest: every ponytail-debt copy greps \#, // and /* markers but not prose
+ok 18 - every ponytail-debt copy greps \#, // and /* markers but not prose
+  ---
+  duration_ms: 17.551424
+  type: 'test'
+  ...
+# Subtest: the ponytail-debt scan skips .git and ignored dirs like node_modules, dist, build and .next
+ok 19 - the ponytail-debt scan skips .git and ignored dirs like node_modules, dist, build and .next
+  ---
+  duration_ms: 8.840266
+  type: 'test'
+  ...
+# hook compatibility checks passed
+# Subtest: tests/hooks.test.js
+ok 5 - tests/hooks.test.js
+  ---
+  duration_ms: 7893.961944
+  type: 'test'
+  ...
+# Subtest: tests/map.test.js
+ok 6 - tests/map.test.js
+  ---
+  duration_ms: 135.853541
+  type: 'test'
+  ...
+# uninstall script checks passed
+# Subtest: tests/uninstall.test.js
+ok 7 - tests/uninstall.test.js
+  ---
+  duration_ms: 498.442007
+  type: 'test'
+  ...
+1..22
+# tests 22
+# suites 0
+# pass 22
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7934.059269

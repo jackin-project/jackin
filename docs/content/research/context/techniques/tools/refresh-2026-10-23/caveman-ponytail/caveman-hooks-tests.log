@@ -1,0 +1,31 @@
+✔ tests/hooks/caveman-config.test.mjs (206.319366ms)
+✖ tests/hooks/codex-sessionstart.test.mjs (1025.514395ms)
+✖ tests/hooks/headless-entrypoint.test.mjs (621.588857ms)
+✖ tests/hooks/host-session-start.test.mjs (863.848308ms)
+✖ tests/hooks/subagent-start.test.mjs (1479.642184ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 1
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1506.693055
+
+✖ failing tests:
+
+test at tests/hooks/codex-sessionstart.test.mjs:1:1
+✖ tests/hooks/codex-sessionstart.test.mjs (1025.514395ms)
+  'test failed'
+
+test at tests/hooks/headless-entrypoint.test.mjs:1:1
+✖ tests/hooks/headless-entrypoint.test.mjs (621.588857ms)
+  'test failed'
+
+test at tests/hooks/host-session-start.test.mjs:1:1
+✖ tests/hooks/host-session-start.test.mjs (863.848308ms)
+  'test failed'
+
+test at tests/hooks/subagent-start.test.mjs:1:1
+✖ tests/hooks/subagent-start.test.mjs (1479.642184ms)
+  'test failed'

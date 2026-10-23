@@ -1,62 +1,115 @@
 ---
 title: "01 — Caveman: current design"
-description: "Caveman 2.7.0: separate narration and input interventions, licensing, evidence, and Jackin integration."
+description: "Caveman 4.0.1 and bin-v4.0.2: separately pinned instructions, Go engine, proxy, recovery, licensing, and executed checks."
 ---
 
 ## Summary
 
-Cutoff: **2026-09-23 UTC**. Reviewed release: [Caveman v2.7.0](https://github.com/JuliusBrussee/caveman/releases/tag/v2.7.0), with the release's **bin-v1.1.7** runtime. Caveman is two interventions, not one: a response-style skill and an input-processing stack. Jackin should evaluate these separately. A useful narration policy does not justify installing a provider proxy.
+Evidence cutoff: **2026-10-23T15:31:31Z**; sources accessed on **2026-10-23 UTC**. The product release is [v4.0.1](https://github.com/JuliusBrussee/caveman/releases/tag/v4.0.1), commit `d262ab3882952a59312ff3537cd86d894523c5ab`; the newest separately released runtime is [bin-v4.0.2](https://github.com/JuliusBrussee/caveman/releases/tag/bin-v4.0.2), commit `b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6`. **The published 4.0.1 npm CLI still pins bin-v4.0.1.** Installing that CLI does not by itself select the security-patched runtime reviewed here.
+
+Two previous conclusions change. Current repository code is Apache-2.0, including the formerly BSL engine; the older distribution objection is obsolete for these releases. The runtime is a reusable Go implementation with an exact-original store, so a narrow process integration is a credible alternative to a Jackin rewrite. Neither change establishes accepted-task savings. Concise instructions, input selection, schema changes, browser extraction, memory, proxying, and cloud routing remain separately qualified interventions.
 
 ## Question and scope
 
-Which Caveman capabilities belong in an automatically configured coding-agent environment, and which require separate compatibility, quality, and distribution decisions?
+Which Caveman components can improve complete Jackin tasks, with a reviewed installation, reliable recovery, stable cache prefixes, preserved native permissions, and an effective off path? The analysis separates the useful primitive from the full installer and from unexecuted claims about model behavior.
 
 ## Method
 
-Inspect the release and tagged licensing map; distinguish the skill, engine-linked binaries, wrappers, and client SDKs. Mechanism evidence is not a new task benchmark. Study eligibility is recorded in [07 — Evidence](/research/context/tools/07-evidence-and-claims/).
+Inspect tagged source, live GitHub releases, npm and PyPI distributions, generated runtime pins, licenses, and effective hook output. Run selected upstream tests and a generated JSON/recovery fixture without installing host-global hooks or using a paid model. The two source revisions are reported independently. Reproducible probes, sanitized results, commands, and failed-environment/rerun logs are preserved in <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md">the execution record</RepoFile>.
 
 ## Findings
 
-### Mechanisms and boundaries
+### Release identity, packages, and licensing
 
-| Surface | What it changes | Appropriate measurement |
+| Surface | Frozen identity and publication | Distribution consequence |
 |---|---|---|
-| Skill / instruction asset | Visible narration and response style | Clarity, output tokens, entire task cost, correction turns |
-| Engine / MCP / proxy | Selected input representations and recovery references | Reach, fidelity, recovery, cache tiers, accepted-task outcomes |
-| Host wrapper | Installation, hooks, endpoint routing, local state | Configuration ownership, activation, credentials, rollback |
+| Product and CLI | v4.0.1, GitHub October 13 18:34:04 UTC; `@caveman-ai/cli` 4.0.1 published 18:31:25 UTC | Published `dist/binaries.generated.js` still names bin-v4.0.1 |
+| Current runtime | bin-v4.0.2, October 23 05:22:07 UTC, before cutoff | Release patches Go CVE-2026-111943; inspected Linux amd64 Engine reports Go 1.26.10 and the runtime commit |
+| Other JS packages | `@caveman-ai/pi` 0.3.1; `@caveman-ai/sdk` 1.2.0; `@caveman-ai/middleware` 1.0.1 | Independent version streams, not four aliases of 4.0.1 |
+| Python packages | `caveman-sdk` 1.2.0; `caveman-middleware` 1.0.0 | Published API clients; Python and JS middleware versions differ |
+| Browser / Blocks | Browser archive 1.3.0; bundled external Blocks 0.1.0-rc.5 | Stable product release does not make a bundled prerelease stable |
+| Internal root package | Source root says `caveman-installer` 4.0.1 | Public npm `caveman-installer` is an unrelated delivery surface: 0.0.0 placeholder marked UNLICENSED; use the actual scoped CLI package |
 
-The [release notes](https://github.com/JuliusBrussee/caveman/releases/tag/v2.7.0) describe ownership-tracked native skill installation, config-home handling, endpoint validation before credential routing, per-request accounting, and recovery-store locking fixes. They also state that Codex shell rewriting was removed because it interfered with saved approvals. This is a concrete reason not to equate successful installation with preserved host semantics.
+The inspected runtime [licensing map](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/LICENSING.md) says all repository code switched to Apache-2.0 at v3.0.0: Engine, Proxy, Browse, MCP, Shrink, Cavemem, shared Go platform, clients, hooks, and skills. Earlier versions retain their earlier terms. Caveman Cloud is separately operated commercial software, and its server source is outside this repository. Distributed notices include retained MIT contributions, pixel dependencies and font terms, Go dependencies, and bundled toolchain/runtime notices; trademarks remain separate. Shipping only text, linking a Go library, and distributing runtime assets require the notices applicable to the actual selected files. The previous blanket BSL blocker must not survive this refresh.
 
-The release distinguishes repository, binary, CLI, SDK, and middleware versions. Some npm publications are marked pending. Pin the artifact actually obtained; do not infer registry availability from a GitHub tag or assign the product version to every component.
+Registry archive checksums matched the fetched packages. The published Ponytail/Caveman package comparison and runtime build metadata are recorded with SHA-256 values. For the runtime, the downloaded Engine reports the expected source commit and `vcs.modified=false`. This establishes inspected artifact identity, **not** a byte-identical reproducible build or an independently verified release signature.
 
-### Reuse and licensing
+### What each component changes
 
-The tagged [licensing map](https://github.com/JuliusBrussee/caveman/blob/v2.7.0/LICENSING.md) assigns MIT to the skill and several adoption/client surfaces, and BSL-1.1 to the compression engine and engine-linked proxy, MCP, browser, and recovery components. Its additional grant distinguishes first-party use from third-party hosted, managed, or embedded services.
+| Component | Execution and interception boundary | Fidelity and reach |
+|---|---|---|
+| Default skill | Host-delivered instructions affect generated answers and behavior | No tool-result replacement; preserves exact literals, negation, requested language and needed explanations; stronger ultracave/megacave modes are separate treatments |
+| Go Engine | Local content classification and deterministic type-specific compression | Lossy selection plus exact-original recovery; unknown, malformed, or unhelpful transformations pass through |
+| Proxy / wrapper | Intercepts requests routed to its endpoint; wrapper changes host routing and installs temporary tool/instruction surfaces | Does not automatically intercept every native tool or every provider connection; output filtering and recovery depend on the adapter |
+| TOON | Explicit supported structured-data encoding and decoding | Restricted logical JSON round trip; not original byte formatting and not universal JSON support |
+| Pixel | Opt-in text-to-image representation with model gate and density setting | Exact visual reading is a model capability, not guaranteed by reversible rendering |
+| Shrink | Reduces tool-schema annotations and descriptions while retaining structural fields | Names/types/enums surviving does not prove unchanged tool choice or argument semantics |
+| Cavemem | SQLite/BM25 memory with remember, recall, supersede, history, forget | Retrieved notes are not a complete session transcript or proof another agent has seen a fact |
+| Browse / browser extension | Browser-specific extraction and CDP operations | A different tool surface, not a transparent replacement for arbitrary native reads |
+| SDK / middleware | Local or remote API clients and integration helpers | Caller still owns routing, permissions, lifecycle, scope and recovery availability |
+| Cloud Auto | Optional remote model/effort routing | Changes the selected model or effort and belongs outside the fixed-policy compression comparison |
 
-An MIT client does not relicense the engine it invokes. A separate process does not by itself settle the distribution boundary. Review the exact Jackin distribution model before shipping engine-linked functionality; this dossier is not a legal clearance.
+These boundaries are visible in the pinned [Engine API](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/engine.go), [result options](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/result.go), [TOON implementation](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/toon.go), [pixel gate](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/pixel/gate.go), [memory documentation](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/mem/README.md), and [Shrink documentation](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/shrink/README.md).
 
-### Evidence
+### Effective defaults, overhead, and exposure
 
-No independent, release-matched accepted-task evaluation of this combined release was established in this review. The JetBrains skill study is not a test of this input stack or this exact release. Current release test counts are upstream reports, not tests executed by this review. Retirement of unmeasured stats claims improves reporting but is not itself a savings result.
+The [v4.0.1 delivered skill](https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/skills/caveman/SKILL.md) now puts clarity ahead of compression. It protects code, paths, errors, numbers, negations, existing comments, requested language, ambiguity/safety explanations, persisted artifacts, and harness-required status messages. Describing it only as broken grammar misses these guards. Its presence still does not prove obedience or unchanged task choices.
+
+Hook-generated default activation measured **4,961 bytes / 1,248 o200k_base estimated tokens**; the source skill file alone was **4,678 bytes / 1,158 tokens**. These are different denominators. Count actual host-added text, wrapper schemas, recovery tool descriptions, and repeated injection in each treatment. This probe did not measure a provider-billed request or all host configurations.
+
+The raw [proxy configuration](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/proxy/internal/config/config.go) defaults to loopback and record mode, whereas the [CLI wrapper](https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/packages/cli/src/index.ts) selects compression and host-specific recovery/output tooling. Cache planners can alter Anthropic cache breakpoints, OpenAI cache keys, and Bedrock cache points in optimization modes; schema stripping is independently disabled by default. Do not compare a wrapper run against a raw-proxy default as if they were the same treatment.
+
+The CLI can write host configuration, download pinned artifacts, and record owned changes for removal. Interactive CLI telemetry is opt-out; `DO_NOT_TRACK=1` or `CAVEMAN_TELEMETRY=0` disables it, while noninteractive telemetry defaults off in the inspected entrypoint. Optional Cloud routing sends prompt-related fields and request facts; the documented Free plan may retain routing data for improvement. Local operation still sends selected context to the chosen model provider. These are separate data flows, described in pinned [security and privacy documentation](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/docs/technical/security-and-privacy.md).
+
+### Recovery, storage, concurrency, and failures
+
+The Engine saves the original before returning a lossy result. A missing store prevents lossy compression unless the caller explicitly claims external recovery; that option makes prior persistence the caller's responsibility. Storage failure returns the original with an error; the integration must handle that error without rerunning the underlying command. Record mode is exact pass-through. A successful exact-retrieval check cannot establish that an agent recognizes when a missing detail matters.
+
+The native [CCR implementation](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/ccr/store_sqlite.go) defaults to a **512 MiB retained-payload ceiling** and refuses new records rather than evicting old ones. Missing handles are errors. SQLite identity checks invalidate an observed replaced database and require restart; relevant tests cover multiprocess replacement and capacity. This is a specific recovery property, not proof against every filesystem race. WASM/in-memory stores are not durable. Handles are content identifiers, not authorization credentials or encryption. Capsule, repository, worktree, session and context-epoch scope remain integration requirements.
+
+The [middleware store](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/proxy/internal/config/middleware.go) has a different lifetime: default one day, maximum seven days, default 576 MiB. Do not extend the native no-eviction promise to middleware records. Memory is another independent database with its own supersession/forget semantics. Native CLI inputs are bounded, but bounds vary by component; Engine accepts up to 64 MiB and Shrink up to 32 MiB. A capsule needs explicit paths and retention policy, not several unnoticed home-directory stores.
+
+### Reuse feasibility and measured local work
+
+The public Go API exposes construction, compression, retrieval, detection, stats, simulation, registry replacement, and an injectable token counter. No supported Rust crate was established. The [token counter](https://github.com/JuliusBrussee/caveman/blob/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6/engine/tokens/tokens.go) embeds o200k_base with an approximation fallback; neither is Anthropic billing ground truth. Builds use SQLite and tree-sitter-related dependencies. The inspected Linux release is CGO-enabled; the no-CGO container has narrower source-language support. A process boundary avoids importing a Go runtime into Jackin's Rust process, while adding startup, IPC, lifecycle, binary supply and recovery ownership work.
+
+| Executed check | Revision and outcome | What remains unproved |
+|---|---|---|
+| Selected host hook suites | Product 4.0.1; Node 24.19.0; **84 tests passed** | Actual installed Claude/Codex permission and streaming behavior |
+| Engine, CCR, tokens, pixel, proxy config tests | Five Go packages passed at product 4.0.1 with Go 1.26.9; separately five passed at runtime bin-v4.0.2 with Go 1.26.10 | Full upstream suite, all operating systems, every dependency or native linkage |
+| Generated JSON selection/recovery | Runtime bin-v4.0.2; 45,007 bytes, Unicode, CRLF, no final newline; exact recovery, record passthrough, no-store passthrough, malformed-input passthrough, missing-handle error | Whether a model answers a complete task correctly from selected data |
+| Local fixture timing | Eleven in-memory compression calls, 15.229–28.475 ms; tokenizer already initialized | Cold tokenizer, process startup, disk I/O, concurrency, peak RAM, whole-agent latency |
+
+That synthetic array fell from 14,002 to 139 estimated tokens. Repeated rows made it deliberately compressible; this number is a component fixture result, not a task-cost claim. Initial Node subprocess tests failed under the execution sandbox; rerunning the same selected suites with permitted isolated subprocess execution passed. Both attempts remain in the record so an environment failure is not relabeled as a current product bug.
+
+### What the published studies establish
+
+The [JetBrains July 6 study](https://blog.jetbrains.com/ai/2026/07/speak-to-ai-agents-like-cavemen-tosave-tokens/) tested a historical output skill, Claude Code 2.1.200 and Sonnet 5 at low effort: 82 paired SkillsBench tasks yielded 8.5% less output, a nonsignificant score difference, and 11.6% higher aggregate reported cost dominated by one long-context outlier. JetBrains is an agent-tooling vendor; it did not test this runtime, and nonsignificance does not demonstrate equivalence.
+
+Current [Honest Numbers](https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/docs/HONEST-NUMBERS.md) labels its small style comparison as ten prompts, one run per condition, a 3.1.0 skill not rerun after 3.2, and local token estimates. Its default-mode median is only 3% shorter than a concise-answer prompt. Instruction billing and a reviewed fidelity snapshot are not supplied.
+
+The first-party [wrap benchmark](https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/docs/WRAP-BENCHMARK.md) reports an August six-fixture/18-pair agent experiment with 33.2% fewer summed input tokens and 18/18 exact answers. That denominator combines fresh input and cache categories without price weighting. Its cloud harness/raw runs are not public; October per-file simulation is a different experiment. It cannot establish current bills, diverse task quality, or a six-tool winner.
+
+[CAVEWOMAN](https://arxiv.org/abs/2606.24083) studies input/output telegraphic representations across models and QA tasks, not this Engine. [Notation Matters](https://arxiv.org/abs/2605.29676) reports token/accuracy tradeoffs for tool serialization, including TOON/TRON, on open-weight models. Both motivate fidelity tests; neither supplies a current hosted-agent savings estimate. See [the evidence ledger](/research/context/tools/07-evidence-and-claims/) for study eligibility.
 
 ## Implications for jackin❯
 
-**Best part:** optional concise narration with exact-content and task-completeness protections. Ship a reviewed instruction asset only to suitable roles, or adapt a short policy and treat that adaptation as a new experimental treatment. Preserve identifiers, commands, requirements, error details, and requested explanations.
+**Default candidate:** a short clarity-preserving narration policy delivered by Jackin's native agent configuration, with complete literal/error/status reporting and the operator's model/effort unchanged. Evaluate the exact upstream skill separately from an adapted policy. There is no reason to install a global CLI solely to deliver that text.
 
-**Integration choice:** no Rust engine crate was established here. Native instruction delivery is preferable to adopting Caveman's global installer. Keep any full-engine/proxy experiment independently selectable, license-reviewed, and separate from the narration arm.
+**Experimental candidate:** one pinned Go Engine sidecar and one deterministic content family, with Jackin-owned capsule paths, exact originals, explicit retrieval, bounded execution, session provenance, and native passthrough. The Apache licensing change makes reuse preferable to assuming a rewrite. First resolve the CLI/runtime pin mismatch; contribute an independently selectable reviewed-runtime pin and host conformance fixtures upstream where possible. Do not silently replace the reviewed artifact with a floating download.
 
-**Default decision:** do not impose a stylized dialect, suppress reasoning effort, or route credentials through the engine automatically. The [integration plan](/research/context/tools/11-jackin-integration/) defines a compatibility-qualified automatic profile instead.
+**Hold separately:** full proxying, schema shrinking, memory, browser extraction, TOON, pixels, and cloud routing each need their own reach, safety and economic case. Cloud model/effort routing is a separate intervention regardless of whether the product bundles it. An effective off path must restore native routing and tools and keep required recovery available for references already emitted.
 
-## Limitations and unknowns
+## Limitations and smallest decisive next experiment
 
-Shorter narration can change the agent's next actions; it is not merely cosmetic. A recoverable representation may still hide the fact that recovery is needed. Provider streaming, cache behavior, host approvals, and component-specific package availability require executable conformance tests on the distributed build.
+No paid agent benchmark, host-global installation, all-platform build, sustained memory measurement, native read-before-edit trial, or subscription-quota experiment was executed. Source tests do not establish actual host interception or cache benefit.
 
-## Sources
-
-Primary release and tagged-license sources are linked inline. Older studies are eligibility checks, not current savings estimates.
+The smallest promotion experiment is a paired accepted-task trial of **native tools versus one current runtime content transformer**, holding agent, model, effort, authentication route and cache policy fixed. Include a repeated JSON/log task with one rare decisive record, a malformed result, a missing recovery record, an interrupted request, and concurrent worktrees. Capture actual model-facing bytes, all recovery calls and failures, fresh/cache-write/cache-read/output usage, correctness, and end-to-end latency. Charge failed attempts and follow-up repair. Only then add a second transformation or the provider proxy.
 
 ## Related work
 
+- [Ponytail](/research/context/tools/09-ponytail-design/)
 - [Six-tool comparison](/research/context/tools/05-head-to-head/)
 - [Composition](/research/context/tools/06-combining/)
 - [Release register](/research/context/tools/08-current-release-register/)
+- [Jackin integration](/research/context/tools/11-jackin-integration/)
