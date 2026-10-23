@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::resetless::{
+    PairSource, evidence_matches_reset, evidence_matches_used, exact_observed_pair_for_source,
+};
 use super::{
     AccountObservations, DurableMonitor, MAX_EVENTS_PER_MONITOR, MONITOR_EVIDENCE_TTL_SECS,
     MONITOR_RESET_GRACE_SECS, MonitorAction, MonitorDecision, MonitorDispatchReadiness,
@@ -174,14 +177,26 @@ pub(super) fn update_reset_barrier(
         } else {
             let due = barrier
                 .prior_reset_at_epoch
-                .map(|reset| reset.saturating_add(MONITOR_RESET_GRACE_SECS))
-                .is_some_and(|due| now_epoch >= due);
+                .map_or_else(
+                    || {
+                        barrier
+                            .started_at_epoch
+                            .saturating_add(MONITOR_RESET_GRACE_SECS)
+                    },
+                    |reset| reset.saturating_add(MONITOR_RESET_GRACE_SECS),
+                )
+                .max(barrier.started_at_epoch)
+                <= now_epoch;
             if due {
                 push_issue(
                     issues,
                     issue(
                         MonitorIssueCode::ResetDueUnverified,
-                        "the old reset elapsed; waiting for fresh lower usage and an advanced reset",
+                        if barrier.prior_reset_at_epoch.is_some() {
+                            "the old reset elapsed; waiting for fresh lower usage and an advanced reset"
+                        } else {
+                            "no reset has been verified; waiting for fresh lower usage and a new reset"
+                        },
                         status.reset_at_epoch,
                     ),
                 );
@@ -232,67 +247,101 @@ fn reset_barrier_satisfied(
     } else {
         MonitorQuotaWindow::SevenDay
     };
-    let Some(prior_reset) = barrier.prior_reset_at_epoch else {
-        return false;
-    };
-    let due_at = prior_reset.saturating_add(MONITOR_RESET_GRACE_SECS);
+    let due_at = barrier.prior_reset_at_epoch.map_or_else(
+        || {
+            barrier
+                .started_at_epoch
+                .saturating_add(MONITOR_RESET_GRACE_SECS)
+        },
+        |reset| reset.saturating_add(MONITOR_RESET_GRACE_SECS),
+    );
     let required_at = due_at.max(barrier.started_at_epoch);
     if now_epoch < required_at {
         return false;
     }
-    let mut resets = Vec::<(&MonitorEvidence, i64)>::new();
-    let mut usages = Vec::<(&MonitorEvidence, i32)>::new();
-    for evidence in &monitor.evidence {
-        if evidence.sequence <= barrier.evidence_sequence_before
-            || !is_current(evidence, now_epoch)
-            || !evidence_is_relevant(evidence, monitor)
-            || evidence.evidence_received_at_epoch < required_at
-            || evidence
+    let Some(account) = account else {
+        return false;
+    };
+    monitor.evidence.iter().any(|used_evidence| {
+        if used_evidence.sequence <= barrier.evidence_sequence_before
+            || !is_current(used_evidence, now_epoch)
+            || !evidence_is_relevant(used_evidence, monitor)
+            || used_evidence.evidence_received_at_epoch < required_at
+            || used_evidence
                 .evidence_at_epoch
                 .is_some_and(|observed| observed < required_at)
         {
-            continue;
+            return false;
         }
-        match evidence.value {
-            MonitorEvidenceValue::QuotaReset {
-                window: found,
-                reset_at_epoch,
-            } if found == window && reset_at_epoch > prior_reset => {
-                resets.push((evidence, reset_at_epoch));
+        let session_id = used_evidence.session_id.as_deref();
+        let stored_window = match used_evidence.source {
+            MonitorEvidenceSource::BrokerProjection if session_id.is_none() => {
+                account.broker_windows.get(index)
             }
-            MonitorEvidenceValue::QuotaUsedPercentage {
-                window: found,
-                used_percentage_basis_points,
-            } if found == window
-                && used_percentage_basis_points < barrier.prior_used_percentage_basis_points =>
-            {
-                usages.push((evidence, used_percentage_basis_points));
-            }
-            _ => {}
-        }
-    }
-    usages.into_iter().any(|(evidence, _)| {
-        let stored_reset = match (evidence.source, account) {
-            (MonitorEvidenceSource::Statusline, Some(account)) => evidence
-                .session_id
-                .as_deref()
+            MonitorEvidenceSource::Statusline => session_id
                 .and_then(|session_id| account.sessions.get(session_id))
-                .and_then(|session| session.windows[index].used.as_ref())
-                .and_then(|used| used.reset_at_epoch),
-            (MonitorEvidenceSource::BrokerProjection, Some(account)) => account.broker_windows
-                [index]
-                .used
-                .as_ref()
-                .and_then(|used| used.reset_at_epoch),
+                .and_then(|session| session.windows.get(index)),
             _ => None,
         };
-        stored_reset.is_some_and(|reset| {
-            reset > prior_reset
-                && resets.iter().any(|(reset_evidence, new_reset)| {
-                    reset_evidence.source == evidence.source
-                        && reset_evidence.session_id == evidence.session_id
-                        && *new_reset == reset
-                })
+        let Some(stored_window) = stored_window else {
+            return false;
+        };
+        let pair_source = match used_evidence.source {
+            MonitorEvidenceSource::BrokerProjection if session_id.is_none() => {
+                PairSource::BrokerProjection
+            }
+            MonitorEvidenceSource::Statusline if session_id.is_some() => PairSource::Statusline,
+            _ => return false,
+        };
+        let (Some(used), Some(reset), Some(pair)) = (
+            stored_window.used.as_ref(),
+            stored_window.reset.as_ref(),
+            exact_observed_pair_for_source(stored_window, pair_source),
+        ) else {
+            return false;
+        };
+        if pair.used_percentage_basis_points >= barrier.prior_used_percentage_basis_points
+            || pair.reset_at_epoch
+                <= barrier
+                    .prior_reset_at_epoch
+                    .unwrap_or(barrier.started_at_epoch)
+            || pair.received_at_epoch < required_at
+            || pair.received_at_epoch > now_epoch
+            || pair
+                .evidence_at_epoch
+                .is_some_and(|source| source < required_at)
+            || field_age(used.evidence_at_epoch, used.received_at_epoch, now_epoch)
+                > MONITOR_EVIDENCE_TTL_SECS as u64
+            || field_age(reset.evidence_at_epoch, reset.received_at_epoch, now_epoch)
+                > MONITOR_EVIDENCE_TTL_SECS as u64
+            || !evidence_matches_used(
+                used_evidence,
+                monitor.account_id.as_deref(),
+                session_id,
+                used,
+                window,
+            )
+        {
+            return false;
+        }
+        monitor.evidence.iter().any(|reset_evidence| {
+            reset_evidence.sequence > barrier.evidence_sequence_before
+                && is_current(reset_evidence, now_epoch)
+                && evidence_is_relevant(reset_evidence, monitor)
+                && reset_evidence.source == used_evidence.source
+                && reset_evidence.account_id == used_evidence.account_id
+                && reset_evidence.session_id == used_evidence.session_id
+                && reset_evidence.evidence_received_at_epoch >= required_at
+                && reset_evidence
+                    .evidence_at_epoch
+                    .is_none_or(|source| source >= required_at)
+                && evidence_matches_reset(
+                    reset_evidence,
+                    monitor.account_id.as_deref(),
+                    session_id,
+                    reset,
+                    window,
+                )
         })
     })
 }

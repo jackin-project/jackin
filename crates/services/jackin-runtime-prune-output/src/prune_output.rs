@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+//! Formatted prune and cleanup terminal output shared by runtime callers.
+
 use owo_colors::OwoColorize;
 use std::fmt::Arguments;
 use std::io::Write;
@@ -32,6 +34,9 @@ pub fn section(label: &str, detail: impl std::fmt::Display) {
     flush_stdout();
 }
 
+/// A started output row that must be finalized with `ok`, `skip`, `failed`,
+/// or `complete`. Dropping an unfinalized row attempts to close it with
+/// `FAILED` and `row not finalized`.
 #[must_use = "PendingRow leaves the dotted prefix open until finalized"]
 #[derive(Debug)]
 pub struct PendingRow {
@@ -104,6 +109,8 @@ impl PendingRow {
         stdout_line(format_args!("      {reason}"));
     }
 
+    /// Finalize the row with `OK` for `Ok` or `FAILED` for `Err`, using `message`
+    /// for the error detail, and return the original value or error.
     pub fn complete<T, E, F>(self, result: Result<T, E>, message: F) -> Result<T, E>
     where
         F: FnOnce(&E) -> String,

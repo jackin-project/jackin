@@ -294,6 +294,17 @@ pub(crate) fn serialized_credential_cache_test() -> std::sync::MutexGuard<'stati
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// Replace the process cache with a newer generation for deterministic lease tests.
+#[cfg(test)]
+pub(crate) fn overwrite_cached_generation_for_test(
+    service: &str,
+    payload: Zeroizing<String>,
+) -> u64 {
+    let generation = next_generation();
+    credential_cache().store(service.to_owned(), payload, generation);
+    generation
+}
+
 #[cfg(test)]
 pub(crate) fn bootstrap_claude_credential_with_for_test(
     service: &str,
