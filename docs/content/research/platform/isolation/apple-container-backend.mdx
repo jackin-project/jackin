@@ -9,7 +9,7 @@ description: Defines the Apple Container backend architecture, CLI integration, 
 
 Apple Container fits the backend abstraction through its CLI, but rootless DinD and mount behavior remain empirical gates.
 
-This design record covers the runtime stack, CLI boundary, manifest schema, and telemetry implemented by <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" /> and <RepoFile path="crates/services/jackin-runtime/src/apple_container_client.rs" />. See [Apple Container backend](/roadmap/apple-container-backend/) for current work.
+This design record covers the runtime stack, CLI boundary, manifest schema, and telemetry implemented by <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" /> and <RepoFile path="crates/services/jackin-runtime-apple-container-client/src/apple_container_client.rs" />. See [Apple Container backend](/roadmap/apple-container-backend/) for current work.
 
 ## Why This Backend
 
@@ -50,38 +50,47 @@ container run --name jackin-<instance> \
 container exec -it jackin-<instance> jackin-capsule   # attach
 container stop jackin-<instance>                       # stop
 container rm jackin-<instance>                         # delete
-container ps --format json                             # list/inspect
+container list --all --format json                     # list/inspect
 container logs jackin-<instance>                       # logs
 ```
 
 ### `AppleContainerApi` Trait
 
-<RepoFile path="crates/services/jackin-runtime/src/apple_container_client.rs" /> defines the trait shape for the backend. Unlike <RepoFile path="crates/adapters/jackin-docker/src/docker_client.rs" />, which uses the **bollard** crate (a typed async Rust API client for Docker), Apple Container has no Rust API — every method shells out to the `container` CLI via `tokio::process::Command`, which is a fundamentally different pattern from the Docker client:
+<RepoFile path="crates/services/jackin-runtime-apple-container-client/src/apple_container_client.rs" /> defines the trait shape for the backend. The real client routes process execution through the shared process telemetry boundary:
 
 ```rust
 pub trait AppleContainerApi: Send + Sync {
     async fn run_container(&self, name: &str, spec: &AppleContainerSpec) -> anyhow::Result<()>;
-    async fn exec_attach(&self, name: &str) -> anyhow::Result<tokio::process::Child>;
+    async fn start_container(&self, name: &str) -> anyhow::Result<()>;
     async fn stop_container(&self, name: &str) -> anyhow::Result<()>;
     async fn remove_container(&self, name: &str) -> anyhow::Result<()>;
     async fn inspect_container(&self, name: &str) -> anyhow::Result<Option<AppleContainerInfo>>;
     async fn list_containers(&self, name_prefix: &str) -> anyhow::Result<Vec<AppleContainerInfo>>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppleContainerStatus { Running, Stopped, Unknown, Stopping }
+
 pub struct AppleContainerSpec {
     pub image: String,
+    pub user: String,
     pub env: Vec<(String, String)>,        // (-e KEY=VALUE flags)
-    pub mounts: Vec<(PathBuf, PathBuf)>,   // (-v host:container flags)
+    pub env_file: Option<PathBuf>,
+    pub mounts: Vec<AppleContainerMount>,  // (-v host:container[:ro] flags)
     pub caps_add: Vec<String>,             // (--cap-add flags)
 }
 
 pub struct AppleContainerInfo {
-    pub name: String,
-    pub status: String,  // "running", "stopped", etc. — parsed from `container ps` output
+    pub id: String,
+    pub status: AppleContainerStatus,
 }
 ```
 
-`exec_attach` returns the child process handle so the caller can pipe stdio (mirrors how `docker exec -it` is handled in the Docker backend via `runner.run`).
+### Inventory and lifecycle observations
+
+Inventory parsing accepts one complete JSON array with the Apple Container `id`, `configuration.id`, and `status.state` fields. It validates the entire array, strict UTF-8, nonempty matching identifiers, unique IDs, and the known `running`, `stopped`, `unknown`, and `stopping` states before applying a list prefix. Unknown unrelated metadata remains additive. `[]` is the only valid empty inventory; malformed output and unsuccessful list commands remain errors.
+
+Reconnect starts a container only after an exact-ID observation reports `Stopped`. `Running` proceeds without a start; missing, failed, `Unknown`, or `Stopping` observations stop before claim activation or attach effects. Attach bookkeeping changes the manifest only for exact `Running` or `Stopped` observations. Purge proceeds only when a successfully validated complete inventory proves the exact identifier absent; a prefix neighbor does not count as that identifier.
 
 ## Networking
 
@@ -124,13 +133,13 @@ Both use optional fields with serde defaults. Config and workspace version const
 
 ## Telemetry Spec
 
-Backend operations emit `debug_log!("apple-container", …)` per the two-tier telemetry rule in AGENTS.md. Lines implemented in <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" /> and <RepoFile path="crates/services/jackin-runtime/src/apple_container_client.rs" />:
+Backend operations emit telemetry through the process transport and existing runtime diagnostics. Lines implemented in <RepoFile path="crates/services/jackin-runtime/src/runtime/apple_container.rs" /> and <RepoFile path="crates/services/jackin-runtime-apple-container-client/src/apple_container_client.rs" />:
 
 - `container_version version=<container --version>`
 - `container_run name=<name> ok` / failure detail
 - `capsule ready name=<container_name>`
 - `dns_check result=<ok|hiccup|unavailable>` (post-sleep/wake check)
-- `record_attach_outcome failed: <err>` (best-effort attach bookkeeping)
+- `runtime.apple_container.attach_outcome.warning` (`WARN`) reports uncertain inspection, absent exact IDs, uncertain states, and best-effort recorder failures. It carries `container.id` and one bounded reason (`inspection_uncertain`, `absent`, `state_uncertain`, `recording_failed`); only observed `Unknown`/`Stopping` carries `apple.container.state`, and only errors carry redacted/clamped `exception.message`.
 
 Compact launch line shape:
 

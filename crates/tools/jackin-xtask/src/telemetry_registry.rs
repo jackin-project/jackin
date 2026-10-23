@@ -941,8 +941,8 @@ fn validate_adoption_metadata(root: &Path) -> Result<()> {
         .transpose()?
         .ok_or_else(|| anyhow::anyhow!("registry manifest dependency has no registry_path"))?;
     let expected = (
-        "1.45.0",
-        "https://jackin.tailrocks.com/telemetry/schemas/1.45.0",
+        "1.46.0",
+        "https://jackin.tailrocks.com/telemetry/schemas/1.46.0",
         "1.44.0",
         "https://opentelemetry.io/schemas/1.44.0",
         "crates/services/jackin-telemetry/vendor/semconv-1.44.0",

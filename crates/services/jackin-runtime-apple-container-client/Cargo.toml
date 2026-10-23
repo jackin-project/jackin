@@ -26,6 +26,7 @@ jackin-process = { workspace = true }
 jackin-runtime-identity = { workspace = true }
 jackin-runtime-process-telemetry = { workspace = true }
 anyhow = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]

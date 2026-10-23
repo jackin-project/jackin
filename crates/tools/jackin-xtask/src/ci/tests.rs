@@ -3,7 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{CiArgs, e2e_selected, parse_capsule_export, step_names, validate_capsule_path};
+use super::{
+    CiArgs, Step, e2e_selected, parse_capsule_export, run_step, step_names, validate_capsule_path,
+};
 
 #[test]
 fn e2e_partition_selects_the_complete_docker_suite() {
@@ -86,6 +88,57 @@ fn existing_relative_capsule_path_is_resolved_from_the_repository() {
         validate_capsule_path(temp.path(), Path::new("target/debug/jackin-capsule")).unwrap(),
         capsule
     );
+}
+
+#[test]
+fn failed_ci_step_preserves_child_stdout_stderr_and_status() {
+    let step = Step::new(
+        "diagnostic child",
+        "/bin/sh",
+        &[
+            "-c",
+            concat!(
+                "printf '%s\\n' 'JACKIN_CI_STDOUT_SENTINEL'; ",
+                "printf '%s\\n' 'JACKIN_CI_STDERR_SENTINEL' >&2; ",
+                "exit 37",
+            ),
+        ],
+        "tests",
+    );
+
+    let error = run_step(Path::new("/"), &step).expect_err("nonzero child must fail the step");
+    let diagnostic = format!("{error:#}");
+
+    assert!(
+        diagnostic.contains("failed with code Some(37)"),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("stdout:\nJACKIN_CI_STDOUT_SENTINEL"),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("stderr:\nJACKIN_CI_STDERR_SENTINEL"),
+        "{diagnostic}"
+    );
+}
+
+#[test]
+fn successful_ci_step_with_captured_output_remains_successful() {
+    let step = Step::new(
+        "successful diagnostic child",
+        "/bin/sh",
+        &[
+            "-c",
+            concat!(
+                "printf '%s\\n' 'JACKIN_CI_SUCCESS_STDOUT'; ",
+                "printf '%s\\n' 'JACKIN_CI_SUCCESS_STDERR' >&2",
+            ),
+        ],
+        "tests",
+    );
+
+    run_step(Path::new("/"), &step).expect("successful CI child is accepted");
 }
 
 fn workspace_root() -> PathBuf {
