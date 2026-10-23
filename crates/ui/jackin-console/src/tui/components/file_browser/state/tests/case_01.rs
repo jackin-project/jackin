@@ -2,6 +2,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use ratatui::{
+    Terminal,
+    backend::TestBackend,
+    layout::{Position, Rect},
+};
+
+fn visible_label_position(buffer: &ratatui::buffer::Buffer, area: Rect, label: &str) -> Position {
+    (area.y..area.bottom())
+        .find_map(|y| {
+            let row = (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>();
+            row.find(label).map(|byte| {
+                Position::new(
+                    u16::try_from(row[..byte].chars().count()).expect("column fits u16"),
+                    y,
+                )
+            })
+        })
+        .unwrap_or_else(|| panic!("actual FileBrowser buffer lacks {label:?}"))
+}
 
 #[test]
 fn filter_excludes_files() {
@@ -108,14 +129,56 @@ fn wheel_selection_scroll_at_area_ignores_prompt_and_outside_pointer() {
         height: 4,
     };
     let mut state = make_state_at(tmp.path().to_path_buf());
+    let mut terminal = Terminal::new(TestBackend::new(20, 10)).unwrap();
+    terminal
+        .draw(|frame| crate::tui::components::file_browser::render(frame, area, &state))
+        .unwrap();
+    let painted_row = visible_label_position(terminal.backend().buffer(), area, "a/");
 
     assert!(!state.scroll_selection_at(area, 1, 3, 1));
     assert_eq!(state.list_state.selected().copied(), Some(0));
-    assert!(state.scroll_selection_at(area, 2, 3, 1));
+    assert!(!state.scroll_selection_at(area, area.x, area.y, 1));
+    assert_eq!(state.list_state.selected().copied(), Some(0));
+    assert!(state.scroll_selection_at(area, painted_row.x, painted_row.y, 1));
     assert_eq!(state.list_state.selected().copied(), Some(1));
 
     state.pending_git_prompt = Some(tmp.path().join("a"));
-    assert!(!state.scroll_selection_at(area, 2, 3, 1));
+    assert!(!state.scroll_selection_at(area, painted_row.x, painted_row.y, 1));
+    assert_eq!(state.list_state.selected().copied(), Some(1));
+}
+
+#[test]
+fn painted_row_wheel_is_consumed_at_saturating_edges() {
+    let tmp = tempdir().unwrap();
+    for name in ["a", "b", "c"] {
+        std::fs::create_dir(tmp.path().join(name)).unwrap();
+    }
+    let area = Rect::new(3, 2, 24, 8);
+    let mut state = make_state_at(tmp.path().to_path_buf());
+    let mut terminal = Terminal::new(TestBackend::new(32, 14)).unwrap();
+    terminal
+        .draw(|frame| crate::tui::components::file_browser::render(frame, area, &state))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let first = visible_label_position(buffer, area, "a/");
+    let middle = visible_label_position(buffer, area, "b/");
+    let last = visible_label_position(buffer, area, "c/");
+    let blank = Position::new(area.x + 1, area.y + 5);
+
+    assert_eq!(state.list_state.selected().copied(), Some(0));
+    assert!(state.scroll_selection_at(area, first.x, first.y, -1));
+    assert_eq!(state.list_state.selected().copied(), Some(0));
+
+    state.list_state.select(Some(2));
+    assert!(state.scroll_selection_at(area, last.x, last.y, 1));
+    assert_eq!(state.list_state.selected().copied(), Some(2));
+
+    state.list_state.select(Some(1));
+    assert!(state.scroll_selection_at(area, middle.x, middle.y, 1));
+    assert_eq!(state.list_state.selected().copied(), Some(2));
+
+    state.list_state.select(Some(1));
+    assert!(!state.scroll_selection_at(area, blank.x, blank.y, 1));
     assert_eq!(state.list_state.selected().copied(), Some(1));
 }
 

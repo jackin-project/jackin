@@ -3,6 +3,35 @@
 
 use super::*;
 
+fn browser_row_position(
+    state: &crate::tui::components::file_browser::FileBrowserState,
+    terminal_area: Rect,
+    area: Rect,
+    label: &str,
+) -> ratatui::layout::Position {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let mut terminal =
+        Terminal::new(TestBackend::new(terminal_area.width, terminal_area.height)).unwrap();
+    terminal
+        .draw(|frame| crate::tui::components::file_browser::render(frame, area, state))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    (area.y..area.bottom())
+        .find_map(|row_index| {
+            let row = (0..buffer.area.width)
+                .map(|column| buffer[(column, row_index)].symbol())
+                .collect::<String>();
+            row.find(label).map(|byte| {
+                ratatui::layout::Position::new(
+                    u16::try_from(row[..byte].chars().count()).expect("column fits u16"),
+                    row_index,
+                )
+            })
+        })
+        .unwrap_or_else(|| panic!("actual FileBrowser buffer lacks {label:?}"))
+}
+
 #[test]
 fn editor_non_mounts_tab_click_focuses_horizontal_scroll_block() {
     let mut state = list_state();
@@ -151,10 +180,42 @@ fn editor_file_browser_wheel_scrolls_modal_selection_not_background() {
     });
     state.stage = ManagerStage::Editor(editor);
 
+    let term_area = term_120x40();
+    let browser_area = crate::tui::components::modal_overlay::file_browser_overlay_rect(term_area);
+    let painted_row = {
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
+            panic!("file browser modal expected");
+        };
+        browser_row_position(fb, term_area, browser_area, "dir-0/")
+    };
+
     handle_mouse_with_config(
         &mut state,
-        mouse_kind_at(MouseEventKind::ScrollDown, 20, 11),
-        term_120x40(),
+        mouse_kind_at(MouseEventKind::ScrollDown, browser_area.x, browser_area.y),
+        term_area,
+        None,
+    );
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("editor stage expected");
+    };
+    assert_eq!(
+        editor.tab_scroll.offset_y(),
+        0,
+        "border wheel must not leak"
+    );
+    let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
+        panic!("file browser modal expected");
+    };
+    assert_eq!(fb.list_state.selected().copied(), Some(0));
+
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, painted_row.x, painted_row.y),
+        term_area,
         None,
     );
 
@@ -345,10 +406,22 @@ fn file_browser_wheel_at_edge_is_consumed_before_background_scroll() {
     });
     state.stage = ManagerStage::Editor(editor);
 
+    let term_area = term_120x40();
+    let browser_area = crate::tui::components::modal_overlay::file_browser_overlay_rect(term_area);
+    let painted_row = {
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
+            panic!("file browser modal expected");
+        };
+        browser_row_position(fb, term_area, browser_area, "dir-0/")
+    };
+
     handle_mouse_with_config(
         &mut state,
-        mouse_kind_at(MouseEventKind::ScrollUp, 20, 11),
-        term_120x40(),
+        mouse_kind_at(MouseEventKind::ScrollUp, painted_row.x, painted_row.y),
+        term_area,
         None,
     );
 
