@@ -4,11 +4,10 @@
 use std::path::Path;
 
 use crate::{
-    Agent, ProfileCredentialMaterialProofRef, ProfileCredentialProofComparison,
-    ProfileCredentialSourceIdentity, ProfileCredentialSourceMaterial,
-    ProfileCredentialSourceMaterialV2, ProfileCredentialV2Error,
-    compare_profile_credential_material_proofs, profile_credential_material_revision_v2,
-    profile_credential_source_identity_v2, profile_credential_source_material_v2,
+    Agent, ProfileCredentialProofComparison, ProfileCredentialSourceMaterialV2,
+    ProfileCredentialV2Error, compare_profile_credential_material_proofs,
+    profile_credential_material_revision_v2, profile_credential_source_identity_v2,
+    profile_credential_source_material_v2,
 };
 
 fn v2_material(
@@ -24,24 +23,10 @@ fn v2_material(
         .expect("valid source material should be constructed")
 }
 
-fn v1_material(
-    agent: Agent,
-    descriptor_fingerprint: &str,
-    material_revision: &str,
-) -> ProfileCredentialSourceMaterial {
-    ProfileCredentialSourceMaterial {
-        source: ProfileCredentialSourceIdentity {
-            agent,
-            descriptor_fingerprint: descriptor_fingerprint.to_owned(),
-        },
-        material_revision: material_revision.to_owned(),
-    }
-}
-
 fn compare(
-    left: ProfileCredentialMaterialProofRef<'_>,
-    right: ProfileCredentialMaterialProofRef<'_>,
-) -> Result<ProfileCredentialProofComparison, ProfileCredentialV2Error> {
+    left: &ProfileCredentialSourceMaterialV2,
+    right: &ProfileCredentialSourceMaterialV2,
+) -> ProfileCredentialProofComparison {
     compare_profile_credential_material_proofs(left, right)
 }
 
@@ -60,11 +45,8 @@ fn v2_comparison_checks_source_agent_and_material() {
         br#"{"token":"a"}"#,
     );
     assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V2(&first),
-            ProfileCredentialMaterialProofRef::V2(&same)
-        ),
-        Ok(ProfileCredentialProofComparison::Equal)
+        compare(&first, &same),
+        ProfileCredentialProofComparison::Equal
     );
 
     let other_source = v2_material(
@@ -94,11 +76,8 @@ fn v2_comparison_checks_source_agent_and_material() {
         same_hashes_other_agent.material_revision()
     );
     assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V2(&first),
-            ProfileCredentialMaterialProofRef::V2(&same_hashes_other_agent)
-        ),
-        Ok(ProfileCredentialProofComparison::Different)
+        compare(&first, &same_hashes_other_agent),
+        ProfileCredentialProofComparison::Different
     );
     let other_material = v2_material(
         Agent::Codex,
@@ -108,126 +87,10 @@ fn v2_comparison_checks_source_agent_and_material() {
     );
     for changed in [&other_source, &other_agent, &other_material] {
         assert_eq!(
-            compare(
-                ProfileCredentialMaterialProofRef::V2(&first),
-                ProfileCredentialMaterialProofRef::V2(changed)
-            ),
-            Ok(ProfileCredentialProofComparison::Different)
+            compare(&first, changed),
+            ProfileCredentialProofComparison::Different
         );
     }
-}
-
-#[test]
-fn v1_comparison_validates_strings_then_compares_complete_proof() {
-    let digest = "0123456789abcdef".repeat(4);
-    let revision = "fedcba9876543210".repeat(4);
-    let first = v1_material(Agent::Codex, &digest, &revision);
-    let same = v1_material(Agent::Codex, &digest, &revision);
-    assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V1(&first),
-            ProfileCredentialMaterialProofRef::V1(&same)
-        ),
-        Ok(ProfileCredentialProofComparison::Equal)
-    );
-
-    let other_agent = v1_material(Agent::Claude, &digest, &revision);
-    let other_source = v1_material(Agent::Codex, &revision, &revision);
-    let other_revision = v1_material(Agent::Codex, &digest, &digest);
-    assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V1(&first),
-            ProfileCredentialMaterialProofRef::V1(&other_agent)
-        ),
-        Ok(ProfileCredentialProofComparison::Different)
-    );
-    assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V1(&first),
-            ProfileCredentialMaterialProofRef::V1(&other_source)
-        ),
-        Ok(ProfileCredentialProofComparison::Different)
-    );
-    assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V1(&first),
-            ProfileCredentialMaterialProofRef::V1(&other_revision)
-        ),
-        Ok(ProfileCredentialProofComparison::Different)
-    );
-
-    let invalid_source = v1_material(Agent::Codex, "not-a-fingerprint", &revision);
-    let invalid_revision = v1_material(Agent::Codex, &digest, &"A".repeat(64));
-    let debug = format!(
-        "{:?}",
-        ProfileCredentialMaterialProofRef::V1(&invalid_revision)
-    );
-    assert!(!debug.contains(&"A".repeat(64)));
-    for invalid in [&invalid_source, &invalid_revision] {
-        assert_eq!(
-            compare(
-                ProfileCredentialMaterialProofRef::V1(invalid),
-                ProfileCredentialMaterialProofRef::V1(&first)
-            ),
-            Err(ProfileCredentialV2Error::InvalidFingerprint)
-        );
-        assert_eq!(
-            compare(
-                ProfileCredentialMaterialProofRef::V1(&first),
-                ProfileCredentialMaterialProofRef::V1(invalid)
-            ),
-            Err(ProfileCredentialV2Error::InvalidFingerprint)
-        );
-    }
-}
-
-#[test]
-fn identical_cross_scheme_fingerprints_require_revalidation_in_both_orders() {
-    let v2 = v2_material(
-        Agent::Codex,
-        "openai",
-        "/profiles/main",
-        br#"{"token":"a"}"#,
-    );
-    let v1 = v1_material(
-        v2.source().agent(),
-        v2.source().descriptor_fingerprint().as_str(),
-        v2.material_revision().as_str(),
-    );
-    let debug = format!("{:?}", ProfileCredentialMaterialProofRef::V2(&v2));
-    assert!(!debug.contains(v2.source().descriptor_fingerprint().as_str()));
-    assert!(!debug.contains(v2.material_revision().as_str()));
-
-    assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V1(&v1),
-            ProfileCredentialMaterialProofRef::V2(&v2)
-        ),
-        Ok(ProfileCredentialProofComparison::RevalidationRequired)
-    );
-    assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V2(&v2),
-            ProfileCredentialMaterialProofRef::V1(&v1)
-        ),
-        Ok(ProfileCredentialProofComparison::RevalidationRequired)
-    );
-
-    let invalid_v1 = v1_material(Agent::Codex, "invalid", "invalid");
-    assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V1(&invalid_v1),
-            ProfileCredentialMaterialProofRef::V2(&v2)
-        ),
-        Err(ProfileCredentialV2Error::InvalidFingerprint)
-    );
-    assert_eq!(
-        compare(
-            ProfileCredentialMaterialProofRef::V2(&v2),
-            ProfileCredentialMaterialProofRef::V1(&invalid_v1)
-        ),
-        Err(ProfileCredentialV2Error::InvalidFingerprint)
-    );
 }
 
 #[test]

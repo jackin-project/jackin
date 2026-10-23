@@ -152,6 +152,8 @@ fn fingerprint_wire_is_a_validated_json_string_and_debug_is_redacted() {
             && !format!("{digest:?}").contains(&canary)));
     for invalid in [
         String::new(),
+        "0".repeat(63),
+        "0".repeat(65),
         "A".repeat(64),
         "z".repeat(64),
         "é".repeat(32),
@@ -196,6 +198,14 @@ fn identity_deserialization_rejects_bad_shapes_with_static_errors() {
         ),
         format!(
             "{{\"scheme\":\"{SOURCE_SCHEME}\",\"agent\":\"codex\",\"descriptor_fingerprint\":\"{canary}\"}}"
+        ),
+        format!(
+            "{{\"scheme\":\"{SOURCE_SCHEME}\",\"agent\":\"codex\",\"descriptor_fingerprint\":\"{}\"}}",
+            "0".repeat(63)
+        ),
+        format!(
+            "{{\"scheme\":\"{SOURCE_SCHEME}\",\"agent\":\"codex\",\"descriptor_fingerprint\":\"{}\"}}",
+            "0".repeat(65)
         ),
         format!(
             "{{\"scheme\":\"{SOURCE_SCHEME}\",\"agent\":\"codex\",\"descriptor_fingerprint\":null}}"

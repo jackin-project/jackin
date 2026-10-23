@@ -47,7 +47,7 @@ Cross-surface **product presentation** (Debug-info paint, product brand/domain R
 | [`op_cache.rs`](src/op_cache.rs) | op cache | [`tests.rs`](src/op_cache/tests.rs) |
 | [`op_probe_error.rs`](src/op_probe_error.rs) | typed `op` probe errors | [`tests.rs`](src/op_probe_error/tests.rs) |
 | [`op_reference.rs`](src/op_reference.rs) | op reference | [`tests.rs`](src/op_reference/tests.rs) |
-| [V1](src/profile_material.rs) / [V2](src/profile_material_v2.rs) | Profile credential source/material proofs | [V1](src/profile_material/tests.rs) · [V2](src/profile_material_v2/tests.rs) · [guide](docs/profile-credential-proofs.md) |
+| [V2](src/profile_material_v2.rs) | Profile credential source/material proofs | [tests](src/profile_material_v2/tests.rs) · [guide](docs/profile-credential-proofs.md) |
 | [`op_types.rs`](src/op_types.rs) | op types | — |
 | [`constants.rs`](src/constants.rs) | shared constants | — |
 | [`container_paths.rs`](src/container_paths.rs) | container-side `/jackin/` path chokepoint | [`tests.rs`](src/container_paths/tests.rs) |
@@ -66,9 +66,9 @@ Higher crates implement the port traits defined here (e.g. `CommandRunner`) and 
 
 Typed construction/parse errors (thiserror): `ParseProfileError`, `ParseMountIsolationError`, `ParseAgentError`, `SelectorError`, `EnvCycleError`, `PathsError`, `OpProbeError`.
 
-## Profile credential proofs (V2)
+## Profile credential proofs
 
-Additive raw-input V2 source/material helpers use separate domains from live account/broker fingerprints. Cross-scheme comparison returns `RevalidationRequired`; see the [V2 guide](docs/profile-credential-proofs.md). No live flow or V1 migration is enabled. Fingerprints show change/equality, not authentication, authorization, credential validity or byte custody.
+V2 is the only active profile-proof API. The unused normalized V1 helper is retired. No in-repository consumer or persisted-record owner was found, so no population conversion was performed. Untagged and `.v1` records reject; no live flow is active. Account/broker fingerprints remain separate. Fingerprints show change/equality, not authentication, authorization, credential validity or byte custody.
 
 ## How to verify
 

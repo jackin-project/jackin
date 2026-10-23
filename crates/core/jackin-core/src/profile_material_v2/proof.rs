@@ -10,7 +10,7 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
-use crate::{Agent, ProfileCredentialSourceMaterial};
+use crate::Agent;
 
 use super::digest::ProfileCredentialFingerprintV2;
 use super::error::ProfileCredentialV2Error;
@@ -322,32 +322,10 @@ impl<'de> Deserialize<'de> for ProfileCredentialSourceMaterialV2 {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum ProfileCredentialMaterialProofRef<'a> {
-    V1(&'a ProfileCredentialSourceMaterial),
-    V2(&'a ProfileCredentialSourceMaterialV2),
-}
-
-impl Debug for ProfileCredentialMaterialProofRef<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::V1(_) => formatter
-                .debug_tuple("ProfileCredentialMaterialProofRef::V1")
-                .field(&"[REDACTED]")
-                .finish_non_exhaustive(),
-            Self::V2(_) => formatter
-                .debug_tuple("ProfileCredentialMaterialProofRef::V2")
-                .field(&"[REDACTED]")
-                .finish_non_exhaustive(),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProfileCredentialProofComparison {
     Equal,
     Different,
-    RevalidationRequired,
 }
 
 pub fn profile_credential_source_material_v2(
@@ -363,54 +341,14 @@ pub fn profile_credential_source_material_v2(
 }
 
 pub fn compare_profile_credential_material_proofs(
-    left: ProfileCredentialMaterialProofRef<'_>,
-    right: ProfileCredentialMaterialProofRef<'_>,
-) -> Result<ProfileCredentialProofComparison, ProfileCredentialV2Error> {
-    if let ProfileCredentialMaterialProofRef::V1(proof) = left {
-        validate_v1_proof(proof)?;
-    }
-    if let ProfileCredentialMaterialProofRef::V1(proof) = right {
-        validate_v1_proof(proof)?;
-    }
-
-    match (left, right) {
-        (
-            ProfileCredentialMaterialProofRef::V1(left),
-            ProfileCredentialMaterialProofRef::V1(right),
-        ) => Ok(if left == right {
-            ProfileCredentialProofComparison::Equal
-        } else {
-            ProfileCredentialProofComparison::Different
-        }),
-        (
-            ProfileCredentialMaterialProofRef::V2(left),
-            ProfileCredentialMaterialProofRef::V2(right),
-        ) => Ok(if same_v2_proof(left, right) {
-            ProfileCredentialProofComparison::Equal
-        } else {
-            ProfileCredentialProofComparison::Different
-        }),
-        _ => Ok(ProfileCredentialProofComparison::RevalidationRequired),
-    }
-}
-
-fn validate_v1_proof(
-    proof: &ProfileCredentialSourceMaterial,
-) -> Result<(), ProfileCredentialV2Error> {
-    if is_sha256_fingerprint(&proof.source.descriptor_fingerprint)
-        && is_sha256_fingerprint(&proof.material_revision)
-    {
-        Ok(())
+    left: &ProfileCredentialSourceMaterialV2,
+    right: &ProfileCredentialSourceMaterialV2,
+) -> ProfileCredentialProofComparison {
+    if same_v2_proof(left, right) {
+        ProfileCredentialProofComparison::Equal
     } else {
-        Err(ProfileCredentialV2Error::InvalidFingerprint)
+        ProfileCredentialProofComparison::Different
     }
-}
-
-fn is_sha256_fingerprint(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn same_v2_proof(

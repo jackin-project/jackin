@@ -171,4 +171,110 @@ fn material_wire_rejects_bad_shapes_with_static_errors() {
         assert!(!display.contains(scheme_canary));
         assert!(!debug.contains(scheme_canary));
     }
+
+    for invalid_digest in [
+        String::new(),
+        "0".repeat(63),
+        "0".repeat(65),
+        "A".repeat(64),
+        "g".repeat(64),
+        "é".repeat(32),
+    ] {
+        let invalid_source = source.replace(&digest, &invalid_digest);
+        let invalid_descriptor = format!(
+            r#"{{"scheme":"{MATERIAL_SCHEME}","source":{invalid_source},"material_revision":"{digest}"}}"#
+        );
+        let invalid_revision = format!(
+            r#"{{"scheme":"{MATERIAL_SCHEME}","source":{source},"material_revision":"{invalid_digest}"}}"#
+        );
+
+        for raw in [invalid_descriptor, invalid_revision] {
+            let error = serde_json::from_str::<ProfileCredentialSourceMaterialV2>(&raw)
+                .expect_err("invalid fingerprint shape unexpectedly deserialized");
+            assert!(
+                error
+                    .to_string()
+                    .starts_with("invalid profile credential source material")
+            );
+            if !invalid_digest.is_empty() {
+                assert!(!format!("{error:?}").contains(&invalid_digest));
+            }
+        }
+    }
+
+    let quoted_digest = format!("\"{digest}\"");
+    let wrong_type_source = source.replace(quoted_digest.as_str(), "7");
+    let wrong_descriptor_type = format!(
+        r#"{{"scheme":"{MATERIAL_SCHEME}","source":{wrong_type_source},"material_revision":"{digest}"}}"#
+    );
+    let wrong_revision_type =
+        format!(r#"{{"scheme":"{MATERIAL_SCHEME}","source":{source},"material_revision":7}}"#);
+    for raw in [wrong_descriptor_type, wrong_revision_type] {
+        let error = serde_json::from_str::<ProfileCredentialSourceMaterialV2>(&raw)
+            .expect_err("wrong fingerprint type unexpectedly deserialized");
+        assert!(
+            error
+                .to_string()
+                .starts_with("invalid profile credential source material")
+        );
+    }
+}
+
+#[test]
+fn v1_and_untagged_wire_records_are_rejected() {
+    let synthetic_digest = "0123456789abcdef".repeat(4);
+    let untagged_identity =
+        format!(r#"{{"agent":"codex","descriptor_fingerprint":"{synthetic_digest}"}}"#);
+    let actual = example_material();
+    let descriptor = actual.source().descriptor_fingerprint().as_str();
+    let revision = actual.material_revision().as_str();
+    let v1_identity = format!(
+        r#"{{"scheme":"jackin.profile-credential-source.v1","agent":"codex","descriptor_fingerprint":"{descriptor}"}}"#
+    );
+    let v2_identity = serde_json::to_string(actual.source()).expect("V2 identity serializes");
+    let untagged_material =
+        format!(r#"{{"source":{untagged_identity},"material_revision":"{synthetic_digest}"}}"#);
+    let v1_material = format!(
+        r#"{{"scheme":"jackin.profile-credential-material.v1","source":{v1_identity},"material_revision":"{revision}"}}"#
+    );
+    let v1_outer_v2_inner = format!(
+        r#"{{"scheme":"jackin.profile-credential-material.v1","source":{v2_identity},"material_revision":"{revision}"}}"#
+    );
+    let v2_outer_v1_inner = format!(
+        r#"{{"scheme":"{MATERIAL_SCHEME}","source":{v1_identity},"material_revision":"{revision}"}}"#
+    );
+
+    for raw in [untagged_identity, v1_identity] {
+        let Err(error) = serde_json::from_str::<crate::ProfileCredentialSourceIdentityV2>(&raw)
+        else {
+            panic!("legacy identity wire unexpectedly deserialized");
+        };
+        assert!(
+            error
+                .to_string()
+                .starts_with("invalid profile credential source identity")
+        );
+        assert!(!error.to_string().contains(descriptor));
+        assert!(!format!("{error:?}").contains(descriptor));
+    }
+
+    for raw in [
+        untagged_material,
+        v1_material,
+        v1_outer_v2_inner,
+        v2_outer_v1_inner,
+    ] {
+        let Err(error) = serde_json::from_str::<ProfileCredentialSourceMaterialV2>(&raw) else {
+            panic!("legacy or mismatched proof wire unexpectedly deserialized");
+        };
+        assert!(
+            error
+                .to_string()
+                .starts_with("invalid profile credential source material")
+        );
+        assert!(!error.to_string().contains(descriptor));
+        assert!(!error.to_string().contains(revision));
+        assert!(!format!("{error:?}").contains(descriptor));
+        assert!(!format!("{error:?}").contains(revision));
+    }
 }

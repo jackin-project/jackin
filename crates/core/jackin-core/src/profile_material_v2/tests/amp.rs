@@ -38,6 +38,8 @@ fn amp_alias_and_canonical_key_project_to_the_same_exact_token() {
 fn amp_requires_one_nonblank_string_and_rejects_both_aliases() {
     let invalid: &[&[u8]] = &[
         b"{}",
+        br#"{"apiKey@https://foreign.example/":"foreign-fixture"}"#,
+        br#"{"mcp-oauth@https://ampcode.com/":"mcp-fixture"}"#,
         br#"{"apiKey@https://ampcode.com/":null}"#,
         br#"{"apiKey@https://ampcode.com/":7}"#,
         br#"{"apiKey@https://ampcode.com/":""}"#,
@@ -78,15 +80,35 @@ fn amp_ignores_valid_unrelated_metadata_but_rejects_duplicate_keys_anywhere() {
 #[test]
 fn amp_errors_do_not_echo_token_or_field_canaries() {
     let canary = "AMP_PROFILE_V2_SECRET_CANARY";
-    let raw = format!(
-        "{{\"apiKey@https://ampcode.com/\":\"{canary}\",\"apiKey@https://ampcode.com\":\"x\"}}"
-    );
-    let Err(error) = profile_credential_material_revision_v2(Agent::Amp, raw.as_bytes()) else {
-        panic!("ambiguous Amp credential unexpectedly succeeded");
-    };
-    assert_eq!(error, ProfileCredentialV2Error::InvalidAmpCredential);
-    assert!(!error.to_string().contains(canary));
-    assert!(!format!("{error:?}").contains(canary));
+    let invalid = [
+        (
+            format!(
+                "{{\"apiKey@https://ampcode.com/\":\"{canary}\",\"apiKey@https://ampcode.com\":\"x\"}}"
+            ),
+            ProfileCredentialV2Error::InvalidAmpCredential,
+        ),
+        (
+            format!(
+                "{{\"apiKey@https://ampcode.com/\":\"{canary}\",\"apiKey@https://ampcode.com/\":\"second\"}}"
+            ),
+            ProfileCredentialV2Error::DuplicateKey,
+        ),
+        (
+            format!(
+                "{{\"apiKey@https://ampcode.com/\":\"token\",\"apiKey@https://foreign.example/\":\"{canary}\",\"apiKey@https://foreign.example/\":\"second\"}}"
+            ),
+            ProfileCredentialV2Error::DuplicateKey,
+        ),
+    ];
+
+    for (raw, expected) in invalid {
+        let Err(error) = profile_credential_material_revision_v2(Agent::Amp, raw.as_bytes()) else {
+            panic!("invalid Amp credential unexpectedly succeeded");
+        };
+        assert_eq!(error, expected);
+        assert!(!error.to_string().contains(canary));
+        assert!(!format!("{error:?}").contains(canary));
+    }
 }
 
 #[test]
@@ -109,6 +131,13 @@ fn omp_material_stays_opaque_and_uses_the_v2_binary_domain() {
     let codex_json = profile_credential_material_revision_v2(Agent::Codex, b"null")
         .expect("null is valid Codex JSON");
     assert_ne!(omp_json_looking, codex_json);
+
+    let shared_json = br#"{"token":"same"}"#;
+    let hermes_revision = profile_credential_material_revision_v2(Agent::Hermes, shared_json)
+        .expect("shared JSON is valid Hermes material");
+    let claude_revision = profile_credential_material_revision_v2(Agent::Claude, shared_json)
+        .expect("shared JSON is valid Claude material");
+    assert_ne!(hermes_revision, claude_revision);
 }
 
 #[test]
