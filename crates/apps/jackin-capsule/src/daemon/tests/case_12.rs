@@ -364,6 +364,7 @@ fn pointer_shape_updates_for_usage_dialog_tabs() {
         plan_label: None,
         source_label: None,
         active: true,
+        account_capability: None,
     }];
     mux.dialog_push(Dialog::new_usage(view.clone()));
     let dialog = mux.dialog_top().expect("usage dialog should open");

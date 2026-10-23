@@ -205,7 +205,10 @@ fn root_quit_interception_requires_the_current_manager_owner_to_allow_input() {
         !should_intercept_root_quit(&state, bare_q),
         "bare q belongs to the Workflows key handler"
     );
-    assert!(!should_intercept_root_quit(&state, shifted_q));
+    assert!(
+        should_intercept_root_quit(&state, shifted_q),
+        "Shift-Q retains root quit because Workflows ignores uppercase Q"
+    );
 
     {
         let ConsoleStage::Manager(manager) = &mut state.stage;
@@ -265,11 +268,47 @@ fn app_key_handler_routes_bare_q_to_workflow_detail_and_list() {
 }
 
 #[test]
+fn app_key_handler_routes_uppercase_q_to_root_quit_without_changing_workflows() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let uppercase_q_events = [
+        KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::SHIFT),
+        KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::NONE),
+    ];
+
+    for key in uppercase_q_events {
+        for detail_open in [true, false] {
+            let mut harness = AppKeyHarness::new();
+            let ConsoleStage::Manager(manager) = &mut harness.state.stage;
+            let mut workflow =
+                jackin_console::tui::screens::workflows::model::WorkflowScreen::default();
+            if detail_open {
+                workflow.set_detail(workflow_detail());
+            }
+            manager.stage = jackin_console::tui::state::ManagerStage::Workflows(workflow);
+
+            assert!(matches!(harness.dispatch(key), ConsoleLoopFlow::Continue));
+            assert!(
+                harness.state.quit_confirm.is_some(),
+                "uppercase Q {key:?} opens root quit"
+            );
+            let ConsoleStage::Manager(manager) = &harness.state.stage;
+            let jackin_console::tui::state::ManagerStage::Workflows(workflow) = &manager.stage
+            else {
+                panic!("uppercase Q preserves the Workflows route");
+            };
+            assert_eq!(workflow.detail().is_some(), detail_open);
+        }
+    }
+}
+
+#[test]
 fn app_key_handler_keeps_workflow_confirmation_above_root_quit() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let mut harness = AppKeyHarness::new();
     let bare_q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+    let shifted_q = KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::SHIFT);
     let ctrl_q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
     let ConsoleStage::Manager(manager) = &mut harness.state.stage;
@@ -277,6 +316,17 @@ fn app_key_handler_keeps_workflow_confirmation_above_root_quit() {
     workflow.set_detail(workflow_detail());
     workflow.open_confirm(jackin_console::tui::screens::workflows::model::WorkflowAction::Cancel);
     manager.stage = jackin_console::tui::state::ManagerStage::Workflows(workflow);
+    harness.dispatch(shifted_q);
+    let ConsoleStage::Manager(manager) = &harness.state.stage;
+    let jackin_console::tui::state::ManagerStage::Workflows(workflow) = &manager.stage else {
+        panic!("Shift-Q under workflow confirmation preserves the Workflows route");
+    };
+    assert_eq!(
+        workflow.confirm(),
+        Some(jackin_console::tui::screens::workflows::model::WorkflowAction::Cancel)
+    );
+    assert!(harness.state.quit_confirm.is_none());
+
     harness.dispatch(bare_q);
     let ConsoleStage::Manager(manager) = &harness.state.stage;
     let jackin_console::tui::state::ManagerStage::Workflows(workflow) = &manager.stage else {
@@ -338,6 +388,8 @@ fn draw_cancels_capture_once_when_a_background_modal_becomes_owner() {
 
     let ConsoleStage::Manager(manager) = &mut state.stage;
     mouse_state.last_painted_owner = Some((false, manager.painted_input_owner()));
+    mouse_state.pointer_shape = termrock::osc::PointerShape::Pointer;
+    mouse_state.chrome_hover = Some(ConsoleChromeHover::DebugChip);
     let seam = jackin_console::tui::layout::split_seam_column(manager.list_split_pct, term.width);
     jackin_console::tui::input::mouse::handle_mouse_with_config(
         manager,
@@ -385,6 +437,15 @@ fn draw_cancels_capture_once_when_a_background_modal_becomes_owner() {
         mouse_state.last_painted_owner,
         Some((false, manager.painted_input_owner()))
     );
+    assert_eq!(
+        mouse_state.pointer_shape,
+        termrock::osc::PointerShape::Default,
+        "a new modal owner clears the adapter pointer without mouse movement"
+    );
+    assert!(
+        mouse_state.chrome_hover.is_none(),
+        "a new modal owner clears stale chrome hover"
+    );
 
     jackin_console::tui::input::mouse::handle_mouse_with_config(
         manager,
@@ -418,6 +479,194 @@ fn draw_cancels_capture_once_when_a_background_modal_becomes_owner() {
     );
     assert_eq!(manager.list_split_pct, original_split);
     assert!(manager.drag_state.is_none());
+}
+
+#[test]
+fn draw_resets_new_modal_pointer_and_preserves_same_owner_pointer() {
+    use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+    use ratatui::layout::Rect;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = AppConfig::default();
+    let mut state = jackin_console::tui::console::new_console_state(&config, temp.path())
+        .expect("console state");
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 40)).expect("test terminal");
+    let mut mouse_state = ConsoleMouseState::new();
+    let mut overlay_active = false;
+    let mut jank = jackin_telemetry::ui::JankMonitor::default();
+    let term = Rect::new(0, 0, 120, 40);
+
+    let ConsoleStage::Manager(manager) = &mut state.stage;
+    mouse_state.last_painted_owner = Some((false, manager.painted_input_owner()));
+    mouse_state.pointer_shape = termrock::osc::PointerShape::Pointer;
+    mouse_state.chrome_hover = Some(ConsoleChromeHover::DebugChip);
+    manager.list_modal = Some(jackin_console::tui::state::Modal::ContainerInfo {
+        state: jackin_console::tui::components::container_info_surface::ContainerInfoState::new(
+            "Debug info",
+            vec![
+                jackin_console::tui::components::container_info_surface::ContainerInfoRow::new(
+                    "Run ID",
+                    "run-same-owner-pointer",
+                )
+                .copyable(),
+            ],
+        ),
+    });
+
+    let draw_context = DrawConsoleContext {
+        config: &config,
+        cwd: temp.path(),
+        mouse_state: &mut mouse_state,
+        container_info_overlay_active: &mut overlay_active,
+        action_parent: None,
+        jank_monitor: &mut jank,
+    };
+    draw_console_frame(&mut terminal, &mut state, draw_context)
+        .expect("draw the newly installed ContainerInfo modal");
+    assert_eq!(
+        mouse_state.pointer_shape,
+        termrock::osc::PointerShape::Default,
+        "a new modal owner clears the adapter pointer without mouse movement"
+    );
+    assert!(mouse_state.chrome_hover.is_none());
+
+    let ConsoleStage::Manager(manager) = &state.stage;
+    let copy_hover = (0..term.height)
+        .flat_map(|row| {
+            (0..term.width).map(move |column| MouseEvent {
+                kind: MouseEventKind::Moved,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            })
+        })
+        .find(|event| {
+            jackin_console::tui::input::mouse::container_info_copyable_row_at(manager, *event, term)
+        })
+        .expect("painted ContainerInfo fixture has a copyable row");
+    let mut pointer_redraw = false;
+    update_console_pointer_shape(
+        manager,
+        &config,
+        copy_hover,
+        term,
+        &mut mouse_state,
+        &mut pointer_redraw,
+        false,
+    );
+    assert_eq!(
+        mouse_state.pointer_shape,
+        termrock::osc::PointerShape::Pointer,
+        "the visible modal exposes its copy target to pointer hit testing"
+    );
+    assert_eq!(
+        mouse_state.last_painted_owner,
+        Some((false, manager.painted_input_owner()))
+    );
+
+    let draw_context = DrawConsoleContext {
+        config: &config,
+        cwd: temp.path(),
+        mouse_state: &mut mouse_state,
+        container_info_overlay_active: &mut overlay_active,
+        action_parent: None,
+        jank_monitor: &mut jank,
+    };
+    draw_console_frame(&mut terminal, &mut state, draw_context)
+        .expect("same-owner redraw keeps the modal pointer");
+    assert_eq!(
+        mouse_state.pointer_shape,
+        termrock::osc::PointerShape::Pointer,
+        "same-owner redraw preserves a valid recomputed modal pointer"
+    );
+}
+
+#[test]
+fn draw_resets_pointer_when_launch_error_or_editor_modal_takes_owner() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = AppConfig::default();
+    let mut state = jackin_console::tui::console::new_console_state(&config, temp.path())
+        .expect("console state");
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 40)).expect("test terminal");
+    let mut mouse_state = ConsoleMouseState::new();
+    let mut overlay_active = false;
+    let mut jank = jackin_telemetry::ui::JankMonitor::default();
+
+    let ConsoleStage::Manager(manager) = &state.stage;
+    mouse_state.last_painted_owner = Some((false, manager.painted_input_owner()));
+    mouse_state.pointer_shape = termrock::osc::PointerShape::Pointer;
+    mouse_state.chrome_hover = Some(ConsoleChromeHover::DebugChip);
+    show_launch_dispatch_error(&mut state, &anyhow::anyhow!("launch failed"));
+
+    let draw_context = DrawConsoleContext {
+        config: &config,
+        cwd: temp.path(),
+        mouse_state: &mut mouse_state,
+        container_info_overlay_active: &mut overlay_active,
+        action_parent: None,
+        jank_monitor: &mut jank,
+    };
+    draw_console_frame(&mut terminal, &mut state, draw_context)
+        .expect("draw the launch error modal without pointer movement");
+    let ConsoleStage::Manager(manager) = &state.stage;
+    assert!(matches!(
+        manager.list_modal,
+        Some(jackin_console::tui::state::Modal::ErrorPopup { .. })
+    ));
+    assert_eq!(
+        mouse_state.pointer_shape,
+        termrock::osc::PointerShape::Default,
+        "launch error ownership clears the stale adapter pointer"
+    );
+    assert!(mouse_state.chrome_hover.is_none());
+
+    let ConsoleStage::Manager(manager) = &mut state.stage;
+    manager.list_modal = None;
+    manager.stage = jackin_console::tui::state::ManagerStage::Editor(EditorState::new_edit(
+        "workspace".to_owned(),
+        jackin_config::WorkspaceConfig::default(),
+    ));
+    let mut editor_mouse_state = ConsoleMouseState::new();
+    let ConsoleStage::Manager(manager) = &mut state.stage;
+    editor_mouse_state.last_painted_owner = Some((false, manager.painted_input_owner()));
+    editor_mouse_state.pointer_shape = termrock::osc::PointerShape::Pointer;
+    editor_mouse_state.chrome_hover = Some(ConsoleChromeHover::DebugChip);
+    let jackin_console::tui::state::ManagerStage::Editor(editor) = &mut manager.stage else {
+        unreachable!();
+    };
+    editor.modal = Some(jackin_console::tui::state::Modal::ErrorPopup {
+        state: jackin_console::tui::components::ErrorPopupState::new(
+            "Editor error",
+            "No operation was performed",
+        ),
+    });
+
+    let draw_context = DrawConsoleContext {
+        config: &config,
+        cwd: temp.path(),
+        mouse_state: &mut editor_mouse_state,
+        container_info_overlay_active: &mut overlay_active,
+        action_parent: None,
+        jank_monitor: &mut jank,
+    };
+    draw_console_frame(&mut terminal, &mut state, draw_context)
+        .expect("draw the editor modal without pointer movement");
+    let ConsoleStage::Manager(manager) = &state.stage;
+    let jackin_console::tui::state::ManagerStage::Editor(editor) = &manager.stage else {
+        panic!("Editor modal keeps the Editor route");
+    };
+    assert!(matches!(
+        editor.modal,
+        Some(jackin_console::tui::state::Modal::ErrorPopup { .. })
+    ));
+    assert_eq!(
+        editor_mouse_state.pointer_shape,
+        termrock::osc::PointerShape::Default,
+        "editor modal ownership clears the stale adapter pointer"
+    );
+    assert!(editor_mouse_state.chrome_hover.is_none());
 }
 
 #[test]

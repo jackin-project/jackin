@@ -3,6 +3,15 @@
 
 use super::super::{Dialog, Multiplexer};
 
+struct OpenUsageDialogSelection {
+    selected: crate::tui::components::dialog::UsageDialogTab,
+    provider_label: Option<String>,
+    selected_account: Option<(
+        jackin_protocol::usage_broker::UsageAccountCapability,
+        jackin_protocol::control::FocusedUsageView,
+    )>,
+}
+
 impl Multiplexer {
     pub(crate) fn focused_usage_snapshot(&mut self) -> jackin_protocol::control::FocusedUsageView {
         self.focused_usage_snapshot_for_provider(None)
@@ -147,10 +156,34 @@ impl Multiplexer {
     }
 
     pub(crate) fn refresh_open_usage_dialog_from_cache(&mut self) -> bool {
-        let Some((selected, provider_label)) = self.open_usage_dialog_selection() else {
+        let Some(OpenUsageDialogSelection {
+            selected,
+            provider_label,
+            selected_account,
+        }) = self.open_usage_dialog_selection()
+        else {
             return false;
         };
-        let mut view = self.focused_usage_snapshot_for_provider(provider_label.as_deref());
+        let mut view = if let Some((capability, previous_view)) = selected_account {
+            let tab_id = capability.opaque_identity_key();
+            match self
+                .usage
+                .usage_cache
+                .focused_snapshot_for_account_id(&tab_id)
+            {
+                Some(mut view) if view.account.account_capability.as_ref() == Some(&capability) => {
+                    mark_usage_account_tab(&mut view, &capability);
+                    view
+                }
+                _ => self.unavailable_selected_usage_account(
+                    &previous_view,
+                    &capability,
+                    chrono::Utc::now().timestamp(),
+                ),
+            }
+        } else {
+            self.focused_usage_snapshot_for_provider(provider_label.as_deref())
+        };
         if self.usage.usage_refresh_task.is_some() {
             decorate_usage_view_refreshing(&mut view);
         }
@@ -179,19 +212,97 @@ impl Multiplexer {
         }
     }
 
-    fn open_usage_dialog_selection(
-        &self,
-    ) -> Option<(
-        crate::tui::components::dialog::UsageDialogTab,
-        Option<String>,
-    )> {
+    fn open_usage_dialog_selection(&self) -> Option<OpenUsageDialogSelection> {
         let Dialog::Usage { view, selected, .. } = self.dialog_top()? else {
             return None;
         };
         let provider = (*selected == crate::tui::components::dialog::UsageDialogTab::Provider)
             .then(|| view.focused_provider.clone())
             .flatten();
-        Some((*selected, provider))
+        let selected_account = view
+            .account
+            .account_capability
+            .clone()
+            .map(|capability| (capability, view.as_ref().clone()));
+        Some(OpenUsageDialogSelection {
+            selected: *selected,
+            provider_label: provider,
+            selected_account,
+        })
+    }
+
+    fn unavailable_selected_usage_account(
+        &self,
+        previous: &jackin_protocol::control::FocusedUsageView,
+        capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+        now: i64,
+    ) -> jackin_protocol::control::FocusedUsageView {
+        let already_unavailable = previous.account.account_capability.as_ref() == Some(capability)
+            && previous.status == jackin_protocol::control::UsageSnapshotStatus::Unavailable
+            && previous.buckets.is_empty()
+            && previous
+                .tabs
+                .iter()
+                .any(|tab| tab.account_capability.as_ref() == Some(capability));
+        let mut view = if already_unavailable {
+            let mut view = previous.clone();
+            view.updated_label = "Unavailable".to_owned();
+            view
+        } else {
+            let mut view = jackin_protocol::control::FocusedUsageView::unavailable(
+                "usage unavailable: selected account not cached",
+                now,
+            );
+            view.focused_agent = previous.focused_agent.clone();
+            view.focused_provider = previous.focused_provider.clone();
+            view.account = previous.account.clone();
+            view
+        };
+        view.account.account_capability = Some(capability.clone());
+        let previous_selected_tab = previous
+            .tabs
+            .iter()
+            .find(|tab| tab.account_capability.as_ref() == Some(capability))
+            .cloned();
+        let mut tab_views: Vec<_> = self
+            .usage
+            .usage_cache
+            .snapshots
+            .values()
+            .map(|cached| &cached.view)
+            .collect();
+        tab_views.push(&view);
+        view.tabs = jackin_usage_provider_core::provider_tabs(&tab_views);
+        if let (Some(previous_tab), Some(selected_tab)) = (
+            previous_selected_tab,
+            view.tabs
+                .iter_mut()
+                .find(|tab| tab.account_capability.as_ref() == Some(capability)),
+        ) {
+            selected_tab.label = previous_tab.label;
+            selected_tab.account_label = previous_tab.account_label;
+            selected_tab.plan_label = previous_tab.plan_label;
+        }
+        if let Some(selected_tab) = view
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.account_capability.as_ref() == Some(capability))
+        {
+            selected_tab.id = capability.opaque_identity_key();
+            selected_tab.status_label = "unavailable".to_owned();
+            selected_tab.source_label = Some("unavailable · no source".to_owned());
+        }
+        mark_usage_account_tab(&mut view, capability);
+        view
+    }
+}
+
+fn mark_usage_account_tab(
+    view: &mut jackin_protocol::control::FocusedUsageView,
+    capability: &jackin_protocol::usage_broker::UsageAccountCapability,
+) {
+    for tab in &mut view.tabs {
+        tab.active = tab.account_capability.as_ref() == Some(capability);
     }
 }
 

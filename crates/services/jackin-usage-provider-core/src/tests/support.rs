@@ -96,6 +96,7 @@ pub(super) fn detail_view(
             username: Some("operator".to_owned()),
             plan_label: Some("Pro 20x".to_owned()),
             credential_origin: Some("OAuth · ~/.codex/auth.json".to_owned()),
+            account_capability: None,
         },
         buckets,
         status,

@@ -44,8 +44,11 @@ pub fn store_usage_snapshots(path: &Path, views: &[FocusedUsageView]) -> Result<
     let path = path.to_path_buf();
     let rows = views
         .iter()
-        .flat_map(account_snapshot_rows)
-        .collect::<Vec<_>>();
+        .map(account_snapshot_rows)
+        .collect::<Result<Vec<_>, String>>()?
+        .into_iter()
+        .flatten()
+        .collect();
     block_on_store(async move {
         let store = open_store(&path).await?;
         if let Err(error) = upsert_account_snapshot_rows(store.store.connection(), rows).await {

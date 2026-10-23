@@ -43,6 +43,7 @@ pub fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
             username: input.username,
             plan_label: input.plan_label,
             credential_origin: input.credential_origin,
+            account_capability: None,
         },
         buckets: input.buckets,
         status: input.status,

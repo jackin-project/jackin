@@ -10,7 +10,6 @@ mod status;
 mod tabs;
 
 pub use compose::{UsageViewInput, usage_view};
-pub(crate) use meta::broker_account_id_from_cache_key;
 pub use meta::{
     bucket, timed_bucket, usage_tab_source_label, usage_tab_status_label, with_status_slot,
     with_used_percent,
@@ -26,6 +25,7 @@ pub use status::{
     status_bar_fresh_or_stale, status_bar_headline_for_surface, status_bar_label,
     status_bar_quota_labels, summary_bucket,
 };
+pub(crate) use tabs::usage_tab_id_for_view;
 pub use tabs::{
     account_tab_label_for_parts, enrich_provider_tabs, provider_tabs, usage_account_tab_id,
 };

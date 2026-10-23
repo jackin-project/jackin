@@ -524,6 +524,7 @@ where
         let painted_owner = (quit_confirm_open, input_owner);
         if context.mouse_state.last_painted_owner != Some(painted_owner) {
             ms.clear_pointer_state();
+            reset_modal_mouse_state(context.mouse_state, &mut ignored_redraw);
         }
         context.mouse_state.last_painted_owner = Some(painted_owner);
         let manager_pointer_actions_enabled = input_owner.allows_manager_pointer_actions();
@@ -1008,7 +1009,7 @@ fn should_intercept_root_quit(state: &ConsoleState, key: crossterm::event::KeyEv
     let workflows_owns_bare_q = matches!(
         &manager.stage,
         jackin_console::tui::state::ManagerStage::Workflows(_)
-    ) && matches!(key.code, KeyCode::Char('q' | 'Q'))
+    ) && matches!(key.code, KeyCode::Char('q'))
         && (key.modifiers - KeyModifiers::SHIFT).is_empty();
 
     state.base_surface_unblocked()
