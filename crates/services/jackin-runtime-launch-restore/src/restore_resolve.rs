@@ -11,7 +11,9 @@ use jackin_config::AppConfig;
 use jackin_core::{ContainerHandle, JackinPaths, WorkspaceName};
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use jackin_instance::InstanceManifest;
-use jackin_runtime_launch_account_identity::account_identity::account_configuration_matches;
+use jackin_runtime_launch_account_identity::account_identity::{
+    AccountConfigurationAdmission, AdmittedAccountConfiguration, admit_account_configuration,
+};
 use jackin_runtime_launch_plan::launch_plan::{
     LaunchPlan, emit_launch_plan_for_run, emit_rejected_launch_plan_for_run,
 };
@@ -29,16 +31,25 @@ pub enum RestoreResolution {
     PurgeAndRestartFresh(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdmittedRestore {
+    pub resolution: RestoreResolution,
+    pub account: Option<AdmittedAccountConfiguration>,
+}
+
 pub fn admit_restore(
     resolution: RestoreResolution,
     root: &Path,
     config: &AppConfig,
     workspace: Option<&WorkspaceName>,
     role: &str,
-) -> anyhow::Result<RestoreResolution> {
+) -> anyhow::Result<AdmittedRestore> {
     let container = match &resolution {
         RestoreResolution::StartFresh | RestoreResolution::PurgeAndRestartFresh(_) => {
-            return Ok(resolution);
+            return Ok(AdmittedRestore {
+                resolution,
+                account: None,
+            });
         }
         RestoreResolution::RecreateCurrentRole(name)
         | RestoreResolution::RestoreCurrentRole(name)
@@ -47,10 +58,28 @@ pub fn admit_restore(
         | RestoreResolution::RecreateCurrentRoleWithHandle(handle) => handle.name(),
         RestoreResolution::RebuildRelatedRole(manifest) => &manifest.container_base,
     };
-    if account_configuration_matches(&root.join(container), config, workspace, role)? {
-        Ok(resolution)
-    } else {
-        Ok(RestoreResolution::StartFresh)
+    let admission_role = match &resolution {
+        RestoreResolution::RebuildRelatedRole(manifest) => manifest.role_key.as_str(),
+        _ => role,
+    };
+    match admit_account_configuration(&root.join(container), config, workspace, admission_role)? {
+        AccountConfigurationAdmission::Changed => Ok(AdmittedRestore {
+            resolution: RestoreResolution::StartFresh,
+            account: None,
+        }),
+        AccountConfigurationAdmission::Matched(account) => {
+            let account = *account;
+            let resolution = match resolution {
+                RestoreResolution::RebuildRelatedRole(_) => {
+                    RestoreResolution::RebuildRelatedRole(Box::new(account.manifest.clone()))
+                }
+                resolution => resolution,
+            };
+            Ok(AdmittedRestore {
+                resolution,
+                account: Some(account),
+            })
+        }
     }
 }
 

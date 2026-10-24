@@ -28,6 +28,12 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
         "Agent Smith",
         jackin_core::Agent::Claude,
     );
+    manifest.set_admitted_instances([crate::instance::AdmittedInstance {
+        config_id: "claude-main".to_owned(),
+        agent: jackin_core::Agent::Claude,
+        account_id: "test".to_owned(),
+        registration_state: crate::instance::RegistrationState::Current,
+    }]);
     manifest.mark_status(InstanceStatus::Running);
     manifest.docker_identity = Some(crate::instance::DockerIdentity {
         role_container_id: container_name.to_owned(),
@@ -139,6 +145,12 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
     );
     let container_name = "jk-k7p9m2xq-workspace-agentsmith";
     let mut manifest = workspace_manifest(container_name, "agent-smith", "Agent Smith", agent);
+    manifest.set_admitted_instances([crate::instance::AdmittedInstance {
+        config_id: "claude-main".to_owned(),
+        agent: jackin_core::Agent::Claude,
+        account_id: "test".to_owned(),
+        registration_state: crate::instance::RegistrationState::Current,
+    }]);
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
     provision_restore_account_policy(&paths, &config, &manifest);

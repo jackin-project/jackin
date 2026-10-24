@@ -14,11 +14,48 @@ pub struct SiblingAuthPrewarm<'a> {
     pub role_key: &'a str,
 }
 
+enum PrewarmInstances {
+    FreshDefaults,
+    AdmittedRestore(Vec<jackin_config::ResolvedInstance>),
+}
+
 pub fn spawn_sibling_auth_prewarm(
     paths: &JackinPaths,
     container_name: &str,
     prewarm: &SiblingAuthPrewarm<'_>,
     selected_agent: jackin_core::Agent,
+) -> Option<tokio::task::JoinHandle<()>> {
+    spawn_sibling_auth_prewarm_with_instances(
+        paths,
+        container_name,
+        prewarm,
+        selected_agent,
+        PrewarmInstances::FreshDefaults,
+    )
+}
+
+pub fn spawn_sibling_auth_prewarm_with_admitted_instances(
+    paths: &JackinPaths,
+    container_name: &str,
+    prewarm: &SiblingAuthPrewarm<'_>,
+    selected_agent: jackin_core::Agent,
+    instances: Vec<jackin_config::ResolvedInstance>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    spawn_sibling_auth_prewarm_with_instances(
+        paths,
+        container_name,
+        prewarm,
+        selected_agent,
+        PrewarmInstances::AdmittedRestore(instances),
+    )
+}
+
+fn spawn_sibling_auth_prewarm_with_instances(
+    paths: &JackinPaths,
+    container_name: &str,
+    prewarm: &SiblingAuthPrewarm<'_>,
+    selected_agent: jackin_core::Agent,
+    prewarm_instances: PrewarmInstances,
 ) -> Option<tokio::task::JoinHandle<()>> {
     let active_run = jackin_diagnostics::active_run_for_paths(paths);
     let sibling_agents = prewarm
@@ -80,20 +117,32 @@ pub fn spawn_sibling_auth_prewarm(
     }
 
     Some(spawn_auth_prewarm_worker(move || {
-        let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
-        let instances: Vec<jackin_config::ResolvedInstance> =
-            match jackin_config::resolve_launch(&config, ws.as_ref(), &role_key, None, None) {
-                Ok(instances) => instances
-                    .into_iter()
-                    .filter(|instance| sibling_agents.contains(&instance.agent))
-                    .collect(),
-                Err(error) => {
-                    if let Some(run) = active_run {
-                        run.compact("sibling_auth_prewarm_failed", &error.to_string());
-                    }
-                    return;
+        let instances_result = match prewarm_instances {
+            PrewarmInstances::FreshDefaults => {
+                let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
+                jackin_config::resolve_launch(&config, ws.as_ref(), &role_key, None, None).map(
+                    |instances| {
+                        instances
+                            .into_iter()
+                            .filter(|instance| sibling_agents.contains(&instance.agent))
+                            .collect()
+                    },
+                )
+            }
+            PrewarmInstances::AdmittedRestore(instances) => Ok(instances
+                .into_iter()
+                .filter(|instance| sibling_agents.contains(&instance.agent))
+                .collect()),
+        };
+        let instances: Vec<jackin_config::ResolvedInstance> = match instances_result {
+            Ok(instances) => instances,
+            Err(error) => {
+                if let Some(run) = active_run {
+                    run.compact("sibling_auth_prewarm_failed", &error.to_string());
                 }
-            };
+                return;
+            }
+        };
         let mut bindings =
             match jackin_runtime_launch_capsule_setup::capsule_setup::instance_auth_bindings(
                 &config, &instances,

@@ -62,7 +62,10 @@ where
         git_pull_join,
         prepared,
         cleanup,
-        trust: TrustSeeded { environment, .. },
+        trust: TrustSeeded {
+            environment,
+            instances,
+        },
     } = input;
     emit_auth_breadcrumbs(
         agent,
@@ -174,8 +177,6 @@ where
         config,
         selector,
         workspace,
-        environment.workspace_opt.as_ref(),
-        role_key,
         agent,
         validated_repo,
         opts,
@@ -183,6 +184,7 @@ where
         dirty_exit_policy.as_str(),
         exec_bindings,
         &environment.state,
+        &instances,
     )?;
     crate::usage_relay::populate_launch_usage_capabilities(config, &mut launch_config);
     Ok(WorkspaceMaterialized {

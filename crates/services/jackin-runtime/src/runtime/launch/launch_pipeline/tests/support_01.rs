@@ -178,6 +178,8 @@ pub(super) struct LaunchCoreFixture {
     source: jackin_config::RoleSource,
     pub(super) container_name: String,
     pub(super) image: String,
+    supported_agents: Vec<Agent>,
+    restore_instances: Option<Vec<jackin_config::ResolvedInstance>>,
 }
 
 impl LaunchCoreFixture {
@@ -284,7 +286,104 @@ agents = ["codex"]
             },
             container_name,
             image,
+            supported_agents: vec![Agent::Codex],
+            restore_instances: None,
         }
+    }
+
+    pub(super) fn configure_account_selection_case(&mut self) {
+        std::fs::write(
+            self.cached_repo.repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex", "claude"]
+
+[codex]
+
+[claude]
+"#,
+        )
+        .unwrap();
+        self.validated_repo =
+            jackin_manifest::repo::validate_role_repo(&self.cached_repo.repo_dir).unwrap();
+        self.supported_agents = vec![Agent::Codex, Agent::Claude];
+
+        if let Some(jackin_config::AccountCredential::ApiKey { value, .. }) = self
+            .config
+            .accounts
+            .get_mut("test-codex")
+            .map(|account| &mut account.credential)
+        {
+            *value = "saved-codex-key-a".into();
+        }
+        self.config.accounts.insert(
+            "saved-claude-account".into(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: "Saved Claude".into(),
+                provider: jackin_config::AiProvider::Anthropic,
+                credential: jackin_config::AccountCredential::ApiKey {
+                    value: "saved-claude-key-a".into(),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+        self.config.agent_configurations.insert(
+            "claude-saved".into(),
+            jackin_config::AgentConfiguration {
+                agent: Agent::Claude,
+                account: "saved-claude-account".into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+        self.config.accounts.insert(
+            "default-codex-account".into(),
+            jackin_config::AccountConfig {
+                enabled: true,
+                name: "Default Codex".into(),
+                provider: jackin_config::AiProvider::OpenAi,
+                credential: jackin_config::AccountCredential::ApiKey {
+                    value: "default-codex-key-b".into(),
+                    base_url: None,
+                    model: None,
+                },
+            },
+        );
+        self.config.agent_configurations.insert(
+            "codex-default-b".into(),
+            jackin_config::AgentConfiguration {
+                agent: Agent::Codex,
+                account: "default-codex-account".into(),
+                model: None,
+                base_url: None,
+                display_label: None,
+                invoked_via_wrapper: None,
+            },
+        );
+        self.config.default_launch = Some(vec!["codex-default-b".into()]);
+        std::fs::write(
+            &self.paths.config_file,
+            toml::to_string(&self.config).unwrap(),
+        )
+        .unwrap();
+    }
+
+    pub(super) fn admit_saved_account_selection(&mut self) {
+        let selected = vec!["codex-main".to_owned(), "claude-saved".to_owned()];
+        self.restore_instances = Some(
+            jackin_config::resolve_launch(
+                &self.config,
+                None,
+                &self.selector.key(),
+                Some(&selected),
+                None,
+            )
+            .unwrap(),
+        );
     }
 
     pub(super) fn with_bad_grants(mut self) -> Self {
@@ -323,7 +422,7 @@ agents = ["codex"]
             role_key: self.selector.key(),
             agent_display_name: "Agent Smith".to_owned(),
             agent: Agent::Codex,
-            supported_agents: vec![Agent::Codex],
+            supported_agents: self.supported_agents.clone(),
             cached_repo: self.cached_repo.clone(),
             validated_repo: self.validated_repo.clone(),
             source: self.source.clone(),
@@ -342,9 +441,133 @@ agents = ["codex"]
             resolved_env: ResolvedEnv { vars: vec![] },
             rebuild: false,
             restore_pinned_sha: None,
+            restore_instances: self.restore_instances.clone(),
             git_pull_join: None,
             account_revision,
             admission_config,
         }
     }
+}
+
+#[tokio::test]
+async fn saved_restore_selection_drives_credentials_and_capsule_config() {
+    let mut fix = LaunchCoreFixture::new();
+    fix.configure_account_selection_case();
+    fix.admit_saved_account_selection();
+
+    launch_core::run_launch_core(fix.as_core())
+        .await
+        .expect("saved account selection launches");
+
+    assert_staged_instance_account(&fix, "codex-main", "test-codex", "saved-codex-key-a");
+    assert_staged_instance_account(
+        &fix,
+        "claude-saved",
+        "saved-claude-account",
+        "saved-claude-key-a",
+    );
+    assert_staged_instance_is_absent(&fix, "codex-default-b");
+
+    let capsule = read_capsule_config(&fix);
+    assert_eq!(
+        capsule.instances,
+        vec!["codex-main".to_owned(), "claude-saved".to_owned()],
+        "CapsuleConfig must keep the saved mixed-agent order"
+    );
+    assert_eq!(
+        capsule.accounts.get("codex-main").map(String::as_str),
+        Some("test-codex")
+    );
+    assert_eq!(
+        capsule.accounts.get("claude-saved").map(String::as_str),
+        Some("saved-claude-account")
+    );
+    assert_eq!(
+        capsule.agents.get("codex-main").map(String::as_str),
+        Some("codex")
+    );
+    assert_eq!(
+        capsule.agents.get("claude-saved").map(String::as_str),
+        Some("claude")
+    );
+    assert!(
+        !capsule
+            .instances
+            .iter()
+            .any(|instance| instance == "codex-default-b")
+    );
+}
+
+#[tokio::test]
+async fn fresh_launch_uses_current_default_for_credentials_and_capsule_config() {
+    let mut fix = LaunchCoreFixture::new();
+    fix.configure_account_selection_case();
+
+    launch_core::run_launch_core(fix.as_core())
+        .await
+        .expect("fresh account selection launches");
+
+    assert_staged_instance_account(
+        &fix,
+        "codex-default-b",
+        "default-codex-account",
+        "default-codex-key-b",
+    );
+    assert_staged_instance_is_absent(&fix, "codex-main");
+    assert_staged_instance_is_absent(&fix, "claude-saved");
+
+    let capsule = read_capsule_config(&fix);
+    assert_eq!(capsule.instances, vec!["codex-default-b".to_owned()]);
+    assert_eq!(
+        capsule.accounts.get("codex-default-b").map(String::as_str),
+        Some("default-codex-account")
+    );
+}
+
+fn assert_staged_instance_account(
+    fix: &LaunchCoreFixture,
+    instance: &str,
+    account_id: &str,
+    credential_marker: &str,
+) {
+    let path = fix
+        .paths
+        .data_dir
+        .join(&fix.container_name)
+        .join("credentials")
+        .join(jackin_protocol::account_credentials_filename(instance));
+    let staged: jackin_protocol::StagedInstanceCredential =
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    assert_eq!(staged.instance, instance);
+    assert_eq!(staged.credential.account_id, account_id);
+    assert!(
+        staged
+            .credential
+            .env
+            .values()
+            .any(|value| value == credential_marker)
+    );
+}
+
+fn assert_staged_instance_is_absent(fix: &LaunchCoreFixture, instance: &str) {
+    let path = fix
+        .paths
+        .data_dir
+        .join(&fix.container_name)
+        .join("credentials")
+        .join(jackin_protocol::account_credentials_filename(instance));
+    assert!(
+        !path.exists(),
+        "unexpected staged credential for {instance}"
+    );
+}
+
+fn read_capsule_config(fix: &LaunchCoreFixture) -> jackin_protocol::CapsuleConfig {
+    let path = fix
+        .paths
+        .jackin_home
+        .join("sockets")
+        .join(&fix.container_name)
+        .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }

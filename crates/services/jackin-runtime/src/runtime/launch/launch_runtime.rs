@@ -128,6 +128,7 @@ pub(crate) struct SiblingPrewarm<'a> {
 pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::spawn_auth_prewarm_worker;
 pub(crate) use jackin_runtime_launch_sibling_auth_prewarm::sibling_auth_prewarm::{
     SiblingAuthPrewarm, await_sibling_auth_prewarm, spawn_sibling_auth_prewarm,
+    spawn_sibling_auth_prewarm_with_admitted_instances,
 };
 
 fn initial_daemon_argv(

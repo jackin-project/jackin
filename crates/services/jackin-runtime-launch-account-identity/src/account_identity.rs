@@ -7,7 +7,10 @@
 )]
 
 use anyhow::Context as _;
-use jackin_config::{AppConfig, ConfigGeneration, ConfigReadGuard, ReadOnlyConfigSnapshot};
+use jackin_config::{
+    AppConfig, ConfigGeneration, ConfigReadGuard, ReadOnlyConfigSnapshot, ResolvedInstance,
+    SavedLaunchInstance,
+};
 use jackin_core::{ContainerHandle, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 use jackin_instance::{AdmittedInstance, InstanceManifest};
@@ -718,6 +721,68 @@ pub fn account_configuration_matches(
         )?;
     lease.ensure_root_identity()?;
     Ok(matches)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccountConfigurationAdmission {
+    Changed,
+    Matched(Box<AdmittedAccountConfiguration>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdmittedAccountConfiguration {
+    pub manifest: InstanceManifest,
+    pub instances: Vec<ResolvedInstance>,
+    pub fingerprint: String,
+}
+
+pub fn admit_account_configuration(
+    root: &Path,
+    config: &AppConfig,
+    workspace: Option<&WorkspaceName>,
+    role: &str,
+) -> anyhow::Result<AccountConfigurationAdmission> {
+    let Some(lease) = marker_transaction::shared_lease_with_recovery(root)? else {
+        return Ok(AccountConfigurationAdmission::Changed);
+    };
+    lease.ensure_root_identity()?;
+    let stored = match std::fs::read_to_string(root.join(ACCOUNT_FINGERPRINT_FILE)) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            lease.ensure_root_identity()?;
+            return Ok(AccountConfigurationAdmission::Changed);
+        }
+        Err(error) => return Err(error.into()),
+    };
+    lease.ensure_root_identity()?;
+    let manifest = InstanceManifest::read(root)?;
+    lease.ensure_root_identity()?;
+    let fingerprint =
+        account_configuration_fingerprint(config, workspace, role, &manifest.admitted_instances)?;
+    if stored != fingerprint {
+        lease.ensure_root_identity()?;
+        return Ok(AccountConfigurationAdmission::Changed);
+    }
+
+    let saved = manifest
+        .admitted_instances
+        .iter()
+        .map(|instance| SavedLaunchInstance {
+            config_id: &instance.config_id,
+            agent: instance.agent,
+            account_id: &instance.account_id,
+        })
+        .collect::<Vec<_>>();
+    let instances = jackin_config::resolve_saved_launch(config, workspace, &saved)
+        .context("saved account selection is no longer valid")?;
+    lease.ensure_root_identity()?;
+    Ok(AccountConfigurationAdmission::Matched(Box::new(
+        AdmittedAccountConfiguration {
+            manifest,
+            instances,
+            fingerprint,
+        },
+    )))
 }
 
 #[derive(Debug)]
