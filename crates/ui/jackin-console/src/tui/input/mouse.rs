@@ -9,26 +9,25 @@ mod scroll_registry;
 mod selection;
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
+use termrock::interaction::HitRegion;
 
 use crate::tui::components::file_browser::FileBrowserState;
 use crate::tui::components::modal_overlay;
 use crate::tui::layout::{
-    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_VERTICAL_SCROLL_STEP,
-    SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, apply_scrollbar_drag,
-    horizontal_split_pane_dims, is_horizontally_scrollable, point_in_rect,
-    scroll_selection_at_position, split_seam_column,
+    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MOUSE_VERTICAL_SCROLL_STEP, ScrollbarAxis,
+    apply_scrollbar_drag, horizontal_split_pane_dims, is_horizontally_scrollable, point_in_rect,
+    split_seam_column,
 };
 use crate::tui::model::{ConsoleInputDispatchPlan, ConsolePaintedInputOwner};
 use crate::tui::run::{ConsoleClickStageFacts, ConsoleClickabilityFacts, console_clickable_at};
 use crate::tui::screens::editor::update::{
     editor_auth_row_index_at_position, editor_mount_hover_target_at_position,
-    editor_mount_index_at_position, editor_scroll_focus_plan, editor_tab_at_position,
-    editor_tab_bar_focus_plan,
+    editor_mount_index_at_position, editor_scroll_focus_plan, editor_tab_bar_focus_plan,
 };
 use crate::tui::screens::settings::update::{
     settings_modal_open as settings_modal_open_fact, settings_scroll_focus_plan,
-    settings_tab_at_position, settings_tab_bar_focus_plan, settings_trust_clickable_at_position,
+    settings_tab_bar_focus_plan, settings_trust_clickable_at_position,
     settings_trust_hover_target_at_position, settings_trust_row_at_position,
 };
 use crate::tui::screens::workspaces::update::{
@@ -39,8 +38,8 @@ use crate::tui::screens::workspaces::update::{
 use crate::tui::state::ManagerEffect;
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{
-    EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsModal,
-    SettingsTab,
+    EditorState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
+    SettingsModal, SettingsState, SettingsTab,
 };
 use crate::tui::update::{
     ConsoleMouseWheelPlan, ListModalScrollTarget, SettingsModalScrollTarget,
@@ -71,6 +70,39 @@ mod tests;
 
 use crate::tui::layout::list::SidebarScrollAreas;
 
+pub(super) fn editor_tab_hit_regions(
+    editor: &EditorState<'_>,
+    term_size: Rect,
+    config: Option<&jackin_config::AppConfig>,
+    op_available: bool,
+) -> Vec<HitRegion<usize>> {
+    let Some(config) = config else {
+        return Vec::new();
+    };
+    crate::tui::screens::editor::view::editor_tab_hit_regions(
+        term_size,
+        editor,
+        config,
+        op_available,
+    )
+}
+
+pub(super) fn settings_tab_hit_regions(
+    settings: &SettingsState<'_>,
+    term_size: Rect,
+    op_available: bool,
+) -> Vec<HitRegion<usize>> {
+    crate::tui::screens::settings::view::settings_tab_hit_regions(term_size, settings, op_available)
+}
+
+pub(super) fn tab_hit_id(regions: &[HitRegion<usize>], mouse: MouseEvent) -> Option<usize> {
+    let position = Position::new(mouse.column, mouse.row);
+    regions
+        .iter()
+        .find(|region| region.area.contains(position))
+        .map(|region| region.id)
+}
+
 #[cfg(test)]
 use crate::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
 #[cfg(test)]
@@ -93,6 +125,13 @@ pub fn handle_mouse_with_config(
     term_size: Rect,
     config: Option<&jackin_config::AppConfig>,
 ) -> super::InputOutcome {
+    if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
+        if state.drag_state.is_some() {
+            dispatch_manager(state, ManagerMessage::SetDragState(None));
+        }
+        return super::InputOutcome::Continue;
+    }
+
     let input_owner = state.painted_input_owner();
     if !input_owner.allows_manager_pointer_actions() {
         state.clear_pointer_state();
@@ -103,22 +142,26 @@ pub fn handle_mouse_with_config(
         ConsolePaintedInputOwner::Dispatch(ConsoleInputDispatchPlan::ListModal)
     );
 
-    if term_size.width < MIN_DRAGGABLE_WIDTH {
-        return super::InputOutcome::Continue;
-    }
-
     if matches!(mouse.kind, MouseEventKind::Moved) {
+        if !term_size.contains(Position::new(mouse.column, mouse.row)) {
+            clear_pointer_hover(state);
+            return super::InputOutcome::Continue;
+        }
         if list_modal_painted {
             state.clear_pointer_state();
             update_container_info_hover(state, mouse, term_size);
         } else if owner_is_modal(input_owner) {
             state.clear_pointer_state();
         } else {
-            update_hover(state, mouse, term_size);
+            update_hover(state, mouse, term_size, config);
             if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() {
                 info.set_hovered_row(None);
             }
         }
+        return super::InputOutcome::Continue;
+    }
+
+    if !term_size.contains(Position::new(mouse.column, mouse.row)) {
         return super::InputOutcome::Continue;
     }
 
@@ -127,12 +170,12 @@ pub fn handle_mouse_with_config(
     }
 
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
-        && try_select_editor_tab(state, mouse)
+        && try_select_editor_tab(state, mouse, term_size, config)
     {
         return super::InputOutcome::Continue;
     }
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
-        && try_select_settings_tab(state, mouse)
+        && try_select_settings_tab(state, mouse, term_size)
     {
         return super::InputOutcome::Continue;
     }
@@ -238,6 +281,23 @@ pub fn handle_mouse_with_config(
     super::InputOutcome::Continue
 }
 
+fn clear_pointer_hover(state: &mut ManagerState<'_>) {
+    state.hover_target = None;
+    state.hover = termrock::interaction::HoverState::default();
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => editor.set_hover_target(None),
+        ManagerStage::Settings(settings) => settings.set_hover_target(None),
+        ManagerStage::List
+        | ManagerStage::CreatePrelude(_)
+        | ManagerStage::Workflows(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
+    }
+    if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() {
+        info.set_hovered_row(None);
+    }
+}
+
 fn handle_modal_pointer_event(
     state: &mut ManagerState<'_>,
     owner: ConsolePaintedInputOwner,
@@ -304,6 +364,10 @@ pub fn clickable_at(
     term_size: Rect,
     config: Option<&jackin_config::AppConfig>,
 ) -> bool {
+    let pointer_supported = term_size.contains(Position::new(mouse.column, mouse.row));
+    if !pointer_supported {
+        return false;
+    }
     let input_owner = state.painted_input_owner();
     if !input_owner.allows_manager_pointer_actions() {
         return false;
@@ -325,7 +389,11 @@ pub fn clickable_at(
     let stage = match &state.stage {
         ManagerStage::Editor(editor) => ConsoleClickStageFacts::Editor {
             modal_open: editor.modal.is_some(),
-            tab_target: editor_tab_at_position(mouse.row, mouse.column).is_some(),
+            tab_target: tab_hit_id(
+                &editor_tab_hit_regions(editor, term_size, config, state.op_available),
+                mouse,
+            )
+            .is_some(),
             mount_row_target: editor_mount_index_at(editor, mouse, term_size).is_some(),
             auth_row_target: config
                 .and_then(|cfg| editor_auth_row_index_at(editor, cfg, mouse, term_size))
@@ -334,7 +402,11 @@ pub fn clickable_at(
         ManagerStage::Settings(settings) => ConsoleClickStageFacts::Settings {
             mounts_modal_open: settings_modal_painted || settings.mounts.modals.is_open(),
             env_modal_open: settings_modal_painted || settings.env.modals.is_open(),
-            tab_target: settings_tab_at_position(mouse.row, mouse.column).is_some(),
+            tab_target: tab_hit_id(
+                &settings_tab_hit_regions(settings, term_size, state.op_available),
+                mouse,
+            )
+            .is_some(),
             trust_target: settings_trust_clickable_at_position(
                 settings.active_tab,
                 settings.mounts.modals.is_open(),
@@ -363,7 +435,7 @@ pub fn clickable_at(
     };
 
     console_clickable_at(ConsoleClickabilityFacts {
-        pointer_supported: term_size.width >= MIN_DRAGGABLE_WIDTH,
+        pointer_supported,
         file_browser_url_target: file_browser_url_row_at(state, mouse, term_size),
         container_info_copy_target: list_modal_painted
             && container_info_copyable_row_at(state, mouse, term_size),
@@ -437,10 +509,7 @@ pub fn list_scroll_areas(
 }
 
 #[must_use]
-pub fn editor_scroll_area(
-    editor: &crate::tui::state::EditorState<'_>,
-    term_size: Rect,
-) -> ScrollArea {
+pub fn editor_scroll_area(editor: &EditorState<'_>, term_size: Rect) -> ScrollArea {
     ScrollArea {
         area: editor.content_area(term_size),
         content_width: editor.workspace_mounts_content_width(),

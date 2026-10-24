@@ -3,14 +3,15 @@
 
 use super::super::InputOutcome;
 use super::{
-    ConsoleHoverTarget, ConsoleScrollBlock, ScrollBlockRegion, container_info_copyable_row_at,
-    file_browser_url_row_at, global_mounts_content_width, handle_mouse, handle_mouse_with_config,
-    hit, list_scroll_areas, max_scroll_offset, workspace_mounts_content_width,
+    ConsoleHoverTarget, ConsoleScrollBlock, ScrollBlockRegion, clickable_at,
+    container_info_copyable_row_at, editor_tab_hit_regions, file_browser_url_row_at,
+    global_mounts_content_width, handle_mouse, handle_mouse_with_config, hit, list_scroll_areas,
+    max_scroll_offset, settings_tab_hit_regions, workspace_mounts_content_width,
 };
 
 use crate::tui::components::save_discard::editor_exit_save_discard_state;
 
-use crate::tui::layout::MOUSE_HORIZONTAL_SCROLL_STEP;
+use crate::tui::layout::{MOUSE_HORIZONTAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT};
 
 use crate::tui::screens::settings::view::global_mount_confirm_state;
 
@@ -32,7 +33,6 @@ use jackin_config::{MountConfig, WorkspaceConfig};
 
 use ratatui::layout::Rect;
 
-use super::{SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT};
 mod support;
 use support::*;
 mod case_01;
@@ -41,3 +41,5 @@ mod case_03;
 mod case_04;
 mod case_05;
 mod case_06;
+mod case_07;
+mod case_08;

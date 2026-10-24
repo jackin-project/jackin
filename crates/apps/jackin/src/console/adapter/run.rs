@@ -297,20 +297,26 @@ struct ConsoleLoopInputs<'a, H, R> {
 
 struct ConsoleMouseState {
     last_event_at: Option<std::time::Instant>,
+    last_pointer_position: Option<ratatui::layout::Position>,
     pointer_shape: termrock::osc::PointerShape,
     chrome_regions: Vec<termrock::interaction::HitRegion<ConsoleChromeHover>>,
     chrome_hover: Option<ConsoleChromeHover>,
     last_painted_owner: Option<(bool, ConsolePaintedInputOwner)>,
+    last_painted_main_area: Option<ratatui::layout::Rect>,
+    geometry_invalid: bool,
 }
 
 impl ConsoleMouseState {
     fn new() -> Self {
         Self {
             last_event_at: None,
+            last_pointer_position: None,
             pointer_shape: termrock::osc::PointerShape::Default,
             chrome_regions: Vec::new(),
             chrome_hover: None,
             last_painted_owner: None,
+            last_painted_main_area: None,
+            geometry_invalid: false,
         }
     }
 }
@@ -507,7 +513,7 @@ fn draw_console_frame<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
     context: DrawConsoleContext<'_>,
-) -> anyhow::Result<()>
+) -> anyhow::Result<bool>
 where
     B: ratatui::backend::Backend,
     B::Error: std::error::Error + Send + Sync + 'static,
@@ -515,6 +521,7 @@ where
     let full_area: ratatui::layout::Rect = terminal.size()?.into();
     let (main_area, debug_bar_area) =
         split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
+    let should_refresh_pointer_after_paint;
     {
         let mut ignored_redraw = false;
         let quit_confirm_open = state.quit_confirm.is_some();
@@ -522,6 +529,10 @@ where
         let ConsoleStage::Manager(ms) = &mut state.stage;
         let input_owner = ms.painted_input_owner();
         let painted_owner = (quit_confirm_open, input_owner);
+        should_refresh_pointer_after_paint = context.mouse_state.last_painted_owner
+            != Some(painted_owner)
+            || context.mouse_state.last_painted_main_area != Some(main_area)
+            || context.mouse_state.geometry_invalid;
         if context.mouse_state.last_painted_owner != Some(painted_owner) {
             ms.clear_pointer_state();
             reset_modal_mouse_state(context.mouse_state, &mut ignored_redraw);
@@ -573,16 +584,7 @@ where
         let ConsoleStage::Manager(ms) = &state.stage;
         jackin_console::tui::view::render(frame, main_area, ms, context.config, context.cwd);
         if let Some(confirm) = confirm_state {
-            let hint_row = ratatui::layout::Rect {
-                x: main_area.x,
-                y: main_area.bottom().saturating_sub(1),
-                width: main_area.width,
-                height: 1,
-            };
-            let body = ratatui::layout::Rect {
-                height: main_area.height.saturating_sub(1),
-                ..main_area
-            };
+            let (body, hint_row) = quit_confirm_body_and_hint_area(main_area);
             jackin_console::tui::view::render_modal_backdrop(frame, body);
             let area = quit_confirm_area(body, confirm);
             jackin_console::tui::components::render_confirm_dialog(frame, area, confirm);
@@ -609,6 +611,7 @@ where
         );
     }
     render_result?;
+    context.mouse_state.last_painted_main_area = Some(main_area);
     context
         .jank_monitor
         .record_frame(screen, render_started.elapsed().as_secs_f64());
@@ -635,7 +638,101 @@ where
         }
         *context.container_info_overlay_active = true;
     }
-    Ok(())
+
+    let hover_frame_owed = refresh_pointer_after_paint(
+        state,
+        main_area,
+        context.config,
+        context.mouse_state,
+        should_refresh_pointer_after_paint,
+    );
+    context.mouse_state.geometry_invalid = false;
+    Ok(hover_frame_owed)
+}
+
+fn quit_confirm_body_and_hint_area(
+    main_area: ratatui::layout::Rect,
+) -> (ratatui::layout::Rect, ratatui::layout::Rect) {
+    let body = ratatui::layout::Rect {
+        height: main_area.height.saturating_sub(1),
+        ..main_area
+    };
+    let hint_row = if main_area.height == 0 {
+        ratatui::layout::Rect::new(main_area.x, main_area.y, main_area.width, 0)
+    } else {
+        ratatui::layout::Rect::new(
+            main_area.x,
+            main_area.bottom().saturating_sub(1),
+            main_area.width,
+            1,
+        )
+    };
+    (body, hint_row)
+}
+
+fn refresh_pointer_after_paint(
+    state: &mut ConsoleState,
+    main_area: ratatui::layout::Rect,
+    config: &AppConfig,
+    mouse_state: &mut ConsoleMouseState,
+    should_refresh_manager_hover: bool,
+) -> bool {
+    if state.quit_confirm.is_some() {
+        let mut redraw_owed = false;
+        reset_modal_mouse_state(mouse_state, &mut redraw_owed);
+        return redraw_owed;
+    }
+    let Some(position) = mouse_state.last_pointer_position else {
+        return false;
+    };
+    let mouse = crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Moved,
+        column: position.x,
+        row: position.y,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    let base_surface_unblocked = state.base_surface_unblocked();
+    let mut redraw_owed = false;
+    let ConsoleStage::Manager(manager) = &mut state.stage;
+    if should_refresh_manager_hover
+        && manager
+            .painted_input_owner()
+            .allows_manager_pointer_actions()
+    {
+        drop(crate::console::adapter::input::handle_mouse_with_config(
+            manager,
+            mouse,
+            main_area,
+            Some(config),
+        ));
+        redraw_owed |= manager_has_pointer_hover(manager);
+    }
+    update_console_pointer_shape(
+        manager,
+        config,
+        mouse,
+        main_area,
+        mouse_state,
+        &mut redraw_owed,
+        base_surface_unblocked,
+    );
+    redraw_owed
+}
+
+fn manager_has_pointer_hover(manager: &jackin_console::tui::state::ManagerState<'_>) -> bool {
+    let stage_has_hover = match &manager.stage {
+        jackin_console::tui::state::ManagerStage::Editor(editor) => editor.hover_target.is_some(),
+        jackin_console::tui::state::ManagerStage::Settings(settings) => {
+            settings.hover_target.is_some()
+        }
+        _ => manager.hover_target.is_some(),
+    };
+    stage_has_hover
+        || matches!(
+            &manager.list_modal,
+            Some(crate::console::adapter::state::Modal::ContainerInfo { state: info })
+                if info.hovered_row().is_some()
+        )
 }
 
 fn present_owed_frame<B>(
@@ -657,9 +754,9 @@ where
         return Ok(());
     }
     pacer.begin_draw(tick.now());
-    draw_console_frame(terminal, state, context)?;
+    let hover_frame_owed = draw_console_frame(terminal, state, context)?;
     pacer.end_draw(tick.now());
-    *needs_redraw = false;
+    *needs_redraw = hover_frame_owed;
     Ok(())
 }
 
@@ -1094,6 +1191,28 @@ fn console_pointer_shape_at(
     )
 }
 
+fn handle_terminal_resize<B>(
+    terminal: &mut ratatui::Terminal<B>,
+    width: u16,
+    height: u16,
+    state: &mut ConsoleState,
+    mouse_state: &mut ConsoleMouseState,
+    needs_redraw: &mut bool,
+) -> anyhow::Result<()>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    terminal.resize(ratatui::layout::Rect::new(0, 0, width, height))?;
+    let ConsoleStage::Manager(manager) = &mut state.stage;
+    manager.clear_pointer_state();
+    mouse_state.chrome_regions.clear();
+    mouse_state.geometry_invalid = true;
+    reset_modal_mouse_state(mouse_state, needs_redraw);
+    *needs_redraw = true;
+    Ok(())
+}
+
 fn handle_mouse_event<H, R>(
     state: &mut ConsoleState,
     mouse: crossterm::event::MouseEvent,
@@ -1103,12 +1222,29 @@ fn handle_mouse_event<H, R>(
     needs_redraw: &mut bool,
 ) -> anyhow::Result<ConsoleLoopFlow> {
     mouse_state.last_event_at = Some(std::time::Instant::now());
+    let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+    mouse_state.last_pointer_position = Some(position);
+    if matches!(
+        mouse.kind,
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left)
+    ) {
+        let ConsoleStage::Manager(manager) = &mut state.stage;
+        if manager.drag_state.is_some() {
+            crate::console::adapter::update_manager(
+                manager,
+                crate::console::adapter::ManagerMessage::SetDragState(None),
+            );
+            *needs_redraw = true;
+        }
+        return Ok(ConsoleLoopFlow::Continue);
+    }
     let base_surface_unblocked = state.base_surface_unblocked();
+    let (main_area, _) = split_debug_area(term_size, jackin_diagnostics::is_debug_mode());
     let (modal_plan, list_modal_painted) = {
-        let (main_area, _) = split_debug_area(term_size, jackin_diagnostics::is_debug_mode());
-        let quit_confirm_rect = state
-            .quit_confirm_state()
-            .map(|confirm| quit_confirm_area(main_area, confirm));
+        let quit_confirm_rect = state.quit_confirm_state().map(|confirm| {
+            let (body, _) = quit_confirm_body_and_hint_area(main_area);
+            quit_confirm_area(body, confirm)
+        });
         let ConsoleStage::Manager(ms) = &state.stage;
         let list_modal_painted = state.quit_confirm.is_none()
             && matches!(
@@ -1191,7 +1327,7 @@ fn handle_mouse_event<H, R>(
         let _outcome = crate::console::adapter::input::handle_mouse_with_config(
             ms,
             mouse,
-            term_size,
+            main_area,
             Some(inputs.config),
         );
         for effect in ms.drain_effects() {
@@ -1211,7 +1347,7 @@ fn handle_mouse_event<H, R>(
         ms,
         inputs.config,
         mouse,
-        term_size,
+        main_area,
         mouse_state,
         needs_redraw,
         pointer_chrome_allowed,
@@ -1244,6 +1380,31 @@ async fn next_event_batch(
         }
     }
     Ok((events, tick_fired))
+}
+
+fn pending_event_allowed_during_invalid_geometry(event: &crossterm::event::Event) -> bool {
+    matches!(event, crossterm::event::Event::Resize(_, _))
+        || matches!(
+            event,
+            crossterm::event::Event::Mouse(mouse)
+                if matches!(
+                    mouse.kind,
+                    crossterm::event::MouseEventKind::Up(
+                        crossterm::event::MouseButton::Left
+                    )
+                )
+        )
+}
+
+fn pop_pending_event(
+    pending_events: &mut std::collections::VecDeque<crossterm::event::Event>,
+    geometry_invalid: bool,
+) -> Option<crossterm::event::Event> {
+    let allowed = !geometry_invalid
+        || pending_events
+            .front()
+            .is_some_and(pending_event_allowed_during_invalid_geometry);
+    allowed.then(|| pending_events.pop_front()).flatten()
 }
 
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
@@ -1325,7 +1486,10 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         }
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
-        let (event_batch, tick_fired) = if pending_events.is_empty() {
+        let pending_event_ready = pending_events.front().is_some_and(|event| {
+            !mouse_state.geometry_invalid || pending_event_allowed_during_invalid_geometry(event)
+        });
+        let (event_batch, tick_fired) = if pending_events.is_empty() || !pending_event_ready {
             next_event_batch(&mut event_stream, &mut animation_tick).await?
         } else {
             (Vec::new(), false)
@@ -1335,7 +1499,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             needs_redraw |= ms.tick_active_animation();
         }
         needs_redraw |= !pending_events.is_empty();
-        if let Some(event) = pending_events.pop_front() {
+        if let Some(event) = pop_pending_event(&mut pending_events, mouse_state.geometry_invalid) {
             match event {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     let mut inputs = ConsoleLoopInputs {
@@ -1380,6 +1544,16 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         ConsoleLoopFlow::Continue => {}
                         ConsoleLoopFlow::Exit(outcome) => break 'main Ok(outcome),
                     }
+                }
+                Event::Resize(width, height) => {
+                    handle_terminal_resize(
+                        &mut terminal,
+                        width,
+                        height,
+                        &mut state,
+                        &mut mouse_state,
+                        &mut needs_redraw,
+                    )?;
                 }
                 _ => {}
             }

@@ -336,15 +336,33 @@ pub fn required_height(state: &ContainerInfoState) -> u16 {
         .max(7)
 }
 
-pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &ContainerInfoState) {
+#[derive(Clone, Copy)]
+struct DetailGeometry {
+    table_area: Rect,
+}
+
+fn detail_geometry(area: Rect, state: &ContainerInfoState) -> Option<DetailGeometry> {
     if area.width < 20 || area.height < 5 {
-        return;
+        return None;
     }
     let theme = termrock::style::DesignSystem::default();
     let panel = Panel::new(&theme)
         .title(&state.title)
         .emphasis(PanelChrome::Focused);
-    let table_area = detail_table_area(panel.inner(area));
+    Some(DetailGeometry {
+        table_area: detail_table_area(panel.inner(area)),
+    })
+}
+
+pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &ContainerInfoState) {
+    let Some(geometry) = detail_geometry(area, state) else {
+        return;
+    };
+    let theme = termrock::style::DesignSystem::default();
+    let panel = Panel::new(&theme)
+        .title(&state.title)
+        .emphasis(PanelChrome::Focused);
+    let table_area = geometry.table_area;
     frame.render_widget(&panel, area);
 
     let rows = detail_rows(state);
@@ -411,18 +429,16 @@ fn detail_content_revision(state: &ContainerInfoState) -> u64 {
 fn detail_layout(
     area: Rect,
     state: &ContainerInfoState,
-) -> (Vec<DetailRow<'_, usize>>, DetailTableState<usize>, Buffer) {
+) -> Option<(Vec<DetailRow<'_, usize>>, DetailTableState<usize>, Buffer)> {
+    let geometry = detail_geometry(area, state)?;
     let rows = detail_rows(state);
     let theme = termrock::style::DesignSystem::default();
-    let panel = Panel::new(&theme)
-        .title(&state.title)
-        .emphasis(PanelChrome::Focused);
-    let table_area = detail_table_area(panel.inner(area));
+    let table_area = geometry.table_area;
     let table = DetailTable::new(&rows, &theme).content_revision(detail_content_revision(state));
     let mut table_state = detail_state(state);
     let mut buffer = Buffer::empty(area);
     (&table).render(table_area, &mut buffer, &mut table_state);
-    (rows, table_state, buffer)
+    Some((rows, table_state, buffer))
 }
 
 #[must_use]
@@ -432,7 +448,7 @@ pub fn copy_payload_at(
     col: u16,
     row: u16,
 ) -> Option<(usize, String)> {
-    let (rows, mut table_state, _) = detail_layout(area, state);
+    let (rows, mut table_state, _) = detail_layout(area, state)?;
     let hit = table_state.click(Position::new(col, row));
     let DetailTableOutcome::Copy(id) = hit else {
         return None;
@@ -447,7 +463,7 @@ pub fn hyperlink_payload_at(
     col: u16,
     row: u16,
 ) -> Option<(usize, String)> {
-    let (rows, mut table_state, _) = detail_layout(area, state);
+    let (rows, mut table_state, _) = detail_layout(area, state)?;
     let hit = table_state.click_link(Position::new(col, row));
     let DetailTableOutcome::ActivateLink(id) = hit else {
         return None;
@@ -458,7 +474,9 @@ pub fn hyperlink_payload_at(
 
 #[must_use]
 pub fn hyperlink_regions(area: Rect, state: &ContainerInfoState) -> Vec<(Rect, String)> {
-    let (rows, table_state, _) = detail_layout(area, state);
+    let Some((rows, table_state, _)) = detail_layout(area, state) else {
+        return Vec::new();
+    };
     let theme = termrock::style::DesignSystem::default();
     DetailTable::new(&rows, &theme)
         .content_revision(detail_content_revision(state))
@@ -471,7 +489,9 @@ pub fn hyperlink_regions(area: Rect, state: &ContainerInfoState) -> Vec<(Rect, S
 #[must_use]
 pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
     let mut out = Vec::new();
-    let (rows, table_state, buffer) = detail_layout(area, state);
+    let Some((rows, table_state, buffer)) = detail_layout(area, state) else {
+        return out;
+    };
     let theme = termrock::style::DesignSystem::default();
     let table = DetailTable::new(&rows, &theme).content_revision(detail_content_revision(state));
     for region in table.hyperlink_regions(&table_state) {

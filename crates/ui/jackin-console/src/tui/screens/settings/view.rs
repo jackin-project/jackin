@@ -6,6 +6,7 @@ use super::model::{
     SettingsEnvTextTarget, SettingsTab,
 };
 use super::update::forbidden_settings_env_keys;
+use ratatui::layout::Rect;
 
 #[cfg(test)]
 use super::model::{SettingsEnvRow, SettingsTrustRow};
@@ -14,7 +15,7 @@ use crate::tui::components::editor_rows::{AuthLineRow, SecretValueDisplay};
 #[cfg(test)]
 use crate::tui::mount_display::MountDisplayRow;
 #[cfg(test)]
-use ratatui::{layout::Rect, text::Line};
+use ratatui::text::Line;
 #[cfg(test)]
 use std::collections::BTreeMap;
 
@@ -33,6 +34,7 @@ pub use text_helpers::*;
 mod tests;
 pub use auth::{auth_lines, auth_state_lines};
 pub use env::{env_lines, env_state_lines};
+pub(crate) use frame::resolve_settings_frame;
 pub use frame::{
     ConsoleSettingsState, SettingsFrameAreas, SettingsModalRenderPlan, render_settings_screen,
     settings_frame_areas, settings_modal_render_plan,
@@ -57,3 +59,19 @@ pub use trust::{trust_lines, trust_state_lines};
 
 pub(crate) use metrics::settings_trust_focused;
 pub(crate) use mounts::truncate;
+
+pub(crate) fn settings_tab_hit_regions(
+    area: Rect,
+    state: &crate::tui::state::SettingsState<'_>,
+    op_available: bool,
+) -> Vec<termrock::interaction::HitRegion<usize>> {
+    let (areas, _) = resolve_settings_frame(area, state, |state, body| {
+        settings_screen_footer_for_state(state, op_available, body)
+    });
+    crate::tui::components::editor_rows::tab_strip_hit_regions(
+        areas.tabs,
+        &tab_labels(state.active_tab),
+        state.tab_bar_focused(),
+        state.hovered_tab(),
+    )
+}

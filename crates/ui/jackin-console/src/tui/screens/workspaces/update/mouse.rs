@@ -6,6 +6,7 @@ use super::workspace_list_hover_row_at_position;
 use crossterm::event::MouseEvent;
 
 use super::super::model::ManagerListRow;
+use crate::tui::layout::MIN_DRAGGABLE_WIDTH;
 use ratatui::layout::Rect;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,12 @@ pub fn workspace_list_mouse_plan(
     visual_rows: &[Option<ManagerListRow>],
     selectable: impl FnMut(ManagerListRow) -> bool,
 ) -> WorkspaceListMousePlan {
+    if matches!(
+        mouse.kind,
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left)
+    ) {
+        return WorkspaceListMousePlan::EndDrag;
+    }
     if list_modal_open {
         return WorkspaceListMousePlan::Continue;
     }
@@ -34,10 +41,14 @@ pub fn workspace_list_mouse_plan(
         crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
             let seam_x = crate::tui::layout::split_seam_column(split_pct, term_size.width);
             if crate::tui::layout::near_seam(mouse.column, seam_x) {
-                return WorkspaceListMousePlan::StartDrag(crate::tui::split::DragState {
-                    anchor_pct: split_pct,
-                    anchor_x: mouse.column,
-                });
+                return if term_size.width >= MIN_DRAGGABLE_WIDTH {
+                    WorkspaceListMousePlan::StartDrag(crate::tui::split::DragState {
+                        anchor_pct: split_pct,
+                        anchor_x: mouse.column,
+                    })
+                } else {
+                    WorkspaceListMousePlan::Continue
+                };
             }
             workspace_list_hover_row_at_position(
                 visual_rows,
@@ -51,8 +62,10 @@ pub fn workspace_list_mouse_plan(
                 WorkspaceListMousePlan::SelectRow(row)
             })
         }
-        crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left) => drag_state
-            .map_or(WorkspaceListMousePlan::Continue, |anchor| {
+        crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left)
+            if term_size.width >= MIN_DRAGGABLE_WIDTH =>
+        {
+            drag_state.map_or(WorkspaceListMousePlan::Continue, |anchor| {
                 WorkspaceListMousePlan::UpdateSplit(crate::tui::split::clamp_split(
                     crate::tui::layout::split_pct_from_drag(
                         anchor.anchor_pct,
@@ -61,9 +74,7 @@ pub fn workspace_list_mouse_plan(
                         term_size.width,
                     ),
                 ))
-            }),
-        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left) => {
-            WorkspaceListMousePlan::EndDrag
+            })
         }
         _ => WorkspaceListMousePlan::Continue,
     }

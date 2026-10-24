@@ -35,7 +35,7 @@ pub(crate) fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas 
     }
 }
 
-pub(crate) fn render_editor_screen<
+pub(crate) fn resolve_editor_frame<
     Modal,
     SaveFlow,
     PendingRoleLoad,
@@ -44,7 +44,6 @@ pub(crate) fn render_editor_screen<
     PendingOpCommit,
     FooterItems,
 >(
-    frame: &mut Frame<'_>,
     area: Rect,
     state: &WorkspaceEditorState<
         Modal,
@@ -57,7 +56,8 @@ pub(crate) fn render_editor_screen<
     >,
     config: &jackin_config::AppConfig,
     mut footer_items: FooterItems,
-) where
+) -> (EditorFrameAreas, Vec<HintSpan<'static>>)
+where
     FooterItems: FnMut(
         &WorkspaceEditorState<
             Modal,
@@ -84,6 +84,47 @@ pub(crate) fn render_editor_screen<
         areas = editor_frame_areas(area, footer_h);
         items = footer_items(state, config, areas.body);
     }
+    (areas, items)
+}
+
+pub(crate) fn render_editor_screen<
+    Modal,
+    SaveFlow,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+    FooterItems,
+>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        jackin_core::EnvValue,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+    footer_items: FooterItems,
+) where
+    FooterItems: FnMut(
+        &WorkspaceEditorState<
+            Modal,
+            SaveFlow,
+            jackin_core::EnvValue,
+            PendingRoleLoad,
+            PendingDriftCheck,
+            PendingIsolationCleanup,
+            PendingOpCommit,
+        >,
+        &jackin_config::AppConfig,
+        Rect,
+    ) -> Vec<HintSpan<'static>>,
+{
+    let (areas, items) = resolve_editor_frame(area, state, config, footer_items);
 
     let title = super::super::editor_header_title(&state.mode);
     render_header(frame, areas.header, &title);
