@@ -17,6 +17,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 const CHILD_ROOT_ENV: &str = "JACKIN_MARKER_PAIR_CHILD_ROOT";
+const CHILD_COMMAND_ENV: &str = "JACKIN_MARKER_PAIR_CHILD_COMMAND";
 const CHILD_READY_PREFIX: &str = "MARKER_PAIR_READY ";
 const CHILD_TEST_ID: &str = "account_identity::tests::case_03::marker_pair_child_fixture";
 const CHILD_RELEASE_COMMAND: &str = "release";
@@ -94,7 +95,7 @@ fn set_directory_mode(path: &Path, mode: u32) {
     std::fs::set_permissions(path, permissions).unwrap();
 }
 
-fn prepare_marker_root(
+pub(super) fn prepare_marker_root(
     root: &Path,
     config: &AppConfig,
     admitted: &[AdmittedInstance],
@@ -130,7 +131,7 @@ fn persist_config(paths: &jackin_core::JackinPaths, config: &AppConfig) {
     std::fs::write(&paths.config_file, toml::to_string(config).unwrap()).unwrap();
 }
 
-fn record_pair(
+pub(super) fn record_pair(
     root: &Path,
     paths: &jackin_core::JackinPaths,
     revision: &AccountConfigRevision,
@@ -163,7 +164,7 @@ fn with_environment(config: &AppConfig, name: &str, value: &str) -> AppConfig {
     changed
 }
 
-struct MarkerPairChild {
+pub(super) struct MarkerPairChild {
     child: Child,
     stdin: Option<ChildStdin>,
     stdout_completion: Option<Receiver<std::io::Result<u64>>>,
@@ -172,27 +173,83 @@ struct MarkerPairChild {
     termination_attempted: bool,
 }
 
-struct MarkerPairTestRoot {
+pub(super) struct MarkerPairTestRoot {
     temp: Option<tempfile::TempDir>,
     preserve: Arc<AtomicBool>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum MarkerPairTransactionChildCommand {
+    PauseAfterPrepared,
+    PauseAfterSelectedInstall,
+    PauseAfterAdmissionInstall,
+    PauseBeforeCommitRename,
+    PauseAfterCommitRename,
+    PauseAfterCommitSync,
+    PauseAfterPreparedExpectingPreflightRefusal,
+    RecoverInFreshChild,
+}
+
+impl MarkerPairTransactionChildCommand {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::PauseAfterPrepared => "prepared",
+            Self::PauseAfterSelectedInstall => "selected",
+            Self::PauseAfterAdmissionInstall => "admission",
+            Self::PauseBeforeCommitRename => "before_commit",
+            Self::PauseAfterCommitRename => "after_commit",
+            Self::PauseAfterCommitSync => "after_commit_sync",
+            Self::PauseAfterPreparedExpectingPreflightRefusal => "preflight_refusal",
+            Self::RecoverInFreshChild => "recover",
+        }
+    }
+
+    fn point(self) -> Option<marker_transaction::TransactionPausePoint> {
+        use super::super::marker_transaction::TransactionPausePoint as Point;
+        Some(match self {
+            Self::PauseAfterPrepared | Self::PauseAfterPreparedExpectingPreflightRefusal => {
+                Point::PreparedDurable
+            }
+            Self::PauseAfterSelectedInstall => Point::SelectedInstalled,
+            Self::PauseAfterAdmissionInstall => Point::AdmissionInstalled,
+            Self::PauseBeforeCommitRename => Point::BeforeCommitRename,
+            Self::PauseAfterCommitRename => Point::AfterCommitRename,
+            Self::PauseAfterCommitSync => Point::AfterCommitSync,
+            Self::RecoverInFreshChild => return None,
+        })
+    }
+
+    fn from_str(command: &str) -> Option<Self> {
+        Some(match command {
+            "prepared" => Self::PauseAfterPrepared,
+            "selected" => Self::PauseAfterSelectedInstall,
+            "admission" => Self::PauseAfterAdmissionInstall,
+            "before_commit" => Self::PauseBeforeCommitRename,
+            "after_commit" => Self::PauseAfterCommitRename,
+            "after_commit_sync" => Self::PauseAfterCommitSync,
+            "preflight_refusal" => Self::PauseAfterPreparedExpectingPreflightRefusal,
+            "recover" => Self::RecoverInFreshChild,
+            _ => return None,
+        })
+    }
+}
+
 impl MarkerPairTestRoot {
-    fn new() -> std::io::Result<Self> {
+    pub(super) fn new() -> std::io::Result<Self> {
         Ok(Self {
             temp: Some(tempfile::tempdir()?),
             preserve: Arc::new(AtomicBool::new(false)),
         })
     }
 
-    fn path(&self) -> &Path {
+    pub(super) fn path(&self) -> &Path {
         self.temp
             .as_ref()
             .expect("marker-pair test root is present before drop")
             .path()
     }
 
-    fn preservation_flag(&self) -> Arc<AtomicBool> {
+    pub(super) fn preservation_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.preserve)
     }
 }
@@ -208,10 +265,30 @@ impl Drop for MarkerPairTestRoot {
 }
 
 impl MarkerPairChild {
-    fn spawn(root: &Path, preserve_root: Arc<AtomicBool>) -> anyhow::Result<(Self, u32)> {
+    pub(super) fn spawn(
+        root: &Path,
+        preserve_root: Arc<AtomicBool>,
+    ) -> anyhow::Result<(Self, u32)> {
+        Self::spawn_command(root, preserve_root, "hold")
+    }
+
+    pub(super) fn spawn_transaction(
+        root: &Path,
+        preserve_root: Arc<AtomicBool>,
+        command: MarkerPairTransactionChildCommand,
+    ) -> anyhow::Result<(Self, u32)> {
+        Self::spawn_command(root, preserve_root, command.as_str())
+    }
+
+    fn spawn_command(
+        root: &Path,
+        preserve_root: Arc<AtomicBool>,
+        command: &str,
+    ) -> anyhow::Result<(Self, u32)> {
         let child = Command::new(std::env::current_exe().context("current test executable")?)
             .args(["--exact", CHILD_TEST_ID, "--ignored", "--nocapture"])
             .env(CHILD_ROOT_ENV, root)
+            .env(CHILD_COMMAND_ENV, command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -284,7 +361,7 @@ impl MarkerPairChild {
         Ok((owner, reported))
     }
 
-    fn release(mut self) -> anyhow::Result<()> {
+    pub(super) fn release(mut self) -> anyhow::Result<()> {
         let Some(mut stdin) = self.stdin.take() else {
             return Err(self.abort_with(anyhow::anyhow!("marker-pair child stdin was not piped")));
         };
@@ -364,7 +441,7 @@ impl MarkerPairChild {
         }
     }
 
-    fn terminate_and_reap(&mut self) -> anyhow::Result<()> {
+    pub(super) fn terminate_and_reap(&mut self) -> anyhow::Result<()> {
         if self.termination_attempted {
             return Ok(());
         }
@@ -498,17 +575,66 @@ fn wait_child_bounded(child: &mut Child, timeout: Duration) -> std::io::Result<E
 fn marker_pair_child_fixture() {
     let root = std::env::var_os(CHILD_ROOT_ENV).expect("child root is required");
     let root = PathBuf::from(root);
-    let lease = MarkerPairLease::acquire(&root).unwrap();
-    println!("{CHILD_READY_PREFIX}{}", std::process::id());
-    std::io::stdout().flush().unwrap();
+    let command = std::env::var(CHILD_COMMAND_ENV).unwrap_or_else(|_| "hold".to_owned());
+    if command == "hold" {
+        let lease = MarkerPairLease::acquire(&root).unwrap();
+        println!("{CHILD_READY_PREFIX}{}", std::process::id());
+        std::io::stdout().flush().unwrap();
+        wait_for_child_release();
+        drop(lease);
+        return;
+    }
 
+    let command = MarkerPairTransactionChildCommand::from_str(&command)
+        .expect("child transaction command must be in the fixed command set");
+    if matches!(
+        command,
+        MarkerPairTransactionChildCommand::RecoverInFreshChild
+    ) {
+        println!("{CHILD_READY_PREFIX}{}", std::process::id());
+        std::io::stdout().flush().unwrap();
+        wait_for_child_release();
+        let lease = marker_transaction::shared_lease_with_recovery(&root)
+            .unwrap()
+            .expect("owned recovery child root is present");
+        drop(lease);
+        return;
+    }
+
+    let lease = MarkerPairLease::acquire(&root).unwrap();
+    let point = command
+        .point()
+        .expect("publisher command has one fixed pause point");
+    let _pause = marker_transaction::pause_at_for_test(point);
+    let result = marker_transaction::publish_locked(
+        &lease,
+        b"1111111111111111111111111111111111111111111111111111111111111111",
+        b"2222222222222222222222222222222222222222222222222222222222222222",
+        || Ok(()),
+    );
+    if matches!(
+        command,
+        MarkerPairTransactionChildCommand::PauseAfterPreparedExpectingPreflightRefusal
+    ) {
+        let error =
+            result.expect_err("prepared publication should reject the tampered preflight input");
+        assert_eq!(
+            marker_transaction::publication_failure_kind(&error),
+            Some(marker_transaction::PublicationFailureKind::PreparedRollbackPending),
+            "preflight refusal must preserve the Prepared transaction and original rollback error"
+        );
+    } else {
+        result.unwrap();
+    }
+}
+
+fn wait_for_child_release() {
     let stdin = std::io::stdin();
     let mut command = String::new();
     std::io::BufReader::new(stdin.lock())
         .read_line(&mut command)
         .unwrap();
     assert_eq!(command.trim_end(), CHILD_RELEASE_COMMAND);
-    drop(lease);
 }
 
 #[test]
@@ -892,8 +1018,10 @@ fn marker_root_symlink_and_replacement_fail_without_touching_replacement() {
     let new_config = with_environment(&config, "MARKER_PAIR_ROOT", "new-root");
     persist_config(&paths, &new_config);
     let new_revision = AccountConfigRevision::acquire(&paths).unwrap();
+    let new_named_root_snapshot = Arc::new(std::sync::Mutex::new(None));
     let root_for_hook = root.clone();
     let replacement_for_hook = replacement.clone();
+    let snapshot_for_hook = Arc::clone(&new_named_root_snapshot);
     let hook = marker_pair::pause_after_selected_rename_once(move |observed_root| {
         assert_eq!(observed_root, root_for_hook);
         std::fs::rename(&root_for_hook, &replacement_for_hook)?;
@@ -903,6 +1031,7 @@ fn marker_root_symlink_and_replacement_fail_without_touching_replacement() {
             root_for_hook.join("replacement-sentinel"),
             b"preserve replacement",
         )?;
+        *snapshot_for_hook.lock().unwrap() = Some(snapshot_tree(&root_for_hook));
         Ok(())
     });
     let error = record_pair(
@@ -938,13 +1067,15 @@ fn marker_root_symlink_and_replacement_fail_without_touching_replacement() {
             .unwrap()
             .as_bytes()
     );
-    assert!(std::fs::read_dir(&replacement).unwrap().any(|entry| {
-        entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with(".account-admission.sha256.")
-    }));
+
+    assert_retained_prepared_custody(&replacement, &original_identity, &new_config, &admitted);
+
+    let observed_new_named_root = new_named_root_snapshot
+        .lock()
+        .unwrap()
+        .take()
+        .expect("the hook captured the newly named replacement root");
+    assert_eq!(snapshot_tree(&root), observed_new_named_root);
 }
 
 #[derive(Clone, Copy)]
@@ -1016,4 +1147,113 @@ fn reserved_journal_kinds_fail_closed_without_changing_evidence() {
             assert_eq!(snapshot_tree(&external), before_external);
         }
     }
+}
+
+fn assert_retained_prepared_custody(
+    replacement: &Path,
+    original_identity: &std::fs::Metadata,
+    new_config: &AppConfig,
+    admitted: &[AdmittedInstance],
+) {
+    let journal_path = replacement.join(ACCOUNT_MARKERS_TRANSACTION_FILE);
+    let journal_metadata = std::fs::symlink_metadata(&journal_path).unwrap();
+    assert!(journal_metadata.file_type().is_file() && !journal_metadata.file_type().is_symlink());
+    assert_eq!(journal_metadata.permissions().mode() & 0o7777, 0o600);
+    assert_eq!(journal_metadata.uid(), rustix::process::geteuid().as_raw());
+    assert_eq!(journal_metadata.nlink(), 1);
+    assert_eq!(journal_metadata.dev(), original_identity.dev());
+    let prepared: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&journal_path).unwrap()).unwrap();
+    assert_eq!(prepared["phase"].as_str(), Some("prepared"));
+    assert_eq!(prepared["schema_version"].as_u64(), Some(2));
+    assert_eq!(
+        prepared["root"]["device"].as_u64(),
+        Some(original_identity.dev())
+    );
+    assert_eq!(
+        prepared["root"]["inode"].as_u64(),
+        Some(original_identity.ino())
+    );
+    let transaction_id = prepared["transaction_id"].as_str().unwrap();
+    assert_eq!(transaction_id.len(), 48);
+    assert!(
+        transaction_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    );
+
+    let selected_stage_name = format!(".account-markers-{transaction_id}-selected");
+    let admission_stage_name = format!(".account-markers-{transaction_id}-admission");
+    assert_eq!(
+        prepared["selected"]["stage_name"].as_str(),
+        Some(selected_stage_name.as_str())
+    );
+    assert_eq!(
+        prepared["admission"]["stage_name"].as_str(),
+        Some(admission_stage_name.as_str())
+    );
+
+    let assert_recorded_file = |path: &Path, recorded: &serde_json::Value| {
+        let metadata = std::fs::symlink_metadata(path).unwrap();
+        assert!(metadata.file_type().is_file() && !metadata.file_type().is_symlink());
+        assert_eq!(metadata.permissions().mode() & 0o7777, 0o600);
+        assert_eq!(metadata.dev(), original_identity.dev());
+        assert_eq!(metadata.uid(), rustix::process::geteuid().as_raw());
+        assert_eq!(metadata.nlink(), 1);
+        assert_eq!(recorded["device"].as_u64(), Some(metadata.dev()));
+        assert_eq!(recorded["inode"].as_u64(), Some(metadata.ino()));
+        assert_eq!(recorded["owner"].as_u64(), Some(u64::from(metadata.uid())));
+        assert_eq!(recorded["links"].as_u64(), Some(metadata.nlink()));
+        assert_eq!(recorded["mode"].as_u64(), Some(0o600));
+        assert_eq!(recorded["size"].as_u64(), Some(metadata.len()));
+    };
+
+    let selected_path = replacement.join(ACCOUNT_FINGERPRINT_FILE);
+    assert_recorded_file(&selected_path, &prepared["selected"]["stage"]);
+    assert!(matches!(
+        std::fs::symlink_metadata(replacement.join(&selected_stage_name)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    ));
+
+    let admission_stage_path = replacement.join(&admission_stage_name);
+    assert_recorded_file(&admission_stage_path, &prepared["admission"]["stage"]);
+    let expected_admission_bytes =
+        account_configuration_fingerprint(new_config, None, TEST_ROLE, admitted)
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+    let recorded_admission_bytes: Vec<u8> =
+        serde_json::from_value(prepared["admission"]["new_bytes"].clone()).unwrap();
+    assert_eq!(recorded_admission_bytes, expected_admission_bytes);
+    assert_eq!(
+        std::fs::read(&admission_stage_path).unwrap(),
+        expected_admission_bytes
+    );
+
+    let candidate_name = ".account-markers-transaction.next";
+    assert_eq!(prepared["candidate"]["name"].as_str(), Some(candidate_name));
+    let candidate_path = replacement.join(candidate_name);
+    assert_recorded_file(&candidate_path, &prepared["candidate"]["file"]);
+    let candidate_bytes = std::fs::read(&candidate_path).unwrap();
+    let committed: serde_json::Value = serde_json::from_slice(&candidate_bytes).unwrap();
+    assert_eq!(committed["phase"].as_str(), Some("committed"));
+    assert_eq!(committed["schema_version"].as_u64(), Some(2));
+    assert_eq!(committed["transaction_id"], prepared["transaction_id"]);
+    assert_eq!(committed["root"], prepared["root"]);
+    assert_eq!(
+        committed["selected"]["new_bytes"],
+        prepared["selected"]["new_bytes"]
+    );
+    assert_eq!(
+        committed["admission"]["new_bytes"],
+        prepared["admission"]["new_bytes"]
+    );
+    assert_eq!(
+        committed["selected"]["installed"],
+        prepared["selected"]["stage"]
+    );
+    assert_eq!(
+        committed["admission"]["installed"],
+        prepared["admission"]["stage"]
+    );
 }
