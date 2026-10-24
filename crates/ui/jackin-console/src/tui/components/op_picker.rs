@@ -11,6 +11,7 @@ pub use lines::{
     account_lines, fatal_body_lines, field_lines, item_choice_lines, loading_descriptor,
     loading_title_stage, section_lines, sentinel_line, vault_lines,
 };
+pub(in crate::tui) use render::selection_hit_at;
 pub use render::{render_fatal, render_picker};
 
 pub trait OpPickerRenderState {

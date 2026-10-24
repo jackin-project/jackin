@@ -794,6 +794,833 @@ fn role_picker_help_blocks_hidden_picker_for_all_owners() {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpPickerRoute {
+    List,
+    Editor,
+    CreatePrelude,
+    SettingsEnv,
+    SettingsAuth,
+}
+
+use crate::tui::op_picker::model::{
+    OpLoadState, OpPickerError, OpPickerFatalState, OpPickerMode, OpPickerStage,
+};
+
+impl OpPickerRoute {
+    const ALL: [Self; 5] = [
+        Self::List,
+        Self::Editor,
+        Self::CreatePrelude,
+        Self::SettingsEnv,
+        Self::SettingsAuth,
+    ];
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum OpPickerParentStage {
+    List,
+    Editor {
+        active_tab: EditorTab,
+        focus_owner:
+            crate::tui::focus::TabFocus<crate::tui::screens::editor::model::EditorFocusTarget>,
+        tab_scroll: u16,
+    },
+    CreatePrelude,
+    Settings {
+        active_tab: SettingsTab,
+        focus_owner: crate::tui::focus::TabFocus<SettingsTab>,
+        mounts_scroll: u16,
+        env_scroll: u16,
+        auth_scroll: u16,
+        trust_scroll: u16,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct OpPickerParentSnapshot {
+    selected: usize,
+    list_focus_owner: crate::tui::focus::TabFocus<MountScrollFocus>,
+    list_scroll: u16,
+    pending_effects: usize,
+    keyboard_help: bool,
+    hidden_settings_picker: Option<OpPickerMouseSnapshot>,
+    stage: OpPickerParentStage,
+}
+
+fn op_picker_parent_snapshot(state: &ManagerState<'_>) -> OpPickerParentSnapshot {
+    let stage = match &state.stage {
+        ManagerStage::List => OpPickerParentStage::List,
+        ManagerStage::Editor(editor) => OpPickerParentStage::Editor {
+            active_tab: editor.active_tab,
+            focus_owner: editor.focus_owner.clone(),
+            tab_scroll: editor.tab_scroll.offset_y(),
+        },
+        ManagerStage::CreatePrelude(_) => OpPickerParentStage::CreatePrelude,
+        ManagerStage::Settings(settings) => OpPickerParentStage::Settings {
+            active_tab: settings.active_tab,
+            focus_owner: settings.focus_owner.clone(),
+            mounts_scroll: settings.mounts.scroll.offset_y(),
+            env_scroll: settings.env.scroll.offset_y(),
+            auth_scroll: settings.auth.scroll.offset_y(),
+            trust_scroll: settings.trust.scroll.offset_y(),
+        },
+        _ => panic!("Op picker fixtures use List, Editor, CreatePrelude, or Settings"),
+    };
+    OpPickerParentSnapshot {
+        selected: state.selected,
+        list_focus_owner: state.list_focus_owner.clone(),
+        list_scroll: state.list_names_scroll.offset_y(),
+        pending_effects: state.pending_effects.len(),
+        keyboard_help: state.keyboard_help.is_some(),
+        hidden_settings_picker: hidden_settings_op_picker_snapshot(state),
+        stage,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct OpPickerMouseSnapshot {
+    stage: OpPickerStage,
+    load_state: String,
+    mode: String,
+    filter: String,
+    accounts: Vec<jackin_core::OpAccount>,
+    active_account: Option<usize>,
+    selected_account: Option<jackin_core::OpAccount>,
+    pending_load: bool,
+    receiver: bool,
+}
+
+fn hidden_settings_op_picker_snapshot(state: &ManagerState<'_>) -> Option<OpPickerMouseSnapshot> {
+    let ManagerStage::Settings(settings) = &state.stage else {
+        return None;
+    };
+    let render_plan = crate::tui::screens::settings::view::settings_modal_render_plan(
+        settings.error_popup.is_some(),
+        settings.mounts.modals.is_open(),
+        settings.env.modals.is_open(),
+        settings.auth.modal_ref().is_some(),
+    );
+    let modal = match render_plan {
+        crate::tui::screens::settings::view::SettingsModalRenderPlan::Environments => {
+            settings.auth.modals.current()
+        }
+        crate::tui::screens::settings::view::SettingsModalRenderPlan::Auth => {
+            settings.env.modals.current()
+        }
+        _ => return None,
+    }?;
+    match modal {
+        SettingsModal::EnvOpPicker { state, .. } | SettingsModal::AuthOpPicker { state } => {
+            Some(op_picker_mouse_snapshot(state))
+        }
+        _ => None,
+    }
+}
+
+fn op_picker_mouse_snapshot(
+    picker: &crate::tui::op_picker::OpPickerState,
+) -> OpPickerMouseSnapshot {
+    OpPickerMouseSnapshot {
+        stage: picker.stage,
+        load_state: format!("{:?}", picker.load_state),
+        mode: format!("{:?}", picker.mode),
+        filter: picker.filter_buf.clone(),
+        accounts: picker.accounts.clone(),
+        active_account: picker.account_list_state.active().copied(),
+        selected_account: picker.selected_account.clone(),
+        pending_load: picker.pending_load.is_some(),
+        receiver: picker.rx.is_some(),
+    }
+}
+
+fn op_picker_fixture_state(
+    stage: OpPickerStage,
+    load_state: OpLoadState,
+    count: usize,
+) -> crate::tui::op_picker::OpPickerState {
+    use crate::tui::op_picker::OpPickerState;
+
+    let mut picker = OpPickerState::new();
+    picker.pending_load = None;
+    picker.rx = None;
+    picker.load_state = load_state;
+    picker.stage = stage;
+    picker.mode = if stage.is_naming() {
+        OpPickerMode::Create {
+            item_name_default: "synthetic-item".to_owned(),
+            field_label_default: "synthetic-field".to_owned(),
+        }
+    } else {
+        OpPickerMode::Browse
+    };
+    picker.accounts = (0..count)
+        .map(|index| jackin_core::OpAccount {
+            id: format!("op-account-{index:02}"),
+            email: format!("account-{index:02}-painted@example.invalid"),
+            url: format!("account-{index:02}.invalid"),
+        })
+        .collect();
+    picker
+        .account_list_state
+        .set_active((count > 0).then_some(0));
+    picker.selected_account = picker.accounts.first().cloned();
+    picker
+}
+
+fn op_picker_manager_state(
+    route: OpPickerRoute,
+    stage: OpPickerStage,
+    load_state: OpLoadState,
+    count: usize,
+) -> ManagerState<'static> {
+    op_picker_manager_state_with_settings_tab(route, stage, load_state, count, None)
+}
+
+fn op_picker_manager_state_with_settings_tab(
+    route: OpPickerRoute,
+    stage: OpPickerStage,
+    load_state: OpLoadState,
+    count: usize,
+    settings_active_tab: Option<SettingsTab>,
+) -> ManagerState<'static> {
+    let mut state = list_state_with_saved(3);
+    state.selected = 1;
+    crate::tui::scroll_block::scroll_area_set_y(&mut state.list_names_scroll, 4);
+    state
+        .list_focus_owner
+        .focus_content(MountScrollFocus::Workspace);
+    let picker = op_picker_fixture_state(stage, load_state.clone(), count);
+
+    match route {
+        OpPickerRoute::List => {
+            state.list_modal = Some(Modal::OpPicker {
+                secrets_target: None,
+                state: Box::new(picker),
+            });
+        }
+        OpPickerRoute::Editor => {
+            let mut editor =
+                EditorState::new_edit("op-picker-synthetic".into(), WorkspaceConfig::default());
+            editor.active_tab = EditorTab::Roles;
+            editor.tab_content_height = 50;
+            crate::tui::scroll_block::scroll_area_set_y(&mut editor.tab_scroll, 4);
+            editor.modal = Some(Modal::OpPicker {
+                secrets_target: None,
+                state: Box::new(picker),
+            });
+            state.stage = ManagerStage::Editor(editor);
+        }
+        OpPickerRoute::CreatePrelude => {
+            state.stage = ManagerStage::CreatePrelude(crate::tui::state::CreatePreludeState {
+                modal: Some(Modal::OpPicker {
+                    secrets_target: None,
+                    state: Box::new(picker),
+                }),
+                ..Default::default()
+            });
+        }
+        OpPickerRoute::SettingsEnv | OpPickerRoute::SettingsAuth => {
+            let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
+            let tab = if route == OpPickerRoute::SettingsEnv {
+                SettingsTab::Environments
+            } else {
+                SettingsTab::Auth
+            };
+            settings.active_tab = settings_active_tab.unwrap_or(tab);
+            settings.set_active_content_focused(true);
+            if route == OpPickerRoute::SettingsEnv {
+                settings.env.modals.open(SettingsModal::EnvOpPicker {
+                    target: crate::tui::state::SettingsEnvOpPickerTarget::NewKey {
+                        scope: crate::tui::state::SettingsEnvScope::Global,
+                    },
+                    state: Box::new(picker),
+                });
+                let hidden_picker = op_picker_fixture_state(stage, load_state, count);
+                settings.auth.modals.open(SettingsModal::AuthOpPicker {
+                    state: Box::new(hidden_picker),
+                });
+            } else {
+                settings.auth.modals.open(SettingsModal::AuthOpPicker {
+                    state: Box::new(picker),
+                });
+            }
+            state.stage = ManagerStage::Settings(settings);
+        }
+    }
+    state
+}
+
+fn op_picker_context<'state>(
+    state: &'state ManagerState<'_>,
+    route: OpPickerRoute,
+    term_size: Rect,
+) -> (Rect, &'state crate::tui::op_picker::OpPickerState) {
+    match route {
+        OpPickerRoute::List => {
+            let modal = state
+                .list_modal
+                .as_ref()
+                .expect("Op picker list modal should be open");
+            let Modal::OpPicker { state: picker, .. } = modal else {
+                panic!("Op picker list modal expected");
+            };
+            (modal.rect(term_size), picker)
+        }
+        OpPickerRoute::Editor => {
+            let ManagerStage::Editor(editor) = &state.stage else {
+                panic!("Op picker editor stage expected");
+            };
+            let modal = editor
+                .modal
+                .as_ref()
+                .expect("Op picker editor modal should be open");
+            let Modal::OpPicker { state: picker, .. } = modal else {
+                panic!("Op picker editor modal expected");
+            };
+            (modal.rect(term_size), picker)
+        }
+        OpPickerRoute::CreatePrelude => {
+            let ManagerStage::CreatePrelude(prelude) = &state.stage else {
+                panic!("Op picker create-prelude stage expected");
+            };
+            let modal = prelude
+                .modal
+                .as_ref()
+                .expect("Op picker create-prelude modal should be open");
+            let Modal::OpPicker { state: picker, .. } = modal else {
+                panic!("Op picker create-prelude modal expected");
+            };
+            (modal.rect(term_size), picker)
+        }
+        OpPickerRoute::SettingsEnv => {
+            let ManagerStage::Settings(settings) = &state.stage else {
+                panic!("Op picker settings stage expected");
+            };
+            let modal = settings
+                .env
+                .modals
+                .current()
+                .expect("settings environment Op picker should be open");
+            let SettingsModal::EnvOpPicker { state: picker, .. } = modal else {
+                panic!("settings environment Op picker modal expected");
+            };
+            (modal.rect(term_size), picker)
+        }
+        OpPickerRoute::SettingsAuth => {
+            let ManagerStage::Settings(settings) = &state.stage else {
+                panic!("Op picker settings stage expected");
+            };
+            let modal = settings
+                .auth
+                .modals
+                .current()
+                .expect("settings authentication Op picker should be open");
+            let SettingsModal::AuthOpPicker { state: picker } = modal else {
+                panic!("settings authentication Op picker modal expected");
+            };
+            (modal.rect(term_size), picker)
+        }
+    }
+}
+
+fn op_picker_context_mut<'state>(
+    state: &'state mut ManagerState<'_>,
+    route: OpPickerRoute,
+) -> &'state mut crate::tui::op_picker::OpPickerState {
+    match route {
+        OpPickerRoute::List => {
+            let Some(Modal::OpPicker { state: picker, .. }) = state.list_modal.as_mut() else {
+                panic!("Op picker list modal expected");
+            };
+            picker
+        }
+        OpPickerRoute::Editor => {
+            let ManagerStage::Editor(editor) = &mut state.stage else {
+                panic!("Op picker editor stage expected");
+            };
+            let Some(Modal::OpPicker { state: picker, .. }) = editor.modal.as_mut() else {
+                panic!("Op picker editor modal expected");
+            };
+            picker
+        }
+        OpPickerRoute::CreatePrelude => {
+            let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
+                panic!("Op picker create-prelude stage expected");
+            };
+            let Some(Modal::OpPicker { state: picker, .. }) = prelude.modal.as_mut() else {
+                panic!("Op picker create-prelude modal expected");
+            };
+            picker
+        }
+        OpPickerRoute::SettingsEnv => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                panic!("Op picker settings stage expected");
+            };
+            let Some(SettingsModal::EnvOpPicker { state: picker, .. }) =
+                settings.env.modals.current_mut()
+            else {
+                panic!("settings environment Op picker modal expected");
+            };
+            picker
+        }
+        OpPickerRoute::SettingsAuth => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                panic!("Op picker settings stage expected");
+            };
+            let Some(SettingsModal::AuthOpPicker { state: picker }) =
+                settings.auth.modals.current_mut()
+            else {
+                panic!("settings authentication Op picker modal expected");
+            };
+            picker
+        }
+    }
+}
+
+fn op_picker_test_buffer(
+    state: &ManagerState<'_>,
+    route: OpPickerRoute,
+    term_size: Rect,
+) -> (Rect, ratatui::buffer::Buffer) {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let (area, picker) = op_picker_context(state, route, term_size);
+    let expected_dispatch = match route {
+        OpPickerRoute::List => crate::tui::model::ConsoleInputDispatchPlan::ListModal,
+        OpPickerRoute::Editor => crate::tui::model::ConsoleInputDispatchPlan::EditorModal,
+        OpPickerRoute::CreatePrelude => {
+            crate::tui::model::ConsoleInputDispatchPlan::CreatePreludeModal
+        }
+        OpPickerRoute::SettingsEnv => {
+            crate::tui::model::ConsoleInputDispatchPlan::SettingsEnvDialog
+        }
+        OpPickerRoute::SettingsAuth => {
+            crate::tui::model::ConsoleInputDispatchPlan::SettingsAuthDialog
+        }
+    };
+    assert_eq!(
+        state.painted_input_owner(),
+        crate::tui::model::ConsolePaintedInputOwner::Dispatch(expected_dispatch),
+        "requested Op picker route must own actual input dispatch"
+    );
+    let mut terminal = Terminal::new(TestBackend::new(term_size.width, term_size.height))
+        .expect("Op picker TestBackend should initialize");
+    match (&state.stage, route) {
+        (ManagerStage::Settings(settings), OpPickerRoute::SettingsEnv) => {
+            let render_plan = crate::tui::screens::settings::view::settings_modal_render_plan(
+                settings.error_popup.is_some(),
+                settings.mounts.modals.is_open(),
+                settings.env.modals.is_open(),
+                settings.auth.modal_ref().is_some(),
+            );
+            assert_eq!(
+                render_plan,
+                crate::tui::screens::settings::view::SettingsModalRenderPlan::Environments,
+                "environment picker fixture must be the settings render-plan owner"
+            );
+            let modal = settings
+                .env
+                .modals
+                .current()
+                .expect("settings environment Op picker should be open");
+            assert!(matches!(modal, SettingsModal::EnvOpPicker { .. }));
+            terminal
+                .draw(|frame| {
+                    crate::tui::screens::settings::view::render_settings_env_modal(frame, modal);
+                })
+                .expect("settings environment picker should render to TestBackend");
+        }
+        (ManagerStage::Settings(settings), OpPickerRoute::SettingsAuth) => {
+            let render_plan = crate::tui::screens::settings::view::settings_modal_render_plan(
+                settings.error_popup.is_some(),
+                settings.mounts.modals.is_open(),
+                settings.env.modals.is_open(),
+                settings.auth.modal_ref().is_some(),
+            );
+            assert_eq!(
+                render_plan,
+                crate::tui::screens::settings::view::SettingsModalRenderPlan::Auth,
+                "authentication picker fixture must be the settings render-plan owner"
+            );
+            let modal = settings
+                .auth
+                .modal_ref()
+                .expect("settings authentication Op picker should be open");
+            assert!(matches!(modal, SettingsModal::AuthOpPicker { .. }));
+            terminal
+                .draw(|frame| {
+                    crate::tui::screens::settings::view::render_settings_auth_modal(frame, modal);
+                })
+                .expect("settings authentication picker should render to TestBackend");
+        }
+        _ => {
+            terminal
+                .draw(|frame| crate::tui::components::op_picker::render_picker(frame, area, picker))
+                .expect("Op picker should render to TestBackend");
+        }
+    }
+    (area, terminal.backend().buffer().clone())
+}
+
+fn painted_op_picker_position(
+    buffer: &ratatui::buffer::Buffer,
+    area: Rect,
+    marker: &str,
+) -> ratatui::layout::Position {
+    (area.y..area.bottom())
+        .find_map(|row| {
+            let text = (area.x..area.right())
+                .map(|column| buffer[(column, row)].symbol())
+                .collect::<String>();
+            let byte = text.find(marker)?;
+            let column = termrock::text::display_cols(&text[..byte]);
+            Some(ratatui::layout::Position::new(
+                area.x.saturating_add(
+                    u16::try_from(column).expect("painted Op picker marker column fits u16"),
+                ),
+                row,
+            ))
+        })
+        .unwrap_or_else(|| panic!("actual Op picker TestBackend buffer lacks {marker:?}"))
+}
+
+fn op_picker_background_blank(
+    buffer: &ratatui::buffer::Buffer,
+    area: Rect,
+    row: u16,
+) -> ratatui::layout::Position {
+    let content_cell = ratatui::layout::Position::new(area.right().saturating_sub(3), row);
+    let scrollbar_column = area.right().saturating_sub(2);
+    let inner_right_border = area.right().saturating_sub(1);
+    assert!(area.x <= content_cell.x);
+    assert!(content_cell.x < scrollbar_column);
+    assert!(scrollbar_column < inner_right_border);
+    assert!(area.y <= row && row < area.bottom());
+    assert_eq!(buffer[(content_cell.x, content_cell.y)].symbol(), " ");
+    content_cell
+}
+
+fn assert_op_picker_wheel_preserves_parent(
+    state: &ManagerState<'_>,
+    route: OpPickerRoute,
+    expected_selection: usize,
+    parent_before: &OpPickerParentSnapshot,
+) {
+    assert_eq!(
+        op_picker_context(state, route, term_120x40())
+            .1
+            .account_list_state
+            .active()
+            .copied(),
+        Some(expected_selection)
+    );
+    assert_eq!(op_picker_parent_snapshot(state), *parent_before);
+}
+
+fn assert_op_picker_wheel_sequence(
+    state: &mut ManagerState<'_>,
+    route: OpPickerRoute,
+    term_size: Rect,
+) {
+    let parent_before = op_picker_parent_snapshot(state);
+    let (area, buffer) = op_picker_test_buffer(state, route, term_size);
+    let first = painted_op_picker_position(&buffer, area, "account-00-painted@example.invalid");
+    let blank = op_picker_background_blank(&buffer, area, first.y);
+    handle_mouse(
+        state,
+        mouse_kind_at(MouseEventKind::ScrollDown, blank.x, blank.y),
+        term_size,
+    );
+    assert_op_picker_wheel_preserves_parent(state, route, 1, &parent_before);
+
+    let (_, buffer) = op_picker_test_buffer(state, route, term_size);
+    let second = painted_op_picker_position(&buffer, area, "account-01-painted@example.invalid");
+    for _ in 0..2 {
+        handle_mouse(
+            state,
+            mouse_kind_at(MouseEventKind::ScrollDown, second.x, second.y),
+            term_size,
+        );
+    }
+    assert_op_picker_wheel_preserves_parent(state, route, 3, &parent_before);
+
+    let (_, buffer) = op_picker_test_buffer(state, route, term_size);
+    let fourth = painted_op_picker_position(&buffer, area, "account-03-painted@example.invalid");
+    handle_mouse(
+        state,
+        mouse_kind_at(MouseEventKind::ScrollUp, fourth.x, fourth.y),
+        term_size,
+    );
+    assert_op_picker_wheel_preserves_parent(state, route, 2, &parent_before);
+
+    op_picker_context_mut(state, route)
+        .account_list_state
+        .set_active(Some(0));
+    let (area, buffer) = op_picker_test_buffer(state, route, term_size);
+    let first = painted_op_picker_position(&buffer, area, "account-00-painted@example.invalid");
+    handle_mouse(
+        state,
+        mouse_kind_at(MouseEventKind::ScrollUp, first.x, first.y),
+        term_size,
+    );
+    assert_op_picker_wheel_preserves_parent(state, route, 0, &parent_before);
+
+    op_picker_context_mut(state, route)
+        .account_list_state
+        .set_active(Some(29));
+    let (area, buffer) = op_picker_test_buffer(state, route, term_size);
+    let last = painted_op_picker_position(&buffer, area, "account-29-painted@example.invalid");
+    handle_mouse(
+        state,
+        mouse_kind_at(MouseEventKind::ScrollDown, last.x, last.y),
+        term_size,
+    );
+    assert_op_picker_wheel_preserves_parent(state, route, 29, &parent_before);
+}
+
+#[test]
+fn op_picker_wheel_uses_painted_rows_for_all_owners() {
+    let term_size = term_120x40();
+    for route in OpPickerRoute::ALL {
+        let mut state =
+            op_picker_manager_state(route, OpPickerStage::Account, OpLoadState::Ready, 30);
+        assert_op_picker_wheel_sequence(&mut state, route, term_size);
+    }
+
+    let mut env_picker_with_auth_tab = op_picker_manager_state_with_settings_tab(
+        OpPickerRoute::SettingsEnv,
+        OpPickerStage::Account,
+        OpLoadState::Ready,
+        30,
+        Some(SettingsTab::Auth),
+    );
+    let ManagerStage::Settings(settings) = &env_picker_with_auth_tab.stage else {
+        panic!("cross-tab environment picker fixture must use Settings stage");
+    };
+    assert_eq!(settings.active_tab, SettingsTab::Auth);
+    assert!(settings.env.modals.is_open());
+    assert!(settings.auth.modals.is_open());
+    assert_eq!(
+        env_picker_with_auth_tab.painted_input_owner(),
+        crate::tui::model::ConsolePaintedInputOwner::Dispatch(
+            crate::tui::model::ConsoleInputDispatchPlan::SettingsEnvDialog
+        )
+    );
+    assert_eq!(
+        op_picker_parent_snapshot(&env_picker_with_auth_tab)
+            .hidden_settings_picker
+            .as_ref()
+            .and_then(|picker| picker.active_account),
+        Some(0)
+    );
+    assert_op_picker_wheel_sequence(
+        &mut env_picker_with_auth_tab,
+        OpPickerRoute::SettingsEnv,
+        term_size,
+    );
+}
+
+fn assert_op_picker_blocked_load_and_naming_states(route: OpPickerRoute, term_size: Rect) {
+    for load_state in [
+        OpLoadState::Loading { spinner_tick: 1 },
+        OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotInstalled)),
+        OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotSignedIn)),
+        OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NoVaults)),
+        OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::GenericFatal {
+            message: "synthetic fatal".to_owned(),
+        })),
+    ] {
+        let mut blocked = op_picker_manager_state(route, OpPickerStage::Account, load_state, 3);
+        let parent_before = op_picker_parent_snapshot(&blocked);
+        let (area, _) = op_picker_test_buffer(&blocked, route, term_size);
+        let position = ratatui::layout::Position::new(area.x + area.width / 2, area.y + 2);
+        let before = op_picker_mouse_snapshot(op_picker_context(&blocked, route, term_size).1);
+        handle_mouse(
+            &mut blocked,
+            mouse_kind_at(MouseEventKind::ScrollDown, position.x, position.y),
+            term_size,
+        );
+        assert_eq!(
+            op_picker_mouse_snapshot(op_picker_context(&blocked, route, term_size).1),
+            before
+        );
+        assert_eq!(op_picker_parent_snapshot(&blocked), parent_before);
+    }
+
+    for stage in [
+        OpPickerStage::NewItemName,
+        OpPickerStage::FieldLabel,
+        OpPickerStage::NewSectionName,
+    ] {
+        let mut naming = op_picker_manager_state(route, stage, OpLoadState::Ready, 3);
+        let parent_before = op_picker_parent_snapshot(&naming);
+        let (area, _) = op_picker_test_buffer(&naming, route, term_size);
+        let position = ratatui::layout::Position::new(area.x + area.width / 2, area.y + 2);
+        let before = op_picker_mouse_snapshot(op_picker_context(&naming, route, term_size).1);
+        handle_mouse(
+            &mut naming,
+            mouse_kind_at(MouseEventKind::ScrollDown, position.x, position.y),
+            term_size,
+        );
+        assert_eq!(
+            op_picker_mouse_snapshot(op_picker_context(&naming, route, term_size).1),
+            before
+        );
+        assert_eq!(op_picker_parent_snapshot(&naming), parent_before);
+    }
+}
+
+#[test]
+fn op_picker_wheel_misses_and_blocked_states_preserve_background() {
+    let term_size = term_120x40();
+    for route in OpPickerRoute::ALL {
+        let mut state =
+            op_picker_manager_state(route, OpPickerStage::Account, OpLoadState::Ready, 3);
+        let parent_before = op_picker_parent_snapshot(&state);
+        let (area, buffer) = op_picker_test_buffer(&state, route, term_size);
+        let row = painted_op_picker_position(&buffer, area, "account-00-painted@example.invalid");
+        let last_row =
+            painted_op_picker_position(&buffer, area, "account-02-painted@example.invalid");
+        let filter = painted_op_picker_position(&buffer, area, "Filter");
+        let spacer = ratatui::layout::Position::new(filter.x, filter.y + 1);
+        let title_border = ratatui::layout::Position::new(area.x, area.y);
+        let unused_body = ratatui::layout::Position::new(row.x, last_row.y + 1);
+        assert!(area.contains(unused_body));
+        assert_eq!(buffer[(unused_body.x, unused_body.y)].symbol(), " ");
+        for position in [
+            filter,
+            spacer,
+            title_border,
+            unused_body,
+            ratatui::layout::Position::new(0, 0),
+        ] {
+            let before = op_picker_mouse_snapshot(op_picker_context(&state, route, term_size).1);
+            handle_mouse(
+                &mut state,
+                mouse_kind_at(MouseEventKind::ScrollDown, position.x, position.y),
+                term_size,
+            );
+            assert_eq!(
+                op_picker_mouse_snapshot(op_picker_context(&state, route, term_size).1),
+                before
+            );
+            assert_eq!(op_picker_parent_snapshot(&state), parent_before);
+        }
+
+        let mut long_list =
+            op_picker_manager_state(route, OpPickerStage::Account, OpLoadState::Ready, 30);
+        op_picker_context_mut(&mut long_list, route)
+            .account_list_state
+            .set_active(Some(29));
+        let long_parent = op_picker_parent_snapshot(&long_list);
+        let (long_area, long_buffer) = op_picker_test_buffer(&long_list, route, term_size);
+        let last_row = painted_op_picker_position(
+            &long_buffer,
+            long_area,
+            "account-29-painted@example.invalid",
+        );
+        let scroll_gutter =
+            ratatui::layout::Position::new(long_area.right().saturating_sub(2), last_row.y);
+        assert!(!crate::tui::components::op_picker::selection_hit_at(
+            long_area,
+            op_picker_context(&long_list, route, term_size).1,
+            scroll_gutter,
+        ));
+        let long_before =
+            op_picker_mouse_snapshot(op_picker_context(&long_list, route, term_size).1);
+        handle_mouse(
+            &mut long_list,
+            mouse_kind_at(MouseEventKind::ScrollDown, scroll_gutter.x, scroll_gutter.y),
+            term_size,
+        );
+        assert_eq!(
+            op_picker_mouse_snapshot(op_picker_context(&long_list, route, term_size).1),
+            long_before
+        );
+        assert_op_picker_wheel_preserves_parent(&long_list, route, 29, &long_parent);
+
+        let mut recoverable = op_picker_manager_state(
+            route,
+            OpPickerStage::Account,
+            OpLoadState::Error(OpPickerError::Recoverable {
+                message: "synthetic recoverable banner".to_owned(),
+            }),
+            3,
+        );
+        let recoverable_parent = op_picker_parent_snapshot(&recoverable);
+        let (recoverable_area, recoverable_buffer) =
+            op_picker_test_buffer(&recoverable, route, term_size);
+        let banner = painted_op_picker_position(&recoverable_buffer, recoverable_area, "Error:");
+        assert!(!crate::tui::components::op_picker::selection_hit_at(
+            recoverable_area,
+            op_picker_context(&recoverable, route, term_size).1,
+            banner,
+        ));
+        let recoverable_before =
+            op_picker_mouse_snapshot(op_picker_context(&recoverable, route, term_size).1);
+        handle_mouse(
+            &mut recoverable,
+            mouse_kind_at(MouseEventKind::ScrollDown, banner.x, banner.y),
+            term_size,
+        );
+        assert_eq!(
+            op_picker_mouse_snapshot(op_picker_context(&recoverable, route, term_size).1),
+            recoverable_before
+        );
+        assert_eq!(op_picker_parent_snapshot(&recoverable), recoverable_parent);
+
+        let mut no_match =
+            op_picker_manager_state(route, OpPickerStage::Account, OpLoadState::Ready, 3);
+        op_picker_context_mut(&mut no_match, route).filter_buf = "no-painted-match".to_owned();
+        let no_match_parent = op_picker_parent_snapshot(&no_match);
+        let (area, buffer) = op_picker_test_buffer(&no_match, route, term_size);
+        let position = painted_op_picker_position(&buffer, area, "(no matches)");
+        let before = op_picker_mouse_snapshot(op_picker_context(&no_match, route, term_size).1);
+        handle_mouse(
+            &mut no_match,
+            mouse_kind_at(MouseEventKind::ScrollDown, position.x, position.y),
+            term_size,
+        );
+        assert_eq!(
+            op_picker_mouse_snapshot(op_picker_context(&no_match, route, term_size).1),
+            before
+        );
+        assert_eq!(op_picker_parent_snapshot(&no_match), no_match_parent);
+
+        assert_op_picker_blocked_load_and_naming_states(route, term_size);
+    }
+}
+
+#[test]
+fn op_picker_help_blocks_hidden_picker_for_all_owners() {
+    let term_size = term_120x40();
+    for route in OpPickerRoute::ALL {
+        let mut state =
+            op_picker_manager_state(route, OpPickerStage::Account, OpLoadState::Ready, 10);
+        let parent_before = op_picker_parent_snapshot(&state);
+        let (area, buffer) = op_picker_test_buffer(&state, route, term_size);
+        let row = painted_op_picker_position(&buffer, area, "account-00-painted@example.invalid");
+        let before = op_picker_mouse_snapshot(op_picker_context(&state, route, term_size).1);
+        state.keyboard_help = Some(termrock::widgets::KeyboardHelpState::modal());
+
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, row.x, row.y),
+            term_size,
+        );
+
+        assert!(state.keyboard_help.is_some(), "help must retain ownership");
+        assert_eq!(
+            op_picker_mouse_snapshot(op_picker_context(&state, route, term_size).1),
+            before
+        );
+        let mut expected_parent = parent_before;
+        expected_parent.keyboard_help = true;
+        assert_eq!(op_picker_parent_snapshot(&state), expected_parent);
+    }
+}
+
 #[test]
 fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::Result<()> {
     const CHILD: &str = "JACKIN_MOUSE_PRIVACY_WIRE_CHILD";

@@ -17,7 +17,7 @@ use crate::tui::components::modal_overlay;
 use crate::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MOUSE_VERTICAL_SCROLL_STEP, ScrollbarAxis,
     apply_scrollbar_drag, horizontal_split_pane_dims, is_horizontally_scrollable, point_in_rect,
-    scroll_selection_at_position, split_seam_column,
+    split_seam_column,
 };
 use crate::tui::model::{ConsoleInputDispatchPlan, ConsolePaintedInputOwner};
 use crate::tui::run::{ConsoleClickStageFacts, ConsoleClickabilityFacts, console_clickable_at};
