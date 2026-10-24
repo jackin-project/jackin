@@ -123,7 +123,11 @@ fn render_stage_modal(
     match console_modal_render_plan(state.stage.route()) {
         ConsoleModalRenderPlan::List => {
             if let Some(modal) = &state.list_modal {
-                render_modal(frame, modal);
+                if matches!(modal, crate::tui::state::Modal::ContainerInfo { .. }) {
+                    super::modal::render_modal_in(frame, area, modal);
+                } else {
+                    render_modal(frame, modal);
+                }
             }
         }
         // The Workflows stage draws its confirmation dialog inline in

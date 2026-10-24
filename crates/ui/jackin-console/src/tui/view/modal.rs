@@ -8,9 +8,17 @@ use super::{
 use ratatui::{Frame, layout::Rect};
 
 pub fn render_modal(frame: &mut Frame<'_>, modal: &crate::tui::state::Modal<'_>) {
+    let area = frame.area();
+    render_modal_in(frame, area, modal);
+}
+
+pub(super) fn render_modal_in(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    modal: &crate::tui::state::Modal<'_>,
+) {
     use crate::tui::state::Modal;
 
-    let area = frame.area();
     let modal_area = modal.rect(area);
     match modal {
         Modal::TextInput { state, .. } => {
