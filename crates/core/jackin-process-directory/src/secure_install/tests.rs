@@ -312,7 +312,7 @@ fn linux_accepts_absent_extended_acl() {
     let checked = root
         .open_file(Path::new("owner"), InstallFileKind::Executable)
         .unwrap();
-    super::linux_acl::ensure_no_extended_acl(checked.file(), false).unwrap();
+    linux_acl::ensure_no_extended_acl(checked.file(), false).unwrap();
     assert_eq!(read_checked(&checked), b"fixed");
 }
 

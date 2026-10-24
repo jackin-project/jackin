@@ -19,6 +19,8 @@ use std::{
     path::Path,
 };
 
+mod checked_install;
+
 const RECEIPT_HEADER: &str = "jackin-precommit-owner-receipt/3";
 const RECEIPT_LIMIT: usize = 4096;
 const ARTIFACT_LIMIT: u64 = 64 * 1024 * 1024;
@@ -33,6 +35,9 @@ const RECEIPT_FIELDS: [&str; 8] = [
     "target-sha256",
     "build-sha256",
 ];
+
+pub(super) const INSTALL_INSPECTION_LIMITATIONS: &str =
+    "source closure, build authority, running image, and execution trust were not checked";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Sha256Digest([u8; 32]);
@@ -206,7 +211,10 @@ impl OpenedFile {
             Mode::empty(),
         )
         .with_context(|| format!("opening {role} without following symlinks"))?;
-        let file = File::from(descriptor);
+        Self::from_file(File::from(descriptor), role, limit)
+    }
+
+    fn from_file(file: File, role: &str, limit: u64) -> Result<Self> {
         let identity = FileIdentity::capture(&file, role)?;
         ensure!(identity.length <= limit, "{role} exceeds its byte limit");
         Ok(Self { file, identity })
@@ -252,8 +260,17 @@ pub(super) fn inspect_receipt(
     Ok(receipt)
 }
 
+pub(super) fn inspect_install(path: &Path) -> Result<String> {
+    let inspected = checked_install::inspect_checked_install(path)?;
+    Ok(inspected.source_hex())
+}
+
 fn read_receipt(path: &Path) -> Result<Vec<u8>> {
     let opened = OpenedFile::open(path, "receipt", RECEIPT_LIMIT as u64)?;
+    read_opened_receipt(&opened)
+}
+
+fn read_opened_receipt(opened: &OpenedFile) -> Result<Vec<u8>> {
     let mut buffer = [0_u8; RECEIPT_LIMIT + 1];
     let mut total = 0_usize;
     loop {

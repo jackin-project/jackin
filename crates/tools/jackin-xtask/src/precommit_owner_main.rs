@@ -45,6 +45,22 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
+    if command == OsStr::new("inspect-install") {
+        let root_path = required_path(&mut args, "physical install root")?;
+        ensure!(
+            args.next().is_none(),
+            "inspect-install accepts exactly one physical root"
+        );
+        let source_digest = precommit_owner_security::inspect_install(&root_path)?;
+        writeln!(
+            io::stdout().lock(),
+            "format3 receipt and checked artifact descriptors are internally consistent; recorded source digest={source_digest}; selected install root and fixed artifact names checked through retained descriptors; {}",
+            precommit_owner_security::INSTALL_INSPECTION_LIMITATIONS
+        )
+        .context("writing checked installation inspection result")?;
+        return Ok(());
+    }
+
     if command != OsStr::new("inspect-receipt") {
         bail!("{}", usage());
     }
@@ -82,7 +98,7 @@ fn required_path(args: &mut impl Iterator<Item = OsString>, name: &str) -> Resul
 
 #[cfg(unix)]
 fn usage() -> &'static str {
-    "usage: jackin-precommit-owner --protocol | inspect-receipt <receipt> <owner> <entry> <helper>"
+    "usage: jackin-precommit-owner --protocol | inspect-receipt <receipt> <owner> <entry> <helper> | inspect-install <physical-root>"
 }
 
 #[cfg(not(unix))]
