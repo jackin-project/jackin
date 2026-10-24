@@ -7,6 +7,7 @@
 mod tests;
 
 use super::{CheckedInstallRoot, DIRECTORY_OPEN_FLAGS, NodeRole};
+#[cfg(not(target_os = "linux"))]
 use rustix::fd::AsFd;
 use rustix::fs::{Mode, fstat, open, openat, statat};
 use std::ffi::{OsStr, OsString};
@@ -63,6 +64,9 @@ fn absolute_components(path: &Path) -> io::Result<Vec<OsString>> {
 fn open_filesystem_root() -> io::Result<File> {
     let opened = File::from(open("/", DIRECTORY_OPEN_FLAGS, Mode::empty())?);
     let root = super::duplicate_file(&opened)?;
+    #[cfg(target_os = "linux")]
+    validate_linux_absolute_directory(&root, NodeRole::Ancestor)?;
+    #[cfg(not(target_os = "linux"))]
     super::validate_directory_descriptor(&root, NodeRole::Ancestor)?;
     Ok(root)
 }
@@ -80,6 +84,28 @@ fn open_directory_component(parent: &File, name: &OsStr, role: NodeRole) -> io::
             "installation directory changed while opening a path component",
         ));
     }
+    #[cfg(target_os = "linux")]
+    validate_linux_absolute_directory(&opened, role)?;
+    #[cfg(not(target_os = "linux"))]
     super::ensure_native_acl(opened.as_fd(), true)?;
     Ok(opened)
+}
+
+#[cfg(target_os = "linux")]
+fn validate_linux_absolute_directory(file: &File, role: NodeRole) -> io::Result<()> {
+    let metadata = fstat(file)?;
+    super::validate_stat(&metadata, role)?;
+    super::linux_acl::ensure_no_extended_acl(
+        file,
+        should_check_default_acl(role, metadata.st_uid, super::geteuid().as_raw()),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn should_check_default_acl(
+    role: NodeRole,
+    owner_uid: super::RawUid,
+    effective_uid: super::RawUid,
+) -> bool {
+    !(matches!(role, NodeRole::Ancestor) && owner_uid == 0 && effective_uid != 0)
 }

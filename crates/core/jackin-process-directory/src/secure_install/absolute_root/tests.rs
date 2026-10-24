@@ -9,6 +9,8 @@ use super::super::{
     CheckedInstallFile, CheckedInstallRoot, InstallFileKind, MetadataFacts, MetadataProblem,
     NodeRole, classify_metadata,
 };
+#[cfg(target_os = "linux")]
+use super::should_check_default_acl;
 use super::{absolute_components, open_directory_component, open_filesystem_root};
 use rustix::fd::AsRawFd;
 use rustix::fs::{FileType, Mode, OFlags, fcntl_getfl, open};
@@ -86,6 +88,7 @@ fn fixture_base() -> tempfile::TempDir {
     for parent in candidates.into_iter().take(2) {
         let temporary = match tempfile::Builder::new()
             .prefix(".jackin-absolute-root-")
+            .permissions(fs::Permissions::from_mode(0o700))
             .tempdir_in(&parent)
         {
             Ok(temporary) => temporary,
@@ -114,6 +117,105 @@ fn fixture_base() -> tempfile::TempDir {
     panic!(
         "no candidate parent provided a production-accepted clean absolute fixture chain:\n{}",
         failures.join("\n"),
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn absolute_linux_system_ancestor_default_acl_policy_is_narrow() {
+    let cases = [
+        (
+            "non-root system ancestor omits only its default-ACL probe",
+            NodeRole::Ancestor,
+            0,
+            1001,
+            false,
+        ),
+        (
+            "current-user ancestor retains its default-ACL probe",
+            NodeRole::Ancestor,
+            1001,
+            1001,
+            true,
+        ),
+        (
+            "root process retains the system ancestor default-ACL probe",
+            NodeRole::Ancestor,
+            0,
+            0,
+            true,
+        ),
+        (
+            "selected root retains its default-ACL probe",
+            NodeRole::Root,
+            1001,
+            1001,
+            true,
+        ),
+        (
+            "relative directory retains its default-ACL probe",
+            NodeRole::Directory,
+            1001,
+            1001,
+            true,
+        ),
+        (
+            "leaf role retains its default-ACL probe",
+            NodeRole::Leaf(InstallFileKind::Executable),
+            1001,
+            1001,
+            true,
+        ),
+        (
+            "foreign ancestor retains its default-ACL probe",
+            NodeRole::Ancestor,
+            2000,
+            1001,
+            true,
+        ),
+    ];
+    for (description, role, owner_uid, effective_uid, expected) in cases {
+        assert_eq!(
+            should_check_default_acl(role, owner_uid, effective_uid),
+            expected,
+            "{description}",
+        );
+    }
+
+    let root_owned_ancestor = MetadataFacts {
+        file_type: FileType::Directory,
+        mode: Mode::from_bits_truncate(0o755),
+        uid: 0,
+        single_link: true,
+    };
+    assert_eq!(
+        classify_metadata(root_owned_ancestor, 1001, NodeRole::Ancestor),
+        Ok(()),
+        "root-owned non-writable ancestors remain valid",
+    );
+    assert_eq!(
+        classify_metadata(
+            MetadataFacts {
+                uid: 2000,
+                ..root_owned_ancestor
+            },
+            1001,
+            NodeRole::Ancestor,
+        ),
+        Err(MetadataProblem::WrongAncestorOwner),
+        "foreign ancestors remain rejected",
+    );
+    assert_eq!(
+        classify_metadata(
+            MetadataFacts {
+                mode: Mode::from_bits_truncate(0o775),
+                ..root_owned_ancestor
+            },
+            1001,
+            NodeRole::Ancestor,
+        ),
+        Err(MetadataProblem::WritableByGroupOrOther),
+        "group-writable ancestors remain rejected",
     );
 }
 

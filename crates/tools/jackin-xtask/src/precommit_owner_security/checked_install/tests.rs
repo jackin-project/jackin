@@ -103,6 +103,7 @@ fn linux_fixture_tempdir() -> Result<tempfile::TempDir> {
     for (source, parent) in candidates.into_iter().take(2) {
         let temporary = match tempfile::Builder::new()
             .prefix(".jackin-checked-install-")
+            .permissions(fs::Permissions::from_mode(0o700))
             .tempdir_in(&parent)
         {
             Ok(temporary) => temporary,
