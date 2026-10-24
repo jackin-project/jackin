@@ -36,8 +36,14 @@ pub(crate) fn render_account_list(
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if screen.accounts.is_empty() {
+        // The detail panel owns the single sticky status row on the full Usage screen.
+        let lines = if state.usage.visible {
+            super::publication::empty_publication_body_lines(screen, now_epoch)
+        } else {
+            empty_publication_lines(screen, now_epoch)
+        };
         frame.render_widget(
-            Paragraph::new(empty_publication_lines(screen, now_epoch))
+            Paragraph::new(lines)
                 .style(Style::default().fg(Color::DarkGray))
                 .wrap(Wrap { trim: false }),
             inner,

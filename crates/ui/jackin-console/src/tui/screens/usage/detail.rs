@@ -4,8 +4,8 @@
 use super::{
     append_account_full_body, append_account_summary_body, append_overview_account,
     append_publication_age, append_publication_issues, credential_expiry_label,
-    empty_publication_lines, freshness_age_label, identity_kind_label, non_empty_label, panel,
-    refreshing_line, relative_time_label,
+    freshness_age_label, identity_kind_label, non_empty_label, panel, refreshing_line,
+    relative_time_label,
 };
 
 use ratatui::{
@@ -29,11 +29,12 @@ pub(crate) fn render_detail(
     };
     let Some(account) = screen.selected_account() else {
         if screen.accounts.is_empty() {
-            frame.render_widget(
-                Paragraph::new(empty_publication_lines(screen, now_epoch))
-                    .block(panel("Overview"))
-                    .wrap(Wrap { trim: false }),
+            render_detail_panel(
+                frame,
                 area,
+                "Overview",
+                screen,
+                super::publication::empty_publication_body_lines(screen, now_epoch),
             );
             return;
         }
@@ -55,21 +56,11 @@ pub(crate) fn render_detail(
                     Style::default().fg(Color::Yellow),
                 )));
             }
-            frame.render_widget(
-                Paragraph::new(lines)
-                    .block(panel("Overview"))
-                    .scroll((screen.scroll, 0))
-                    .wrap(Wrap { trim: false }),
-                area,
-            );
+            render_detail_panel(frame, area, "Overview", screen, lines);
             return;
         }
         let mut lines = vec![Line::from("Status    available"), Line::from("")];
         append_publication_age(&mut lines, screen, now_epoch);
-        if screen.refreshing() {
-            lines.push(refreshing_line());
-            lines.push(Line::from(""));
-        }
         let width = area.width.saturating_sub(8).max(8) as usize;
         for &index in &order {
             append_overview_account(&mut lines, &screen.accounts[index], width, now_epoch);
@@ -81,13 +72,7 @@ pub(crate) fn render_detail(
                 Style::default().fg(Color::Yellow),
             )));
         }
-        frame.render_widget(
-            Paragraph::new(lines)
-                .block(panel("Overview"))
-                .scroll((screen.scroll, 0))
-                .wrap(Wrap { trim: false }),
-            area,
-        );
+        render_detail_panel(frame, area, "Overview", screen, lines);
         return;
     };
     let title = if screen.detail { "Account" } else { "Overview" };
@@ -119,10 +104,6 @@ pub(crate) fn render_detail(
     lines.push(Line::from(format!("Freshness {freshness}")));
     lines.push(Line::from(""));
     lines.push(Line::from("Limits"));
-    if screen.refreshing() {
-        lines.push(refreshing_line());
-        lines.push(Line::from(""));
-    }
     let width = area.width.saturating_sub(8).max(8) as usize;
     if screen.detail {
         append_account_full_body(&mut lines, account, width, now_epoch);
@@ -136,11 +117,46 @@ pub(crate) fn render_detail(
             Style::default().fg(Color::Yellow),
         )));
     }
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(panel(title))
-            .scroll((screen.scroll, 0))
-            .wrap(Wrap { trim: false }),
-        area,
+    render_detail_panel(frame, area, title, screen, lines);
+}
+
+fn render_detail_panel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &'static str,
+    screen: &super::UsageScreenState,
+    lines: Vec<Line<'static>>,
+) {
+    let block = panel(title);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let status_height = inner.height.min(1);
+    let status_area = Rect::new(inner.x, inner.y, inner.width, status_height);
+    let body_area = Rect::new(
+        inner.x,
+        inner.y.saturating_add(status_height),
+        inner.width,
+        inner.height.saturating_sub(status_height),
     );
+    if status_height > 0 {
+        let status = if screen.refreshing() || (screen.accounts.is_empty() && screen.loading()) {
+            refreshing_line()
+        } else {
+            Line::default()
+        };
+        frame.render_widget(Paragraph::new(status), status_area);
+    }
+    if body_area.width > 0 && body_area.height > 0 {
+        frame.render_widget(
+            Paragraph::new(lines)
+                .scroll((screen.scroll, 0))
+                .wrap(Wrap { trim: false }),
+            body_area,
+        );
+    }
 }
