@@ -381,12 +381,8 @@ fn source_linux_acl_controls_use_clean_fullwalk_baselines() {
     source
         .open_file(Path::new("source.rs"))
         .expect("verify a clean leaf before ACL injection");
-    let leaf = open(
-        &access_root.join("source.rs"),
-        OFlags::RDONLY,
-        Mode::empty(),
-    )
-    .expect("open source leaf for ACL fixture");
+    let leaf = open(access_root.join("source.rs"), OFlags::RDONLY, Mode::empty())
+        .expect("open source leaf for ACL fixture");
     secure_install::set_source_linux_acl_fixture(&leaf, false)
         .expect("inject an access ACL on the source leaf");
     assert_eq!(
