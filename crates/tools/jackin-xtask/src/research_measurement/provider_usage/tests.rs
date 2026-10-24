@@ -211,6 +211,138 @@ fn claude_thinking_is_optional_bounded_and_summed_for_split_iterations() {
 }
 
 #[test]
+fn claude_output_details_requires_null_or_object() {
+    for usage in [
+        json!({
+            "input_tokens": 1,
+            "output_tokens": 10,
+            "output_tokens_details": null
+        }),
+        json!({
+            "input_tokens": 1,
+            "output_tokens": 10,
+            "output_tokens_details": {}
+        }),
+        json!({
+            "input_tokens": 1,
+            "output_tokens": 10,
+            "output_tokens_details": {"thinking_tokens": null}
+        }),
+    ] {
+        let normalized = normalize("claude-messages", &usage, None).unwrap();
+        assert!(normalized["reasoning_output_tokens"].is_null());
+        assert!(
+            normalized["reasoning_included_in_output"]
+                .as_bool()
+                .unwrap()
+        );
+    }
+
+    for thinking in [0, 3] {
+        let normalized = normalize(
+            "claude-messages",
+            &json!({
+                "input_tokens": 1,
+                "output_tokens": 10,
+                "output_tokens_details": {"thinking_tokens": thinking}
+            }),
+            None,
+        )
+        .unwrap();
+        assert_eq!(normalized["tokens"]["input"], 1);
+        assert_eq!(normalized["tokens"]["output"], 10);
+        assert_eq!(normalized["reasoning_output_tokens"], thinking);
+        assert!(
+            normalized["reasoning_included_in_output"]
+                .as_bool()
+                .unwrap()
+        );
+    }
+
+    let malformed = [
+        json!(true),
+        json!(false),
+        json!(0),
+        json!(1),
+        json!(""),
+        json!("bad"),
+        json!([]),
+        json!([{}]),
+    ];
+    for details in malformed {
+        let usage = json!({
+            "input_tokens": 1,
+            "output_tokens": 10,
+            "output_tokens_details": details
+        });
+        let error = normalize("claude-messages", &usage, None).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("output_tokens_details must be an object"),
+            "details={usage}: {error:#}"
+        );
+    }
+}
+
+#[test]
+fn claude_iteration_output_details_rejects_non_objects_before_missing_split_fallback() {
+    let malformed = [
+        json!(true),
+        json!(false),
+        json!(0),
+        json!(1),
+        json!(""),
+        json!("bad"),
+        json!([]),
+        json!([{}]),
+    ];
+    for details in malformed {
+        for invalid_position in 0..2 {
+            let mut first = json!({"type": "compaction", "input_tokens": 2, "output_tokens": 6});
+            let mut second = json!({"type": "message", "input_tokens": 1, "output_tokens": 4});
+            if invalid_position == 0 {
+                first["output_tokens_details"] = details.clone();
+            } else {
+                second["output_tokens_details"] = details.clone();
+            }
+            let usage = json!({
+                "input_tokens": 999,
+                "output_tokens": 999,
+                "iterations": [first, second]
+            });
+            let error = normalize("claude-messages", &usage, None).unwrap_err();
+            assert!(
+                format!("{error:#}").contains("output_tokens_details must be an object"),
+                "position={invalid_position}; details={details}: {error:#}"
+            );
+        }
+    }
+
+    for details in [
+        None,
+        Some(json!(null)),
+        Some(json!({})),
+        Some(json!({"thinking_tokens": null})),
+    ] {
+        let mut first = json!({"type": "compaction", "input_tokens": 2, "output_tokens": 6});
+        if let Some(details) = details {
+            first["output_tokens_details"] = details;
+        }
+        let usage = json!({
+            "input_tokens": 999,
+            "output_tokens": 999,
+            "iterations": [
+                first,
+                {"type": "message", "input_tokens": 1, "output_tokens": 4}
+            ]
+        });
+        let normalized = normalize("claude-messages", &usage, None).unwrap();
+        assert_eq!(normalized["tokens"]["input"], 3);
+        assert_eq!(normalized["tokens"]["output"], 10);
+        assert!(normalized["reasoning_output_tokens"].is_null());
+    }
+}
+
+#[test]
 fn absent_and_null_rates_stay_unknown_while_invalid_rates_fail() {
     let normalized = normalize(
         "openai-responses",

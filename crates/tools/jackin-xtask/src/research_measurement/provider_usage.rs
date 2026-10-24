@@ -48,12 +48,15 @@ fn normalize(contract: &str, usage: &Value, cache_writes: Option<&str>) -> Resul
             let split_values = samples
                 .iter()
                 .map(|sample| {
-                    sample
-                        .get("output_tokens_details")
-                        .and_then(|details| details.get("thinking_tokens"))
-                        .filter(|value| !value.is_null())
+                    let sample = sample
+                        .as_object()
+                        .context("Claude usage sample must be an object")?;
+                    let details = optional_object(sample, "output_tokens_details")?;
+                    Ok(details
+                        .get("thinking_tokens")
+                        .filter(|value| !value.is_null()))
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>>>()?;
             if split_values.iter().all(Option::is_some) {
                 let mut total = 0_u64;
                 for (sample, value) in samples.iter().zip(split_values) {
