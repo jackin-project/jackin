@@ -9,6 +9,7 @@ use super::{
     workspace_frame_areas, workspace_header_title,
 };
 use crate::tui::model::console_usage_surface_painted;
+use crate::tui::screens::usage::UsagePaintReceipt;
 use ratatui::{Frame, layout::Rect};
 
 pub fn render(
@@ -18,8 +19,19 @@ pub fn render(
     config: &jackin_config::AppConfig,
     cwd: &std::path::Path,
 ) {
+    drop(render_with_usage_receipt(frame, area, state, config, cwd));
+}
+
+pub fn render_with_usage_receipt(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::tui::state::ManagerState<'_>,
+    config: &jackin_config::AppConfig,
+    cwd: &std::path::Path,
+) -> Option<UsagePaintReceipt> {
     use crate::tui::screens::workspaces::view::footer::workspace_screen_footer_items_for_state;
 
+    let mut usage_receipt = None;
     match console_main_frame_plan(state.stage.route()) {
         ConsoleMainFramePlan::Editor => {
             if let crate::tui::state::ManagerStage::Editor(editor) = &state.stage {
@@ -53,7 +65,7 @@ pub fn render(
                 console_usage_surface_painted(state.stage.route(), state.usage.visible);
 
             if usage_surface_painted {
-                render_usage_surface(frame, area, state);
+                usage_receipt = render_usage_surface(frame, area, state);
             } else {
                 render_header(frame, areas.header, workspace_header_title());
             }
@@ -100,6 +112,7 @@ pub fn render(
             .title("Keyboard shortcuts")
             .paint(rect, frame.buffer_mut(), &mut paint);
     }
+    usage_receipt
 }
 
 fn render_stage_modal(
@@ -110,7 +123,11 @@ fn render_stage_modal(
     match console_modal_render_plan(state.stage.route()) {
         ConsoleModalRenderPlan::List => {
             if let Some(modal) = &state.list_modal {
-                render_modal(frame, modal);
+                if matches!(modal, crate::tui::state::Modal::ContainerInfo { .. }) {
+                    super::modal::render_modal_in(frame, area, modal);
+                } else {
+                    render_modal(frame, modal);
+                }
             }
         }
         // The Workflows stage draws its confirmation dialog inline in

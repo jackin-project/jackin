@@ -35,7 +35,7 @@ pub use plans::{
     console_reserved_footer_height_plan, modal_overlay_state_for_route,
     modal_overlay_state_from_stage_facts, modal_overlay_visible, reserved_footer_height_for_facts,
 };
-pub use render::render;
+pub use render::{render, render_with_usage_receipt};
 
 #[cfg(test)]
 pub(crate) use ratatui::Frame;

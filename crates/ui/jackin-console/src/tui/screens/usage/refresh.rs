@@ -16,6 +16,7 @@ impl UsageScreenState {
         self.last_refresh_at = Some(now);
         self.consume_refresh_intent();
         self.scroll = 0;
+        self.list_scroll = 0;
         match &self.selected_id {
             None => self.selected = 0,
             Some(id) => {

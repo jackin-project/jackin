@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{UsageAccount, UsageScreenState, UsageSort};
+use super::{UsageAccount, UsageRowTarget, UsageScreenState, UsageSort, UsageWheelAction};
 
 impl UsageScreenState {
     #[must_use]
@@ -42,6 +42,7 @@ impl UsageScreenState {
             None => self.selected = 0,
         }
         self.scroll = 0;
+        self.list_scroll = 0;
     }
 
     #[must_use]
@@ -71,6 +72,7 @@ impl UsageScreenState {
             self.selected = selected;
             self.selected_id = self.selected_account().map(UsageAccount::stable_id);
             self.scroll = 0;
+            self.list_scroll = 0;
             true
         } else {
             self.notice = Some(if self.accounts.is_empty() {
@@ -123,5 +125,65 @@ impl UsageScreenState {
 
     pub(crate) fn overview_selected(&self) -> bool {
         self.selected == 0
+    }
+
+    /// Select a semantic usage row if its stable ID is still visible.
+    ///
+    /// This updates local selection state only. A prepared row target is not a
+    /// frame revision or owner authorization for live input dispatch.
+    pub fn select_rendered_target(&mut self, target: &UsageRowTarget) -> bool {
+        let order = self.visible_order();
+        if order.is_empty() {
+            return false;
+        }
+        match target {
+            UsageRowTarget::Overview => {
+                self.selected = 0;
+                self.selected_id = None;
+                true
+            }
+            UsageRowTarget::Account(id) => {
+                let Some(position) = order
+                    .iter()
+                    .position(|&index| self.accounts[index].stable_id() == *id)
+                else {
+                    return false;
+                };
+                self.selected = position.saturating_add(1);
+                self.selected_id = Some(id.clone());
+                true
+            }
+        }
+    }
+
+    /// Apply a usage-local wheel action to this screen's selection or scroll.
+    ///
+    /// This updates local state only and does not validate a painted frame or
+    /// authorize input dispatch.
+    pub fn apply_wheel_action(&mut self, action: UsageWheelAction) {
+        match action {
+            UsageWheelAction::MoveSelection(delta) => {
+                if !self.visible_order().is_empty() {
+                    self.move_selection(delta);
+                }
+            }
+            UsageWheelAction::ScrollDetail(delta) => {
+                let amount = u16::from(delta.unsigned_abs());
+                self.scroll = if delta.is_negative() {
+                    self.scroll.saturating_sub(amount)
+                } else {
+                    self.scroll.saturating_add(amount)
+                };
+            }
+        }
+    }
+
+    pub(crate) fn apply_painted_detail_wheel(&mut self, delta: i8, painted: u16, maximum: u16) {
+        let amount = u16::from(delta.unsigned_abs());
+        self.scroll = if delta.is_negative() {
+            painted.saturating_sub(amount)
+        } else {
+            painted.saturating_add(amount).min(maximum)
+        };
     }
 }

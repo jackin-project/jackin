@@ -63,6 +63,7 @@ fn s8_scroll_moves_overview_content() {
 
     let mut scrolled = manager.usage.screen.as_ref().unwrap().clone();
     scrolled.scroll = 25;
+    scrolled.list_scroll = 25;
     let manager = s8_manager(scrolled);
     let moved = s8_render_full(&manager, 80, 24);
     assert!(!moved.contains("account-0"), "{moved}");
