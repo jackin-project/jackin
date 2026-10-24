@@ -7,10 +7,15 @@ license.workspace = true
 repository.workspace = true
 description = "Workspace automation (construct image build/publish) for jackin."
 publish = false
+default-run = "jackin-xtask"
 
 [[bin]]
 name = "jackin-xtask"
 path = "src/main.rs"
+
+[[bin]]
+name = "jackin-precommit-owner"
+path = "src/precommit_owner_main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
