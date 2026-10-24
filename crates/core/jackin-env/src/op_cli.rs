@@ -266,6 +266,8 @@ fn op_read_args<'a>(reference: &'a str, account: Option<&'a str>) -> Vec<&'a str
 
 impl OpRunner for OpCli {
     fn read_with_account(&self, reference: &str, account: Option<&str>) -> anyhow::Result<String> {
+        // A per-ref account overrides the instance default so a workspace
+        // holding refs from several accounts resolves each against its own.
         match account {
             Some(_) => Self {
                 binary: self.binary.clone(),

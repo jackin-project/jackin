@@ -57,7 +57,7 @@ matching scoped ratchet after generation.
 
 ## Native release packaging
 
-`mise run release:package` consumes Velnor's `velnor.release-task.v1` handoff. Leaves build four CLI and two Linux capsule payloads; assembly validates captured archives, SBOMs, and the capsule manifest without rebuilding. Separate jobs sign and publish rolling previews or immutable stable versions. Builds receive no publishing credentials.
+`mise run release:package` consumes Velnor's `velnor.release-task.v1` handoff. Leaves build four CLI and two Linux capsule payloads; assembly validates captured archives, SBOMs, and the capsule manifest without rebuilding. Separate jobs sign and publish immutable previews by SHA and stable versions. Builds receive no publishing credentials.
 
 ## How to verify
 
