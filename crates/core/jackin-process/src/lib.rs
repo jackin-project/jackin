@@ -10,6 +10,23 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
+mod child_ownership;
+mod spooled;
+
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use child_ownership::registry_contention_count;
+pub(crate) use child_ownership::supports_selective_reaping;
+pub use child_ownership::{
+    ChildRegistration, ChildRegistrationSlot, ChildRegistry, coordinate_children,
+    has_reaper_wakeup, install_reaper_wakeup, take_registry_poisoned,
+};
+pub use spooled::{
+    SpoolCaptureObservation, SpoolCleanupObservation, SpoolError, SpoolExecResult,
+    SpoolExecutionObservation, SpoolFailure, SpoolFailureKind, SpoolPipeObservation, SpoolRecovery,
+    exec_spooled_sync_cancellable,
+};
+
 pub const DEFAULT_CAPTURE_LIMIT: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -315,14 +332,56 @@ fn validate_request(request: &ExecRequest, spawning: bool) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn spawn_and_register_async(
+    command: &mut tokio::process::Command,
+    request: &ExecRequest,
+) -> Result<(tokio::process::Child, ChildRegistration)> {
+    coordinate_children(|registry| {
+        let slot = registry
+            .prepare_registration()
+            .context("reserving asynchronous child wait ownership")?;
+        let child = command
+            .spawn()
+            .with_context(|| format!("spawning {}", display_request(request)))?;
+        let Some(pid) = child.id() else {
+            // Tokio reports no ID only after its child has already been
+            // polled to completion; this fresh child has not been polled.
+            bail!("newly spawned Tokio child had no live PID before registration");
+        };
+        let registration = registry.register_prepared(pid, slot);
+        Ok((child, registration))
+    })
+}
+
 #[derive(Debug)]
 struct OwnedChild {
     child: tokio::process::Child,
     #[cfg(unix)]
     group: Option<nix::unistd::Pid>,
+    // Field order matters: drop the Tokio Child before releasing its PID token.
+    #[cfg(target_os = "macos")]
+    registration: Option<ChildRegistration>,
 }
 
 impl OwnedChild {
+    fn spawn(command: &mut tokio::process::Command, request: &ExecRequest) -> Result<Self> {
+        #[cfg(target_os = "macos")]
+        let (child, registration) = spawn_and_register_async(command, request)?;
+        #[cfg(not(target_os = "macos"))]
+        let child = command
+            .spawn()
+            .with_context(|| format!("spawning {}", display_request(request)))?;
+        #[cfg(target_os = "macos")]
+        {
+            Ok(Self::with_registration(child, registration))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Ok(Self::new(child))
+        }
+    }
+
     fn new(child: tokio::process::Child) -> Self {
         Self {
             #[cfg(unix)]
@@ -331,7 +390,16 @@ impl OwnedChild {
                 .and_then(|id| i32::try_from(id).ok())
                 .map(nix::unistd::Pid::from_raw),
             child,
+            #[cfg(target_os = "macos")]
+            registration: None,
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn with_registration(child: tokio::process::Child, registration: ChildRegistration) -> Self {
+        let mut owned = Self::new(child);
+        owned.registration = Some(registration);
+        owned
     }
 
     fn kill_group(&self) -> Result<()> {
@@ -348,16 +416,31 @@ impl OwnedChild {
     async fn kill_and_reap(&mut self) -> Result<()> {
         let group_result = self.kill_group();
         let kill_result = self.child.start_kill().context("killing child");
-        tokio::time::timeout(Duration::from_secs(1), self.child.wait())
+        let (_status, cleanup_result) = self.reap_and_finish(group_result, kill_result).await?;
+        cleanup_result
+    }
+
+    async fn reap_and_finish(
+        &mut self,
+        group_result: Result<()>,
+        kill_result: Result<()>,
+    ) -> Result<(std::process::ExitStatus, Result<()>)> {
+        let status = tokio::time::timeout(Duration::from_secs(1), self.child.wait())
             .await
             .context("child did not reap within cleanup deadline")?
             .context("reaping child")?;
+        let cleanup_result = self.finish_reaped_cleanup(group_result, kill_result);
+        Ok((status, cleanup_result))
+    }
+
+    fn finish_reaped_cleanup(
+        &mut self,
+        group_result: Result<()>,
+        kill_result: Result<()>,
+    ) -> Result<()> {
+        self.disarm();
         group_result?;
         kill_result?;
-        #[cfg(unix)]
-        {
-            self.group = None;
-        }
         Ok(())
     }
 
@@ -365,6 +448,10 @@ impl OwnedChild {
         #[cfg(unix)]
         {
             self.group = None;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            drop(self.registration.take());
         }
     }
 }
@@ -435,10 +522,7 @@ where
     if request.stdin.is_some() {
         cmd.stdin(Stdio::piped());
     }
-    let mut owned = OwnedChild::new(
-        cmd.spawn()
-            .with_context(|| format!("spawning {}", display_request(request)))?,
-    );
+    let mut owned = OwnedChild::spawn(&mut cmd, request)?;
     let stdin = owned.child.stdin.take();
     let stdout = owned.child.stdout.take();
     let stderr = owned.child.stderr.take();
