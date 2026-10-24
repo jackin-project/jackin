@@ -43,18 +43,27 @@ The source snapshots, upstream clones, toolchains and binaries are deliberately 
 
 The frontier additions preserve all sixteen K proposals and eight V extensions while retiring unsupported daily-cost floors and combined multipliers. Their primary-paper scope is abstract/version inspection; no training, learned compression or self-hosted serving experiment was run. Mutable provider pages retrieved after the cutoff do not prove identical bytes at the cutoff. The 66 frontier rows are separate from the original 110 evaluation/economics heading dispositions; product RTK/LeanCTX headings have their own [23-row map](../rtk-leanctx/heading-dispositions.json).
 
-## Reproduce without network or provider access
+## Reproduce offline aggregation
 
 From this directory:
 
 ~~~sh
 PYTHONDONTWRITEBYTECODE=1 python3 reaggregate.py
+~~~
+
+Reaggregation checks all numeric sections against `aggregation-results.json`. It carries forward the **recorded** upstream checker result; it does not pretend to re-execute that checker without its pinned source. Likewise, Tokbench's zero source-summary mismatches were established during extraction, not by looking at the derived rows alone.
+
+## Reproduce the historical Python instrument tests
+
+The recorded 17-test Python suite belongs to the historical source snapshot at commit `f4f2655d79cda60c2dd97e2ed81ac66614fbdf44`, which contains its five matching instrument and test files. It is not a test result for the current Rust commands. From any repository checkout where that commit is available, create a separate worktree at an unused path and run the historical test there:
+
+~~~sh
+git worktree add --detach /tmp/jackin-measurement-python-history f4f2655d79cda60c2dd97e2ed81ac66614fbdf44
+cd /tmp/jackin-measurement-python-history/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation
 PYTHONDONTWRITEBYTECODE=1 python3 ../../test_measurement_tools.py
 ~~~
 
-The second command uses the instruments directory's test file and imports its sibling modules. The recorded suite has **17 passing tests**. It verifies duplicate/scoped receipt handling, monotone updates, missing write TTLs, invalid accounting, exact CRLF text, image dimensions, paid OpenAI write partitions, Claude compaction iterations, and Gemini disjoint output/thought fields.
-
-Reaggregation checks all numeric sections against `aggregation-results.json`. It carries forward the **recorded** upstream checker result; it does not pretend to re-execute that checker without its pinned source. Likewise, Tokbench's zero source-summary mismatches were established during extraction, not by looking at the derived rows alone.
+The historical test imports its sibling instrument modules from that worktree. Keep the original 17-pass result and execution record attributed to the historical source revision; current measurement use should follow the Rust commands in the repository's measurement-tools index.
 
 To reconstruct from public source, first inspect the download plan, then explicitly opt in:
 
