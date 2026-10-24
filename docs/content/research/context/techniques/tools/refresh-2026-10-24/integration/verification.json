@@ -1695,7 +1695,7 @@
       "origin/main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
     }
   },
-  "latest_completed_documentation_gate": "docs-final-main-results",
+  "latest_completed_documentation_gate": "ci-repair.json#/local_documentation_gate",
   "updated_utc": "2026-10-24T09:12:05.413775+00:00",
   "verification_freeze_utc": "2026-10-24T08:53:31.325332+00:00",
   "assembly_integrity": {
@@ -1774,5 +1774,19 @@
     },
     "historical_hashes_preserved": "The frozen manifest sha256, render command/results inputManifest sha256, earlier review hashes and previous integrity audit observations retain their original snapshot meanings."
   },
-  "publication_annotation_utc": "2026-10-24T09:12:05.413775+00:00"
+  "publication_annotation_utc": "2026-10-24T09:12:05.413775+00:00",
+  "previous_completed_documentation_gate": "docs-final-main-results",
+  "post_publication_ci_failure": {
+    "artifact": "ci-repair.json",
+    "head": "f8201076af4bca7faf9f579f627e8056dbd7f83f",
+    "failure": "Three late evidence file mentions required verifiable links.",
+    "earlier_gate_scope_preserved": true
+  },
+  "latest_completed_documentation_gate_details": {
+    "artifact": "ci-repair.json",
+    "section": "local_documentation_gate",
+    "completed_utc": "2026-10-24T09:36:22.399618+00:00",
+    "effective_gate_passed": true,
+    "scope": "Complete evidence tree;699 tracked Markdown/MDX/config inputs unchanged; initial roadmap cache failure retained with successful exact-command retry."
+  }
 }

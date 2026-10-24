@@ -1,0 +1,2910 @@
+{
+  "head_before_repair_commit": "f8201076af4bca7faf9f579f627e8056dbd7f83f",
+  "scope": "All tracked repository Markdown/MDX plus two docs configuration files captured before the gate; late evidence Markdown is included. This is broader than the prior58-page/config correspondence. It is not a full dependency/environment manifest.",
+  "inputs": [
+    {
+      "path": ".github/AGENTS.md",
+      "sha256": "4b9c4ce99c49a6bfb2d34864a82967d6c245b69d432120f4bd77361fe0afeec2"
+    },
+    {
+      "path": ".github/CLAUDE.md",
+      "sha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "ceb79a62da41f13fb782f77f32ba7b28dcfe6b6d461ef2765deb101af663ef25"
+    },
+    {
+      "path": "BRANCHING.md",
+      "sha256": "24bbdd6bd4d603dec240d1f93b6338ee00ed300c485cbe366aee210cd2ee8c37"
+    },
+    {
+      "path": "CLAUDE.md",
+      "sha256": "ceb79a62da41f13fb782f77f32ba7b28dcfe6b6d461ef2765deb101af663ef25"
+    },
+    {
+      "path": "COMMITS.md",
+      "sha256": "6bd71dce5c79cdf42253be19af0997f48b7f71dcd85b4e85d97279828b86a927"
+    },
+    {
+      "path": "CONTEXT.md",
+      "sha256": "6e78f405ab08b29459d33af584dc01fbd162ed26dfacecbbf61b3520c0f38253"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "217a78bfc6f4f39f6e69e14fcb118866beff73d9318e96b794be08850e733fb7"
+    },
+    {
+      "path": "README.md",
+      "sha256": "6c68545dbdd8425c49342fea385b872abff31dcce03d912c918d8170f9647966"
+    },
+    {
+      "path": "crates/adapters/jackin-docker/README.md",
+      "sha256": "91539725554af930b3e1a0d9a2562820865ebd2e611fa5d0e544b30227b49450"
+    },
+    {
+      "path": "crates/adapters/jackin-image/README.md",
+      "sha256": "ad8e8f32cc068fc258ed5ffee09fcef38fc7e4db8d17371eae2eafe18a970180"
+    },
+    {
+      "path": "crates/adapters/jackin-oppicker/README.md",
+      "sha256": "4a0a4823f448a4248bb97e1f12bac5613cbd2fc98ba79b04e43461601a0b3bdc"
+    },
+    {
+      "path": "crates/adapters/jackin-usage-ffi/README.md",
+      "sha256": "2910c7f99e9b5840cd89213fccb0731f76aa8a8001b884a0a4bf828b0fcd43b3"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/README.md",
+      "sha256": "62dbc577fe2c4a799e0692c7c6c5a7f390c96f0812b2509adc685e70a32e243d"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/tests/fixtures/pty/README.md",
+      "sha256": "fbe5e3ed36c27a06cd04e4348df17e639857b8c08786c8585c3667b858570f18"
+    },
+    {
+      "path": "crates/apps/jackin/README.md",
+      "sha256": "c65861192fc2f0d84b1a4cb7debe7bc166160f3b1f9091b2ac0b4519a387f7f3"
+    },
+    {
+      "path": "crates/apps/jackin/tests/fixtures/roles/jackin-sentinel/README.md",
+      "sha256": "f374265b692d3c372e269b4150543e12fd4ea37b6398c4ea12ee9e80f3e67b1f"
+    },
+    {
+      "path": "crates/core/jackin-brand/README.md",
+      "sha256": "02fed3b5783c2c062e429a1241292ec9f2ab434245803c6f80b7134a09a81c58"
+    },
+    {
+      "path": "crates/core/jackin-build-meta/README.md",
+      "sha256": "c1dea260e772be26e22b67505e73545e771fee49c4aeb112d8b2c4e3d3b2a16e"
+    },
+    {
+      "path": "crates/core/jackin-config/README.md",
+      "sha256": "56a9f1fdbc18b693b2aa92af16b9733d5ee5d8fa44163d7e80a1d0ac77bedb62"
+    },
+    {
+      "path": "crates/core/jackin-core/README.md",
+      "sha256": "fa844dc082bfe4740336e722dac31b8b914abe2f0f72bade0e809d57bc658871"
+    },
+    {
+      "path": "crates/core/jackin-core/docs/profile-credential-proofs.md",
+      "sha256": "2ec75cd9c2cb5dce90180c60278fc0cc2f7d1ad6ad5566e40f8f08df7f5d2d5b"
+    },
+    {
+      "path": "crates/core/jackin-env/README.md",
+      "sha256": "c11cb7e5acdba1562ab78744988bdf1a641d72d94ed7146329d34563696654e4"
+    },
+    {
+      "path": "crates/core/jackin-manifest/README.md",
+      "sha256": "90d11268d14daf64624d05864add002f2246504f3b182a7ffd70db8191010211"
+    },
+    {
+      "path": "crates/core/jackin-process-directory/README.md",
+      "sha256": "810f400cf8593cd3b62b47db711c26a824de9562097452e3187c0d0a62f7c156"
+    },
+    {
+      "path": "crates/core/jackin-process/README.md",
+      "sha256": "ead551614856396e77db2c66122eadccb7ba472fef1d0c8cbaf22fccb391365a"
+    },
+    {
+      "path": "crates/core/jackin-protocol/README.md",
+      "sha256": "b87f9f9a35391696cd1160a4affaed736a931db40d2055be6ff52ccbd8242789"
+    },
+    {
+      "path": "crates/core/jackin-workflow-spec/README.md",
+      "sha256": "bc7fcc0f4421cb18aab935e37d2fd9a91eb5d51be62181c45e8ec764c2ac94dd"
+    },
+    {
+      "path": "crates/services/jackin-agent-status/README.md",
+      "sha256": "1af08db29ce34d1c279276ebb172c2029bda7d74ea849296d19bbc40ff17e61b"
+    },
+    {
+      "path": "crates/services/jackin-diagnostics/README.md",
+      "sha256": "b8a27ac17c3f419f178f8c547c41ee6daf6a5f574d22afe7aacb6c5f362f0609"
+    },
+    {
+      "path": "crates/services/jackin-host/README.md",
+      "sha256": "9a430f33fefe4ee1b49081733054ff8672c4b19fd9aa25529b9fee102431ac0b"
+    },
+    {
+      "path": "crates/services/jackin-instance-agents/README.md",
+      "sha256": "5c92b4ca4704646dc7e92794281f679806df17b83fde13af6590a5dfa058c45e"
+    },
+    {
+      "path": "crates/services/jackin-instance-credentials/README.md",
+      "sha256": "e8094be8e3c654a313e3a84cab588e65c672ff2649ced80866505bfce0b06347"
+    },
+    {
+      "path": "crates/services/jackin-instance-roles/README.md",
+      "sha256": "980438bb79cad1c666f29e2f99f0ea1d4b1757b894d3cabb0f0d5ad8d4909398"
+    },
+    {
+      "path": "crates/services/jackin-instance-roles/src/tests/fixtures/README.md",
+      "sha256": "abf694ee66639c74e8b038806c8ffe934562188461b14da36e457bba306a6f06"
+    },
+    {
+      "path": "crates/services/jackin-instance/README.md",
+      "sha256": "118ae7fce16e816bebfa1e1a7bf9422a60816a1c9378924914bd7a5ad5a995bb"
+    },
+    {
+      "path": "crates/services/jackin-isolation/README.md",
+      "sha256": "b628dd09b48a9e411f6458849a6b3cffc6bbaeee09ff832d6287e3cdd063eda2"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-activate-entry/README.md",
+      "sha256": "e0572a2e5225f1a35d107404fabe4e900691ad142d4f9146e9a7e787cc943fff"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-attach-outcome/README.md",
+      "sha256": "3519a773c79907289522b32ad90d6c34e954067c18b90b9fddb166f3a13d653c"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-attach/README.md",
+      "sha256": "f3a7a2c29620db1146e512a5120890e21e750ed25505e92fd396b77c2dfbe2dd"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-check-dns/README.md",
+      "sha256": "ee3531496a4eea6cae4e5afb0a47452f4ad22ff0b003dd51785aaa62ae879bd1"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-client/README.md",
+      "sha256": "adbfcd1b16ab6ac880e96452486eb6bbeb18729b0510f0b9cf3dff2df14be8a8"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-probe-version/README.md",
+      "sha256": "99a8e15a1c38fa2af0efbbf88cbac687c0f4e4eab0d4d5dd1806ba100025162d"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-running/README.md",
+      "sha256": "b40b229196d43a8d02a62d7245bfc12a845f17bef42a0aff43f53509bc165b6c"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-session-contract/README.md",
+      "sha256": "8dac47840bf35038659efaa858174092548d09cbff18ae7461ecf54c2a5ce4d1"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-stop/README.md",
+      "sha256": "578846977af286996a92b330a4bd95557454f985a5b20ae3c4bc575e2b1e4832"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-supervisor-env/README.md",
+      "sha256": "97cc98dccce26cbf7ebc4ed681519155134d2f58e853b3b3f5b3ef3dab16099c"
+    },
+    {
+      "path": "crates/services/jackin-runtime-apple-container-wait/README.md",
+      "sha256": "cbc13b6cafd8a5f5f3c72adaf71936bad4fc3d64fd60a48183731456c32f8acc"
+    },
+    {
+      "path": "crates/services/jackin-runtime-attach-admission/README.md",
+      "sha256": "92bfa0cfb2bc9d357e2562c730def16038032e7511f99511f82dbdb9a7960fc2"
+    },
+    {
+      "path": "crates/services/jackin-runtime-attach-capsule-ready/README.md",
+      "sha256": "8eb72e723ba791424b3b19275993116b7f26052c42bf80e63ac1f1518988d37c"
+    },
+    {
+      "path": "crates/services/jackin-runtime-attach-exec-args/README.md",
+      "sha256": "0a9c569df7412da9a1d04a7d8134f2f873cd7396a021ff3a855fb8e04031e3d5"
+    },
+    {
+      "path": "crates/services/jackin-runtime-attach-inspect/README.md",
+      "sha256": "be0bc8213c35f4e840220ffe7a7c17173191eee77b23c719a36c50f1bb11fded"
+    },
+    {
+      "path": "crates/services/jackin-runtime-attach-running-gate/README.md",
+      "sha256": "216c0258a7e0b0f9f047b56d3ca9e1c5b8d17197ebbdcd6e2c201afdcf170a27"
+    },
+    {
+      "path": "crates/services/jackin-runtime-attach-sessions/README.md",
+      "sha256": "2a2ca94149beb6c71dc9d68417ed68271e98dd7c431eabf4b52e41882eeae42b"
+    },
+    {
+      "path": "crates/services/jackin-runtime-attach-transport/README.md",
+      "sha256": "0084bbc1af2776b72208072106a931bc77b9d4ebf8a6ea3e4105fd4fb5a74eba"
+    },
+    {
+      "path": "crates/services/jackin-runtime-backend-selection/README.md",
+      "sha256": "779115f47445a5d3193a3388f34d5814479190950732b78d4fa8b1a2c0b6186b"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-absent-guards/README.md",
+      "sha256": "8854d821f388795649de35bbb8d1bfcd0b3bcd86e425ab416f57da9575a8174c"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-dind-gc/README.md",
+      "sha256": "704d2ce563906f995dd544000b5b9fed26249d56c893a4c5e724c0d859c0fd16"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-eject-resources/README.md",
+      "sha256": "1268bffeaf554b6b1eba35ea5ea34a816ad982e5af5a339033cc6dcd6641d735"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-prune-cache/README.md",
+      "sha256": "9e6550c8a4c71d965dde1edce288f760e1dfe6c20119385ef1574e52aede31ce"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-prune-dir/README.md",
+      "sha256": "5692823120c1ab01229c06cc0f135236a629db7ab783b4dff3312f170b379fe0"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-prune-home/README.md",
+      "sha256": "7187bf17c63bbecb6e0db68a9156d41b16070f697231bf10e1caa865ac59458d"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-prune-images/README.md",
+      "sha256": "692014b82efc170a1851cc279ec4057a236099b726ef26bee9fdeb01b21a23cc"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-prune-roles/README.md",
+      "sha256": "6beb0edd13a7cc1bb1a2089633913d53826c7ac3ca219c20cdf1c6dfcc9b6004"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-resolve/README.md",
+      "sha256": "ee7a3b9239048424bfd3fa0b36bf69f92fb9df48ca13cad7b198f4ea513a9eb4"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-socket-dir/README.md",
+      "sha256": "07227e7a7973bd2b2afe0c62a344af41e4890619bca92ec4be266322229c6da2"
+    },
+    {
+      "path": "crates/services/jackin-runtime-cleanup-timing/README.md",
+      "sha256": "7c80d362fd3af9f27a105c2d59e5e1fba8d5e133f2e6f370adf67eec9ce79957"
+    },
+    {
+      "path": "crates/services/jackin-runtime-coordination/README.md",
+      "sha256": "2f6ee181e21856316621c236e16368599a89d55f35272e0f772f90257c712830"
+    },
+    {
+      "path": "crates/services/jackin-runtime-discovery/README.md",
+      "sha256": "ea428032ad251aa3a5edd7ae50e2dc0dfc761a7b6bd59f905a902d4ac279f48d"
+    },
+    {
+      "path": "crates/services/jackin-runtime-docker-profile/README.md",
+      "sha256": "69ccfa0cf61aefbb739c33ebcc1570c43335d9ad754396f88db3ffe11f2ba3f2"
+    },
+    {
+      "path": "crates/services/jackin-runtime-drift/README.md",
+      "sha256": "0d144b0bf470c1dc941d7e31d8b5190547c81c3f641f7a97d2fac15b997d945d"
+    },
+    {
+      "path": "crates/services/jackin-runtime-exec-host/README.md",
+      "sha256": "e5ea738fff044afd9d21b5f8f9dc973be56666a7c11c63dacaf960c55e5969ef"
+    },
+    {
+      "path": "crates/services/jackin-runtime-exit-summary/README.md",
+      "sha256": "477825348344a0f62db8ba79c060827cf60f2f1919c1ebbf912087fd903b8a1c"
+    },
+    {
+      "path": "crates/services/jackin-runtime-host-attach/README.md",
+      "sha256": "258639de6e97df3246958928245793031f4f3ab35ec0dcc34a016dbd1b47a5fa"
+    },
+    {
+      "path": "crates/services/jackin-runtime-host-daemon/README.md",
+      "sha256": "c08236e4108a78e710bd2938c6d620f955694d0c633537fe288bb1ab8adb7ed0"
+    },
+    {
+      "path": "crates/services/jackin-runtime-identity/README.md",
+      "sha256": "731a2e5fd29ba27f9ad8d9a7532504234504d39f7872db48ed1ac0dcbf18dceb"
+    },
+    {
+      "path": "crates/services/jackin-runtime-image/README.md",
+      "sha256": "d8a02e3ea4ee8a2c32dd2ff7253331bd4e8db7d58e3eccf5a33d355bbf6031b9"
+    },
+    {
+      "path": "crates/services/jackin-runtime-isolation/README.md",
+      "sha256": "3c8e6127203465f3b268d8a79bcd835a394f09a9e77608bf4b04f3d7fac52b92"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-account-config/README.md",
+      "sha256": "8c816974f24470906ada5b1ca2db303ac69f6573dd38250daa48b1738af68cdc"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-account-identity/README.md",
+      "sha256": "01d2361cb4a60a0b8b7e81fed6d8dd2f4fcb8e87508398439c08c4521f2072ba"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-attach-outcome/README.md",
+      "sha256": "f7a43a322c361a036b46121cf1e2e679752ca0003d7820e0af48666564a87126"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-auth-error/README.md",
+      "sha256": "eb38de7aa984ce0d08f8dad2427826df4a78f7934bce51e6718999cbf3e904d2"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-capsule-setup/README.md",
+      "sha256": "6206b7c59c81461a038d39b1684572ab4fcbc0c4eec38458ba201bb1761e280c"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-debug-envs/README.md",
+      "sha256": "4410314d3b407174986136953bf356926851a36663d005f88bbe71cc1c08e795"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-dind/README.md",
+      "sha256": "0d64049b46c6c8b612cb56b9143c58e0efb7129aad2fa13e88d7fcf6a84e4c80"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-dry-run/README.md",
+      "sha256": "85add95d1507ddf33c8f2a4827ad16d116272646079d81700cfd7c874697848e"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-exit-diagnosis/README.md",
+      "sha256": "f9057c68b83818a18ad49a6925c07310f46de389e5fc6a33709e6f14c7865125"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-exit-outro/README.md",
+      "sha256": "bba6023f4088314fa040e0f958fe47477caefaf3071ce297f2107ac9260612e8"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-failure/README.md",
+      "sha256": "127812d55a0c065b47a5554cdb15305b6fb8df5be06c1e9332c015635106bd09"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-git-pull/README.md",
+      "sha256": "f5e1c9083ab25ab7523bb0e9ed2610e289c48467335735c9f97bb936b53a45d9"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-image-plan/README.md",
+      "sha256": "c3a819b0d2c687dc98fa881d06db86ca973199f5cae8fd1bc3472415a6572f23"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-load-cleanup/README.md",
+      "sha256": "eca52eeee8df2c211e171580ee0beabd78bba1c0fb0b97f66d54449fed0494ee"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-load-options/README.md",
+      "sha256": "db30dbd66b2eed5ef30ce63b23e8e9b7e538bcc4b7e70411c15a5d1d6a3e6eed"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-mounts/README.md",
+      "sha256": "a7d16e7b16b3523c95249eab15f900aee30b7f3f514fc306766a99c6f5c8c4d1"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-plan/README.md",
+      "sha256": "e6f098de9377cbc6f4bc1caf09b76cc0d1c57f417d1f313d8713f63caaf1df21"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-post-run-failure/README.md",
+      "sha256": "a44e64602b8e8b27a02d46f9e053a94e760375392ce5b2a2e4f95df3289965d9"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-programmatic-selection/README.md",
+      "sha256": "5e1298c03057dcfe8ca73fb595a126c2017589efc988e50d508a283263fcd423"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-progress-helpers/README.md",
+      "sha256": "c52ef231f1106653ba0b75a9d36c4844abde84bad14b010e6d9397ffeb1fe6f9"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-restore/README.md",
+      "sha256": "5fb76ffa145866c5072130513367164466356d872d87718a7991820ad9474bef"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-run-envs/README.md",
+      "sha256": "cf621fa1204ab482d191ae04eb5421ea9971f7cd29497ff463646ea102182b55"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-sibling-auth-prewarm/README.md",
+      "sha256": "1d2f18467c2478de902ec97d4803c51d823f7eb201a762e28e69a73dd9d9f293"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-slot/README.md",
+      "sha256": "5fc3d44b93ea9812ad2e5be1083fd4db0653db6802b7a9a2cd9849c28b60f2ea"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-supported-agents/README.md",
+      "sha256": "dde6afef80a56f32cb073cddbbfa4b68b0cf9a40c1fb333843df9d43ee9128fb"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-trust/README.md",
+      "sha256": "16fb206639cb4273f3b2f8dd25e4eea042f93b1c3058f61e91bc62a15dde72cf"
+    },
+    {
+      "path": "crates/services/jackin-runtime-naming/README.md",
+      "sha256": "b25b10e7ad4c67e3fa2c9a6fd98f5f48b02ea3778e803091c28a94a1ce2a98d8"
+    },
+    {
+      "path": "crates/services/jackin-runtime-prewarm-trigger/README.md",
+      "sha256": "5f2deeac6421b6ed292364a4cad1aa8f299b373ca23d27e59b3f4d79fb01975e"
+    },
+    {
+      "path": "crates/services/jackin-runtime-process-telemetry/README.md",
+      "sha256": "33e3d09a90e286b7601ff65ec9e6c4aa0a7a7a63f64d0f5abb369552262e120c"
+    },
+    {
+      "path": "crates/services/jackin-runtime-progress/README.md",
+      "sha256": "d6d07b1d89471d3cc9b6397f19befa77da2d9b30bf36c063ae9089a229402c67"
+    },
+    {
+      "path": "crates/services/jackin-runtime-prune-output/README.md",
+      "sha256": "8d4cba903338b11b48912b93aff7bb54c5376257bb04672ff6a5f9f4bd1ee70f"
+    },
+    {
+      "path": "crates/services/jackin-runtime-reactive-daemon/README.md",
+      "sha256": "f2a6f64de192551fea8138b888281f2cca30372c51b40376900480e15a49f7df"
+    },
+    {
+      "path": "crates/services/jackin-runtime-repo-cache/README.md",
+      "sha256": "0eb00bd6bf634776c5b2d7cf682b8d8fc9680bcd5e62436ca359ce018e980ff0"
+    },
+    {
+      "path": "crates/services/jackin-runtime-session-control/README.md",
+      "sha256": "221e25db1ff34f7c2b90979ff1ba39223876dbd1a3ecf35f485078bc043abaee"
+    },
+    {
+      "path": "crates/services/jackin-runtime-shared-runner/README.md",
+      "sha256": "8975e4e6d0c2c14bef0ae5609e2011d7fff7b7df535b3a8dc0b45291b40f3976"
+    },
+    {
+      "path": "crates/services/jackin-runtime-snapshot/README.md",
+      "sha256": "4600f2a083cbad3e4a80379cca90cbd45eee1f815cbc0e7837eb68edcca37c7d"
+    },
+    {
+      "path": "crates/services/jackin-runtime-spin-wait/README.md",
+      "sha256": "eb79d0a8aed2e7ec6e1ad37b18968eec59ee2061cb5fc91aff44487f19a5f7f2"
+    },
+    {
+      "path": "crates/services/jackin-runtime-universe-claims/README.md",
+      "sha256": "8ad232d4764d2e68cba2dfdc2c325b3046c54360f96cddac3821e2942c395adb"
+    },
+    {
+      "path": "crates/services/jackin-runtime-universe/README.md",
+      "sha256": "49632ebd2f5bfd8cd666d618a54efa9310393aaec15436acc61ebc54599b2556"
+    },
+    {
+      "path": "crates/services/jackin-runtime-usage-relay/README.md",
+      "sha256": "53133fd819ffba2201b5e0f1ea9c02875f02b65c871075b2930084078e30c1d2"
+    },
+    {
+      "path": "crates/services/jackin-runtime/README.md",
+      "sha256": "745f06b465d9349e77e840e4326ebcdf4ca8b8482a46921922ee57efa536eda3"
+    },
+    {
+      "path": "crates/services/jackin-telemetry/README.md",
+      "sha256": "15d8c2feac8d504b81bdf52a4cc92ec0e965ca490744d6905b8b35f72d4e221a"
+    },
+    {
+      "path": "crates/services/jackin-telemetry/registry/error-ownership-census.md",
+      "sha256": "be4d7c88b19579f6b85c9d15c10b893866465a9ebee33f54df0455902bed2b48"
+    },
+    {
+      "path": "crates/services/jackin-usage-broker-publish/README.md",
+      "sha256": "265b331776989905d1fde2f35b0367beea4151c942693e152af77aaa06c7dbaa"
+    },
+    {
+      "path": "crates/services/jackin-usage-broker-wire/README.md",
+      "sha256": "71cd63fdcb434db981150023d68240dc23534838112edf1b304d3c91c0351dc5"
+    },
+    {
+      "path": "crates/services/jackin-usage-broker/README.md",
+      "sha256": "dc72dd581169e6267cc8f7942351e4f880da861f17a728635529662a1b694f57"
+    },
+    {
+      "path": "crates/services/jackin-usage-capsule-telemetry/README.md",
+      "sha256": "f0b1a5fc30186006573b78095365fc423ab7b94a9348cb4f2ef0de9c0a9d758f"
+    },
+    {
+      "path": "crates/services/jackin-usage-coordinator/README.md",
+      "sha256": "4a080e2df0904a21e2010d93ca509cac84db2c2cdf64cbc5ed56a60b70d170c1"
+    },
+    {
+      "path": "crates/services/jackin-usage-credential-resolver/README.md",
+      "sha256": "ce961a47f9bcc6a858c22fc385be5eb5fbc548f98386a532a85f21ab8a5ef0e2"
+    },
+    {
+      "path": "crates/services/jackin-usage-credential-snapshots/README.md",
+      "sha256": "96381f1bd090563dd72323ea8be89ad8c8cc074ceb74bc95b6632bde2199093b"
+    },
+    {
+      "path": "crates/services/jackin-usage-destination/README.md",
+      "sha256": "49e2d36d34b126397a90977a5de2814d191361e7927288ab1421a67dd9d4c055"
+    },
+    {
+      "path": "crates/services/jackin-usage-discovery/README.md",
+      "sha256": "77175b4a06e0b7daed3212a98e4db15923f9300d2e406e99fe532dbf0f7b7c27"
+    },
+    {
+      "path": "crates/services/jackin-usage-host-accounts/README.md",
+      "sha256": "3444745649b427a5469851815d06348a4ffce4203a7edad31c0878fab2eadbe5"
+    },
+    {
+      "path": "crates/services/jackin-usage-host-credentials/README.md",
+      "sha256": "60b1a48a98a5fa2edfa0b4804dca9d1f515cfa90bee7da5ab4dc7b172390ba3f"
+    },
+    {
+      "path": "crates/services/jackin-usage-host-glance/README.md",
+      "sha256": "0a48245a97c9df9ac16d0b16f59c4f994e074c786b1c5e99599aa816c44e7390"
+    },
+    {
+      "path": "crates/services/jackin-usage-host-presentation/README.md",
+      "sha256": "0ebc711e926915d33d3c3cbc6f7aec86c7623c7652b9444d477d8852ca2e0e0e"
+    },
+    {
+      "path": "crates/services/jackin-usage-host-runtime/README.md",
+      "sha256": "5aa14795e009a71cede116c07890729255d0081af773700b5d387ad615ef6d89"
+    },
+    {
+      "path": "crates/services/jackin-usage-output/README.md",
+      "sha256": "8ba884b0bd054dd138ffa2eb5df313fba71ef90f6f6814cc7346e8f4875b163b"
+    },
+    {
+      "path": "crates/services/jackin-usage-projection/README.md",
+      "sha256": "991c28a9e9a7f0a22fbfebe4a5f9c1a6bf1a53728f20bb37e2e0e94793871089"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-amp/README.md",
+      "sha256": "94d23b78856ff2daa832f8387db5247fa3cc565f3099dbcf3b0821487c8dd837"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-antigravity/README.md",
+      "sha256": "3e6dc377549c9c922cc4b9ede594d51700cb35baf61d677d6a011769ddf25ab6"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-claude/README.md",
+      "sha256": "6ddcdd5b41fe2f533177a1e25a31eb3a7264f1b5d1f22f2865f01fd455935f76"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-codex/README.md",
+      "sha256": "c3fcf7d418bcf2dbe04c1823f5cb85223845eb7f9a9b6fa4142f817c0244068d"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-core/README.md",
+      "sha256": "8aad471fa540414a652ec203ae1e7690cbc13d1e2bcf9665d65edcf84e45fc50"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-cursor/README.md",
+      "sha256": "2061bbaf2d4cf2d9c7368f03b45a4bb32d5c2d04a872c7940d3bede048a52868"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-gemini/README.md",
+      "sha256": "e4fe366eb30bdd6f3e3e1070c0a38d9b292d0e520cba609b5e611b1d65a1b7a4"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-grok/README.md",
+      "sha256": "48010eaba5dd77b2246e51a7a193591e9e68fb8099559218664d41619d9be806"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-hermes/README.md",
+      "sha256": "29bf4c72dfce95b1db2ae3a656cb28a7fd26b326f3a3361c32b5aca7424f3600"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-kimi/README.md",
+      "sha256": "1cfcf2f673596c8f153d8218e3d34b1d23ba799842b8d2ee8d5df4ed7b9a3f5d"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-minimax/README.md",
+      "sha256": "15061575d3e7250bbfd628a3b5d05ee010df8519ca8e6f25ff49335a5e6182f0"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-muse/README.md",
+      "sha256": "b0d110308faaf9a9c111c70c5eb42f73e578439bf0da8df07ef6aef45206dd7a"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-opencode/README.md",
+      "sha256": "f018b05d161323fb85308c6af172352c6f0f53eeb724fbf663b2ebfdd96166bc"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-openrouter/README.md",
+      "sha256": "b76c94799a0ec73f6c5f11ab05d33a3f52803d0e862c874f07eca5796a478033"
+    },
+    {
+      "path": "crates/services/jackin-usage-provider-zai/README.md",
+      "sha256": "d2a37995aca6920bf4d0b9bd766f24ffd778630bc8d3d0168870988961e1d34a"
+    },
+    {
+      "path": "crates/services/jackin-usage-snapshot-store/README.md",
+      "sha256": "32c1fec9a569d487d96615a67cc11a1f9081a778818bc86151409010d6904006"
+    },
+    {
+      "path": "crates/services/jackin-usage-store-backend/README.md",
+      "sha256": "b256ef6496310dea987b83f731eebbc7550b404e5b52fa532278c044d2f98619"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/README.md",
+      "sha256": "0496dfa6fdaf09c37942fca282fc2d580b6bbcbac8b082c48fe2e88add845093"
+    },
+    {
+      "path": "crates/services/jackin-usage/README.md",
+      "sha256": "e44f0a6c400380aba8a8626f7ba462482dfd9f185245be6ff652c19a917ed47a"
+    },
+    {
+      "path": "crates/services/jackin-usage/tests/fixtures/contracts/README.md",
+      "sha256": "659597beae19ea83e4f8a6cefcaf2cb60f05629fe973b466b95665db7ca15a49"
+    },
+    {
+      "path": "crates/services/jackin-workflow/README.md",
+      "sha256": "c85c3a34e08310dd589e049ecdd80e182797df3a9381ab53576bbed866f6f3b1"
+    },
+    {
+      "path": "crates/testing/jackin-otlp-testbed/README.md",
+      "sha256": "c107a12ef4633202ef5e308ab547a7ebc4caeb39ce6174f971b864514ca34ab8"
+    },
+    {
+      "path": "crates/testing/jackin-test-support/README.md",
+      "sha256": "9c8de94ffa6eec8e228f412b81a0c8b3e0b8ffc0532dac2e80bca68375e19081"
+    },
+    {
+      "path": "crates/tools/jackin-dev/README.md",
+      "sha256": "c6bba6b7702a51f21d786a7028e5f5230f0c9a7a945b721f374d7b57f6ee33c5"
+    },
+    {
+      "path": "crates/tools/jackin-lints/README.md",
+      "sha256": "b14022dacb8cc6417329ad998325e62549277d3f9659be0627e51df696c8a659"
+    },
+    {
+      "path": "crates/tools/jackin-lints/RUNNING.md",
+      "sha256": "4582ed6e8bf4d6fd5516aca058b59913d081f7afa812bd8071ecb6538e4cec23"
+    },
+    {
+      "path": "crates/tools/jackin-pr-trailers/README.md",
+      "sha256": "b9dc1483a0ac1a91a5039d5fce61a82c270468c528a71b75ca8a6d41962b5f78"
+    },
+    {
+      "path": "crates/tools/jackin-xtask/README.md",
+      "sha256": "e02f1519373446bcefd4fe7a9f6a81c353722dd0271b793965274899e5335c88"
+    },
+    {
+      "path": "crates/ui/jackin-console/README.md",
+      "sha256": "f9dbfb2edcc37c5ad632c3841d730935a68d44e52c95971a6dc80ae98751d81d"
+    },
+    {
+      "path": "crates/ui/jackin-launch/README.md",
+      "sha256": "5205cd3bb98ec92ee59d7e503f6aeeb4e31bde339ab96390fb3f2eb8cbce854a"
+    },
+    {
+      "path": "crates/ui/jackin-tui/README.md",
+      "sha256": "097cc5b3333ecbde051977452fccec4098661ebdd8c90b4154c8fb0f67c1baf5"
+    },
+    {
+      "path": "docker/construct/README.md",
+      "sha256": "fd9e6979ee35371c1efcc1d11c825a27670f19ed439be3bd8d5ee905327fa034"
+    },
+    {
+      "path": "docs/PULL_REQUEST_TEMPLATE.md",
+      "sha256": "a1f2aa01a9ca2cda309628e7bed9cc5fddcee2989d9055107152b4464a332e50"
+    },
+    {
+      "path": "docs/content/(public)/(role-authoring)/developing/construct-image.mdx",
+      "sha256": "f275c26d1a3134a5eddbcd9844919a336a81a71462815d7bc2bc898b8d04d716"
+    },
+    {
+      "path": "docs/content/(public)/(role-authoring)/developing/creating-roles.mdx",
+      "sha256": "2f10195f265590f2416e4b5a90a14244c7bc4de7b829afc2a5f1162e090796b4"
+    },
+    {
+      "path": "docs/content/(public)/(role-authoring)/developing/publishing-role-images.mdx",
+      "sha256": "d342123d1f76721b8946e4d6f5e869be78afda19fcdb577991f1e8934924fbd3"
+    },
+    {
+      "path": "docs/content/(public)/(role-authoring)/developing/role-manifest.mdx",
+      "sha256": "6e1883934e6631445c51c3a7d4d25900ee11c078d42e9e638862b68ed6d413e4"
+    },
+    {
+      "path": "docs/content/(public)/(role-authoring)/guides/role-repos.mdx",
+      "sha256": "2940b4e0f77ae006984d43a6255af7ef08c79d6a8001bf5b76cd7711220dd7d1"
+    },
+    {
+      "path": "docs/content/(public)/commands/account.mdx",
+      "sha256": "3f478ff5b3c561408e9ac23032dd2e932137e8e23fd1acc06d5359d3f464eac4"
+    },
+    {
+      "path": "docs/content/(public)/commands/config.mdx",
+      "sha256": "4909315bc151ecaf044eb5aeed79b4ccf9c9282d73f47f50d5ac537242fbb64e"
+    },
+    {
+      "path": "docs/content/(public)/commands/console.mdx",
+      "sha256": "28ce0401f1d93ca081a401be486d088252a268fb7b90e796e9e63dacf17b4530"
+    },
+    {
+      "path": "docs/content/(public)/commands/daemon.mdx",
+      "sha256": "82fe18e0bb943b0cb12413a32a10156b9afb8b320ed9f14d33eff94d9a4d2912"
+    },
+    {
+      "path": "docs/content/(public)/commands/diagnostics.mdx",
+      "sha256": "8ec3346584915dd1f715372a3e934e416433a9271bf3ed7e244be0aca9202f2f"
+    },
+    {
+      "path": "docs/content/(public)/commands/doctor.mdx",
+      "sha256": "475e895b26b4457508a963e677222ec2a475169a87fb83065d5bcd642e043883"
+    },
+    {
+      "path": "docs/content/(public)/commands/eject.mdx",
+      "sha256": "0597b63935a11c344058ed40f68f6a840f569a907b4fa18e233324a4afff38ae"
+    },
+    {
+      "path": "docs/content/(public)/commands/exile.mdx",
+      "sha256": "76d13d9b85096b31fa75efd12674abe1a4fa75024e95a1896dc33f972f4ebd51"
+    },
+    {
+      "path": "docs/content/(public)/commands/hardline.mdx",
+      "sha256": "14d416c45affe3e8ac9a0382186a08cc1e83f71b24100b7a0f82022a2d76f536"
+    },
+    {
+      "path": "docs/content/(public)/commands/load.mdx",
+      "sha256": "11a271325e513799a463efcd02aa2f4dbab3e15ad02ab6b0a58e8f83025944e3"
+    },
+    {
+      "path": "docs/content/(public)/commands/prewarm.mdx",
+      "sha256": "7d6917fb1ea3f03e2f0a5fe8b8892646fde73eb3e1b3e334ebca7f894761580f"
+    },
+    {
+      "path": "docs/content/(public)/commands/prune.mdx",
+      "sha256": "9591b0495e4f1be779fac2fbee3528bb211ed6566d7750a8d860d895b6bfd251"
+    },
+    {
+      "path": "docs/content/(public)/commands/purge.mdx",
+      "sha256": "c21bcdb9d04a47d4b5e59634d4452ffa366536a959a5737a49986e9b3bc00923"
+    },
+    {
+      "path": "docs/content/(public)/commands/role.mdx",
+      "sha256": "2f21f0935439912e117899edac6862731f4b411e123049bd837ff35c728274e9"
+    },
+    {
+      "path": "docs/content/(public)/commands/status.mdx",
+      "sha256": "6e59820728c2c048037c0db1272d3e5b7d13f2cf2c6390392ab02567ca687fdf"
+    },
+    {
+      "path": "docs/content/(public)/commands/usage.mdx",
+      "sha256": "9d34c722496f07899b7e83d28ca4fdaa59776af3726da2589da4c74aaef5d7f8"
+    },
+    {
+      "path": "docs/content/(public)/commands/workspace.mdx",
+      "sha256": "7bee933b07e630eddff45540535073dca64c054ec76723c0835b3a90ffe78e63"
+    },
+    {
+      "path": "docs/content/(public)/getting-started/concepts.mdx",
+      "sha256": "96deeb9514a3e770a471d926a663618e90e9fe53a885744e406a2df0b61314e7"
+    },
+    {
+      "path": "docs/content/(public)/getting-started/design-principles.mdx",
+      "sha256": "1ee706431c35a1aa124fda29dd11a40230eec0ccf1da6f00adb16b5341b9a32e"
+    },
+    {
+      "path": "docs/content/(public)/getting-started/installation.mdx",
+      "sha256": "03755b28006e49256a766c2eeb71d9747b56f2a60cdeba89db094b51e045a22e"
+    },
+    {
+      "path": "docs/content/(public)/getting-started/quickstart.mdx",
+      "sha256": "d5fff1d9da8a1832a102419513bec50094d7422d946e8c12c1b99674a239524a"
+    },
+    {
+      "path": "docs/content/(public)/getting-started/verifying-releases.mdx",
+      "sha256": "01b285207778396be5ca840b8d9da6d7dfd1366e9bacf1292c0be780bf1253c0"
+    },
+    {
+      "path": "docs/content/(public)/getting-started/why.mdx",
+      "sha256": "a8db10361c84bb5614aafe0ec6b3be9659148e51bcfece2a041b2b0727596584"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/agents.mdx",
+      "sha256": "ab2f16d956a8639aec6297d85332a09948b3a44684b7e65bb93a91eb437ff1cc"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/agents/amp.mdx",
+      "sha256": "2f2c64ca0061665f521d327288b641b7b615bc8cfff9e80956dfae81850a64f6"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/agents/claude-code.mdx",
+      "sha256": "8bfe6baa3f085f1ace63cc12ac8494afc7ccb2ee04b9f51e410f2db8f3ce90e1"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/agents/codex.mdx",
+      "sha256": "f3f4dc101456f1806637374c9a81d35753793f7f16b8e527174c32b750ddcf11"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/agents/grok.mdx",
+      "sha256": "d66da0b12abb5e7956eb6d77a5729e8495175b072462d1e3adbdcb2f487ed6c3"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/agents/kimi.mdx",
+      "sha256": "345f7a905f9b2fb34c3c0c64a997d11ae07bbba83208ed353b33520410f1b879"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/agents/opencode.mdx",
+      "sha256": "9d25131f4e054ce746fe2199ff570b4a09c0f7342ca6c77042be2c229c3f7ead"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/github-cli.mdx",
+      "sha256": "5c8f4c04e7e60302d816a288616efe181dae22e2bd15028e6471cb58c9fd2f37"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/index.mdx",
+      "sha256": "c17b946b3b4dcedf7f25f94cd9fcaaf06d7e8090ce523aff9462575d99c302e0"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/kimi.mdx",
+      "sha256": "2976e5b469958ab5b5164dd20a22d935860df90c7d0959fe271a019b1153dcf9"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/minimax.mdx",
+      "sha256": "804b98ecafc54cacc4894fdf61f6ab8ebd28d4e46f230de1770ee579dbc42a93"
+    },
+    {
+      "path": "docs/content/(public)/guides/authentication/zai.mdx",
+      "sha256": "c7fb522cc609ac87afdd64654b67d4055e9ade3e82a2714488424ce052846922"
+    },
+    {
+      "path": "docs/content/(public)/guides/comparison.mdx",
+      "sha256": "513138a76ad158533b67e6a17427b1f26571e691ac87c83c432d220eb78198e7"
+    },
+    {
+      "path": "docs/content/(public)/guides/docker-profiles.mdx",
+      "sha256": "2dbd0a4becbb498cd8b7d3b80f199129b576f6dc66d7d2fb5e1108f222902309"
+    },
+    {
+      "path": "docs/content/(public)/guides/environment-variables.mdx",
+      "sha256": "208cd90cbe67e7d1426332c6711f3d60e51b77a828333182f1e3af381668a9af"
+    },
+    {
+      "path": "docs/content/(public)/guides/host-affordances.mdx",
+      "sha256": "cba56b5ce5850ea9cc40fd035d08d2f1373c3b888c04dc6818667ab78c6be119"
+    },
+    {
+      "path": "docs/content/(public)/guides/macos-usage-menu-bar.mdx",
+      "sha256": "f76fa1eb318c143a183ae9090e9c96edb0c443a4b3d9598c37828b418ce9417f"
+    },
+    {
+      "path": "docs/content/(public)/guides/mounts.mdx",
+      "sha256": "3f078264d1ce5bb918ce0dea0f3824b63fa6293263cd5e76b706d7e12b1f6271"
+    },
+    {
+      "path": "docs/content/(public)/guides/parallel-agent-coordination.mdx",
+      "sha256": "183c9a8dcf912fbdb2aab4ed601feabdc3084dd1c297782c47f0f661f7d950c2"
+    },
+    {
+      "path": "docs/content/(public)/guides/parallel-agents.mdx",
+      "sha256": "824267a1d171722f47cb7685160f88922be6b54db1aeac72012c40f93b008606"
+    },
+    {
+      "path": "docs/content/(public)/guides/run-telemetry.mdx",
+      "sha256": "dc3697c7397adfa3749cb9ef5a24ade18dbec497ac5a8cff38b49eccbb29109a"
+    },
+    {
+      "path": "docs/content/(public)/guides/security-model.mdx",
+      "sha256": "f5b6d84a726ad1343c3bd9d0aae8cd49306fee00575469acf23b3ea88bae721a"
+    },
+    {
+      "path": "docs/content/(public)/guides/tmux.mdx",
+      "sha256": "b8d0fcd4635adca9022a8f9481f705ba7e6c692bd535f9854d3871d62d7c5bf6"
+    },
+    {
+      "path": "docs/content/(public)/guides/workspaces.mdx",
+      "sha256": "7a71cd71c016df4533cc7f3701edc983d2864722b85be2d5b22cd7f2ae46b5e6"
+    },
+    {
+      "path": "docs/content/development/rust-policy-rollout.mdx",
+      "sha256": "11c3f7cafc64cfa7a04b31dc2e692510311c383636cc48726d02a7e033b80485"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-001-single-crate-vs-workspace.mdx",
+      "sha256": "939f0aff73c984adcd3ff0870c6389287cb569a9964f7b4c8b49856c09d0c7f8"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-002-rust-toolchain.mdx",
+      "sha256": "6c5c4c4cd916dbdf5823e35e5be1ac4e6d0a7725213ba83adaf1d47b8959de48"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-003-ratatui.mdx",
+      "sha256": "9a6be4b577fa1248b0035e9ce3a181df47c26ad719da5e1cbb7cd479f6fab415"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-004-pane-body-rendering.mdx",
+      "sha256": "d1fbdf1658a866f0eaae2d4262adf09bacba46f926b63cc3688c92bfa1fd754c"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-005-capsule-single-render-path.mdx",
+      "sha256": "72841701ad0b2924c3b099035c14faabc43a20b5788d92c9c0795d25bfacad54"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-006-editor-state-workspace-config.mdx",
+      "sha256": "97d410b41f02ad9b7a38c8e9e5ce3796ba4b1a1140013b2e7388ee70b1b51521"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-007-container-backend-lifecycle.mdx",
+      "sha256": "b749b3b3f49d0655f7180c44f309f93f74741d8672ed33b77b07c54181831ed1"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-008-launch-never-reconnects-live-instance.mdx",
+      "sha256": "cb077464ccf90740b4411a2966b693aae2fa5116e67a182c98ac326a7c62d07a"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-009-role-hooks-authors-domain.mdx",
+      "sha256": "11a32afe8ea223295082a47dab2e7a03ecba5911bf722fb3b5ff5593eb91bcda"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-010-cleanup-explicit-operator-approval.mdx",
+      "sha256": "d16961f1089de14f23147261976454a006f4b3d43a610c67ef4e8259d4eb2dcd"
+    },
+    {
+      "path": "docs/content/reference/adrs/adr-011-native-macos-usage-menu-bar.mdx",
+      "sha256": "c89048f1bc6d4e9f4d8dbb679839a3773845d34a2f0daee705090b0afe05542a"
+    },
+    {
+      "path": "docs/content/reference/adrs/index.mdx",
+      "sha256": "c28f03b7113815e8809ef1e67e05ec12f52840d7ebe69655fd40fc4a7db12462"
+    },
+    {
+      "path": "docs/content/reference/brand-identity.mdx",
+      "sha256": "6c9ab2fbcba9effe6b77931af758d94af86414e040a2d3ed4c5c619b493c24ed"
+    },
+    {
+      "path": "docs/content/reference/capsule/index.mdx",
+      "sha256": "96e96c4191a3ff4ac7726e286612946daffc2ac972047f336415da7975737aec"
+    },
+    {
+      "path": "docs/content/reference/capsule/multiplexer-design-rules.mdx",
+      "sha256": "53c875a162d61b065ee71bc6fe2f4e4709d5450bed6d6868770ce7c35d3bbbb5"
+    },
+    {
+      "path": "docs/content/reference/capsule/session-lifecycle.mdx",
+      "sha256": "e42f4eeca0964efb28f447e0edf7f151d83b6d5b3c01c6872395b8a87a8a97c3"
+    },
+    {
+      "path": "docs/content/reference/capsule/terminal-model.mdx",
+      "sha256": "2889481f4e4f230a22cf9f3d4e6cb6790f5e63e6ecbdcf70324e63639d9be60a"
+    },
+    {
+      "path": "docs/content/reference/capsule/token-orchestrator.mdx",
+      "sha256": "1c414f0c68393a075415c8d85824c1196b1e93facf6681c94575ceda8a96ecaa"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/architecture.mdx",
+      "sha256": "b36c437239f076c7f8ec45874cd6e452e53bf98bfbe09f70b0807d7ad6ed7da8"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/code-tour.mdx",
+      "sha256": "0bd2d43084354d61239f1153cfe7f3792ee062fd306db9e9f9794544f26250b7"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/domain-newtypes-census.mdx",
+      "sha256": "bd9c7f984ada07bbc8cb985de7c53e3376120ed0be5b2b3854eb4810634b89c8"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/index.mdx",
+      "sha256": "76a82940c50d80c10299e6aaa292bf8ff3952f4e9b48658a588ffe53b6254af7"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/lint-policy.mdx",
+      "sha256": "23b70bb9467b93712b758a34e2f646be7a42b40ed013367d9ac72ae1158e905c"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/specs/auth-source-folder-sync.mdx",
+      "sha256": "5931630064389c05e1a0395c96271ceb6a9e4d69e5ad27999fb48ad9b3bb6e8a"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/specs/capsule-daemon.mdx",
+      "sha256": "02347b7aae6f35fdbbd861dafef76e45bf3fced254cb71934d962f483fb9d0f2"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/specs/index.mdx",
+      "sha256": "cab89958f6bb43175519da3b5890e8332300556a0d300ead33b38396ccf53509"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/specs/op-picker.mdx",
+      "sha256": "b7e275c3a3bf870d617be98268bdc477a5237b6cf7df790b1c4602f92282d3ad"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/specs/operator-console.mdx",
+      "sha256": "66472e7638b82d2e2847ed7f2ff335706d8ff39a5aeae88ffc25d05758ec16ef"
+    },
+    {
+      "path": "docs/content/reference/developer-reference/specs/runtime-launch.mdx",
+      "sha256": "6bcec22a6968434afaf3ed80d5f69847730e453f5e0b85435ec8bf8ab250840b"
+    },
+    {
+      "path": "docs/content/reference/errors/E001.mdx",
+      "sha256": "32d0e0ab3817323fafd66b92943fe13f09fa99b2288c6e37ca7db035f82de40e"
+    },
+    {
+      "path": "docs/content/reference/errors/E002.mdx",
+      "sha256": "629c06efd07e21afbd3e94c37e790cdeb9f814a7824e9d2cc2b618cd0c29f13f"
+    },
+    {
+      "path": "docs/content/reference/errors/E003.mdx",
+      "sha256": "a71038381247ffd9762d3e2f0ad47c5a0706806f023409579bf991662bcc94ee"
+    },
+    {
+      "path": "docs/content/reference/errors/E004.mdx",
+      "sha256": "2ecf18e6294de7b0e9a926f0d7eadfa32abdaaf95fc518b6200ca376d175cf8c"
+    },
+    {
+      "path": "docs/content/reference/errors/E005.mdx",
+      "sha256": "8b9fc5cc381f13cb56df96da94057419f9c189d3019b44b3dcf665fe4a0517dc"
+    },
+    {
+      "path": "docs/content/reference/errors/E006.mdx",
+      "sha256": "5fcb7796fe53e46b7e6918f8266c9533d31cbf36de80bc3c79a6ebe5188ae46a"
+    },
+    {
+      "path": "docs/content/reference/errors/E007.mdx",
+      "sha256": "88cbe808e706deeb4791570a4d712d6eb8fa35a6de2a5f245004236247ddd81d"
+    },
+    {
+      "path": "docs/content/reference/errors/E008.mdx",
+      "sha256": "30ad2466d3c9ee2e48ef7001e8dcb80e0bc9c5d9e2a5da91276ac8b67e826d33"
+    },
+    {
+      "path": "docs/content/reference/errors/E009.mdx",
+      "sha256": "a698d82d0f367672ebddb70565fbd85e8485ba14b29369c2adb3269adac123dd"
+    },
+    {
+      "path": "docs/content/reference/errors/E010.mdx",
+      "sha256": "938a87032e2b7eb6c59048696010c1da1b396fad1ec2c83119f8cdf467dfb820"
+    },
+    {
+      "path": "docs/content/reference/errors/E011.mdx",
+      "sha256": "635ef5c98eafcaf4d792d5df4845b7bed31ce20bea128c5514cdb8b44220d990"
+    },
+    {
+      "path": "docs/content/reference/errors/E012.mdx",
+      "sha256": "8deb778401de8c26f6feedd875601ad6a1b0aa0e8244f94c0bbef67a6e080c45"
+    },
+    {
+      "path": "docs/content/reference/errors/E013.mdx",
+      "sha256": "188e7a26d29ad50181c3466a57eeac94794a74a7e95325cd3fefb04e1e40b592"
+    },
+    {
+      "path": "docs/content/reference/errors/E014.mdx",
+      "sha256": "c5a8ef8f0929ba3119a7bb11b4e00ee1c840faaaa811834e996c0818ee83684c"
+    },
+    {
+      "path": "docs/content/reference/errors/E015.mdx",
+      "sha256": "7297725c117ecd82660d39567092fe101ab6844bdeda05cbaadb5ac6a09bf5b0"
+    },
+    {
+      "path": "docs/content/reference/errors/E016.mdx",
+      "sha256": "bd6fd3acf0b8ea6eb5a3b31b7771528166f3c598636c0f56d5a70be47d1aed73"
+    },
+    {
+      "path": "docs/content/reference/errors/index.mdx",
+      "sha256": "aea793282b6e6d4f627a122aceecc4867c32348a4d65aa1db5f5cde9673db548"
+    },
+    {
+      "path": "docs/content/reference/getting-oriented/architecture.mdx",
+      "sha256": "f7313269d6824d072008b45f4f499e47557cce2586883ae744d08c13f5c11372"
+    },
+    {
+      "path": "docs/content/reference/getting-oriented/codebase-map.mdx",
+      "sha256": "8d2448fbd86e0159d8efd7647956e5f450f7372902d66c811a2d5840517f8384"
+    },
+    {
+      "path": "docs/content/reference/getting-oriented/index.mdx",
+      "sha256": "2dcdeee4539cc1611ca8703420cc3db9c641bd5ccbf45be69bbf91be27a47a6e"
+    },
+    {
+      "path": "docs/content/reference/getting-oriented/xtasks.mdx",
+      "sha256": "8e33c7e394b5935031c0810e3cdc3819c8fdefe07b6197c72038d53afb242a34"
+    },
+    {
+      "path": "docs/content/reference/index.mdx",
+      "sha256": "e83b09e63803d351bd880b014d8292ab3b567fb0cf3d354efdb284d002665618"
+    },
+    {
+      "path": "docs/content/reference/runtime/configuration.mdx",
+      "sha256": "b0d53d095043d4d60055e3811f716b378946e5eb082faa4ed4114a628fec9d4f"
+    },
+    {
+      "path": "docs/content/reference/runtime/diagnostics.mdx",
+      "sha256": "67c0f7ea05c440c73b8d01b7994e596e751b5b1e695e5cf7129b7a1e1b52d95d"
+    },
+    {
+      "path": "docs/content/reference/runtime/image-labels.mdx",
+      "sha256": "8273237059f7a8245ec0d13a46a045661a418f1311d49f80ea490b0064d40cc8"
+    },
+    {
+      "path": "docs/content/reference/runtime/index.mdx",
+      "sha256": "162c37223c237649a57b931febcd4e618f710a505c094a8890c45c5ce2f75fb1"
+    },
+    {
+      "path": "docs/content/reference/runtime/instance-resource-naming.mdx",
+      "sha256": "e3a1e76baaee3030161718461567ab56c75617e15b22ea4cf1a26964e149a527"
+    },
+    {
+      "path": "docs/content/reference/runtime/runtime-instance-model.mdx",
+      "sha256": "b9cb401131305b538e0ef289651a7edf129fedca14242fedb758c8a42670f8ee"
+    },
+    {
+      "path": "docs/content/reference/runtime/schema-versions.mdx",
+      "sha256": "8248a0ba86587e8dbfeb19bf58d8877ac635a80a3a80978e590baa4029a09af7"
+    },
+    {
+      "path": "docs/content/reference/runtime/user-identity.mdx",
+      "sha256": "d6982e4702e4603ffde56fd4bcd650ecaf83d3e813c91f5d096d5c8186039da4"
+    },
+    {
+      "path": "docs/content/reference/security-implementation.mdx",
+      "sha256": "4856c8848dfd1b2467be6443d8fc62177251cb72ebaf18a3a409f1686f1fb4ca"
+    },
+    {
+      "path": "docs/content/reference/tui/architecture.mdx",
+      "sha256": "4f47c1e7f350c741a8f7d666bdbb898cf37368f0371f553dcf7eb969114008e4"
+    },
+    {
+      "path": "docs/content/reference/tui/chrome.mdx",
+      "sha256": "c101323154c56a59c528555afe3e96361695b162354fa1d0cae534e03a1a24ad"
+    },
+    {
+      "path": "docs/content/reference/tui/components.mdx",
+      "sha256": "b4bd8f5febf328d5a66b7d7379ba2923a0d8c57f50d16fe677d4502604c9b3a8"
+    },
+    {
+      "path": "docs/content/reference/tui/dialogs.mdx",
+      "sha256": "4ed84f25cd8e8d02357619a76661079096aeb79cd305156460bc16579aa9dbc5"
+    },
+    {
+      "path": "docs/content/reference/tui/index.mdx",
+      "sha256": "d574708447daa4ff4d0f65f4711ad65de0a8bf4cf4b4177c35f6d337bdb81dd1"
+    },
+    {
+      "path": "docs/content/reference/tui/navigation.mdx",
+      "sha256": "7d6b079e2b4b8d9be7d0f192f0a3e92c4d14804d776ec823673862348a3a7b3d"
+    },
+    {
+      "path": "docs/content/reference/tui/visual-design.mdx",
+      "sha256": "e8d557c810dfe8bbce44b6d27e74b81da6954088d028920ed9835f876c87b714"
+    },
+    {
+      "path": "docs/content/research/agents/authentication/auth-reliability-program-design.mdx",
+      "sha256": "42dc59216613caee21a63436da7a9d8d11219a4cfd63fc67efb9f6d487fe9b20"
+    },
+    {
+      "path": "docs/content/research/agents/authentication/claude-auth-strategy.mdx",
+      "sha256": "ca76063cbee2ab262621333772a7063acc92d3a3f8f553cd3c28f239df03c86b"
+    },
+    {
+      "path": "docs/content/research/agents/authentication/index.mdx",
+      "sha256": "588096a66d6dbd55dd00e84d2958e833e8368cf157fd4b515dc45c24faf3db3a"
+    },
+    {
+      "path": "docs/content/research/agents/authentication/live-auth-sync-design.mdx",
+      "sha256": "2125e8ff4e502183c1fad27c23cc3b1d535537719ec34e7df2880b50bcb9cf42"
+    },
+    {
+      "path": "docs/content/research/agents/index.mdx",
+      "sha256": "1a1d894bc4a10c6c9a224f778b10b3ae02c80e2b02fb538e77d3af3a2ef9883e"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/agent-attention-prompts-design.mdx",
+      "sha256": "6176d7e330a341802d65e1e47ca31ba0824ffcf7578c2840b17c68d24c3f66b0"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/conversation-capture/index.mdx",
+      "sha256": "0aaacfbc13fbba7835006bfda91725f4d327c6c4b465e7af1329c4c0ea61f90c"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/fleet-operations/index.mdx",
+      "sha256": "b2f611b89fff339eced7c7e265439c03b70e0906ce1ace2eb5edf268d97cbc3c"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/idle-runtime-cleanup-design.mdx",
+      "sha256": "271dc97c80d602f0718d55f80f16d82b82a82aebc18dfc74ca690f00ee52ce36"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/index.mdx",
+      "sha256": "72c6ae74817f76732e91891198dbfad775261f380a2facddfcb3f25b467fa937"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/jackin-capsule-multiplexer-rewrite.mdx",
+      "sha256": "0a42d1e674286f6fcafc091c26f88c5d69ccde20a346a980e6dadedb2ceb78ac"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/memory/01-requirements-and-prior-art.mdx",
+      "sha256": "e248483ed69993e0a8474310f5f8e53632d736bf48b175295876a976f40a2836"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/memory/02-storage-and-memory-model.mdx",
+      "sha256": "cf68027468d67df27ed569df7c7a7dd296c4dab661d5248671af8475c289b6bd"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/memory/03-delivery-lifecycle-and-concurrency.mdx",
+      "sha256": "c3e3ee0117bdd79d0c1115fe1c94d014fc9f7afb5bc381e2d98112c93bcec14f"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/memory/index.mdx",
+      "sha256": "0c190c09b116beeb3e08e32c79d4b276240448e7297a3fac84d3bc8ae328fc70"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/multi-agent-collaboration/index.mdx",
+      "sha256": "eec645d12f3ac38fdc7f31ddf8a6cb6ba2f833aabe300e0b615774f566734662"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/orca-ade.mdx",
+      "sha256": "98f4f74179cca8edbc7a328f3a89575fca726144dab8f1c0e1029e784e8a0650"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/program-research/01-decision-and-benefit-matrices.mdx",
+      "sha256": "1fbd652d16abeb34e014464a967299be6065219827d557c78c3da6a22b34e38f"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/program-research/02-containment-benchmarks.mdx",
+      "sha256": "333bdfde9fc73e82fc8ad8b6e55d16606aa3b2b9fa3a1383c5d82bd978bfd5d7"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/program-research/03-fleet-and-recovery-comparison.mdx",
+      "sha256": "d1c8a9594a1a907140989191644032a61788b8835f13325ad161bc3d9e7bb7f5"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/program-research/04-open-questions-and-sources.mdx",
+      "sha256": "a792884f5780d31c3edd6ed3afeb49d08f2d0d7b73e46562d387158b8df794aa"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/program-research/index.mdx",
+      "sha256": "4561b6dc418a4ba6065f7465c4fc7ff5aca094afc7e0e08764cb2b248d09728a"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/recovery/index.mdx",
+      "sha256": "ce0758760ac7a88b8809371800f277f91b8e4eb7008ad6308ef48a9493e4db7a"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/recovery/session-keep-and-resume-design.mdx",
+      "sha256": "2414218ae67240a8d14f56f0ec489e275f8ab70ed55f566a59903a3232c9745f"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/recovery/session-snapshot-rollback.mdx",
+      "sha256": "8a59a378c359a2af954326eb8e7e96732a2fe7a1430515acff43550fb9227385"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/remote-execution/index.mdx",
+      "sha256": "111a1b8915194dcc7a40f5a56be5eda6e0a6e2762769b73850f35b903b2488e9"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/resource-limits/console-resource-panel-design.mdx",
+      "sha256": "2feab0ca0396fe9eb04c58787d93d6300ac8a61bf9ed836911d673772d13e450"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/resource-limits/declarative-resource-limits-design.mdx",
+      "sha256": "bd9efcfdb0df7b72c4a10666e5db17739f41aee0b744d592fe19ffe116095ff4"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/resource-limits/index.mdx",
+      "sha256": "91514b4cc7518a57869c162abfd361370983989879931e3f1dd80f61874320fd"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/stack-integration-hints.mdx",
+      "sha256": "a2ae4ad3799c23be61a6d66948c58041a05e1ccf61a72a2eec981b207710bf0d"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/terminal-observation/agent-runtime-status-design.mdx",
+      "sha256": "a1596bc41b56826d8a514230629eef47283dba7a3335bda4fbba80843db3e0be"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/terminal-observation/index.mdx",
+      "sha256": "caf8c09e4851c571673a3d0ca8624521299e6fbbd3fb461fe63709278073b8d7"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/terminal-observation/terminal-observation-automation.mdx",
+      "sha256": "8b18cc86ba920726fb96f3c899fe480790abe9686e46a2ed46600b39d3bea525"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/01-prior-art.mdx",
+      "sha256": "24de251258765015ef799d5e0d0ba84612f4444c9641966e9b8347ca52ec2468"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/02-design-constraints.mdx",
+      "sha256": "5177a7b815e62f215df0f971c85e7c04fe2dd53fe706086c711e305199b75289"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/workflow-systems/agent-workflow-orchestration/index.mdx",
+      "sha256": "4187d3a6efb4a30e29344f3cde0bbdd27969c8359bd4bb439dbb598158df32d6"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/workflow-systems/index.mdx",
+      "sha256": "fa58d8cc1d95701abf0ec0f96e7cdfa40a739f68e630d03ebb3cdf5735d6df6e"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/workflow-systems/task-source-abstraction-design.mdx",
+      "sha256": "0205e04e9ccc751eca6d93fd001295765eb224194ab625ca3e00b78a0521a381"
+    },
+    {
+      "path": "docs/content/research/agents/orchestration/workspace-description-field.mdx",
+      "sha256": "2a10b0878ddaee6d8defdfb79f24457158fa541ec4f2a62f8569a04127555246"
+    },
+    {
+      "path": "docs/content/research/agents/runtimes/agent-launch-flags-api-design.mdx",
+      "sha256": "9acc8e0197d81cc92caf7bfed71734cc048a700f409ef4ccc1f5021c041d3710"
+    },
+    {
+      "path": "docs/content/research/agents/runtimes/index.mdx",
+      "sha256": "9963836d625abf83d4e8fa8b52a5626b0d4d021f71ac6547bc9b27995a69c748"
+    },
+    {
+      "path": "docs/content/research/agents/runtimes/package-manager-support/index.mdx",
+      "sha256": "603b9054d59dca08caeed2cbb1b10f4de5603e2942fc549e7dea6c73887915f9"
+    },
+    {
+      "path": "docs/content/research/agents/runtimes/package-manager-support/native-apm-role-support.mdx",
+      "sha256": "1b85cb6827c2c715ee228deeae138ed5ca8e61706f6069ea5f5efb525a0afcca"
+    },
+    {
+      "path": "docs/content/research/agents/runtimes/package-manager-support/workspace-skills-mount-design.mdx",
+      "sha256": "f6f05d5abe908216ad80bddc750f9345992f37a53ec24b3ffb3c27db77a20a48"
+    },
+    {
+      "path": "docs/content/research/agents/session-capture/00-executive-summary.mdx",
+      "sha256": "a6649ff1cf9bbb7ef99f900a388b9a016b97bf000e8069867383e3385be43753"
+    },
+    {
+      "path": "docs/content/research/agents/session-capture/01-specstory-product.mdx",
+      "sha256": "c20d1e12ddf25ae73edc6d420d2282c0c148ad8330eb8ca4eca6df86d4676d90"
+    },
+    {
+      "path": "docs/content/research/agents/session-capture/02-specstory-cli-internals.mdx",
+      "sha256": "fbcbb70ad7f4da0178b14c013cf871b36c47aed029047f5283a926ce50f814da"
+    },
+    {
+      "path": "docs/content/research/agents/session-capture/10-agent-session-stores.mdx",
+      "sha256": "2d6ec99e29573a62d30f03bb9149489598c96910526fc6396bfda4dbcc61b54c"
+    },
+    {
+      "path": "docs/content/research/agents/session-capture/11-open-source-exporters.mdx",
+      "sha256": "5b7a5397cd0728168256b6d0cf5a99cc5374f05c17e41045ba6c4646dfe533f9"
+    },
+    {
+      "path": "docs/content/research/agents/session-capture/12-platforms-and-observability.mdx",
+      "sha256": "f43d8cb8c9c6450a5ff1d8e904ece352dd17ddf7faa84a72ec47f0e7f80cd63f"
+    },
+    {
+      "path": "docs/content/research/agents/session-capture/20-comparison-matrix.mdx",
+      "sha256": "dc9d21c0f41604a2800ab9ecfc3870ab149374adb2de1c4352a9648b273c6795"
+    },
+    {
+      "path": "docs/content/research/agents/session-capture/30-jackin-fit.mdx",
+      "sha256": "d814cded154021a50f9fdd31c513a89cf2584246584c6265a972c50980f4de67"
+    },
+    {
+      "path": "docs/content/research/agents/session-capture/index.mdx",
+      "sha256": "30f6b0b713b1e374b108322e9c17b541068ad0ed36bf6da8ca2ff12ddd971b8c"
+    },
+    {
+      "path": "docs/content/research/agents/telemetry/index.mdx",
+      "sha256": "917543d9d401b1df40e6c5a7e77ac8f8cdfefd5cb5058d77937d6e6d2602ce5a"
+    },
+    {
+      "path": "docs/content/research/agents/telemetry/parallax-observability-findings/01-tracing-and-instrumentation.mdx",
+      "sha256": "b75e98524197fe04a0095c1e93248643696dccc75cd958c918f6332ef59093f5"
+    },
+    {
+      "path": "docs/content/research/agents/telemetry/parallax-observability-findings/02-parallax-ui-evidence.mdx",
+      "sha256": "58c9a8756397df93df19944d74eeb75d6a7c3e5a094c37f4fa9e240330281f78"
+    },
+    {
+      "path": "docs/content/research/agents/telemetry/parallax-observability-findings/03-raw-data-and-root-causes.mdx",
+      "sha256": "f14fdfebd670bd862fbe55d574218f9482f89af271a1f52d9d0dc650f1a1be35"
+    },
+    {
+      "path": "docs/content/research/agents/telemetry/parallax-observability-findings/04-signal-contract-and-verification.mdx",
+      "sha256": "d92d5f4d52e3947453142625e83eebd34140d62003d49c463d582090d1709503"
+    },
+    {
+      "path": "docs/content/research/agents/telemetry/parallax-observability-findings/index.mdx",
+      "sha256": "b9da6a42ba1f53582625048de9665eae36edcc40a9a8bd3725116ce5b4121322"
+    },
+    {
+      "path": "docs/content/research/agents/telemetry/token-cost-telemetry/01-account-limit-model.mdx",
+      "sha256": "fdf1e9da7c6f4182aebc10cb49f2297eec373308202c260b3a2c241acfe3bbc6"
+    },
+    {
+      "path": "docs/content/research/agents/telemetry/token-cost-telemetry/02-sources-and-attribution.mdx",
+      "sha256": "136b69b6febcd31f39d486c0b86480e8322200da7b53c44fb92f3c470ea56662"
+    },
+    {
+      "path": "docs/content/research/agents/telemetry/token-cost-telemetry/index.mdx",
+      "sha256": "689ca7c0216a80a5f7f658a906026ad154f8fc3d90ccda14e2818287994d06b2"
+    },
+    {
+      "path": "docs/content/research/context/engine/01-goals-and-non-goals.mdx",
+      "sha256": "c3bf982baf32039d9001b7dc210f62520a8c0a1208fa9a46a091aa8c11617afe"
+    },
+    {
+      "path": "docs/content/research/context/engine/02-architecture.mdx",
+      "sha256": "e5861bcf978a40be76c4dfcf6b061685cc0e27490c001ecd52ad5e1f9e45b78f"
+    },
+    {
+      "path": "docs/content/research/context/engine/03-observation-pipeline.mdx",
+      "sha256": "7aa84dc055165ba1cd5e4792b03ebf3e728e7f094e0ee1963651585031fea46d"
+    },
+    {
+      "path": "docs/content/research/context/engine/04-retrieval-layer.mdx",
+      "sha256": "bb9e532dcfb3f7c5acc938588ef18bfdd1935c2c01f5613b88ea5ad2cae76565"
+    },
+    {
+      "path": "docs/content/research/context/engine/05-output-and-prompt-layer.mdx",
+      "sha256": "6a589ebb7453eb9965dfd8675f56ce706b552789144068f10021a52a157a29ad"
+    },
+    {
+      "path": "docs/content/research/context/engine/06-routing-and-fleet-economics.mdx",
+      "sha256": "818a0125fb63e5616e79dd969ac1882584f1705b136ea3ae015738a8e5673b91"
+    },
+    {
+      "path": "docs/content/research/context/engine/07-memory-and-state.mdx",
+      "sha256": "78269f8b27f3cf5c763f6019e64dfbb44b10ab71cb6684ebc5e6ee71e8970219"
+    },
+    {
+      "path": "docs/content/research/context/engine/08-measurement-and-verification.mdx",
+      "sha256": "d06da083a4b0d74cca48ad09c98853cbfe380de404fb1a50423b34921ab2986e"
+    },
+    {
+      "path": "docs/content/research/context/engine/09-reuse-decision-matrix.mdx",
+      "sha256": "77c7a309a3efde3120af5480df9d4db981f994ecb720ab3d5d01e852b1b23379"
+    },
+    {
+      "path": "docs/content/research/context/engine/10-rollout-and-validation.mdx",
+      "sha256": "d6b82ce62050e1015c10033004fb6f42c6d88ae595d7b19e227401f4297af600"
+    },
+    {
+      "path": "docs/content/research/context/engine/index.mdx",
+      "sha256": "61b49162fd053da88cf71c427765e256565d755262afb6b95bd4afd4d46cc20d"
+    },
+    {
+      "path": "docs/content/research/context/index.mdx",
+      "sha256": "58b6dc219fa99c2815a559719c2d19691e729d3efa4983a0ae9588e5502d3a0b"
+    },
+    {
+      "path": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "sha256": "fe9d22f4883447687efc3c09de85c304721e29247ef1a196a53d6774e8f8821d"
+    },
+    {
+      "path": "docs/content/research/context/techniques/01-economics-and-measurement.mdx",
+      "sha256": "c016404c938559cc59eca72ae127f28a1afad64b2fe756a9ddce4a7dbd1ce03b"
+    },
+    {
+      "path": "docs/content/research/context/techniques/02-baseline-audit.mdx",
+      "sha256": "d6ae3c6f8f8add9a227789a9c6dd596a5fe2cc83bfdc1314c75c1ed512f66c12"
+    },
+    {
+      "path": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "sha256": "ff9273765f582c862e9adfcc20916159665b38343403ffcb3cff420b11f5913e"
+    },
+    {
+      "path": "docs/content/research/context/techniques/04-style-and-language-compression.mdx",
+      "sha256": "3bee5529215cece5ff4c8ac88cd32487b81ac5649ee3a75eebe86f8b03970674"
+    },
+    {
+      "path": "docs/content/research/context/techniques/05-tokenizer-arbitrage.mdx",
+      "sha256": "a81201a9ee84d0283e3b222a4284d2188efea0f4c9aec2ea93e4f5612f7d51be"
+    },
+    {
+      "path": "docs/content/research/context/techniques/06-context-architecture.mdx",
+      "sha256": "68279fe1275233a74af12e73a779368f107da765d10d921e5a483049f88af555"
+    },
+    {
+      "path": "docs/content/research/context/techniques/07-caching-exploitation.mdx",
+      "sha256": "ed6d175ec092207536a56fb7c086d44b591f0f3eed9f1b0b559e619ce4453771"
+    },
+    {
+      "path": "docs/content/research/context/techniques/08-retrieval-memory-and-state.mdx",
+      "sha256": "a788edcf9659a1da7948ad2679b46b0c70ce9956d82d65f1c0576ce3fb9dcc61"
+    },
+    {
+      "path": "docs/content/research/context/techniques/09-output-discipline.mdx",
+      "sha256": "19eca137a66affc9509a1cecaa4b6d614184593e7cc160536d575cd0a0ec45bc"
+    },
+    {
+      "path": "docs/content/research/context/techniques/10-model-routing-and-delegation.mdx",
+      "sha256": "b2c464bf6a4d7b69428545fdd4a1b801e4f82c44ea87dd66fb840c23cef09b49"
+    },
+    {
+      "path": "docs/content/research/context/techniques/11-multi-agent-protocols.mdx",
+      "sha256": "d3b8cf627204076c96b835d8fd2648401d90b75712ae6a87a3e436c9189407eb"
+    },
+    {
+      "path": "docs/content/research/context/techniques/12-provider-features.mdx",
+      "sha256": "7958c1208276b1bb4fc74583057a85d43d48298e716c1acdd6dd18d301d28ad2"
+    },
+    {
+      "path": "docs/content/research/context/techniques/13-infrastructure-level.mdx",
+      "sha256": "90db0ab74692230a66538916e7143f3bdef06d07ddb1dc40550197919ed961d4"
+    },
+    {
+      "path": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "sha256": "ec92fe0f50d134116d123b50700f23cae773c4631d5ccbd18d989d5780815e79"
+    },
+    {
+      "path": "docs/content/research/context/techniques/15-composed-stacks.mdx",
+      "sha256": "3c99dd3806b261f7ed6e5831389c18cd84533f0acbf527be9afbdbbe5d800770"
+    },
+    {
+      "path": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "sha256": "2aa346836d78fd47d0cbcbac812e75d4d632ace3ee7a2b78c9d5f45abc42911f"
+    },
+    {
+      "path": "docs/content/research/context/techniques/17-adoption-roadmap.mdx",
+      "sha256": "a10ab63a8e7bb17c1d3e227c2ba2f801dbcb5a5e587e4ca0306b0700c5ed6463"
+    },
+    {
+      "path": "docs/content/research/context/techniques/18-extension-overview.mdx",
+      "sha256": "ad7d983c1a51af96b2b9a0e665c81f523658925972fe5b540973444f835ca2f1"
+    },
+    {
+      "path": "docs/content/research/context/techniques/19-subscription-and-quota-economics.mdx",
+      "sha256": "303da5e50e00bbd67ce8ebe7ac134795c8064a2697a628ccdf2b648a6e529e00"
+    },
+    {
+      "path": "docs/content/research/context/techniques/20-multimodal-token-economics.mdx",
+      "sha256": "00fee5bd2d9bef40eb6edebf155850bac0f32c4febdf20da6d8a66a75a8dc1c2"
+    },
+    {
+      "path": "docs/content/research/context/techniques/21-latency-and-time-economics.mdx",
+      "sha256": "ee5681470712a8aa3eddc9bd5c8101e15e0016080b175863be53cb74208fe554"
+    },
+    {
+      "path": "docs/content/research/context/techniques/22-fleet-and-multitenant-cache.mdx",
+      "sha256": "81161f1d10548efb6f5850812d08460e9d9d7d092d5f2f6daecea5d90bcbe52f"
+    },
+    {
+      "path": "docs/content/research/context/techniques/23-cross-agent-portability.mdx",
+      "sha256": "f8ddcb8eeee1318a348ce84004cbcf2f77335abd8ad865ea3972ad6c823e3e5f"
+    },
+    {
+      "path": "docs/content/research/context/techniques/24-fresh-literature-and-market-delta.mdx",
+      "sha256": "72408e209436fcc259b9f0ad20ae7706b787cfe6529dd995f267d907668c9da8"
+    },
+    {
+      "path": "docs/content/research/context/techniques/25-meta-cost-governance-and-online-quality.mdx",
+      "sha256": "93eb22ee095052fbb295b97829aaab74d203be288a1f3ac56c4fef891c4d570e"
+    },
+    {
+      "path": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "sha256": "460f3449326357e92ec25c0b438944391c8c7cfd3e712f8d749d095e11431039"
+    },
+    {
+      "path": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "sha256": "2ad96d089f5ae592003059192f1631e403c3611bf1574a6753a677948757aa6e"
+    },
+    {
+      "path": "docs/content/research/context/techniques/28-drift-delta.mdx",
+      "sha256": "240514952098385d59ac6d3e014b48b1391fadd970c87f7d139c44d5d8f8fa78"
+    },
+    {
+      "path": "docs/content/research/context/techniques/index.mdx",
+      "sha256": "39c29e600fc9d0b5d1d0fc31e6d978507cf9bc9e0ec0d51e9aebd91904f0d7f1"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/index.mdx",
+      "sha256": "b6fce18a3e2a4d7c29812635b4f1730e3a511c3064ef60e134cc6923cfab422c"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "sha256": "fea6d631ee87b842af593f91ee6c2a0144b98d508ea41304d381e273e8158e2d"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+      "sha256": "5bb47421ae80e67b7d70dec7fd96a2c1e1fc2d600386a78625b75480b6a0df70"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md",
+      "sha256": "3e530537712a052a5aa4d9ff3ea4d4041a4df6866e1d07cb6fb15f40997fa66f"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-reconciliation-review.md",
+      "sha256": "b989f2408a5696555e5e6cca9a6023cf259a92f1e53e989ed3018f4505be0d36"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/literature-independent-review.md",
+      "sha256": "be24113d1b620ece2a897939b9063b5d00fd8f1f82e9940db276f372dc6ed533"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.md",
+      "sha256": "f1040376f6bfcaf75c3b8c98a89881ae3c43f36b0d1aee9057041ce72822df9b"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review.md",
+      "sha256": "738ec9ceb4ff96a0d237ced69693356e1153de143e33fe8ecf14f660f9b6d568"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+      "sha256": "598b4ac9b020494c49713748e4f4e135794a4e04367c5d1f8b87df5fdc5edc76"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/README.md",
+      "sha256": "65e6fd1990d236c938fc587174b49c9bbe19dd3dd30e0541718ed2be22f5aeea"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/late-main-overlay.md",
+      "sha256": "0b27cbcaf606d0e952f99be7d2e5dc9331926bc8dcbe5d6ea28d1188be986e50"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/verification.md",
+      "sha256": "029bb97831ae312c4032ce352ec91536891664b60326df7956c9332cc206edb0"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/README.md",
+      "sha256": "16c00528324aafb6922f354aca5b82a2fb1a41542ce5033b9e2a6d85c39162d8"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-review.md",
+      "sha256": "07a45f9d1a908aea1087c5e4a46c360b43e3a4c64ad6bec3b17c65df89e83876"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/independent-review.md",
+      "sha256": "2373309f6901b6dd5edf21d17edb633905eaac7f3a9f0e52b496c9bbd74171a6"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md",
+      "sha256": "396ba5b760acb74ffb94eed2818837ac1840d44e1b426d74f2b996baeaefccc8"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/policy-independent-review.md",
+      "sha256": "7afc7f554856397db47a9c66a478a5ee75cb7de4509f99d8f1cdd2fdba13c1a1"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-review.md",
+      "sha256": "989eae4a6ae3b1a42492237f5a73b0648c2c22db35539823b5745ef0ae774b1a"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/security-review.md",
+      "sha256": "b9fb2b6a73fcb67c4fbd6e1c7b68d1616822deb603b0ed61016a3a8ccac59b4e"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/README.md",
+      "sha256": "249119dc5b946d1e13bbf9e03936cd2421c76a6d18a8f0f6b6033531bf6f4bd9"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/independent-review.md",
+      "sha256": "23e7170107cf6a1534d1ab3c704a4e6d80d2bed5bb69d25d13949a00a6a1d0a6"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/README.md",
+      "sha256": "526eab6067cd2a0ded13e5a5b82ad87b80f8a827f1c0a093bd79e4a4630f2838"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/README.md",
+      "sha256": "72fbe70a900ca02f3a009e44b8e10246f752bb272a6179db554cf81f588ce9b8"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/independent-review/README.md",
+      "sha256": "928bb55becb4b3fc24b2aeb56d2f098b54caa97a6aa3e0851fa2521a5efa189b"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+      "sha256": "0fae8a720e15e6b23775691762111f2e5cc2ca0961d4f9cd88ab7925cd1353f1"
+    },
+    {
+      "path": "docs/content/research/context/tools/01-caveman-design.mdx",
+      "sha256": "7fba56b3baad6478611da43b51d4ffca7f25a6c8e0550b9bbdd7b2f65492d737"
+    },
+    {
+      "path": "docs/content/research/context/tools/02-headroom-design.mdx",
+      "sha256": "a16d26fe969cb3c7229c7c58404c193b111c140a201c7030225c98ad50ced57d"
+    },
+    {
+      "path": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "sha256": "193f353419bfb7708735a6621c54aa5a4af9b4c2b148198a6deff469a288e6e6"
+    },
+    {
+      "path": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "sha256": "a752496c1461bba8531414b0b4cb50aa662f66712ff4340c3ba554dbe3a9b12a"
+    },
+    {
+      "path": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "sha256": "86dc6b9cf8e313bc1ce147edb0914ef24442f9b0a6a78886a24b6cb2e383e1c0"
+    },
+    {
+      "path": "docs/content/research/context/tools/06-combining.mdx",
+      "sha256": "abe174002d0666b4eba51b4c1eb35422786a5c91ad291696f938450dd03f25bd"
+    },
+    {
+      "path": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "sha256": "a942a16406cf8538e8c51a2c318c4ee2db17dd09234a71062d1fd1003ad002b4"
+    },
+    {
+      "path": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "sha256": "f5dc8a38f72e9b849d2d8fb65905870accd7904617bd86a82f61dc0dc5db0e54"
+    },
+    {
+      "path": "docs/content/research/context/tools/09-ponytail-design.mdx",
+      "sha256": "34ea1a0f098ad2b432ec7f31fe809284f71b00356bd80f1f0c24f49735b50b7d"
+    },
+    {
+      "path": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "sha256": "65b956eb9a860414debbeb8f0efae950fe631abd7277bd5d840c06e1b58e8d86"
+    },
+    {
+      "path": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "sha256": "9f33588611761829310a2a6a8e4e9fa3472799f61c1fe1f312bbff5e30527b00"
+    },
+    {
+      "path": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "sha256": "0441ab2a2544809260d6b1fcc9721e628eb5988d03fb31b4d8ec824db91ac1b9"
+    },
+    {
+      "path": "docs/content/research/context/tools/index.mdx",
+      "sha256": "a9cd2ed83bde199bbd660c1ed828b2fd0f3b51fb5aba8962840c9ead468d84c4"
+    },
+    {
+      "path": "docs/content/research/engineering/build-performance/index.mdx",
+      "sha256": "0de44a4a7b17f6a91c3a13546654961ee92f9c209fc9170f6824d5d292cf0ee2"
+    },
+    {
+      "path": "docs/content/research/engineering/build-performance/rust-build-cache-hygiene.mdx",
+      "sha256": "ada4b36ff520c81e0e5b3aa2f7085e1379bd14173711a6f31119c87f0210ab20"
+    },
+    {
+      "path": "docs/content/research/engineering/build-performance/shared-ci-compiler-cache.mdx",
+      "sha256": "cf8843f8f6ae150736cb8330442b1d079a33cd90da12cef4602cf357c4d58fa8"
+    },
+    {
+      "path": "docs/content/research/engineering/ci/index.mdx",
+      "sha256": "aa86de46c59f409458141913848dd1d9afb645caf62246ae4b4e068280413e98"
+    },
+    {
+      "path": "docs/content/research/engineering/ci/performance/ci-performance-analysis.mdx",
+      "sha256": "c8edbc7ca49ca59ffc5ce5217fa9111e669bf5b96e2cb6687a1976632253267b"
+    },
+    {
+      "path": "docs/content/research/engineering/ci/performance/ci-speed-roadmap.mdx",
+      "sha256": "3b6fc64de75f106d9c0818ad4eedffa7609e1a4437ae37929f9b723287d4eee9"
+    },
+    {
+      "path": "docs/content/research/engineering/ci/performance/index.mdx",
+      "sha256": "f09a63b45f645b6926b0bf01b9e872fc0846ec0283252e019fcdb4fa19b73d08"
+    },
+    {
+      "path": "docs/content/research/engineering/ci/pr-verification/index.mdx",
+      "sha256": "e47caaf57a2178e2c259946064d1b6071e8a37420b9173fcc8b3a36701503763"
+    },
+    {
+      "path": "docs/content/research/engineering/ci/rust-tooling/index.mdx",
+      "sha256": "c0258e470be56cdaf7a042c4915f9f3d7017a2ca2ebbda688bd155947c96c7b3"
+    },
+    {
+      "path": "docs/content/research/engineering/desktop-verification/commands.mdx",
+      "sha256": "c19aae7f604ac25157d15061be57209ceab04ce0a02ab67e53adf4d1c99df25a"
+    },
+    {
+      "path": "docs/content/research/engineering/desktop-verification/index.mdx",
+      "sha256": "42f26b3db924462eb78c9f6e217ba7d2ae66afacd185a5d23c38b4e63b02597c"
+    },
+    {
+      "path": "docs/content/research/engineering/documentation/docs-markdown-linting.mdx",
+      "sha256": "5024db68631cc42cdcc1cde2c77ad24f338a1af46026150e95b163f1ffa2048f"
+    },
+    {
+      "path": "docs/content/research/engineering/documentation/index.mdx",
+      "sha256": "54b66492739dad0009d4d75884f23e72ee8ca3e76569a5599bf495775230c6cf"
+    },
+    {
+      "path": "docs/content/research/engineering/documentation/repository-strategy/index.mdx",
+      "sha256": "ce3c0a08fb113260cbece27f769aaf7cc60aaf40076acff069915a957457d73c"
+    },
+    {
+      "path": "docs/content/research/engineering/documentation/spec-workflow/index.mdx",
+      "sha256": "8be713d33308fd67e8fb2a0cf70bcf4651dedae9c82d6a13aada4474196548ef"
+    },
+    {
+      "path": "docs/content/research/engineering/index.mdx",
+      "sha256": "545366d978dbed6e19956baa7a32a9f2e832b6ea64e7ff282c4100adb0b9fa42"
+    },
+    {
+      "path": "docs/content/research/engineering/testing/index.mdx",
+      "sha256": "0f34a753120cf05bb2fedcad18d2dc032a5ab9490c58cf9906c026f96d02e5d1"
+    },
+    {
+      "path": "docs/content/research/engineering/testing/test-infrastructure-consolidation.mdx",
+      "sha256": "2b67baa55e812342fe4dfaa1992aa6d9385c02d12ad20011f5dfd490f693837d"
+    },
+    {
+      "path": "docs/content/research/engineering/testing/visual-snapshots/index.mdx",
+      "sha256": "afbf42549ef44290efe934f814413da8afdd51406e8ac9959d30e0af436df3f8"
+    },
+    {
+      "path": "docs/content/research/index.mdx",
+      "sha256": "c48996b53ad4b41d0cd389dfc861859fc033d064ad1f65e30047e207467af4f0"
+    },
+    {
+      "path": "docs/content/research/multi-account-usage-invariants.mdx",
+      "sha256": "8b462dac28da7bb8c45df0fffd4166390139115a6669840f748154576f41fef3"
+    },
+    {
+      "path": "docs/content/research/platform/index.mdx",
+      "sha256": "5121cd6d5d9abb1c777342908a3ad60b697108b6d73eae405ab60515f101ed0a"
+    },
+    {
+      "path": "docs/content/research/platform/infrastructure/code-intelligence/index.mdx",
+      "sha256": "c46ea544aa54416b8aafcca314538373050199031ce7905cdb7fa0aabb2328eb"
+    },
+    {
+      "path": "docs/content/research/platform/infrastructure/index.mdx",
+      "sha256": "924f7a3dd75f094ec322199a86754d6ff77a1238f53f21d80c8ed5a35a9fe2ca"
+    },
+    {
+      "path": "docs/content/research/platform/infrastructure/jackin-daemon-design.mdx",
+      "sha256": "70fcae287dcd02a9eef85832e30a09905d0be48fcfc3fe2897ad44118f04aa66"
+    },
+    {
+      "path": "docs/content/research/platform/infrastructure/platform-support-and-freshness-policy.mdx",
+      "sha256": "c3ecf55c5a3cbfa27ebbbdb21a60745fc91318a005ef120a0d39020b32ecbaf4"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/apple-container-1-0-landscape.mdx",
+      "sha256": "765ed9922ca65bbbcc1223a1342b181e6406863aca8458a99fbf813f37b403fb"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/apple-container-backend.mdx",
+      "sha256": "f8aefcbf361e55dcdca4d03b9a8e5392b88973d09d97f688c5b0c3bf4f30cb95"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/ephemeral-mount-modes.mdx",
+      "sha256": "1180b35a271c4856f700602f0aaf3a7a26b9fc0122335bf8e389d0e4f8c29192"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/index.mdx",
+      "sha256": "1674c7abd7e801376f95065f06bd543bf89ccb45fc1e54add8fc9435babe81aa"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/orbstack-isolated-machines/01-architecture-and-security.mdx",
+      "sha256": "621224f7d5b3209050e123674d5ab907880b080ca6958812f654c8dfeb97c778"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/orbstack-isolated-machines/02-cli-and-compatibility.mdx",
+      "sha256": "789519f848331107c604aab192dce83b1b120e5471b4b660f6a7d6f38754ee87"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/orbstack-isolated-machines/index.mdx",
+      "sha256": "3ef281cd26a79d2192175d646ae5b456b8d83386882dfa2d72a21df5b0058ae3"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/smolvm-backend/01-architecture-and-compatibility.mdx",
+      "sha256": "7e03bc608513c151c892a7b33e0f734777b4e9731df5f811afda30fac75541bd"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/smolvm-backend/02-alternatives-and-decision.mdx",
+      "sha256": "70d3ef564578956a9d6552c48847391d7b1b0baccf38692a367d2732563109ae"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/smolvm-backend/index.mdx",
+      "sha256": "986dc368eb5afba161049413b1a9a8052a7fb29766ce488c32424eb4b6fe8355"
+    },
+    {
+      "path": "docs/content/research/platform/isolation/source-branch-policy-isolated-mounts.mdx",
+      "sha256": "6b5c5c5de603fd3f9708d77407d9a9b4ded4490ad8093e9a2662eeadaf0c4821"
+    },
+    {
+      "path": "docs/content/research/platform/runtime/config-versioning-migration-design.mdx",
+      "sha256": "052501d896a8f0daeae2bcd009cfe97345caf1a2afb5b0afae515aff5f7eea87"
+    },
+    {
+      "path": "docs/content/research/platform/runtime/devcontainer-parity.mdx",
+      "sha256": "1cade56092401104cd36fa765009d182ee2bbfe7e52f23bc02d9b647715f7cfb"
+    },
+    {
+      "path": "docs/content/research/platform/runtime/in-capsule-dirty-exit-design.mdx",
+      "sha256": "21870f61a8dc1d67e9a4d039c6da5436db74b04004b95c1d84ae192a8605f5ee"
+    },
+    {
+      "path": "docs/content/research/platform/runtime/index.mdx",
+      "sha256": "44210eea67a17941bc87c7a6098e64a1b0d778687df0cd8d80f361439fa26782"
+    },
+    {
+      "path": "docs/content/research/platform/security/credential-exposure/container-credential-exposure.mdx",
+      "sha256": "255448e4d42a5889bf05e3f38363a6386e6d767e8118954870abc2f1e597c00a"
+    },
+    {
+      "path": "docs/content/research/platform/security/credential-exposure/credential-source-pattern.mdx",
+      "sha256": "280baed98b4f885d03c50c138a385ad63faee05247f0d5798ab24033a29f1123"
+    },
+    {
+      "path": "docs/content/research/platform/security/credential-exposure/host-bridge-design.mdx",
+      "sha256": "b47c7d585a45b9d1420a0d28d7479d91aab14436efe70d4abe8648f3b5082758"
+    },
+    {
+      "path": "docs/content/research/platform/security/credential-exposure/index.mdx",
+      "sha256": "c6f156edfa327c3a3c0224adf38847927b5c52aa3f82a399e831e6acfd2e1a05"
+    },
+    {
+      "path": "docs/content/research/platform/security/credential-exposure/jackin-exec-design.mdx",
+      "sha256": "87758911c0f20924b36d07baa3be08b4552afefee8616fdbc93f468018c4e129"
+    },
+    {
+      "path": "docs/content/research/platform/security/credential-exposure/registry-configurations-design.mdx",
+      "sha256": "594b6c0e573eae5c813db71e07826caaa3e92006b88023c2e2a03998dc3297e6"
+    },
+    {
+      "path": "docs/content/research/platform/security/index.mdx",
+      "sha256": "d3050ab56d2280659ba68a67e3eae5eb407b12ff5b484867275677e707769fa5"
+    },
+    {
+      "path": "docs/content/research/platform/security/isolation-architecture/agent-isolation-architecture/01-threat-and-platform-evidence.mdx",
+      "sha256": "d72ef0cde98607963fef2037b1a13aac168d406adaf404f4255de90f2926f463"
+    },
+    {
+      "path": "docs/content/research/platform/security/isolation-architecture/agent-isolation-architecture/02-four-layer-model.mdx",
+      "sha256": "1fa8953afb5b75fc9f7de9a237c07914dbb2fa0e35959fcc93d86cd711164629"
+    },
+    {
+      "path": "docs/content/research/platform/security/isolation-architecture/agent-isolation-architecture/03-layer-contracts-and-open-questions.mdx",
+      "sha256": "2e956349226d1fd040da3ed8f8fcfe7f8259857379f95f03d596dfaf5af18e34"
+    },
+    {
+      "path": "docs/content/research/platform/security/isolation-architecture/agent-isolation-architecture/index.mdx",
+      "sha256": "b1bac19ac7bb91a518f6f689f0961c8133b9d74365d031454936b9a9698af978"
+    },
+    {
+      "path": "docs/content/research/platform/security/isolation-architecture/index.mdx",
+      "sha256": "a64afee81a7e2bd5be26d6c29c288af6b5168a532ed92361ddc36552836e0aa0"
+    },
+    {
+      "path": "docs/content/research/platform/security/isolation-architecture/session-contract-design.mdx",
+      "sha256": "ba1b21da37e3ac8803c5b9b93b289aed7fa787ea79ff4d141a791849751bea9b"
+    },
+    {
+      "path": "docs/content/research/platform/security/network-egress/index.mdx",
+      "sha256": "b5e03cd05c0961e044af5f47bd072ff7cc128b0db5737b3d412e5289605447df"
+    },
+    {
+      "path": "docs/content/research/platform/security/process-sandboxing/index.mdx",
+      "sha256": "76c11802111f32f08f720a24ba2e0b96ecdced5d170f40eec70d2ae553c79698"
+    },
+    {
+      "path": "docs/content/research/platform/security/sandbox-backends/index.mdx",
+      "sha256": "44a1f502b6c712ffc1a21457b22983d6367ce8c42c08c0a691085dfc818b844b"
+    },
+    {
+      "path": "docs/content/research/platform/security/sensitive-boundary-code-health-study.mdx",
+      "sha256": "084336669e4d34250b5935bbe869fe2aa7379b56ded709247b967372112cf751"
+    },
+    {
+      "path": "docs/content/research/platform/security/supply-chain/index.mdx",
+      "sha256": "dae3de5e5bbdbc372b67ff7793b4698cc8a54345ff3637697f1165db632e41fd"
+    },
+    {
+      "path": "docs/content/research/product/desktop/agent-hub/01-native-desktop-references.mdx",
+      "sha256": "fcc1594da6247df0cec1e4b1b7f38be8da7e5c9800658a7ac413e3a209919773"
+    },
+    {
+      "path": "docs/content/research/product/desktop/agent-hub/02-product-surfaces.mdx",
+      "sha256": "6a79c799390c45e27ee69715babd8dd486292386304b0a15a395dbde80621b68"
+    },
+    {
+      "path": "docs/content/research/product/desktop/agent-hub/03-daemon-integration-architecture.mdx",
+      "sha256": "b3fdb735c909979075a973e6b12b5999366f95d9c896547a3f54ee36b73a441f"
+    },
+    {
+      "path": "docs/content/research/product/desktop/agent-hub/index.mdx",
+      "sha256": "d80452b516cfe18d080a00e76bbb1e305084f6e37a303430d03ccdcc98b9ec17"
+    },
+    {
+      "path": "docs/content/research/product/desktop/index.mdx",
+      "sha256": "7c9eb738ae66fc51b91136b54cee47b7045ae82089024197d8e05fd2fe2c633d"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/01-current-coverage.mdx",
+      "sha256": "2f1ad2181fdc93345381dd239c07d988dd844e294a5e90234a45d42f3cb817a0"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/02-codex-api.mdx",
+      "sha256": "08bba39017a4d1fd56afdbe8df0cfd96b09f35604148cdfa95adcb8fe03962bf"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/03-claude-api.mdx",
+      "sha256": "edfd0e226141fac8597a7e27cf6f4db1c79c2bf39039c00bbe926a7e77711d70"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/04-amp-api.mdx",
+      "sha256": "a8a43f1391067b254e221da17458898b5b7e5e56bc081ea3960b35796950fd24"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/05-grok-api.mdx",
+      "sha256": "4d36b2f4997a5ad664be4973fd669fed0e1d41ebf9ecf9629ca84f7523ac8a34"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/06-zai-minimax-kimi-apis.mdx",
+      "sha256": "5462ce654fa010dbe726c1043d9430ffa603572614a29b8f9659138e4e2d958f"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/07-runout-projection.mdx",
+      "sha256": "b31cda6ee2e8cd573347a6624171c30430ec138c14ca29948824fe2c903cf29b"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/08-codex-followups.mdx",
+      "sha256": "b44ef3ac304806f2f0917d9f2285c52f7223cd09d0f7ca8177bf57e1efa7ea64"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/09-claude-followups.mdx",
+      "sha256": "8fec0b3eb882217eaa17c7d78272dac502177a4a560251127fe3423b1f87fe12"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/10-provenance-and-misc.mdx",
+      "sha256": "ea5189bb6187835b0f57dc3e8e7b91d21e9412967c6dc33302c735cf23bf911b"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/11-amp-daily-followup.mdx",
+      "sha256": "8cd724ec103fdc0da63e425203cf5046a67a0ed8902af596953108e0e16f5ea4"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-provider-apis/index.mdx",
+      "sha256": "600d1837983a390c175fd11ad45d7b90fb09661b92bfd57bc6d6053238015b96"
+    },
+    {
+      "path": "docs/content/research/product/desktop/usage-visual-references/index.mdx",
+      "sha256": "3244773c20b8c7b0da809f5a32039ab374eca533d0dd697f3bc468374844539b"
+    },
+    {
+      "path": "docs/content/research/product/future-directions/index.mdx",
+      "sha256": "f5949df14d3dad2101aafdbcbf0a56d0e64e9489d2b8ff5429c1ac7928cb5778"
+    },
+    {
+      "path": "docs/content/research/product/future-directions/platform-ideas-scan.mdx",
+      "sha256": "c27249f15ff4074d60f07b15134afbbb7ceedfb3967f53f0bdc9a61ff0429ca4"
+    },
+    {
+      "path": "docs/content/research/product/growth/index.mdx",
+      "sha256": "4478e3bc21846b5c647b219a03cb13da19fda9c8f784f691bac0bcdb7fb075dc"
+    },
+    {
+      "path": "docs/content/research/product/index.mdx",
+      "sha256": "ccf456e2c7dc23b1b87a921becb7e5c4a2c032b15b5bb1e21229a6ca50348569"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/agent-tag-protocol-design.mdx",
+      "sha256": "3a27d45f03fd5b2c63dc4d3a81c4ecbe9cf4168578602ca8d714bbed6a37087a"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/console-agent-session-control-design.mdx",
+      "sha256": "400073e0ba760a67bfdea0214327a8d8cb78c57fdbfc058172510705d3e02eee"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/github-link-tracking-design.mdx",
+      "sha256": "7581192d8ae04c8ee12962966764386b17a8e3623db315d106dfd1cdd294e279"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/host-affordances/custom-operator-tools-design.mdx",
+      "sha256": "03a0114afde104879a4c43678ff8777ee97ff2840a6df73918b99490232b1986"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/host-affordances/host-affordance-bridge-design/01-host-affordance-evidence.mdx",
+      "sha256": "3a38b07ddc336eadd4fa1c4fb412bff63b666326d02dc9faa53c892ead6f2a8b"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/host-affordances/host-affordance-bridge-design/02-product-contract.mdx",
+      "sha256": "ede888a57fb9fba3b458aeca9a6ad8bae6502808e66421df6ecccfe3970f9568"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/host-affordances/host-affordance-bridge-design/03-architecture-and-security.mdx",
+      "sha256": "1b304024a6a29054fc309d630e200165a55bfc5286e4ede0a65b02585d3aee29"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/host-affordances/host-affordance-bridge-design/04-alternatives-and-open-questions.mdx",
+      "sha256": "3d9d041a39a9eb3e5007cd25f5a0723f9557902637682c6e15c85251e9b63254"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/host-affordances/host-affordance-bridge-design/index.mdx",
+      "sha256": "7ffb2eabbe20e7f52aada7b90c3c2882833dc40a812ff634d8de0cd202b18784"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/host-affordances/host-affordance-bridge-preflight.mdx",
+      "sha256": "8acfd35ff082701c7de7c725a57f8d663dcd0cb0c889d51e01ae9776671932fc"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/host-affordances/index.mdx",
+      "sha256": "dbaef8ca11fddece9ab72f0a76a1907ae11edc92f56072cd02a682b3adad174d"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/host-affordances/operator-handler-system-design.mdx",
+      "sha256": "ea4ecd6d0ac06fce008ae545ec71d29b8384098d1e3975ee96f118cbef24c0f1"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/index.mdx",
+      "sha256": "c00a24a560c15a35df7635f365adfb2edade651ce4f956a7967699d45f6b6876"
+    },
+    {
+      "path": "docs/content/research/product/operator-experience/settings-editor-surface-unification-design.mdx",
+      "sha256": "f85248769bd3408ae992f251b6a5629d8508529e633ad9a32757c72cfcc195f5"
+    },
+    {
+      "path": "docs/content/research/watchlist.mdx",
+      "sha256": "fcd72db8dfa6bab1a7acfe4b7a8d56bd6d8d9da6e0621899df23271f857a81b8"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(containment-boundary-contract)/session-contract-explain-mode.mdx",
+      "sha256": "487fd9ed831b4ad5a7074f91e03169514c227ee4e06d3783b07168509bad5b40"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(containment-boundary-contract)/stack-integration-contracts.mdx",
+      "sha256": "858a6ce6628bca000915a9701579079aa62e0c463a48e8ca5b744a925dc19493"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(containment-egress-recovery)/network-egress-policy.mdx",
+      "sha256": "6ff152254399eee7b72c2e782d1eab535d9dea8c7d174835d9f92e16c2c088fb"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(containment-egress-recovery)/session-snapshot-rollback.mdx",
+      "sha256": "620a647746801c392493a1b6ea4242d55e93d4026a0fb98195e121279ac1d23f"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(distributed-work)/credential-source-pattern.mdx",
+      "sha256": "7729e9cd55db426d91ff1c4a25805ef549fc98039c02ee048b5344959725f5e8"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(distributed-work)/jackin-remote.mdx",
+      "sha256": "bf6f0b8988bf1c69fdf69f1a1c274e37ada4376aac3cebbe90c44e85468a9d8f"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(distributed-work)/workspace-skills-mount.mdx",
+      "sha256": "a0ac36816b53244ffd62a0dc125373fe3ae9041c93652e7fd00b7368ab13b760"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(fleet-automation)/autonomous-task-queue.mdx",
+      "sha256": "5813b72ceba9a14026073a066876fd225d90addf4ea13415f8940a8b0b7e25ce"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(fleet-automation)/idle-runtime-cleanup.mdx",
+      "sha256": "2edfa88611fab63d516ead871213cedf01948ddb0d7fbb97517846d9015e88b3"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(fleet-automation)/task-source-abstraction.mdx",
+      "sha256": "c969c9e6910146dd616fac2af6c35913406b4de36250964576eef60d6bf93704"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(foundation)/declarative-resource-limits.mdx",
+      "sha256": "33b9ca6a66f3c6f1f516a549097d7a05cd173eb3ddde3198809ce79f11b24306"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(foundation)/ephemeral-mount-modes.mdx",
+      "sha256": "6ca9ebf0c72f7c2b9a669f19b422e75f27e3318642086d2347c1a5c4d53dc06d"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(foundation)/operator-handler-system.mdx",
+      "sha256": "a1aa5dcfc655469a46dadbd32a592b38e232c24c13d4033b0121113a253c1074"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(foundation)/source-branch-policy-isolated-mounts.mdx",
+      "sha256": "5a375c3be4a4e07d1ecdbaf2832e8a29c7d1fcb068be1cd00eb0e3ec85511114"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(foundation)/workspace-description.mdx",
+      "sha256": "85ec3a796a7f879aa5fc00e5da2b1affdad56274f36db4688f77e10b0ad8e527"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(live-operations)/agent-runtime-status.mdx",
+      "sha256": "3e4368d0a84219b382250543682641cd223c0e1ab1db6dfde2e1457ebc9718df"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(live-operations)/agent-tag-protocol.mdx",
+      "sha256": "4f6cfc53a5160f4e7d0dd0edeabdc870ef6675a72731370a64bbf4773d572a0b"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(live-operations)/console-agent-session-control.mdx",
+      "sha256": "b556f54d3271c01d256939fefb61c4a86755e0cd060c559b71bad708effa34e1"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(live-operations)/console-resource-panel.mdx",
+      "sha256": "6c6cf266df375cba9b71e07fad212bf37ee6ed8ba0cc9f099c8f836bf47d22fc"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(live-operations)/custom-operator-tools.mdx",
+      "sha256": "adbea26d31fb1c178ed2797cc474d0c254ded749c1c195e5c27614ceacdedd06"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(live-operations)/github-link-tracking.mdx",
+      "sha256": "82447e8e21de9c48b8dc1b529fbd951023024b309aa669a828a390c0ee53b8fc"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(live-operations)/launch-progress-tui.mdx",
+      "sha256": "b56df22bd3d49b9212cd970f7964b0495cce2fe51237635066d273d6365ac61e"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-orchestration)/(live-operations)/session-keep-and-resume.mdx",
+      "sha256": "761c3ab3bfeb099485f8e97fc9261bf7490c2ab8af1eaa79bc79cbab92d14a82"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-runtimes-authentication)/agent-launch-flags-api.mdx",
+      "sha256": "d0425d16971502b3364b2e8518737c3579c1229608f659a5c9bc510213ae9348"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-runtimes-authentication)/auth-health-and-visibility.mdx",
+      "sha256": "929e05ccfeafd5eaffe3e4eafb6eb84c8734f5382f23421500b53cebff4cd0e3"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-runtimes-authentication)/auth-overwrite-on-new-tab.mdx",
+      "sha256": "fdb07cada0d85926e664e3f7775bebb9499ae548ac669219c56b273abe1d10f7"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-runtimes-authentication)/auth-reliability-program.mdx",
+      "sha256": "87168dbe0c2d074fd12f06b6e3577f18b05aa64e572fd421d542fa80809b6dd3"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-runtimes-authentication)/github-cli-auth-strategy.mdx",
+      "sha256": "21b893c7050bd6d48fb4a2882c89304706308783c20969dbe10b9948af13bc1a"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-runtimes-authentication)/multi-runtime-support.mdx",
+      "sha256": "48bd23bf27940751be0cbae708f11dab9206dcbbbdf24637dd96747fb10f13ae"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-runtimes-authentication)/onepassword-integration.mdx",
+      "sha256": "22d7473aca9dde91f5d135a932ab3bfb988cec5ea61c48c36ae561dc35d14f5c"
+    },
+    {
+      "path": "docs/content/roadmap/(agent-runtimes-authentication)/workspace-claude-token-setup.mdx",
+      "sha256": "c0307f2c3d5d593d20362796e4cc4355543ac80a60db4b75eab318a677edc08e"
+    },
+    {
+      "path": "docs/content/roadmap/(configuration-ergonomics)/config-versioning-migration.mdx",
+      "sha256": "e2a5c3cad9a826800d5a3434e89c0f977f9a2925da2424062a449a77d798396f"
+    },
+    {
+      "path": "docs/content/roadmap/(documentation-tooling)/agent-workflow-cc-sdd.mdx",
+      "sha256": "6ae2b4b5a181b281be5a85a545ae2b4b5dbf3c75f12232e544a60171aded54fd"
+    },
+    {
+      "path": "docs/content/roadmap/(documentation-tooling)/docs-markdown-linting.mdx",
+      "sha256": "e2d316fbd8d841df8a95ea6751d360ff5326eaa29f62751a6a75b4b11f3f051d"
+    },
+    {
+      "path": "docs/content/roadmap/(documentation-tooling)/rustdoc-json-fumadocs.mdx",
+      "sha256": "c5ee852016e5c732d4c2c6fda3a159dbdba9628073a9597d1ea18dbc67cb5fd2"
+    },
+    {
+      "path": "docs/content/roadmap/(infrastructure)/context-engine.mdx",
+      "sha256": "6f11b22e2b7f638031164c68cbb425d6f19b2f085a84c60b6d3906153c4854fe"
+    },
+    {
+      "path": "docs/content/roadmap/(infrastructure)/instant-launch-architecture.mdx",
+      "sha256": "d67387a93c0f7d0d09f1ab13263f1cacb1041cd1165e5156ee61e3cdaef4e2f1"
+    },
+    {
+      "path": "docs/content/roadmap/(infrastructure)/platform-support-and-freshness.mdx",
+      "sha256": "ec67018d59626999eae899998669c0c696d07cad6faa5967699a6867c70a1f19"
+    },
+    {
+      "path": "docs/content/roadmap/(infrastructure)/registry-configurations.mdx",
+      "sha256": "191e15eb3ef1b844c4f8261f39c066e198ec1930c746679b494c95e4aefcce8e"
+    },
+    {
+      "path": "docs/content/roadmap/(infrastructure)/shared-ci-compiler-cache.mdx",
+      "sha256": "db42865dccd96b27373e223a4a8e5bb33e4f09c4aaad36690574cf6301d56cb1"
+    },
+    {
+      "path": "docs/content/roadmap/(infrastructure)/workspace-registry-cache.mdx",
+      "sha256": "d072faa23aa54ab5e471ce4ed4802b77f8d8e1dc1960bfb482c815b7c088b010"
+    },
+    {
+      "path": "docs/content/roadmap/(isolation-security)/apple-container-backend.mdx",
+      "sha256": "c91ce1ae5558e7f853fc4811514f7e41604059f6555e1b39e6de0811d1537813"
+    },
+    {
+      "path": "docs/content/roadmap/(isolation-security)/docker-runtime-hardening-contract.mdx",
+      "sha256": "25be1cd17243c7372c2c6e022193a6f6875f5acb6ba28d070795c04a4cf42754"
+    },
+    {
+      "path": "docs/content/roadmap/(isolation-security)/jackin-exec.mdx",
+      "sha256": "8c0835e62143660a56ba6be4066e8f33aa5ddb235b64beb79941214854c36060"
+    },
+    {
+      "path": "docs/content/roadmap/(isolation-security)/open-review-findings.mdx",
+      "sha256": "6584e322bbc1a0203ca689a43ad4d2c2534f19f5811e6e002114a7503ecdb3a1"
+    },
+    {
+      "path": "docs/content/roadmap/(isolation-security)/reproducibility-pinning.mdx",
+      "sha256": "be01481974a24885535bf24fa507a9e8e901ad84f3362d5ae1953ea59246ca6d"
+    },
+    {
+      "path": "docs/content/roadmap/(isolation-security)/security-threat-model-and-signed-releases.mdx",
+      "sha256": "d8074ce7be5c9c0d8fd137f1b5910895fef1cd8e2e4fc9efc1269d1e6034f7c5"
+    },
+    {
+      "path": "docs/content/roadmap/(isolation-security)/sensitive-boundary-code-health.mdx",
+      "sha256": "eac5eb6c6e1bcffa968e39f78a66494c975f034124f2811eb94c2751591748ba"
+    },
+    {
+      "path": "docs/content/roadmap/(operator-surface)/asciinema-session-recording.mdx",
+      "sha256": "b22db33600448c1cce48827b5f8304c9f9af6ff9f3572c5f5f06b3839d43da4d"
+    },
+    {
+      "path": "docs/content/roadmap/(operator-surface)/clipboard-image-bridge.mdx",
+      "sha256": "75a4f50f73ba289d70e23b408d7b335fd050a3a07b102f9a9ce8a828d58bf2cc"
+    },
+    {
+      "path": "docs/content/roadmap/(operator-surface)/jackin-join-and-debug-bundle.mdx",
+      "sha256": "31ddf46f9e94dac40381235bbf2b88b5ab224ed02f2487f1492ae3d6de1e0662"
+    },
+    {
+      "path": "docs/content/roadmap/(operator-surface)/native-macos-usage-menu-bar.mdx",
+      "sha256": "44155b0d0e54759fa7da0fb33a5b745832920031b451667679c4f5c94f1317cc"
+    },
+    {
+      "path": "docs/content/roadmap/(operator-surface)/operator-cli-hygiene.mdx",
+      "sha256": "9305cb863b31ee5317d7caac085195dcf7e868e4f1f5446d4fcd5fc549c04c5d"
+    },
+    {
+      "path": "docs/content/roadmap/(operator-surface)/pr-verification.mdx",
+      "sha256": "8bac711fd7a572b90030b5ce5d9cdb00eb983464f9e1b116dd6e73851f9ce40e"
+    },
+    {
+      "path": "docs/content/roadmap/(reactive-daemon-program)/(host-integration)/host-bridge.mdx",
+      "sha256": "8d24de74f0d00fccc1f9e8571dd476ff1c1ca85d36082066958b6218e13348b7"
+    },
+    {
+      "path": "docs/content/roadmap/(reactive-daemon-program)/(reactive-adapters)/agent-attention-prompts.mdx",
+      "sha256": "53483717a2f1b6413f5ac205d781d1c228860fbdbc150fac620611f380fab38d"
+    },
+    {
+      "path": "docs/content/roadmap/(reactive-daemon-program)/(reactive-adapters)/live-auth-sync.mdx",
+      "sha256": "d5835dad85a785e2cfa58ab6b6d9e1dc33d2093753c9cf2fc65bb0074d9a0227"
+    },
+    {
+      "path": "docs/content/roadmap/(reactive-daemon-program)/jackin-capsule.mdx",
+      "sha256": "e0a01ea6521492e1e8b6268e3cb9e6c0d609ed7f0c6152867c0aa3ecb0a8c5c9"
+    },
+    {
+      "path": "docs/content/roadmap/(reactive-daemon-program)/jackin-daemon.mdx",
+      "sha256": "5082acc3a168c9d559d91e952b37941d7d3010b640f9b93d0cdde4377baadc31"
+    },
+    {
+      "path": "docs/content/roadmap/ideas.mdx",
+      "sha256": "0384a134082aad19a1a8f8971127d9a403f4c6bf86a4d7b6d4e1c4e76941d482"
+    },
+    {
+      "path": "docs/content/roadmap/in-progress.mdx",
+      "sha256": "446326c086e1f5419ea15c9fd96c8c91b3062f3bf855ac17e8695d5cd88a0c1e"
+    },
+    {
+      "path": "docs/content/roadmap/index.mdx",
+      "sha256": "0b6f67c18cb67281ea8aa1fbc84fb1f72da45d1e6ab773ecd92710c6ca6f4749"
+    },
+    {
+      "path": "docs/content/roadmap/planned.mdx",
+      "sha256": "8e29a5b71e00073e35016fb88a83d5cb4e7dee6422c381054e23adcda4f2cdef"
+    },
+    {
+      "path": "docs/content/roadmap/platform-ideas.mdx",
+      "sha256": "cda0dc07dd9d23e9a95759f6fc87b5a5aa10b9464532457a323e8dce28daedf9"
+    },
+    {
+      "path": "docs/content/roadmap/rust-build-cache-hygiene.mdx",
+      "sha256": "5cbeb1582f3087740d52c20e906d2ba663abb3e56053e31182efa1a3e33d081e"
+    },
+    {
+      "path": "docs/integration/automatic-homebrew-preview-plan.md",
+      "sha256": "42d677e1be12c882d3bc973c35cc529279e1dc34ef83dbe29c39ef212e33709a"
+    },
+    {
+      "path": "docs/integration/immutable-preview-publication.md",
+      "sha256": "345d87f66c9fd57a5699986204cbc82d0c6642ebd54d95cf534ae071ed34a10d"
+    },
+    {
+      "path": "docs/integration/native-preview-build-observations.md",
+      "sha256": "b7b06815fd7029934cf2e234d5e2a31654af007df564cbe0ecb5d8185f992bbc"
+    },
+    {
+      "path": "docs/integration/task-004-source-unit-approval.md",
+      "sha256": "868ef2f4a6c706516b1ebc5502f204b6e63bcd2220e8b03fe802ce91619be5af"
+    },
+    {
+      "path": "docs/integration/velnor-native-preview-design.md",
+      "sha256": "3904d31a07d50a1117132882085c5567dec26ed5cddcfb2938cede8cc7f4a5c1"
+    },
+    {
+      "path": "docs/integration/velnor-native-preview-security-review.md",
+      "sha256": "7d37a7cdd8ee7676b2cc29bbdb71c57e00388648247f275a642874f4d9502cbe"
+    },
+    {
+      "path": "docs/source.config.ts",
+      "sha256": "f86949c314dfe6af60c7fea8a9836c03e1083c8f32aae74c548c04c35f12654c"
+    },
+    {
+      "path": "docs/tsconfig.json",
+      "sha256": "417f79cf35ee9685b60f79a539785d4da6a195f4a14013b60789c3781c5147f0"
+    },
+    {
+      "path": "examples/workflows/requirements.md",
+      "sha256": "eb95c3724c562fd7198068c92955c86f0c0f1dcec1a7d172d3436d5ab58b0697"
+    },
+    {
+      "path": "examples/workflows/task.md",
+      "sha256": "e0e7ffe7a85c54200c5d8b8c37bc593937af73fad44c899f2ea2c7a30fc963d1"
+    },
+    {
+      "path": "native/Design/Prototypes/UnifiedAgentUsage/DESIGN_AUDIT.md",
+      "sha256": "362b29017d9d9fe0762286b4788da7843528821311673ec11d0b061f72eef4a5"
+    },
+    {
+      "path": "native/Design/Prototypes/UnifiedAgentUsage/PRODUCTION_MAPPING.md",
+      "sha256": "5af05ae7c1d39b5dc4300cfa4e51997d4446099e33b89cf0e45ee262e35bba4b"
+    },
+    {
+      "path": "native/Design/Prototypes/UnifiedAgentUsage/Regions.md",
+      "sha256": "38020094e12d115e5d5fc4862ba9dcb126a96921f72ad22982342fae59c6176a"
+    },
+    {
+      "path": "native/Design/Prototypes/UnifiedAgentUsage/SIGNOFF.md",
+      "sha256": "e182bd93d8024cf855e916ea74eec1225c3ad48a8cb394057bdfde7fdf0b933c"
+    },
+    {
+      "path": "native/Design/Prototypes/UnifiedAgentUsage/Sources/UnifiedAgentUsageProto/Resources/ProviderMarks/PROVENANCE.md",
+      "sha256": "e894ae356c55f04ab579e4ed8c4614b578fc72c3382adab01a8818d1f2c32e36"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/Alternatives.md",
+      "sha256": "7db406f219999b7662e84caa944054e66412e42d421af66f584f2e937caf2f50"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/AntiReferences.md",
+      "sha256": "0b206399cf300d33ebe300a2c82962e0f289d5658101c9916988a2c8ac8f631a"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/BaselineVisualQA.md",
+      "sha256": "1b3d86cbc81516d584d4992bc548f6ad3df63fb5c1efab52d2d71ad50a858c35"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/ExperienceBrief.md",
+      "sha256": "f5dde3286706b44b1008745795c65cb13309e4f563b0122a3b140c3687d08542"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/Fixtures.md",
+      "sha256": "22516fae2912abe4ee98369cdc1797936778c0c6efb6dba479a4f89de8e84928"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/NativeComponentMap.md",
+      "sha256": "3a2dcd7286428037170ee30e6d7d141bc2b769827fe2389ceae7d78dce10006f"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/PrototypeHandoff.md",
+      "sha256": "771c186e2d9eae154538a3c3ec79652a93b474ac06445c8a8329a0b6f70ced5c"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/SelectionPacket.md",
+      "sha256": "d5c5319f07ce8384d6551a2a54b002ffce6d99f025ef3b565ef856b4611e0f8b"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/SwiftBestPracticesReview.md",
+      "sha256": "3d607bfe05063b81ea6add23eccd2a9eb4da0f6cca1353aa57c93329c5ccebf8"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/SwiftProjectReadiness.md",
+      "sha256": "a35088015387461d4f826c1ac8a76ac0e2def148056155dee5a0822249bd27a3"
+    },
+    {
+      "path": "native/Design/UnifiedAgentUsage/SwiftProjectSetupAudit.md",
+      "sha256": "eeb8ca25b33aa5a393d90473d819d5eef04acc809c2e60c4bd8e6fb3a736e9bd"
+    },
+    {
+      "path": "native/README.md",
+      "sha256": "1e33117f603a896d8df082599bc9ebe7a0c4ad11f29ca0f9c43b43ed80c589b4"
+    },
+    {
+      "path": "native/Sources/JackinDesktop/Resources/ProviderMarks/PROVENANCE.md",
+      "sha256": "63e243f1ee61b62ded7ed5068dfcbbbf8ed70487faef0df4653ddd9e9f1f15fc"
+    },
+    {
+      "path": "plans/workflows/00-product-specification.md",
+      "sha256": "3d67801fab927c981ee7f2da077d36009d8e81f13838472c9d6e3a0c09808084"
+    },
+    {
+      "path": "plans/workflows/README.md",
+      "sha256": "bd09dda275730bb9b32f1edc99734dda65c20a0edb657397556b6e8dbea2140d"
+    },
+    {
+      "path": "plans/workflows/adapters/01-claude.md",
+      "sha256": "6f0df29eec3c377547e10a25fa7ea46dc4a7dd13d7c3faa3970a656d6587339f"
+    },
+    {
+      "path": "plans/workflows/adapters/02-codex.md",
+      "sha256": "8bf2adea2c6bd21388c4b1966aed669f663e677f63e3d77e8b267d2851342726"
+    },
+    {
+      "path": "plans/workflows/adapters/03-opencode.md",
+      "sha256": "1026a98244149e0eb0dad2e95ff856b6c098b8bb2723f2e1326200def3ae3410"
+    },
+    {
+      "path": "plans/workflows/adapters/04-muse.md",
+      "sha256": "c3c8a4cc8228b53628881746b2223b222d51dd44760c8223ae41a893e1ce930b"
+    },
+    {
+      "path": "plans/workflows/adapters/05-generic-pty.md",
+      "sha256": "4dde738d217751ef999c9f9062aba274d2f8a6ee801d0f558f73e901e3b047d6"
+    },
+    {
+      "path": "plans/workflows/adapters/06-amp.md",
+      "sha256": "c95e820c95621910d192748d546e269b94a75a86bdf80f5e351db28677f62f4a"
+    },
+    {
+      "path": "plans/workflows/adapters/07-kimi.md",
+      "sha256": "5281aa53b15b2d19e086b817ebf54e8a5e87e94c596eab0b1c353b838656b832"
+    },
+    {
+      "path": "plans/workflows/adapters/08-grok.md",
+      "sha256": "b8bcdebd9fa531c48685909bfbda7ad2f205f0dce22b904e82dde62f17b1b558"
+    },
+    {
+      "path": "plans/workflows/adapters/09-antigravity.md",
+      "sha256": "1891e35049794ff9c39fecf4e752ad38db3a17e0f4849bf6ae5a2c7a81d649d0"
+    },
+    {
+      "path": "plans/workflows/adapters/10-gemini.md",
+      "sha256": "0704f3bce95d3400e9f6c3ce4abe30936db2dc9f2c3d1ff657610862d4721ea3"
+    },
+    {
+      "path": "plans/workflows/adapters/11-cursor.md",
+      "sha256": "40dec3ad7e9d7c627c24847f42f95c7274088e086ad87e5442b58958d9fb5e77"
+    },
+    {
+      "path": "plans/workflows/adapters/12-omp.md",
+      "sha256": "22e04883ed129b88f096381e0c3ae9adefd4f150f7fab82b9c1fc11d1d694797"
+    },
+    {
+      "path": "plans/workflows/adapters/13-hermes.md",
+      "sha256": "3742735c619e833c77b479bfaa267749f933658d5d1ce309a047ecb514cfeb3e"
+    },
+    {
+      "path": "plans/workflows/architecture/01-system-boundaries.md",
+      "sha256": "10b02059861a3013d61863af6b72a5c16936cd06e6ce4638f8419580541d6f26"
+    },
+    {
+      "path": "plans/workflows/architecture/02-domain-contracts.md",
+      "sha256": "31157c23802e724d97e1dd0be0d810b3e4f4668919244ad3d5ca98b38c14abdb"
+    },
+    {
+      "path": "plans/workflows/architecture/03-state-and-recovery.md",
+      "sha256": "a08fc734e60a00de8af00d1dc873a3f5b0c537e889bb61e2d5edc463820a4068"
+    },
+    {
+      "path": "plans/workflows/architecture/04-decisions-and-certification.md",
+      "sha256": "38970f55fca9dd93d8221649506aebda170af8d7e9a31e000af3b84d1248444a"
+    },
+    {
+      "path": "plans/workflows/blocks/01-agent.md",
+      "sha256": "c65cd268487587917caa0dd6e27f5f94f65d2e3c795108c8701bc094a7a7b177"
+    },
+    {
+      "path": "plans/workflows/blocks/02-context.md",
+      "sha256": "a181c9196e5950d53b3756e5fd10d39d7ddb0cf46c3611d27e39f5d3da88d2d1"
+    },
+    {
+      "path": "plans/workflows/blocks/03-command.md",
+      "sha256": "9ae9e620d55751c1190f65c18bcc21340d3595d4c1ed493f181bf8a197e4554b"
+    },
+    {
+      "path": "plans/workflows/blocks/04-test.md",
+      "sha256": "81238bf9b9eb6fd1db39504a02e2c86ad2935af31df8ce9cb899a9689021c443"
+    },
+    {
+      "path": "plans/workflows/blocks/05-review.md",
+      "sha256": "7771f05c68a5597f26ad1a93cf604f68be249e359f33197333183fb56ce095dc"
+    },
+    {
+      "path": "plans/workflows/blocks/06-condition.md",
+      "sha256": "c16af16d48537bc8d51d194b10bd1668cf0bf68b366bf61221ae9d8acf2912ba"
+    },
+    {
+      "path": "plans/workflows/blocks/07-parallel.md",
+      "sha256": "ac3c65e7ab8b3575cf69609d0a30a0614cc8874fc7ad79dddfb5de39b75cfd4f"
+    },
+    {
+      "path": "plans/workflows/blocks/08-join.md",
+      "sha256": "971128052ef16da76c58300caaeaddcf24b560aa1efdcfd30e684caba70e2899"
+    },
+    {
+      "path": "plans/workflows/blocks/09-feedback.md",
+      "sha256": "3ae4da629b584ad28f134fce184f0af0eb7f928e3576db88c02f72a9bdd0b49b"
+    },
+    {
+      "path": "plans/workflows/blocks/10-gate.md",
+      "sha256": "f090b77ecf175d6d8c5de29617b536299c5fe167cf6088d99bfddf1173b0a765"
+    },
+    {
+      "path": "plans/workflows/blocks/11-git.md",
+      "sha256": "1ffa2554c1f0f9d6b28679bf1946302f41ab7842b9a515ee9d4e645c16df43ee"
+    },
+    {
+      "path": "plans/workflows/blocks/12-publish.md",
+      "sha256": "a8ae6fa7c8eca31c31018c60b65bc01e8379f08aa679306783d7039022f067b8"
+    },
+    {
+      "path": "plans/workflows/components/01-pkl-schema.md",
+      "sha256": "225f61b7c4700c7e6e08c09611777d4def9735822ccfb76069b4c51c09512dca"
+    },
+    {
+      "path": "plans/workflows/components/02-plan-compiler.md",
+      "sha256": "2bae2fe3136bf38a94d596aa8c27cd818a36ee31cb59d13a646f1ca2b30b4fdb"
+    },
+    {
+      "path": "plans/workflows/components/03-host-authorization.md",
+      "sha256": "47ad4f9ed215961f6a5dd0b13d22bec233d143949c16ff7fa3292bd2b7a86d63"
+    },
+    {
+      "path": "plans/workflows/components/04-runtime-sandbox.md",
+      "sha256": "36c42e93379ee855ea8b400744624158eaa101199d12cd9ed92979c520c37762"
+    },
+    {
+      "path": "plans/workflows/components/05-agent-adapters.md",
+      "sha256": "27fbd34baaa54bcb117699311b178349e28295c52ba78a84ac0961af788cb1fd"
+    },
+    {
+      "path": "plans/workflows/components/06-capsule-session-control.md",
+      "sha256": "d4b14a75602f4b94d64eade900f9666e5b3eb85dcad6c7bde301bf36c92d6184"
+    },
+    {
+      "path": "plans/workflows/components/07-input-leases-attachment.md",
+      "sha256": "23b3b2ce12b276829c58f59786bb1808ed9bc09fa259858913e7544707306fda"
+    },
+    {
+      "path": "plans/workflows/components/08-repository-checkpoints.md",
+      "sha256": "bdb852a3c5f8d218d95dc0a1c26249860bc86c94ccca35e319fc776484db6de4"
+    },
+    {
+      "path": "plans/workflows/components/09-scheduler-budgeting.md",
+      "sha256": "92b1a1ee7c63982f6948885768d1e30a32cde8aa23d35d96f71b62e477ead89c"
+    },
+    {
+      "path": "plans/workflows/components/10-durable-storage.md",
+      "sha256": "3bccfe36802a5db4d0470dc12145520564fdaa55b25e2f7e252e8da121b3a6e5"
+    },
+    {
+      "path": "plans/workflows/components/11-context-artifacts.md",
+      "sha256": "1a4bd0d33d8c334390ea824f58c1f4e32e70ef44e26f92def737d1b58a29be78"
+    },
+    {
+      "path": "plans/workflows/components/12-tests-evidence.md",
+      "sha256": "0b2594059eb2a1f76e9b3efdc6bff1b3e2aff7d8164c0eb29a3ddaff116a91a5"
+    },
+    {
+      "path": "plans/workflows/components/13-independent-review.md",
+      "sha256": "a66c3b0b94f1b5efa753035b07e17f3940888333b77da51299422a9e493cb941"
+    },
+    {
+      "path": "plans/workflows/components/14-feedback-repair.md",
+      "sha256": "a28f05d10ad3e290311c10e8e0a3112b1cd342763b3d46aa49c7476e2632c307"
+    },
+    {
+      "path": "plans/workflows/components/15-acceptance-gates.md",
+      "sha256": "7905482bae0c34ae9e5852f6bb9722c9372f5429a540200d777653aafee026d6"
+    },
+    {
+      "path": "plans/workflows/components/16-publication.md",
+      "sha256": "97045b2b4eaadb58c5d51b74f46c04c6f69953e3bb5560f8959041b324ec7755"
+    },
+    {
+      "path": "plans/workflows/components/17-recovery-preservation.md",
+      "sha256": "a4b5868bfa430f2bc8b5f0c314db939caa5a4faf0d62f06fd10d5859fc837140"
+    },
+    {
+      "path": "plans/workflows/components/18-host-workflow-api.md",
+      "sha256": "9901bdef19e314b8cafb2dcdef11b7f602e6a05f0725ae338bb6a07d01ea0da9"
+    },
+    {
+      "path": "plans/workflows/components/19-workflow-cli.md",
+      "sha256": "f0d29a936915fac9e803658a024cda5ccdfa2b406478a679e49f89fddcfb4676"
+    },
+    {
+      "path": "plans/workflows/components/20-console-inspection.md",
+      "sha256": "7f9717496c17d467bb02d3f95689eca9f84ad61ab2ab7faa741f0ec9bd8c013b"
+    },
+    {
+      "path": "plans/workflows/components/21-visual-authoring.md",
+      "sha256": "701d78a237a999d566a3b3282af4841818a019c9b911ef787d567e87e2721756"
+    },
+    {
+      "path": "plans/workflows/components/22-replay-observability-export.md",
+      "sha256": "cadc5833573ebb51cb19a56e4c442c3b47b5b5d856ae016c431e2a4af5504234"
+    },
+    {
+      "path": "plans/workflows/examples/01-pkl-fixtures-and-workflow.md",
+      "sha256": "075ee2aa5e958c0d4f6da38579ac824444be557694a28c53f0cced70d5c9aaa6"
+    },
+    {
+      "path": "plans/workflows/examples/02-api-and-recovery.md",
+      "sha256": "de084b3ce42231d13e4a9feb6e13393c009f7b8d58d9417bf53806787c2ed876"
+    },
+    {
+      "path": "plans/workflows/examples/03-end-to-end-walkthrough.md",
+      "sha256": "5ca934ffc4fa13e1ffc33911951cfedb0d5fb1db01b167235fad64e8d8f51316"
+    },
+    {
+      "path": "plans/workflows/implementation/01-build-sequence.md",
+      "sha256": "b3aba5f78e90c04c51dc4894cba248ea9298679a675305bcd5bd3dc88e058fed"
+    },
+    {
+      "path": "plans/workflows/implementation/02-task-backlog.md",
+      "sha256": "13eabb1553386db8472ef865de7eaa5df9db60168359f127cc6cd085a732850b"
+    },
+    {
+      "path": "plans/workflows/implementation/03-acceptance-and-test-matrix.md",
+      "sha256": "af7f7f89a2f8b9692aed5ed6f8534a864b999e26b28d4b68e42b7a08d50e9580"
+    },
+    {
+      "path": "plans/workflows/implementation/04-operator-runbook.md",
+      "sha256": "3f5c6c696acb7c6f8bc72936c21f0f33997a5cd102dee23bebad210601d8bdca"
+    },
+    {
+      "path": "plans/workflows/mvp/CHECKS.md",
+      "sha256": "2fc666c390e56260d678c8c635f0a890ebb134d80233843b7252235482a7d6d0"
+    },
+    {
+      "path": "plans/workflows/mvp/EXAMPLE.md",
+      "sha256": "f7129f4227ea5f05af27ce861620704f19a3dabbdef038d2887dc88c09c8c728"
+    },
+    {
+      "path": "plans/workflows/mvp/GOAL.md",
+      "sha256": "7c367cafcadc4458db037659c37a4b13a5f241511a35b56e3f539d78b0c2771c"
+    },
+    {
+      "path": "plans/workflows/mvp/PLAN.md",
+      "sha256": "9eee2e92e675bb531c1057d6d6d8e224863c7927f7dad0bbeedfaf2b11cb73d7"
+    },
+    {
+      "path": "plans/workflows/mvp/PROGRESS.md",
+      "sha256": "572e12cd2ccd165654472b5128ed5376f2d87384cee3ba608c02f54bc0816479"
+    },
+    {
+      "path": "plans/workflows/mvp/README.md",
+      "sha256": "e41c451a019f5ea241558f4c3346fa144954481cd935a666037e05b0b944dc2e"
+    },
+    {
+      "path": "plans/workflows/mvp/REVIEW.md",
+      "sha256": "14782b96c7580ac6c244ded35a18a2a12bf2da0c2770660aef91f2e6b28e16eb"
+    },
+    {
+      "path": "plans/workflows/mvp/SOURCES.md",
+      "sha256": "dbf2f3250745b3c110748f9605610f8965fb92e13ceabcf32d31282cf979b3c2"
+    },
+    {
+      "path": "plans/workflows/mvp/SPEC.md",
+      "sha256": "87abd4dd295d906ff44fb34c0cda22fe996d3a7a53bef081c902f3f8402ba6c2"
+    },
+    {
+      "path": "plans/workflows/mvp/TERMS.md",
+      "sha256": "c8634be74dd46ae0c03cfac8256186140f6f7f0950136bebb9983f850b0e7e62"
+    },
+    {
+      "path": "plans/workflows/mvp/VALIDATION.md",
+      "sha256": "68b4c7582d591e099733d6021f302fdc432c17993d7ffe32651d6071cb2d9083"
+    },
+    {
+      "path": "plans/workflows/mvp/components/01-definition-and-plan.md",
+      "sha256": "3bb6bdca782993e599b04caa9b98551aba6e82c872f35f28e24f3aa131b1ae2b"
+    },
+    {
+      "path": "plans/workflows/mvp/components/02-sessions-and-control.md",
+      "sha256": "9c1bda0d08fec865d81b3f20aaa589ea5c38ecb517bc9faf36ce07470e804836"
+    },
+    {
+      "path": "plans/workflows/mvp/components/03-sandbox-and-auth.md",
+      "sha256": "4f8fc4eb1dc5016654b35559b74e4494450f525844175852ef2d5a8953c238f0"
+    },
+    {
+      "path": "plans/workflows/mvp/components/04-checkpoints-and-backup.md",
+      "sha256": "c068b82653ae747107ef2f0c2c30dbaabdcd6e0d15ae1b5c8d7b26817ccaeb8d"
+    },
+    {
+      "path": "plans/workflows/mvp/components/05-run-state-and-recovery.md",
+      "sha256": "0132627397be163272c7cf2ed032f29a20b51a287430f8614fb20dc0b386415a"
+    },
+    {
+      "path": "plans/workflows/mvp/components/06-verification-and-repair.md",
+      "sha256": "de706dab1e16f03266d1f6ab240ebb8889e62a75725f6c96bf10a2ed3c535aef"
+    },
+    {
+      "path": "plans/workflows/mvp/components/07-host-api-and-interface.md",
+      "sha256": "c86e8fe583ed7532e1f5c35e8ce4a5a4700fe768de218e8ecce1a9cb2df8b864"
+    }
+  ],
+  "input_count": 699,
+  "inputs_changed_during_gate": [],
+  "commands": [
+    {
+      "command": [
+        "bun",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+      "started_utc": "2026-10-24T09:33:50.926664+00:00",
+      "finished_utc": "2026-10-24T09:33:51.412628+00:00",
+      "duration_seconds": 0.486,
+      "exit_code": 0,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/ci-repair-local-1.log",
+      "log_sha256": "9d0d5dc7e8a124936d5c09a0baa23586c0a4a4a465b6f2ebc766bb3e289b71a8"
+    },
+    {
+      "command": [
+        "bun",
+        "run",
+        "build"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+      "started_utc": "2026-10-24T09:33:51.412849+00:00",
+      "finished_utc": "2026-10-24T09:34:32.093802+00:00",
+      "duration_seconds": 40.681,
+      "exit_code": 0,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/ci-repair-local-2.log",
+      "log_sha256": "98dcef43438ec1d6ee8660d7d7cc4aa4997676d98876c954a9ef45af51acbcf7"
+    },
+    {
+      "command": [
+        "mbx",
+        "+1.99.1",
+        "xtask",
+        "docs",
+        "repo-links"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+      "started_utc": "2026-10-24T09:34:32.094406+00:00",
+      "finished_utc": "2026-10-24T09:34:32.519413+00:00",
+      "duration_seconds": 0.425,
+      "exit_code": 0,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/ci-repair-local-3.log",
+      "log_sha256": "401ba2ef82a047941a31fc71d2b5febb62732726e69ac94bbe0a67912eacef10"
+    },
+    {
+      "command": [
+        "mbx",
+        "+1.99.1",
+        "xtask",
+        "roadmap",
+        "audit"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+      "started_utc": "2026-10-24T09:34:32.519798+00:00",
+      "finished_utc": "2026-10-24T09:34:46.386264+00:00",
+      "duration_seconds": 13.866,
+      "exit_code": 101,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/ci-repair-local-4.log",
+      "log_sha256": "0a85dc50acc343a6ce092dda73f321fa1e950d870092cdb3640d650b20b38a93"
+    },
+    {
+      "command": [
+        "mbx",
+        "+1.99.1",
+        "xtask",
+        "research",
+        "check"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+      "started_utc": "2026-10-24T09:34:46.386443+00:00",
+      "finished_utc": "2026-10-24T09:34:46.791669+00:00",
+      "duration_seconds": 0.405,
+      "exit_code": 0,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/ci-repair-local-5.log",
+      "log_sha256": "5d22082d04ca65704d2651fff721af73db70659f1da38e83feb65e8f10809783"
+    },
+    {
+      "command": [
+        "bunx",
+        "tsc",
+        "--noEmit"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+      "started_utc": "2026-10-24T09:34:46.791809+00:00",
+      "finished_utc": "2026-10-24T09:34:47.454160+00:00",
+      "duration_seconds": 0.662,
+      "exit_code": 0,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/ci-repair-local-6.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bun",
+        "test"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+      "started_utc": "2026-10-24T09:34:47.454538+00:00",
+      "finished_utc": "2026-10-24T09:34:47.470454+00:00",
+      "duration_seconds": 0.016,
+      "exit_code": 0,
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/ci-repair-local-7.log",
+      "log_sha256": "4b90f94e60e1f171b2bdcf1298fa00e8e7d3c5d4b7bd7b8a6ee1d7a989f4661f"
+    }
+  ],
+  "passed": false
+}

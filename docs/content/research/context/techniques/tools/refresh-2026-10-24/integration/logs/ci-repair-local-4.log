@@ -1,0 +1,16 @@
+error: unclosed table, expected `]`
+ --> ../../tooling/cargo/git/checkouts/velnor-new-e7471f4f9af9fd1a/1bd31f8/fixtures/parity/malformed/input/Cargo.toml:4:14
+  |
+4 | [dependencies
+  |              ^
+error: unclosed table, expected `]`
+ --> ../../tooling/cargo/git/checkouts/velnor-new-e7471f4f9af9fd1a/1bd31f8/fixtures/parity/malformed-ignored/input/Cargo.toml:4:14
+  |
+4 | [dependencies
+  |              ^
+error: output file /workspace/scratch/1335a158b2a9/tooling/jackin-target/debug/deps/libvelnor_actions_contract-b334a6627e6d34ba.rlib is not writeable -- check its permissions
+
+error: could not compile `velnor-actions-contract` (lib) due to 1 previous error
+mbx[cache]: 1 hits, 14 misses; 0 B downloaded, 0 B uploaded, 32.3 MiB stored locally
+mbx[gc]: 2.2 GiB free on the disk holding /workspace/scratch/1335a158b2a9/tooling/mbx-cache, under the 5.0 GiB minimum; collecting private state and managed targets past their budgets, then shared cache objects if the cache disk is short
+mbx[gc]: evicted 107 shared cache objects and 16 action results below gc.max_size because the disk was under gc.min_free_size (128.2 MiB logical freed)

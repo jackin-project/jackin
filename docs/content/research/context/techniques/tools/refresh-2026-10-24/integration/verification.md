@@ -10,9 +10,9 @@ Within the 51-entry archive described here, **50 records remain byte-identical t
 
 The original assembly check at **08:53:31 UTC**, earlier input-manifest hashes and historical review/integrity observations retain their original time and scope. The machine-readable record distinguishes the original source digest from the current published-file digest and records the later read-only correspondence check. No scanner rule, baseline, ignore setting, evidence value or source document was changed by this formatting operation.
 
-## Latest completed documentation gate
+## Pre-publication documentation gate
 
-After integrating main `e737f4b5eb7c1a0d15ba6595fc260407ad178452`, the latest seven-command gate ran **08:46:41–08:47:57 UTC** from the repository's `docs` directory. Every command exited 0:
+After integrating main `e737f4b5eb7c1a0d15ba6595fc260407ad178452`, the recorded pre-publication seven-command gate ran **08:46:41–08:47:57 UTC** from the repository's `docs` directory. Every command exited 0. Evidence Markdown added afterward was checked by the [later complete documentation gate and CI repair](ci-repair.json); the table below retains this earlier run's scope:
 
 | Command | Result |
 |---|---|
@@ -85,7 +85,7 @@ Later PR edits are not silently covered by those hashes. The [central/frontier i
 
 ## Later main advancement
 
-Main subsequently advanced to `e737f4b5eb7c1a0d15ba6595fc260407ad178452`. The coordinator integrated that revision normally into the worktree; the latest documentation gate above records all seven actual passing commands. The [independent late-main overlay review](late-main-overlay.md) and [exact comparison record](late-main-overlay.json) establish that **25 of 26 original audited files remain byte-identical**. The exception is `Cargo.toml`, whose sole change updates the Velnor contract dependency from 0.1.48 to 0.1.52 and its source revision. All 13 files in the first main-overlay audit remain unchanged.
+Main subsequently advanced to `e737f4b5eb7c1a0d15ba6595fc260407ad178452`. The coordinator integrated that revision normally into the worktree; the pre-publication documentation gate above records all seven actual passing commands at that time. The [independent late-main overlay review](late-main-overlay.md) and [exact comparison record](late-main-overlay.json) establish that **25 of 26 original audited files remain byte-identical**. The exception is [Cargo.toml](https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/Cargo.toml), whose sole change updates the Velnor contract dependency from 0.1.48 to 0.1.52 and its source revision. All 13 files in the first main-overlay audit remain unchanged.
 
 The 26-file main update changes no Rust source file and no context-research path. Its complete lock-package comparison changes only Velnor; the SQLite and Tokio package records remain unchanged. The CI graph still has 40 jobs, 32 Rust crate jobs and 37 dependencies of the required verdict. This is a source/configuration comparison, not a CI result or qualification of the changed release toolchain. That graph has no documentation-site build/typecheck/test lane, so the local documentation gate remains separate evidence.
 
@@ -110,3 +110,7 @@ The [screenshot inventory](../jackin-architecture/rendered-qa-screenshots.json) 
 Final publication hooks, the meaningful staged content scan and exact-head remote CI belong in the final PR metadata after these verification artifacts are staged. This tree does not fabricate a self-referential final commit hash or a future CI pass. The PR remains unmerged without explicit authorization.
 
 No paid/subscription task benchmark, live native-host result-replacement/read-before-edit trial, or actual quota-depletion experiment was executed. Successful local checks do not establish current six-product accepted-task superiority.
+
+## Publication CI follow-up
+
+The first complete published head, `f8201076af4bca7faf9f579f627e8056dbd7f83f`, failed the remote repository-link check on three bare file references in evidence Markdown added after the preceding local gate. The files existed; their mentions needed explicit verifiable links. The [CI repair record](ci-repair.json) preserves the actual failed job log, timing explanation, narrow link correction and subsequent complete documentation gate. The earlier 58-input MDX/config correspondence did not attest to later evidence Markdown. Final commit checks remain separately visible in the PR.

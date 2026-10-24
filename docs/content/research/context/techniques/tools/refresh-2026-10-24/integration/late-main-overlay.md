@@ -4,9 +4,9 @@ Recorded **2026-10-24T08:49:28.303211+00:00**. This is an independent source/con
 
 ## Source continuity and the one changed audit file
 
-**25 of the original 26 audited files remain byte-identical**, and **all 13 files in the separate c98 main-overlay audit remain byte-identical**. The exception is `Cargo.toml`: its sole change is `velnor-actions-contract` from **0.1.48** at `9191feacdb538a8df8299b73eaf2ece63f2645d7` to **0.1.52** at `1bd31f8203ecf40d141c331e5195eb422e0904d3`. Every other parsed field in the root Cargo manifest is identical. The previous source-audit records retain their original snapshots.
+**25 of the original 26 audited files remain byte-identical**, and **all 13 files in the separate c98 main-overlay audit remain byte-identical**. The exception is [Cargo.toml](https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/Cargo.toml): its sole change is `velnor-actions-contract` from **0.1.48** at `9191feacdb538a8df8299b73eaf2ece63f2645d7` to **0.1.52** at `1bd31f8203ecf40d141c331e5195eb422e0904d3`. Every other parsed field in the root Cargo manifest is identical. The previous source-audit records retain their original snapshots.
 
-The entire c98-to-e737 diff contains **26 files**, **no `.rs` file**, and **no `docs/content/research/context/` path**. It changes generated CI/release tooling, native Homebrew tap configuration, the Velnor contract dependency, and release/install documentation. The full-package multiset comparison of `Cargo.lock` finds only the Velnor package version/source replacement; its dependency list is unchanged.
+The entire c98-to-e737 diff contains **26 files**, **no `.rs` file**, and **no `docs/content/research/context/` path**. It changes generated CI/release tooling, native Homebrew tap configuration, the Velnor contract dependency, and release/install documentation. The full-package multiset comparison of [Cargo.lock](https://github.com/jackin-project/jackin/blob/e737f4b5eb7c1a0d15ba6595fc260407ad178452/Cargo.lock) finds only the Velnor package version/source replacement; its dependency list is unchanged.
 
 | Integration constraint | Previous main and late main | Result |
 | --- | --- | --- |
