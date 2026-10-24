@@ -53,7 +53,6 @@ pub(crate) use std::collections::BTreeMap;
 pub(crate) use std::collections::BTreeSet;
 pub use tabs::{
     EditorTabMovePlan, EditorTabSelectPlan, editor_mount_hover_target_at_position,
-    editor_mount_index_at_position, editor_tab_at_position, editor_tab_bar_focus_plan,
-    editor_tab_hover_plan, editor_tab_hover_target_plan, editor_tab_move_plan,
+    editor_mount_index_at_position, editor_tab_bar_focus_plan, editor_tab_move_plan,
     editor_tab_select_plan, next_editor_tab, previous_editor_tab,
 };

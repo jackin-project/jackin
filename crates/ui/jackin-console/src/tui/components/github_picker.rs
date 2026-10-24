@@ -67,57 +67,57 @@ impl GithubPickerState {
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    buffer::Buffer,
+    layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
+    widgets::StatefulWidget,
 };
 
 use termrock::layout::render_dialog_shell;
-use termrock::widgets::PanelChrome;
-use termrock::widgets::{List, ListRow};
+use termrock::widgets::{List, ListRow, Panel, PanelChrome};
 
-pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
-    let inner = render_dialog_shell(
-        frame,
-        area,
-        Some("Open in GitHub"),
-        PanelChrome::Focused,
-        &termrock::style::DesignSystem::default(),
-    );
+const GITHUB_PICKER_TITLE: &str = "Open in GitHub";
 
+fn picker_inner_area(area: Rect) -> Rect {
+    let theme = termrock::style::DesignSystem::default();
+    Panel::new(&theme)
+        .emphasis(PanelChrome::Focused)
+        .title(GITHUB_PICKER_TITLE)
+        .block()
+        .inner(area)
+}
+
+fn picker_list_area(inner: Rect) -> Rect {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(inner);
+    rows[1]
+}
 
-    if state.choices.is_empty() {
-        frame.render_widget(
-            ratatui::widgets::Paragraph::new(Line::from(Span::styled(
-                "no GitHub sources",
-                termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted),
-            )))
-            .alignment(ratatui::layout::Alignment::Center),
-            rows[1],
-        );
-        return;
-    }
-    let displays: Vec<String> = state.choices.iter().map(|c| shorten_home(&c.src)).collect();
-    let path_w = displays
+fn picker_rows(state: &GithubPickerState) -> Vec<ListRow<'_, usize>> {
+    let displays: Vec<String> = state
+        .choices
         .iter()
-        .map(|d| d.chars().count())
+        .map(|choice| shorten_home(&choice.src))
+        .collect();
+    let path_width = displays
+        .iter()
+        .map(|display| display.chars().count())
         .max()
         .unwrap_or(0)
         .max(10);
 
-    let items: Vec<ListRow<'_, usize>> = state
+    state
         .choices
         .iter()
         .enumerate()
-        .map(|(i, c)| {
-            let display = &displays[i];
-            let pad = path_w.saturating_sub(display.chars().count());
+        .map(|(index, choice)| {
+            let display = &displays[index];
+            let pad = path_width.saturating_sub(display.chars().count());
             ListRow::item(
-                i,
+                index,
                 Line::from(vec![
                     Span::styled(
                         display.to_owned(),
@@ -128,7 +128,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
                     ),
                     Span::raw(format!("{}  ", " ".repeat(pad))),
                     Span::styled(
-                        format!("github \u{b7} {}", c.branch),
+                        format!("github \u{b7} {}", choice.branch),
                         Style::default()
                             .fg(termrock::style::DesignSystem::default()
                                 .style(termrock::style::Role::TextMuted)
@@ -139,11 +139,61 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
                 ]),
             )
         })
-        .collect();
+        .collect()
+}
+
+pub(in crate::tui) fn selection_hit_at(
+    area: Rect,
+    state: &GithubPickerState,
+    position: Position,
+) -> bool {
+    if area.width == 0 || area.height == 0 || state.choices.is_empty() {
+        return false;
+    }
+
+    let list_area = picker_list_area(picker_inner_area(area));
+    if list_area.width == 0 || list_area.height == 0 {
+        return false;
+    }
+
     let theme = termrock::style::DesignSystem::default();
+    let rows = picker_rows(state);
+    let mut list_state = ListState::new(state.list_state.selected().copied());
+    let mut buffer = Buffer::empty(list_area);
+    (&List::new(&rows, &theme)).render(list_area, &mut buffer, &mut list_state);
+
+    list_state
+        .regions()
+        .iter()
+        .any(|region| region.area.contains(position))
+}
+
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
+    let theme = termrock::style::DesignSystem::default();
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some(GITHUB_PICKER_TITLE),
+        PanelChrome::Focused,
+        &theme,
+    );
+    let list_area = picker_list_area(inner);
+
+    if state.choices.is_empty() {
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(Line::from(Span::styled(
+                "no GitHub sources",
+                theme.style(termrock::style::Role::TextMuted),
+            )))
+            .alignment(ratatui::layout::Alignment::Center),
+            list_area,
+        );
+        return;
+    }
+    let items = picker_rows(state);
     frame.render_stateful_widget(
         &List::new(&items, &theme),
-        rows[1],
+        list_area,
         &mut ListState::new(state.list_state.selected().copied()),
     );
 }

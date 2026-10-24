@@ -13,6 +13,7 @@ pub use displays::{
     SecretEnvLineFrame, SecretLineRow, SecretValueDisplay, action_row_style, auth_source_display,
     auth_source_display_for_required_env, disclosure_style,
 };
+pub(crate) use primitives::tab_strip_hit_regions;
 pub use primitives::{
     AUTH_LABEL_COL_WIDTH, FieldEmphasis, SECRET_LABEL_COL_WIDTH, cursor_gutter, cursor_span,
     labeled_field_line, render_tab_strip,

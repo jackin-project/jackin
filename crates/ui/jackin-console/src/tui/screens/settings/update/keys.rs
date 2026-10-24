@@ -314,10 +314,3 @@ pub const fn settings_trust_key_plan(key: KeyCode, is_dirty: bool) -> SettingsTr
         _ => SettingsTrustKeyPlan::Noop,
     }
 }
-
-#[must_use]
-pub fn settings_tab_at_position(row: u16, col: u16) -> Option<SettingsTab> {
-    let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
-    let idx = crate::tui::layout::tab_cell_at_position(row, col, &labels)?;
-    SettingsTab::ALL.get(idx).copied()
-}

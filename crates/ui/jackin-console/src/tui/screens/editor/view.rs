@@ -128,7 +128,7 @@ mod frame;
 pub(crate) use frame::{
     editor_body_area, editor_contextual_footer_items, editor_frame_areas,
     prepare_editor_for_render, prepare_editor_tab_for_area, render_editor_with_footer,
-    render_general_tab, render_roles_tab, render_secrets_tab,
+    render_general_tab, render_roles_tab, render_secrets_tab, resolve_editor_frame,
 };
 
 #[must_use]
@@ -218,6 +218,23 @@ pub fn tab_labels(active: EditorTab) -> Vec<(&'static str, bool)> {
         .iter()
         .map(|tab| (tab.label(), *tab == active))
         .collect()
+}
+
+pub(crate) fn editor_tab_hit_regions(
+    area: Rect,
+    state: &crate::tui::state::EditorState<'_>,
+    config: &jackin_config::AppConfig,
+    op_available: bool,
+) -> Vec<termrock::interaction::HitRegion<usize>> {
+    let (areas, _) = resolve_editor_frame(area, state, config, |state, config, body| {
+        crate::tui::components::footer_hints::editor_footer_items(state, config, op_available, body)
+    });
+    crate::tui::components::editor_rows::tab_strip_hit_regions(
+        areas.tabs,
+        &tab_labels(state.active_tab),
+        state.tab_bar_focused(),
+        state.hovered_tab(),
+    )
 }
 
 #[cfg(test)]

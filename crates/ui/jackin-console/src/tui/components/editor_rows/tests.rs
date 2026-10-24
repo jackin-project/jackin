@@ -3,6 +3,7 @@
 
 use super::*;
 use jackin_tui::tokens::ACTION_ACCENT;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier};
 
 #[test]
@@ -72,4 +73,65 @@ fn auth_source_display_returns_not_required_without_env() {
         ),
         AuthSourceDisplay::NotRequired,
     );
+}
+
+#[test]
+fn tab_regions_match_real_widget_paint_with_unicode_and_focus() {
+    let area = Rect::new(5, 3, 78, 2);
+    let labels = [
+        ("Genéral🤖", true),
+        ("Mounts", false),
+        ("仓库", false),
+        ("e\u{301}nv", false),
+        ("A very long tab label", false),
+    ];
+
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(90, 10)).unwrap();
+    terminal
+        .draw(|frame| render_tab_strip(frame, area, &labels, true, Some(2)))
+        .unwrap();
+
+    let tabs = labels
+        .iter()
+        .enumerate()
+        .map(|(id, (label, active))| termrock::widgets::Tab::new(id, label).active(*active))
+        .collect::<Vec<_>>();
+    let system = termrock::style::DesignSystem::default();
+    let mut expected = ratatui::buffer::Buffer::empty(area);
+    let mut state = termrock::widgets::TabsState::default();
+    state.selected = Some(0);
+    state.hovered = Some(2);
+    state.focused = true;
+    termrock::widgets::Tabs::new(&tabs, &system)
+        .gap(termrock::widgets::TAB_GAP)
+        .paint(area, &mut expected, &mut state);
+
+    let rendered = terminal.backend().buffer();
+    for y in area.y..area.bottom() {
+        for x in area.x..area.right() {
+            let actual_cell = &rendered[(x, y)];
+            let expected_cell = &expected[(x, y)];
+            assert_eq!(actual_cell.symbol(), expected_cell.symbol(), "({x}, {y})");
+            assert_eq!(actual_cell.fg, expected_cell.fg, "({x}, {y})");
+            assert_eq!(actual_cell.bg, expected_cell.bg, "({x}, {y})");
+            assert_eq!(actual_cell.modifier, expected_cell.modifier, "({x}, {y})");
+        }
+    }
+
+    let regions = tab_strip_hit_regions(area, &labels, true, Some(2));
+    let actual_regions = regions
+        .iter()
+        .map(|region| (region.id, region.area))
+        .collect::<Vec<_>>();
+    let painted_regions = state
+        .regions
+        .iter()
+        .map(|region| (region.id, region.area))
+        .collect::<Vec<_>>();
+    assert_eq!(actual_regions, painted_regions);
+    assert!(regions.iter().all(|region| {
+        area.contains(Position::new(region.area.x, region.area.y))
+            && area.right() >= region.area.right()
+            && area.bottom() >= region.area.bottom()
+    }));
 }
