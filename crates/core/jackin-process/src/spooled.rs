@@ -226,11 +226,11 @@ impl Error for SpoolError {}
 ///
 /// Both output limits must be explicit and are independent spool budgets.
 /// Files must be distinct, empty, regular, effective-UID-owned mode `0600`
-/// descriptors opened for writing at byte zero, with one hard link and no
-/// append mode. The supervisor checks descriptor metadata and access flags;
-/// it does not validate ACLs or prove that another same-UID process lacks a
-/// writable descriptor. The caller must create these files without following
-/// symlinks and keep them exclusive.
+/// descriptors opened for writing at byte zero, with one hard link, no append
+/// mode, and `FD_CLOEXEC` set. The supervisor checks descriptor metadata,
+/// access flags, and close-on-exec; it does not validate ACLs or prove that
+/// another same-UID process lacks a writable descriptor. The caller must
+/// create these files without following symlinks and keep them exclusive.
 ///
 /// The child and a held `cat` anchor share a private process group. The anchor
 /// remains unreaped through the last destructive group signal. Cleanup uses a
@@ -560,7 +560,7 @@ fn validate_spools(
 
 #[cfg(unix)]
 fn validate_spool(file: &File, name: &str) -> Result<SpoolIdentity, String> {
-    use nix::fcntl::{FcntlArg, OFlag, fcntl};
+    use nix::fcntl::{FcntlArg, FdFlag, OFlag, fcntl};
     use std::os::unix::fs::MetadataExt;
 
     let metadata = file
@@ -590,6 +590,12 @@ fn validate_spool(file: &File, name: &str) -> Result<SpoolIdentity, String> {
     }
     if flags.contains(OFlag::O_APPEND) {
         return Err(format!("{name} spool descriptor uses append mode"));
+    }
+    let raw_descriptor_flags = fcntl(file, FcntlArg::F_GETFD)
+        .map_err(|error| format!("reading {name} spool descriptor flags: {error}"))?;
+    let descriptor_flags = FdFlag::from_bits_truncate(raw_descriptor_flags);
+    if !descriptor_flags.contains(FdFlag::FD_CLOEXEC) {
+        return Err(format!("{name} spool descriptor must have FD_CLOEXEC"));
     }
     Ok(SpoolIdentity {
         device: metadata.dev(),

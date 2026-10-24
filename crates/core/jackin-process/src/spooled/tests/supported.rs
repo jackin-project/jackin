@@ -13,6 +13,7 @@ use super::super::*;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt as _;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -83,6 +84,184 @@ fn output_pair_uses_retained_named_private_single_link_files() {
         assert_eq!(metadata.nlink(), 1);
         assert!(metadata.is_file());
     }
+    let (stdout, stderr) = spool_files.files();
+    for file in [&stdout, &stderr] {
+        let flags = nix::fcntl::fcntl(file, nix::fcntl::FcntlArg::F_GETFD)
+            .expect("read retained spool descriptor flags");
+        assert!(
+            nix::fcntl::FdFlag::from_bits_truncate(flags).contains(nix::fcntl::FdFlag::FD_CLOEXEC)
+        );
+    }
+}
+
+#[test]
+fn inheritable_stdout_spool_is_rejected_before_spawn() {
+    let spool_files = output_pair();
+    let marker = spool_files.stdout_path().with_file_name("target-started");
+    assert!(!marker.exists());
+    let stdout = File::from(
+        nix::fcntl::open(
+            &spool_files.stdout_path(),
+            nix::fcntl::OFlag::O_WRONLY | nix::fcntl::OFlag::O_NOFOLLOW,
+            nix::sys::stat::Mode::empty(),
+        )
+        .expect("open stdout spool without close-on-exec"),
+    );
+    let stderr = spool_files.stderr_file();
+    let stdout_fd = stdout.as_raw_fd();
+    let stderr_fd = stderr.as_raw_fd();
+    let stdout_identity = stdout.metadata().expect("inspect inheritable stdout");
+    let stderr_identity = stderr.metadata().expect("inspect valid stderr");
+    assert!(
+        !nix::fcntl::FdFlag::from_bits_truncate(
+            nix::fcntl::fcntl(&stdout, nix::fcntl::FcntlArg::F_GETFD)
+                .expect("read inheritable stdout flags")
+        )
+        .contains(nix::fcntl::FdFlag::FD_CLOEXEC)
+    );
+    assert!(
+        nix::fcntl::FdFlag::from_bits_truncate(
+            nix::fcntl::fcntl(&stderr, nix::fcntl::FcntlArg::F_GETFD).expect("read stderr flags")
+        )
+        .contains(nix::fcntl::FdFlag::FD_CLOEXEC)
+    );
+
+    let request = ExecRequest::new("/bin/sh", ["-c", ": > \"$JACKIN_SPOOL_MARKER\""])
+        .envs([("JACKIN_SPOOL_MARKER", marker.as_os_str())])
+        .timeout(Duration::from_secs(2))
+        .output_limits(8, 8);
+    let error = typed_error(
+        exec_spooled_sync_cancellable(&request, stdout, stderr, &AtomicBool::new(false))
+            .expect_err("inheritable stdout must be rejected before spawn"),
+    );
+    assert_eq!(error.kind, SpoolFailureKind::Request);
+    assert_eq!(
+        error.message,
+        "stdout spool descriptor must have FD_CLOEXEC"
+    );
+    assert_eq!(error.stdout_bytes, 0);
+    assert_eq!(error.stderr_bytes, 0);
+    let (stdout, stderr, recovery) = error.into_parts();
+    assert!(recovery.is_none());
+    let stdout = stdout.expect("return original stdout descriptor");
+    let stderr = stderr.expect("return original stderr descriptor");
+    assert_eq!(stdout.as_raw_fd(), stdout_fd);
+    assert_eq!(stderr.as_raw_fd(), stderr_fd);
+    let returned_stdout = stdout.metadata().expect("inspect returned stdout");
+    let returned_stderr = stderr.metadata().expect("inspect returned stderr");
+    assert_eq!(
+        (returned_stdout.dev(), returned_stdout.ino()),
+        (stdout_identity.dev(), stdout_identity.ino())
+    );
+    assert_eq!(
+        (returned_stderr.dev(), returned_stderr.ino()),
+        (stderr_identity.dev(), stderr_identity.ino())
+    );
+    assert_eq!(returned_stdout.len(), 0);
+    assert_eq!(returned_stderr.len(), 0);
+    assert!(
+        !nix::fcntl::FdFlag::from_bits_truncate(
+            nix::fcntl::fcntl(&stdout, nix::fcntl::FcntlArg::F_GETFD)
+                .expect("re-read returned stdout flags")
+        )
+        .contains(nix::fcntl::FdFlag::FD_CLOEXEC)
+    );
+    assert!(
+        nix::fcntl::FdFlag::from_bits_truncate(
+            nix::fcntl::fcntl(&stderr, nix::fcntl::FcntlArg::F_GETFD)
+                .expect("re-read returned stderr flags")
+        )
+        .contains(nix::fcntl::FdFlag::FD_CLOEXEC)
+    );
+    assert!(
+        !marker.exists(),
+        "rejected request must not start its target"
+    );
+}
+
+#[test]
+fn inheritable_stderr_spool_is_rejected_before_spawn() {
+    let spool_files = output_pair();
+    let marker = spool_files.stdout_path().with_file_name("target-started");
+    assert!(!marker.exists());
+    let stdout = spool_files.stdout_file();
+    let stderr = File::from(
+        nix::fcntl::open(
+            &spool_files.stderr_path(),
+            nix::fcntl::OFlag::O_WRONLY | nix::fcntl::OFlag::O_NOFOLLOW,
+            nix::sys::stat::Mode::empty(),
+        )
+        .expect("open stderr spool without close-on-exec"),
+    );
+    let stdout_fd = stdout.as_raw_fd();
+    let stderr_fd = stderr.as_raw_fd();
+    let stdout_identity = stdout.metadata().expect("inspect valid stdout");
+    let stderr_identity = stderr.metadata().expect("inspect inheritable stderr");
+    assert!(
+        nix::fcntl::FdFlag::from_bits_truncate(
+            nix::fcntl::fcntl(&stdout, nix::fcntl::FcntlArg::F_GETFD).expect("read stdout flags")
+        )
+        .contains(nix::fcntl::FdFlag::FD_CLOEXEC)
+    );
+    assert!(
+        !nix::fcntl::FdFlag::from_bits_truncate(
+            nix::fcntl::fcntl(&stderr, nix::fcntl::FcntlArg::F_GETFD)
+                .expect("read inheritable stderr flags")
+        )
+        .contains(nix::fcntl::FdFlag::FD_CLOEXEC)
+    );
+
+    let request = ExecRequest::new("/bin/sh", ["-c", ": > \"$JACKIN_SPOOL_MARKER\""])
+        .envs([("JACKIN_SPOOL_MARKER", marker.as_os_str())])
+        .timeout(Duration::from_secs(2))
+        .output_limits(8, 8);
+    let error = typed_error(
+        exec_spooled_sync_cancellable(&request, stdout, stderr, &AtomicBool::new(false))
+            .expect_err("inheritable stderr must be rejected before spawn"),
+    );
+    assert_eq!(error.kind, SpoolFailureKind::Request);
+    assert_eq!(
+        error.message,
+        "stderr spool descriptor must have FD_CLOEXEC"
+    );
+    assert_eq!(error.stdout_bytes, 0);
+    assert_eq!(error.stderr_bytes, 0);
+    let (stdout, stderr, recovery) = error.into_parts();
+    assert!(recovery.is_none());
+    let stdout = stdout.expect("return original stdout descriptor");
+    let stderr = stderr.expect("return original stderr descriptor");
+    assert_eq!(stdout.as_raw_fd(), stdout_fd);
+    assert_eq!(stderr.as_raw_fd(), stderr_fd);
+    let returned_stdout = stdout.metadata().expect("inspect returned stdout");
+    let returned_stderr = stderr.metadata().expect("inspect returned stderr");
+    assert_eq!(
+        (returned_stdout.dev(), returned_stdout.ino()),
+        (stdout_identity.dev(), stdout_identity.ino())
+    );
+    assert_eq!(
+        (returned_stderr.dev(), returned_stderr.ino()),
+        (stderr_identity.dev(), stderr_identity.ino())
+    );
+    assert_eq!(returned_stdout.len(), 0);
+    assert_eq!(returned_stderr.len(), 0);
+    assert!(
+        nix::fcntl::FdFlag::from_bits_truncate(
+            nix::fcntl::fcntl(&stdout, nix::fcntl::FcntlArg::F_GETFD)
+                .expect("re-read returned stdout flags")
+        )
+        .contains(nix::fcntl::FdFlag::FD_CLOEXEC)
+    );
+    assert!(
+        !nix::fcntl::FdFlag::from_bits_truncate(
+            nix::fcntl::fcntl(&stderr, nix::fcntl::FcntlArg::F_GETFD)
+                .expect("re-read returned stderr flags")
+        )
+        .contains(nix::fcntl::FdFlag::FD_CLOEXEC)
+    );
+    assert!(
+        !marker.exists(),
+        "rejected request must not start its target"
+    );
 }
 
 #[test]
