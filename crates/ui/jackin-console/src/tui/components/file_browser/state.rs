@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use super::git_prompt::GitPromptFocus;
 use super::listing::{FolderEntry, FolderListing};
-use crate::tui::layout::point_in_rect;
+use super::render::selection_hit_at;
+use ratatui::layout::Position;
 use termrock::widgets::ListState;
 
 #[derive(Debug)]
@@ -100,7 +101,9 @@ impl FileBrowserState {
         row: u16,
         delta: i16,
     ) -> bool {
-        if self.pending_git_prompt.is_some() || !point_in_rect(column, row, area) {
+        if self.pending_git_prompt.is_some()
+            || !selection_hit_at(area, self, Position::new(column, row))
+        {
             return false;
         }
         let _changed = self.scroll_selection(delta);

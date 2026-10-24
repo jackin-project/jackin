@@ -72,6 +72,39 @@ pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
     }
 }
 
+pub(crate) fn resolve_settings_frame<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingOpCommit,
+    FooterItems,
+>(
+    area: Rect,
+    state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
+    mut footer_items: FooterItems,
+) -> (SettingsFrameAreas, Vec<HintSpan<'static>>)
+where
+    FooterItems: FnMut(
+        &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
+        Rect,
+    ) -> Vec<HintSpan<'static>>,
+{
+    let provisional_body =
+        settings_frame_areas(area, effective_footer_height(state.cached_footer_h)).body;
+    let footer = footer_items(state, provisional_body);
+    let mut footer_h = measured_footer_height(&footer, area.width);
+    let mut areas = settings_frame_areas(area, footer_h);
+    let mut footer = footer_items(state, areas.body);
+    let exact_footer_h = measured_footer_height(&footer, area.width);
+    if exact_footer_h != footer_h {
+        footer_h = exact_footer_h;
+        areas = settings_frame_areas(area, footer_h);
+        footer = footer_items(state, areas.body);
+    }
+    (areas, footer)
+}
+
 #[expect(
     clippy::fn_params_excessive_bools,
     reason = "Four orthogonal settings-modal visibility flags (error_popup, \
@@ -113,25 +146,14 @@ pub fn render_settings_screen<
     frame: &mut Frame<'_>,
     area: Rect,
     state: &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
-    mut footer_items: FooterItems,
+    footer_items: FooterItems,
 ) where
     FooterItems: FnMut(
         &ConsoleSettingsState<MountModal, EnvModal, AuthModal, ErrorPopup, PendingOpCommit>,
         Rect,
     ) -> Vec<HintSpan<'static>>,
 {
-    let provisional_body =
-        settings_frame_areas(area, effective_footer_height(state.cached_footer_h)).body;
-    let footer = footer_items(state, provisional_body);
-    let mut footer_h = measured_footer_height(&footer, area.width);
-    let mut areas = settings_frame_areas(area, footer_h);
-    let mut footer = footer_items(state, areas.body);
-    let exact_footer_h = measured_footer_height(&footer, area.width);
-    if exact_footer_h != footer_h {
-        footer_h = exact_footer_h;
-        areas = settings_frame_areas(area, footer_h);
-        footer = footer_items(state, areas.body);
-    }
+    let (areas, footer) = resolve_settings_frame(area, state, footer_items);
     render_header(frame, areas.header, settings_header_title());
     render_tab_strip(
         frame,

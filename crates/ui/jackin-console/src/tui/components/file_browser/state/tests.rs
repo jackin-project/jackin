@@ -5,8 +5,6 @@ use super::*;
 
 use crate::services::file_browser::EXCLUDED;
 
-use ratatui::layout::Rect;
-
 use tempfile::tempdir;
 
 mod support;

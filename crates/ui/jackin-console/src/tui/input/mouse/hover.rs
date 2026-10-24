@@ -7,12 +7,11 @@ use termrock::interaction::HitRegion;
 use super::{
     FileBrowserState, ManagerEffect, ManagerListRow, ManagerStage, ManagerState, Modal, MouseEvent,
     Rect, apply_workspace_list_hover_target, editor_mount_hover_target_at_position,
-    editor_scroll_area, settings_trust_hover_target_at_position, split_seam_column,
+    editor_scroll_area, editor_tab_hit_regions, settings_tab_hit_regions,
+    settings_trust_hover_target_at_position, split_seam_column,
     workspace_list_hover_row_at_position,
 };
-use crate::tui::layout::{
-    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT,
-};
+use crate::tui::layout::{LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT};
 use crate::tui::state::{
     EditorHoverTarget, EditorTab, ManagerHoverTarget, SettingsHoverTarget, SettingsTab,
 };
@@ -116,8 +115,13 @@ pub fn file_browser_url_row_at(
     let modal_area = modal.rect(term_size);
     fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
 }
-pub fn update_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
-    let regions = hover_regions(state, term_size);
+pub fn update_hover(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&jackin_config::AppConfig>,
+) {
+    let regions = hover_regions(state, term_size, config);
     let hovered = state
         .hover
         .update(Position::new(mouse.column, mouse.row), &regions)
@@ -143,14 +147,24 @@ pub fn update_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
     update_container_info_hover(state, mouse, term_size);
 }
 
-fn hover_regions(state: &ManagerState<'_>, term_size: Rect) -> Vec<HitRegion<ConsoleHoverTarget>> {
+fn hover_regions(
+    state: &ManagerState<'_>,
+    term_size: Rect,
+    config: Option<&jackin_config::AppConfig>,
+) -> Vec<HitRegion<ConsoleHoverTarget>> {
     let mut regions = Vec::new();
     match &state.stage {
         ManagerStage::Editor(editor) => {
             if editor.modal.is_none() {
-                push_tab_regions(&mut regions, &EditorTab::ALL.map(EditorTab::label), |idx| {
-                    ConsoleHoverTarget::Editor(EditorHoverTarget::Tab(idx))
-                });
+                for region in editor_tab_hit_regions(editor, term_size, config, state.op_available)
+                {
+                    if EditorTab::ALL.get(region.id).is_some() {
+                        regions.push(HitRegion {
+                            id: ConsoleHoverTarget::Editor(EditorHoverTarget::Tab(region.id)),
+                            area: region.area,
+                        });
+                    }
+                }
                 let area = editor_scroll_area(editor, term_size).area;
                 let content_x = area.x.saturating_add(1);
                 let content_width = area.width.saturating_sub(2);
@@ -176,27 +190,41 @@ fn hover_regions(state: &ManagerState<'_>, term_size: Rect) -> Vec<HitRegion<Con
         }
         ManagerStage::Settings(settings) => {
             if !settings.mounts.modals.is_open() && !settings.env.modals.is_open() {
-                push_tab_regions(
-                    &mut regions,
-                    &SettingsTab::ALL.map(SettingsTab::label),
-                    |idx| ConsoleHoverTarget::Settings(SettingsHoverTarget::Tab(idx)),
-                );
+                for region in settings_tab_hit_regions(settings, term_size, state.op_available) {
+                    if SettingsTab::ALL.get(region.id).is_some() {
+                        regions.push(HitRegion {
+                            id: ConsoleHoverTarget::Settings(SettingsHoverTarget::Tab(region.id)),
+                            area: region.area,
+                        });
+                    }
+                }
             }
             let area = settings.content_area(term_size);
-            for offset in 0..area.height {
-                let y = area.y.saturating_add(offset);
+            let pad_x = termrock::style::DesignSystem::default().spacing.pad_x;
+            let viewport = Rect::new(
+                area.x.saturating_add(1).saturating_add(pad_x),
+                area.y.saturating_add(1),
+                area.width.saturating_sub(2).saturating_sub(pad_x),
+                area.height.saturating_sub(2),
+            );
+            let modal_open = settings.error_popup.is_some()
+                || settings.mounts.modals.is_open()
+                || settings.env.modals.is_open()
+                || settings.auth.modals.is_open();
+            for offset in 0..viewport.height {
+                let y = viewport.y.saturating_add(offset);
                 if let Some(target) = settings_trust_hover_target_at_position(
                     settings.active_tab,
-                    settings.mounts.modals.is_open(),
+                    modal_open,
                     area,
-                    area.x,
+                    viewport.x,
                     y,
                     settings.trust.scroll.offset_y(),
                     settings.trust.pending.len(),
                 ) {
                     regions.push(HitRegion {
                         id: ConsoleHoverTarget::Settings(target),
-                        area: Rect::new(area.x, y, area.width, 1),
+                        area: Rect::new(viewport.x, y, viewport.width, 1),
                     });
                 }
             }
@@ -228,28 +256,6 @@ fn hover_regions(state: &ManagerState<'_>, term_size: Rect) -> Vec<HitRegion<Con
         _ => {}
     }
     regions
-}
-
-fn push_tab_regions(
-    regions: &mut Vec<HitRegion<ConsoleHoverTarget>>,
-    labels: &[&str],
-    target: impl Fn(usize) -> ConsoleHoverTarget,
-) {
-    let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
-    for (idx, cell) in termrock::widgets::lay_out_tabs(&cells, 0)
-        .iter()
-        .enumerate()
-    {
-        regions.push(HitRegion {
-            id: target(idx),
-            area: Rect::new(
-                cell.start_col,
-                SCREEN_HEADER_HEIGHT,
-                cell.cell_cols,
-                TAB_STRIP_HEIGHT,
-            ),
-        });
-    }
 }
 
 pub fn list_row_hover_at(

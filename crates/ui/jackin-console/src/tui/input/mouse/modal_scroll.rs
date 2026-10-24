@@ -7,7 +7,6 @@ use super::{
     ConsoleInputDispatchPlan, ConsolePaintedInputOwner, FileBrowserState, ListModalScrollTarget,
     MOUSE_VERTICAL_SCROLL_STEP, ManagerStage, ManagerState, Modal, MouseEvent, Rect, SettingsModal,
     SettingsModalScrollTarget, SharedModalScrollTarget, modal_overlay, point_in_rect,
-    scroll_selection_at_position,
 };
 
 fn modal_vertical_scroll_delta(mouse: MouseEvent) -> Option<i16> {
@@ -114,8 +113,31 @@ pub fn try_scroll_picker_modal(
             return false;
         };
         let area = modal.rect(term_size);
-        return point_in_rect(mouse.column, mouse.row, area)
-            && scroll_list_modal_selection(state, delta);
+        let accepts_wheel = match modal {
+            Modal::GithubPicker { state: picker } => {
+                crate::tui::components::github_picker::selection_hit_at(
+                    area,
+                    picker,
+                    ratatui::layout::Position::new(mouse.column, mouse.row),
+                )
+            }
+            Modal::RolePicker { state: picker } => {
+                crate::tui::components::role_picker::selection_hit_at(
+                    area,
+                    picker,
+                    ratatui::layout::Position::new(mouse.column, mouse.row),
+                )
+            }
+            Modal::OpPicker { state: picker, .. } => {
+                crate::tui::components::op_picker::selection_hit_at(
+                    area,
+                    picker.as_ref(),
+                    ratatui::layout::Position::new(mouse.column, mouse.row),
+                )
+            }
+            _ => point_in_rect(mouse.column, mouse.row, area),
+        };
+        return accepts_wheel && scroll_list_modal_selection(state, delta);
     }
 
     match (owner, &mut state.stage) {
@@ -127,7 +149,32 @@ pub fn try_scroll_picker_modal(
                 return false;
             };
             let area = modal.rect(term_size);
-            if !point_in_rect(mouse.column, mouse.row, area) {
+            let accepts_wheel = match modal {
+                Modal::WorkdirPick { state: picker } => {
+                    crate::tui::components::workdir_pick::selection_hit_at(
+                        area,
+                        picker,
+                        ratatui::layout::Position::new(mouse.column, mouse.row),
+                    )
+                }
+                Modal::RolePicker { state: picker }
+                | Modal::RoleOverridePicker { state: picker } => {
+                    crate::tui::components::role_picker::selection_hit_at(
+                        area,
+                        picker,
+                        ratatui::layout::Position::new(mouse.column, mouse.row),
+                    )
+                }
+                Modal::OpPicker { state: picker, .. } => {
+                    crate::tui::components::op_picker::selection_hit_at(
+                        area,
+                        picker.as_ref(),
+                        ratatui::layout::Position::new(mouse.column, mouse.row),
+                    )
+                }
+                _ => point_in_rect(mouse.column, mouse.row, area),
+            };
+            if !accepts_wheel {
                 return false;
             }
             scroll_modal_selection(editor.modal.as_mut(), delta)
@@ -140,7 +187,32 @@ pub fn try_scroll_picker_modal(
                 return false;
             };
             let area = modal.rect(term_size);
-            if !point_in_rect(mouse.column, mouse.row, area) {
+            let accepts_wheel = match modal {
+                Modal::WorkdirPick { state: picker } => {
+                    crate::tui::components::workdir_pick::selection_hit_at(
+                        area,
+                        picker,
+                        ratatui::layout::Position::new(mouse.column, mouse.row),
+                    )
+                }
+                Modal::RolePicker { state: picker }
+                | Modal::RoleOverridePicker { state: picker } => {
+                    crate::tui::components::role_picker::selection_hit_at(
+                        area,
+                        picker,
+                        ratatui::layout::Position::new(mouse.column, mouse.row),
+                    )
+                }
+                Modal::OpPicker { state: picker, .. } => {
+                    crate::tui::components::op_picker::selection_hit_at(
+                        area,
+                        picker.as_ref(),
+                        ratatui::layout::Position::new(mouse.column, mouse.row),
+                    )
+                }
+                _ => point_in_rect(mouse.column, mouse.row, area),
+            };
+            if !accepts_wheel {
                 return false;
             }
             scroll_modal_selection(prelude.modal.as_mut(), delta)
@@ -236,9 +308,12 @@ pub fn scroll_global_mount_modal_selection(
     match (target, modal) {
         (SettingsModalScrollTarget::MountRolePicker, SettingsModal::MountRolePicker { state }) => {
             let area = modal_overlay::role_picker_overlay_rect(term_size, state.filtered.len());
-            scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
-                state.scroll_selection(delta)
-            })
+            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+            if !crate::tui::components::role_picker::selection_hit_at(area, state, position) {
+                return false;
+            }
+            let _changed = state.scroll_selection(delta);
+            true
         }
         (SettingsModalScrollTarget::None, _) => false,
         _ => false,
@@ -255,15 +330,22 @@ pub fn scroll_settings_env_modal_selection(
     match (target, modal) {
         (SettingsModalScrollTarget::EnvOpPicker, SettingsModal::EnvOpPicker { state, .. }) => {
             let area = modal_overlay::op_picker_overlay_rect(term_size);
-            scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
-                state.scroll_selection(delta)
-            })
+            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+            if !crate::tui::components::op_picker::selection_hit_at(area, state.as_ref(), position)
+            {
+                return false;
+            }
+            let _changed = state.scroll_selection(delta);
+            true
         }
         (SettingsModalScrollTarget::EnvRolePicker, SettingsModal::EnvRolePicker { state }) => {
             let area = modal_overlay::role_picker_overlay_rect(term_size, state.filtered.len());
-            scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
-                state.scroll_selection(delta)
-            })
+            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+            if !crate::tui::components::role_picker::selection_hit_at(area, state, position) {
+                return false;
+            }
+            let _changed = state.scroll_selection(delta);
+            true
         }
         (SettingsModalScrollTarget::None, _) => false,
         _ => false,
@@ -280,9 +362,13 @@ pub fn scroll_settings_auth_modal_selection(
     match (target, modal) {
         (SettingsModalScrollTarget::AuthOpPicker, SettingsModal::AuthOpPicker { state }) => {
             let area = modal_overlay::op_picker_overlay_rect(term_size);
-            scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
-                state.scroll_selection(delta)
-            })
+            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+            if !crate::tui::components::op_picker::selection_hit_at(area, state.as_ref(), position)
+            {
+                return false;
+            }
+            let _changed = state.scroll_selection(delta);
+            true
         }
         (SettingsModalScrollTarget::None, _) => false,
         _ => false,

@@ -54,50 +54,6 @@ fn editor_tab_bar_focus_plan_returns_requested_focus() {
 }
 
 #[test]
-fn editor_tab_at_position_maps_tab_strip_cells() {
-    assert_eq!(
-        editor_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
-        Some(EditorTab::General)
-    );
-    assert_eq!(
-        editor_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 11),
-        Some(EditorTab::Mounts)
-    );
-    assert_eq!(
-        editor_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT - 1, 1),
-        None
-    );
-}
-
-#[test]
-fn editor_tab_hover_plan_maps_strip() {
-    assert_eq!(
-        editor_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
-        Some(0)
-    );
-    assert_eq!(
-        editor_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT, 11),
-        Some(1)
-    );
-    assert_eq!(
-        editor_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT - 1, 1),
-        None
-    );
-}
-
-#[test]
-fn editor_tab_hover_target_plan_maps_strip_when_no_modal() {
-    assert_eq!(
-        editor_tab_hover_target_plan(false, crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
-        Some(EditorHoverTarget::Tab(0))
-    );
-    assert_eq!(
-        editor_tab_hover_target_plan(true, crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
-        None
-    );
-}
-
-#[test]
 fn editor_mount_hover_target_at_position_maps_mount_rows() {
     let mounts = vec![
         MountConfig {
