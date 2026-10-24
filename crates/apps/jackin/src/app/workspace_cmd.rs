@@ -539,26 +539,13 @@ async fn apply_workspace_edit(
         current_ws,
     } = prepared;
 
-    let mut prospective_mounts: Vec<workspace::MountConfig> = current_ws
-        .mounts
-        .iter()
-        .filter(|m| !plan.effective_removals.iter().any(|d| d == &m.dst))
-        .cloned()
-        .collect();
-    if params.no_workdir_mount {
-        let workdir_path = &current_ws.workdir;
-        prospective_mounts.retain(|m| !(m.src == *workdir_path && m.dst == *workdir_path));
-    }
-    for upsert in &upsert_mounts {
-        if let Some(existing) = prospective_mounts
-            .iter_mut()
-            .find(|existing| existing.dst == upsert.dst)
-        {
-            *existing = upsert.clone();
-        } else {
-            prospective_mounts.push(upsert.clone());
-        }
-    }
+    let prospective_mounts = prospective_mounts_for_edit(
+        &current_ws,
+        &upsert_mounts,
+        &plan.effective_removals,
+        params.no_workdir_mount,
+        &params.mount_isolation,
+    )?;
     let wn = WorkspaceName::parse(name).map_err(anyhow::Error::from)?;
     let has_records =
         jackin_runtime::isolation::state::list_records_for_workspace(&paths.data_dir, &wn)
@@ -589,7 +576,7 @@ async fn apply_workspace_edit(
                 .map(|r| r.container_name.clone())
                 .collect();
             anyhow::bail!(
-                "edit affects preserved isolated state for {} container(s): {}; pass --delete-isolated-state to remove and apply, or restore the previous src",
+                "edit affects preserved isolated state for {} container(s): {}; pass --delete-isolated-state to remove and apply, or restore the previous mount source/isolation mode",
                 detection.stopped_records.len(),
                 names.join(", ")
             );
@@ -639,6 +626,37 @@ async fn apply_workspace_edit(
         println!("  - {change}");
     }
     Ok(())
+}
+
+fn prospective_mounts_for_edit(
+    current_ws: &WorkspaceConfig,
+    upsert_mounts: &[workspace::MountConfig],
+    effective_removals: &[String],
+    no_workdir_mount: bool,
+    isolation_overrides: &[(String, jackin_core::MountIsolation)],
+) -> Result<Vec<workspace::MountConfig>> {
+    let mut prospective_mounts: Vec<workspace::MountConfig> = current_ws
+        .mounts
+        .iter()
+        .filter(|m| !effective_removals.iter().any(|d| d == &m.dst))
+        .cloned()
+        .collect();
+    if no_workdir_mount {
+        let workdir_path = &current_ws.workdir;
+        prospective_mounts.retain(|m| !(m.src == *workdir_path && m.dst == *workdir_path));
+    }
+    for upsert in upsert_mounts {
+        if let Some(existing) = prospective_mounts
+            .iter_mut()
+            .find(|existing| existing.dst == upsert.dst)
+        {
+            *existing = upsert.clone();
+        } else {
+            prospective_mounts.push(upsert.clone());
+        }
+    }
+    jackin_config::apply_isolation_overrides(&mut prospective_mounts, isolation_overrides)?;
+    Ok(prospective_mounts)
 }
 
 async fn handle_workspace_edit(
@@ -807,3 +825,6 @@ fn handle_workspace_env(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
