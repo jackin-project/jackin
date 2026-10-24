@@ -3,6 +3,8 @@
 
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
+#[cfg(target_os = "linux")]
+use super::super::linux_acl::{XattrProbe, classify_probe};
 use super::super::{
     CheckedInstallFile, CheckedInstallRoot, InstallFileKind, MetadataFacts, MetadataProblem,
     NodeRole, classify_metadata,
@@ -10,23 +12,240 @@ use super::super::{
 use super::{absolute_components, open_directory_component, open_filesystem_root};
 use rustix::fd::AsRawFd;
 use rustix::fs::{FileType, Mode, OFlags, fcntl_getfl, open};
+#[cfg(target_os = "linux")]
+use rustix::fs::{fgetxattr, fstat, openat};
 use rustix::io::{FdFlags, fcntl_getfd};
+#[cfg(target_os = "linux")]
+use std::ffi::CStr;
+#[cfg(target_os = "linux")]
+use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
+#[cfg(target_os = "linux")]
+use std::path::{Component, PathBuf};
 
 const FIXTURE_DIRECTORY_FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::DIRECTORY)
     .union(OFlags::NOFOLLOW)
     .union(OFlags::CLOEXEC);
 
+#[cfg(target_os = "macos")]
 fn fixture_base() -> tempfile::TempDir {
     let cwd = std::env::current_dir().expect("read the physical test working directory");
     tempfile::Builder::new()
         .prefix(".jackin-absolute-root-")
         .tempdir_in(cwd)
         .expect("create an owned fixture below the checked-out working directory")
+}
+
+#[cfg(target_os = "linux")]
+fn fixture_base() -> tempfile::TempDir {
+    let mut candidates = Vec::with_capacity(2);
+    let mut failures = Vec::with_capacity(4);
+    let mut cwd_candidate = None;
+
+    match std::env::current_dir() {
+        Ok(cwd) => {
+            cwd_candidate = Some(cwd.clone());
+            if let Some(reason) = fixture_parent_problem(&cwd) {
+                failures.push(format!(
+                    "current_dir candidate {cwd:?} rejected: {reason}; chain diagnostics: {}",
+                    fixture_chain_diagnostics(&cwd),
+                ));
+            } else {
+                candidates.push(cwd);
+            }
+        }
+        Err(error) => failures.push(format!(
+            "reading physical current directory failed: {error}"
+        )),
+    }
+
+    match std::env::var_os("HOME") {
+        Some(home) if !home.is_empty() => {
+            let home = PathBuf::from(home);
+            if cwd_candidate.as_ref() == Some(&home) {
+                failures.push(format!(
+                    "HOME candidate {home:?} duplicates current_dir and was not retried"
+                ));
+            } else if let Some(reason) = fixture_parent_problem(&home) {
+                failures.push(format!(
+                    "HOME candidate {home:?} rejected: {reason}; chain diagnostics: {}",
+                    fixture_chain_diagnostics(&home),
+                ));
+            } else {
+                candidates.push(home);
+            }
+        }
+        Some(_) => failures.push("HOME candidate is empty".to_owned()),
+        None => failures.push("HOME candidate is unset".to_owned()),
+    }
+
+    for parent in candidates.into_iter().take(2) {
+        let temporary = match tempfile::Builder::new()
+            .prefix(".jackin-absolute-root-")
+            .tempdir_in(&parent)
+        {
+            Ok(temporary) => temporary,
+            Err(error) => {
+                failures.push(format!(
+                    "creating a private fixture below {parent:?} failed: {error}; chain diagnostics: {}",
+                    fixture_chain_diagnostics(&parent),
+                ));
+                continue;
+            }
+        };
+
+        match CheckedInstallRoot::from_absolute_directory(temporary.path()) {
+            Ok(root) => {
+                drop(root);
+                return temporary;
+            }
+            Err(error) => failures.push(format!(
+                "production clean-chain check rejected candidate {parent:?} at {:?}: {error}; chain diagnostics: {}",
+                temporary.path(),
+                fixture_chain_diagnostics(temporary.path()),
+            )),
+        }
+    }
+
+    panic!(
+        "no candidate parent provided a production-accepted clean absolute fixture chain:\n{}",
+        failures.join("\n"),
+    );
+}
+
+#[cfg(target_os = "linux")]
+fn fixture_parent_problem(parent: &Path) -> Option<String> {
+    if !parent.is_absolute() {
+        return Some("candidate parent is not absolute".to_owned());
+    }
+    if parent
+        .components()
+        .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
+    {
+        return Some("candidate parent contains parent traversal".to_owned());
+    }
+    match fs::metadata(parent) {
+        Ok(metadata) if metadata.is_dir() => None,
+        Ok(_) => Some("candidate parent is not a directory".to_owned()),
+        Err(error) => Some(format!("reading candidate parent metadata failed: {error}")),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn fixture_chain_diagnostics(candidate: &Path) -> String {
+    const ACCESS_ACL: &CStr = c"system.posix_acl_access";
+    const DEFAULT_ACL: &CStr = c"system.posix_acl_default";
+
+    let mut report = format!("candidate={candidate:?}\n");
+    if !candidate.is_absolute() {
+        writeln!(report, "  traversal=not-absolute")
+            .expect("formatting a diagnostic String cannot fail");
+        return report;
+    }
+
+    let mut components = Vec::new();
+    for component in candidate.components() {
+        match component {
+            Component::RootDir => {}
+            Component::Normal(name) => components.push(name.to_os_string()),
+            Component::CurDir => {}
+            Component::ParentDir | Component::Prefix(_) => {
+                writeln!(report, "  traversal=refused-unsafe-component:{component:?}")
+                    .expect("formatting a diagnostic String cannot fail");
+                return report;
+            }
+        }
+    }
+
+    let mut parent = match open("/", FIXTURE_DIRECTORY_FLAGS, Mode::empty()) {
+        Ok(root) => File::from(root),
+        Err(error) => {
+            writeln!(report, "  component=/ open=error({error:?})")
+                .expect("formatting a diagnostic String cannot fail");
+            return report;
+        }
+    };
+    append_fixture_component_diagnostic(
+        &mut report,
+        Path::new("/"),
+        &parent,
+        ACCESS_ACL,
+        DEFAULT_ACL,
+    );
+
+    let mut opened_path = PathBuf::from("/");
+    for component in components {
+        let next = match openat(&parent, &component, FIXTURE_DIRECTORY_FLAGS, Mode::empty()) {
+            Ok(next) => File::from(next),
+            Err(error) => {
+                writeln!(report, "  component={component:?} openat=error({error:?})")
+                    .expect("formatting a diagnostic String cannot fail");
+                break;
+            }
+        };
+        opened_path.push(&component);
+        append_fixture_component_diagnostic(
+            &mut report,
+            &opened_path,
+            &next,
+            ACCESS_ACL,
+            DEFAULT_ACL,
+        );
+        parent = next;
+    }
+    report
+}
+
+#[cfg(target_os = "linux")]
+fn append_fixture_component_diagnostic(
+    report: &mut String,
+    path: &Path,
+    descriptor: &File,
+    access_acl: &CStr,
+    default_acl: &CStr,
+) {
+    write!(report, "  component={path:?}").expect("formatting a diagnostic String cannot fail");
+    match fstat(descriptor) {
+        Ok(metadata) => {
+            write!(
+                report,
+                " uid={} mode={:04o} dev={} ino={}",
+                metadata.st_uid,
+                metadata.st_mode & 0o7777,
+                metadata.st_dev,
+                metadata.st_ino,
+            )
+            .expect("formatting a diagnostic String cannot fail");
+        }
+        Err(error) => {
+            write!(report, " stat=error({error:?})")
+                .expect("formatting a diagnostic String cannot fail");
+        }
+    }
+    writeln!(
+        report,
+        " {}={} {}={}",
+        access_acl.to_string_lossy(),
+        fixture_xattr_probe(descriptor, access_acl),
+        default_acl.to_string_lossy(),
+        fixture_xattr_probe(descriptor, default_acl),
+    )
+    .expect("formatting a diagnostic String cannot fail");
+}
+
+#[cfg(target_os = "linux")]
+fn fixture_xattr_probe(descriptor: &File, name: &CStr) -> String {
+    let mut value = [0_u8; 1];
+    match classify_probe(fgetxattr(descriptor, name, &mut value)) {
+        XattrProbe::Absent => "absent".to_owned(),
+        XattrProbe::Present => "present".to_owned(),
+        XattrProbe::Unsupported => "unsupported".to_owned(),
+        XattrProbe::Failed(error) => format!("error({error:?})"),
+    }
 }
 
 fn create_directory(path: &Path, mode: u32) {
@@ -375,6 +594,10 @@ fn absolute_linux_access_acl_ancestor_is_rejected() {
     create_directory(&ancestor, 0o755);
     let selected = ancestor.join("selected");
     create_directory(&selected, 0o700);
+    drop(
+        CheckedInstallRoot::from_absolute_directory(&selected)
+            .expect("full absolute chain must be clean before access ACL injection"),
+    );
     let descriptor = open_fixture_directory(&ancestor);
     set_extended_acl_fixture(&descriptor, false).expect("set access ACL fixture");
     assert_eq!(
@@ -403,6 +626,10 @@ fn absolute_linux_default_acl_on_private_ancestor_is_rejected() {
     create_directory(&ancestor, 0o700);
     let selected = ancestor.join("selected");
     create_directory(&selected, 0o700);
+    drop(
+        CheckedInstallRoot::from_absolute_directory(&selected)
+            .expect("full absolute chain must be clean before default ACL injection"),
+    );
     let descriptor = open_fixture_directory(&ancestor);
     set_extended_acl_fixture(&descriptor, true).expect("set default ACL fixture");
     set_mode(&ancestor, 0o700);

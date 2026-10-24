@@ -11,6 +11,8 @@ use super::{
 use anyhow::{Context, Result, anyhow, ensure};
 use jackin_process_directory::{CheckedInstallFile, CheckedInstallRoot, InstallFileKind};
 use sha2::{Digest as _, Sha256};
+#[cfg(target_os = "linux")]
+use std::path::Component;
 use std::{
     fs::{self, File},
     io::{Seek, SeekFrom},
@@ -33,11 +35,16 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Result<Self> {
-        let cwd = std::env::current_dir().context("reading physical test working directory")?;
-        let temporary = tempfile::Builder::new()
-            .prefix(".jackin-checked-install-")
-            .tempdir_in(cwd)
-            .context("creating fixture below the checked-out working directory")?;
+        #[cfg(target_os = "macos")]
+        let temporary = {
+            let cwd = std::env::current_dir().context("reading physical test working directory")?;
+            tempfile::Builder::new()
+                .prefix(".jackin-checked-install-")
+                .tempdir_in(cwd)
+                .context("creating fixture below the checked-out working directory")?
+        };
+        #[cfg(target_os = "linux")]
+        let temporary = linux_fixture_tempdir()?;
         let root = temporary.path().join("install-root");
         fs::create_dir(&root).context("creating private fixture install root")?;
         set_mode(&root, 0o700)?;
@@ -45,6 +52,12 @@ impl Fixture {
         write_file(&root.join(ENTRY_NAME), ENTRY_BYTES, 0o400)?;
         write_file(&root.join(HELPER_NAME), HELPER_BYTES, 0o400)?;
         write_file(&root.join(RECEIPT_NAME), &valid_receipt(), 0o600)?;
+        #[cfg(target_os = "linux")]
+        {
+            let baseline = inspect_checked_install(&root)
+                .context("establishing a clean full-chain checked-install fixture baseline")?;
+            drop(baseline);
+        }
         Ok(Self { temporary, root })
     }
 
@@ -54,6 +67,105 @@ impl Fixture {
 
     fn rewrite_receipt(&self, bytes: &[u8]) -> Result<()> {
         write_file(&self.path(RECEIPT_NAME), bytes, 0o600)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_fixture_tempdir() -> Result<tempfile::TempDir> {
+    let mut candidates = Vec::with_capacity(2);
+    let mut seen = Vec::with_capacity(2);
+    let mut failures = Vec::with_capacity(4);
+
+    match std::env::current_dir() {
+        Ok(cwd) => add_linux_fixture_candidate(
+            "current_dir",
+            cwd,
+            &mut seen,
+            &mut candidates,
+            &mut failures,
+        ),
+        Err(error) => failures.push(format!(
+            "reading physical current directory failed: {error}"
+        )),
+    }
+    match std::env::var_os("HOME") {
+        Some(home) if !home.is_empty() => add_linux_fixture_candidate(
+            "HOME",
+            PathBuf::from(home),
+            &mut seen,
+            &mut candidates,
+            &mut failures,
+        ),
+        Some(_) => failures.push("HOME candidate is empty".to_owned()),
+        None => failures.push("HOME candidate is unset".to_owned()),
+    }
+
+    for (source, parent) in candidates.into_iter().take(2) {
+        let temporary = match tempfile::Builder::new()
+            .prefix(".jackin-checked-install-")
+            .tempdir_in(&parent)
+        {
+            Ok(temporary) => temporary,
+            Err(error) => {
+                failures.push(format!(
+                    "creating a private fixture below {source} candidate {parent:?} failed: {error}"
+                ));
+                continue;
+            }
+        };
+
+        match CheckedInstallRoot::from_absolute_directory(temporary.path()) {
+            Ok(root) => {
+                drop(root);
+                return Ok(temporary);
+            }
+            Err(error) => failures.push(format!(
+                "production clean-chain check rejected {source} candidate {parent:?} at {:?}: {error:#}",
+                temporary.path(),
+            )),
+        }
+    }
+
+    Err(anyhow!(
+        "no candidate parent provided a production-accepted clean absolute fixture chain:\n{}",
+        failures.join("\n"),
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn add_linux_fixture_candidate(
+    source: &'static str,
+    parent: PathBuf,
+    seen: &mut Vec<PathBuf>,
+    candidates: &mut Vec<(&'static str, PathBuf)>,
+    failures: &mut Vec<String>,
+) {
+    if seen.iter().any(|candidate| candidate == &parent) {
+        failures.push(format!(
+            "{source} candidate {parent:?} duplicates an earlier parent"
+        ));
+        return;
+    }
+    seen.push(parent.clone());
+    if !parent.is_absolute() {
+        failures.push(format!("{source} candidate {parent:?} is not absolute"));
+        return;
+    }
+    if parent
+        .components()
+        .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
+    {
+        failures.push(format!(
+            "{source} candidate {parent:?} contains parent traversal"
+        ));
+        return;
+    }
+    match fs::metadata(&parent) {
+        Ok(metadata) if metadata.is_dir() => candidates.push((source, parent)),
+        Ok(_) => failures.push(format!("{source} candidate {parent:?} is not a directory")),
+        Err(error) => failures.push(format!(
+            "reading {source} candidate {parent:?} metadata failed: {error}"
+        )),
     }
 }
 
