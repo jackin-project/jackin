@@ -18,7 +18,7 @@ mod tests;
 use rustix::fd::AsFd;
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, Stat, fstat, openat, statat};
 use rustix::process::{RawUid, geteuid};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::File;
 use std::io;
@@ -69,6 +69,16 @@ pub struct CheckedInstallRoot {
     directory: File,
 }
 
+/// Absolute source-root descriptors used only by the sibling source
+/// capability. The parent role is always `Ancestor`: the selected source root
+/// itself is validated separately as a current-user-owned `Directory`.
+pub(super) struct AbsoluteSourceRoot {
+    pub(super) directory: File,
+    pub(super) parent: File,
+    pub(super) name: OsString,
+    pub(super) identity: Stat,
+}
+
 /// A checked file descriptor and the pinned parent/name used to recheck it.
 ///
 /// The file descriptor remains the original opened object. `recheck` reports
@@ -106,6 +116,7 @@ enum NodeRole {
     Directory,
     Ancestor,
     Leaf(InstallFileKind),
+    SourceLeaf,
 }
 
 #[derive(Clone, Copy)]
@@ -124,6 +135,7 @@ enum MetadataProblem {
     WrongMode,
     MultipleLinks,
     WritableByGroupOrOther,
+    UnsafeSourceMode,
 }
 
 struct ParentLookup {
@@ -168,6 +180,196 @@ impl CheckedInstallRoot {
         let lookup = open_parent_directory(&self.directory, relative)?;
         open_checked_leaf(lookup.parent, lookup.role, lookup.leaf_name, kind)
     }
+}
+
+/// Open a source root through the same checked absolute walk as an install
+/// root, but validate its final component as a non-writable current-user
+/// directory rather than an exact-0700 install root.
+pub(super) fn open_absolute_source_root(path: &Path) -> io::Result<AbsoluteSourceRoot> {
+    absolute_root::open_absolute_source_root(path)
+}
+
+/// Parse source-relative components with the install walk's lexical rules.
+pub(super) fn source_relative_components(path: &Path) -> io::Result<Vec<OsString>> {
+    Ok(relative_components(path)?.collect())
+}
+
+/// Open one current-user-owned source subdirectory beneath a checked source
+/// directory, preserving the same no-follow/identity/ACL checks as the
+/// absolute walker.
+pub(super) fn open_source_directory(parent: &File, name: &OsStr) -> io::Result<(File, Stat)> {
+    validate_directory_descriptor(parent, NodeRole::Directory)?;
+    let directory = absolute_root::open_directory_component(parent, name, NodeRole::Directory)?;
+    let identity = fstat(&directory)?;
+    validate_stat(&identity, NodeRole::Directory)?;
+    Ok((directory, identity))
+}
+
+/// Open one source leaf read-only and return its original descriptor and
+/// checked identity. Source files retain their actual safe mode rather than
+/// an installation artifact mode.
+pub(super) fn open_source_file(parent: &File, name: &OsStr) -> io::Result<(File, Stat)> {
+    validate_directory_descriptor(parent, NodeRole::Directory)?;
+    let before = statat(parent, name, NOFOLLOW_STAT_FLAGS)?;
+    validate_stat(&before, NodeRole::SourceLeaf)?;
+
+    let opened = File::from(openat(parent, name, LEAF_OPEN_FLAGS, Mode::empty())?);
+    let file = duplicate_file(&opened)?;
+    let identity = fstat(&file)?;
+    validate_stat(&identity, NodeRole::SourceLeaf)?;
+    if !same_identity(&before, &identity) {
+        return Err(permission_denied(
+            "source file changed while opening a path component",
+        ));
+    }
+    ensure_native_acl(file.as_fd(), false)?;
+
+    let final_name = statat(parent, name, NOFOLLOW_STAT_FLAGS)?;
+    validate_stat(&final_name, NodeRole::SourceLeaf)?;
+    if !same_identity(&final_name, &identity) {
+        return Err(permission_denied(
+            "source file name changed while opening the leaf",
+        ));
+    }
+    ensure_native_acl(file.as_fd(), false)?;
+
+    Ok((file, identity))
+}
+
+/// Recheck the selected source root's retained original parent/name edge.
+pub(super) fn recheck_absolute_source_root(
+    parent: &File,
+    name: &OsStr,
+    directory: &File,
+    identity: &Stat,
+) -> io::Result<()> {
+    recheck_named_source_directory(parent, NodeRole::Ancestor, name, directory, identity)
+}
+
+/// Recheck a retained source-relative parent/name edge.
+pub(super) fn recheck_source_directory(
+    parent: &File,
+    name: &OsStr,
+    directory: &File,
+    identity: &Stat,
+) -> io::Result<()> {
+    recheck_named_source_directory(parent, NodeRole::Directory, name, directory, identity)
+}
+
+fn recheck_named_source_directory(
+    parent: &File,
+    parent_role: NodeRole,
+    name: &OsStr,
+    directory: &File,
+    identity: &Stat,
+) -> io::Result<()> {
+    validate_directory_descriptor(parent, parent_role)?;
+    validate_directory_descriptor(directory, NodeRole::Directory)?;
+    let original = fstat(directory)?;
+    if !same_identity(&original, identity) {
+        return Err(permission_denied(
+            "checked source directory descriptor identity changed",
+        ));
+    }
+
+    let named = statat(parent, name, NOFOLLOW_STAT_FLAGS)?;
+    validate_stat(&named, NodeRole::Directory)?;
+    if !same_identity(&named, identity) {
+        return Err(permission_denied(
+            "checked source directory name now identifies another object",
+        ));
+    }
+
+    let candidate = absolute_root::open_directory_component(parent, name, NodeRole::Directory)?;
+    let candidate_stat = fstat(&candidate)?;
+    validate_stat(&candidate_stat, NodeRole::Directory)?;
+    if !same_identity(&candidate_stat, identity) {
+        return Err(permission_denied(
+            "checked source directory name was rebound",
+        ));
+    }
+
+    let final_name = statat(parent, name, NOFOLLOW_STAT_FLAGS)?;
+    validate_stat(&final_name, NodeRole::Directory)?;
+    if !same_identity(&final_name, identity) {
+        return Err(permission_denied(
+            "checked source directory name changed during recheck",
+        ));
+    }
+    Ok(())
+}
+
+/// Recheck the original source-file descriptor and its retained leaf name.
+pub(super) fn recheck_source_file(
+    parent: &File,
+    name: &OsStr,
+    file: &File,
+    identity: &Stat,
+) -> io::Result<()> {
+    validate_directory_descriptor(parent, NodeRole::Directory)?;
+    let original = fstat(file)?;
+    validate_stat(&original, NodeRole::SourceLeaf)?;
+    ensure_native_acl(file.as_fd(), false)?;
+    if !same_identity(&original, identity) {
+        return Err(permission_denied(
+            "checked source file descriptor identity changed",
+        ));
+    }
+
+    let named = statat(parent, name, NOFOLLOW_STAT_FLAGS)?;
+    validate_stat(&named, NodeRole::SourceLeaf)?;
+    if !same_identity(&named, identity) {
+        return Err(permission_denied(
+            "checked source file name now identifies another object",
+        ));
+    }
+
+    let candidate = openat(parent, name, LEAF_OPEN_FLAGS, Mode::empty())?;
+    let candidate_file = File::from(candidate);
+    let candidate_stat = fstat(&candidate_file)?;
+    validate_stat(&candidate_stat, NodeRole::SourceLeaf)?;
+    ensure_native_acl(candidate_file.as_fd(), false)?;
+    if !same_identity(&candidate_stat, identity) {
+        return Err(permission_denied("checked source file name was rebound"));
+    }
+
+    let final_name = statat(parent, name, NOFOLLOW_STAT_FLAGS)?;
+    validate_stat(&final_name, NodeRole::SourceLeaf)?;
+    if !same_identity(&final_name, identity) {
+        return Err(permission_denied(
+            "checked source file name changed during recheck",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+pub(super) fn set_source_linux_acl_fixture(
+    descriptor: impl AsFd,
+    include_default_acl: bool,
+) -> io::Result<()> {
+    linux_acl::set_extended_acl_fixture(descriptor, include_default_acl)
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[derive(Clone, Copy)]
+pub(super) enum SourceDarwinAclFixture {
+    DenyRead,
+    AllowRead,
+    AllowMutation,
+}
+
+#[cfg(all(test, target_os = "macos"))]
+pub(super) fn set_source_darwin_acl_fixture(
+    descriptor: impl AsFd,
+    fixture: SourceDarwinAclFixture,
+) -> io::Result<()> {
+    let fixture = match fixture {
+        SourceDarwinAclFixture::DenyRead => darwin_acl::FixtureAcl::DenyRead,
+        SourceDarwinAclFixture::AllowRead => darwin_acl::FixtureAcl::AllowRead,
+        SourceDarwinAclFixture::AllowMutation => darwin_acl::FixtureAcl::AllowMutation,
+    };
+    darwin_acl::set_test_acl(descriptor, fixture)
 }
 
 impl CheckedInstallFile {
@@ -326,9 +528,28 @@ fn relative_components(path: &Path) -> io::Result<impl Iterator<Item = OsString>
 }
 
 fn validate_directory_descriptor(file: &File, role: NodeRole) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    if matches!(role, NodeRole::Ancestor) {
+        return absolute_root::validate_linux_absolute_directory(file, role);
+    }
+
     let metadata = fstat(file)?;
     validate_stat(&metadata, role)?;
     ensure_native_acl(file.as_fd(), true)
+}
+
+#[cfg(test)]
+pub(super) fn source_directory_owner_matches_for_test(
+    owner_uid: RawUid,
+    effective_uid: RawUid,
+) -> bool {
+    let facts = MetadataFacts {
+        file_type: FileType::Directory,
+        mode: Mode::from_bits_truncate(0o755),
+        uid: owner_uid,
+        single_link: true,
+    };
+    classify_metadata(facts, effective_uid, NodeRole::Directory).is_ok()
 }
 
 fn validate_stat(metadata: &Stat, role: NodeRole) -> io::Result<()> {
@@ -350,6 +571,7 @@ fn classify_metadata(
     let (expected_type, expected_mode) = match role {
         NodeRole::Root | NodeRole::Directory | NodeRole::Ancestor => (FileType::Directory, None),
         NodeRole::Leaf(kind) => (FileType::RegularFile, Some(kind.expected_mode())),
+        NodeRole::SourceLeaf => (FileType::RegularFile, None),
     };
     if facts.file_type != expected_type {
         return Err(MetadataProblem::WrongType);
@@ -377,6 +599,14 @@ fn classify_metadata(
                 return Err(MetadataProblem::MultipleLinks);
             }
         }
+        NodeRole::SourceLeaf => {
+            if facts.mode.intersects(Mode::from_bits_truncate(0o7022)) {
+                return Err(MetadataProblem::UnsafeSourceMode);
+            }
+            if !facts.single_link {
+                return Err(MetadataProblem::MultipleLinks);
+            }
+        }
         NodeRole::Root | NodeRole::Directory | NodeRole::Ancestor => {}
     }
     Ok(())
@@ -394,6 +624,7 @@ fn metadata_problem_error(problem: MetadataProblem) -> io::Error {
         MetadataProblem::WritableByGroupOrOther => {
             "installation directory is writable by group or other"
         }
+        MetadataProblem::UnsafeSourceMode => "source file has writable or special permission bits",
     };
     permission_denied(message)
 }

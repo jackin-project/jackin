@@ -80,7 +80,7 @@ Process separation can isolate resource contention, but introduces transport and
 
 ### Cache-aware replica routing
 
-[SGLang Model Gateway](https://docs.sglang.io/advanced_features/sgl_model_gateway) balances cache locality with worker load. Current documentation also states that multiple gateway replicas do not synchronize their cache-aware radix trees. Session affinity at one layer therefore does not guarantee a global hit.
+[SGLang Model Gateway](https://docs.sglang.io/docs/advanced_features/sgl_model_gateway) balances cache locality with worker load. Current documentation also states that multiple gateway replicas do not synchronize their cache-aware radix trees. Session affinity at one layer therefore does not guarantee a global hit.
 
 A cache-heavy hot worker can have worse queue latency than a cold idle worker. Compare scheduling policies using end-to-end p50/p95 latency, accepted throughput and resource cost, including misses and failover. Do not infer a fleet-wide latency saving from a prefix-hit counter or an advertised example.
 
