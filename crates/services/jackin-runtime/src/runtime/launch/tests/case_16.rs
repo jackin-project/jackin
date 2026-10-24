@@ -253,6 +253,119 @@ async fn explicit_restore_rejects_agent_different_from_stored_instance() {
 }
 
 #[tokio::test]
+async fn explicit_restore_rejects_invalid_matching_v7_tuple_before_docker_or_credential_writes() {
+    let (_temp, paths, mut config, selector, workspace, docker, mut runner, current_container) =
+        task_override_current_role_fixture(ContainerState::Running);
+    config.env.insert(
+        "OPERATOR_RESTORE_SECRET".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/item/restore-secret".to_owned(),
+            path: "Vault/Item/restore secret".to_owned(),
+            account: None,
+            on_demand: false,
+        }),
+    );
+    let root = paths.data_dir.join(&current_container);
+    let mut manifest = InstanceManifest::read(&root).unwrap();
+    manifest.set_admitted_instances([jackin_instance::AdmittedInstance::new(
+        "codex-main",
+        jackin_core::Agent::Codex,
+        "other-account",
+    )]);
+    write_indexed_manifest(&paths, &manifest);
+    provision_restore_account_policy(&paths, &config, &manifest);
+
+    let credential_path = root
+        .join("credentials")
+        .join(jackin_protocol::account_credentials_filename("codex-main"));
+    std::fs::create_dir_all(credential_path.parent().unwrap()).unwrap();
+    std::fs::write(&credential_path, b"preserve existing credentials").unwrap();
+    let config_bytes = std::fs::read(&paths.config_file).unwrap();
+    let fingerprint_bytes = std::fs::read(root.join("account-config.sha256")).unwrap();
+    let admission_bytes = std::fs::read(root.join("account-admission.sha256")).unwrap();
+    let credential_bytes = std::fs::read(&credential_path).unwrap();
+
+    struct UnexpectedOpRunner;
+
+    impl jackin_env::OpRunner for UnexpectedOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("invalid saved selection must fail before resolving operator env")
+        }
+
+        fn probe(&self) -> anyhow::Result<()> {
+            anyhow::bail!("invalid saved selection must fail before probing operator env")
+        }
+    }
+
+    let opts = LoadOptions {
+        agent: Some(jackin_core::Agent::Codex),
+        restore_container_base: Some(current_container),
+        op_runner: Some(Box::new(UnexpectedOpRunner)),
+        ..LoadOptions::default()
+    };
+    let error = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap_err();
+    let rendered = format!("{error:#}");
+
+    assert!(
+        rendered.contains("saved account selection is no longer valid")
+            && rendered.contains("saved configuration"),
+        "unexpected matching-v7 refusal: {rendered}"
+    );
+    assert!(
+        !docker.recorded.borrow().iter().any(|call| {
+            [
+                "docker start",
+                "docker run",
+                "docker exec",
+                "docker rm -f",
+                "docker stop",
+            ]
+            .iter()
+            .any(|forbidden| call.contains(forbidden))
+        }) && docker.created_containers.borrow().is_empty(),
+        "invalid saved tuple must not start/reconnect/create/remove a container: {:?}",
+        docker.recorded.borrow()
+    );
+    assert!(
+        !runner.recorded.iter().any(|call| {
+            [
+                "docker run",
+                "docker start",
+                "docker exec",
+                "docker create",
+                "docker rm -f",
+                "docker stop",
+                "jackin-capsule",
+            ]
+            .iter()
+            .any(|forbidden| call.contains(forbidden))
+        }),
+        "invalid saved tuple must not launch Docker or stage Capsule credentials: {}",
+        runner.recorded.join("\n")
+    );
+    assert_eq!(std::fs::read(&paths.config_file).unwrap(), config_bytes);
+    assert_eq!(
+        std::fs::read(root.join("account-config.sha256")).unwrap(),
+        fingerprint_bytes
+    );
+    assert_eq!(
+        std::fs::read(root.join("account-admission.sha256")).unwrap(),
+        admission_bytes
+    );
+    assert_eq!(std::fs::read(&credential_path).unwrap(), credential_bytes);
+}
+
+#[tokio::test]
 async fn load_agent_attaches_explicit_restore_container_with_stored_agent_before_role_repo() {
     struct FailingOpRunner;
 
@@ -268,6 +381,7 @@ async fn load_agent_attaches_explicit_restore_container_with_stored_agent_before
 
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    write_singleton_claude_admission(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     config.env.insert(
         "OPERATOR_RESTORE_SECRET".to_owned(),
@@ -288,6 +402,11 @@ async fn load_agent_attaches_explicit_restore_container_with_stored_agent_before
         jackin_core::Agent::Claude,
     );
     manifest.workspace_name = None;
+    manifest.set_admitted_instances([jackin_instance::AdmittedInstance::new(
+        "claude-main",
+        jackin_core::Agent::Claude,
+        "test",
+    )]);
     manifest.docker_identity = Some(crate::instance::DockerIdentity {
         role_container_id: container_name.to_owned(),
         dind_container_id: manifest.docker.dind_container.clone(),
@@ -375,6 +494,11 @@ async fn absent_related_rebuild_launches_with_model_and_effort() {
         jackin_core::Agent::Claude,
     );
     manifest.workspace_name = None;
+    manifest.set_admitted_instances([jackin_instance::AdmittedInstance::new(
+        "claude-main",
+        jackin_core::Agent::Claude,
+        "test",
+    )]);
     write_indexed_manifest(&paths, &manifest);
     provision_restore_account_policy(&paths, &config, &manifest);
     let docker = jackin_test_support::FakeDockerClient::default();

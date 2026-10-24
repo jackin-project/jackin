@@ -845,6 +845,13 @@ pub struct ResolvedInstance {
     pub synthesized: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SavedLaunchInstance<'a> {
+    pub config_id: &'a str,
+    pub agent: Agent,
+    pub account_id: &'a str,
+}
+
 impl ResolvedInstance {
     fn bind(config_id: &str, config: &AgentConfiguration, account: &AccountConfig) -> Self {
         let (account_model, account_url) = match &account.credential {
@@ -1010,6 +1017,76 @@ pub fn resolve_launch(
         )));
     }
     Ok(eligible)
+}
+
+pub fn resolve_saved_launch(
+    cfg: &AppConfig,
+    workspace: Option<&WorkspaceName>,
+    saved: &[SavedLaunchInstance<'_>],
+) -> ConfigResult<Vec<ResolvedInstance>> {
+    let ws = workspace
+        .map(|name| {
+            cfg.workspaces
+                .get(name.as_str())
+                .ok_or_else(|| ConfigError::WorkspaceNotFound(name.as_str().into()))
+        })
+        .transpose()?;
+    if saved.is_empty() {
+        return Err(ConfigError::msg(format_args!(
+            "saved launch selection is empty"
+        )));
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut instances = Vec::with_capacity(saved.len());
+    for tuple in saved {
+        if !seen.insert(tuple.config_id) {
+            return Err(ConfigError::msg(format_args!(
+                "duplicate configuration {:?} in saved launch selection",
+                tuple.config_id
+            )));
+        }
+
+        let instance = if cfg.agent_configurations.contains_key(tuple.config_id) {
+            let instance = bind_explicit(cfg, ws, tuple.config_id)?;
+            if instance.agent != tuple.agent || instance.account_id != tuple.account_id {
+                return Err(ConfigError::msg(format_args!(
+                    "saved configuration {:?} no longer matches its recorded agent/account tuple",
+                    tuple.config_id
+                )));
+            }
+            instance
+        } else {
+            let expected_id = format!("{}@{}", tuple.account_id, tuple.agent.slug());
+            if tuple.config_id != expected_id.as_str() {
+                return Err(ConfigError::msg(format_args!(
+                    "saved synthesized configuration {:?} does not match its recorded account/agent tuple",
+                    tuple.config_id
+                )));
+            }
+            if let Some(workspace) = ws
+                && !workspace.accounts.iter().any(|id| id == tuple.account_id)
+            {
+                return Err(ConfigError::msg(format_args!(
+                    "account {:?} is not assigned to this workspace",
+                    tuple.account_id
+                )));
+            }
+            let account = cfg.accounts.get(tuple.account_id).ok_or_else(|| {
+                ConfigError::msg(format_args!("unknown account {:?}", tuple.account_id))
+            })?;
+            if !account.supports_agent(tuple.agent) {
+                return Err(ConfigError::msg(format_args!(
+                    "account {:?} is not authorized for {}",
+                    tuple.account_id, tuple.agent
+                )));
+            }
+            ResolvedInstance::synthesize(tuple.account_id, tuple.agent, account)
+        };
+        instances.push(instance);
+    }
+
+    checked_launch_instances(instances)
 }
 
 fn checked_launch_instances(
