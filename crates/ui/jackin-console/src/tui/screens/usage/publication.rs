@@ -42,6 +42,17 @@ pub(crate) fn empty_publication_lines(
     lines
 }
 
+pub(crate) fn empty_publication_body_lines(
+    screen: &UsageScreenState,
+    now_epoch: i64,
+) -> Vec<Line<'static>> {
+    let mut lines = empty_publication_lines(screen, now_epoch);
+    if screen.loading() {
+        lines.drain(..2);
+    }
+    lines
+}
+
 pub(crate) fn publication_has_issues(screen: &UsageScreenState) -> bool {
     !screen.projection_issues.is_empty()
         || screen

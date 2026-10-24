@@ -35,3 +35,6 @@ mod case_03;
 mod case_04;
 mod case_05;
 mod case_06;
+mod case_07;
+mod case_08;
+mod case_09;

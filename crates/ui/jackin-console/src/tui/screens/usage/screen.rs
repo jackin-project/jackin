@@ -1,14 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{now_epoch, render_account_list, render_detail};
+use super::detail::render_detail_with_geometry;
+use super::list::render_account_list_with_geometry;
+use super::{UsagePaintReceipt, now_epoch, usage_frame_layout};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-};
+use ratatui::{Frame, layout::Rect};
 
 use crate::tui::state::ManagerState;
 
@@ -36,9 +35,13 @@ pub fn handle_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             screen.refresh_due = true;
             screen.force_refresh_pending = true;
         }
-        KeyCode::PageUp => screen.scroll = screen.scroll.saturating_sub(5),
+        KeyCode::PageUp => {
+            screen.scroll = screen.scroll.saturating_sub(5);
+            screen.list_scroll = screen.list_scroll.saturating_sub(5);
+        }
         KeyCode::PageDown => {
             screen.scroll = screen.scroll.saturating_add(5);
+            screen.list_scroll = screen.list_scroll.saturating_add(5);
         }
         _ => {}
     }
@@ -49,11 +52,31 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
 }
 
 pub fn render_at(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>, now_epoch: i64) {
-    let body = crate::tui::view::workspace_frame_areas(area).body;
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-        .split(body);
-    render_account_list(frame, columns[0], state, now_epoch);
-    render_detail(frame, columns[1], state, now_epoch);
+    drop(render_at_with_pointer_receipt(
+        frame, area, state, now_epoch,
+    ));
+}
+
+pub(crate) fn render_at_with_pointer_receipt(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &ManagerState<'_>,
+    now_epoch: i64,
+) -> Option<UsagePaintReceipt> {
+    let frame_area = frame.area();
+    let request_is_fully_painted = area.width > 0
+        && area.height > 0
+        && u32::from(area.x) >= u32::from(frame_area.x)
+        && u32::from(area.y) >= u32::from(frame_area.y)
+        && u32::from(area.x) + u32::from(area.width)
+            <= u32::from(frame_area.x) + u32::from(frame_area.width)
+        && u32::from(area.y) + u32::from(area.height)
+            <= u32::from(frame_area.y) + u32::from(frame_area.height);
+    let layout = usage_frame_layout(area);
+    let geometry = render_account_list_with_geometry(frame, layout.list_outer, state, now_epoch)?;
+    let detail_geometry =
+        render_detail_with_geometry(frame, layout.detail_outer, state, now_epoch)?;
+    let screen = state.usage.screen.as_ref()?;
+    (state.usage.visible && request_is_fully_painted)
+        .then(|| UsagePaintReceipt::new(area, now_epoch, screen, layout, geometry, detail_geometry))
 }

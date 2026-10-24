@@ -133,6 +133,11 @@ pub fn handle_mouse_with_config(
     }
 
     let input_owner = state.painted_input_owner();
+    if input_owner == ConsolePaintedInputOwner::Usage {
+        state.clear_pointer_state();
+        handle_usage_pointer_event(state, mouse, term_size);
+        return super::InputOutcome::Continue;
+    }
     if !input_owner.allows_manager_pointer_actions() {
         state.clear_pointer_state();
         return super::InputOutcome::Continue;
@@ -298,6 +303,44 @@ fn clear_pointer_hover(state: &mut ManagerState<'_>) {
     }
 }
 
+fn handle_usage_pointer_event(state: &mut ManagerState<'_>, mouse: MouseEvent, area: Rect) {
+    match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            let _ = state
+                .usage
+                .select_painted_row(area, mouse.column, mouse.row);
+        }
+        MouseEventKind::ScrollLeft
+        | MouseEventKind::ScrollRight
+        | MouseEventKind::ScrollUp
+        | MouseEventKind::ScrollDown => {
+            let direction = match console_mouse_wheel_plan(mouse.kind, mouse.modifiers) {
+                ConsoleMouseWheelPlan::Vertical(delta) if delta < 0 => {
+                    Some(crate::tui::screens::usage::WheelDirection::Up)
+                }
+                ConsoleMouseWheelPlan::Vertical(delta) if delta > 0 => {
+                    Some(crate::tui::screens::usage::WheelDirection::Down)
+                }
+                ConsoleMouseWheelPlan::Vertical(_)
+                | ConsoleMouseWheelPlan::Horizontal { .. }
+                | ConsoleMouseWheelPlan::None => None,
+            };
+            if let Some(direction) = direction {
+                let _ = state.usage.apply_painted_wheel_action(
+                    area,
+                    mouse.column,
+                    mouse.row,
+                    direction,
+                );
+            }
+        }
+        MouseEventKind::Moved
+        | MouseEventKind::Down(_)
+        | MouseEventKind::Drag(_)
+        | MouseEventKind::Up(_) => {}
+    }
+}
+
 fn handle_modal_pointer_event(
     state: &mut ManagerState<'_>,
     owner: ConsolePaintedInputOwner,
@@ -369,6 +412,12 @@ pub fn clickable_at(
         return false;
     }
     let input_owner = state.painted_input_owner();
+    if input_owner == ConsolePaintedInputOwner::Usage {
+        return state
+            .usage
+            .painted_row_target(term_size, mouse.column, mouse.row)
+            .is_some();
+    }
     if !input_owner.allows_manager_pointer_actions() {
         return false;
     }

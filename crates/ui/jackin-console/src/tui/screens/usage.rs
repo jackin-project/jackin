@@ -3,10 +3,12 @@
 
 mod body;
 mod detail;
+mod geometry;
 mod labels_metric;
 mod labels_time;
 mod list;
 mod model;
+mod pointer;
 mod publication;
 mod refresh;
 mod screen;
@@ -19,7 +21,12 @@ pub(crate) use body::{
     append_account_full_body, append_account_summary_body, append_overview_account, meter_line,
     meter_style, panel, refreshing_line, row_style,
 };
+#[cfg(test)]
 pub(crate) use detail::render_detail;
+pub use geometry::{
+    UsageFrameLayout, UsageListGeometry, UsageRowTarget, UsageWheelAction, WheelDirection,
+    list_geometry, usage_frame_layout, usage_wheel_action,
+};
 pub use labels_metric::freshness_age_label;
 pub(crate) use labels_metric::{
     issue_text, metric_group_value_summary, metric_scope_summary, non_empty_label, now_epoch,
@@ -31,13 +38,16 @@ pub(crate) use labels_time::{
     past_age_label, quota_state_label, relative_time_label, summary_category_rank,
     updated_age_label,
 };
+#[cfg(test)]
 pub(crate) use list::render_account_list;
 pub use model::{
     USAGE_HEARTBEAT_INTERVAL, UsageAccount, UsageFilter, UsageMetricGroup, UsageRefreshOutcome,
     UsageRefreshRequest, UsageSort, UsageWindow,
 };
+pub use pointer::UsagePaintReceipt;
 pub(crate) use publication::{
     append_publication_age, append_publication_issues, empty_publication_lines,
 };
+pub(crate) use screen::render_at_with_pointer_receipt;
 pub use screen::{handle_key, render, render_at};
 pub use state::UsageScreenState;

@@ -28,7 +28,7 @@ termrock = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync"] }
 nix = { workspace = true, features = ["term"] }
 open = "5.4.4"
-ratatui = { workspace = true }
+ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 
 [dev-dependencies]
 insta = { workspace = true, features = ["filters"] }
