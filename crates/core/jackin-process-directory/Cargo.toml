@@ -16,8 +16,11 @@ readme = "README.md"
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["process"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = { workspace = true }
+
 [dev-dependencies]
-nix = { workspace = true }
+nix = { workspace = true, features = ["process", "signal"] }
 tempfile = { workspace = true }
 
 [lints]

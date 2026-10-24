@@ -2840,6 +2840,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-otlp-testbed",
  "jackin-process",
+ "jackin-process-directory",
  "jackin-protocol",
  "jackin-telemetry",
  "jackin-tui",
@@ -3278,6 +3279,7 @@ version = "0.6.4"
 dependencies = [
  "anyhow",
  "nix 0.31.3",
+ "tempfile",
  "tokio",
 ]
 
@@ -3285,6 +3287,7 @@ dependencies = [
 name = "jackin-process-directory"
 version = "0.6.4"
 dependencies = [
+ "libc",
  "nix 0.31.3",
  "rustix 1.1.5",
  "tempfile",

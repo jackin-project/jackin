@@ -62,7 +62,7 @@ key = "clippy::disallowed_methods@jackin"
 bound = 19
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-capsule"
-bound = 9
+bound = 10
 [[family.entry]]
 key = "clippy::disallowed_methods@jackin-config"
 bound = 3
@@ -155,7 +155,7 @@ key = "clippy::exit@jackin"
 bound = 2
 [[family.entry]]
 key = "clippy::exit@jackin-capsule"
-bound = 1
+bound = 2
 [[family.entry]]
 key = "clippy::expect_used@jackin"
 bound = 10
@@ -255,6 +255,9 @@ bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin"
 bound = 4
+[[family.entry]]
+key = "clippy::print_stderr@jackin-capsule"
+bound = 1
 [[family.entry]]
 key = "clippy::print_stderr@jackin-dev"
 bound = 1
@@ -608,7 +611,7 @@ key = "clippy::unused_async_trait_impl@jackin-isolation"
 bound = 1
 [[family.entry]]
 key = "unsafe_code@jackin-process-directory"
-bound = 1
+bound = 3
 [[family.entry]]
 key = "unsafe_code@jackin-usage-host-accounts"
 bound = 6
@@ -622,8 +625,11 @@ bound = 4
 key = "clippy::disallowed_methods@jackin-docker"
 bound = 2
 [[family.entry]]
-key = "clippy::disallowed_methods@jackin-process-directory"
+key = "clippy::disallowed_methods@jackin-process"
 bound = 1
+[[family.entry]]
+key = "clippy::disallowed_methods@jackin-process-directory"
+bound = 2
 [[family.entry]]
 key = "clippy::too_many_lines@jackin-usage-broker"
 bound = 2
@@ -1103,7 +1109,7 @@ key = "crates/services/jackin-workflow/README.md"
 bound = 650
 [[family.entry]]
 key = "crates/core/jackin-process-directory/README.md"
-bound = 1171
+bound = 1168
 [[family]]
 id = "export-volume"
 kind = "numeric"

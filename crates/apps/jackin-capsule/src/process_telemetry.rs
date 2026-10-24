@@ -3,7 +3,55 @@
 
 use jackin_process::{ExecRequest, ExecResult};
 use jackin_telemetry::schema::enums::{ErrorType, OutcomeValue, ProcessExecutableName};
+#[cfg(target_os = "macos")]
+use std::ops::{Deref, DerefMut};
 use std::process::ExitStatus;
+
+#[cfg(target_os = "macos")]
+pub(crate) struct RegisteredStdChild {
+    child: std::process::Child,
+    // Field order keeps the wait-status reservation until after Child drops.
+    registration: jackin_process::ChildRegistration,
+}
+
+#[cfg(target_os = "macos")]
+impl RegisteredStdChild {
+    fn new(child: std::process::Child, registration: jackin_process::ChildRegistration) -> Self {
+        Self {
+            child,
+            registration,
+        }
+    }
+
+    pub(crate) fn wait_with_output(self) -> std::io::Result<std::process::Output> {
+        let Self {
+            child,
+            registration,
+        } = self;
+        let output = child.wait_with_output();
+        drop(registration);
+        output
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Deref for RegisteredStdChild {
+    type Target = std::process::Child;
+
+    fn deref(&self) -> &Self::Target {
+        &self.child
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl DerefMut for RegisteredStdChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.child
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) type RegisteredStdChild = std::process::Child;
 
 fn operation(
     request: &ExecRequest,
@@ -105,9 +153,20 @@ impl Drop for ChildOperation {
 
 pub(crate) fn spawn_sync(
     request: &ExecRequest,
-) -> anyhow::Result<(ChildOperation, std::process::Child)> {
+) -> anyhow::Result<(ChildOperation, RegisteredStdChild)> {
     let operation = ChildOperation::begin(request);
-    let Ok(child) = jackin_process::spawn_sync(request) else {
+    #[cfg(target_os = "macos")]
+    let spawn_result = jackin_process::coordinate_children(|registry| {
+        let slot = registry
+            .prepare_registration()
+            .map_err(anyhow::Error::from)?;
+        let child = jackin_process::spawn_sync(request)?;
+        let registration = registry.register_prepared(child.id(), slot);
+        Ok::<_, anyhow::Error>(RegisteredStdChild::new(child, registration))
+    });
+    #[cfg(not(target_os = "macos"))]
+    let spawn_result = jackin_process::spawn_sync(request);
+    let Ok(child) = spawn_result else {
         operation.complete_spawn_failure();
         return Err(anyhow::anyhow!("process spawn failed"));
     };

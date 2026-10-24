@@ -273,18 +273,26 @@ fn run_command_capturing_output(
     let stdout_reader = read_pipe_bounded(stdout, 64 * 1024);
     let stderr_reader = read_pipe_bounded(stderr, 4 * 1024);
     let status = match wait_child_with_timeout(&mut child, timeout) {
-        WaitOutcome::Exited(status) => Some(status),
-        WaitOutcome::Reaped => None,
+        WaitOutcome::Exited(status) => {
+            drop(child);
+            Some(status)
+        }
+        WaitOutcome::Reaped => {
+            drop(child);
+            None
+        }
         WaitOutcome::TimedOut => {
+            operation.complete_timeout();
+            drop(child);
             drop(stdout_reader.join());
             drop(stderr_reader.join());
-            operation.complete_timeout();
             return Err(LookupError::Timeout);
         }
         WaitOutcome::Failed => {
+            operation.complete_io_failure();
+            drop(child);
             drop(stdout_reader.join());
             drop(stderr_reader.join());
-            operation.complete_io_failure();
             return Err(LookupError::Io);
         }
     };
