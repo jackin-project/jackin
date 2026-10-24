@@ -57,6 +57,7 @@ tag_name = "v{{ version }}"
 manifest_path = "Cargo.toml"
 version_package = "jackin"
 version_env = "JACKIN_VERSION_OVERRIDE"
+publication_timeout_minutes = 15
 
 [stacks.rust.binary_release.preview]
 enabled = true
@@ -111,7 +112,7 @@ asset_name = "capsule-manifest.json"
 profile = "signed-sbom-v1"
 
 [distribution.homebrew_tap]
-enabled = false
+enabled = true
 repository = "jackin-project/homebrew-tap"
 environment = "tap-update"
 app_id_variable = "HOMEBREW_TAP_APP_ID"

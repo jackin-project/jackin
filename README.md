@@ -5,7 +5,7 @@
 > [!WARNING]
 > 🚧 jackin❯ is in active early development.
 >
-> jackin❯ is not production-ready. We are actively refining the core concept, runtime integrations, CLI/TUI workflows, schemas, and documentation, and that will introduce major breaking changes before a stable release. Features may be redesigned, replaced, or removed while we find the shape that makes sense. Early adopters are welcome, but the priority right now is concept quality and fast iteration rather than freezing today's behavior. The docs track the rolling preview channel; open issues and roadmap feedback are welcome, but do not treat the current feature set as a compatibility promise.
+> jackin❯ is not production-ready. We are actively refining the core concept, runtime integrations, CLI/TUI workflows, schemas, and documentation, and that will introduce major breaking changes before a stable release. Features may be redesigned, replaced, or removed while we find the shape that makes sense. Early adopters are welcome, but the priority right now is concept quality and fast iteration rather than freezing today's behavior. The docs track the preview channel; open issues and roadmap feedback are welcome, but do not treat the current feature set as a compatibility promise.
 
 Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.
 
