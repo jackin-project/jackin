@@ -123,6 +123,7 @@ where
     let github_ctx_owned = configured.github_ctx.clone();
     let model_override_owned = opts.model.clone();
     let effort_owned = opts.effort;
+    let restored_selection = restore_instances.is_some();
     let provision = resolve_provision_inputs(
         config,
         configured.workspace_opt.as_ref(),
@@ -132,6 +133,7 @@ where
         restore_instances,
     )?;
     let instances = provision.instances;
+    let prewarm_instances = restored_selection.then(|| instances.clone());
     let admitted = instances.clone();
     let credentials = provision.credentials;
     let credential_scope = crate::usage_relay::usage_credential_scope_for_staged_launch(
@@ -139,14 +141,18 @@ where
         &instances,
         &credentials,
     )?;
+    let sibling_auth_prewarm = crate::runtime::launch::SiblingAuthPrewarm {
+        manifest: &validated_repo.manifest,
+        config,
+        workspace_name: &configured.workspace_name_str,
+        role_key,
+    };
     if let Err(error) = prewarm_sibling_auth_before_admission(
         paths,
         container_name,
-        &validated_repo.manifest,
-        config,
-        &configured.workspace_name_str,
-        role_key,
+        sibling_auth_prewarm,
         agent,
+        prewarm_instances,
     )
     .await
     {

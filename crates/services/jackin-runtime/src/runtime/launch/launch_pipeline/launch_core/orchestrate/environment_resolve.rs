@@ -131,19 +131,26 @@ pub(crate) struct PrepareEnvironment<'a, D> {
 pub(crate) async fn prewarm_sibling_auth_before_admission(
     paths: &jackin_core::JackinPaths,
     container_name: &str,
-    manifest: &jackin_manifest::RoleManifest,
-    config: &jackin_config::AppConfig,
-    workspace_name: &str,
-    role_key: &str,
+    prewarm: crate::runtime::launch::SiblingAuthPrewarm<'_>,
     agent: jackin_core::Agent,
+    admitted_instances: Option<Vec<jackin_config::ResolvedInstance>>,
 ) -> anyhow::Result<()> {
-    let prewarm = crate::runtime::launch::SiblingAuthPrewarm {
-        manifest,
-        config,
-        workspace_name,
-        role_key,
+    let prewarm = match admitted_instances {
+        Some(instances) => {
+            crate::runtime::launch::launch_runtime::spawn_sibling_auth_prewarm_with_admitted_instances(
+                paths,
+                container_name,
+                &prewarm,
+                agent,
+                instances,
+            )
+        }
+        None => crate::runtime::launch::spawn_sibling_auth_prewarm(
+            paths,
+            container_name,
+            &prewarm,
+            agent,
+        ),
     };
-    let prewarm =
-        crate::runtime::launch::spawn_sibling_auth_prewarm(paths, container_name, &prewarm, agent);
     crate::runtime::launch::await_sibling_auth_prewarm(prewarm).await
 }
