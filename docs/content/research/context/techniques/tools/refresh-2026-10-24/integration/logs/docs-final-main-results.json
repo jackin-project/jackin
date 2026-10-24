@@ -1,0 +1,105 @@
+[
+  {
+    "command": [
+      "bun",
+      "install",
+      "--frozen-lockfile"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:46:41.257289+00:00",
+    "finished_utc": "2026-10-24T08:46:41.699747+00:00",
+    "duration_seconds": 0.442,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-1.log",
+    "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+  },
+  {
+    "command": [
+      "bun",
+      "run",
+      "build"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:46:41.700219+00:00",
+    "finished_utc": "2026-10-24T08:47:28.384195+00:00",
+    "duration_seconds": 46.684,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-2.log",
+    "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+  },
+  {
+    "command": [
+      "mbx",
+      "+1.99.1",
+      "xtask",
+      "docs",
+      "repo-links"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:47:28.384644+00:00",
+    "finished_utc": "2026-10-24T08:47:52.139381+00:00",
+    "duration_seconds": 23.755,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-3.log",
+    "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+  },
+  {
+    "command": [
+      "mbx",
+      "+1.99.1",
+      "xtask",
+      "roadmap",
+      "audit"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:47:52.139845+00:00",
+    "finished_utc": "2026-10-24T08:47:56.812693+00:00",
+    "duration_seconds": 4.673,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-4.log",
+    "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+  },
+  {
+    "command": [
+      "mbx",
+      "+1.99.1",
+      "xtask",
+      "research",
+      "check"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:47:56.813010+00:00",
+    "finished_utc": "2026-10-24T08:47:57.144638+00:00",
+    "duration_seconds": 0.332,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-5.log",
+    "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+  },
+  {
+    "command": [
+      "bunx",
+      "tsc",
+      "--noEmit"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:47:57.145034+00:00",
+    "finished_utc": "2026-10-24T08:47:57.738227+00:00",
+    "duration_seconds": 0.593,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-6.log",
+    "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+  },
+  {
+    "command": [
+      "bun",
+      "test"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T08:47:57.738852+00:00",
+    "finished_utc": "2026-10-24T08:47:57.751864+00:00",
+    "duration_seconds": 0.013,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-7.log",
+    "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+  }
+]

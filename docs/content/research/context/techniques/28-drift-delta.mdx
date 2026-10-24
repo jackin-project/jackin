@@ -1,51 +1,65 @@
 ---
 title: "28 — Provider-sensitive claim verification"
-description: "Verification contract for model, pricing, quota, cache, beta, and tool claims that can drift between provider releases."
+description: "A dated verification ledger for pricing, cache accounting, native defaults, subscriptions, beta contracts, and host capability drift."
 ---
 
 ## Summary
 
-No provider-sensitive value on this page is actionable until the dossier is refreshed under one declared cutoff.
+**Research state:** Current
 
-Provider claims age at different rates. Model availability, prices, quota behavior, cache semantics, beta headers, and tool compatibility need primary-source verification as one atomic refresh; old and new values must never coexist as a correction ledger.
+**Snapshot:** 2026-10-24 01:15 UTC. Retrieval happened on October 24 and is separately timestamped. “Current” describes the research refresh; it does not certify a product, an installed native version or a successfully executed provider treatment.
 
-## Question and scope
+Provider-sensitive claims require an exact surface: model, endpoint, account/billing route, host/version, region/platform where relevant, and effective date. A current page can describe a future price or development-branch feature. Record that distinction rather than silently moving the snapshot.
 
-How should the dossier represent volatile provider facts without preserving superseded claims?
+## Verified deltas that change the analysis
 
-## Method
+| Previous assumption | Current disposition | Primary evidence |
+| --- | --- | --- |
+| OpenAI implicit cache writes are always free | Withdrawn for GPT-5.6+ API: 30m and 12h writes have separate paid classes | [OpenAI cache guide](https://developers.openai.com/api/docs/guides/prompt-caching) |
+| All cache reads cost 10% of ordinary input | Withdrawn: current model-specific ratios include 2.5% and 5% | [Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing), [OpenAI pricing](https://developers.openai.com/api/docs/pricing) |
+| Cached input accounting is the same everywhere | Withdrawn: inclusive OpenAI versus disjoint Claude input classes, and separate Gemini output/thoughts | [Provider register](/research/context/techniques/tools/#october-24-provider-evidence) |
+| Claude automatic caching is limited to the older platform list | Updated current support, with legacy Bedrock model exceptions | [Claude cache guide](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) |
+| Editing old tool results only affects tokens/cache | Incomplete: current preserved-thinking signatures can invalidate continuation | [Preserved thinking](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking) |
+| Claude compaction is one threshold-only beta | Withdrawn: separate on-demand and threshold contracts exist | [Compaction](https://platform.claude.com/docs/en/build-with-claude/compaction) |
+| Explore always runs Haiku, or always inherits | Both too broad; current Fable behavior depends on connection mode and overrides | [Subagents](https://code.claude.com/docs/en/sub-agents) |
+| There is no native spend enforcement | Withdrawn: current SDK query budget and provider spend controls exist; task token budgets remain advisory | [SDK limits](https://code.claude.com/docs/en/agent-sdk/subagents#cap-subagent-depth-concurrency-and-spend) |
+| A subscription never supplies API usage credit | Withdrawn for eligible opted-in Max/Team benefits | [Monthly API credits](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans) |
+| Codex credits follow all API write charges | Withdrawn: credit billing has no separate cache-write charge | [Codex pricing](https://learn.chatgpt.com/docs/pricing) |
+| All Codex paid plans have five-hour limits | Withdrawn: current Pro differs; account/weekly limits still apply | [Codex pricing](https://learn.chatgpt.com/docs/pricing) |
+| Gemini explicit caches apply to every generation | Withdrawn for Argon onward; Interactions uses implicit caching | [Gemini caching](https://ai.google.dev/gemini-api/docs/caching) |
+| Smaller increments always lower input cost | False at some cache boundaries; Argon synthetic scenario demonstrates a counterexample | [Offline scenarios](/research/context/techniques/tools/#october-24-provider-evidence) |
+| Twelve Jackin registry entries mean twelve launchable hosts | Withdrawn: six runtime dispatch cases at the pinned baseline | [Entrypoint](https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/docker/runtime/entrypoint.sh) |
+| PostToolUse always means replacement, or Codex is observer-only | Both stale: actual payload and error/promise behavior differ by host | [Host matrix](/research/context/techniques/23-cross-agent-portability) |
+| LiteLLM offers only load balancing | Withdrawn: current AutoRouter add-on exists; vendor benchmarks remain separately graded | [AutoRouter](https://docs.litellm.ai/docs/auto_router/) |
 
-For each provider, verify official documentation, product announcements, and release notes at the same cutoff. Record source URLs and access dates in the owning chapter. Run local measurements only when the method, input, tool version, and limitations are reproducible from the repository.
+## Source and execution ledger
 
-## Findings
+The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/README.md">provider evidence bundle</RepoFile> contains source URLs, redirect targets, access timestamps, hashes, status/error records, inspected host pins, normalized rate assumptions, offline scripts/results and prior-heading dispositions. Failed fetches remain attempts, not supporting citations.
 
-### Findings
+Official mutable documentation is evidence of what was documented when retrieved. A pinned source file is evidence about that revision. Neither alone proves the npm/binary package delivered by an installer, the installed host's configuration, a real cache hit, a correct task outcome or a paid receipt. Release/package correspondence for the six core products is tracked in their own dossiers.
 
-- One refresh declares one cutoff for every provider-sensitive chapter it touches.
-- Owning chapters state only the verified current value and link the primary source.
-- A changed claim replaces the old prose. Git history preserves the prior state.
-- Unverified or conflicting evidence yields `Needs refresh`, not an inferred value.
-- Product chronology, rollout progress, and implementation status belong outside Research.
+Retrieval after the cutoff does not prove the page had identical content at the cutoff. Last-modified metadata is retained where available; unversioned sources have this time-resolution limitation. Pinned host commits used here precede the cutoff. Announced December/January prices are labeled future terms and excluded from current-rate calculations.
 
-## Implications for jackin❯
+## Recheck triggers and ownership
 
-### How to use this page
+| Claim family | Recheck trigger | Evidence needed before changing a decision |
+| --- | --- | --- |
+| Price and billing normalization | Model/rate-card change, new endpoint or receipt shape | Official price plus real usage schema; fixture proving disjoint accounting |
+| Cache mechanics | New model, TTL option, endpoint or host update | Exact minimum, write/read, scope and lifetime contracts; cold/warm receipt when authorized |
+| Native hooks | Host version, plugin API, trust or installer change | Versioned source/package plus model-visible replacement and off-path conformance |
+| Compaction / thinking | Beta or model update, history-transform change | Compatible continuation, signature behavior and repeated-compaction fidelity |
+| Subscription economics | Plan/credit policy, auth route or enterprise agreement change | Applicable official terms and account-authorized observations |
+| Fleet sharing | Tenant/workspace or prefix identity change | Authorized scope and isolation proof; never infer scope from a hit counter |
+| Quality and efficacy | New task stratum, transformer, model or policy | Independent acceptance and all-attempt task cost under the validation gates |
 
-Treat this as the refresh contract, not a fact register. Consult the owning chapter for a verified claim. If its cutoff is absent or older than a relevant provider release, mark it `Needs refresh` and avoid the value.
+Keep a stable canonical URL and record its actual resolved destination. Do not create query-string variants to retrieve an older price or treat cached search snippets as current authority. Separate first-party claims, independent studies, local execution and proposed experiments in every table.
 
-## Limitations and unknowns
+## Unknowns and stale claims
 
-- The provider-sensitive chapters have not yet completed a single-cutoff refresh.
-- Undocumented subscription weighting and private response headers cannot support exact public formulas.
-- Local credentials and private host state are not reproducible research evidence.
+An unknown does not prove a feature is unsafe, ineffective or absent. It means the corresponding decision remains unqualified. Preserve the native path while collecting the missing evidence. A current source that contradicts a prior claim should replace it explicitly; a newly unavailable source should not silently become proof that the product disappeared.
 
-## Sources
+The coverage register maps every prior heading in chapters 06/07/10/11/12/13/19/22/23/28 and records withdrawn numerical claims. Old measurements remain historical evidence only when their original fixture, model and denominator are retained. They are not relabeled as fresh execution.
 
-This page defines verification policy rather than external product facts. The policy applies to the primary-source ledgers in [Economics and measurement](/research/context/techniques/01-economics-and-measurement/), [Provider-level features](/research/context/techniques/12-provider-features/), and [Evidence and claims](/research/context/tools/07-evidence-and-claims/).
+## Decision
 
-## Related work
-
-- [Literature and market evidence map](/research/context/techniques/24-fresh-literature-and-market-delta/)
-- [Economics and measurement](/research/context/techniques/01-economics-and-measurement/)
-- [Validation harness](/research/context/techniques/16-validation-harness/)
-- [Evidence and claims](/research/context/tools/07-evidence-and-claims/)
+Use this ledger when updating [economics](/research/context/techniques/01-economics-and-measurement), [provider features](/research/context/techniques/12-provider-features), [host portability](/research/context/techniques/23-cross-agent-portability) and the [adoption roadmap](/research/context/techniques/17-adoption-roadmap). Recalculate affected claims instead of changing a version label alone. No paid calls or production optimizer changes were made to verify this snapshot.

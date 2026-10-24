@@ -1,0 +1,17 @@
+{
+  "command": [
+    "mbx",
+    "+1.99.1",
+    "xtask",
+    "docs",
+    "repo-links"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+  "started_utc": "2026-10-24T09:44:05.584512+00:00",
+  "finished_utc": "2026-10-24T09:44:05.968403+00:00",
+  "duration_seconds": 0.384,
+  "exit_code": 0,
+  "artifact": "logs/ci-repair-final-repo-links.log",
+  "log_sha256": "401ba2ef82a047941a31fc71d2b5febb62732726e69ac94bbe0a67912eacef10",
+  "scope": "Complete recursive documentation reference audit after the final evidence-Markdown label correction and curation of the new render records. All remaining evidence additions are JSON/log data; no later Markdown/MDX edit is planned."
+}

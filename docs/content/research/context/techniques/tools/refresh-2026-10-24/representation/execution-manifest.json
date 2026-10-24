@@ -1,0 +1,31 @@
+{
+  "snapshot_cutoff_utc": "2026-10-24T01:15:00Z",
+  "jackin_base_revision": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "started_utc": "2026-10-24T02:28:38Z",
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "/workspace/scratch/1335a158b2a9/research/representation/representation_probe.py",
+    "--out",
+    "/workspace/scratch/1335a158b2a9/research/representation/probe-results"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9",
+  "environment_overrides": {
+    "PYTHONPATH": "/workspace/scratch/1335a158b2a9/research/representation/python-libs",
+    "TIKTOKEN_CACHE_DIR": "/workspace/scratch/1335a158b2a9/research/representation/tokenizer-cache"
+  },
+  "exit_code": 0,
+  "duration_seconds": 0.484004,
+  "duration_scope": "Harness execution bookkeeping only, not model or provider performance.",
+  "script_sha256": "42c5ebfe4546e9afd93b6d393fa611f180082b5756577a89a966bf274113b00e",
+  "results_sha256": "168c4d5c731ed0cba9f4aff6c7a434fef31a7eb5d5736c0a16c8081b47cc9523",
+  "interpreter": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "runtime_execution": "Offline; socket connection methods disabled before tokenizer initialization; cached public encodings.",
+  "no_execution": [
+    "No authenticated count_tokens request",
+    "No model generation or OCR",
+    "No native agent host or hook task",
+    "No subscription usage experiment",
+    "No image generated, edited, or sent"
+  ],
+  "environment_limitation": "A separate documentation write was blocked by ENOSPC before execution. Reproducible owned Go toolchain copies were removed; source/probe logs retained. This did not fail a product test."
+}

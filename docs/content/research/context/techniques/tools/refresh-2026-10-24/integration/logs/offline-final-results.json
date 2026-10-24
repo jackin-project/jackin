@@ -1,0 +1,49 @@
+[
+  {
+    "name": "measurement",
+    "command": [
+      "python3",
+      "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/test_measurement_tools.py"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+    "environment_overrides": {},
+    "started_utc": "2026-10-24T08:24:10.604383+00:00",
+    "finished_utc": "2026-10-24T08:24:10.696377+00:00",
+    "duration_seconds": 0.092,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/final-measurement.log"
+  },
+  {
+    "name": "reaggregation",
+    "command": [
+      "python3",
+      "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/reaggregate.py"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+    "environment_overrides": {},
+    "started_utc": "2026-10-24T08:24:10.696518+00:00",
+    "finished_utc": "2026-10-24T08:24:10.748965+00:00",
+    "duration_seconds": 0.052,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/final-reaggregation.log"
+  },
+  {
+    "name": "representation",
+    "command": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+      "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/representation_probe.py",
+      "--out",
+      "/workspace/scratch/1335a158b2a9/research/coordinator/representation-rerun"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+    "environment_overrides": {
+      "PYTHONPATH": "/workspace/scratch/1335a158b2a9/research/representation/python-libs",
+      "TIKTOKEN_CACHE_DIR": "/workspace/scratch/1335a158b2a9/research/representation/tokenizer-cache"
+    },
+    "started_utc": "2026-10-24T08:24:10.749075+00:00",
+    "finished_utc": "2026-10-24T08:24:11.443119+00:00",
+    "duration_seconds": 0.694,
+    "exit_code": 0,
+    "log": "/workspace/scratch/1335a158b2a9/tooling/logs/final-representation.log"
+  }
+]

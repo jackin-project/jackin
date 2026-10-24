@@ -1,0 +1,44 @@
+{
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/render_pages.mjs",
+    "--repo",
+    "/workspace/scratch/1335a158b2a9/jackin",
+    "--manifest",
+    "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-build-input-manifest.json",
+    "--browser",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/chrome-for-testing/chrome-headless-shell-linux64/chrome-headless-shell",
+    "--playwright-module",
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.js",
+    "--origin",
+    "http://127.0.0.1:4188",
+    "--out",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/ci-repair-render"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9",
+  "started_utc": "2026-10-24T09:39:32.085465+00:00",
+  "env_overrides": {},
+  "script_sha256": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54",
+  "input_manifest": {
+    "path": "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-build-input-manifest.json",
+    "sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+    "entries": 58
+  },
+  "git_head": "f8201076af4bca7faf9f579f627e8056dbd7f83f",
+  "context_note": "Working tree includes documentation-only CI repair after published f820; exact unchanged 58 input hashes and rebuilt 56 HTML hashes are in the result. Prior architecture pack remains untouched.",
+  "server_argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "-m",
+    "http.server",
+    "4188",
+    "--bind",
+    "127.0.0.1",
+    "--directory",
+    "/workspace/scratch/1335a158b2a9/jackin/docs/.output/public"
+  ],
+  "server_pid": 640131,
+  "server_bound": "127.0.0.1:4188",
+  "duration_seconds": 31.45,
+  "exit_code": 0,
+  "finished_utc": "2026-10-24T09:40:03.639886+00:00"
+}

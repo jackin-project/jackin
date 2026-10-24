@@ -1,0 +1,2138 @@
+[
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "README.md",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/README.md",
+    "status": 200,
+    "bytes": 15844,
+    "sha256": "14ce5366fca5f0f854957afeb898e6618d22fb0b59f43e7ae27633c6e7f6c9a7",
+    "fetched_utc": "2026-10-24T01:47:53.962153+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "FACT-VS-FICTION.md",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/FACT-VS-FICTION.md",
+    "status": 200,
+    "bytes": 30357,
+    "sha256": "14ea67d4ba59f4f58ac3ecc23e988ef792d88be47ff02ca033dde858361ec8ba",
+    "fetched_utc": "2026-10-24T01:47:53.964064+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "arms/README.md",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/arms/README.md",
+    "status": 200,
+    "bytes": 26303,
+    "sha256": "2055ca0e84a30ea824a2e86e53055807cdb39347506ea61408ac1e9a28d60adb",
+    "fetched_utc": "2026-10-24T01:47:54.037968+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "arms/headroom.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/arms/headroom.py",
+    "status": 200,
+    "bytes": 3159,
+    "sha256": "4bda99b45b142e3157dac10cb718deced09547bac5d25a73f8057db7d6aa53ca",
+    "fetched_utc": "2026-10-24T01:47:53.967471+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "arms/rtk.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/arms/rtk.py",
+    "status": 200,
+    "bytes": 14678,
+    "sha256": "959e4847ec815690342214fda548cbbaca0f3b59dcefd73e8cf6e5f403581c76",
+    "fetched_utc": "2026-10-24T01:47:53.965994+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "arms/dasein.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/arms/dasein.py",
+    "status": 200,
+    "bytes": 13546,
+    "sha256": "6d44f1f1acb12caef3c46b8914cf6228d82819bd4fc7094a359b887e914d49c6",
+    "fetched_utc": "2026-10-24T01:47:53.964746+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "arms/caveman.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/arms/caveman.py",
+    "status": 200,
+    "bytes": 5139,
+    "sha256": "93ddb80ab560eb829b3625cf5d517d061f100434d437501fd9fb8fcbc499840e",
+    "fetched_utc": "2026-10-24T01:47:53.953853+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "bench/grader.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/bench/grader.py",
+    "status": 200,
+    "bytes": 7353,
+    "sha256": "1577605bb2c1c37c655f2631bac26263a5de9e89e928aaed059f306e13946ec0",
+    "fetched_utc": "2026-10-24T01:47:53.959791+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "bench/pricing.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/bench/pricing.py",
+    "status": 200,
+    "bytes": 15129,
+    "sha256": "00c2434c1bb9e34872d80043b067b5416298b5445e7bf84628fdc2348b75b850",
+    "fetched_utc": "2026-10-24T01:47:54.112030+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "bench/report.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/bench/report.py",
+    "status": 200,
+    "bytes": 17299,
+    "sha256": "afb3f2dfca9e634715cfb929885f697ba62a98c8a62eb37990b02687db22484b",
+    "fetched_utc": "2026-10-24T01:47:54.117791+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "bench/schema.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/bench/schema.py",
+    "status": 200,
+    "bytes": 12815,
+    "sha256": "aa715502b68ff096c4273104e23dd2bcc151af5892f9f1ded2eb5f47edd89247",
+    "fetched_utc": "2026-10-24T01:47:54.083516+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "bench/cc_runner.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/bench/cc_runner.py",
+    "status": 200,
+    "bytes": 79285,
+    "sha256": "c5a5f73f36d87a97b9b80dcf682205b676c6d99f34f2538120c0880bb4f4f254",
+    "fetched_utc": "2026-10-24T01:47:54.168732+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "bench/usage_gateway.py",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/bench/usage_gateway.py",
+    "status": 200,
+    "bytes": 60322,
+    "sha256": "4d5d87da00f90f72a99e9baca3153c16d38e1ff4c2c8755d1b85e63f2d0a98c5",
+    "fetched_utc": "2026-10-24T01:47:54.129620+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "results/2026-07-04/README.md",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/results/2026-07-04/README.md",
+    "status": 200,
+    "bytes": 6560,
+    "sha256": "1709bdc745b9e9e55dab1d906d18f0e9dc888a3aa631577bcb115152a745c834",
+    "fetched_utc": "2026-10-24T01:47:54.074551+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "results/2026-07-04/paired.csv",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/results/2026-07-04/paired.csv",
+    "status": 200,
+    "bytes": 48182,
+    "sha256": "4553d0b31cc695740125c22a24cdfd27dbc89f73e7f0474b7c0b084de048932f",
+    "fetched_utc": "2026-10-24T01:47:54.083830+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "results/2026-07-04/summary.json",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/results/2026-07-04/summary.json",
+    "status": 200,
+    "bytes": 2423,
+    "sha256": "2120796224d19a8c04d25e6c74085eca62a5d141b9af739bba0c4e9b01db5a76",
+    "fetched_utc": "2026-10-24T01:47:54.168061+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "results/2026-07-04/summary_rich.json",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/results/2026-07-04/summary_rich.json",
+    "status": 200,
+    "bytes": 173332,
+    "sha256": "2586b193ccf332062783f27a0adff2707afd99cfe8dc7690b4a45a36a338d758",
+    "fetched_utc": "2026-10-24T01:47:54.200013+00:00"
+  },
+  {
+    "repo": "daseinlabs/code-compression-bench",
+    "commit": "466077f002e6ef71fe5e8f24fc1c930edd4e3691",
+    "path": "tasks.json",
+    "url": "https://raw.githubusercontent.com/daseinlabs/code-compression-bench/466077f002e6ef71fe5e8f24fc1c930edd4e3691/tasks.json",
+    "status": 200,
+    "bytes": 17995,
+    "sha256": "56ef5f4260d5d92d0701fd9aa3b20ff64143381f5e1d7170ddc3915bb7a7c2d5",
+    "fetched_utc": "2026-10-24T01:47:54.187534+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "README.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/README.md",
+    "status": 200,
+    "bytes": 9475,
+    "sha256": "306dc420fc9a2a9dfd6934251196619b3af8c6dfc6e41b56b98b4f9c4711caae",
+    "fetched_utc": "2026-10-24T01:47:54.278473+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "deploy/eval-containers/results/README.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/deploy/eval-containers/results/README.md",
+    "status": 200,
+    "bytes": 1541,
+    "sha256": "6e85ef4be03af3b0480adeba5bf4429dda6efedb152e194c15686ff35c83e462",
+    "fetched_utc": "2026-10-24T01:47:54.227211+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "deploy/eval-containers/results/swe-bench-sweep-2026-07-13.csv",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/deploy/eval-containers/results/swe-bench-sweep-2026-07-13.csv",
+    "status": 200,
+    "bytes": 13430,
+    "sha256": "4f8cd1147eabb27b774901b65f664445576b6051634cef3946e81fffe7b48b9b",
+    "fetched_utc": "2026-10-24T01:47:54.330514+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "deploy/harbor/swebench.py",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/deploy/harbor/swebench.py",
+    "status": 200,
+    "bytes": 22411,
+    "sha256": "9ba62109ccbff4af5184c46ec49d2beb7011766094196ac0255d6ceeaa6e8f0f",
+    "fetched_utc": "2026-10-24T01:47:54.284297+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "deploy/harbor/swebench_rtk.py",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/deploy/harbor/swebench_rtk.py",
+    "status": 200,
+    "bytes": 13757,
+    "sha256": "8dba43c506403428e2f06fe09dbd61143a0ece5ee6f52c856993380fc6351215",
+    "fetched_utc": "2026-10-24T01:47:54.297217+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "deploy/harbor/terminalbench.py",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/deploy/harbor/terminalbench.py",
+    "status": 200,
+    "bytes": 22543,
+    "sha256": "4f71c7fea6bec5ac9ec46b5b6377e0f82db41dc2ee2958829abe81de05821d4f",
+    "fetched_utc": "2026-10-24T01:47:54.376478+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "deploy/harbor/terminalbench_headroom.py",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/deploy/harbor/terminalbench_headroom.py",
+    "status": 200,
+    "bytes": 20038,
+    "sha256": "2e124f26c6a6e83303284f3c8219492220c36243833ce7d3c1ccecd087ff5ae2",
+    "fetched_utc": "2026-10-24T01:47:54.285369+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "deploy/harbor/terminalbench_rtk.py",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/deploy/harbor/terminalbench_rtk.py",
+    "status": 200,
+    "bytes": 13918,
+    "sha256": "d57c3780eaa65dc2035342148921ea939146b16d0892940e8150709706c1a7c2",
+    "fetched_utc": "2026-10-24T01:47:54.315652+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "docs/results/REPRODUCE.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/REPRODUCE.md",
+    "status": 200,
+    "bytes": 21420,
+    "sha256": "90443591be0ac0bc1f1ed73daf34203cf39da2a9f4ddab3a66247b4751500382",
+    "fetched_utc": "2026-10-24T01:47:54.369595+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "docs/results/comparison.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/comparison.md",
+    "status": 200,
+    "bytes": 7279,
+    "sha256": "6e4702d09f377b26c33abac67cd3954ba080968728aa82968148211e14df2216",
+    "fetched_utc": "2026-10-24T01:47:54.409745+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "docs/results/measured-2026-08.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/measured-2026-08.md",
+    "status": 200,
+    "bytes": 22467,
+    "sha256": "213f58e99d0fb1c7386a1323cbc074d60559177739c5b6091c3916f44964ebb7",
+    "fetched_utc": "2026-10-24T01:47:54.400545+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "docs/results/measurement-limits.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/measurement-limits.md",
+    "status": 200,
+    "bytes": 31689,
+    "sha256": "dd44193598e09c38a36f35b9c1e902252cd07a08a7123783bf33a296330fe4c1",
+    "fetched_utc": "2026-10-24T01:47:54.430567+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "docs/results/saved-usd-correction-2026-09.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/saved-usd-correction-2026-09.md",
+    "status": 200,
+    "bytes": 21983,
+    "sha256": "ba3ba1c96f5d4f2af564856df38cf905d86684430e8cb49affc2e45a593cdc78",
+    "fetched_utc": "2026-10-24T01:47:54.443617+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "docs/results/swebench-arms.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/swebench-arms.md",
+    "status": 200,
+    "bytes": 25112,
+    "sha256": "7865e461b78749836324dd5b20688bca07943e2272207dee015e54afe258d634",
+    "fetched_utc": "2026-10-24T01:47:54.458811+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "docs/results/terminal-bench-arms.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/terminal-bench-arms.md",
+    "status": 200,
+    "bytes": 58108,
+    "sha256": "7b9ba1e9d9496d8dda1eb3d5cf745cb0bc435fa00d761a8790f416bcbc55c557",
+    "fetched_utc": "2026-10-24T01:47:54.579232+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "docs/results/terminal-bench-comparison.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/terminal-bench-comparison.md",
+    "status": 200,
+    "bytes": 18890,
+    "sha256": "5616a7dcfee17a4bcdd0b42fd524c332a0ed48e5d3126d86b0fa1df5e0e53e75",
+    "fetched_utc": "2026-10-24T01:47:54.484194+00:00"
+  },
+  {
+    "repo": "rossoctl/context-guru",
+    "commit": "17314835e339674d1ae8e6ff6bfd43a6c534e7ca",
+    "path": "docs/results/vs-competitors.md",
+    "url": "https://raw.githubusercontent.com/rossoctl/context-guru/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/vs-competitors.md",
+    "status": 200,
+    "bytes": 10090,
+    "sha256": "2e6d0d6cb174e35edec0fec8cc880d25468169e9a68d03242febf89a773fac81",
+    "fetched_utc": "2026-10-24T01:47:54.507638+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "README.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/README.md",
+    "status": 200,
+    "bytes": 11434,
+    "sha256": "b415c8cf3ba6ea71a4c04ec1818c602e9445584b8b43221e152836b6c0c065fd",
+    "fetched_utc": "2026-10-24T01:47:54.521834+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "bench/PROTOCOL.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/bench/PROTOCOL.md",
+    "status": 200,
+    "bytes": 9792,
+    "sha256": "e1460ea541cde39799ecd9b665ed75821a212e852cb46efec137fb7383019221",
+    "fetched_utc": "2026-10-24T01:47:54.558415+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "bench/pins.env",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/bench/pins.env",
+    "status": 200,
+    "bytes": 8443,
+    "sha256": "1f52756b0747ffcbbbf7afb2686ff3abbbd59e4bb0853f668ce54828ccc11b74",
+    "fetched_utc": "2026-10-24T01:47:54.554190+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "analysis/README.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/analysis/README.md",
+    "status": 200,
+    "bytes": 951,
+    "sha256": "c417386001bcb0be50083a6e6d46cd80394f134f3e03c9efc54d6c694eb09a81",
+    "fetched_utc": "2026-10-24T01:47:54.586992+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "analysis/extract.py",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/analysis/extract.py",
+    "status": 200,
+    "bytes": 11821,
+    "sha256": "6c73fda24a521b55c36e314562adba5559865208fe2177855ecb9d26ee6b1aa0",
+    "fetched_utc": "2026-10-24T01:47:54.581970+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "analysis/data.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/analysis/data.json",
+    "status": 200,
+    "bytes": 115070,
+    "sha256": "a9d324314a421d6abbd1ef54397e74b4cc3187f3d1c7b15639067003c3d67225",
+    "fetched_utc": "2026-10-24T01:47:54.605095+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "notes/00-INDEX.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/notes/00-INDEX.md",
+    "status": 200,
+    "bytes": 11687,
+    "sha256": "3f714734171c5350d0d456bf0b7b729ac3386bf6f4654391087ba0650cc55f98",
+    "fetched_utc": "2026-10-24T01:47:54.690953+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "notes/02-run1-results.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/notes/02-run1-results.md",
+    "status": 200,
+    "bytes": 30447,
+    "sha256": "872c2c8753bcf44f843ddfbc9db2b726995db197ac0364f0f6a6ec26a8357ad0",
+    "fetched_utc": "2026-10-24T01:47:54.628621+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "notes/03-product-integration-notes.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/notes/03-product-integration-notes.md",
+    "status": 200,
+    "bytes": 18674,
+    "sha256": "cb94090b07fd359d3f009b446939335ddca39aef6131191839a433b3cdaae307",
+    "fetched_utc": "2026-10-24T01:47:54.679574+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "notes/04-publication-readiness.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/notes/04-publication-readiness.md",
+    "status": 200,
+    "bytes": 7746,
+    "sha256": "6f6187fb1a240ee79b9895d71f7117ed229ece33b485f9fb9b37cff86c787d91",
+    "fetched_utc": "2026-10-24T01:47:54.684101+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "notes/07-can-it-be-fixed.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/notes/07-can-it-be-fixed.md",
+    "status": 200,
+    "bytes": 13344,
+    "sha256": "49f1438556d8b9f6daafb569d2fbb1b86762cb9ea3e78c594536604212463cde",
+    "fetched_utc": "2026-10-24T01:47:54.687449+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "notes/08-forge-compress.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/notes/08-forge-compress.md",
+    "status": 200,
+    "bytes": 5009,
+    "sha256": "4cf40fe79a4e9e145a2a9e3a0b8f9fe7b1a9ccaae7c0c492687ee827efe0a9d6",
+    "fetched_utc": "2026-10-24T01:47:54.678290+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "notes/09-vendor-right-of-reply.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/notes/09-vendor-right-of-reply.md",
+    "status": 200,
+    "bytes": 16007,
+    "sha256": "b72b83c8d8e6b70efc0dc3fc68469a58b6b85734f72f63388f68fafd558be7c7",
+    "fetched_utc": "2026-10-24T01:47:54.707628+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/INDEX.md",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/INDEX.md",
+    "status": 200,
+    "bytes": 21199,
+    "sha256": "2b2e62bdec256977301b23c6eca79240135dfcfb7e2b8976c20aa2a838060a2c",
+    "fetched_utc": "2026-10-24T01:47:54.709461+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "README.md",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/README.md",
+    "status": 200,
+    "bytes": 14939,
+    "sha256": "c6561d3d321d5aff92488d9ababf8d931aa9b485f3689c51ad754e5d2f34244f",
+    "fetched_utc": "2026-10-24T01:47:54.772118+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "pyproject.toml",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/pyproject.toml",
+    "status": 200,
+    "bytes": 1453,
+    "sha256": "8637e68115b036b83dab8d978631e1a6cb6af97ec557d0bd68c83fd7dd2f9201",
+    "fetched_utc": "2026-10-24T01:47:54.786540+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/langgraph/README.md",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/langgraph/README.md",
+    "status": 200,
+    "bytes": 33121,
+    "sha256": "4190478685a270841cd588154a89a4341805fcd6e160542aea6aec3ba4d8ecf5",
+    "fetched_utc": "2026-10-24T01:47:54.869129+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/langgraph/agent/graph.py",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/langgraph/agent/graph.py",
+    "status": 200,
+    "bytes": 8331,
+    "sha256": "e749f541a02f83b1033ac362b798e0ff303de0a7c3ac373c987ab724cb4d1c47",
+    "fetched_utc": "2026-10-24T01:47:54.776097+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/langgraph/agent/pricing.py",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/langgraph/agent/pricing.py",
+    "status": 200,
+    "bytes": 1278,
+    "sha256": "dfceb31d724d90b3a559943228729f71a73141f94a3f6442f5fb0925881940df",
+    "fetched_utc": "2026-10-24T01:47:54.808384+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/langgraph/runner/metrics.py",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/langgraph/runner/metrics.py",
+    "status": 200,
+    "bytes": 10246,
+    "sha256": "0403bf7bd9260b9e2485bc57cce7b7599af1e7a574b538d0c672fee99c0167da",
+    "fetched_utc": "2026-10-24T01:47:54.782950+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/langgraph/runner/run.py",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/langgraph/runner/run.py",
+    "status": 200,
+    "bytes": 8327,
+    "sha256": "a077aa062f9696f669a8c9607e2e7b98cf1b989dc2a97a620838dd4040a5608c",
+    "fetched_utc": "2026-10-24T01:47:54.799153+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/langgraph/runner/test_cases.json",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/langgraph/runner/test_cases.json",
+    "status": 200,
+    "bytes": 6064,
+    "sha256": "3ab1a8cc33543e195593e662c8ed93e8432facf40a890cfa08d0bb713abf9817",
+    "fetched_utc": "2026-10-24T01:47:54.824705+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/benchmarks/tier1/common.py",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/benchmarks/tier1/common.py",
+    "status": 200,
+    "bytes": 7790,
+    "sha256": "eea3acf7a9d93d3feae3bb7b53e3987fa5f5313f22d39abb69714a2cd7c27489",
+    "fetched_utc": "2026-10-24T01:47:54.861425+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/benchmarks/tier1/bfcl.py",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/benchmarks/tier1/bfcl.py",
+    "status": 200,
+    "bytes": 6457,
+    "sha256": "f3f8f65e65c85671e149463439266ee5dada8697b260c598cd5114c9d677cbb2",
+    "fetched_utc": "2026-10-24T01:47:54.887401+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/benchmarks/tier1/gsm8k.py",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/benchmarks/tier1/gsm8k.py",
+    "status": 200,
+    "bytes": 7052,
+    "sha256": "415fda1478f54dcb8f2bb7bf7c8e416e44c3ecef9c1dde0b34d898560d7caf34",
+    "fetched_utc": "2026-10-24T01:47:54.875681+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/benchmarks/tier1/squad.py",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/benchmarks/tier1/squad.py",
+    "status": 200,
+    "bytes": 5366,
+    "sha256": "fca88dd6ff66364dab74410e57d561348c54833ba384c43b4a60b209cbee3d2e",
+    "fetched_utc": "2026-10-24T01:47:54.907493+00:00"
+  },
+  {
+    "repo": "shreyassks/headroom-benchmarks",
+    "commit": "1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e",
+    "path": "src/headroom_benchmarks/benchmarks/tier1/truthfulqa.py",
+    "url": "https://raw.githubusercontent.com/shreyassks/headroom-benchmarks/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e/src/headroom_benchmarks/benchmarks/tier1/truthfulqa.py",
+    "status": 200,
+    "bytes": 4981,
+    "sha256": "e3592b0cbb688829c39807abaf192881573c848227c44088c10c0c0a7a61f754",
+    "fetched_utc": "2026-10-24T01:47:54.907185+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "README.md",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/README.md",
+    "status": 200,
+    "bytes": 11557,
+    "sha256": "188f312e6c1676b3524062720a03cb55b844dbb376b0f52cf34eef3fe319381a",
+    "fetched_utc": "2026-10-24T01:47:54.934559+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "bench.py",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/bench.py",
+    "status": 200,
+    "bytes": 11782,
+    "sha256": "2f82eb077f5fd2edc968b70723bb6430435737d9a999c7a8717c7e0f58dada3a",
+    "fetched_utc": "2026-10-24T01:47:54.938906+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "results.json",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/results.json",
+    "status": 200,
+    "bytes": 21256,
+    "sha256": "c9e1fe0ff50d7298ca86bafeb60c8046e5ee34bd95106cfa066f265f5f77bd96",
+    "fetched_utc": "2026-10-24T01:47:54.963583+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "agents/agent_bench.py",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/agents/agent_bench.py",
+    "status": 200,
+    "bytes": 7118,
+    "sha256": "dce0b8480a1ecb334080ec6946b5e3d3772a891f12f5c5bedb1b5087897f8c6f",
+    "fetched_utc": "2026-10-24T01:47:54.983875+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "agents/claude_results.json",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/agents/claude_results.json",
+    "status": 200,
+    "bytes": 9628,
+    "sha256": "d804a36582ba71e29895dae0ac21a7d7970a2798a00a2b9c3a5ac42b5633eaa8",
+    "fetched_utc": "2026-10-24T01:47:54.978820+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "agents/droid_results.json",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/agents/droid_results.json",
+    "status": 200,
+    "bytes": 9465,
+    "sha256": "63ca3b600aca6de4b87b535d222d931afa0c48ebb3ba072d6452a60fc6df58ba",
+    "fetched_utc": "2026-10-24T01:47:55.054349+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "amp/amp_bench.py",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/amp/amp_bench.py",
+    "status": 200,
+    "bytes": 6325,
+    "sha256": "67ddf6d0ba655a0225cb9099b2c706137fb8ab564a7640d9a676f9aac67cd12a",
+    "fetched_utc": "2026-10-24T01:47:55.018704+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "amp/amp_results.json",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/amp/amp_results.json",
+    "status": 200,
+    "bytes": 9748,
+    "sha256": "a716474af5dd7ae836a9e1298f1fa30087ed1aa57a270c2744d3227e0a6c78e9",
+    "fetched_utc": "2026-10-24T01:47:55.011060+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "amp/amp_results_wsl.json",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/amp/amp_results_wsl.json",
+    "status": 200,
+    "bytes": 6447,
+    "sha256": "ba3e109d4f55b24bf4f3738843e670bc32a54a8b6c06db954641b031e18e820c",
+    "fetched_utc": "2026-10-24T01:47:55.043506+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "amp/amp_note.txt",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/amp/amp_note.txt",
+    "status": 200,
+    "bytes": 801,
+    "sha256": "0948da51a76e288424c67e94c32b25501e954543ff1d54445596543a90e51c4b",
+    "fetched_utc": "2026-10-24T01:47:55.033449+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "amp/rtk.ts",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/amp/rtk.ts",
+    "status": 200,
+    "bytes": 2368,
+    "sha256": "a20e5de2b3c0cce6fea4c7435972b839b800fa8fa3235c05f71fa5d570d3a287",
+    "fetched_utc": "2026-10-24T01:47:55.078132+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "out/claude_counts.json",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/out/claude_counts.json",
+    "status": 200,
+    "bytes": 461,
+    "sha256": "124cad728b611dfb2a1443fee0278660e7d269908970bfd06500b5221b445ca3",
+    "fetched_utc": "2026-10-24T01:47:55.073662+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "claude-tok/package.json",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/claude-tok/package.json",
+    "status": 200,
+    "bytes": 88,
+    "sha256": "56658978ec902dff0dbfe854eb379453d2c636df825e5560b3088f38bdb0a826",
+    "fetched_utc": "2026-10-24T01:47:55.147562+00:00"
+  },
+  {
+    "repo": "zuwasi/rtk-token-benchmark",
+    "commit": "9803a553838ae59e66c31a55295dd57e56a94fe0",
+    "path": "article/linkedin-article.md",
+    "url": "https://raw.githubusercontent.com/zuwasi/rtk-token-benchmark/9803a553838ae59e66c31a55295dd57e56a94fe0/article/linkedin-article.md",
+    "status": 200,
+    "bytes": 8141,
+    "sha256": "e3e847f6b83e22891a5425236e4dae70d1053213a02b59d44a34d71db6b11c4d",
+    "fetched_utc": "2026-10-24T01:47:55.109015+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "README.md",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/README.md",
+    "status": 200,
+    "bytes": 1361,
+    "sha256": "333f365de7f0d1f5646ab9a5fda00dd6e2da354303a32924170d0a037c995999",
+    "fetched_utc": "2026-10-24T01:47:55.136788+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/exploration-release-validation_2026-09-25/README.md",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/exploration-release-validation_2026-09-25/README.md",
+    "status": 200,
+    "bytes": 212,
+    "sha256": "8ea18bb85db933144a28b8e1e0f1b61f1523f8e2a85da10ed696f8b535410d17",
+    "fetched_utc": "2026-10-24T01:49:06.020152+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/exploration-release-validation_2026-09-25/benchmark-manifest.json",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/exploration-release-validation_2026-09-25/benchmark-manifest.json",
+    "status": 200,
+    "bytes": 3143,
+    "sha256": "15bad49d5375a320f45e3018e2c495205c9e038170a4c868249de719a25e6040",
+    "fetched_utc": "2026-10-24T01:49:06.055890+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/exploration-release-validation_2026-09-25/model_audit.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/exploration-release-validation_2026-09-25/model_audit.csv",
+    "status": 200,
+    "bytes": 1166,
+    "sha256": "8b0d0e5b086f7644eec6723a61025cfdc9fb1ce8569180f048c2d152c7e37724",
+    "fetched_utc": "2026-10-24T01:49:06.027021+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/exploration-release-validation_2026-09-25/pairwise_quality.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/exploration-release-validation_2026-09-25/pairwise_quality.csv",
+    "status": 200,
+    "bytes": 316,
+    "sha256": "02a3e107e78bc63538d3df2d3fafc9845df874d447947a1d93fcd8e97bf2f012",
+    "fetched_utc": "2026-10-24T01:49:06.051464+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/exploration-release-validation_2026-09-25/quality_adjusted_summary.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/exploration-release-validation_2026-09-25/quality_adjusted_summary.csv",
+    "status": 200,
+    "bytes": 359,
+    "sha256": "f95c749700bff4f871d036ac1f13f6268d1c3366a514beb1306810762f154667",
+    "fetched_utc": "2026-10-24T01:49:06.097038+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/exploration-release-validation_2026-09-25/results.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/exploration-release-validation_2026-09-25/results.csv",
+    "status": 200,
+    "bytes": 16050,
+    "sha256": "5c3e210267e4fa3368c59f8a921ea58bb43abd6602309bf732b6bf75e8a89cee",
+    "fetched_utc": "2026-10-24T01:49:06.154478+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/exploration-release-validation_2026-09-25/summary.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/exploration-release-validation_2026-09-25/summary.csv",
+    "status": 200,
+    "bytes": 475,
+    "sha256": "f7292f1e1f4a02b5d013f0e0791b5d19d196e3d7423e32ec80374494e21dd5a7",
+    "fetched_utc": "2026-10-24T01:49:06.035136+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/exploration-release-validation_2026-09-25/task_correctness.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/exploration-release-validation_2026-09-25/task_correctness.csv",
+    "status": 200,
+    "bytes": 325,
+    "sha256": "e9758de580ef991f5b1cc96f2214bb481dbf4168569c1ab5ca0764c46cb93d20",
+    "fetched_utc": "2026-10-24T01:49:06.044056+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/exploration-release-validation_2026-09-25/task_metrics.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/exploration-release-validation_2026-09-25/task_metrics.csv",
+    "status": 200,
+    "bytes": 400,
+    "sha256": "9c60cfee06a3c74d1e9e24ce2967f7e67fc5772c77d25f06a80a2f8476b55974",
+    "fetched_utc": "2026-10-24T01:49:06.117086+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite-release-validation_2026-09-21/README.md",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite-release-validation_2026-09-21/README.md",
+    "status": 200,
+    "bytes": 925,
+    "sha256": "d9c0988a31b8497beb726a0f2c942a5ca70f6c3673647ae69a1fc8b94d734ea2",
+    "fetched_utc": "2026-10-24T01:49:06.121119+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite-release-validation_2026-09-21/benchmark-manifest.json",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite-release-validation_2026-09-21/benchmark-manifest.json",
+    "status": 200,
+    "bytes": 421,
+    "sha256": "4eefea3f14996e529f270ca26d55afb4a1d74aafc0752b0ab2bdde42fbe41e12",
+    "fetched_utc": "2026-10-24T01:49:06.137019+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite-release-validation_2026-09-21/model_audit.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite-release-validation_2026-09-21/model_audit.csv",
+    "status": 200,
+    "bytes": 1798,
+    "sha256": "955afe8b36882ce263bc52575c79c55ed0492fe569d88213b14c33380f7652ee",
+    "fetched_utc": "2026-10-24T01:49:06.147965+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite-release-validation_2026-09-21/pairwise_quality.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite-release-validation_2026-09-21/pairwise_quality.csv",
+    "status": 200,
+    "bytes": 315,
+    "sha256": "5668e28d02b46638fe58d41bd41a3e9e644c841b7c159cb8a876d33122f01db2",
+    "fetched_utc": "2026-10-24T01:49:06.139813+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite-release-validation_2026-09-21/quality_adjusted_summary.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite-release-validation_2026-09-21/quality_adjusted_summary.csv",
+    "status": 200,
+    "bytes": 358,
+    "sha256": "314724fd82e3cc346ae532cb26e857b46b716245cb241bd954d08beaf25a9f41",
+    "fetched_utc": "2026-10-24T01:49:06.195696+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite-release-validation_2026-09-21/results.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite-release-validation_2026-09-21/results.csv",
+    "status": 200,
+    "bytes": 6224,
+    "sha256": "a617ef5c13468ef037cfa7168c9cc7ad2510cc804a865a7b715a28fbcb835245",
+    "fetched_utc": "2026-10-24T01:49:06.264149+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite-release-validation_2026-09-21/summary.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite-release-validation_2026-09-21/summary.csv",
+    "status": 200,
+    "bytes": 482,
+    "sha256": "ab93e4cb930e49bd289e103cf37f58affed2464b76b16016aafdc58cf7c3a319",
+    "fetched_utc": "2026-10-24T01:49:06.228910+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite-release-validation_2026-09-21/task_correctness.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite-release-validation_2026-09-21/task_correctness.csv",
+    "status": 200,
+    "bytes": 324,
+    "sha256": "22a3e9c49bb90d78d9a173d5257c2ce80cf3c4af269bc2ee566c37d7ded46de4",
+    "fetched_utc": "2026-10-24T01:49:06.217881+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite-release-validation_2026-09-21/task_metrics.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite-release-validation_2026-09-21/task_metrics.csv",
+    "status": 200,
+    "bytes": 399,
+    "sha256": "07b9c1e257f23b4e46a8e5c291c09deaeece457c377edc7105332f28ee980a27",
+    "fetched_utc": "2026-10-24T01:49:06.232496+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/VOID-a0-T-fix-r1-failed-0.2/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/VOID-a0-T-fix-r1-failed-0.2/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.244591+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/VOID-a0-T-fix-r1-failed-0.2/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/VOID-a0-T-fix-r1-failed-0.2/run-manifest.json",
+    "status": 200,
+    "bytes": 228,
+    "sha256": "9d00c8f3198b5fe0d06d140ade1393bba51a874bcf088c2b7591f231673c58a5",
+    "fetched_utc": "2026-10-24T01:49:06.275286+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r1/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r1/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.265632+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r1/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r1/run-manifest.json",
+    "status": 200,
+    "bytes": 228,
+    "sha256": "9d00c8f3198b5fe0d06d140ade1393bba51a874bcf088c2b7591f231673c58a5",
+    "fetched_utc": "2026-10-24T01:49:06.293094+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r1/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r1/run-summary.tsv",
+    "status": 200,
+    "bytes": 713,
+    "sha256": "633d884422bf3afd25820b25b3ef1c113edecb42eb9065ea841399e6ef0a53d7",
+    "fetched_utc": "2026-10-24T01:49:06.319918+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r2/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r2/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.328484+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r2/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r2/run-manifest.json",
+    "status": 200,
+    "bytes": 228,
+    "sha256": "8b1958c5ec317941b916dfa2b098592d37124711455d43c07fc266e0c449f4ab",
+    "fetched_utc": "2026-10-24T01:49:06.423350+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r2/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r2/run-summary.tsv",
+    "status": 200,
+    "bytes": 715,
+    "sha256": "0a3b7fdb18ac802e96e10aa4dfbc67f714733216bba25ae6741b5f7715cc86d1",
+    "fetched_utc": "2026-10-24T01:49:06.354481+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r3/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r3/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.386356+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r3/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r3/run-manifest.json",
+    "status": 200,
+    "bytes": 330,
+    "sha256": "54439c6f0a5369fcc86d899fcc1598eb587c2a8deffc26ecee4c3d90cb1712e5",
+    "fetched_utc": "2026-10-24T01:49:06.386634+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r3/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r3/run-summary.tsv",
+    "status": 200,
+    "bytes": 717,
+    "sha256": "5fda94d58b804104f5bcf8ff9c91cabf510991b9df026f8b40ea82e380c97f79",
+    "fetched_utc": "2026-10-24T01:49:06.368217+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r4/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r4/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.385942+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r4/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r4/run-manifest.json",
+    "status": 200,
+    "bytes": 407,
+    "sha256": "251759a3a1b2dc3763aebf9129c983ac0480a02625fc2cc1ee349fee1c10d41f",
+    "fetched_utc": "2026-10-24T01:49:06.455667+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r4/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r4/run-summary.tsv",
+    "status": 200,
+    "bytes": 717,
+    "sha256": "ca2180be996f39a2bfbb381f9374e802c9e33adfb8bb1f506b3ce82e3738f640",
+    "fetched_utc": "2026-10-24T01:49:06.420958+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r5/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r5/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.490248+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r5/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r5/run-manifest.json",
+    "status": 200,
+    "bytes": 378,
+    "sha256": "623c4f90ff7dfd60f611212eb43b7b0e9bb85927be82e19bf754c6cfc6248f66",
+    "fetched_utc": "2026-10-24T01:49:06.457935+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r5/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r5/run-summary.tsv",
+    "status": 200,
+    "bytes": 711,
+    "sha256": "331591440b8b3747f62691ee29efa5a64fba162acb5782289f0e1b5f52384569",
+    "fetched_utc": "2026-10-24T01:49:06.483403+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r6/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r6/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.482274+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r6/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r6/run-manifest.json",
+    "status": 200,
+    "bytes": 555,
+    "sha256": "042852c6492b1a8478fdb5853263571951d16d7ed84bc7b29c3c3fdd63cb312b",
+    "fetched_utc": "2026-10-24T01:49:06.486221+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r6/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r6/run-summary.tsv",
+    "status": 200,
+    "bytes": 686,
+    "sha256": "1f99f1fd41e8aabe0c4261ba83f0568eaa014669506945838bc88c0c35c6fb69",
+    "fetched_utc": "2026-10-24T01:49:06.534660+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r6b/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r6b/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.534309+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r6b/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r6b/run-manifest.json",
+    "status": 200,
+    "bytes": 471,
+    "sha256": "834b8e55c6055a4c91b8a5baeea0e946eb0a3a76bb264f9bd4add1ce35a755fe",
+    "fetched_utc": "2026-10-24T01:49:06.554858+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0-T-fix-r6b/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0-T-fix-r6b/run-summary.tsv",
+    "status": 200,
+    "bytes": 716,
+    "sha256": "8e14b818fe3b127702deb4c4f385d96c30fd2b95da6eed0775563b37038ee532",
+    "fetched_utc": "2026-10-24T01:49:06.583581+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0c-T-fix-r1/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0c-T-fix-r1/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.584865+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0c-T-fix-r1/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0c-T-fix-r1/run-manifest.json",
+    "status": 200,
+    "bytes": 698,
+    "sha256": "87fb0d5f6d0096903b76e0e5135565b433ebc6cdc23a12f749c8a6e86d5d8d90",
+    "fetched_utc": "2026-10-24T01:49:06.597555+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0c-T-fix-r1/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0c-T-fix-r1/run-summary.tsv",
+    "status": 200,
+    "bytes": 733,
+    "sha256": "319072353ad0e5aad3c1b179aa11d8c189d96ad6a7930910324a448d250ac034",
+    "fetched_utc": "2026-10-24T01:49:06.607569+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0v-T-fix-base1.0/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0v-T-fix-base1.0/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.829118+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a0v-T-fix-base1.0/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a0v-T-fix-base1.0/run-summary.tsv",
+    "status": 200,
+    "bytes": 2392,
+    "sha256": "7830258abeb424e49b34089185da888873f14b9727e3047f4755fb038d70fe87",
+    "fetched_utc": "2026-10-24T01:49:06.629691+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1-T-fix-r1/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1-T-fix-r1/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.631372+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1-T-fix-r1/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1-T-fix-r1/run-manifest.json",
+    "status": 200,
+    "bytes": 249,
+    "sha256": "2a63cf67a1554b23003acb2a0232e16b55640e035eaf932c8913742414f43a0e",
+    "fetched_utc": "2026-10-24T01:49:06.688135+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1-T-fix-r1/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1-T-fix-r1/run-summary.tsv",
+    "status": 200,
+    "bytes": 720,
+    "sha256": "68e67ca0b30e0944074ef98002cae25220df90d501ca9d8ae3f7e4bfa0cc608e",
+    "fetched_utc": "2026-10-24T01:49:06.949000+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1f-T-fix-r1/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1f-T-fix-r1/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.860004+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1f-T-fix-r1/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1f-T-fix-r1/run-manifest.json",
+    "status": 200,
+    "bytes": 248,
+    "sha256": "65fa6144eccc016ca53e15a4752b98ac0301a07ad8651c437cf8449eac17eb69",
+    "fetched_utc": "2026-10-24T01:49:06.861890+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1f-T-fix-r1/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1f-T-fix-r1/run-summary.tsv",
+    "status": 200,
+    "bytes": 714,
+    "sha256": "21557788fdfd69ee08c38f60e5b3c6ba9fce399fe615077cea406b9276a132d5",
+    "fetched_utc": "2026-10-24T01:49:06.849513+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r1/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r1/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:06.934434+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r1/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r1/run-manifest.json",
+    "status": 200,
+    "bytes": 248,
+    "sha256": "b864e52a2da85a0961eba10f43066e15e527a3caa25a7c7f44aa0e3c968620f6",
+    "fetched_utc": "2026-10-24T01:49:06.973538+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r1/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r1/run-summary.tsv",
+    "status": 200,
+    "bytes": 716,
+    "sha256": "4359ce5c7902cfe8a52a4218465cf0c63cf64205fdd58ffc2fae0e2500c6ff15",
+    "fetched_utc": "2026-10-24T01:49:07.234059+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r2/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r2/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.372509+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r2/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r2/run-manifest.json",
+    "status": 200,
+    "bytes": 235,
+    "sha256": "719885b0f7ed277e73c43700539c443f7f98f4b5dea3bcb8522e3b661907a746",
+    "fetched_utc": "2026-10-24T01:49:07.232091+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r2/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r2/run-summary.tsv",
+    "status": 200,
+    "bytes": 713,
+    "sha256": "341b85c5452d22c44cbf4e73afe0aeac0047d4fb98f691aa853003521f62fc5b",
+    "fetched_utc": "2026-10-24T01:49:07.453415+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r3/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r3/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.232427+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r3/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r3/run-manifest.json",
+    "status": 200,
+    "bytes": 520,
+    "sha256": "0659ad7550c2e1dfe63b20f1bc573176e51f8bd8de816b7a6bc23bcb0b613ce0",
+    "fetched_utc": "2026-10-24T01:49:07.371689+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r3/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r3/run-summary.tsv",
+    "status": 200,
+    "bytes": 718,
+    "sha256": "5887770879b0435659e46ae79452b2948ba7ddd88ae862412b7e7dab37ed18b8",
+    "fetched_utc": "2026-10-24T01:49:07.236933+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r4/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r4/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.409023+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r4/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r4/run-manifest.json",
+    "status": 200,
+    "bytes": 505,
+    "sha256": "a7ab7ea64ce8fed10a927ea75ed273f786f0e580afcc3580cbecf12c771eb195",
+    "fetched_utc": "2026-10-24T01:49:07.449022+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-r4/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-r4/run-summary.tsv",
+    "status": 200,
+    "bytes": 717,
+    "sha256": "0ba269c78a3c6dd1333a978ea0ad49a93c3f063d341037bb594f9dc134a3e00f",
+    "fetched_utc": "2026-10-24T01:49:07.388027+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-s374/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-s374/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.426637+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-s374/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-s374/run-manifest.json",
+    "status": 200,
+    "bytes": 267,
+    "sha256": "59c1e4b9f5dce03c3e6be6e19d4f89db0a3a114c1214efa2f28be823ddf9975a",
+    "fetched_utc": "2026-10-24T01:49:07.524214+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-s374/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-s374/run-summary.tsv",
+    "status": 200,
+    "bytes": 339,
+    "sha256": "7a42c310036e0b80926c4d8ee8eef3f7f8fa46a1e5640d8221cdda2360f444e9",
+    "fetched_utc": "2026-10-24T01:49:07.527624+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-s375/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-s375/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.526664+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-s375/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-s375/run-manifest.json",
+    "status": 200,
+    "bytes": 251,
+    "sha256": "d64f0e0a88f2450cde50db0079462f0dcbd0c03b56532f3a7925f37eb60e7e51",
+    "fetched_utc": "2026-10-24T01:49:07.553093+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a1m-T-fix-s375/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a1m-T-fix-s375/run-summary.tsv",
+    "status": 200,
+    "bytes": 718,
+    "sha256": "e36612932c642e900281f56309d874112d28b9617db32b6e64b7a13fbcf8e856",
+    "fetched_utc": "2026-10-24T01:49:07.576175+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r1/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r1/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.558348+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r1/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r1/run-manifest.json",
+    "status": 200,
+    "bytes": 230,
+    "sha256": "924e61bc571703d978a5af0d928b4546c6b1d4405f8c180f9a108a30baef7105",
+    "fetched_utc": "2026-10-24T01:49:07.580009+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r1/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r1/run-summary.tsv",
+    "status": 200,
+    "bytes": 718,
+    "sha256": "6f6792bdb40fa94449c61a1d238db82083bd4b787f501f18552c22b016e62fd8",
+    "fetched_utc": "2026-10-24T01:49:07.614474+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r2/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r2/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.638423+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r2/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r2/run-manifest.json",
+    "status": 200,
+    "bytes": 230,
+    "sha256": "f7d3b6d16bb1b86a97514cea920f5e7d061d724bdeacfde55a04e0373703488a",
+    "fetched_utc": "2026-10-24T01:49:07.646237+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r2/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r2/run-summary.tsv",
+    "status": 200,
+    "bytes": 707,
+    "sha256": "020e1a6b7f8dfce78fd99ca068d1c03eeba91c697b38b8faac55047f2f8af1c7",
+    "fetched_utc": "2026-10-24T01:49:07.675638+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r3/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r3/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.643608+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r3/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r3/run-manifest.json",
+    "status": 200,
+    "bytes": 490,
+    "sha256": "c8cdb6993c604a941c1fd53e36f1e43cc834e325606defc85dd17cca6fdf2e93",
+    "fetched_utc": "2026-10-24T01:49:07.675894+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r3/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r3/run-summary.tsv",
+    "status": 200,
+    "bytes": 534,
+    "sha256": "54bba4c5a84987f17909024337a0e6fcf7a79a23e52904da495e5d4066aeb358",
+    "fetched_utc": "2026-10-24T01:49:07.691360+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r3b/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r3b/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.897119+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r3b/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r3b/run-manifest.json",
+    "status": 200,
+    "bytes": 759,
+    "sha256": "d1121a88aad1e6b1815b10703e6add845e637f639d0987914b0ca569a74fc3c4",
+    "fetched_utc": "2026-10-24T01:49:07.705546+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r3b/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r3b/run-summary.tsv",
+    "status": 200,
+    "bytes": 597,
+    "sha256": "4740dfadfe1dbf4445aca8d309be3b727a2c4c025c0425d30272ace4f84ed242",
+    "fetched_utc": "2026-10-24T01:49:07.852292+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r3c/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r3c/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.978081+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r3c/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r3c/run-manifest.json",
+    "status": 200,
+    "bytes": 543,
+    "sha256": "10489d3e3e1474389bbbb7f81e0a80c115022a5298c1f9abad2d3298a957e649",
+    "fetched_utc": "2026-10-24T01:49:07.785700+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r3c/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r3c/run-summary.tsv",
+    "status": 200,
+    "bytes": 717,
+    "sha256": "bc4ad22e2fa8d9a91ba17215357d0fb4145ea1be75f0a1ff5a07f3814e6cf6c9",
+    "fetched_utc": "2026-10-24T01:49:07.772377+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r4/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r4/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.765103+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r4/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r4/run-manifest.json",
+    "status": 200,
+    "bytes": 506,
+    "sha256": "7013075c6fb5803c0fa12442090f873bae64059f15cf306aaaf55be1a4da8a94",
+    "fetched_utc": "2026-10-24T01:49:07.784271+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a2-T-fix-r4/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a2-T-fix-r4/run-summary.tsv",
+    "status": 200,
+    "bytes": 719,
+    "sha256": "92e31e9250bb2bbcaaf766a5555b6616922bce6573485038e145a1325f7810f4",
+    "fetched_utc": "2026-10-24T01:49:07.819533+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r1/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r1/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.885655+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r1/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r1/run-manifest.json",
+    "status": 200,
+    "bytes": 230,
+    "sha256": "fbb79614b16e91f446c971e11a04242dea5e3211b2d75a496805725278f7b795",
+    "fetched_utc": "2026-10-24T01:49:07.871573+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r1/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r1/run-summary.tsv",
+    "status": 200,
+    "bytes": 717,
+    "sha256": "18e1048c79498891bc29c4716c560f3fba0345c92a25a545a4fa083b740803d8",
+    "fetched_utc": "2026-10-24T01:49:07.892722+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r2/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r2/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.865142+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r2/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r2/run-manifest.json",
+    "status": 200,
+    "bytes": 230,
+    "sha256": "e75ceea4ff5c0992c5a758a28554f9af8af9e5a9c2657f2bd3483124aac36bb2",
+    "fetched_utc": "2026-10-24T01:49:07.971476+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r2/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r2/run-summary.tsv",
+    "status": 200,
+    "bytes": 719,
+    "sha256": "6e4049f2eb0ac9032b790f6599da25a21c6fa5abf20127c5e934bd6442389d99",
+    "fetched_utc": "2026-10-24T01:49:07.951509+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r3/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r3/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.954003+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r3/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r3/run-manifest.json",
+    "status": 200,
+    "bytes": 430,
+    "sha256": "74b15cd172c19caf6bed7e208b261b026c85fc40591d90549a691c1b73c3736a",
+    "fetched_utc": "2026-10-24T01:49:07.979280+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r3/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r3/run-summary.tsv",
+    "status": 200,
+    "bytes": 213,
+    "sha256": "28e9508d422e8e82494bfbab2aa03b9f8855b4fb9ad6eb974d54f5c17c3d3ea8",
+    "fetched_utc": "2026-10-24T01:49:07.981373+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r3b/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r3b/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:07.980520+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r3b/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r3b/run-manifest.json",
+    "status": 200,
+    "bytes": 248,
+    "sha256": "682fc0c2afa601f842809f4edda56abde4bb73cac867adc62f8637c010b35788",
+    "fetched_utc": "2026-10-24T01:49:07.989643+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r3b/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r3b/run-summary.tsv",
+    "status": 200,
+    "bytes": 719,
+    "sha256": "67c046d90e1f62c8d04286d22075515ce12d1e2e13fadb09d070682369999c44",
+    "fetched_utc": "2026-10-24T01:49:08.067728+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r4/gates.txt",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r4/gates.txt",
+    "status": 200,
+    "bytes": 22,
+    "sha256": "b74648beb936d21484e7b21a6b0b0fb98131b38c2923514f5b97085f09b36b20",
+    "fetched_utc": "2026-10-24T01:49:08.050576+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r4/run-manifest.json",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r4/run-manifest.json",
+    "status": 200,
+    "bytes": 526,
+    "sha256": "fb5ab5a7c16609b42edc3a5a3b9720a2634a8e598bd7e677f3d942e5eff6fa00",
+    "fetched_utc": "2026-10-24T01:49:08.060830+00:00"
+  },
+  {
+    "repo": "Entelligentsia/tokbench",
+    "commit": "6b7098f8b4df20715963d0895ae9a63fd5348dc5",
+    "path": "results/a3-T-fix-r4/run-summary.tsv",
+    "url": "https://raw.githubusercontent.com/Entelligentsia/tokbench/6b7098f8b4df20715963d0895ae9a63fd5348dc5/results/a3-T-fix-r4/run-summary.tsv",
+    "status": 200,
+    "bytes": 718,
+    "sha256": "2222a29af35a60fea5c25cba8daeda6a485b786916bcee0ad8fcb235a690b4ab",
+    "fetched_utc": "2026-10-24T01:49:08.070916+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe50_2026_06_30/benchmark-manifest.json",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe50_2026_06_30/benchmark-manifest.json",
+    "status": 200,
+    "bytes": 3889,
+    "sha256": "e8c68a6415152fcf41f06dc30a2761921d7f1fd5c92615043d720e1cb1059eb4",
+    "fetched_utc": "2026-10-24T01:50:14.537043+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe50_2026_06_30/pairwise_quality.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe50_2026_06_30/pairwise_quality.csv",
+    "status": 200,
+    "bytes": 40387,
+    "sha256": "294f49f7bb22b3ad8cb0d040391eac899373d519f4ffe059a143e66815f0ae44",
+    "fetched_utc": "2026-10-24T01:50:14.538743+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe50_2026_06_30/quality_adjusted_summary.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe50_2026_06_30/quality_adjusted_summary.csv",
+    "status": 200,
+    "bytes": 443,
+    "sha256": "a34cc230328eb391c6a2c55bb1b3b0fc580b120d4a6b74707be1981e78bdbc6b",
+    "fetched_utc": "2026-10-24T01:50:14.560768+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe50_2026_06_30/results.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe50_2026_06_30/results.csv",
+    "status": 200,
+    "bytes": 861279,
+    "sha256": "adc09e73843d638d05b992b6d1d1f2b606566fcfb8327a77bd3fe676181b3bf7",
+    "fetched_utc": "2026-10-24T01:50:14.591663+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe50_2026_06_30/summary.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe50_2026_06_30/summary.csv",
+    "status": 200,
+    "bytes": 526,
+    "sha256": "8b43634686575b0dd7b03c9abdfa90cdc2b23075e8197aa70f34658de8af2517",
+    "fetched_utc": "2026-10-24T01:50:14.614613+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite_2026-07-16/pairwise_quality.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite_2026-07-16/pairwise_quality.csv",
+    "status": 200,
+    "bytes": 8191,
+    "sha256": "125c10fbc6c98ce210029520843ef0947c9a3b963abb950e41f3639a050c1f85",
+    "fetched_utc": "2026-10-24T01:50:14.574401+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite_2026-07-16/quality_adjusted_summary.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite_2026-07-16/quality_adjusted_summary.csv",
+    "status": 200,
+    "bytes": 436,
+    "sha256": "3468c04df09c053485b53e736cddf4f26e93e6f5e62a4954bf8990df267d7cff",
+    "fetched_utc": "2026-10-24T01:50:14.539128+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite_2026-07-16/results.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite_2026-07-16/results.csv",
+    "status": 200,
+    "bytes": 105273,
+    "sha256": "131e92ca0be9665bf9a2ebf99c1c7ada7de43de8bc67f1dfef50b25d6ba16fc7",
+    "fetched_utc": "2026-10-24T01:50:14.607808+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "codebench/results/swe-lite_2026-07-16/summary.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/codebench/results/swe-lite_2026-07-16/summary.csv",
+    "status": 200,
+    "bytes": 503,
+    "sha256": "a46d15ebb99e519012418f4d889f5ca97cc9caac418f4fed0e7bc03320e434e4",
+    "fetched_utc": "2026-10-24T01:50:14.702102+00:00"
+  },
+  {
+    "repo": "hystax/optscale-kompressor",
+    "commit": "91156bb29c05b2fa6b10f4ca2db5aa9e538f228c",
+    "path": "README.md",
+    "url": "https://raw.githubusercontent.com/hystax/optscale-kompressor/91156bb29c05b2fa6b10f4ca2db5aa9e538f228c/README.md",
+    "status": 200,
+    "bytes": 22198,
+    "sha256": "2df10241b835d1074e797e585cd9fd722ee3a84fdbdd8181cc3bcdece51a99a1",
+    "fetched_utc": "2026-10-24T01:50:14.661465+00:00"
+  },
+  {
+    "repo": "hystax/optscale-kompressor",
+    "commit": "91156bb29c05b2fa6b10f4ca2db5aa9e538f228c",
+    "path": "crates/kompressor-bench/src/metrics.rs",
+    "url": "https://raw.githubusercontent.com/hystax/optscale-kompressor/91156bb29c05b2fa6b10f4ca2db5aa9e538f228c/crates/kompressor-bench/src/metrics.rs",
+    "status": 200,
+    "bytes": 8656,
+    "sha256": "63f5844b1b1be0eef7bbc3d1e8edc1a387a8a0378587749e0f62396dcd5889e3",
+    "fetched_utc": "2026-10-24T01:50:14.671389+00:00"
+  },
+  {
+    "repo": "hystax/optscale-kompressor",
+    "commit": "91156bb29c05b2fa6b10f4ca2db5aa9e538f228c",
+    "path": "crates/kompressor-bench/src/replay.rs",
+    "url": "https://raw.githubusercontent.com/hystax/optscale-kompressor/91156bb29c05b2fa6b10f4ca2db5aa9e538f228c/crates/kompressor-bench/src/replay.rs",
+    "status": 200,
+    "bytes": 35353,
+    "sha256": "3fd33cf415ef3598970af023a42c1e9810b8c06249be6947f0a6bc2c2b3839aa",
+    "fetched_utc": "2026-10-24T01:50:14.692546+00:00"
+  },
+  {
+    "repo": "hystax/optscale-kompressor",
+    "commit": "91156bb29c05b2fa6b10f4ca2db5aa9e538f228c",
+    "path": "crates/kompressor-bench/src/report.rs",
+    "url": "https://raw.githubusercontent.com/hystax/optscale-kompressor/91156bb29c05b2fa6b10f4ca2db5aa9e538f228c/crates/kompressor-bench/src/report.rs",
+    "status": 200,
+    "bytes": 9339,
+    "sha256": "3208a83e09797bb3879f100cbf877c2ba50a60aaef2300b8e38833e513785549",
+    "fetched_utc": "2026-10-24T01:50:14.802902+00:00"
+  },
+  {
+    "repo": "hystax/optscale-kompressor",
+    "commit": "91156bb29c05b2fa6b10f4ca2db5aa9e538f228c",
+    "path": "scripts/harbor/bench.py",
+    "url": "https://raw.githubusercontent.com/hystax/optscale-kompressor/91156bb29c05b2fa6b10f4ca2db5aa9e538f228c/scripts/harbor/bench.py",
+    "status": 200,
+    "bytes": 110214,
+    "sha256": "87e3a46c82110ac9b3e5aae19496573e7de31abd958204e6fc90d83367fad3b8",
+    "fetched_utc": "2026-10-24T01:50:14.745430+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/2026-07-28__19-19-14/config.json",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/2026-07-28__19-19-14/config.json",
+    "status": 200,
+    "bytes": 996,
+    "sha256": "eb6757cf3779c3d6ef00d6cbda55580b9e71b55de266b7e4efae7d73e6d6a944",
+    "fetched_utc": "2026-10-24T01:53:28.139256+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/2026-07-28__19-19-14/result.json",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/2026-07-28__19-19-14/result.json",
+    "status": 200,
+    "bytes": 29183,
+    "sha256": "da52b22bc36e298949d1ac32f1a46c4e949daa993d80b44d3e674c51e28a2329",
+    "fetched_utc": "2026-10-24T01:53:28.238159+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/2026-07-29__15-35-08/config.json",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/2026-07-29__15-35-08/config.json",
+    "status": 200,
+    "bytes": 994,
+    "sha256": "7f232c88c5d9983e50fd2afe5ee26544266cdf928f59d313c13c5da48a4f3e9a",
+    "fetched_utc": "2026-10-24T01:53:28.125248+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/2026-07-29__15-35-08/result.json",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/2026-07-29__15-35-08/result.json",
+    "status": 200,
+    "bytes": 29781,
+    "sha256": "4d85aaa78b218a7c3711930944aa774d776235f586fb36380b05c2db8ec95dd7",
+    "fetched_utc": "2026-10-24T01:53:28.146913+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/baseline/README.md",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline/README.md",
+    "status": 200,
+    "bytes": 9540,
+    "sha256": "c4ec5185a4f8bb4f7cf1be5a3e16e286e3b74fa00ba6fac1316d7879f4c9694e",
+    "fetched_utc": "2026-10-24T01:53:28.126012+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/baseline/cost_vs_savings_scatter.png",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline/cost_vs_savings_scatter.png",
+    "status": 200,
+    "bytes": 157295,
+    "sha256": "eac94074c3cf8d0f37633d965c159915f577bb21854dce084fe940d0235ecbf0",
+    "fetched_utc": "2026-10-24T01:53:28.164239+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/baseline/cost_vs_savings_scatter.svg",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline/cost_vs_savings_scatter.svg",
+    "status": 200,
+    "bytes": 131021,
+    "sha256": "ce54652359c09676f67c6a5ded7998a6bbdf76ff116260575094314a77842271",
+    "fetched_utc": "2026-10-24T01:53:28.128675+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/baseline/lemoncrow_vs_baseline_per_task.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline/lemoncrow_vs_baseline_per_task.csv",
+    "status": 200,
+    "bytes": 20936,
+    "sha256": "d30046640ad8feb7738d17b40b348092329aecb8379c87fa5729f0a21ced3c1d",
+    "fetched_utc": "2026-10-24T01:53:28.127957+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/baseline/summary.txt",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline/summary.txt",
+    "status": 200,
+    "bytes": 3207,
+    "sha256": "c9e106c298de82863007d5aff5a6e74d0e928b2a854889d6cd7c24e1359d9602",
+    "fetched_utc": "2026-10-24T01:53:28.281902+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/baseline/tbench_opus48_claudecode_2.1.205_aggregate.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline/tbench_opus48_claudecode_2.1.205_aggregate.csv",
+    "status": 200,
+    "bytes": 371,
+    "sha256": "8154bb2b0fb65ef27ed0c5e44912a28c36c8bcb52547643cadc83258708c0129",
+    "fetched_utc": "2026-10-24T01:53:28.240007+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/baseline/tbench_opus48_claudecode_2.1.205_per_task.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline/tbench_opus48_claudecode_2.1.205_per_task.csv",
+    "status": 200,
+    "bytes": 8827,
+    "sha256": "0fcc252e6595a6dfc2f667497895c82ad97991b9248b14b5ce73e13b35a9f65c",
+    "fetched_utc": "2026-10-24T01:53:28.253380+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/baseline/tbench_opus48_claudecode_2.1.205_tasks.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline/tbench_opus48_claudecode_2.1.205_tasks.csv",
+    "status": 200,
+    "bytes": 58604,
+    "sha256": "4380b0a5140595a49a8c86232873487ac31a95cc147e0f05800d9024b7cda28e",
+    "fetched_utc": "2026-10-24T01:53:28.329952+00:00"
+  },
+  {
+    "repo": "lemoncrow-lab/benchmarks",
+    "commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+    "path": "harbor/results/baseline/tbench_opus48_claudecode_2.1.205_turns.csv",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/benchmarks/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline/tbench_opus48_claudecode_2.1.205_turns.csv",
+    "status": 200,
+    "bytes": 61411,
+    "sha256": "4e073818e743a3f2f480a7c8b15129047b1ce1c31e39ca1324181ff05c6fdaf1",
+    "fetched_utc": "2026-10-24T01:53:28.352559+00:00"
+  },
+  {
+    "repo": "JuliusBrussee/caveman",
+    "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+    "path": "docs/WRAP-BENCHMARK.md",
+    "url": "https://raw.githubusercontent.com/JuliusBrussee/caveman/d262ab3882952a59312ff3537cd86d894523c5ab/docs/WRAP-BENCHMARK.md",
+    "status": 200,
+    "bytes": 7080,
+    "sha256": "7b973a005e1c981babf006b68fb7e22c4775db8ee661a17d4bc0bb061d4925b3",
+    "fetched_utc": "2026-10-24T02:08:56.722027+00:00",
+    "retrieval": "Read pinned repository clone; timestamp is audit/read time."
+  },
+  {
+    "repo": "JuliusBrussee/caveman",
+    "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+    "path": "docs/HONEST-NUMBERS.md",
+    "url": "https://raw.githubusercontent.com/JuliusBrussee/caveman/d262ab3882952a59312ff3537cd86d894523c5ab/docs/HONEST-NUMBERS.md",
+    "status": 200,
+    "bytes": 7306,
+    "sha256": "a7ac74da98a64399d563789a771a54f20cb259b2716e36e140605d2fb4a098b1",
+    "fetched_utc": "2026-10-24T02:08:56.722187+00:00",
+    "retrieval": "Read pinned repository clone; timestamp is audit/read time."
+  },
+  {
+    "repo": "headroomlabs-ai/headroom",
+    "commit": "76133cff59b71284399bf760c5578dc373c97231",
+    "path": "benchmarks/results/index_proof_table.txt",
+    "url": "https://raw.githubusercontent.com/headroomlabs-ai/headroom/76133cff59b71284399bf760c5578dc373c97231/benchmarks/results/index_proof_table.txt",
+    "status": 200,
+    "bytes": 1616,
+    "sha256": "5ee3a4a5508778453a53e398de513274b52dff0e5d6de422074deea65cb6876a",
+    "fetched_utc": "2026-10-24T02:08:56.722744+00:00",
+    "retrieval": "Read pinned repository clone; timestamp is audit/read time."
+  },
+  {
+    "repo": "headroomlabs-ai/headroom",
+    "commit": "76133cff59b71284399bf760c5578dc373c97231",
+    "path": "benchmarks/tool_search_vs_native/README.md",
+    "url": "https://raw.githubusercontent.com/headroomlabs-ai/headroom/76133cff59b71284399bf760c5578dc373c97231/benchmarks/tool_search_vs_native/README.md",
+    "status": 200,
+    "bytes": 4633,
+    "sha256": "9b32d0bda75acb341b7307b3c59c19cc22e88c48ee3e0a822e3a38286b15c8e5",
+    "fetched_utc": "2026-10-24T02:08:56.722846+00:00",
+    "retrieval": "Read pinned repository clone; timestamp is audit/read time."
+  },
+  {
+    "repo": "lemoncrow-lab/lemoncrow",
+    "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+    "path": "BENCHMARKS.md",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/lemoncrow/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/BENCHMARKS.md",
+    "status": 200,
+    "bytes": 57686,
+    "sha256": "a26ccc6638bd5ef7f4bf6e09d9b2de203af7dd10b1e6d953ab6b4195a232e408",
+    "fetched_utc": "2026-10-24T02:08:56.723735+00:00",
+    "retrieval": "Read pinned repository clone; timestamp is audit/read time."
+  },
+  {
+    "repo": "lemoncrow-lab/lemoncrow",
+    "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+    "path": "benchmarks/harbor/normalized_token_cost.py",
+    "url": "https://raw.githubusercontent.com/lemoncrow-lab/lemoncrow/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d/benchmarks/harbor/normalized_token_cost.py",
+    "status": 200,
+    "bytes": 10250,
+    "sha256": "10b7fbf97e1fa80805bde81c738ef1e7e455fa6a6f997315c004a491cc440549",
+    "fetched_utc": "2026-10-24T02:08:56.723909+00:00",
+    "retrieval": "Read pinned repository clone; timestamp is audit/read time."
+  }
+]

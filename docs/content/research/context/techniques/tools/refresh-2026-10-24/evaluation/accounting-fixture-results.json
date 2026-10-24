@@ -1,0 +1,101 @@
+[
+  {
+    "id": "openai-paid-write-partition",
+    "normalized": {
+      "contract": "openai-responses",
+      "tokens": {
+        "input": 1000,
+        "cache_read": 4000,
+        "output": 800,
+        "cache_write_30m": 3000,
+        "cache_write_12h": 4000
+      },
+      "reasoning_output_tokens": 300,
+      "reasoning_included_in_output": true
+    },
+    "price": {
+      "usd": 0.0379,
+      "by_class": {
+        "input": 0.002,
+        "cache_read": 0.0004,
+        "output": 0.008,
+        "cache_write_30m": 0.0075,
+        "cache_write_12h": 0.02
+      },
+      "scope": "API list-price estimate; excludes non-token fees and discounts"
+    },
+    "matches_expected": true
+  },
+  {
+    "id": "claude-compaction-iterations",
+    "normalized": {
+      "contract": "claude-messages",
+      "tokens": {
+        "input": 300,
+        "cache_read": 0,
+        "cache_write_5m": 0,
+        "cache_write_1h": 0,
+        "cache_write_unknown": 0,
+        "output": 30
+      },
+      "reasoning_output_tokens": null,
+      "reasoning_included_in_output": true
+    },
+    "price": {
+      "usd": 0.0009,
+      "by_class": {
+        "input": 0.0006,
+        "cache_read": 0.0,
+        "cache_write_5m": 0.0,
+        "cache_write_1h": 0.0,
+        "output": 0.0003
+      },
+      "scope": "API list-price estimate; excludes non-token fees and discounts"
+    },
+    "matches_expected": true
+  },
+  {
+    "id": "gemini-disjoint-generation",
+    "normalized": {
+      "contract": "gemini-interactions",
+      "tokens": {
+        "input": 62,
+        "cache_read": 0,
+        "output": 468
+      },
+      "reasoning_output_tokens": 297,
+      "reasoning_included_in_output": true
+    },
+    "price": {
+      "usd": 0.004804,
+      "by_class": {
+        "input": 0.000124,
+        "cache_read": 0.0,
+        "output": 0.00468
+      },
+      "scope": "API list-price estimate; excludes non-token fees and discounts"
+    },
+    "matches_expected": true
+  },
+  {
+    "id": "claude-unknown-write-lifetime",
+    "normalized": {
+      "contract": "claude-messages",
+      "tokens": {
+        "input": 1,
+        "cache_read": 0,
+        "cache_write_5m": 0,
+        "cache_write_1h": 0,
+        "cache_write_unknown": 100,
+        "output": 10
+      },
+      "reasoning_output_tokens": null,
+      "reasoning_included_in_output": true
+    },
+    "price": {
+      "usd": null,
+      "reason": "cache write lifetime unknown"
+    },
+    "matches_expected": true
+  }
+]

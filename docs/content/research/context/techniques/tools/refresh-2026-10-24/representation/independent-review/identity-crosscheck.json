@@ -1,0 +1,33 @@
+{
+  "sources": [
+    {
+      "path": "research/rtk-leanctx/rtk/engine/LICENSE",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "sha256": "4e3d24d5ae066274a03b82b400b31ad057628c40911cd08aa5a19ff31787dc98",
+      "matches_recorded_pinned_source": true
+    },
+    {
+      "path": "research/rtk-leanctx/rtk/src/cmds/system/pipe_cmd.rs",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "sha256": "f1903288278ff0134e5cbe36a7963eaaa90a6422fda6474aa2379bbac15cf004",
+      "matches_recorded_pinned_source": true
+    },
+    {
+      "path": "research/rtk-leanctx/lean-ctx/rust/crates/lean-ctx-embed/src/engine.rs",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "sha256": "800824aca97d0ed8434ec7c777720ccf4b7706debb6d59f291a1454d2fe63338",
+      "matches_recorded_pinned_source": true
+    },
+    {
+      "path": "research/rtk-leanctx/lean-ctx/rust/src/core/conversation.rs",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "sha256": "78e55cc0dd60789790d65890d67cc0ca619485e86a8d5537557ede44cd3a4053",
+      "matches_recorded_pinned_source": true
+    }
+  ],
+  "rtk_oss_archive_sha256": "a44e8ffc43981100b4ddf1710399a1649a6c874591aa6d0c0727fe6cbd983c41",
+  "matches_dossier_archive": true,
+  "binary_sha256": "38b915f2a52ce4b7ef7d6dc3966aaeccb9f754731b2933571bf85026bcba8677",
+  "binary_matches_archive_member": true,
+  "version": "rtk 1.0.1"
+}

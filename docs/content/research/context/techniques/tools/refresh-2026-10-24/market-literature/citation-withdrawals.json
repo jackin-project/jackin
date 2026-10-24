@@ -1,0 +1,25 @@
+{
+  "base_revision": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "records": [
+    {
+      "old_label": "LLMRouterBench",
+      "wrong_url": "https://arxiv.org/abs/2504.11154",
+      "actual_title": "SAR-to-RGB Translation with Latent Diffusion for Earth Observation",
+      "disposition": "Withdraw wrong citation; unrelated paper cannot support routing claim.",
+      "replacement_url": "https://aclanthology.org/2026.findings-acl.1881/"
+    },
+    {
+      "old_label": "OrcaRouter",
+      "wrong_url": "https://arxiv.org/abs/2408.11348",
+      "actual_title": "Learning Flock: Enhancing Sets of Particles for Multi~Sub-State Particle Filtering with Neural Augmentation",
+      "disposition": "Withdraw wrong citation; particle-filter paper cannot support routing claim.",
+      "replacement_url": "https://arxiv.org/abs/2605.30736v1"
+    },
+    {
+      "old_label": "TRACE-ROUTER current title",
+      "old_url": "https://arxiv.org/abs/2607.22465v1",
+      "current_version": "https://arxiv.org/abs/2607.22465v4",
+      "disposition": "Keep Julyv1 title only as version history; October1v4 title is ORACLE and includes a changed verification/resource allocation method."
+    }
+  ]
+}

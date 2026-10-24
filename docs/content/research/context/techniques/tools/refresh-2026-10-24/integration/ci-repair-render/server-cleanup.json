@@ -1,0 +1,7 @@
+{
+  "server_pid": 640131,
+  "server_exit_code": -15,
+  "stopped_utc": "2026-10-24T09:40:03.641646+00:00",
+  "loopback_port_4188_closed": true,
+  "scope": "Only this task-owned loopback server was terminated."
+}

@@ -1,0 +1,132 @@
+{
+  "scope": "Synthetic final API usage receipts. Values are hand-checkable contract examples, not provider calls, invoices or subscriber quota measurements.",
+  "cases": [
+    {
+      "id": "openai-paid-write-partition",
+      "contract": "openai-responses",
+      "cache_writes": "paid",
+      "model": "gpt-6.1-sol",
+      "rate_profile": "Standard API, at most272K prompt, cutoff2026-10-24T01:15:00Z",
+      "usage": {
+        "input_tokens": 12000,
+        "output_tokens": 800,
+        "input_tokens_details": {
+          "cached_tokens": 4000,
+          "cache_write_tokens": 7000,
+          "cache_write_tokens_details": {
+            "ttl_30m_tokens": 3000,
+            "ttl_12h_tokens": 4000
+          }
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 300
+        }
+      },
+      "rates": {
+        "input": 2,
+        "cache_read": 0.1,
+        "cache_write_30m": 2.5,
+        "cache_write_12h": 5,
+        "output": 10
+      },
+      "expected_tokens": {
+        "input": 1000,
+        "cache_read": 4000,
+        "cache_write_30m": 3000,
+        "cache_write_12h": 4000,
+        "output": 800
+      },
+      "expected_usd": 0.0379,
+      "reasoning_is_subset": true
+    },
+    {
+      "id": "claude-compaction-iterations",
+      "contract": "claude-messages",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "iterations": [
+          {
+            "type": "compaction",
+            "input_tokens": 200,
+            "output_tokens": 20
+          },
+          {
+            "type": "message",
+            "input_tokens": 100,
+            "output_tokens": 10
+          }
+        ]
+      },
+      "rates": {
+        "input": 2,
+        "cache_read": 0.1,
+        "cache_write_5m": 2.5,
+        "cache_write_1h": 4,
+        "output": 10
+      },
+      "expected_tokens": {
+        "input": 300,
+        "cache_read": 0,
+        "cache_write_5m": 0,
+        "cache_write_1h": 0,
+        "cache_write_unknown": 0,
+        "output": 30
+      },
+      "expected_usd": 0.0009,
+      "reasoning_output_tokens": null
+    },
+    {
+      "id": "gemini-disjoint-generation",
+      "contract": "gemini-interactions",
+      "model": "gemini-4-argon",
+      "rate_profile": "Introductory API rates through2026-11-30",
+      "usage": {
+        "total_input_tokens": 62,
+        "total_output_tokens": 171,
+        "total_thought_tokens": 297,
+        "total_tokens": 530
+      },
+      "rates": {
+        "input": 2,
+        "cache_read": 0.1,
+        "output": 10
+      },
+      "expected_tokens": {
+        "input": 62,
+        "cache_read": 0,
+        "output": 468
+      },
+      "expected_usd": 0.004804,
+      "reasoning_output_tokens": 297
+    },
+    {
+      "id": "claude-unknown-write-lifetime",
+      "contract": "claude-messages",
+      "model": "fixture-model",
+      "usage": {
+        "input_tokens": 1,
+        "output_tokens": 10,
+        "cache_creation_input_tokens": 100
+      },
+      "rates": {
+        "input": 2,
+        "cache_read": 0.1,
+        "cache_write_5m": 2.5,
+        "cache_write_1h": 4,
+        "output": 10
+      },
+      "expected_tokens": {
+        "input": 1,
+        "cache_read": 0,
+        "cache_write_5m": 0,
+        "cache_write_1h": 0,
+        "cache_write_unknown": 100,
+        "output": 10
+      },
+      "expected_usd": null,
+      "reason": "Unspecified write TTL remains unknown."
+    }
+  ]
+}

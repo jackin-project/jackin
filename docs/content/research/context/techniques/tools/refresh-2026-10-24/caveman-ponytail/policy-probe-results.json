@@ -1,0 +1,22 @@
+{
+  "claude_distinct_projects_keep_modes": true,
+  "claude_same_project_other_session_reads_ultra": true,
+  "codex_shared_plugin_data_other_session_reads_lite": true,
+  "ponytail_map_disabled_activation_ms": {
+    "first": 36.53923399906489,
+    "subsequent": [
+      35.225294002884766,
+      32.87916399858659,
+      33.74502400038182,
+      32.3809470028209,
+      41.14057100014179,
+      39.495286997407675,
+      37.37700999772642,
+      35.38858500178321,
+      37.50328500245814,
+      41.67788499762537
+    ]
+  },
+  "ponytail_injection_bytes": 2861,
+  "caveman_injection_bytes": 4961
+}

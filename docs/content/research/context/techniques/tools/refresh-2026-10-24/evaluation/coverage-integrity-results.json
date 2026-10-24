@@ -1,0 +1,31 @@
+{
+  "scope": "Original reconciler independently audited, then remediated by this reviewer at root request. These are implementation checks of that remediation, not an independent review of my own authored fix.",
+  "reconciler_sha256": "a569a808b67c1e85570a5979b0510ad6d7535d9988f883033af9b674edcdcd04",
+  "inventory_sha256": "833aa4fbea3963e7616e12ff5ca12b03a168fff01a959543a3cfeea1673f5511",
+  "summary_sha256": "ace4dd2bbd4306d48451dc4fcb274e59a0d60cbbb54125d8aed02c0a95e3074a",
+  "guard_checks": {
+    "exact_destination_passes": true,
+    "misspelling_is_not_fuzzy_mapped": true,
+    "substring_is_not_mapped": true,
+    "missing_heading_has_no_summary_fallback": true,
+    "conflicting_anchor_rejected": true,
+    "conflicting_id_document_rejected": true,
+    "unknown_census_id_rejected": true,
+    "generic_status_is_not_rationale": true,
+    "valid_author_route_preserved": true,
+    "split_destinations_preserved": true,
+    "numeric_array_excluded": true,
+    "valid_small_inventory_passes": true,
+    "identical_duplicate_fails": true,
+    "conflicting_duplicate_fails": true,
+    "numeric_only_cannot_complete_inventory": true
+  },
+  "guard_check_count": 15,
+  "canonical_rows": 905,
+  "canonical_ledgers": 12,
+  "slugger_compared_documents": 57,
+  "slugger_compared_heading_occurrences": 663,
+  "slugger_mismatches": [],
+  "provider_calls": 0,
+  "network_requests": 0
+}

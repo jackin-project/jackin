@@ -1,0 +1,332 @@
+{
+  "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "reviewer": "/root/rtk_leanctx",
+  "scope": "Explicit census mappings for19non-MDX/navigation/historical entries; no pattern-based automatic coverage fallback. Historical artifacts verified byte-identical to baseline.",
+  "rows": [
+    {
+      "id": "S0150",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/engine/meta.json",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "9b431e9620624fbd11c9fe962f6aef513e11ce8795d08b34e9066fe3790d87a7",
+      "workstream": "integration",
+      "disposition": "retained-navigation-artifact",
+      "current_document": "docs/content/research/context/engine/meta.json",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "Existing dossier navigation remains at this exact path. Current destination/render checks are a separate integration verification gate; this artifact map makes no scientific efficacy or completed-build claim.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0152",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/meta.json",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "c224cd266581681232bd480dc9b3b4d6e926bb52dc8bb62488211e02bf994459",
+      "workstream": "integration",
+      "disposition": "retained-navigation-artifact",
+      "current_document": "docs/content/research/context/meta.json",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "Existing dossier navigation remains at this exact path. Current destination/render checks are a separate integration verification gate; this artifact map makes no scientific efficacy or completed-build claim.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0738",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/meta.json",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "7a22092fafa69370e42062feb0bb81faf271a9ede617832f2d16da2b04f2d7ac",
+      "workstream": "integration",
+      "disposition": "retained-navigation-artifact",
+      "current_document": "docs/content/research/context/techniques/meta.json",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "Existing dossier navigation remains at this exact path. Current destination/render checks are a separate integration verification gate; this artifact map makes no scientific efficacy or completed-build claim.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0739",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/count_tokens.py",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "3d135dd69a083107c5f80d5e144c01bd7050c9b9330e704c0a2ac252fcac5da6",
+      "workstream": "evaluation",
+      "disposition": "revalidated-unchanged-instrument",
+      "current_document": "docs/content/research/context/techniques/tools/count_tokens.py",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "Explicit-input offline instruments were source-audited and exercised by the recorded measurement regressions. Provider estimates, exact strings and image dimensions retain distinct scopes; no live counting request or inherited credential discovery was executed.",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/measurement-tests.log"
+      ]
+    },
+    {
+      "id": "S0740",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/image_tokens.py",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "0bac3a0379b8bac955a7fe67e360f108bfba3fda848c3f5709eb5c6b4274225b",
+      "workstream": "evaluation",
+      "disposition": "revalidated-unchanged-instrument",
+      "current_document": "docs/content/research/context/techniques/tools/image_tokens.py",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "Explicit-input offline instruments were source-audited and exercised by the recorded measurement regressions. Provider estimates, exact strings and image dimensions retain distinct scopes; no live counting request or inherited credential discovery was executed.",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md",
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/measurement-tests.log"
+      ]
+    },
+    {
+      "id": "S0745",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/meta.json",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "3785adb780a8ebeb0097b74acf1fada77aa406716a12e4440c7e5029c641c0ad",
+      "workstream": "integration",
+      "disposition": "retained-navigation-artifact",
+      "current_document": "docs/content/research/context/techniques/tools/meta.json",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "Existing dossier navigation remains at this exact path. Current destination/render checks are a separate integration verification gate; this artifact map makes no scientific efficacy or completed-build claim.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0746",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "line": "5",
+      "heading": "## Source identities and environments",
+      "blob_sha256": "fea6d631ee87b842af593f91ee6c2a0144b98d508ea41304d381e273e8158e2d",
+      "workstream": "integration",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "current_heading": "Source identities and environments",
+      "whole_artifact": false,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0747",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "line": "15",
+      "heading": "## Exact test selections and recorded outcomes",
+      "blob_sha256": "fea6d631ee87b842af593f91ee6c2a0144b98d508ea41304d381e273e8158e2d",
+      "workstream": "integration",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "current_heading": "Exact test selections and recorded outcomes",
+      "whole_artifact": false,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0748",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "line": "41",
+      "heading": "## Reproducing the probes in a disposable workspace",
+      "blob_sha256": "fea6d631ee87b842af593f91ee6c2a0144b98d508ea41304d381e273e8158e2d",
+      "workstream": "integration",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "current_heading": "Reproducing the probes in a disposable workspace",
+      "whole_artifact": false,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0749",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "line": "61",
+      "heading": "## Curated results and release/package provenance",
+      "blob_sha256": "fea6d631ee87b842af593f91ee6c2a0144b98d508ea41304d381e273e8158e2d",
+      "workstream": "integration",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "current_heading": "Curated results and release/package provenance",
+      "whole_artifact": false,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0750",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "line": "88",
+      "heading": "## Interpretation and outstanding experiments",
+      "blob_sha256": "fea6d631ee87b842af593f91ee6c2a0144b98d508ea41304d381e273e8158e2d",
+      "workstream": "integration",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "current_heading": "Interpretation and outstanding experiments",
+      "whole_artifact": false,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0751",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/caveman-probe-results.json",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "ac3e6382676dff77fb1dc252665fa4f4e4511abacee83cc7476388562ae5ed93",
+      "workstream": "integration",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/caveman-probe-results.json",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0752",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/package-correspondence.json",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "eafbe03beaa7a3a9051b92b76b17640b0e5388a4ef874532e11d780d523a5613",
+      "workstream": "integration",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/package-correspondence.json",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0753",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/policy-probe-results.json",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "a4127c87952c2bc24d2ec3ac8f2832bf42c6b33aa3e761a135a63c48857cfce2",
+      "workstream": "integration",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/policy-probe-results.json",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0754",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/probe_caveman.go",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "abdb8a5451975775b2b6f38e41a7d3df39a7fcec07a12a79eee916e1d0f953da",
+      "workstream": "integration",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/probe_caveman.go",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0755",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/probe_policy.py",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "caa2e3175b19509644e6def597a7c91c419c9e6afbb43557657b38dbf406dc7a",
+      "workstream": "evaluation",
+      "disposition": "retained-historical-reference",
+      "current_document": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/probe_policy.py",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "This exact dated October23 artifact/section remains the historical record. Its original result is not counted as fresh execution; current product release and component outcomes are separately documented in October24 packs.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    },
+    {
+      "id": "S0756",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/session_cost.py",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "63d87c72ae86a0eaa1311bd2c9f7278bd86ee722d85f48216b87aa99d8034d98",
+      "workstream": "evaluation",
+      "disposition": "updated-and-tested-instrument",
+      "current_document": "docs/content/research/context/techniques/tools/session_cost.py",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "Current provider accounting and17offline regressions cover scoped/deduplicated receipts, write lifetime classes, Claude compaction iterations and disjoint Gemini thoughts; the exact result is retained in the evaluation execution manifest.",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/execution-manifest.json"
+      ]
+    },
+    {
+      "id": "S0757",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/techniques/tools/test_measurement_tools.py",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "444fde68e83f91cb9bff3cd4cf9ad3bce7f7269793c6b6db4b044c28cfc2f365",
+      "workstream": "evaluation",
+      "disposition": "updated-and-tested-instrument",
+      "current_document": "docs/content/research/context/techniques/tools/test_measurement_tools.py",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "Current provider accounting and17offline regressions cover scoped/deduplicated receipts, write lifetime classes, Claude compaction iterations and disjoint Gemini thoughts; the exact result is retained in the evaluation execution manifest.",
+      "evidence": [
+        "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/execution-manifest.json"
+      ]
+    },
+    {
+      "id": "S0905",
+      "baseline_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+      "document": "docs/content/research/context/tools/meta.json",
+      "line": "1",
+      "heading": "Whole artifact",
+      "blob_sha256": "00b222746ce75047ee5db6a1fe73b0bd8c0b02bab434cfd8f8ff56158a185627",
+      "workstream": "integration",
+      "disposition": "retained-navigation-artifact",
+      "current_document": "docs/content/research/context/tools/meta.json",
+      "current_heading": "",
+      "whole_artifact": true,
+      "evidence_or_reason": "Existing dossier navigation remains at this exact path. Current destination/render checks are a separate integration verification gate; this artifact map makes no scientific efficacy or completed-build claim.",
+      "evidence": [
+        "docs/content/research/context/tools/12-scope-and-reconciliation.mdx"
+      ]
+    }
+  ]
+}

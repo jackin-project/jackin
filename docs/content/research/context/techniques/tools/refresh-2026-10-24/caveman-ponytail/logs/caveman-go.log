@@ -1,0 +1,17 @@
+[Curated diagnostic excerpts. Complete original log hash and byte count in execution-manifest.json.]
+compile: writing output: write $WORK/b296/_pkg_.a: no space left on device
+internal/saferio: write /tmp/go-build1373317081/b225/vet.cfg: no space left on device
+encoding/asn1: write /tmp/go-build1373317081/b224/vet.cfg: no space left on device
+vendor/golang.org/x/crypto/cryptobyte: write /tmp/go-build1373317081/b223/vet.cfg: no space left on device
+crypto/aes: write /tmp/go-build1373317081/b228/vet.cfg: no space left on device
+crypto/des: write /tmp/go-build1373317081/b229/vet.cfg: no space left on device
+crypto/dsa: write /tmp/go-build1373317081/b230/vet.cfg: no space left on device
+crypto/internal/fips140/edwards25519: write /tmp/go-build1373317081/b233/vet.cfg: no space left on device
+crypto/internal/fips140/ed25519: write /tmp/go-build1373317081/b232/vet.cfg: no space left on device
+crypto/ed25519: write /tmp/go-build1373317081/b231/vet.cfg: no space left on device
+crypto/internal/fips140/rsa: write /tmp/go-build1373317081/b235/vet.cfg: no space left on device
+crypto/x509/pkix: write /tmp/go-build1373317081/b236/vet.cfg: no space left on device
+encoding/pem: write /tmp/go-build1373317081/b237/vet.cfg: no space left on device
+github.com/JuliusBrussee/caveman/proxy/providers/jsonsplice: write /tmp/go-build1373317081/b240/vet.cfg: no space left on device
+github.com/JuliusBrussee/caveman/shared/platform/runtimeenv: write /tmp/go-build1373317081/b243/vet.cfg: no space left on device
+crypto/internal/fips140/hkdf: write /tmp/go-build1373317081/b247/vet.cfg: no space left on device

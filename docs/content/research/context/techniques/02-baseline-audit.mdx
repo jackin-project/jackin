@@ -5,7 +5,7 @@ description: "What this refresh measured, which historical numbers remain unveri
 
 **Research state:** Current
 
-Execution date **2026-10-23**; frozen cutoff **2026-10-23T15:31:31Z**. This page replaces assertions that earlier private-session measurements were measured again in the current environment.
+Research refresh **2026-10-24**; frozen source cutoff **2026-10-24T01:15:00Z**. Later offline checks use pinned sources. This page replaces assertions that earlier private-session measurements were measured again in the current environment.
 
 ## Summary
 
@@ -19,9 +19,9 @@ What is the native baseline, which costs are already present, and which earlier 
 
 ## Method
 
-The repository baseline is [Jackin fb9a51c](https://github.com/jackin-project/jackin/tree/fb9a51ca4eb2e51b92abe1c994ac5e469458cd95). The current checkout, uploaded brief, historical PR and retrievable source history were inspected. Private agent settings and transcripts were not searched. The [scope ledger](/research/context/tools/12-scope-and-reconciliation/) records inaccessible history and the real delegated work.
+The repository baseline for this refresh is [Jackin 6e266406](https://github.com/jackin-project/jackin/tree/6e266406b49da2ab3c55355f3b7d33d1643ee6cd). The current checkout, uploaded brief, historical PRs and retrievable source history were inspected. The original numerical claims below predate this baseline; their older source is linked separately. Private agent settings and transcripts were not searched. The [scope ledger](/research/context/tools/12-scope-and-reconciliation/) records inaccessible history and the real delegated work.
 
-The [measurement instruments](/research/context/techniques/tools/) now require explicit inputs, preserve unknown accounting fields and default to offline request preparation. Their offline regressions check duplicate receipt handling, monotone updates, session/model separation, aggregate cache writes, missing TTLs, true zero costs, invalid receipts, CRLF input and PNG dimensions.
+The [measurement instruments](/research/context/techniques/tools/) require explicit inputs, preserve unknown accounting fields and default to offline request preparation. Seventeen offline regressions check duplicate receipt handling, monotone updates, session/model separation, cache TTLs, zero costs, invalid receipts, CRLF input, PNG dimensions, paid OpenAI writes, Claude compaction iterations and Gemini's disjoint output/thought fields.
 
 ## Findings
 
@@ -63,11 +63,15 @@ Current product chapters contain fresh component receipts: [Caveman](/research/c
 
 Hook payload bytes and local tokenizer estimates, MCP schema bytes, parser preservation, recovery failures and concurrency behavior are useful baseline inputs. None is an invoice or a quality-adjusted task outcome. Timings from this shared research container are smoke measurements, not controlled cold/warm latency comparisons.
 
+Public benchmark arithmetic was also recomputed: Dasein's 700 published rows, LemonCrow's historical Verified/Lite results, 28 Tokbench run summaries, the current RTK command/agent records and Context Guru's July CSV. An upstream structured-Headroom checker accepted a wrong function with one matching argument in an offline counterexample. These checks audit existing records and grading, not new agent trials. Exact pins, exclusions and results are in the [evidence ledger](/research/context/tools/07-evidence-and-claims/) and its dated artifact pack.
+
 ### Establishing the next native baseline
 
 Record the exact agent binary, auth route, model and effort, system/role instructions, native tools, loaded schema set, permissions, timeouts, repository commit and dirty patch. Record which hooks actually fire, which bytes reach the model and whether the host requires a native read before editing. Keep existing native caching, compaction, schema discovery and edit tools enabled where they are part of the chosen baseline.
 
 Start with explicit isolated agent homes and fresh session IDs. Separate cold versus warm indexes and caches; never call warm startup “free.” Export provider usage, all retries/child sessions, task patches and independent grader receipts. Observe quota windows directly for subscription arms. The [validation protocol](/research/context/techniques/16-validation-harness/) defines acceptance and sampling.
+
+Do not assume a parent summary covers the whole agent tree. The current Claude SDK distinguishes main-loop `result.usage` from whole-tree `modelUsage`/`model_usage`; actual raw-call coverage must survive errors and interrupted runs. [SDK accounting contract](https://code.claude.com/docs/en/agent-sdk/agent-loop). API list prices, Codex credits and included subscription usage require different accounting adapters.
 
 ## Implications for jackin❯
 

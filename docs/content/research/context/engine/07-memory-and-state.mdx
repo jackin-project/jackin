@@ -1,68 +1,95 @@
 ---
-title: "07 — Memory and state (L5)"
-description: "Design for durable memory, session state, provenance, retention, and evidence-gated retrieval without uncontrolled context injection."
+title: "07 — Memory, recovery and context epochs"
+description: "Separate source indexes, authorized originals, model exposure, durable notes and receipts with explicit scope, retention and recovery."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Memory should remain a small, provenance-rich view over the reversible observation archive because current memory products do not prove net savings over re-exploration.
-Memory is the layer with the worst evidence-to-marketing ratio in the entire research corpus: no memory tool anywhere publishes injection-cost-vs-re-exploration-saved net accounting, files-only baselines beat flagship memory products (Letta 74.0% > Mem0 68.5%; full-context beats both), and lossy stores create the confidently-wrong-recall failure mode. The engine's memory layer is therefore deliberately small, reversible, and net-accounted.
+Snapshot **2026-10-24 01:15:00 UTC**. Use one accountable owner per state class, not one mandatory physical database. Share immutable source data only within compatible roots/security/configuration; keep mutable exposure and recovery authority scoped to the consumer session and context epoch. Raw recovery, repository memory and handoff summaries solve different problems.
 
 ## Question and scope
 
-What state should persist across turns and sessions, and how should retrieval keep durable memory bounded and inspectable?
+What survives a tool call, file edit, compaction, resume, fork, backend restart, worktree switch or disabled optimizer? Which state may be shared, and who can retrieve it?
 
 ## Method
 
-The design inventories current session, workspace, and repository state, then assigns ownership, retention, provenance, retrieval triggers, and operator inspection requirements to each durable item.
+Inspect current Jackin session/isolation/authorization code and the current product storage implementations. Reconcile the old one-store/TTL/purge design with Headroom storage-fault, LemonCrow worktree/spill and LeanCTX context-lifecycle probes. These observations support the proposed contracts; they are not an implemented Jackin store.
 
 ## Findings
 
-### Exactly one store (INV-8)
+### Current identity is necessary but insufficient
 
-The CCR archive (L2) doubles as the memory substrate — one turso database, three views:
+Jackin's <RepoFile path="crates/core/jackin-protocol/src/lib.rs">SessionIdentity</RepoFile> has UID/GID only. Its <RepoFile path="crates/apps/jackin-capsule/src/session/agent_cmd.rs">session launcher</RepoFile> supplies separate numeric session ID, capability and private session state/tmp/runtime/cache roots. <RepoFile path="crates/apps/jackin-capsule/src/daemon/control/auth.rs">Control authorization</RepoFile> checks configured session identities/capabilities for relevant requests. Those mechanisms cannot be replaced by a model-supplied repository path or content hash.
 
-1. **Verbatim archive** — every compressed observation's original, blake3-addressed, FTS-searchable, TTL'd (≥30 min hot, archived cold). Recovery without knowing the id: search the archive, expand the match (lean-ctx's FTS-searchable archive semantics).
-2. **Read-stub / attention ledger** — what each session/subagent has already seen, fingerprinted (structural hash for code via sem, content hash otherwise), powering `[unchanged]` stubs and delta-fills (L2). Bookkeeping only, never content.
-3. **Knowledge notes** — operator- or agent-curated durable facts (decisions, gotchas, environment quirks), stored as *files* under the workspace/role (compaction-survival placement below), indexed for retrieval, **never auto-written into always-loaded instruction files without a human gate** (headroom-`learn`'s risk: one wrong auto-rule is a bad commit that outlives months of savings; the engine surfaces *candidate* corrections for review instead).
+A separate post-cutoff main review found account-marker publication now uses cooperative nonblocking root leases and Prepared/Committed recovery, with root/inode/value validation and refusal to overwrite foreign state. Uncertain commit errors do not enter blind rollback. This is existing account-configuration safety, not model-exposure tracking or the proposed observation archive. Preserve it and its trusted-root assumptions. <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md">Pinned integration-base evidence and limits</RepoFile>.
 
-Running the engine's store alongside cavemem/headroom-memory/lean-ctx-CCP is refused at setup (one memory layer per capsule — the combining page's rule).
+The proposed observation scope includes capsule generation, instance, canonical repository/worktree identity, source generation, host session/subagent and context epoch. A supervisor admits the scope from trusted launch metadata. A fresh process alone does not prove a fresh model context; a resumed conversation alone does not prove every original observation survived compaction.
 
-### Handoff state, not transcript replay
+### State classes and owners
 
-Session continuity uses the file-based handoff pattern (a ~387-token progress/decisions file beats 10–40k of transcript replay/re-exploration): on session end or task boundary the engine writes a structured handoff file (task state, decisions with handles, files touched, next steps) into the workspace state dir; the next session boots from it. jackin❯'s existing COORDINATION.md convention for parallel agents is the production sibling; the engine formalizes and meters it.
+| State | Owner and minimum key | Retention and sharing |
+|---|---|---|
+| Original authorized observation | Recovery broker; observation ID plus admitted security/session scope | Preserve active references through the supported resume horizon; no cross-scope lookup by hash alone |
+| Immutable source index | Selected backend; repository/worktree snapshot, parser/configuration, security domain | Reusable only while source/policy identity matches; invalidation is independent of model exposure |
+| Model exposure | Host adapter; consumer session/subagent and context epoch | New/unknown epoch clears omission permission; cannot be shared merely because source is shared |
+| Durable project notes | Explicit memory owner; project scope, provenance, author/version and expiry/review | Curated, inspectable and revocable; never silently promoted from untrusted tool text into instructions |
+| Handoff/task state | Task owner; requirements, decisions, remaining work and evidence references | Transfer only the declared task scope; retain exact artifacts when needed |
+| Measurement receipts | Evaluation/usage owner; run/treatment/task/event identity | Sanitized, auditable retention separate from source-content recovery |
 
-### Compaction-survival placement
+Separate files, SQLite databases or upstream index stores are acceptable when ownership and lifecycle are explicit. Reusing the existing quota/snapshot database for every raw object is not justified by the fact that it already persists data. Conversely, stacking several stores that each believe they own the same exposure/marker is a correctness risk. [Architecture](/research/context/engine/02-architecture/).
 
-The engine places must-survive state only in locations that survive Claude Code compaction (root instruction file, auto-memory, disk files) and treats conversation-resident state as ephemeral — with a PreCompact-event hook purging the read-stub index so post-compaction re-reads are never falsely stubbed (the correctness rule lean-ctx learned).
+### Durable recovery contract
 
-### Net accounting (the missing number, shipped)
+An original artifact records exact captured bytes, content hash, producer/tool/version, timestamp, admitted scope, native status, stdout/stderr association where supplied, and completeness/redaction/truncation. Archive only content already authorized for the consumer; “raw” is not access to pre-redaction secrets.
 
-Every injection from memory is metered as cost; every avoided re-exploration is measured through a paired current task path. Memory features report **net** per role and are auto-demoted when negative. Stub size, reachable reread share, and tasks-per-cap effect are local benchmark outputs—not inherited vendor constants.
+A lossy replacement requires successful storage acknowledgement and a scoped recovery reference before delivery. Headroom's reviewed Rust CCR `put` returns unit even when its SQLite table is missing; LemonCrow's repeated-shell stub can outlive a failed spill attempt. Those narrow executed faults make a stronger broker contract necessary. [Headroom](/research/context/tools/02-headroom-design/), [LemonCrow](/research/context/tools/10-lemoncrow-design/).
 
-### Memory requirements
+Use unguessable observation references and broker authorization; a truncated content digest is not a capability. Verify stored bytes against the recorded digest, reject mismatched scope and report missing/corrupt records explicitly. Deduplication may share immutable storage internally only when it does not create an authorization or retention channel between consumers.
 
-1. **Store and index canonical originals.** Compression is a recoverable view, never the durable source.
-2. **Scope retrieval per workspace by default.** Cross-workspace recall is explicit and policy-gated.
-3. **Budget and measure every injection.** Standing memory is a cost until a current task A/B proves net benefit.
-4. **Preserve exact technical spans and modality words.** Code, URLs, paths, versions, identifiers, uncertainty, and negation remain byte- or meaning-exact.
+The proposed recovery tool accepts an observation reference and bounded range/representation, not an arbitrary filesystem path. It returns historical captured evidence with its timestamp and completeness. Reading the current file is a different operation and cannot silently stand in for the archived original or a native read receipt.
+
+Do not impose an upstream short TTL as Jackin's session policy. Active handles and supported resumes need retention leases or an explicit checkpoint migration. Under disk pressure, refuse new lossy replacements and pass the original observation through. Do not evict referenced evidence silently to keep a compression percentage attractive. Off stops new transformations while keeping existing references retrievable; deletion/expiry must be explicit and auditable.
+
+### Context epochs and delivery evidence
+
+An exposure record means the host accepted a specific observation into a specific consumer context, not that the model understood or remembers it. A hook invocation alone is insufficient. If delivery cannot be observed, record `unknown` and do not suppress future exact content based on that record.
+
+Compaction, context reset, clear, fork, subagent changes and uncertain resume start a new exposure epoch unless a host contract proves continuity of the particular retained content. A fresh repository hash does not solve this. Current Claude/Codex lifecycle documentation offers events that may help an adapter, but Jackin's installed status-event lists do not yet cover the complete epoch contract. [Host qualification](/research/context/tools/11-jackin-integration/).
+
+LeanCTX's released-binary probe distinguishes these layers: branch changes refreshed source; a simulated compaction marker prevented the unchanged stub; a cold restart without that marker could retain the custom consumer's stub; another consumer received content. Its Claude-specific mitigation is also recorded. This supports explicit consumer/epoch binding rather than claiming every cached read is unsafe. [LeanCTX reproduction](/research/context/tools/04-leanctx-design/).
+
+Do not purge recovery artifacts merely because an exposure epoch ends. The compacted context may retain a handle or later need earlier evidence. Invalidate omission permission immediately; retain artifacts according to the declared recovery horizon. Provider-native compaction and preserved-reasoning protocols remain separate from the local index/exposure store.
+
+### Handoffs and durable memory
+
+A handoff should carry the original goal/constraints, accepted decisions, current source identity, exact changed files, executed verification, unresolved questions and artifact references. Preserve critical requirements verbatim where paraphrase risks changing them. The receiving agent may request raw evidence and must still verify work it did not author. A small summary is not proof that tens of thousands of earlier tokens have become unnecessary.
+
+Project notes require provenance, confidence, source version, owner, relevance and expiration/review rules. Distinguish an observed fact from a tentative hypothesis or an instruction from external content. Repository documents, web pages and tool output may contain hostile or stale instructions; indexing them does not elevate their authority. Do not let automatic memory silently alter the user's requirements or security policy.
+
+Persist durable notes through the intended host/project mechanism only after deciding their scope and update rules. Adding the same memory through root instructions, auto-memory, a sidecar and a compaction hook causes duplication and conflicting freshness. One writer/merge contract and one effective delivery source per note are required.
+
+### Net accounting
+
+Measure memory/index writes, injected context, retrieval, verification, stale-note repairs and accepted outcomes. An estimate of avoided transcript replay is a counterfactual, not an observed saving. This research does not ship a universal memory-profit ledger or prove that other tools have none. [Measurement design](/research/context/engine/08-measurement-and-verification/).
 
 ## Implications for jackin❯
 
-These findings define the memory and state (l5) contract for jackin❯; any implementation must preserve the acceptance gates and boundaries above.
+Build the scope/recovery interfaces in Rust and keep stateful upstream workers behind them. Initial retrieval should avoid unchanged stubs unless the host epoch contract is proven. Use separate per-worktree/consumer processes where an upstream library uses global environment or session state; sharing can be introduced only with explicit source/consumer identity tests.
+
+The security corpus must attempt forged scope/handles, same-content cross-session lookup, symlink/path escape, private/ignored-file retrieval, changed permissions, missing/corrupt records, restart with incomplete writes, disk pressure, concurrent worktrees and off/resume. Optional transform failures return the existing authorized observation. Authorization, path integrity and mandatory redaction failures never take that fallback.
 
 ## Limitations and unknowns
 
-### What stays out
-
-No vector memory by default; the bounded docs/decision hybrid index remains an opt-in role experiment under the current ≥20% acceptance bar ([current retrieval-tools comparison](/research/context/tools/06-combining/)). No cross-capsule shared memory or adaptive cognition in v1 without current fleet-ledger evidence.
+No full adversarial broker or process-isolation test ran in this workstream, because the broker is not implemented. Product retention defaults and direct-library probes do not prove recovery through a real compacted/resumed agent. The old universal one-store rule, 30-minute recovery assumption, handoff multiplier and “net accounting shipped” wording are withdrawn.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Current Jackin source anchors above are pinned by the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json">source audit</RepoFile>. Product dossiers preserve exact faults and state behavior; proposed retention and epoch rules are explicitly Jackin design requirements.
 
 ## Related work
 
-- [Context engine dossier](/research/context/engine/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Token-optimization tools](/research/context/tools/)
+- [Observation pipeline](/research/context/engine/03-observation-pipeline/)
+- [Retrieval/memory techniques](/research/context/techniques/08-retrieval-memory-and-state/)
+- [Rollout and rollback](/research/context/engine/10-rollout-and-validation/)

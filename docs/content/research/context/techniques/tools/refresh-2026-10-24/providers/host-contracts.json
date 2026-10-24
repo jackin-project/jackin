@@ -1,0 +1,139 @@
+{
+  "jackin_base_revision": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "snapshot_cutoff_utc": "2026-10-24T01:15:00Z",
+  "qualification": "Registry/adapters, not twelve runnable hosts. No native replacement task executed. Existing Jackin isolation and launch flags must be preserved.",
+  "hosts": [
+    {
+      "id": "claude",
+      "name": "Claude",
+      "jackin_dispatch": true,
+      "adapter_state": ".claude",
+      "adapter_env": "CLAUDE_CONFIG_DIR",
+      "source_id": "claude-code-hooks",
+      "revision": "Official mutable docs",
+      "contract": "updatedToolOutput replaces valid built-in shape and MCP output; async reporters cannot replace; original may enter telemetry.",
+      "qualification": "No native replacement execution"
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "jackin_dispatch": true,
+      "adapter_state": ".codex",
+      "adapter_env": "CODEX_HOME",
+      "source_id": "codex-hooks-from-architecture",
+      "revision": "Official mutable docs",
+      "contract": "PostToolUse block/exit2 feedback substitution rejects nested promise; continue:False feedback substitution does not reject it; updatedMCPToolOutput and suppressOutput unsupported.",
+      "qualification": "No native replacement execution. Jackin flat {command} event entries differ from documented nested matcher/hooks entries; schema acceptance and discovery unqualified, not proven invalid."
+    },
+    {
+      "id": "amp",
+      "name": "Amp",
+      "jackin_dispatch": true,
+      "adapter_state": ".local/share/amp + .config/amp",
+      "adapter_env": "XDG_DATA_HOME",
+      "source_id": "amp-plugins",
+      "revision": "Official mutable docs",
+      "contract": "tool.result replacement status/output; in-process plugin; direct tool calls retain permissions but do not automatically enter transcript.",
+      "qualification": "No native replacement execution"
+    },
+    {
+      "id": "kimi",
+      "name": "Kimi",
+      "jackin_dispatch": true,
+      "adapter_state": ".kimi-code",
+      "adapter_env": null,
+      "source_id": "kimi-hooks",
+      "revision": "Official mutable docs",
+      "contract": "PostToolUse/failure observational; selected pretool/stop/prompt controls do not imply post-result replacement.",
+      "qualification": "No native replacement execution"
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "jackin_dispatch": true,
+      "adapter_state": ".local/share/opencode + .config/opencode",
+      "adapter_env": "XDG_DATA_HOME",
+      "source_id": "opencode-tool-core",
+      "revision": "c272a63cb4dd86a3e8771cf9a03be051fae28e95",
+      "contract": "execute.after result/error mutable and core consumes mutated result; installed version unknown; old docs differ; Jackin plugin discovery mismatch unqualified.",
+      "qualification": "Pinned source inspection only"
+    },
+    {
+      "id": "grok",
+      "name": "Grok",
+      "jackin_dispatch": true,
+      "adapter_state": ".grok",
+      "adapter_env": null,
+      "source_id": "grok-hooks",
+      "revision": "2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8",
+      "contract": "Settings command/HTTP updatedToolOutput validated for builtins, MCP alias unvalidated; SDK callback cannot replace; original transcript/telemetry retained.",
+      "qualification": "Pinned source inspection only"
+    },
+    {
+      "id": "antigravity",
+      "name": "Antigravity",
+      "jackin_dispatch": false,
+      "adapter_state": ".gemini/antigravity-cli",
+      "adapter_env": "GEMINI_CLI_HOME parent",
+      "source_id": "antigravity-hooks",
+      "revision": "Official mutable docs",
+      "contract": "PostToolUse metadata lacks full output and no replacement; invocation injection separate mechanism.",
+      "qualification": "Missing Jackin runtime dispatch"
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "jackin_dispatch": false,
+      "adapter_state": ".gemini",
+      "adapter_env": "GEMINI_CLI_HOME parent",
+      "source_id": "gemini-cli-hooks",
+      "revision": "Official mutable docs",
+      "contract": "AfterTool deny/reason or exit2 substitutes feedback; additionalContext appends; tailToolCallRequest executes another tool.",
+      "qualification": "Missing Jackin runtime dispatch"
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "jackin_dispatch": false,
+      "adapter_state": ".cursor",
+      "adapter_env": "CURSOR_CONFIG_DIR",
+      "source_id": "cursor-hooks",
+      "revision": "Official mutable docs",
+      "contract": "Local MCP replacement only; shell observers; cloud HTTP MCP redacted and no replacement.",
+      "qualification": "Missing Jackin runtime dispatch"
+    },
+    {
+      "id": "muse",
+      "name": "Muse",
+      "jackin_dispatch": false,
+      "adapter_state": ".config/muse",
+      "adapter_env": null,
+      "source_id": "muse-hook-reference",
+      "revision": "next/preview docs; stable runtime unverified",
+      "contract": "Stable guide advertises hooks; preview post-tool feedback not universal typed replacement; no verified standalone installer in adapter.",
+      "qualification": "Missing dispatch and installer qualification"
+    },
+    {
+      "id": "omp",
+      "name": "Omp",
+      "jackin_dispatch": false,
+      "adapter_state": ".omp",
+      "adapter_env": "PI_CODING_AGENT_DIR",
+      "source_id": "omp-extensions",
+      "revision": "v18.2.4 / 1c0303b1f2ec515cbf4b44a9a49d68a029531aac",
+      "contract": "tool_result patches content/details/isError, ordered handlers observe prior mutations; in-process crash/lifecycle distinctions.",
+      "qualification": "Adapter version source inspected, missing dispatch"
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes",
+      "jackin_dispatch": false,
+      "adapter_state": ".hermes",
+      "adapter_env": "HERMES_HOME",
+      "source_id": "hermes-pinned-hooks",
+      "revision": "5894e750c3dba980d43b25aa29e3958149ba2c61",
+      "contract": "transform_tool_result first string wins incl empty; observer returns ignored; terminal hook narrower and may see bounded original.",
+      "qualification": "Pinned source inspected, missing dispatch"
+    }
+  ]
+}

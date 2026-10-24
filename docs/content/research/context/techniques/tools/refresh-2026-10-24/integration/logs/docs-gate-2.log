@@ -1,0 +1,912 @@
+$ bun run scripts/gen-crate-pages.ts && vite build && bun run scripts/prerender-static.ts
+{
+  "generated": 152,
+  "pages": [
+    "jackin",
+    "jackin-agent-status",
+    "jackin-brand",
+    "jackin-build-meta",
+    "jackin-capsule",
+    "jackin-config",
+    "jackin-console",
+    "jackin-core",
+    "jackin-dev",
+    "jackin-diagnostics",
+    "jackin-docker",
+    "jackin-env",
+    "jackin-host",
+    "jackin-image",
+    "jackin-instance",
+    "jackin-instance-agents",
+    "jackin-instance-credentials",
+    "jackin-instance-roles",
+    "jackin-isolation",
+    "jackin-launch",
+    "jackin-lints",
+    "jackin-manifest",
+    "jackin-oppicker",
+    "jackin-otlp-testbed",
+    "jackin-pr-trailers",
+    "jackin-process",
+    "jackin-process-directory",
+    "jackin-protocol",
+    "jackin-runtime",
+    "jackin-runtime-apple-container-activate-entry",
+    "jackin-runtime-apple-container-attach",
+    "jackin-runtime-apple-container-attach-outcome",
+    "jackin-runtime-apple-container-check-dns",
+    "jackin-runtime-apple-container-client",
+    "jackin-runtime-apple-container-probe-version",
+    "jackin-runtime-apple-container-running",
+    "jackin-runtime-apple-container-session-contract",
+    "jackin-runtime-apple-container-stop",
+    "jackin-runtime-apple-container-supervisor-env",
+    "jackin-runtime-apple-container-wait",
+    "jackin-runtime-attach-admission",
+    "jackin-runtime-attach-capsule-ready",
+    "jackin-runtime-attach-exec-args",
+    "jackin-runtime-attach-inspect",
+    "jackin-runtime-attach-running-gate",
+    "jackin-runtime-attach-sessions",
+    "jackin-runtime-attach-transport",
+    "jackin-runtime-backend-selection",
+    "jackin-runtime-cleanup-absent-guards",
+    "jackin-runtime-cleanup-dind-gc",
+    "jackin-runtime-cleanup-eject-resources",
+    "jackin-runtime-cleanup-prune-cache",
+    "jackin-runtime-cleanup-prune-dir",
+    "jackin-runtime-cleanup-prune-home",
+    "jackin-runtime-cleanup-prune-images",
+    "jackin-runtime-cleanup-prune-roles",
+    "jackin-runtime-cleanup-resolve",
+    "jackin-runtime-cleanup-socket-dir",
+    "jackin-runtime-cleanup-timing",
+    "jackin-runtime-coordination",
+    "jackin-runtime-discovery",
+    "jackin-runtime-docker-profile",
+    "jackin-runtime-drift",
+    "jackin-runtime-exec-host",
+    "jackin-runtime-exit-summary",
+    "jackin-runtime-host-attach",
+    "jackin-runtime-host-daemon",
+    "jackin-runtime-identity",
+    "jackin-runtime-image",
+    "jackin-runtime-isolation",
+    "jackin-runtime-launch-account-config",
+    "jackin-runtime-launch-account-identity",
+    "jackin-runtime-launch-attach-outcome",
+    "jackin-runtime-launch-auth-error",
+    "jackin-runtime-launch-capsule-setup",
+    "jackin-runtime-launch-debug-envs",
+    "jackin-runtime-launch-dind",
+    "jackin-runtime-launch-dry-run",
+    "jackin-runtime-launch-exit-diagnosis",
+    "jackin-runtime-launch-exit-outro",
+    "jackin-runtime-launch-failure",
+    "jackin-runtime-launch-git-pull",
+    "jackin-runtime-launch-image-plan",
+    "jackin-runtime-launch-load-cleanup",
+    "jackin-runtime-launch-load-options",
+    "jackin-runtime-launch-mounts",
+    "jackin-runtime-launch-plan",
+    "jackin-runtime-launch-post-run-failure",
+    "jackin-runtime-launch-programmatic-selection",
+    "jackin-runtime-launch-progress-helpers",
+    "jackin-runtime-launch-restore",
+    "jackin-runtime-launch-run-envs",
+    "jackin-runtime-launch-sibling-auth-prewarm",
+    "jackin-runtime-launch-slot",
+    "jackin-runtime-launch-supported-agents",
+    "jackin-runtime-launch-trust",
+    "jackin-runtime-naming",
+    "jackin-runtime-prewarm-trigger",
+    "jackin-runtime-process-telemetry",
+    "jackin-runtime-progress",
+    "jackin-runtime-prune-output",
+    "jackin-runtime-reactive-daemon",
+    "jackin-runtime-repo-cache",
+    "jackin-runtime-session-control",
+    "jackin-runtime-shared-runner",
+    "jackin-runtime-snapshot",
+    "jackin-runtime-spin-wait",
+    "jackin-runtime-universe",
+    "jackin-runtime-universe-claims",
+    "jackin-runtime-usage-relay",
+    "jackin-telemetry",
+    "jackin-test-support",
+    "jackin-tui",
+    "jackin-usage",
+    "jackin-usage-broker",
+    "jackin-usage-broker-publish",
+    "jackin-usage-broker-wire",
+    "jackin-usage-capsule-telemetry",
+    "jackin-usage-coordinator",
+    "jackin-usage-credential-resolver",
+    "jackin-usage-credential-snapshots",
+    "jackin-usage-destination",
+    "jackin-usage-discovery",
+    "jackin-usage-ffi",
+    "jackin-usage-host-accounts",
+    "jackin-usage-host-credentials",
+    "jackin-usage-host-glance",
+    "jackin-usage-host-presentation",
+    "jackin-usage-host-runtime",
+    "jackin-usage-output",
+    "jackin-usage-projection",
+    "jackin-usage-provider-amp",
+    "jackin-usage-provider-antigravity",
+    "jackin-usage-provider-claude",
+    "jackin-usage-provider-codex",
+    "jackin-usage-provider-core",
+    "jackin-usage-provider-cursor",
+    "jackin-usage-provider-gemini",
+    "jackin-usage-provider-grok",
+    "jackin-usage-provider-hermes",
+    "jackin-usage-provider-kimi",
+    "jackin-usage-provider-minimax",
+    "jackin-usage-provider-muse",
+    "jackin-usage-provider-opencode",
+    "jackin-usage-provider-openrouter",
+    "jackin-usage-provider-zai",
+    "jackin-usage-snapshot-store",
+    "jackin-usage-store-backend",
+    "jackin-usage-token-monitor",
+    "jackin-workflow",
+    "jackin-workflow-spec",
+    "jackin-xtask"
+  ],
+  "outDir": "docs/content/reference/crates"
+}
+vite v8.3.4 building client environment for production...
+[MDX] generated files in 1.7649280000000545ms
+transforming...
+Found 2 warnings while optimizing generated CSS:
+
+Issue #1:
+[2m│     }[22m
+[2m│   }[22m
+[2m│[22m   .\[\&_\:\:highlight\(fd-search\)\]\:text-fd-primary ::highlight(fd-search) {
+[2m┆[22m                                                                   [33m[2m^--[22m 'highlight' is not recognized as a valid pseudo-element. Did you mean ':highlight' (pseudo-class) or is this a typo?[39m
+[2m┆[22m
+[2m│     color: var(--color-fd-primary);[22m
+[2m│   }[22m
+
+Issue #2:
+[2m│     color: var(--color-fd-primary);[22m
+[2m│   }[22m
+[2m│[22m   .\[\&_\:\:highlight\(fd-search\)\]\:underline ::highlight(fd-search) {
+[2m┆[22m                                                             [33m[2m^--[22m 'highlight' is not recognized as a valid pseudo-element. Did you mean ':highlight' (pseudo-class) or is this a typo?[39m
+[2m┆[22m
+[2m│     text-decoration-line: underline;[22m
+[2m│   }[22m
+
+✓ 2982 modules transformed.
+rendering chunks...
+.output/public/assets/fraunces-vietnamese-500-normal-GOH_-EGq.woff2                    6.16 kB
+.output/public/assets/fraunces-vietnamese-400-normal-CvGt0Ybw.woff2                    6.20 kB
+.output/public/assets/fraunces-vietnamese-700-normal-DH94m5DZ.woff2                    6.34 kB
+.output/public/assets/jetbrains-mono-vietnamese-wght-normal-Bt-aOZkq.woff2             7.50 kB
+.output/public/assets/fraunces-vietnamese-500-normal-B-KbxExq.woff                     7.92 kB
+.output/public/assets/fraunces-vietnamese-400-normal-B65MOf9T.woff                     7.98 kB
+.output/public/assets/fraunces-vietnamese-700-normal-DxawQjq2.woff                     7.99 kB
+.output/public/assets/jetbrains-mono-greek-wght-normal-Bw9x6K1M.woff2                  9.00 kB
+.output/public/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2                     10.25 kB
+.output/public/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2                      11.23 kB
+.output/public/assets/jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2              12.10 kB
+.output/public/assets/status-bar-Bi7aj6Jv.png                                         14.89 kB
+.output/public/assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2             15.19 kB
+.output/public/assets/fraunces-latin-ext-400-normal-D8gbi3Gu.woff2                    17.28 kB
+.output/public/assets/fraunces-latin-ext-500-normal-Z5DV8IzT.woff2                    17.29 kB
+.output/public/assets/fraunces-latin-ext-700-normal-CanUGppC.woff2                    17.66 kB
+.output/public/assets/fraunces-latin-400-normal-6IfK1voy.woff2                        17.96 kB
+.output/public/assets/fraunces-latin-500-normal-DnGCNyPD.woff2                        18.00 kB
+.output/public/assets/fraunces-latin-700-normal-CEOla-zY.woff2                        18.21 kB
+.output/public/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2                       18.74 kB
+.output/public/assets/inter-greek-wght-normal-CkhJZR-_.woff2                          18.99 kB
+.output/public/assets/fraunces-latin-ext-400-normal-UihxqfOe.woff                     22.36 kB
+.output/public/assets/fraunces-latin-ext-500-normal-BMcFk1Xs.woff                     22.43 kB
+.output/public/assets/fraunces-latin-500-normal-BTR4KCeb.woff                         22.46 kB
+.output/public/assets/fraunces-latin-400-normal-NUPT2cO8.woff                         22.48 kB
+.output/public/assets/fraunces-latin-700-normal-DTjk5d1Q.woff                         22.51 kB
+.output/public/assets/fraunces-latin-ext-700-normal-DuBstVeD.woff                     22.60 kB
+.output/public/assets/inter-latin-900-normal-D4nM5aha.woff2                           23.90 kB
+.output/public/assets/credits-section-QyV5yHV1.png                                    25.09 kB
+.output/public/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2                   25.96 kB
+.output/public/assets/provider-tabs-DbvWt75n.png                                      34.99 kB
+.output/public/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2                 40.40 kB
+.output/public/assets/inter-latin-wght-normal-Dx4kXJAl.woff2                          48.25 kB
+.output/public/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2                      85.06 kB
+.output/public/assets/codex-tab-detail-CWQO53SG.png                                   99.22 kB
+.output/public/assets/grok-tab-detail-De3tb7sW.png                                 1,198.81 kB
+.output/public/assets/amp-tab-detail-BTgSyrIK.png                                  1,243.57 kB
+.output/public/assets/provider-tab-accounts-BYc_GGkF.png                           2,223.57 kB
+.output/public/assets/popover-overview-D2sLYiNZ.png                                2,367.28 kB
+.output/public/assets/app-BfnDVi9j.css                                               212.27 kB
+.output/public/assets/404-TP6C5pL-.js                                                  0.07 kB
+.output/public/assets/remove-undefined-CzMSKybq-CP3jfHCp.js                            0.33 kB
+.output/public/assets/jsx-runtime-LKYXHABd.js                                          0.43 kB
+.output/public/assets/fetch-BNZwt6Yb.js                                                0.62 kB
+.output/public/assets/BrandMark-D5RbXs5u.js                                            0.68 kB
+.output/public/assets/rolldown-runtime-XKyaHtl9.js                                     0.72 kB
+.output/public/assets/algolia-gRndbTnN.js                                              0.78 kB
+.output/public/assets/orama-cloud-legacy-nIIHJM7J.js                                   1.15 kB
+.output/public/assets/orama-cloud-CNyxF6WN.js                                          1.21 kB
+.output/public/assets/search-default-C9Slp0MS.js                                       1.55 kB
+.output/public/assets/mixedbread-DPsc5_Iv.js                                           1.68 kB
+.output/public/assets/future-directions-UHiRqFQ0.js                                    2.04 kB
+.output/public/assets/getting-oriented-CUgdDQtZ.js                                     2.14 kB
+.output/public/assets/E015-CYOvSwyz.js                                                 2.23 kB
+.output/public/assets/E007-vzOINVox.js                                                 2.25 kB
+.output/public/assets/E014-Br68qCIA.js                                                 2.28 kB
+.output/public/assets/E009-Bl98WEiT.js                                                 2.28 kB
+.output/public/assets/E006-CWQH6Nnz.js                                                 2.29 kB
+.output/public/assets/E004-D5LVkJhL.js                                                 2.33 kB
+.output/public/assets/E003-CzVWz2bL.js                                                 2.36 kB
+.output/public/assets/E011-DSzOnnaR.js                                                 2.37 kB
+.output/public/assets/E013-Cs9aQUyn.js                                                 2.38 kB
+.output/public/assets/E012-DwHRCFFF.js                                                 2.41 kB
+.output/public/assets/E002-zlR5qijD.js                                                 2.44 kB
+.output/public/assets/E008-B1K-TTbs.js                                                 2.44 kB
+.output/public/assets/E001-CrHYXqTd.js                                                 2.45 kB
+.output/public/assets/E005-D6Y5HmLP.js                                                 2.57 kB
+.output/public/assets/E010-DdNWWLYH.js                                                 2.66 kB
+.output/public/assets/architecture-CENacTbQ.js                                         2.72 kB
+.output/public/assets/jackin-build-meta-30jQhV36.js                                    2.98 kB
+.output/public/assets/platform-6nbhL0dD.js                                             3.04 kB
+.output/public/assets/jackin-workflow-BG16sA5_.js                                      3.09 kB
+.output/public/assets/product-BBwflziz.js                                              3.12 kB
+.output/public/assets/ci-CgxQa4kz.js                                                   3.59 kB
+.output/public/assets/testing-Bhxm5ual.js                                              3.62 kB
+.output/public/assets/runtime-BSxO7NcO.js                                              3.68 kB
+.output/public/assets/runtimes-ChVFdOrS.js                                             3.71 kB
+.output/public/assets/engineering-Cd2PEhs7.js                                          3.74 kB
+.output/public/assets/performance-DJ9yVIA2.js                                          3.79 kB
+.output/public/assets/telemetry-DE_HYsA7.js                                            3.81 kB
+.output/public/assets/recovery-C0uWTpvZ.js                                             3.82 kB
+.output/public/assets/agents-SoYWFFTG.js                                               3.83 kB
+.output/public/assets/desktop-Yuq3H01q.js                                              3.90 kB
+.output/public/assets/workflow-systems-xn4nJ2pf.js                                     3.93 kB
+.output/public/assets/documentation--sw8Pc5P.js                                        3.94 kB
+.output/public/assets/resource-limits-C-ZxGrnj.js                                      3.97 kB
+.output/public/assets/terminal-observation-D3IT2sjz.js                                 3.98 kB
+.output/public/assets/package-manager-support-p8pXSNGC.js                              4.05 kB
+.output/public/assets/isolation-architecture-BfqBnx1P.js                               4.11 kB
+.output/public/assets/reference-CIFAJDqc.js                                            4.15 kB
+.output/public/assets/infrastructure-DKybFzel.js                                       4.39 kB
+.output/public/assets/isolation-B8YZZ5KF.js                                            4.48 kB
+.output/public/assets/exile-lht0xMAu.js                                                4.52 kB
+.output/public/assets/jackin-process-directory-6i9Y-RdG.js                             4.71 kB
+.output/public/assets/authentication-CHGARyPh.js                                       4.73 kB
+.output/public/assets/developer-reference-CI9UEVeJ.js                                  4.73 kB
+.output/public/assets/build-performance-BxmjxXk9.js                                    4.75 kB
+.output/public/assets/desktop-verification-DIBRlGHK.js                                 4.85 kB
+.output/public/assets/runtime-9nQfCw8h.js                                              4.88 kB
+.output/public/assets/E016-C0ci_Ylm.js                                                 5.18 kB
+.output/public/assets/ideas-CpL7NE9A.js                                                5.32 kB
+.output/public/assets/_-BJjh4mGR.js                                                    5.41 kB
+.output/public/assets/specs-DUdxB5R1.js                                                5.56 kB
+.output/public/assets/usage-visual-references-DeKfhCF6.js                              5.62 kB
+.output/public/assets/host-affordances-dabU1otL.js                                     5.72 kB
+.output/public/assets/code-tour-DYbFzf3w.js                                            5.77 kB
+.output/public/assets/jackin-runtime-apple-container-running-S2fvnZmg.js               5.81 kB
+.output/public/assets/security-ZeuPofG7.js                                             6.02 kB
+.output/public/assets/shared-ci-compiler-cache-DoT99BJo.js                             6.05 kB
+.output/public/assets/jackin-runtime-shared-runner-B1eCO2rz.js                         6.29 kB
+.output/public/assets/operator-experience-KNFq8sOy.js                                  6.49 kB
+.output/public/assets/credential-exposure-BUqal6Nn.js                                  6.53 kB
+.output/public/assets/adr-010-cleanup-explicit-operator-approval-DB-XK19S.js           6.55 kB
+.output/public/assets/jackin-runtime-apple-container-stop-C3ZNe5T9.js                  6.60 kB
+.output/public/assets/jackin-usage-output-LN6jNkcb.js                                  6.66 kB
+.output/public/assets/jackin-runtime-launch-image-plan-ETsMo49y.js                     6.73 kB
+.output/public/assets/context-BlHvNVKd.js                                              6.80 kB
+.output/public/assets/jackin-runtime-apple-container-attach-outcome-2wkQkwKK.js        6.81 kB
+.output/public/assets/jackin-runtime-apple-container-check-dns-ClD64qgo.js             6.84 kB
+.output/public/assets/jackin-runtime-spin-wait-QxU6IQHP.js                             6.88 kB
+.output/public/assets/jackin-runtime-progress-CpMpC5fi.js                              6.90 kB
+.output/public/assets/jackin-usage-host-glance-ByAgkjB8.js                             6.94 kB
+.output/public/assets/onepassword-integration-CBMkRe6B.js                              6.96 kB
+.output/public/assets/jackin-runtime-launch-run-envs-Cpst0h5E.js                       6.99 kB
+.output/public/assets/diagnostics-BFkgRBWx.js                                          7.03 kB
+.output/public/assets/jackin-runtime-apple-container-wait-FLjD6pQv.js                  7.04 kB
+.output/public/assets/jackin-runtime-cleanup-prune-cache-312MHIq1.js                   7.05 kB
+.output/public/assets/jackin-runtime-cleanup-prune-home-DfK_hAlJ.js                    7.06 kB
+.output/public/assets/jackin-runtime-cleanup-absent-guards-BQ8Fo3g8.js                 7.06 kB
+.output/public/assets/jackin-runtime-apple-container-session-contract-Cv1Y0LxZ.js      7.09 kB
+.output/public/assets/jackin-runtime-cleanup-prune-roles-BneozEQJ.js                   7.09 kB
+.output/public/assets/jackin-usage-destination-SbMmUzHc.js                             7.10 kB
+.output/public/assets/jackin-runtime-apple-container-attach-B0MsZTCF.js                7.12 kB
+.output/public/assets/jackin-runtime-cleanup-prune-images-DKjfj4mR.js                  7.13 kB
+.output/public/assets/jackin-runtime-apple-container-probe-version-BhgNSUzR.js         7.13 kB
+.output/public/assets/jackin-runtime-launch-load-cleanup-BDx1QDk5.js                   7.15 kB
+.output/public/assets/reproducibility-pinning-CIvJ406M.js                              7.15 kB
+.output/public/assets/jackin-runtime-cleanup-resolve--rrK3GCR.js                       7.16 kB
+.output/public/assets/jackin-runtime-launch-supported-agents-ExZUvyi1.js               7.16 kB
+.output/public/assets/jackin-runtime-cleanup-socket-dir-BQGk4tU-.js                    7.17 kB
+.output/public/assets/jackin-runtime-launch-debug-envs-N6qAjovG.js                     7.18 kB
+.output/public/assets/jackin-runtime-attach-running-gate-h8Z9UmAi.js                   7.18 kB
+.output/public/assets/jackin-runtime-cleanup-prune-dir-BHaLuZ3R.js                     7.19 kB
+.output/public/assets/jackin-runtime-apple-container-activate-entry-CiTKLqOU.js        7.24 kB
+.output/public/assets/jackin-runtime-cleanup-timing-DSVH63m0.js                        7.26 kB
+.output/public/assets/jackin-runtime-launch-post-run-failure-bmVScQA0.js               7.29 kB
+.output/public/assets/jackin-runtime-launch-programmatic-selection-VMY10fPV.js         7.30 kB
+.output/public/assets/jackin-runtime-apple-container-supervisor-env-DSJKSiEl.js        7.34 kB
+.output/public/assets/jackin-runtime-drift-B1Xy6VH8.js                                 7.34 kB
+.output/public/assets/jackin-runtime-cleanup-eject-resources-CamHZ2nB.js               7.36 kB
+.output/public/assets/jackin-runtime-exit-summary-BXQoqgff.js                          7.38 kB
+.output/public/assets/jackin-runtime-apple-container-client-BawSdP5F.js                7.38 kB
+.output/public/assets/jackin-runtime-launch-trust-CBhLPWSw.js                          7.38 kB
+.output/public/assets/jackin-usage-projection-DG7LWWJl.js                              7.40 kB
+.output/public/assets/jackin-runtime-launch-plan-BwT25sQR.js                           7.43 kB
+.output/public/assets/jackin-runtime-attach-exec-args-Cf5uAvjr.js                      7.44 kB
+.output/public/assets/rust-build-cache-hygiene-v1fT8hU7.js                             7.45 kB
+.output/public/assets/jackin-runtime-launch-exit-outro-DIuUGuaN.js                     7.50 kB
+.output/public/assets/jackin-runtime-backend-selection-CZ2sW6Bd.js                     7.57 kB
+.output/public/assets/jackin-runtime-attach-inspect-C0lLakFX.js                        7.58 kB
+.output/public/assets/jackin-runtime-identity-BtPCWUu8.js                              7.60 kB
+.output/public/assets/jackin-runtime-launch-slot-BeqQekbZ.js                           7.65 kB
+.output/public/assets/jackin-runtime-prune-output-DDOgG2xY.js                          7.65 kB
+.output/public/assets/jackin-runtime-naming-C3zBc0oE.js                                7.70 kB
+.output/public/assets/jackin-runtime-launch-attach-outcome-3O6cggqB.js                 7.70 kB
+.output/public/assets/jackin-runtime-launch-account-config-C9Z6bRmT.js                 7.71 kB
+.output/public/assets/jackin-usage-credential-resolver-BssnWHcP.js                     7.71 kB
+.output/public/assets/jackin-usage-store-backend-CS1wWfBf.js                           7.73 kB
+.output/public/assets/jackin-runtime-launch-auth-error-rj1ergzt.js                     7.73 kB
+.output/public/assets/jackin-runtime-launch-dry-run-DZQkX6i4.js                        7.74 kB
+.output/public/assets/jackin-runtime-discovery-BGTTSmb_.js                             7.74 kB
+.output/public/assets/jackin-runtime-repo-cache-BrpcbM9V.js                            7.79 kB
+.output/public/assets/jackin-runtime-snapshot-DDGTsowl.js                              7.84 kB
+.output/public/assets/jackin-runtime-launch-git-pull-D4z2Mx1f.js                       7.87 kB
+.output/public/assets/react-DlmbjZJV.js                                                7.87 kB
+.output/public/assets/agent-workflow-cc-sdd-BlASPhe9.js                                7.91 kB
+.output/public/assets/jackin-runtime-coordination-D8Q4WptR.js                          7.94 kB
+.output/public/assets/jackin-runtime-attach-sessions-CoRtYuqx.js                       7.95 kB
+.output/public/assets/jackin-runtime-attach-transport-B6fxSNKI.js                      7.98 kB
+.output/public/assets/jackin-runtime-attach-capsule-ready-BtdlSy_0.js                  8.03 kB
+.output/public/assets/jackin-runtime-universe-claims-CTyV8WIK.js                       8.06 kB
+.output/public/assets/jackin-brand-V-H1wiLY.js                                         8.07 kB
+.output/public/assets/jackin-runtime-launch-mounts-CfuPL8Me.js                         8.12 kB
+.output/public/assets/jackin-otlp-testbed-C1FkR448.js                                  8.13 kB
+.output/public/assets/jackin-runtime-launch-sibling-auth-prewarm-BUGcO3Ip.js           8.17 kB
+.output/public/assets/jackin-process-uYYgSf7x.js                                       8.18 kB
+.output/public/assets/jackin-runtime-docker-profile-BPSu9YAM.js                        8.19 kB
+.output/public/assets/jackin-runtime-exec-host-DbbIMocb.js                             8.20 kB
+.output/public/assets/jackin-runtime-launch-failure-urqgYaDN.js                        8.21 kB
+.output/public/assets/jackin-runtime-attach-admission-C2HSirEW.js                      8.23 kB
+.output/public/assets/jackin-runtime-isolation-DrYfgd9c.js                             8.25 kB
+.output/public/assets/jackin-runtime-process-telemetry-BY14IiRF.js                     8.26 kB
+.output/public/assets/jackin-runtime-host-daemon-kMZmh8L_.js                           8.35 kB
+.output/public/assets/jackin-usage-credential-snapshots-CDRqNvnl.js                    8.38 kB
+.output/public/assets/adr-006-editor-state-workspace-config-DyfuTn2o.js                8.40 kB
+.output/public/assets/jackin-runtime-host-attach-Bw-JBT3X.js                           8.41 kB
+.output/public/assets/jackin-runtime-launch-capsule-setup-DC5hDdI6.js                  8.44 kB
+.output/public/assets/jackin-runtime-reactive-daemon-DemXHqds.js                       8.49 kB
+.output/public/assets/jackin-runtime-launch-account-identity-g2hI5QAf.js               8.51 kB
+.output/public/assets/jackin-usage-capsule-telemetry-OlumXuRY.js                       8.51 kB
+.output/public/assets/jackin-runtime-session-control-CEqMpjob.js                       8.56 kB
+.output/public/assets/jackin-usage-broker-CYYGEwOw.js                                  8.61 kB
+.output/public/assets/adr-008-launch-never-reconnects-live-instance-CyU8FCmH.js        8.61 kB
+.output/public/assets/jackin-runtime-cleanup-dind-gc-Ppe7XkDR.js                       8.62 kB
+.output/public/assets/jackin-runtime-universe-BjzamA6Q.js                              8.68 kB
+.output/public/assets/jackin-runtime-launch-progress-helpers-D7pBxhmh.js               8.75 kB
+.output/public/assets/jackin-runtime-image-DaW1t6Iw.js                                 8.91 kB
+.output/public/assets/token-orchestrator-zn9ka7jd.js                                   8.93 kB
+.output/public/assets/adr-001-single-crate-vs-workspace-BDGkIeuK.js                    8.95 kB
+.output/public/assets/sensitive-boundary-code-health-study-Bw90efWw.js                 8.97 kB
+.output/public/assets/jackin-usage-host-credentials-B_D8ykKq.js                        9.02 kB
+.output/public/assets/jackin-usage-provider-hermes-DwzYopGr.js                         9.17 kB
+.output/public/assets/jackin-runtime-launch-exit-diagnosis-lkSE8xwe.js                 9.19 kB
+.output/public/assets/jackin-usage-provider-opencode-DEsXE1li.js                       9.22 kB
+.output/public/assets/jackin-usage-host-accounts-pH4XIF3o.js                           9.24 kB
+.output/public/assets/jackin-runtime-prewarm-trigger-DJsZLYF6.js                       9.42 kB
+.output/public/assets/jackin-usage-snapshot-store-CtdNqpZx.js                          9.48 kB
+.output/public/assets/jackin-usage-host-presentation-WVfRvVAD.js                       9.50 kB
+.output/public/assets/errors-CHWKf3G7.js                                               9.52 kB
+.output/public/assets/workspace-description-CuWWHCer.js                                9.55 kB
+.output/public/assets/jackin-dev-CgGrAYct.js                                           9.62 kB
+.output/public/assets/jackin-usage-provider-muse-DN6hbsjd.js                           9.68 kB
+.output/public/assets/jackin-usage-token-monitor-DiiWGhaV.js                           9.72 kB
+.output/public/assets/jackin-usage-provider-openrouter-4XWXNBQU.js                     9.82 kB
+.output/public/assets/jackin-runtime-launch-load-options-DFmvVUL6.js                   9.93 kB
+.output/public/assets/jackin-usage-provider-gemini-DrbmLLXq.js                         9.96 kB
+.output/public/assets/auth-source-folder-sync-BrkPtK_a.js                             10.03 kB
+.output/public/assets/jackin-usage-provider-zai-DjOWBuVG.js                           10.05 kB
+.output/public/assets/jackin-instance-roles-4ILvqB72.js                               10.19 kB
+.output/public/assets/workspace-skills-mount-fgHApjwC.js                              10.25 kB
+.output/public/assets/jackin-usage-provider-grok-DGVBCr7N.js                          10.45 kB
+.output/public/assets/jackin-usage-host-runtime-DaVMaCWc.js                           10.45 kB
+.output/public/assets/adr-009-role-hooks-authors-domain-DSzB8uUE.js                   10.49 kB
+.output/public/assets/jackin-protocol-BoJzsEnT.js                                     10.50 kB
+.output/public/assets/jackin-usage-provider-amp-v_5cowLv.js                           10.51 kB
+.output/public/assets/adrs-BPI4IhgC.js                                                10.53 kB
+.output/public/assets/platform-ideas-DgOygU5Y.js                                      10.55 kB
+.output/public/assets/adr-007-container-backend-lifecycle-DHAAlBTy.js                 10.64 kB
+.output/public/assets/planned-DFFRU57o.js                                             10.65 kB
+.output/public/assets/jackin-usage-discovery-ZrLJB8Fz.js                              10.84 kB
+.output/public/assets/jackin-usage-broker-wire-CefFEWuk.js                            10.89 kB
+.output/public/assets/jackin-usage-provider-kimi-CXTVI-j9.js                          10.90 kB
+.output/public/assets/jackin-runtime-launch-dind-kOTRRvZB.js                          10.91 kB
+.output/public/assets/jackin-runtime-launch-restore-BooAUg60.js                       10.95 kB
+.output/public/assets/rustdoc-json-fumadocs-CSvVWaZo.js                               10.95 kB
+.output/public/assets/console-agent-session-control-design-eOzeFHTY.js                11.05 kB
+.output/public/assets/stack-integration-hints-DKr6ONRO.js                             11.19 kB
+.output/public/assets/jackin-lints-DPEboz3z.js                                        11.20 kB
+.output/public/assets/console-resource-panel-C4L7HfDQ.js                              11.34 kB
+.output/public/assets/jackin-usage-provider-antigravity-CehppKi2.js                   11.50 kB
+.output/public/assets/jackin-oppicker-XtVCTYcE.js                                     11.51 kB
+.output/public/assets/context-engine-CriHXE1F.js                                      11.53 kB
+.output/public/assets/custom-operator-tools-CWZDJqX2.js                               11.57 kB
+.output/public/assets/zai-CvdO4DUt.js                                                 11.59 kB
+.output/public/assets/jackin-usage-provider-minimax-DueOd0m5.js                       11.63 kB
+.output/public/assets/kimi-CJfh_FEK.js                                                11.67 kB
+.output/public/assets/asciinema-session-recording-va5vdHDW.js                         11.86 kB
+.output/public/assets/workspace-registry-cache-DD-TmaSH.js                            11.97 kB
+.output/public/assets/research-DHdYrA5X.js                                            12.24 kB
+.output/public/assets/orchestration-bp0bS8VR.js                                       12.30 kB
+.output/public/assets/agent-tag-protocol-DFA7iO84.js                                  12.34 kB
+.output/public/assets/jackin-runtime-usage-relay-CUICMgCC.js                          12.40 kB
+.output/public/assets/github-cli-auth-strategy-B7gnxYiH.js                            12.48 kB
+.output/public/assets/tui-C5U4p8Fa.js                                                 12.58 kB
+.output/public/assets/agent-launch-flags-api-CjVT72WD.js                              12.65 kB
+.output/public/assets/platform-support-and-freshness-CXbB3J5K.js                      12.77 kB
+.output/public/assets/jackin-telemetry-BqEhBBZF.js                                    12.89 kB
+.output/public/assets/in-progress-CFkxPyBg.js                                         12.91 kB
+.output/public/assets/agent-hub-CzAaCiDa.js                                           13.01 kB
+.output/public/assets/jackin-instance-credentials-BhRA9hNb.js                         13.03 kB
+.output/public/assets/idle-runtime-cleanup-DcffXFu_.js                                13.14 kB
+.output/public/assets/jackin-join-and-debug-bundle-CJIivSDF.js                        13.24 kB
+.output/public/assets/adr-002-rust-toolchain-D-3VLenw.js                              13.25 kB
+.output/public/assets/host-affordance-bridge-design-D_nEf2eO.js                       13.26 kB
+.output/public/assets/eject-vvJSUhy-.js                                               13.31 kB
+.output/public/assets/agents-ByjbrZxa.js                                              13.33 kB
+.output/public/assets/docs-markdown-linting-BDCX_gCH.js                               13.40 kB
+.output/public/assets/jackin-usage-broker-publish-CEyqJ6OG.js                         13.48 kB
+.output/public/assets/jackin-usage-provider-codex-BMXzqcFA.js                         13.57 kB
+.output/public/assets/github-link-tracking-BWJZs0lO.js                                13.60 kB
+.output/public/assets/task-source-abstraction-D33mYWYz.js                             13.69 kB
+.output/public/assets/workspace-skills-mount-design-DJX27g39.js                       13.69 kB
+.output/public/assets/jackin-instance-CkXYU9SR.js                                     13.75 kB
+.output/public/assets/workspace-claude-token-setup-C2FKGy4H.js                        13.76 kB
+.output/public/assets/jackin-usage-provider-claude-DY-fQauK.js                        13.80 kB
+.output/public/assets/jackin-usage-provider-cursor-C-rWsEVo.js                        13.81 kB
+.output/public/assets/jackin-manifest-CD_YsLbP.js                                     13.82 kB
+.output/public/assets/jackin-docker-CtHHeNsA.js                                       13.87 kB
+.output/public/assets/spec-workflow-BNvt2uZC.js                                       13.93 kB
+.output/public/assets/memory-8Pk5pWqQ.js                                              13.98 kB
+.output/public/assets/roadmap-Dyw48Vtm.js                                             14.02 kB
+.output/public/assets/ephemeral-mount-modes-DPPEkRiq.js                               14.06 kB
+.output/public/assets/agent-isolation-architecture-CUG-fSGi.js                        14.11 kB
+.output/public/assets/operator-handler-system-Dqyihome.js                             14.11 kB
+.output/public/assets/run-telemetry-DFHGTlGm.js                                       14.13 kB
+.output/public/assets/jackin-launch-C4aWNSj7.js                                       14.34 kB
+.output/public/assets/jackin-config-Dnt0GAOV.js                                       14.34 kB
+.output/public/assets/orama-static-Dc4RWgFg.js                                        14.54 kB
+.output/public/assets/console-agent-session-control-b8ZYqkEK.js                       14.59 kB
+.output/public/assets/host-bridge-CRCrVJFJ.js                                         14.66 kB
+.output/public/assets/orbstack-isolated-machines-h2Q6aV7T.js                          14.71 kB
+.output/public/assets/jackin-instance-agents-C9INXGL7.js                              14.71 kB
+.output/public/assets/jackin-host-DFOO2MPl.js                                         14.72 kB
+.output/public/assets/session-snapshot-rollback-DpvtiQdv.js                           14.84 kB
+.output/public/assets/auth-health-and-visibility-ncUYbs_B.js                          14.91 kB
+.output/public/assets/multi-runtime-support-BhfO7WLf.js                               14.93 kB
+.output/public/assets/jackin-usage-coordinator-CkLMAJ8g.js                            15.02 kB
+.output/public/assets/adr-003-ratatui-DGlerXZx.js                                     15.05 kB
+.output/public/assets/source-branch-policy-isolated-mounts-BuDK-Gf6.js                15.10 kB
+.output/public/assets/jackin-diagnostics-Dw2q1V8i.js                                  15.11 kB
+.output/public/assets/operator-cli-hygiene-B9S7_tFN.js                                15.16 kB
+.output/public/assets/jackin-pr-trailers-B4poKmoQ.js                                  15.26 kB
+.output/public/assets/daemon-rW5z2mZY.js                                              15.65 kB
+.output/public/assets/jackin-workflow-spec-BVBXXLBs.js                                16.08 kB
+.output/public/assets/minimax-DBj7rGle.js                                             16.15 kB
+.output/public/assets/jackin-agent-status-DSYiqr0s.js                                 16.31 kB
+.output/public/assets/registry-configurations-CovunaG1.js                             16.50 kB
+.output/public/assets/config-versioning-migration-DQV3_e_p.js                         16.75 kB
+.output/public/assets/smolvm-backend-BxP4MLco.js                                      16.92 kB
+.output/public/assets/jackin-test-support-9ABjQtpB.js                                 17.00 kB
+.output/public/assets/jackin-remote-qdCckpyJ.js                                       17.17 kB
+.output/public/assets/jackin-tui-BTiIDdtp.js                                          17.17 kB
+.output/public/assets/jackin-usage-provider-core-D2sarXH3.js                          17.34 kB
+.output/public/assets/token-cost-telemetry-EDzU35AZ.js                                17.39 kB
+.output/public/assets/agent-attention-prompts-BgXNb9Z2.js                             17.47 kB
+.output/public/assets/codex-CNkOpiyR.js                                               17.51 kB
+.output/public/assets/credential-source-pattern-CtI1WvMi.js                           17.53 kB
+.output/public/assets/opencode-De86LtKK.js                                            17.65 kB
+.output/public/assets/jackin-isolation-B3PUNsA9.js                                    17.75 kB
+.output/public/assets/24-fresh-literature-and-market-delta-zO4z6O1K.js                18.04 kB
+.output/public/assets/session-contract-explain-mode-DPi4uNmx.js                       18.20 kB
+.output/public/assets/jackin-exec-BVKIagWe.js                                         18.51 kB
+.output/public/assets/agent-workflow-orchestration-BOughTtz.js                        18.56 kB
+.output/public/assets/declarative-resource-limits-Dfs0a8Zo.js                         18.80 kB
+.output/public/assets/adr-004-pane-body-rendering-BCpp4Ngn.js                         19.17 kB
+.output/public/assets/authentication-BzUbbTM5.js                                      19.21 kB
+.output/public/assets/purge-Ct2w3Lok.js                                               19.58 kB
+.output/public/assets/apple-container-backend-8lmQN4VG.js                             19.80 kB
+.output/public/assets/agent-launch-flags-api-design-CrgneOHL.js                       20.21 kB
+.output/public/assets/live-auth-sync-D6vLQVAH.js                                      20.33 kB
+.output/public/assets/jackin-console-CW_LnxIE.js                                      20.34 kB
+.output/public/assets/multi-account-usage-invariants-7KVZLs_A.js                      20.37 kB
+.output/public/assets/jackin-usage-ffi-DWEiR0zn.js                                    20.38 kB
+.output/public/assets/amp-Db3l-qjG.js                                                 20.46 kB
+.output/public/assets/network-egress-policy-31wB9XHW.js                               20.81 kB
+.output/public/assets/jackin-env-C1X1sAjI.js                                          20.86 kB
+.output/public/assets/op-picker-BJvKp8cM.js                                           20.91 kB
+.output/public/assets/kimi-DxCGqtVK.js                                                20.98 kB
+.output/public/assets/commands-esh8qJTB.js                                            20.99 kB
+.output/public/assets/stack-integration-contracts-DY5GQWQO.js                         21.09 kB
+.output/public/assets/jackin-tbiEpuMf.js                                              21.17 kB
+.output/public/assets/02-product-contract-B7eItdBX.js                                 21.17 kB
+.output/public/assets/grok-BRtXvarL.js                                                21.19 kB
+.output/public/assets/auth-reliability-program-DNZQa1e_.js                            21.37 kB
+.output/public/assets/jackin-image-7shBN8sE.js                                        21.52 kB
+.output/public/assets/tmux-BlA6lfa9.js                                                21.55 kB
+.output/public/assets/open-review-findings-CI48VMML.js                                21.64 kB
+.output/public/assets/instant-launch-architecture-D4PtlIoB.js                         21.80 kB
+.output/public/assets/jackin-runtime-DsmN1tx5.js                                      22.16 kB
+.output/public/assets/01-architecture-and-security-BQ3t4err.js                        22.19 kB
+.output/public/assets/jackin-daemon-6lZfAavI.js                                       22.77 kB
+.output/public/assets/adr-005-capsule-single-render-path-KImuk5P0.js                  23.28 kB
+.output/public/assets/claude-code-BCaV9kD6.js                                         23.34 kB
+.output/public/assets/github-cli-BphxprfC.js                                          23.47 kB
+.output/public/assets/verifying-releases-CDs4uiT3.js                                  23.58 kB
+.output/public/assets/pr-verification-D1Fl5YPE.js                                     23.87 kB
+.output/public/assets/launch-progress-tui-Dz8XE-H_.js                                 24.19 kB
+.output/public/assets/autonomous-task-queue-B7Yxrw0q.js                               24.24 kB
+.output/public/assets/02-alternatives-and-decision-DeN0ZZRv.js                        24.25 kB
+.output/public/assets/session-capture-Cxd4l8t2.js                                     24.79 kB
+.output/public/assets/00-executive-summary-BbCq97YL.js                                24.83 kB
+.output/public/assets/platform-support-and-freshness-policy-BRdZnFAl.js               25.01 kB
+.output/public/assets/installation-C-qd2nhT.js                                        25.58 kB
+.output/public/assets/brand-identity-BSQ0S0nF.js                                      25.60 kB
+.output/public/assets/techniques-BHirI94e.js                                          26.45 kB
+.output/public/assets/workspace-description-field-BfVIg90e.js                         26.84 kB
+.output/public/assets/auth-overwrite-on-new-tab-B_Enq1-G.js                           26.85 kB
+.output/public/assets/doctor-lT7ITRZv.js                                              26.96 kB
+.output/public/assets/docs-markdown-linting-BoL2SlqZ.js                               27.13 kB
+.output/public/assets/session-snapshot-rollback-DHjn3XHT.js                           27.23 kB
+.output/public/assets/console-resource-panel-design-DWLO4kMR.js                       27.41 kB
+.output/public/assets/02-cli-and-compatibility-BFM0uR5j.js                            27.61 kB
+.output/public/assets/idle-runtime-cleanup-design-ByVku_ek.js                         28.10 kB
+.output/public/assets/03-fleet-and-recovery-comparison-BoBy3ShM.js                    28.40 kB
+.output/public/assets/account-DI6ckB3f.js                                             28.89 kB
+.output/public/assets/network-egress-ByKxMR__.js                                      29.16 kB
+.output/public/assets/parallel-agents-CP_U6_D2.js                                     29.16 kB
+.output/public/assets/macos-usage-menu-bar-V56SQW_Y.js                                29.17 kB
+.output/public/assets/supply-chain-zGrMl8bq.js                                        29.98 kB
+.output/public/assets/01-architecture-and-compatibility-BvBGgvql.js                   30.09 kB
+.output/public/assets/role-C8733wGG.js                                                30.42 kB
+.output/public/assets/test-infrastructure-consolidation-D-qUc35D.js                   30.64 kB
+.output/public/assets/domain-newtypes-census-fdUSOIzu.js                              30.76 kB
+.output/public/assets/security-threat-model-and-signed-releases-oDmuDF2y.js           30.85 kB
+.output/public/assets/01-requirements-and-prior-art-Dg_H28h7.js                       31.40 kB
+.output/public/assets/in-capsule-dirty-exit-design-UbcHKyfN.js                        31.94 kB
+.output/public/assets/jackin-capsule-B-dlSZSK.js                                      32.01 kB
+.output/public/assets/jackin-usage-BaQpxmdH.js                                        32.66 kB
+.output/public/assets/session-keep-and-resume-S26gJsr3.js                             33.00 kB
+.output/public/assets/native-macos-usage-menu-bar-D2Wr1on5.js                         33.09 kB
+.output/public/assets/declarative-resource-limits-design-RkJbd3hm.js                  33.45 kB
+.output/public/assets/runtime-launch-izAGrGhh.js                                      33.59 kB
+.output/public/assets/02-sources-and-attribution-y_HnYeL1.js                          33.77 kB
+.output/public/assets/security-implementation-BGFnx6gZ.js                             33.85 kB
+.output/public/assets/config-versioning-migration-design-B5cr_Vku.js                  33.92 kB
+.output/public/assets/remote-execution-BQ1vPed8.js                                    35.40 kB
+.output/public/assets/02-containment-benchmarks-ByUOuSKO.js                           35.54 kB
+.output/public/assets/operator-handler-system-design-GZs_3MiJ.js                      35.62 kB
+.output/public/assets/03-delivery-lifecycle-and-concurrency-D4oKcZn6.js               35.93 kB
+.output/public/assets/04-open-questions-and-sources-3_Flz6kd.js                       35.97 kB
+.output/public/assets/console-BBhvXKGL.js                                             36.31 kB
+.output/public/assets/06-routing-and-fleet-economics-B9-icRE0.js                      36.41 kB
+.output/public/assets/shared-ci-compiler-cache-DnsTgz46.js                            36.66 kB
+.output/public/assets/01-native-desktop-references-z5Shguwk.js                        36.82 kB
+.output/public/assets/role-repos-CrylkQ5D.js                                          36.84 kB
+.output/public/assets/prune-DO8415GS.js                                               36.92 kB
+.output/public/assets/clipboard-image-bridge-BV3QgE8T.js                              36.93 kB
+.output/public/assets/session-contract-design-BF8WzJ9a.js                             37.15 kB
+.output/public/assets/docker-runtime-hardening-contract-DK4euk8A.js                   37.17 kB
+.output/public/assets/program-research-ClWlriqj.js                                    37.24 kB
+.output/public/assets/22-fleet-and-multitenant-cache-C9J5RYRa.js                      37.28 kB
+.output/public/assets/agent-tag-protocol-design-QXmUPC0U.js                           37.54 kB
+.output/public/assets/tools-DlKFDeg4.js                                               37.82 kB
+.output/public/assets/jackin-core-BR3WoWaA.js                                         37.86 kB
+.output/public/assets/diagnostics-RUMO_RrY.js                                         37.99 kB
+.output/public/assets/sensitive-boundary-code-health-9UWiGNpz.js                      38.02 kB
+.output/public/assets/platform-ideas-scan-DuFo65Aw.js                                 38.10 kB
+.output/public/assets/design-principles-DaRG_ZZa.js                                   38.57 kB
+.output/public/assets/10-model-routing-and-delegation-Dv_x_fRe.js                     39.01 kB
+.output/public/assets/02-design-constraints-B3wiEH1M.js                               39.03 kB
+.output/public/assets/tools-BREvqIC8.js                                               39.05 kB
+.output/public/assets/jackin-daemon-design-CEMVqNnI.js                                39.40 kB
+.output/public/assets/11-amp-daily-followup-DmOIBNlv.js                               39.67 kB
+.output/public/assets/credential-source-pattern-BbiWWj6i.js                           39.75 kB
+.output/public/assets/28-drift-delta-CLJDzn5n.js                                      39.77 kB
+.output/public/assets/01-threat-and-platform-evidence-rfJ4Bx-T.js                     39.84 kB
+.output/public/assets/custom-operator-tools-design-BQ5Lw_bt.js                        39.88 kB
+.output/public/assets/06-combining-8Xree0cF.js                                        40.05 kB
+.output/public/assets/task-source-abstraction-design-BJG5MNrG.js                      40.15 kB
+.output/public/assets/01-prior-art-4mV8WmL5.js                                        40.49 kB
+.output/public/assets/quickstart-p9dnwThM.js                                          40.74 kB
+.output/public/assets/05-output-and-prompt-layer-aGEOGld5.js                          40.81 kB
+.output/public/assets/status-BDLEyrTB.js                                              40.86 kB
+.output/public/assets/code-intelligence-D0GQRNJf.js                                   41.19 kB
+.output/public/assets/live-auth-sync-design-CU3SrOUw.js                               41.43 kB
+.output/public/assets/routes-DlgaOCK2.js                                              41.44 kB
+.output/public/assets/github-link-tracking-design-BglGq-J0.js                         41.50 kB
+.output/public/assets/fleet-operations-BFwkPzaT.js                                    41.71 kB
+.output/public/assets/13-infrastructure-level-oz_Za60O.js                             41.73 kB
+.output/public/assets/08-current-release-register-CDuQjPGO.js                         42.04 kB
+.output/public/assets/07-memory-and-state-CTrx2LF3.js                                 42.28 kB
+.output/public/assets/user-identity-DbRu5IoC.js                                       42.34 kB
+.output/public/assets/engine-DCo5Mj0G.js                                              42.67 kB
+.output/public/assets/auth-reliability-program-design-o9Lm7lL7.js                     42.76 kB
+.output/public/assets/repository-strategy-CaYK44_1.js                                 42.95 kB
+.output/public/assets/04-retrieval-layer-DpdWp7UR.js                                  43.04 kB
+.output/public/assets/agent-attention-prompts-design-g2-yt3XC.js                      43.18 kB
+.output/public/assets/02-baseline-audit-lPEHl-Yn.js                                   43.21 kB
+.output/public/assets/00-executive-summary-CPAYByc-.js                                43.24 kB
+.output/public/assets/instance-resource-naming-1QQGLB0x.js                            43.27 kB
+.output/public/assets/adr-011-native-macos-usage-menu-bar-KH6QqddH.js                 43.47 kB
+.output/public/assets/05-head-to-head-Czm0iVMM.js                                     43.63 kB
+.output/public/assets/parallax-observability-findings-42Mawixh.js                     43.72 kB
+.output/public/assets/jackin-capsule-D4cj0Xk6.js                                      43.77 kB
+.output/public/assets/11-multi-agent-protocols-Cg089a7C.js                            44.16 kB
+.output/public/assets/06-context-architecture-ngR6hN1-.js                             44.87 kB
+.output/public/assets/01-goals-and-non-goals-CPGrjnvH.js                              45.50 kB
+.output/public/assets/operator-console-DmfvM-hZ.js                                    45.56 kB
+.output/public/assets/02-parallax-ui-evidence-CIKmgc1f.js                             45.88 kB
+.output/public/assets/parallel-agent-coordination-CsKIEr12.js                         46.04 kB
+.output/public/assets/02-product-surfaces-DEurn5so.js                                 46.22 kB
+.output/public/assets/07-caching-exploitation-D6ctQPvM.js                             46.34 kB
+.output/public/assets/jackin-xtask-BJ8gcYya.js                                        46.48 kB
+.output/public/assets/04-alternatives-and-open-questions-D-ev3sIf.js                  46.48 kB
+.output/public/assets/08-measurement-and-verification-Suwu2xn7.js                     46.65 kB
+.output/public/assets/jackin-capsule-multiplexer-rewrite-Ct1Nsqg9.js                  47.02 kB
+.output/public/assets/19-subscription-and-quota-economics-Vjn8Nxte.js                 47.06 kB
+.output/public/assets/01-specstory-product-BnCKzH_Y.js                                47.77 kB
+.output/public/assets/ephemeral-mount-modes-BDz-cDor.js                               48.09 kB
+.output/public/assets/growth-5gzurfl5.js                                              48.66 kB
+.output/public/assets/03-observation-pipeline-BvaSXs86.js                             49.36 kB
+.output/public/assets/mounts-CIX39liQ.js                                              49.36 kB
+.output/public/assets/30-jackin-fit-CZVwy91F.js                                       49.63 kB
+.output/public/assets/15-composed-stacks-Cgj0JLCN.js                                  50.07 kB
+.output/public/assets/11-open-source-exporters-CJrKTm8v.js                            50.07 kB
+.output/public/assets/01-account-limit-model-D7dQobrV.js                              50.68 kB
+.output/public/assets/03-daemon-integration-architecture-C0iozndb.js                  50.78 kB
+.output/public/assets/02-four-layer-model-CfFq5sUr.js                                 50.88 kB
+.output/public/assets/capsule-daemon-CLRLh7fW.js                                      51.13 kB
+.output/public/assets/session-lifecycle-CioupSJh.js                                   51.86 kB
+.output/public/assets/image-labels-CdYq4j9T.js                                        51.92 kB
+.output/public/assets/21-latency-and-time-economics-WAJjpEsV.js                       52.02 kB
+.output/public/assets/09-output-discipline-DH4lvVjx.js                                52.52 kB
+.output/public/assets/concepts-BqOWYECz.js                                            52.70 kB
+.output/public/assets/05-tokenizer-arbitrage-DULlKk6w.js                              53.00 kB
+.output/public/assets/01-economics-and-measurement-DPTHGqHA.js                        53.19 kB
+.output/public/assets/usage-provider-apis-De7XBmpU.js                                 53.62 kB
+.output/public/assets/12-platforms-and-observability-BLlmUpYX.js                      55.16 kB
+.output/public/assets/10-rollout-and-validation-D1-5624y.js                           55.53 kB
+.output/public/assets/04-style-and-language-compression-CH4Nwsrx.js                   55.58 kB
+.output/public/assets/12-scope-and-reconciliation-NgNlqXjK.js                         55.61 kB
+.output/public/assets/27-extension-stacks-and-verdict-Bl13yDP4.js                     56.37 kB
+.output/public/assets/20-multimodal-token-economics-QNoCWfh3.js                       56.90 kB
+.output/public/assets/02-architecture-K1-qMgCU.js                                     57.10 kB
+.output/public/assets/xtasks-fo0ronDG.js                                              58.05 kB
+.output/public/assets/01-decision-and-benefit-matrices-B7evjn37.js                    58.26 kB
+.output/public/assets/agent-runtime-status-ii9JikhG.js                                59.08 kB
+.output/public/assets/hardline-Bz1egVZb.js                                            59.18 kB
+.output/public/assets/prewarm-CHGSESfL.js                                             60.57 kB
+.output/public/assets/20-comparison-matrix-B36XlWET.js                                60.82 kB
+.output/public/assets/12-provider-features-DXAPaCyP.js                                61.76 kB
+.output/public/assets/construct-image-vISF6sxG.js                                     62.15 kB
+.output/public/assets/26-extension-frontier-BM7F_Tb_.js                               62.62 kB
+.output/public/assets/25-meta-cost-governance-and-online-quality-CGz7lCVU.js          63.15 kB
+.output/public/assets/lint-policy-CvZ2I-t9.js                                         63.21 kB
+.output/public/assets/visual-design-ClUyV5px.js                                       63.25 kB
+.output/public/assets/07-runout-projection-BHGoMlG2.js                                64.24 kB
+.output/public/assets/16-validation-harness-C-OSQeZu.js                               64.32 kB
+.output/public/assets/04-amp-api-Dr2ub0OG.js                                          64.61 kB
+.output/public/assets/parse-BU3fTLtO-f3154N8Z.js                                      65.07 kB
+.output/public/assets/04-signal-contract-and-verification-CIfP9dr6.js                 65.58 kB
+.output/public/assets/load-CJRjR7zT.js                                                66.23 kB
+.output/public/assets/02-specstory-cli-internals-g7Zsi7r1.js                          66.36 kB
+.output/public/assets/17-adoption-roadmap-Dnxn59LK.js                                 66.66 kB
+.output/public/assets/config-Cut-zT1P.js                                              67.01 kB
+.output/public/assets/08-codex-followups-Dx7Ps2_X.js                                  67.09 kB
+.output/public/assets/process-sandboxing-DwLhVsCu.js                                  67.11 kB
+.output/public/assets/23-cross-agent-portability-Dv0Rp7l_.js                          67.34 kB
+.output/public/assets/02-storage-and-memory-model-Bkcgop59.js                         68.53 kB
+.output/public/assets/claude-auth-strategy-36zqTDR5.js                                68.65 kB
+.output/public/assets/publishing-role-images-DI95UoAq.js                              68.70 kB
+.output/public/assets/09-reuse-decision-matrix-BdHru-Q9.js                            70.00 kB
+.output/public/assets/09-ponytail-design-0lV0h8mh.js                                  70.32 kB
+.output/public/assets/02-codex-api-DC7GAOkS.js                                        70.74 kB
+.output/public/assets/03-layer-contracts-and-open-questions-hTw5WO_-.js               71.05 kB
+.output/public/assets/18-extension-overview-DwleLo5Y.js                               71.06 kB
+.output/public/assets/10-agent-session-stores-CiQfsAF-.js                             71.61 kB
+.output/public/assets/watchlist-B8yg5_pE.js                                           71.91 kB
+.output/public/assets/comparison-BNhALXj_.js                                          72.02 kB
+.output/public/assets/search-CcU6A1bY.js                                              72.21 kB
+.output/public/assets/runtime-instance-model-CkIUBXL9.js                              73.19 kB
+.output/public/assets/multiplexer-design-rules-11GjazPW.js                            73.34 kB
+.output/public/assets/02-headroom-design-CoDF1zLC.js                                  73.93 kB
+.output/public/assets/orca-ade-CaE-6AEa.js                                            74.64 kB
+.output/public/assets/11-jackin-integration-fSyB3Fad.js                               74.65 kB
+.output/public/assets/09-claude-followups-DUx4Sd2-.js                                 75.59 kB
+.output/public/assets/environment-variables-BpRqxTp5.js                               76.23 kB
+.output/public/assets/03-claude-api-DIaWyUr4.js                                       77.58 kB
+.output/public/assets/10-lemoncrow-design-Bq905jwA.js                                 77.61 kB
+.output/public/assets/host-bridge-design-BFyDIFnV.js                                  77.92 kB
+.output/public/assets/creating-roles-BpP4h0Bd.js                                      77.98 kB
+.output/public/assets/terminal-model-Cj24DO3G.js                                      78.04 kB
+.output/public/assets/07-evidence-and-claims-Bil7dQKc.js                              78.36 kB
+.output/public/assets/01-host-affordance-evidence-Kpu7JSD4.js                         78.60 kB
+.output/public/assets/03-rtk-design-B5ltoW3G.js                                       78.92 kB
+.output/public/assets/why-2naamUBL.js                                                 79.00 kB
+.output/public/assets/05-grok-api-6lr1hkTD.js                                         79.10 kB
+.output/public/assets/01-current-coverage-BqY-fNvh.js                                 79.15 kB
+.output/public/assets/08-retrieval-memory-and-state-Ce-0BdfD.js                       79.27 kB
+.output/public/assets/architecture-CdF084D5.js                                        83.20 kB
+.output/public/assets/agent-runtime-status-design-DvTGZWHq.js                         85.32 kB
+.output/public/assets/06-zai-minimax-kimi-apis-Cy_6IS7O.js                            86.16 kB
+.output/public/assets/native-apm-role-support-9Fj6Zq2y.js                             87.78 kB
+.output/public/assets/03-raw-data-and-root-causes-BZudq_dH.js                         89.14 kB
+.output/public/assets/security-model-DgPENLi_.js                                      89.46 kB
+.output/public/assets/14-frontier-ideas-Bsop0zK8.js                                   90.09 kB
+.output/public/assets/workspaces-C67B0ZQX.js                                          90.32 kB
+.output/public/assets/01-tracing-and-instrumentation-BI6acPNB.js                      91.48 kB
+.output/public/assets/source-branch-policy-isolated-mounts-DNKOzzq-.js                92.02 kB
+.output/public/assets/pr-verification-BVmVd24k.js                                     92.52 kB
+.output/public/assets/devcontainer-parity-BvfTUDT7.js                                 92.57 kB
+.output/public/assets/host-affordances-C2i0Avpb.js                                    93.17 kB
+.output/public/assets/04-leanctx-design-CQhXnXW3.js                                   93.20 kB
+.output/public/assets/apple-container-backend-Bd26tQRn.js                             95.50 kB
+.output/public/assets/visual-snapshots-hxZvXI0a.js                                    96.36 kB
+.output/public/assets/01-caveman-design-BM_1DJaS.js                                  100.58 kB
+.output/public/assets/10-provenance-and-misc-CK1TQT1u.js                             100.72 kB
+.output/public/assets/settings-editor-surface-unification-design-g9SCKmOE.js         101.65 kB
+.output/public/assets/multi-agent-collaboration-DRilRDCy.js                          102.96 kB
+.output/public/assets/03-architecture-and-security-CVtos8Ka.js                       106.68 kB
+.output/public/assets/workspace-h3Nlg2ON.js                                          107.58 kB
+.output/public/assets/ci-speed-roadmap-XOm1Uspe.js                                   109.55 kB
+.output/public/assets/ci-performance-analysis-pPw7bvjF.js                            112.24 kB
+.output/public/assets/sandbox-backends-jmeLOPRa.js                                   117.97 kB
+.output/public/assets/registry-configurations-design-CBnPi0zj.js                     122.47 kB
+.output/public/assets/host-affordance-bridge-preflight-Dwk57F4o.js                   122.93 kB
+.output/public/assets/container-credential-exposure-DdkpSc0c.js                      123.20 kB
+.output/public/assets/docker-profiles-BZWcRbV9.js                                    124.65 kB
+.output/public/assets/rust-tooling-C-EKQvpJ.js                                       130.46 kB
+.output/public/assets/terminal-observation-automation-D2MigaFO.js                    136.52 kB
+.output/public/assets/dialogs-D8-W8WMn.js                                            145.87 kB
+.output/public/assets/usage-C8r_GCtN.js                                              148.71 kB
+.output/public/assets/components-CZrHFn8Y.js                                         151.36 kB
+.output/public/assets/apple-container-1-0-landscape-C1f1SmmB.js                      152.32 kB
+.output/public/assets/configuration-ClTsRRCI.js                                      159.60 kB
+.output/public/assets/03-prior-art-and-market-scan-CowacW-6.js                       163.25 kB
+.output/public/assets/chrome-D3ft2cEH.js                                             164.64 kB
+.output/public/assets/role-manifest-iOSGUZNH.js                                      167.60 kB
+.output/public/assets/rust-build-cache-hygiene-BiZAr3EK.js                           172.21 kB
+.output/public/assets/session-keep-and-resume-design-72RxWIFZ.js                     172.30 kB
+.output/public/assets/architecture-CmMZ6Vlo.js                                       178.36 kB
+.output/public/assets/jackin-exec-design-vp-lhb4Z.js                                 185.21 kB
+.output/public/assets/conversation-capture-BqQFRb7G.js                               193.60 kB
+.output/public/assets/navigation-Cse3jgpE.js                                         206.03 kB
+.output/public/assets/capsule-B-qEcCMF.js                                            228.69 kB
+.output/public/assets/codebase-map-oYKSxyp6.js                                       273.15 kB
+.output/public/assets/schema-versions-Bd8t8e7E.js                                    336.88 kB
+.output/public/assets/index-GwhnD3XB.js                                              726.92 kB
+.output/public/assets/rust-policy-rollout-DDcKpqsY.js                              1,535.39 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 10.30s
+[33m[PLUGIN_TIMINGS] [0mJavaScript callbacks ran for 9.1s of this 10.3s build (88%).
+The slowest callbacks, timed inside each callback (the wait before a callback starts is excluded, the time it awaits is included):
+  - plugin @tailwindcss/vite:generate:build transform (82%, 8.5s, 1 call)
+  - plugin tanstack-start-core::server-fn:client transform (82%, 8.4s, 18 calls)
+  - plugin fumadocs-mdx:mdx transform (76%, 7.8s, 551 calls)
+These rows add up to more than the total. Callbacks can overlap, so the same time counts for more than one row.
+2 callbacks are listed without a time. Their calls overlapped, so the time inside one call includes work from other calls. To find their cost, profile the build with `node --cpu-prof`:
+  - plugin tanstack-start-core:import-protection resolveId (8279 calls)
+  - plugin vite:asset load (8 calls)
+See https://rolldown.rs/reference/InputOptions.checks#bundlertimings for more details.
+
+vite v8.3.4 building ssr environment for production...
+[MDX] generated files in 1.1790060000002995ms
+transforming...
+Found 2 warnings while optimizing generated CSS:
+
+Issue #1:
+[2m│     }[22m
+[2m│   }[22m
+[2m│[22m   .\[\&_\:\:highlight\(fd-search\)\]\:text-fd-primary ::highlight(fd-search) {
+[2m┆[22m                                                                   [33m[2m^--[22m 'highlight' is not recognized as a valid pseudo-element. Did you mean ':highlight' (pseudo-class) or is this a typo?[39m
+[2m┆[22m
+[2m│     color: var(--color-fd-primary);[22m
+[2m│   }[22m
+
+Issue #2:
+[2m│     color: var(--color-fd-primary);[22m
+[2m│   }[22m
+[2m│[22m   .\[\&_\:\:highlight\(fd-search\)\]\:underline ::highlight(fd-search) {
+[2m┆[22m                                                             [33m[2m^--[22m 'highlight' is not recognized as a valid pseudo-element. Did you mean ':highlight' (pseudo-class) or is this a typo?[39m
+[2m┆[22m
+[2m│     text-decoration-line: underline;[22m
+[2m│   }[22m
+
+✓ 954 modules transformed.
+✗ Build failed in 8.31s
+error during build:
+Build failed with 29 errors:
+
+[plugin fumadocs-mdx:meta] /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/map-claude.json?collection=docs
+Error: [MDX] invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/map-claude.json:
+- : Invalid input: expected object, received array
+    at TransformPluginContextImpl.transform (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/adapter-XBO81DIE.js:86:44)
+    at async plugin (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:1730:16)
+    at async plugin.<computed> (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:2320:12)
+Caused by:
+  Error: invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/map-claude.json:
+    : Invalid input: expected object, received array
+      at validate (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:99:28)
+      at async transformMetadata (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:123:33)
+      at async Object.transformMeta (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:254:11)
+[plugin fumadocs-mdx:meta] /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/map-scoped.json?collection=docs
+Error: [MDX] invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/map-scoped.json:
+- : Invalid input: expected object, received array
+    at TransformPluginContextImpl.transform (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/adapter-XBO81DIE.js:86:44)
+    at async plugin (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:1730:16)
+    at async plugin.<computed> (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:2320:12)
+Caused by:
+  Error: invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/map-scoped.json:
+    : Invalid input: expected object, received array
+      at validate (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:99:28)
+      at async transformMetadata (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:123:33)
+      at async Object.transformMeta (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:254:11)
+[plugin fumadocs-mdx:meta] /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/other-B.json?collection=docs
+Error: [MDX] invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/other-B.json:
+- : Invalid input: expected object, received array
+    at TransformPluginContextImpl.transform (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/adapter-XBO81DIE.js:86:44)
+    at async plugin (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:1730:16)
+    at async plugin.<computed> (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:2320:12)
+Caused by:
+  Error: invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/other-B.json:
+    : Invalid input: expected object, received array
+      at validate (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:99:28)
+      at async transformMetadata (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:123:33)
+      at async Object.transformMeta (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:254:11)
+[plugin fumadocs-mdx:meta] /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/resume-A.json?collection=docs
+Error: [MDX] invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/resume-A.json:
+- : Invalid input: expected object, received array
+    at TransformPluginContextImpl.transform (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/adapter-XBO81DIE.js:86:44)
+    at async plugin (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:1730:16)
+    at async plugin.<computed> (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:2320:12)
+Caused by:
+  Error: invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/resume-A.json:
+    : Invalid input: expected object, received array
+      at validate (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:99:28)
+      at async transformMetadata (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:123:33)
+      at async Object.transformMeta (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:254:11)
+[plugin fumadocs-mdx:meta] /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/safe.json?collection=docs
+Error: [MDX] invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/safe.json:
+- : Invalid input: expected object, received array
+    at TransformPluginContextImpl.transform (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/adapter-XBO81DIE.js:86:44)
+    at async plugin (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:1730:16)
+    at async plugin.<computed> (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/bindingify-input-options-UCGox0BH.mjs:2320:12)
+Caused by:
+  Error: invalid data in /workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/safe.json:
+    : Invalid input: expected object, received array
+      at validate (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:99:28)
+      at async transformMetadata (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:123:33)
+      at async Object.transformMeta (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/fumadocs-mdx/dist/core-DTiWJ6t1.js:254:11)
+...
+    at aggregateBindingErrorsIntoJsError (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/error-CBG33oNV.mjs:49:18)
+    at unwrapBindingResult (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/error-CBG33oNV.mjs:19:128)
+    at #build (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/rolldown/dist/shared/rolldown-BYX6bV3R.mjs:146:34)
+    at async buildEnvironment (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/vite/dist/node/chunks/node.js:34716:66)
+    at async Object.build (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/vite/dist/node/chunks/node.js:35137:19)
+    at async buildStartViteEnvironments (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/@tanstack/start-plugin-core/dist/esm/vite/planning.js:86:23)
+    at async Object.buildApp (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/@tanstack/start-plugin-core/dist/esm/vite/plugin.js:114:8)
+    at async Object.buildApp (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/vite/dist/node/chunks/node.js:35129:6)
+    at async CAC.<anonymous> (file:///workspace/scratch/1335a158b2a9/jackin/docs/node_modules/vite/dist/node/cli.js:780:3) {
+  errors: [Getter/Setter]
+}
+error: script "build" exited with code 1

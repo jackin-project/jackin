@@ -1,0 +1,492 @@
+{
+  "snapshot_cutoff_utc": "2026-10-24T01:15:00Z",
+  "execution_date_utc": "2026-10-24",
+  "reported_exit_codes": "Child command results; run_verification.py itself does not propagate child failures.",
+  "provider_calls": "None. Local HTTP mocks only; toolchain/module downloads used public registries.",
+  "checks": [
+    {
+      "started_utc": "2026-10-24T01:24:24Z",
+      "checkout": "caveman-runtime",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/toolchains/go/bin/go",
+        "test",
+        "-p=1",
+        "-mod=readonly",
+        "-count=1",
+        "-short",
+        "./proxy/internal/gateway",
+        "-run",
+        "TestCacheWarm|TestCachePrefix|TestRecoveryExempt"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off",
+        "CGO_ENABLED": "0",
+        "GOMAXPROCS": "2"
+      },
+      "inherited_proxy_variable_names": [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy"
+      ],
+      "node": "v24.19.0",
+      "exit_code": 0,
+      "duration_seconds": 7.356553077697754,
+      "name": "caveman-gateway",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/caveman-runtime",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "ed6fcf4b332eaed98e4d5f4a4f6095c0aa197d15cf55d2b3bc9bef774a33ab44",
+      "raw_log_bytes": 68,
+      "phase": "executed tests",
+      "public_log": "logs/caveman-gateway.log"
+    },
+    {
+      "started_utc": "2026-10-24T01:22:44Z",
+      "checkout": "caveman-runtime",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/toolchains/go/bin/go",
+        "test",
+        "-p=1",
+        "-mod=readonly",
+        "-count=1",
+        "-short",
+        "./engine",
+        "./engine/ccr",
+        "./engine/tokens",
+        "./engine/pixel",
+        "./proxy/internal/config",
+        "./mcp"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off",
+        "CGO_ENABLED": "1",
+        "GOMAXPROCS": "2"
+      },
+      "inherited_proxy_variable_names": [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy"
+      ],
+      "node": "v24.19.0",
+      "exit_code": 0,
+      "duration_seconds": 58.36271381378174,
+      "name": "caveman-go-cgo",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/caveman-runtime",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "4c94e80975eb1ba8cd0941ce83ee78f34883a661c166b5cf95186c9d29f6b0fd",
+      "raw_log_bytes": 341,
+      "phase": "executed tests",
+      "public_log": "logs/caveman-go-cgo.log"
+    },
+    {
+      "started_utc": "2026-10-24T01:17:02Z",
+      "checkout": "caveman-runtime",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/toolchains/go/bin/go",
+        "test",
+        "-count=1",
+        "-short",
+        "./engine",
+        "./engine/ccr",
+        "./engine/tokens",
+        "./engine/pixel",
+        "./proxy/internal/config",
+        "./mcp"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off"
+      },
+      "node": "v24.19.0",
+      "exit_code": 1,
+      "duration_seconds": 15.606253862380981,
+      "name": "caveman-go-initial-no-proxy",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/caveman-runtime",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "1b347bd32e954b28995ef736e958f67bfc2a9444e4437a60bd1fc7ba1268031a",
+      "raw_log_bytes": 13801,
+      "phase": "dependency setup failed; no tests",
+      "public_log": "logs/caveman-go-initial-no-proxy.log"
+    },
+    {
+      "started_utc": "2026-10-24T01:20:57Z",
+      "checkout": "caveman-runtime",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/toolchains/go/bin/go",
+        "test",
+        "-p=1",
+        "-mod=readonly",
+        "-count=1",
+        "-short",
+        "./engine",
+        "./engine/ccr",
+        "./engine/tokens",
+        "./engine/pixel",
+        "./proxy/internal/config",
+        "./mcp"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off",
+        "CGO_ENABLED": "0",
+        "GOMAXPROCS": "2"
+      },
+      "inherited_proxy_variable_names": [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy"
+      ],
+      "node": "v24.19.0",
+      "exit_code": 1,
+      "duration_seconds": 66.85656595230103,
+      "name": "caveman-go-nocgo",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/caveman-runtime",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "49bb1e3fb62a9d1ae4819b672aa1ca55cbd432fac156e502848ffaf88161f83d",
+      "raw_log_bytes": 822,
+      "phase": "executed tests; profile-specific Engine failures",
+      "public_log": "logs/caveman-go-nocgo.log"
+    },
+    {
+      "started_utc": "2026-10-24T01:18:27Z",
+      "checkout": "caveman-runtime",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/toolchains/go/bin/go",
+        "test",
+        "-count=1",
+        "-short",
+        "./engine",
+        "./engine/ccr",
+        "./engine/tokens",
+        "./engine/pixel",
+        "./proxy/internal/config",
+        "./mcp"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off"
+      },
+      "inherited_proxy_variable_names": [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy"
+      ],
+      "node": "v24.19.0",
+      "exit_code": 1,
+      "duration_seconds": 20.295516967773438,
+      "name": "caveman-go",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/caveman-runtime",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "202977e281330ed920bdd76f6ca7f03d174cb345163e18f2e53dfeecfa8d600b",
+      "raw_log_bytes": 4982,
+      "phase": "compile failed ENOSPC; no tests",
+      "public_log": "logs/caveman-go.log"
+    },
+    {
+      "started_utc": "2026-10-24T01:16:59Z",
+      "checkout": "caveman",
+      "commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+        "--test",
+        "--test-reporter=tap",
+        "tests/hooks/codex-sessionstart.test.mjs",
+        "tests/hooks/host-session-start.test.mjs",
+        "tests/hooks/subagent-start.test.mjs",
+        "tests/hooks/caveman-config.test.mjs",
+        "tests/hooks/headless-entrypoint.test.mjs"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off"
+      },
+      "node": "v24.19.0",
+      "exit_code": 0,
+      "duration_seconds": 3.1485061645507812,
+      "name": "caveman-node",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/caveman",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "279a080fe14704b8e1944a2728cde6f4080331faef7e47860f121fb72fa7a569",
+      "raw_log_bytes": 15594,
+      "phase": "executed tests",
+      "public_log": "logs/caveman-node.log"
+    },
+    {
+      "started_utc": "2026-10-24T01:24:08Z",
+      "checkout": "caveman-runtime",
+      "commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "argv": [
+        "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/toolchains/go/bin/go",
+        "test",
+        "-p=1",
+        "-mod=readonly",
+        "-count=1",
+        "-short",
+        "./proxy/cmd/caveman-proxy",
+        "-run",
+        "TestCacheWarm"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off",
+        "CGO_ENABLED": "0",
+        "GOMAXPROCS": "2"
+      },
+      "inherited_proxy_variable_names": [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy"
+      ],
+      "node": "v24.19.0",
+      "exit_code": 0,
+      "duration_seconds": 16.271947145462036,
+      "name": "caveman-warm",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/caveman-runtime",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "bba420cca5846fa4691d957dfd0035f6abb95e906a5b5a1827c6f5a0b106bf2c",
+      "raw_log_bytes": 342,
+      "phase": "executed tests",
+      "public_log": "logs/caveman-warm.log"
+    },
+    {
+      "started_utc": "2026-10-24T01:22:16Z",
+      "checkout": "ponytail",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "benchmarks/agentic/complete.py",
+        "--selftest-offline"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off",
+        "CGO_ENABLED": "0",
+        "GOMAXPROCS": "2"
+      },
+      "inherited_proxy_variable_names": [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy"
+      ],
+      "node": "v24.19.0",
+      "exit_code": 0,
+      "duration_seconds": 0.06989216804504395,
+      "name": "ponytail-completeness-gate",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/ponytail",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "e56f3921ff45c94512b340604d8f7dc546176e78d4bbaeba531f8a4d2dd8b73c",
+      "raw_log_bytes": 216,
+      "phase": "executed tests",
+      "public_log": "logs/ponytail-completeness-gate.log"
+    },
+    {
+      "started_utc": "2026-10-24T01:17:01Z",
+      "checkout": "ponytail",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+        "--test",
+        "--test-reporter=tap",
+        "tests/hooks.test.js",
+        "tests/behavior.test.js",
+        "tests/map.test.js",
+        "tests/uninstall.test.js",
+        "tests/activation-map.test.js",
+        "tests/commands.test.js",
+        "tests/band-import.test.js"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off"
+      },
+      "node": "v24.19.0",
+      "exit_code": 0,
+      "duration_seconds": 10.663978099822998,
+      "name": "ponytail-node",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/ponytail",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "de9a0204545bc1a0bd2d2054f0b2390f8973562f11fd643f9c8d34395560a892",
+      "raw_log_bytes": 3926,
+      "phase": "executed tests",
+      "public_log": "logs/ponytail-node.log"
+    },
+    {
+      "started_utc": "2026-10-24T01:22:15Z",
+      "checkout": "ponytail",
+      "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "benchmarks/agentic/run.py",
+        "--selftest"
+      ],
+      "env": {
+        "LANG": "C.UTF-8",
+        "GOTOOLCHAIN": "local",
+        "GOCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-cache",
+        "GOMODCACHE": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/go-mod-cache",
+        "GOPROXY": "https://proxy.golang.org",
+        "GOSUMDB": "sum.golang.org",
+        "DO_NOT_TRACK": "1",
+        "CAVEMAN_TELEMETRY": "0",
+        "CAVEMAN_CACHE_WARM": "off",
+        "CGO_ENABLED": "0",
+        "GOMAXPROCS": "2"
+      },
+      "inherited_proxy_variable_names": [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy"
+      ],
+      "node": "v24.19.0",
+      "exit_code": 0,
+      "duration_seconds": 1.2802772521972656,
+      "name": "ponytail-scorers",
+      "cwd": "/workspace/scratch/1335a158b2a9/research/caveman-ponytail/ponytail",
+      "toolchain": {
+        "node": "24.19.0",
+        "go": "1.26.10 linux/amd64",
+        "python": "3.12.14",
+        "cc": "Ubuntu GCC 13.3.0"
+      },
+      "raw_log_sha256": "23f0065aae617d7e11cd290ed52ef202abe8286a4a5efbbb5318395c33e2c054",
+      "raw_log_bytes": 3145,
+      "phase": "executed tests",
+      "public_log": "logs/ponytail-scorers.log"
+    }
+  ]
+}

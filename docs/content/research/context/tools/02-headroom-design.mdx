@@ -1,62 +1,117 @@
 ---
 title: "02 — Headroom: current design"
-description: "Headroom 0.38.0: reusable Rust transforms, feature and recovery boundaries, evidence, and deployment choices."
+description: "Headroom 0.41.0: verified no-ML Rust build, backend-specific fidelity and recovery gaps, and qualified reuse choices."
 ---
+
+**Research state:** Current
+
 
 ## Summary
 
-Cutoff: **2026-09-23 UTC**. Reviewed release: [Headroom v0.38.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.38.0), release commit `94206e265203acfd72a3b939e9a964e29175ad50`. Headroom is the strongest **source-level Rust transform candidate** in this comparison, not an established task-cost winner. Evaluate selected library capabilities before adopting its complete provider proxy.
+Snapshot: **2026-10-24 01:15:00 UTC**. Stable [v0.41.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.41.0), published **2026-10-14 22:46:09 UTC**, resolves to `76133cff59b71284399bf760c5578dc373c97231`. The repository remains `headroomlabs-ai/headroom`.
+
+**Retain Headroom as a transform candidate, remove its unconditional preferred-backend status.** Its no-ML Rust core builds at the reviewed lockfile, and the Python SDK has a useful independently selectable `densify` mode. However, the selected Rust JSON and recovery APIs need tighter contracts, and closing the Python shell-boundary bug did not repair the Rust Kompress implementation. No inspected evidence qualifies this release as a complete-task winner or an automatic proxy default.
 
 ## Question and scope
 
-Can Jackin reuse the existing Rust implementation while retaining ownership of execution, recovery, configuration, and provider authentication?
+Which Headroom components can Jackin reuse while preserving native execution, editing, permissions, provider authentication, exact evidence and context ownership? A library call, a tool-result adapter and a complete provider proxy are different treatments.
 
 ## Method
 
-Read the release, workspace manifest, core crate manifest, and exported transform surface at the release tag. Separate callable source APIs from stable SDK promises, successful builds, and outcome evidence.
+Reopened the release, package registries, source manifests, effective transformation and storage code, issue #3099, delivered Python package and benchmark artifacts. Built the locked no-ML core on Linux x86_64 with Rust 1.99.1; executed focused fidelity/recovery probes and selected upstream Python tests. No paid model calls, agent sessions, global installation or proxy activation occurred. Commands, source identities, environment limitations and outputs are in the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md">reproduction record</RepoFile>.
 
 ## Findings
 
-### The Rust surface is real
+### Release, packages and license boundaries
 
-The [workspace](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/Cargo.toml) includes `headroom-core`, `headroom-proxy`, Python bindings, simulators, and parity tooling under Apache-2.0. The [core exports](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/src/transforms/mod.rs) include `LogCompressor`, `SearchCompressor`, `CompressionPipelineBuilder`, `JsonMinifier`, and recovery-aware pipeline types. Describing Headroom as Python-only or requiring a wholesale Rust rewrite is incorrect.
-
-| Choice | Advantage | Additional responsibility |
+| Surface | Verified identity | Distribution and implication |
 |---|---|---|
-| Selected core transforms | Reuse existing algorithms without global wrapping | Typed payload contract, fidelity, packaging, bounded latency |
-| Supervised worker | Fault and dependency isolation from the launcher | Lifecycle, deadlines, IPC, state scoping |
-| Full proxy | Access to assembled provider requests | Authentication, streaming, cache continuity, retries, recovery protocol |
+| Python product | `headroom-ai==0.41.0`; Python 3.10+ | PyPI sdist and five abi3 wheel targets: Linux x86_64/aarch64, macOS Intel/Arm, Windows amd64. The tested Linux wheel digest matches the GitHub release asset. |
+| TypeScript SDK | npm `headroom-ai@0.41.0` | Library package, separate from the Python CLI despite the same name. |
+| Host plugins | npm `headroom-opencode@0.41.0`, `headroom-openclaw@0.41.0` | Published packages with their own dependency graphs; integration labels do not establish host parity. |
+| Rust workspace | `headroom-core` and `headroom-proxy`, internal version `0.1.0` | Reviewed as commit-pinned source. The crates.io `headroom-core` endpoint returned 404; do not specify product version 0.41.0 as a Cargo crate version. |
+| License | Apache-2.0 public repository and inspected package manifests | Preserve license/notices for redistributed source and artifacts; optional models, dependencies and separate enterprise offerings require their own inventory. |
 
-### Feature and dependency reality
+Primary records: [PyPI release](https://pypi.org/pypi/headroom-ai/0.41.0/json), [SDK manifest](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/sdk/typescript/package.json), [core manifest](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/Cargo.toml), [license](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/LICENSE). The release/package register records artifact hashes and npm publication times. Source availability and a matching wheel do not establish a reproducible build of every binary.
 
-The [core manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml) declares internal crate version **0.1.0**, not product version 0.38.0. ML is enabled by default; `default-features = false` excludes optional ONNX/embedding/classifier dependencies. The remaining core still includes tokenizers, grammars, SQLite, and network-capable dependencies. Feature exclusion is not proof of a small binary, offline operation, or a successful build on every Jackin target.
+### Independently selectable boundaries
 
-The source explicitly distinguishes parity with the Python implementation from information preservation. Matching upstream output can reproduce upstream omissions. Jackin therefore needs independent fidelity tests, not just parity fixtures.
+| Component | What it sees and changes | Outside its boundary / qualification concern |
+|---|---|---|
+| Rust transform calls | Caller-supplied strings; deterministic JSON, log, search, diff and code operations, plus optional learned paths | No access to native tools that the caller does not route through it. The caller owns observation typing, recovery, deadlines and host delivery. |
+| Python `densify` / `compress(mode="agent")` | Supplied message list; deterministic structural densification, no CCR removal or ML text compression; verification can revert changes | Parsed-JSON reversibility is narrower than exact-byte fidelity and does not prove the model understands the representation. |
+| Python default `compress` | Full supplied messages; content routing, optional ML, recovery markers and history-related behavior | Default `mode=None` differs from agent mode; caller must supply frozen-prefix state and wire recovery. `compress_system_messages` defaults true. |
+| Full proxy and wrappers | Provider-bound requests and responses actually routed through the proxy | Other provider routes and local/native activity outside it remain invisible. It owns a much broader authentication, streaming, retry and cache boundary. |
+| Optional memory, code-memory, learning and routing | Additional stores, instructions, MCP registration or provider/model decisions | Qualify separately; they are not required to reuse a transform. Model/effort routing remains outside the fixed-policy compression comparison. |
 
-### Evidence and operational interpretation
+The [public exports](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/transforms/mod.rs) confirm reusable Rust APIs. [Python configuration and agent pipeline](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/compress.py) implement the distinct SDK modes. None of these surfaces automatically replaces an arbitrary native host tool result.
 
-No independent accepted-task result tied to this exact release and a proposed Jackin profile was established. Payload compression counters are not a control trajectory. A proxy benchmark configured to rewrite more historical content cannot qualify a selected-transform integration, and a selected-transform test cannot qualify the whole proxy. See [evidence eligibility](/research/context/tools/07-evidence-and-claims/).
+### No-ML build: demonstrated feasibility, substantial remaining dependencies
+
+ML is enabled by the default Cargo feature set. `cargo check --locked -p headroom-core --no-default-features` passed on Linux x86_64 with Rust **1.99.1**. The resolved normal dependency tree contained 185 distinct package/version nodes including the core; `ort`, `fastembed` and `magika` were absent. It still contains bundled SQLite, Oniguruma, tree-sitter and C grammars, tokenizers and a network-capable Hugging Face client. ML exclusion is not an egress control.
+
+The workspace declares Rust **1.80**, but the pinned tree-sitter 0.27.0 and tree-sitter-language 0.1.8 manifests require **1.90**; the repository toolchain file selects **1.95.0**. The actual minimum compiler was not tested. The build proves the tested Linux configuration only, not macOS, Windows, musl, cross-compilation or compatibility with Jackin's complete dependency graph. A supervised worker avoids forcing SQLite linkage and runtime dependencies into the launcher. [Workspace manifest](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/Cargo.toml), [toolchain](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/rust-toolchain.toml).
+
+### Shell-boundary defect: fixed in one backend, retained in another
+
+[Issue #3099](https://github.com/headroomlabs-ai/headroom/issues/3099) reported shell lines merged into a plausible false fact and fields removed unevenly from table rows. It closed on October 1. At this release, [Python Kompress](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/transforms/kompress_compressor.py) records each word's source line and preserves line transitions. It also protects runs of at least three fixed-width rows with consistent column counts when the must-keep feature is enabled. The four upstream line-integrity tests passed using a fake keep-mask model; this tests reconstruction and table protection, not learned-model accuracy.
+
+The [Rust Kompress implementation](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/transforms/kompress.rs) still splits with `split_whitespace()` and reconstructs retained words with `join(" ")`. That source path erases line boundaries whenever compression proceeds. It was **inspected, not exercised with model inference**. The no-ML build excludes it. A merged fix and issue closure therefore cannot qualify all backends. The inspected post-release history did not provide a line-preserving Rust correction.
+
+### Fidelity and recovery probes change the integration contract
+
+| Probe against pinned source/package | Observed result | Decision |
+|---|---|---|
+| Rust `JsonMinifier` on an object containing the same key twice | Earlier value disappeared; output retained only the last value | Accept only an explicitly typed, unique-key JSON domain, or use a byte-preserving whitespace lexer. Do not apply it to unknown JSON text or exact evidence. |
+| Rust minifier on large integers, `1.0`, escaped Unicode and malformed JSON | Large integer and decimal spelling survived; escapes normalized; malformed input returned `InvalidInput` | Semantic JSON equality differs from raw-text preservation. Preserve original bytes and exactness requirements. |
+| Rust `LogCompressor` on the reported two-line shell fixture | Fixture passed through intact | Narrow positive control; it does not qualify Kompress or arbitrary build logs. |
+| Rust SQLite CCR after its table was deliberately removed | `put` returned unit; later `get` returned `None` | Storage failure cannot be acknowledged through this trait. Require durable write acknowledgement before replacing the original. |
+| Python SDK agent-mode and line-integrity tests | 18 selected tests passed against the installed 0.41.0 wheel | Useful component proof, not full-suite or accepted-task evidence. |
+| Python agent-mode verifier on duplicate-key JSON | It accepted the last-value parsed representation | Its “lossless” claim is parsed-JSON equivalence; reject duplicate keys before using this contract. |
+
+Sources: [JsonMinifier](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/transforms/pipeline/reformats/json_minifier.rs), [CCR trait](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/ccr/mod.rs), [SQLite writes](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-core/src/ccr/backends/sqlite.rs), [SDK verification](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/compress.py). These probes are in the reproduction record; the SQLite fault was schema loss, not a simulated disk-full test.
+
+Rust CCR has a **30-minute sliding idle TTL**, an **eight-times-TTL maximum lifetime**, an in-memory capacity default of **1,000 entries**, and selectable SQLite/Redis stores. SQLite is the factory's production default; its API does not itself inject a model recovery tool, authenticate retrieval, scope hashes to sessions or guarantee resumed-session retention. An original stored somewhere is not evidence that the model noticed its omission. A library consumer must build the end-to-end recovery protocol. The Python store additionally falls back to memory after SQLite initialization failure; the Rust factory surfaces initialization errors. Keep these backend contracts distinct.
+
+### Defaults, installation and network costs
+
+The Python CLI `proxy` and persistent installation paths default to **cache mode**, prioritizing prefix continuity; **token mode** permits broader rewriting. The standalone Rust proxy's `compression_mode` defaults to **off** and has a separate compression enable flag. A normalizer's token fallback is not the CLI default. [Python CLI](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/cli/proxy.py), [Rust config](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/crates/headroom-proxy/src/config.rs).
+
+The Python wrapper defaults its code-memory choice to **Serena** and can register MCP/configuration and index projects. Persistent install/remove manages provider configuration and service ownership. These are material side effects beyond installing a compression library. Jackin should supply its own capsule-local configuration and explicit component list rather than execute a general upstream installer. [Wrapper](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/cli/wrap.py), [managed removal](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/cli/install.py).
+
+The effective [beacon code](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/headroom/telemetry/beacon.py) enables anonymous session upload by default; local `HEADROOM_TELEMETRY` statistics default off. They are separate switches despite older changelog wording. Set `HEADROOM_BEACON=off`, disable update checks and enforce worker egress restrictions. `HEADROOM_OFFLINE=1` guards model/tokenizer downloads and other outbound calls; optional ML additionally needs runtime/model artifacts and first-use loading. We did not download models or measure their cold RAM/latency. Direct selected no-ML transforms avoid those paths but are not equivalent to the full Python package's defaults.
+
+### Benchmark provenance and maintenance
+
+The checked-in [index proof table](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/benchmarks/results/index_proof_table.txt) is a synthetic component output with seed `20260902`, not a new 0.41.0 accepted-task benchmark. Its token reduction must not enter a current whole-task ranking.
+
+The newer [tool-search comparison](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/benchmarks/tool_search_vs_native/README.md) reports October 6 runs with Claude Code 2.1.290 and Sonnet 5.5. It is first-party, one pricing-fix scenario with fake MCP services, repeated runs and selected configurations; the release tag containing it is not the tested source identity. It is valuable evidence that schema deferral, small-result compression and prefix rewriting can add turns and cost. It does not independently qualify selected Rust transforms or current Jackin tasks.
+
+An independent direct-verifier probe also accepted non-string metadata `False`→`0` through Python scalar equality; JSON-string comparison rejected `1.0`→`1`. This identifies a strict-type guard hardening opportunity, not an observed compression-pipeline mutation. <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review-results.json">Independent source/package-matched probe</RepoFile>.
+
+Recent releases and the issue/fix history show active maintenance and practical upstream contribution opportunities. They do not establish turnaround guarantees or eliminate local ownership. Propose a supported small Rust feature set, fallible durable CCR writes, duplicate-key rejection, and Python/Rust line-integrity parity before maintaining a fork.
 
 ## Implications for jackin❯
 
-**Best part:** typed transformations of large structured observations, with explicit recovery and result metadata. Keep source code, diffs, requirements, and acceptance evidence raw until separately qualified.
-
-**Integration choice:** try a commit-pinned `headroom-core` dependency inside an optional Jackin worker. Start with ML disabled and a small transform allowlist. Measure cold startup, allocations, concurrency, payload limits, and model/artifact access. Do not expose upstream types as Jackin's durable public API.
-
-**Reuse before rewrite:** request upstream feature decomposition or a smaller supported kernel API when necessary. Extract licensed, tested source only when the library cannot satisfy a demonstrated boundary requirement. Do not rewrite the algorithms merely to avoid a Python wrapper that this integration does not need.
-
-**Default decision:** no global provider proxy or automatic model download. Qualified transforms can later be activated invisibly at a supported tool-result seam.
+1. Keep native execution, editing, approvals, authentication and model/effort policy. Select only observations Jackin actually owns at a verified host seam.
+2. Compare a no-ML Rust worker with the Python `densify` SDK and native output, using the same typed fixtures and complete tasks. Do not reject the SDK solely for its language or presume Rust parity.
+3. Own the raw artifact before transformation, byte hash, producer status, completeness flags, repository/worktree/session/context epoch and recovery authorization. Reuse upstream algorithms behind an internal adapter; do not expose upstream types as Jackin's permanent API.
+4. Default-disable semantic rewriting, code/diff compression, full provider interception, memory, routing, installers and model downloads. Promote one narrow transform only after fidelity, host activation, recovery, cache and accepted-task gates pass.
+5. Seek upstream corrections first. A licensed kernel extraction needs an assigned maintainer, upstream sync policy, regression corpus and exit condition; the current evidence does not justify a whole-product rewrite.
 
 ## Limitations and unknowns
 
-This review did not compile the dependency or run proxy traffic. Default-disabled ML does not remove all transitive complexity. Deadlines must cover the entire pipeline, not only one compressor. Recovery must remain available for resumed sessions, and a smaller result is not automatically semantically sufficient.
+The Linux build and component probes do not measure accepted tasks, subscription quota, real model recognition of compact formats, cross-platform linkage, network traces or long-running resource use. The first source-checkout densify test run lacked the compiled `_core` extension and failed; repeating the exact selected tests against the matched installed wheel passed. A separate Rust CCR test invocation aborted during workspace disk exhaustion before producing test results and is not counted. No complete upstream suite, ML inference or host/provider conformance test ran.
+
+The smallest decisive next tests are: line/table fidelity across both Kompress backends; an acknowledged durable recovery adapter under failed writes, expiry and restart; selected-transform fixtures with exact bytes and duplicate keys; and a randomized task comparison at a real replacement boundary. See [evaluation protocol](/research/context/tools/07-evidence-and-claims/).
 
 ## Sources
 
-Release, workspace, core manifest, and exported APIs are linked inline at the reviewed tag.
+Implementation links are pinned to the inspected release commit. Registry snapshots, exact command results and test limitations accompany the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md">reproducible artifacts</RepoFile>.
 
 ## Related work
 
-- [Six-tool comparison](/research/context/tools/05-head-to-head/)
+- [Boundary comparison](/research/context/tools/05-head-to-head/)
+- [Composition rules](/research/context/tools/06-combining/)
 - [Jackin integration](/research/context/tools/11-jackin-integration/)
-- [Engine reuse matrix](/research/context/engine/09-reuse-decision-matrix/)
+- [Reuse matrix](/research/context/engine/09-reuse-decision-matrix/)

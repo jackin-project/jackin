@@ -1,0 +1,212 @@
+[
+  {
+    "id": "jetbrains-rtk",
+    "url": "https://blog.jetbrains.com/ai/2026/07/rtk-claude-code-token-savings/",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "download_error": "HTTP Error 403: Forbidden",
+    "retrieved_utc": "2026-10-24T02:10:00.627751+00:00"
+  },
+  {
+    "id": "jetbrains-ponytail",
+    "url": "https://blog.jetbrains.com/ai/2026/07/ponytail-skill-claude-tested/",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "download_error": "HTTP Error 403: Forbidden",
+    "retrieved_utc": "2026-10-24T02:10:00.584002+00:00"
+  },
+  {
+    "id": "jetbrains-caveman",
+    "url": "https://blog.jetbrains.com/ai/2026/07/speak-to-ai-agents-like-cavemen-tosave-tokens/",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "download_error": "HTTP Error 403: Forbidden",
+    "retrieved_utc": "2026-10-24T02:10:00.582506+00:00"
+  },
+  {
+    "id": "quesma-rtk",
+    "url": "https://quesma.com/blog/does-rtk-make-ai-coding-cheaper/",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://quesma.com/blog/does-rtk-make-ai-coding-cheaper/",
+    "bytes": 346451,
+    "sha256": "e4514c99284cfc52075ec2fd3bdf40abfa41c3e442aa29789c54cf4127d227ce",
+    "retrieved_utc": "2026-10-24T02:10:00.753633+00:00"
+  },
+  {
+    "id": "codepointer",
+    "url": "https://codepointer.dev/p/cutting-llm-token-costs-with-rtk",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://codepointer.dev/p/cutting-llm-token-costs-with-rtk",
+    "bytes": 280741,
+    "sha256": "f83c50899f54ea672622ac444aedecdf279cfde3db42bc1cb9020ab1d5c1c16f",
+    "retrieved_utc": "2026-10-24T02:10:00.860267+00:00"
+  },
+  {
+    "id": "kompressor-article",
+    "url": "https://wf.optscale.ai/blog/context-compression-coding-agents",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://wf.optscale.ai/blog/context-compression-coding-agents",
+    "bytes": 117110,
+    "sha256": "ae8aa6a5491041b700db7a36a1e9efb3213319f1dbdd3b45c8b1e97c1f2046bb",
+    "retrieved_utc": "2026-10-24T02:10:00.692185+00:00"
+  },
+  {
+    "id": "claude-workspaces",
+    "url": "https://platform.claude.com/docs/en/manage-claude/workspaces",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://platform.claude.com/docs/en/manage-claude/workspaces",
+    "bytes": 996873,
+    "sha256": "ca1e7be791d4d18d9c023251cc2ca12e9e2a6db07471946901e0ccba7e266950",
+    "retrieved_utc": "2026-10-24T02:10:01.076577+00:00"
+  },
+  {
+    "id": "claude-enterprise-spend",
+    "url": "https://platform.claude.com/docs/en/manage-claude/spend-limits-api",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://platform.claude.com/docs/en/manage-claude/spend-limits-api",
+    "bytes": 1773377,
+    "sha256": "2803551a1812b5a1c6febaaeef0fc66a44c8fea57c34864307c68c5d088d0444",
+    "retrieved_utc": "2026-10-24T02:10:01.109394+00:00"
+  },
+  {
+    "id": "claude-sdk-loop",
+    "url": "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://code.claude.com/docs/en/agent-sdk/agent-loop",
+    "bytes": 704559,
+    "sha256": "e90c1880572d475841320cfb704f8102cf8694dad62a37e7fbe66a327a1acbaa",
+    "retrieved_utc": "2026-10-24T02:10:00.754083+00:00"
+  },
+  {
+    "id": "claude-fast-mode",
+    "url": "https://code.claude.com/docs/en/fast-mode",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://code.claude.com/docs/en/fast-mode",
+    "bytes": 479395,
+    "sha256": "76cc6fcb018ab8d16891546c18f2170f498927554c0038cd280180ce5c65e75b",
+    "retrieved_utc": "2026-10-24T02:10:00.793715+00:00"
+  },
+  {
+    "id": "claude-stop-reasons",
+    "url": "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+    "download_error": "snapshot exceeds 3 MB bounded fetch",
+    "retrieved_utc": "2026-10-24T02:10:01.551813+00:00"
+  },
+  {
+    "id": "claude-cost-reporting",
+    "url": "https://platform.claude.com/docs/en/manage-claude/usage-cost-api",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://platform.claude.com/docs/en/manage-claude/usage-cost-api",
+    "bytes": 601532,
+    "sha256": "7de0b664ac32268303d84293f6fa0d43f021835c19393cdda0bec55af0e53f0f",
+    "retrieved_utc": "2026-10-24T02:10:01.128485+00:00"
+  },
+  {
+    "id": "litellm-budgets",
+    "url": "https://docs.litellm.ai/docs/proxy/users",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://docs.litellm.ai/docs/proxy/users",
+    "bytes": 232523,
+    "sha256": "b213e1dff7d371529c0866b4e531dc77b536b0d360276c4c2d6154ecf353ccc3",
+    "retrieved_utc": "2026-10-24T02:10:00.916904+00:00"
+  },
+  {
+    "id": "cloudflare-spend",
+    "url": "https://developers.cloudflare.com/ai-gateway/features/spend-limits/",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://developers.cloudflare.com/ai-gateway/features/spend-limits/",
+    "bytes": 132073,
+    "sha256": "5774e9a01a23695f1b00485eca0a66f61643285f4643c9091c0b8ca91b6d51ee",
+    "retrieved_utc": "2026-10-24T02:10:00.970402+00:00"
+  },
+  {
+    "id": "portkey-budgets",
+    "url": "https://portkey.ai/docs/product/ai-gateway/virtual-keys/budget-limits",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://portkey.ai/docs/product/ai-gateway/virtual-keys/budget-limits",
+    "bytes": 235993,
+    "sha256": "bf375945f621fbe14443fee68bc6ac6b8064051db7575ab69d87740d701e8dd2",
+    "retrieved_utc": "2026-10-24T02:10:01.221090+00:00"
+  },
+  {
+    "id": "langsmith-online",
+    "url": "https://docs.langchain.com/langsmith/online-evaluations-llm-as-judge",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://docs.langchain.com/langsmith/online-evaluations-llm-as-judge",
+    "bytes": 556169,
+    "sha256": "b508b17c2984b470cb14d9b3348c6b6f8af6249126f4f6cf2f9df86c11c8e7e0",
+    "retrieved_utc": "2026-10-24T02:10:01.162663+00:00"
+  },
+  {
+    "id": "braintrust-online",
+    "url": "https://www.braintrust.dev/docs/evaluate/score-online",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://www.braintrust.dev/docs/evaluate/score-online",
+    "bytes": 541723,
+    "sha256": "6573c1ac14c8392ba96cdb60fc9125f8b0376c16caae255b12c990017f0f4716",
+    "retrieved_utc": "2026-10-24T02:10:01.363885+00:00"
+  },
+  {
+    "id": "phoenix-evaluators",
+    "url": "https://arize.com/docs/phoenix/evaluation/llm-evals/evaluator-traces",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://arize.com/docs/phoenix/evaluation/llm-evals",
+    "bytes": 417714,
+    "sha256": "ba66617fecd6be5d0ba7bba4e3effc8efe183bb982a2d181399e537096c78cd7",
+    "retrieved_utc": "2026-10-24T02:10:01.900430+00:00"
+  },
+  {
+    "id": "helicone-scores",
+    "url": "https://docs.helicone.ai/features/advanced-usage/scores",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://docs.helicone.ai/features/advanced-usage/scores",
+    "bytes": 320201,
+    "sha256": "90da38335b06727bd24dc3f4c026b3ae25915afd34aa7414d45cff2a5e2f33ff",
+    "retrieved_utc": "2026-10-24T02:10:01.521848+00:00"
+  },
+  {
+    "id": "rust-set-var",
+    "url": "https://doc.rust-lang.org/std/env/fn.set_var.html",
+    "source_kind": "Original public article or official documentation; mutable web snapshot",
+    "read_via_search_service": true,
+    "status": 200,
+    "final_url": "https://doc.rust-lang.org/std/env/fn.set_var.html",
+    "bytes": 7278,
+    "sha256": "58e462e222d7fbb74d5cf0b4f425e0aa19b453405f21f72d893b00e733105860",
+    "retrieved_utc": "2026-10-24T02:10:01.225634+00:00"
+  }
+]

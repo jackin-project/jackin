@@ -1,0 +1,17 @@
+{
+  "command": [
+    "git",
+    "commit",
+    "-s",
+    "-m",
+    "chore(merge): sync main into context refresh"
+  ],
+  "started_utc": "2026-10-24T08:21:33.908758+00:00",
+  "finished_utc": "2026-10-24T08:28:52.536414+00:00",
+  "duration_seconds": 438.628,
+  "exit_code": 0,
+  "staged_files": 84,
+  "head": "50146c4cd66e96cd66f18277a1a212642898e01f",
+  "log": "/workspace/scratch/1335a158b2a9/tooling/logs/main-merge-commit.log",
+  "environment": "Pinned task-local tools; MISE_EXEC_AUTO_INSTALL=false; required hook steps unchanged."
+}

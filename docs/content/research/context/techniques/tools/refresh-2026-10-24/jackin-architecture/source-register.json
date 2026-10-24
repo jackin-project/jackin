@@ -1,0 +1,290 @@
+{
+  "cutoff_utc": "2026-10-24T01:15:00Z",
+  "source_records": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "3d314492e199ee07ddd01b8f2dc420f09c5a4f5c8e5c29a3046636ce0025f431",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/Cargo.toml",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/core/jackin-core/src/agent.rs",
+      "sha256": "9e23e84d8fb0aa6c5629e18f8c51d82d99281b3808795f9f657e2e29f49b4067",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/core/jackin-core/src/agent.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/core/jackin-core/src/manifest.rs",
+      "sha256": "c2d41f53f597aa05c765f1b550cafb480ffb323a04d421985e010ea2861deba3",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/core/jackin-core/src/manifest.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/core/jackin-core/src/container_paths.rs",
+      "sha256": "b857c791e2e765b04c3c6db1e43ab627d37bd6384fb04c1254e4736ba1512817",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/core/jackin-core/src/container_paths.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/core/jackin-protocol/src/lib.rs",
+      "sha256": "e9892ee7d08005ea8f57c71624a039c7cd0c3877b6c73e6ce9a466c0e846e40b",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/core/jackin-protocol/src/lib.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-capsule-setup/src/capsule_setup.rs",
+      "sha256": "0eb95a3a082184f1ed81e6bf2ee30f0651e6a3ca326e4c16d23747732f851715",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-runtime-launch-capsule-setup/src/capsule_setup.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/adapters/jackin-image/src/derived_image.rs",
+      "sha256": "d498a292ffeb9edd9c502aa56e6a9b1fcbd909dc0c4e54659c55a1f29dc73922",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/adapters/jackin-image/src/derived_image.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/session/agent_cmd.rs",
+      "sha256": "7d235a2a7c49eeca244725840cbc3e4aadd13755db1b7a0588d0a538858d46e0",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/session/agent_cmd.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer.rs",
+      "sha256": "d429a0bb0f22cc721499ff65e75084de9df9566bee9729104c2c754585909dbe",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/agent_status/hook_installer.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer/claude.rs",
+      "sha256": "e4d9e11f87c72bdef100e85d4f4432b7855c4d57991d7736e3e24b8282cf2300",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/agent_status/hook_installer/claude.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer/codex.rs",
+      "sha256": "f713d52e18108c767414c7c03cac1f83e47d1786770c40ac7ffa3266388b24d3",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/agent_status/hook_installer/codex.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/runtime_setup/agent_auth.rs",
+      "sha256": "37d13fb49c3dcd7ee2f71fe350f3e5d85e22a8f6bf47aa16c5575d51fa7576fc",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/runtime_setup/agent_auth.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/daemon/control/auth.rs",
+      "sha256": "d22cd21a5a34370112747b3a51d0777bb74ebc40ff14bfde8bb3df9e9a171b39",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/daemon/control/auth.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation.rs",
+      "sha256": "0a244bab7778063364b2af38d7f6d87566c05c93fc5f4adf9e630f6d0e86a2bb",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/process_isolation.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation/linux.rs",
+      "sha256": "6c9e6043351c5cff01aa89ab66e459fd5d064f6678c6579feede37eea72731c8",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/process_isolation/linux.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation/linux/rules.rs",
+      "sha256": "bbe30da97e9b710661b6bd34cea5c4ef5d577b94a929a91b94290f55045bec50",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/process_isolation/linux/rules.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation/linux/paths.rs",
+      "sha256": "27b5b9b14566f7e129422f89f744f22b82f3e3793ac3959a99fe9b779c111337",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/process_isolation/linux/paths.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/exec.rs",
+      "sha256": "6f24ada8ac73cd01a41548fe8db2a346a0b439f4682a0f0f1d601c06752b9241",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/exec.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/mcp_server.rs",
+      "sha256": "e57e771c5f68337f9144033a44e3507f3cee47fb8a63104ddff8cee87305925c",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/mcp_server.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/session.rs",
+      "sha256": "80c14c887af0c259cc4cb969205bbc07a9a7d2fcdb2d415d9058e1708c71153e",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/session.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/monitor.rs",
+      "sha256": "ca497885f6b7aca2e6fcb0346976db577e82d748f29192652574fcf66c825282",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/monitor.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/totals.rs",
+      "sha256": "5c4ebbc42aeac13c3e192650df9b99321df811bd3c8162a57a16f851ed8ed54b",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/totals.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/claude.rs",
+      "sha256": "b55e58d0ab35bf35ca0944203094a3f2ed24ae7c80e770092393c25f7a04373b",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/claude.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/codex.rs",
+      "sha256": "372bf68b043be3a118783712ee0e9fd7564bb2e28bccdbe8ffe9306480b00053",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/codex.rs",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "docker/runtime/entrypoint.sh",
+      "sha256": "99c092f761fbc2f7ef3d0fe7d4c466f1f5358c91a3df82b29c78b52891daab5b",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/docker/runtime/entrypoint.sh",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "path": "docker/runtime/agent-status/hooks/codex/report-hook.sh",
+      "sha256": "c74d61ecf5a267d69ebc30ab055a05606b49f8bc39a2ee8d4553ead679ad8ac1",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/docker/runtime/agent-status/hooks/codex/report-hook.sh",
+      "evidence_class": "pinned Jackin source inspection"
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "Cargo.toml",
+      "sha256": "95ab10a9abb2f4f9e31d0c56e11877c82ba8f0b4fb237a885de658d3c3f267f2",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/Cargo.toml",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "engine/Cargo.toml",
+      "sha256": "053407d64513bd9366cdb62ab4946bd24476614005c301c69889b211df1c20c9",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/Cargo.toml",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "engine/LICENSE",
+      "sha256": "4e3d24d5ae066274a03b82b400b31ad057628c40911cd08aa5a19ff31787dc98",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/LICENSE",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "engine/src/lib.rs",
+      "sha256": "33f05bd8b9e6b48c3a044d701a09ac2c2bb82d94a77de3027ddf11632342e066",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/engine/src/lib.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/lib.rs",
+      "sha256": "53d051c380f717fc3cd7bdfa6e6b812105673806fe48dc7a68d1566356b7616e",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/lib.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/cmds/system/pipe_cmd.rs",
+      "sha256": "f1903288278ff0134e5cbe36a7963eaaa90a6422fda6474aa2379bbac15cf004",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/system/pipe_cmd.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/cmds/git/git_cmd.rs",
+      "sha256": "d2589f25bb1235c581beb3400015ab07874e43600e1a3ba74efc9052824264b0",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/cmds/git/git_cmd.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "src/core/retriever.rs",
+      "sha256": "0ccf1a2b049ed33c0414983ef4546171df408fa868028dfb57694a365d900277",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/src/core/retriever.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "path": "text/src/lib.rs",
+      "sha256": "c711aabf1961de3a3e9a31818c160eb3c42c68d31293eca4803df8e16f7165a6",
+      "url": "https://github.com/rtk-ai/rtk/blob/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100/text/src/lib.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/Cargo.toml",
+      "sha256": "a4cd44eeb45d9b365f7a6163bd5b02d5b38e489bcc79507c3ac7950973194839",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/Cargo.toml",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/lib.rs",
+      "sha256": "61c38ee9da5c70dc9a79bf78d15ab0e8026e2e4e7df981117502333c85a259ac",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/lib.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/crates/lean-ctx-embed/Cargo.toml",
+      "sha256": "83eeac8d9fb16180a45e80fd5261b8442e6eb31e01549666b5d30243099f288f",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/Cargo.toml",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/crates/lean-ctx-embed/src/engine.rs",
+      "sha256": "800824aca97d0ed8434ec7c777720ccf4b7706debb6d59f291a1454d2fe63338",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/crates/lean-ctx-embed/src/engine.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/core/conversation.rs",
+      "sha256": "78e55cc0dd60789790d65890d67cc0ca619485e86a8d5537557ede44cd3a4053",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/conversation.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/core/read_stub_index.rs",
+      "sha256": "d2a1ba1515bc1a8a52111b2a938526e7ac362f2f05792b1dfa35e93559383d5e",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/core/read_stub_index.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    },
+    {
+      "repository": "yvgude/lean-ctx",
+      "commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "path": "rust/src/server/compaction_sync.rs",
+      "sha256": "34210b8ec150b6f98a832d8bfae91f3372ab02199b04791aaf220d9ca5aa25a5",
+      "url": "https://github.com/yvgude/lean-ctx/blob/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57/rust/src/server/compaction_sync.rs",
+      "evidence_class": "independent reviewer pinned source inspection"
+    }
+  ],
+  "mutable_docs_note": "Official host docs were observed later on the same research date. Their exact access times and hashes are recorded separately; this is not an immutable claim about page contents at the release cutoff."
+}

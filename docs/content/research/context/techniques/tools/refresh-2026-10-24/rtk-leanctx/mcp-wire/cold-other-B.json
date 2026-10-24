@@ -1,0 +1,65 @@
+[
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {
+          "name": "jackin-research",
+          "version": "0.1"
+        }
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {
+          "tools": {
+            "listChanged": true
+          }
+        },
+        "serverInfo": {
+          "name": "lean-ctx",
+          "version": "3.11.4"
+        }
+      }
+    },
+    "elapsed_ms": 9.254
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/call",
+      "params": {
+        "name": "ctx_read",
+        "arguments": {
+          "path": "fixture.rs",
+          "mode": "auto"
+        }
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "--- AUTO CONTEXT ---\nPROJECT OVERVIEW  1 files  0 edges  scanned 0m ago\n\n/  fixture.rs\n\n\n--- END AUTO CONTEXT ---\n\nfixture.rs 300L cognitive\n// /workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-leanctx-cold/fixture-repo/fixture.rs\n§ function function_1 (L1-L15)\npub fn function_1() -> usize {\n    let v0 = 1;\n    let v1 = 2;\n    let v2 = 3;\n    let v3 = 4;\n    let v4 = 5;\n    let v5 = 6;\n    let v6 = 7;\n    let v7 = 8;\n    let v8 = 9;\n    let v9 = 10;\n    let v10 = 11;\n    let v11 = 12;\n    v0\n}\n§ function function_2 (L16-L30)\npub fn function_2() -> usize {\n    let v0 = 2;\n    let v1 = 3;\n    let v2 = 4;\n    let v3 = 5;\n    let v4 = 6;\n    let v5 = 7;\n    let v6 = 8;\n    let v7 = 9;\n    let v8 = 10;\n    let v9 = 11;\n    let v10 = 12;\n    let v11 = 13;\n    v0\n}\n§ function function_3 (L31-L45)\npub fn function_3() -> usize {\n    let v0 = 3;\n    let v1 = 4;\n    let v2 = 5;\n    let v3 = 6;\n    let v4 = 7;\n    let v5 = 8;\n    let v6 = 9;\n    let v7 = 10;\n    let v8 = 11;\n    let v9 = 12;\n    let v10 = 13;\n    let v11 = 14;\n    v0\n}\n§ function function_4 (L46-L60)\npub fn function_4() -> usize {\n    let v0 = 4;\n    let v1 = 5;\n    let v2 = 6;\n    let v3 = 7;\n    let v4 = 8;\n    let v5 = 9;\n    let v6 = 10;\n    let v7 = 11;\n    let v8 = 12;\n    let v9 = 13;\n    let v10 = 14;\n    let v11 = 15;\n    v0\n}\n§ function function_5 (L61-L75)\npub fn function_5() -> usize {\n    let v0 = 5;\n    let v1 = 6;\n    let v2 = 7;\n    let v3 = 8;\n    let v4 = 9;\n    let v5 = 10;\n    let v6 = 11;\n    let v7 = 12;\n    let v8 = 13;\n    let v9 = 14;\n    let v10 = 15;\n    let v11 = 16;\n    v0\n}\n§ function function_6 (L76-L90)\npub fn function_6() -> usize {\n    let v0 = 6;\n    let v1 = 7;\n    let v2 = 8;\n    let v3 = 9;\n    let v4 = 10;\n    let v5 = 11;\n    let v6 = 12;\n    let v7 = 13;\n    let v8 = 14;\n    let v9 = 15;\n    let v10 = 16;\n    let v11 = 17;\n    v0\n}\n§ function function_7 (L91-L105)\npub fn function_7() -> usize {\n    let v0 = 7;\n    let v1 = 8;\n    let v2 = 9;\n    let v3 = 10;\n    let v4 = 11;\n    let v5 = 12;\n    let v6 = 13;\n    let v7 = 14;\n    let v8 = 15;\n    let v9 = 16;\n    let v10 = 17;\n    let v11 = 18;\n    v0\n}\n7/20 chunks shown (770 tokens)\n[lean-ctx] full source: read \"/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-leanctx-cold/fixture-repo/fixture.rs\" directly (no MCP)  ·  or ctx_read(\"/workspace/scratch/1335a158b2a9/research/rtk-leanctx/probes-leanctx-cold/fixture-repo/fixture.rs\", mode=\"full\")"
+          }
+        ],
+        "isError": false,
+        "_meta": {
+          "cache_hint": "ephemeral"
+        }
+      }
+    },
+    "elapsed_ms": 351.738
+  }
+]

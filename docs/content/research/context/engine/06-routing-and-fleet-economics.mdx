@@ -1,81 +1,86 @@
 ---
-title: "06 — Routing and fleet economics (L4)"
-description: "Model, effort, delegation, and fleet-routing policy grounded in measured token, quota, latency, and quality constraints."
+title: "06 — Routing and fleet economics"
+description: "Fixed model and effort for compression, separate routing experiments, and provider-specific cache, quota, fleet and latency accounting."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Routing should occur at task boundaries, with explicit model and effort pins, because mid-session switches invalidate caches and inherited defaults are not a cost policy.
-The only levers that touch the thinking bucket (20% of dollars) live here, and the biggest multipliers in the dossier's composed stacks are routing multipliers. jackin❯ is the launcher, supervisor, and orchestrator — every technique in this layer is a config-generation or scheduling decision the runtime already has the authority to make.
+Snapshot **2026-10-24 01:15:00 UTC**. Keep the selected model and reasoning effort fixed in the principal compression comparison. Routing, effort control, cache warming, batch scheduling and self-hosted inference are separate interventions with their own authority and outcome evidence. A lower unit price or shorter request does not establish more accepted tasks.
 
 ## Question and scope
 
-When do model routing, delegation, and fleet-wide prefix reuse reduce accepted-task cost rather than shift it?
+How should Jackin account for provider billing, subscription windows, fleet reuse and latency without disguising policy changes as compression? What can a scheduler safely preserve or recommend before any automatic model-routing implementation exists?
 
 ## Method
 
-The analysis composes per-model token counts, cache behavior, delegation overhead, and acceptance gates; it rejects any route whose retries, cold context, or quality loss erase the apparent saving.
+Read Jackin's current session model/effort and account handling, then use the refreshed provider/economic chapters for live pricing and native feature contracts. Retire old fixed multipliers whose workload, model generation or authentication route no longer matches. No paid cache warmer, model-routing experiment or subscription session ran in this research.
 
 ## Findings
 
-### Effort policy
+### Existing policy ownership and fixed comparison
 
-- Per-role default effort written into the launch env/flags (`build_agent_command`), per-task-class overrides at session boundaries only (INV-9: mid-session `/effort` busts the cache; ~9-turn break-even).
-- Anchor evidence: Opus 4.5 at `medium` matched Sonnet 4.5's best SWE-bench at **−76% output tokens** (T1 vendor); `max → high` is negative-cost per vendor docs ("prone to overthinking"). Transfer to newer models is **unvalidated — the engine's own harness must produce the per-level effort curve**, which nobody (including the vendor) has published; `usage.output_tokens_details.thinking_tokens` now makes it measurable.
-- Subagent effort pins: exploration/read-only agents get explicit effort and model frontmatter. Inheritance is not a cost policy; generated pins are the stable way to keep exploration in the intended lane. Reverify built-in defaults before relying on them ([provider-sensitive claim verification](/research/context/techniques/28-drift-delta/)).
+The current <RepoFile path="crates/apps/jackin-capsule/src/session/agent_cmd.rs">session command builder</RepoFile> receives model, effort, auth mode and instance home from the launch specification; it sets model arguments for supported hosts and Claude/Codex lane environment. It clears ambient account/capability and host-folder variables before applying admitted state. This is existing policy transport, not an optimization router.
 
-### Model routing
+Compression arms must record the effective model and effort, not merely requested values. Some hosts have different model flags or incomplete launch paths; a registry entry is not proof that the intended policy reached the host. Pin agent version, role instructions, native tools, permissions, timeouts and auth route alongside model settings. [Current architecture](/research/context/engine/02-architecture/).
 
-- **Advisor-pattern first** (the only routing with published negative-cost numbers: Sonnet-main + Opus-advisor = +2.7pp SWE-bench Multilingual AND −11.9% cost/task, T1): role-level `advisorModel` wiring where the runtime supports it.
-- **Cheap-fleet pinning**: read-only fan-out to Haiku-tier (5-worker fan-out $2.75 → ~$0.20–0.28 class, −90–93% ESTIMATE); code-writing teammates stay Sonnet-tier (Haiku SWE-bench gap ~6pp — the quality-delta map). The advisor and fan-out evidence is Sonnet-4.5-era; per the spec's own per-model-validation rule, the harness re-produces these curves on the current lineup (Sonnet 5) before pinning fleet defaults.
-- **Tokenizer-aware routing** ([techniques 05 — Tokenizer arbitrage](/research/context/techniques/05-tokenizer-arbitrage/)/[techniques 10 — Model routing and tiered delegation](/research/context/techniques/10-model-routing-and-delegation/)): tokenizer families can produce materially different counts for the same corpus. The engine counts routed corpora against the exact target model before committing a route and never ports counts across families. Reverify model-family membership, price, and availability together ([provider-sensitive claim verification](/research/context/techniques/28-drift-delta/)).
-- Route changes happen at task/session boundaries via new sessions or subagents (cache is model-scoped); the orchestrator, not the operator, owns the boundary.
+### Effort and model-routing research
 
-### Spawn choreography (fleet cache)
+A separately authorized routing study may compare task-specific models or reasoning levels, but it must label those changes and grade the same complete requirements. Include escalation, retries, failed attempts and repair work in cost and latency. Routing based on model self-confidence, a lexical “difficulty” score or historical success alone is not established correctness.
 
-- **Stagger or pre-warm**: a cache entry exists only after the first response begins streaming — N simultaneous same-prefix spawns pay N full writes; await-first-then-fan-out cuts the wave's prefix cost ~3.8× at n=5 / ~8.6× at n=25. Pre-warm pattern for cold fleets: one `max_tokens:0`-class request, then fan out (25×30k prefix: ~$9.4 → ~$0.94 ESTIMATE).
-- **`excludeDynamicSections` enforced fleet-wide** with an SDK version floor: six per-container fields (~111 tokens: cwd, git flag, platform, …) placed ahead of the prefix otherwise un-share the entire ~28–34k system prefix across every container in the fleet — the single biggest hosted-fleet lever ([techniques 22 — Fleet, team & multi-tenant cache economics (hosted)](/research/context/techniques/22-fleet-and-multitenant-cache/)).
-- **Byte-identical prefix discipline**: same workspace, same model/effort/tool set across a fleet lane; any tool-definition change busts the whole fleet's prefix. Subagent-caching behavior is version-dependent (issue #29966 vs measured cavecrew writes) — the ledger audits `cache_read_input_tokens > 0` per subagent class rather than assuming.
-- Depth/fan-out caps: subagents nest 5 deep and agent teams run ≈7× tokens; the orchestrator enforces role-level caps and tears down idle teammates.
+Do not silently select cheaper subagents, shorten required verification or use a lower-effort result as a compression gain. An advisor/subagent can also add startup prefix cost, duplicated investigation, handoff loss and review work. Compare one-agent and delegated workflows only with declared treatment boundaries. [Routing/delegation techniques](/research/context/techniques/10-model-routing-and-delegation/).
 
-### Lane scheduler
+### Billing classes and economic comparisons
 
-Three lanes per capsule, chosen by human-attachment (which jackin❯ knows from the attach state):
+For API billing, compute each run from its actual provider/model/route-specific classes: fresh input, cache reads, cache writes by applicable lifetime, visible/reasoning output where exposed, tool/service charges and other fees. Avoid double-counting cached input when a provider reports it as a subset of total input. Separate observed bills from reconstructed estimates and preserve missing fields as unknown.
 
-| Lane | Pricing | Routed there |
-|---|---|---|
-| Interactive (human attached) | standard; fast mode only by the `v·t·s > Δ$` rule at session start (never mid-session — re-bills context at premium) | operator sessions |
-| Autonomous (no human blocked) | standard | agent-driven work |
-| Offline | **Batch API: 50% off everything, stacks with caching (0.05× batched cache reads)** | nightly sweeps, eval/harness runs, doc regen, subagent fleets that tolerate ≤24h |
+Use all-attempt cost per accepted task, with acceptance criteria fixed before running. A failed treatment consumes resources even if its final patch is discarded. Report both aggregate and task-weighted results; one enormous task should not hide regressions across many ordinary tasks. [Economics and measurement](/research/context/techniques/01-economics-and-measurement/).
 
-### Quota and budget governance
+Cache prices and lifetimes now vary substantially across current provider/model families and routes. A universal 0.1× cache-read multiplier or fixed 5× output/input ratio is no longer a design constant. Likewise, reducing a historically cheap cached prefix can cost more than leaving it stable if the rewrite invalidates reuse. The current [provider features](/research/context/techniques/12-provider-features/) and [caching](/research/context/techniques/07-caching-exploitation/) chapters own the dated price tables and contracts.
 
-- **Dual cost model per capsule auth mode** (headroom's auth-mode policy, driven by jackin❯ credential provisioning): API-key capsules optimize dollars; subscription capsules optimize **tasks per limit window**. The engine detects the active billing regime at launch instead of hard-coding plan, model, or headless-usage policy. Exact cap weights remain unpublished and therefore bounded ([provider-sensitive claim verification](/research/context/techniques/28-drift-delta/)).
-- The cap denominator is unpublished: the engine ships the **V2 prober** — regress token-class consumption against `anthropic-ratelimit-unified-*` header utilization (captured pass-through, `cache_control`-preserving) to fit per-account weights, closing the dossier's biggest INCOMPLETE.
-- **Governors that actually govern** ([techniques 25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/research/context/techniques/25-meta-cost-governance-and-online-quality/)): workspace rate limits and monthly credit caps (real stops), gateway-tier budgets where a gateway exists; the vendor "spend limit" is alert-only and treated as such. Degrade-don't-die: budget triggers downgrade model/effort on routine lanes, never on critical lanes, and never truncate via `max_tokens`.
-- Engine self-cost is metered in the same ledger (meta-governance: the meter must cost less than what it measures; `count_tokens` runs against its own separate RPM pool, batched, never inline per-step).
+### Fleet prefixes and spawn choreography
+
+Reuse a stable shared instruction/tool prefix only within a compatible provider cache and authorization scope. Put task-specific content after stable material when the host/provider contract permits it. Do not assume cache sharing across accounts, API projects, tenants, models, auth routes, regions or native hosts. A shared capsule or byte-identical prefix does not prove provider reuse.
+
+First establish observed cache hits and full-task outcomes. Deliberate warm-up calls incur cost and may require retaining request data or credentials. They are not passive telemetry. Caveman's current warmer is enabled by default even in its record mode, so a native/raw comparison must explicitly disable it. [Caveman component defaults](/research/context/tools/01-caveman-design/).
+
+Do not schedule unsolicited keep-alive requests or claim a “cold-spawn tax” from one old experiment. Native provider retention, eviction and project isolation must be verified. In a declared warming arm, charge the warm-up, idle expiry, failures and refreshes to all attempted tasks. A low `max_tokens` request is not inherently free.
+
+### Lanes, batching and subagents
+
+A proposed scheduler can preserve chosen role/model/effort, avoid duplicate identical owned setup and limit concurrent work to available local/provider capacity. It must not infer permission to move work between accounts or alter a user's subscription policy. Separate interactive latency-sensitive tasks from eligible asynchronous batch work; a batch discount is not a blanket interactive-agent optimization.
+
+Measure subagent startup, shared prefix hits, useful work, duplicate reads, parent synthesis and independent verification separately. Repetitions and parallel agents are not free task diversity. Deterministic task decomposition may help, but the old fixed depth/team-size/cheap-worker multipliers are not current performance evidence. [Fleet/multitenant cache](/research/context/techniques/22-fleet-and-multitenant-cache/), [multi-agent protocols](/research/context/techniques/11-multi-agent-protocols/).
+
+### Subscription and quota governance
+
+Subscription quota is not necessarily a public token-price function. Preserve actual provider/account plan, observed usage-window counters, accepted tasks per window, resets, throttling and user-visible limits. Keep missing quota conversion unknown rather than fitting arbitrary token weights and presenting them as provider policy.
+
+Budgets can stop or defer optional work and explain the reason. They cannot silently downgrade the model, bypass approvals, drop required tests or claim successful completion when a window expires. Account/provider errors should remain distinguishable from optimizer failures. Current usage snapshots are inputs to governance, not authoritative proof of task-level causality. [Subscription economics](/research/context/techniques/19-subscription-and-quota-economics/).
 
 ### Additional routing constraints
 
-- **Mutation-gain arithmetic**: any decision to rewrite a deep (already-cached) block uses headroom's *corrected* `net_mutation_gain`: the warm-case rewrite penalty applies over the saved tokens *plus* the downstream tail (`S+ΔT`), not `S` alone. Property tests ship with the formula.
-- **Learning never destabilizes prefixes**: any adaptive policy (mode selection, register level, effort tier) selects by **deterministic argmax over posterior means by default**; stochastic exploration (Thompson/ε-greedy) is opt-in per role — lean-ctx's #498 doctrine, adopted as an invariant: a learner that randomizes prompt-visible behavior is a cache-buster.
-- **Subscription write-quarantine**: capsules on subscription credentials consume learned recommendations read-only and never write into shared learning pools (headroom's `toin_read_only` pattern) — UX-bound traffic must not mutate policy trained for PAYG economics.
-- **Bandit spec baseline** (if/when adaptive mode selection ships): Beta(2,1) arms over (entropy, jaccard, budget) triples; success ⇔ savings-ratio &gt; 0.3 AND task completed; ×0.98 session-end decay floored at 1 — lean-ctx's ~300-line spec, adopted as the reference design rather than invented fresh.
+Semantic answer caches require an exact-enough task/source/configuration/authorization key and a fresh verification plan; similarity alone cannot establish that an old patch or answer remains correct. Do not reuse private context across tenants. Self-hosted KV-cache sharing and inference scheduling have different memory/throughput economics and do not imply hosted-provider bill reductions.
+
+Online routing policies or bandits require outcome delay, task mix, exploration cost, holdout protection and stable acceptance definitions. Arbitrary Beta priors, decay constants or automatic reward-only promotion are not an implementation plan. Keep the proposed optimization selector deterministic over approved qualification records until a separate adaptive-policy study justifies more.
 
 ## Implications for jackin❯
 
-These findings define the routing and fleet economics (l4) contract for jackin❯; any implementation must preserve the acceptance gates and boundaries above.
+The initial automatic context profile makes **no model or effort change**, no paid warm-up call and no provider proxy. Preserve native cache/compaction behavior and collect provenance. Separate routing/warming/batch arms can be added only with explicit authorization for their execution, effective-policy receipts and the same complete-task acceptance accounting.
+
+Where a future complex optimizer passes the canonical task-cost and latency gates, promote only the host/model/auth/content configuration actually tested. Subscription benefits require observed task/window evidence. Do not add independent-study percentages or instruction/filter/cache savings as if they were disjoint. [Canonical gates](/research/context/tools/07-evidence-and-claims/).
 
 ## Limitations and unknowns
 
-The design remains bounded by the evidence and acceptance gates above; volatile dependencies and provider behavior require revalidation before implementation.
+No current dataset in this work establishes the old fleet dollar forecasts, universal worker-price advantage, thinking-reduction percentage or quota weights. The source audit verifies policy transport, not current model availability in every account. Concrete current pricing and provider changes are separately dated in the linked chapters; all routing proposals here remain unimplemented.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Jackin source is pinned to `6e266406b49da2ab3c55355f3b7d33d1643ee6cd`; current provider facts are sourced in the linked economic/feature chapters. Historical numerical claims and their withdrawal/reconstruction status are mapped in the architecture coverage record.
 
 ## Related work
 
-- [Context engine dossier](/research/context/engine/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Token-optimization tools](/research/context/tools/)
+- [Measurement](/research/context/engine/08-measurement-and-verification/)
+- [Latency and time economics](/research/context/techniques/21-latency-and-time-economics/)
+- [Rollout](/research/context/engine/10-rollout-and-validation/)

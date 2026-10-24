@@ -1,116 +1,112 @@
 ---
 title: "07 — Evidence and acceptance protocol"
-description: "Current-release evidence eligibility, independent-study limits, open-data requirements, and a reproducible six-tool Jackin evaluation."
+description: "Audited benchmark denominators, current-release limits, reproduced public aggregates, and the proposed Jackin acceptance gates."
 ---
+
+**Research state:** Current
+
+Source cutoff: **2026-10-24T01:15:00Z**. Later local checks use frozen source. No paid provider trial or subscriber benchmark was run by this review.
 
 ## Summary
 
-Cutoff: **2026-09-23 UTC**. This review established current mechanisms, not a current six-way performance winner. No independent, release-matched accepted-task experiment for the six entries in the [register](/research/context/tools/08-current-release-register/) was established. A new release containing an old benchmark document does not make the experiment current.
+**There is no established six-product winner for Jackin.** Fresh source, package and executable evidence supports narrower integration decisions. External experiments are informative, including a release-matched RTK 1.0.1 study, but none measures the six current products under one representative, quality-controlled Jackin protocol.
+
+We reopened the original reports, inspected public runners and raw records where available, and reproduced inexpensive aggregations. Publication date, current repository commit, experiment date and tested product release are separate fields. Repetition improves precision on a task; it does not create additional task diversity.
 
 ## Question and scope
 
-What constitutes proof that an optimization helps Jackin, and which apparent validations fail that bar?
+Which claims survive scrutiny of their actual treatment, accounting, acceptance checks and denominator? What experiment would justify deploying a new optimizer?
 
-## Method
+## Method and executed evidence
 
-Prefer original studies, open task artifacts, tagged source, and release metadata. Require a matching tool version, configuration, host, model, reasoning level, workload, baseline, and grader before assigning a current performance claim. Older-release outcomes are excluded rather than projected forward. Their original sources can inform test design without entering the current ranking.
+The <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md">benchmark audit and reproduction record</RepoFile> contains exact repository pins, source hashes, extraction code, numeric rows, reproduced totals and unresolved provenance. It distinguishes first-party, competitor-owned, external controlled, observational and fixed-trajectory evidence. Sources outside the public repositories were reopened as original articles; unavailable raw trajectories remain unavailable.
 
-This refresh used direct repository and public-source reads. No delegated research runtime was available; no independent subagent review, paid model benchmark, complete upstream compilation, or installed-host conformance run is claimed.
+This refresh used delegated research and independent source review. RTK, LeanCTX, Headroom, LemonCrow, Caveman and Ponytail component checks are documented on their design pages. A successful parser, package build or lifecycle probe is implementation evidence. It does not establish a provider bill, acceptable patch or population latency distribution.
 
 ## Findings
 
-### Current evidence ledger
+### Current product evidence
 
-| Current candidate | Established by this review | Not established |
+| Candidate at cutoff | Established here | Still requires qualification |
 |---|---|---|
-| Caveman 2.7.0 | Release/component split, host changes, tagged license boundary | Current skill-only or full-stack accepted-task advantage |
-| RTK 0.49.0 | Released recall and parser corrections; CLI manifest | Current task savings or independent execution of its regression corpus |
-| LeanCTX 3.10.2 | Engine/facade source; preview API; withdrawn historical benchmarks | Current controlled outcome gain for selected reads or full runtime |
-| Ponytail 4.10.0 | Current policy and host adapter changes | Quality equivalence or savings for this release or Jackin's adaptation |
-| Headroom 0.38.0 | Real exported Rust transforms and feature boundary | Build portability, latency envelope, current library/proxy outcome benefit |
-| LemonCrow 0.7.4 | Engine-source presence, bounded lock, maintainer-confirmed worktree fix | Independent current runtime advantage or complete build reproduction |
+| Caveman 4.0.1 | Skill/runtime/license split and executed component checks | Current skill or full input-stack benefit on accepted Jackin tasks |
+| RTK 1.0.1 | Apache OSS filters versus BUSL engine/proxy; 286 engine unit tests plus integration test; released binary/filter/diff probes | Host integration, full shell equivalence and task economics |
+| LeanCTX 3.11.4 | Released MCP binary, schema overhead, scope/resume/compaction probes; Preview facade source | Instance-safe embedding, host exposure epochs and task economics |
+| Ponytail 5.3.2 | Actual delivered policy, code-map and activation/state probes | Full-plugin or Jackin-policy quality and savings |
+| Headroom 0.41.0 | Source/library/license boundary and focused conformance | Exact selected-transform versus full-proxy task comparison |
+| LemonCrow 0.8.0 | Public Runtime Lite boundary, explicit-root/worktree probes | Current Lite outcomes; historical full-runtime results do not qualify Lite |
 
-Sources: each current design page; [LeanCTX benchmark policy](https://github.com/yvgude/lean-ctx/blob/v3.10.2/BENCHMARKS.md), [LemonCrow benchmark provenance](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/BENCHMARKS.md).
+Release details and execution limits: [product register](/research/context/tools/08-current-release-register/) and the six design chapters.
 
-### External validation eligibility
+### External studies: useful findings and limits
 
-| Original source | What makes it useful | Why it does not qualify today's default |
+| Original evidence | Actual treatment and denominator | Interpretation |
 |---|---|---|
-| [JetBrains: RTK](https://blog.jetbrains.com/ai/2026/07/rtk-claude-code-token-savings/) | Paired task costs, effort sensitivity, reach and native-truncation analysis | Superseded RTK release and different host/model treatment |
-| [JetBrains: Ponytail](https://blog.jetbrains.com/ai/2026/07/ponytail-skill-claude-tested/) | Explicit policy activation and paired task outcomes | Superseded release; emulated delivery differs from some full plugin behaviors; not a security-equivalence test |
-| [JetBrains: Caveman](https://blog.jetbrains.com/ai/2026/07/speak-to-ai-agents-like-cavemen-tosave-tokens/) | Distinguishes visible output, cost, and outlier sensitivity | Skill experiment, not the current full input runtime or a six-way test |
-| [Quesma: RTK cost study](https://quesma.com/blog/does-rtk-make-ai-coding-cheaper/) | Independent repeated terminal-heavy tasks, cache-aware costs, task-weighting analysis | Tests a superseded RTK release; trajectories offered on request, not verified as an openly downloadable complete dataset here |
-| [Dasein benchmark adapter](https://github.com/daseinlabs/code-compression-bench/blob/master/arms/headroom.py) | Inspectable actual launch configuration | Explicit token-mode proxy; cannot qualify current selected-transform or cache-preserving treatment |
-| [LemonCrow benchmark repository](https://github.com/lemoncrow-lab/benchmarks) | Public author-produced data and trajectory/patch artifacts | First-party, historical treatment; openness is not independent replication |
+| [JetBrains RTK](https://blog.jetbrains.com/ai/2026/07/rtk-claude-code-token-savings/) | RTK 0.43.0, Claude Code 2.1.201, Sonnet 5 low/high, SkillsBench; 80 clean low-effort pairs; 425 billed trials including ancillary tests | Median paired cost +7.6% at low effort, +0.1% at high. Error exclusions, a setup incompatibility and native output truncation matter. No current-release transfer; raw complete trial corpus was not recovered. |
+| [JetBrains Ponytail](https://blog.jetbrains.com/ai/2026/07/ponytail-skill-claude-tested/) | Ponytail 4.8.4, Sonnet 5 medium, 80 pairs; emulated injection differs from full hooks/subagents | Median cost −10.3%; quality 6 better/9 worse/65 ties. Non-significance is not equivalence; security/accessibility were not the study's acceptance target. |
+| [JetBrains Caveman](https://blog.jetbrains.com/ai/2026/07/speak-to-ai-agents-like-cavemen-tosave-tokens/) | Historical skill, Sonnet 5 low, 82 complete pairs from 86 tasks | Output −8.5%; raw full-run cost +11.6%, dominated by a pricing-tier outlier. Neither a universal ceiling nor proof for today's input engine. |
+| [Quesma RTK](https://quesma.com/blog/does-rtk-make-ai-coding-cheaper/) | RTK 0.45.0; Terminal-Bench 2.1, five repeats, 1,740 attempts across Fable 5 and DeepSeek V4 Pro; different hosts | Spend per pass −3%/+7%, but equal-task average +1%/+17%. Four Fable task refusals excluded. Trajectories offered on request; not independently audited as a public complete dataset. |
+| [CodePointer](https://codepointer.dev/p/cutting-llm-token-costs-with-rtk) | Replay of 500 sampled historical sessions; Headroom transformed captured content, RTK used claimed command reduction factors, Caveman used a ten-prompt estimate | The combined 3.7% is a modeled counterfactual. It cannot establish changed agent trajectories, accepted-task savings or a universal upper bound. |
+| [ESL / zuwasi RTK](https://github.com/zuwasi/rtk-token-benchmark/tree/9803a553838ae59e66c31a55295dd57e56a94fe0) | **RTK 1.0.1**; 12 command fixtures, five local/proxy tokenizers; one constrained seven-answer task, three threads per arm for each host | Recomputed command totals show 87.3–88.0% payload reduction. Claude's answers improve from 17/21 to 21/21, while recorded cost rises from $1.4127 to $2.7772. Amp/Droid differ. One task and host truncation do not establish a general winner. |
 
-The JetBrains articles do not evaluate LemonCrow. A positive result for a policy does not validate another product that combines related ideas. A competitor-published benchmark can be useful evidence, but its interests, version pins, actual adapter, exclusions, and raw data need inspection. No superseded performance percentage is reused as a current estimate.
+The ESL task forces five shell calls and forbids native reads; PowerShell is disabled in Claude. Effort is not pinned and hosts use different default models. Its Claude tokenizer is an older public package and Gemini uses Gemma as a proxy. Large-file results compare full <code>cat</code> with a 150-line structural preview. Its stopped-on-error runner does not retain the aborted row in the final successful set. These are explicit treatment limits, not reasons to erase the useful current-release evidence.
 
-### Evidence classes
+### Competitor and first-party studies
 
-**T1:** release/source/API evidence, with executed conformance explicitly separated from inspection. **T2:** independent controlled current-release task outcomes. **T3:** observational reports or fixed-trajectory replay without a real alternative agent run. **T4:** first-party or competitor-owned experiments and claims. Openness, release match, and experimental control are separate dimensions, not one score.
+| Evidence | What we inspected or reproduced | Limit that changes the decision |
+|---|---|---|
+| [Dasein code-compression-bench](https://github.com/daseinlabs/code-compression-bench/tree/466077f002e6ef71fe5e8f24fc1c930edd4e3691) | 700 published rows, 100 tasks × seven arms; official SWE grader; reproduced baseline 57 solves/$147.301, RTK 54/$165.7721, Headroom 58/$212.1427, Caveman 58/$118.9869 | Operator sells the Parsec arm. July CLI version unrecorded; latest complete run only, earlier aborted/bug-affected attempts excluded. Headroom adapter explicitly uses token mode. Fermat rows were added in September under a newer harness/model alias; not same-day pairs. |
+| [Context Guru](https://github.com/rossoctl/context-guru/tree/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results) | Actual SWE/Terminal runners, per-task tables, July CSV, measurement-limit and September correction reports | Competitor-owned. Historical RTK 0.43 and Headroom with CCR/tool search disabled. Terminal arms had unequal time budgets, selected reruns and post-hoc baseline exclusions. Some competitor trial artifacts were pruned. Current presets differ. |
+| [Tokbench](https://github.com/Entelligentsia/tokbench/tree/6b7098f8b4df20715963d0895ae9a63fd5348dc5) | Reaggregated all 28 available run summaries; 14 designated matrix runs: native ×5 and each candidate ×3 | Author owns Forge harness/competing compression. **One bug-fix task**, GLM model mix on Ollama; RTK 0.42.2, LeanCTX 3.7.5, Headroom 0.23. Four voids retain 4,998,311 input tokens outside the matrix. Token counts are not observed subscription savings. |
+| [Structured Headroom benchmark](https://github.com/shreyassks/headroom-benchmarks/tree/1eb5a7ad1101697fbf82caaf8c3717e5e3604e1e) | LangGraph runner/metrics and MiniMax tier-1 graders inspected; pure BFCL checker exercised offline | Headline 37% compares proxy-estimated counterfactual cost with one compressed trajectory, not two live task arms. Tier-1 baseline always precedes compressed calls; cache-read tokens excluded from claimed input reduction. Checker accepted an entirely wrong function containing one expected numeric argument. No verified broad coding-quality result. |
+| [Caveman Honest Numbers](https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/docs/HONEST-NUMBERS.md) and [Wrap](https://github.com/JuliusBrussee/caveman/blob/d262ab3882952a59312ff3537cd86d894523c5ab/docs/WRAP-BENCHMARK.md) | Ten-prompt style snapshot versus concise control; six large fixture cases ×3 in August wrap report | Style snapshot predates current rules and lacks reviewed fidelity/usage evidence. Wrap's 33.2% is summed input classes, not weighted dollars; public raw harness absent. October engine 82.4% file shrink is a separate experiment. |
+| [Headroom tool-search study](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/benchmarks/tool_search_vs_native/README.md) | October 6, Claude Code 2.1.290/Sonnet 5.5; one pricing task, six fake MCP servers, short/long variants and fixes | First-party task-specific evidence: native search versus client/server/hot-tool modes. Three-repeat post-fix medians and 73 total runs do not represent 73 diverse tasks or qualify 0.41 universally. |
+| [LemonCrow published data](https://github.com/lemoncrow-lab/benchmarks/tree/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1) | Reproduced Verified 202/250→232/250 and $234.8433→$165.4507; Lite 49/50→48/50 and $19.8300→$17.5054 | First-party historical full runtime/persona. Verified manifest conflicts with observed model rows and narrative settings. September source changed during runs; exploration completion is ungraded. Terminal cost normalizes cache TTL and excludes unpriceable tasks. No current Runtime Lite or independent all-six winner. |
+| [OptScale Kompressor](https://wf.optscale.ai/blog/context-compression-coding-agents) | Competitor report, public replay/Harbor runner; Headroom 0.40 versus Kompressor 0.13; 6,255-output replay and GPT-5.5 Terminal-Bench comparison | 87 common tasks, uneven repetitions; seven Kompressor streaming failures excluded. Reported 22.7% cost reduction is not an all-attempt deployment estimate. Quality non-significance is not non-inferiority. Public complete billed-trial records were not located. |
 
-A replay can prove how many bytes a transform removes on that captured trajectory. It cannot prove what the agent would subsequently do. A health endpoint can prove a process responds, not that the intended transform ran. Source parity can prove agreement with an implementation, not semantic fidelity.
+Context Guru's [September correction](https://github.com/rossoctl/context-guru/blob/17314835e339674d1ae8e6ff6bfd43a6c534e7ca/docs/results/saved-usd-correction-2026-09.md) explicitly separates provider spend from estimated removed-content value. Its corrected 0.488% observational net-savings share remains a calibrated counterfactual, not a randomized alternative run. The July CSV contains nine baseline rows versus ten per candidate; the prose's uniform ten-task denominator is not fully present in that snapshot.
+
+LemonCrow's published Terminal baseline contains a material class-label mismatch. Across all **445** rows, `tasks.csv` cache tokens equal `turns.csv` cache **reads**, despite the README calling them read-plus-write. The turn-class totals are 174,804,998 prompt, 161,931,526 reads and 12,803,162 writes: ordinary input is **70,310**, not the advertised 12.87 million. That larger figure still includes writes. The claimed 98.6% “fresh input” reduction therefore has an inconsistent baseline label; we do not invent a replacement candidate ratio. The normalized-price script separately subtracts both classes, so its historical 86-task price scenario must be evaluated on its own scope. [Pinned task/turn data and definitions](https://github.com/lemoncrow-lab/benchmarks/tree/8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1/harbor/results/baseline).
+
+[LeanCTX issue 1305](https://github.com/yvgude/lean-ctx/issues/1305), issue 1319 and [Wavect](https://wavect.io/blog/lean-ctx-agency-experience/) are retained in the [LeanCTX chapter](/research/context/tools/04-leanctx-design/): historical negative results, proposed rather than executed remediation benchmarks, and observational agency tracking are different evidence. Literature including CAVEWOMAN, Notation Matters and TurnCost is reconciled in the [literature chapter](/research/context/techniques/24-fresh-literature-and-market-delta/); fixed-trace replay with simulated cache cannot prove a compressed agent would complete the task.
+
+### What these results establish
+
+Payload reduction, task cost, acceptance and subscription capacity are separate outcomes. A tool may shrink its eligible slice while increasing total traffic through extra turns, exact rereads, schemas or lost cache reuse. A native preview may already be smaller than an optimizer's structured summary. Conversely, a useful summary can improve an answer by fitting evidence under the host limit. Both directions occurred in inspected evidence.
+
+No old-release negative is automatically a present defect. No released fix erases the need to retest its exact path. No small positive study establishes zero regression probability. Openness improves auditability; commercial independence, representative tasks and release match still require their own checks.
 
 ## Implications for jackin❯
 
-### Reproducible arms
+### Canonical acceptance gates: proposed, not observed
 
-Hold the model and reasoning level fixed. Keep the actual upstream configurations distinct from the proposed Jackin integrations:
-
-| Arm | Treatment |
+| Gate | Requirement for a new complex optimizer |
 |---|---|
-| A | Native agent, no optimizer |
-| B | Actual Caveman skill only |
-| C | Actual Ponytail policy/plugin with recorded activation |
-| D | Restrained Jackin-native narration/reuse policy |
-| E | RTK current executable with exact command/retriever configuration |
-| F | Headroom selected Rust transforms, ML disabled initially |
-| G | Headroom full proxy in an explicitly recorded cache-oriented configuration |
-| H | LeanCTX restricted read/search/symbol/outline backend |
-| I | LemonCrow restricted code-search/read backend |
-| J | LemonCrow full upstream runtime/persona |
-| K | Caveman input stack only, subject to license and protocol approval |
+| Critical behavior | Zero observed new critical correctness, security, permission, provenance or recovery failures; any identified case blocks promotion until fixed and retested |
+| Representative acceptance | One-sided 95% lower confidence bound for candidate minus baseline acceptance above **−1 percentage point**, using task clusters and a predeclared plan |
+| Economics | **At least 20% lower all-attempt cost per accepted task**, with a **one-sided 95% upper confidence bound** on the candidate/baseline ratio at most **0.80**, using paired task clusters |
+| Time | Whole-task p95 latency at most **10% worse**, unless a distinct, explicitly accepted tradeoff profile applies; predeclare absolute cold/warm local budgets |
+| Operations | Demonstrated activation, cancellation, fallback, bounded resources, provenance and rollback in the actual host adapter |
 
-Start with conformance and smoke runs; do not run expensive task trials on a treatment that never activates. Add a LeanCTX embedding arm only after the process backend is understood. Combined arms follow individual qualification, not the reverse.
+The 1-point margin bounds statistical uncertainty; it is not permission knowingly to sacrifice correctness. The 20% threshold pays for a new optimizer's complexity and maintenance. Insufficient cost precision leaves that optimizer experimental or provisional; it does not waive the bound for default promotion. Existing native caching, bounded reads and other low-impact improvements receive proportionate conformance checks, without an arbitrary retroactive 20% hurdle.
 
-### Workloads and controls
+A 12–30-task pilot can reject broken candidates and estimate variance. It cannot establish a one-point non-inferiority claim by count alone. Confirmation requires a power calculation using expected paired discordance and representative task clusters. The previous 5-point/n=30 automatic qualification is withdrawn.
 
-Use representative Jackin Rust tasks, build/test diagnosis, multi-crate refactors, TUI correctness, TypeScript/Java investigation, configuration and docs changes, long-session continuation, and simultaneous worktrees. Pair starting commits and working-tree contents. Randomize arm order and repeat tasks; repetitions are clustered within a task, not additional independent task diversity.
+### Arms and measurements
 
-Record agent and optimizer commit/digest, profile and instruction hashes, native tool/schema surface, provider/auth route, model, reasoning effort, timeouts, permissions, index state, cache conditions, and machine resources. Include a truly cold first-use path and a warm repeated-use path. Preserve host-native truncation as the baseline: a deliberately bounded read must not be compared with an imaginary whole-file dump.
+Keep the selected model and effort fixed. Distinguish native control, actual Caveman skill, actual Ponytail plugin, Jackin's adapted policy, RTK OSS filter versus full hook, Headroom selected Rust transforms versus full proxy, LeanCTX restricted MCP versus facade, LemonCrow Lite restricted retrieval versus historical/full authorized runtime, and Caveman input engine. Test combinations only after their individual activation and fidelity gates.
 
-### Required measurements
+Randomize or interleave matched task starts; cross cold/warm index and cache conditions. Keep real native truncation, caching, discovery and edits in the baseline. Include failed setup, rejected patches, timeouts, retries, retrieval, auxiliary models and all child sessions in cost. Report observed invoice/credit outcomes separately from API rate estimates and local tokenizer counts.
 
-| Class | Required fields |
-|---|---|
-| Outcome | Hidden or predeclared acceptance tests, reviewer findings, requirement coverage, regressions |
-| Provider usage | Fresh input, cache reads, cache writes, output and reasoning where reported; retain raw receipts |
-| Local estimates | Tokenizer/version, measured bytes, estimate method, eligible share, actually transformed share |
-| Agent behavior | Turns, calls, retries, exact rereads, recovery requests, compactions, context-limit exits |
-| Self-cost | Instructions, tool schemas, discovery calls, recovery markers, auxiliary model calls |
-| Runtime | End-to-end time, transform p50/p95/p99, startup/index time, CPU/RAM/disk, parallel contention |
-| Reliability | Installation/activation failures, timeouts, cancellation, bypass correctness, retention and rollback |
-
-Do not double-count provider fields whose totals include reasoning or cached tokens. Unknown quota accounting remains unknown; do not derive subscription savings from a dollar-equivalent estimate.
-
-### Acceptance and open artifacts
-
-Primary metric: total spend across **all** attempts divided by accepted outcomes; alternatively accepted outcomes per observed subscription window, with separate token and latency reports. Include rejected patches and infrastructure failures. Publish exclusion reasons before aggregation and show both aggregate and task-weighted effects with confidence intervals.
-
-Predeclare the quality non-inferiority margin and statistical plan. A nonsignificant difference is not equivalence. The engine's proposed 20% improvement target is a design gate to test, not a fact about obtainable savings; do not lower a declared gate after seeing results. Correctness and isolation remain hard constraints regardless of the measured saving.
-
-Publish the harness revision, task list, sanitized inputs/configs, per-attempt usage, patches, grader outputs, traces needed to verify activation, and the aggregation code. Never publish credentials or unrestricted private source. A Rust-native harness can orchestrate existing official graders without rewriting those graders in Rust.
+Publish pinned binaries, config/instruction/schema hashes, host/auth/model/effort, task commits, accepted-outcome rubric, failure reasons, per-attempt receipts, patches, grader results, aggregation code, task-cluster intervals and sensitivity analyses. Unknown receipts stay unknown. The [validation harness](/research/context/techniques/16-validation-harness/) specifies workloads and staged experiments.
 
 ## Limitations and unknowns
 
-The review stopped after current release/API, licensing, key contradiction, host-boundary, and study-eligibility questions were covered. Remaining uncertainties require executable conformance or current controlled runs, not more popularity comparisons. No universal savings number is justified.
-
-## Sources
-
-Original studies, current tagged evidence, and method links are inline. The three JetBrains articles and Quesma were consulted as original experiment reports; secondary opinion summaries were not used as proof.
+This review reproduced public arithmetic and focused component behavior, not the underlying paid benchmark runs. Missing raw records, undocumented historical effort/settings and unpublished private runtimes remain evidence gaps. There is enough evidence to prioritize narrow experiments; no basis to claim a universal multiplier, a LemonCrow global win, or six-way quality equivalence.
 
 ## Related work
 
+- [Economics and receipt contracts](/research/context/techniques/01-economics-and-measurement/)
+- [Baseline reconciliation](/research/context/techniques/02-baseline-audit/)
 - [Jackin integration](/research/context/tools/11-jackin-integration/)
-- [Composition](/research/context/tools/06-combining/)
-- [Engine measurement](/research/context/engine/08-measurement-and-verification/)
+- [Composition](/research/context/techniques/15-composed-stacks/)

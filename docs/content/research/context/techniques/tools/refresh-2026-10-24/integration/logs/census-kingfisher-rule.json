@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Detected a LightOn Paradigm API key, which may expose enterprise LLM services to unauthorized access.",
+    "id": "betterleaks.lighton-paradigm-api-key",
+    "pattern": "(?i)(?:lighton|paradigm)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_\\-]{40,80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+    "confidence": "medium",
+    "examples": [],
+    "visible": true
+  }
+]

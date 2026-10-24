@@ -1,0 +1,66 @@
+{
+  "reviewer": "/root/rtk_leanctx",
+  "recorded_utc": "2026-10-24T08:19:46.581377+00:00",
+  "source_cutoff_utc": "2026-10-24T01:15:00Z",
+  "scope": "Independent critical review of Headroom and LemonCrow current runtime boundaries; bounded direct Python probes and release-package byte comparison.",
+  "reviewed_pages": [
+    {
+      "path": "docs/content/research/context/tools/02-headroom-design.mdx",
+      "sha256": "a16d26fe969cb3c7229c7c58404c193b111c140a201c7030225c98ad50ced57d",
+      "bytes": 17789
+    },
+    {
+      "path": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "sha256": "65b956eb9a860414debbeb8f0efae950fe631abd7277bd5d840c06e1b58e8d86",
+      "bytes": 19894
+    }
+  ],
+  "source_identity_record": "runtime-independent-review-results.json",
+  "findings": [
+    {
+      "id": "HR-LINES",
+      "disposition": "corroborated-source-only",
+      "finding": "Python line-aware reconstruction and Rust whitespace join differ; no ML inference executed."
+    },
+    {
+      "id": "HR-JSON",
+      "disposition": "independently-reproduced",
+      "finding": "Python verifier accepts duplicate-key last-value semantics; rejects float/integer mutation inside JSON string."
+    },
+    {
+      "id": "HR-SCALAR-TYPE",
+      "disposition": "new-bounded-hardening-item-accepted-by-product-author",
+      "finding": "Direct verifier accepts scalar metadata False changed to 0. No actual pipeline mutation demonstrated."
+    },
+    {
+      "id": "HR-CCR",
+      "disposition": "corroborated-source-only",
+      "finding": "Unit-returning storage write cannot acknowledge durable success. Original author owns missing-table executable result."
+    },
+    {
+      "id": "LEMON-PACKAGE",
+      "disposition": "independently-reproduced",
+      "finding": "87 packaged client files match immutable release source; metadata name differs from source project name."
+    },
+    {
+      "id": "LEMON-ROOTS",
+      "disposition": "corroborated-source-only",
+      "finding": "Lite dispatch routes each call with active=None; original author owns concurrency test execution."
+    },
+    {
+      "id": "LEMON-FAILED-SPILL",
+      "disposition": "independently-reproduced",
+      "finding": "Unusable spill directory from first direct presentation call still permits repeated-output unchanged marker with no spill. Fresh history and disabled delta avoid marker."
+    }
+  ],
+  "operations": [
+    "runtime-independent-review-operation.json",
+    "lemon-package-independent-operation.json"
+  ],
+  "provider_calls": 0,
+  "model_inference": 0,
+  "native_host_sessions": 0,
+  "rust_builds": 0,
+  "global_installations": 0,
+  "review_conclusion": "No new blocker for the already restricted component/retrieval proposals. Existing fidelity and recovery blockers remain; new scalar guard finding is a direct verifier boundary, not an observed pipeline/task failure."
+}

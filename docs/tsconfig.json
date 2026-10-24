@@ -1,6 +1,6 @@
 {
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": [".output", "node_modules"],
+  "exclude": [".output", "node_modules", "content/research/**/fixtures/**"],
   "compilerOptions": {
     "strict": true,
     "esModuleInterop": true,

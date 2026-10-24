@@ -1,369 +1,99 @@
 ---
 title: "19 — Subscription and quota economics"
-description: "How subscription limits, cache weighting, reset windows, routing, and overage change token-optimization priorities."
+description: "Current included limits, purchased credits, monthly API credits, billing routes, and task-level measurement without invented quota conversions."
 ---
 
 ## Summary
 
-Subscription work is constrained by rolling usage windows rather than API dollars until overage begins. This chapter builds the quota-weighted model, reorders the dossier's levers under it, and states what providers do not publish.
+**Research state:** Current
 
-> **INCOMPLETE — bounded.** Anthropic publishes the limit *structure* but neither (a) the **token
-> denominator** of a 5-hour or weekly window (how many token-equivalents = 100%) nor (b) the exact
-> **cache-read weighting against the subscription cap**. Both were confirmed unpublished across six
-> primary pages and three GitHub issues. What is delivered below: the official API
-> rule (which anchors the cap weight), the community-triangulated cap weight (T3, ~0.1×, with its
-> error bar), the measurable proxy (the `anthropic-ratelimit-unified-*` headers behind `/usage`), and
-> local consumption measurements. What is NOT delivered: a billable-unit-exact cap formula, because
-> Anthropic does not expose one.
+**Snapshot:** 2026-10-24 01:15 UTC. API dollars, purchased credits, included-plan utilization and elapsed time are distinct metrics. A token reduction does not establish the same percentage improvement in each. No account credentials, paid sessions or live quota counters were used in this workstream.
 
-**TL;DR**
+Current official sources invalidate two major old claims: eligible Claude Max/Team plans can provide a **separate monthly API-credit balance** for eligible API/SDK work, and Codex token-based credits have **no separate cache-write charge** even though newer OpenAI API-key calls do. Headless work cannot be classified by its command name alone.
 
-- **For a flat-rate subscriber the optimization target flips from "$ per task" to "tasks per cap."**
- Below the cap, dollars are sunk ($20 Pro / $100 Max-5x / $200 Max-20x); the
- only thing that matters is staying under the **rolling 5-hour** and **weekly** windows. Above the
- cap you spill into **usage credits billed at standard API rates** — so the core dossier's dollar model
- applies *only to the overage tail*. The right headline number is **% of the 5-hour/weekly window
- per task**, not $/task.
-- **The cap weighting is officially unpublished, but triangulated at ~0.1× for cache reads** by three
- independent community datasets (cnighswonger ~1,500 calls, ArkNill ~39k requests, seanGSISG ~179k
- calls), all April 2026, all on the *pre-doubling* window (T3; the estimate itself moved 0.0×→0.1×
- as data grew — treat as a best-estimate with a real error bar). The one **official** number is the
- API rule: cache reads are **excluded from ITPM** and billed at **10%** — but that governs the API
- limiter, *not* the Pro/Max cap, which is metered by a separate undocumented `unified-*` header
- family.
-- **The lever order re-sorts under quota.** Anthropic's own stated top cap-drains are (1) **expensive
- cache misses on stale large-context sessions** and (2) **request volume from subagents/plugins/
- background automation** — not cache-read weight. So under a cap the top levers become **prefix
- stability** (every miss is a 1×–2× write, not a 0.1× read), **a smaller context window**
- (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000`), and **request-volume discipline** — which *partially
- inverts* the core dossier's dollar-era praise for heavy subagent fan-out (subagents were ~61% of calls in
- one measured account).
-- **Current verified subscription facts:** 5-hour limits **doubled and the peak-hours throttle was removed** (announced and effective 2026-05-06); **all consumption counters were reset** — a sub-claim resting only on the morphllm.com secondary source (the announcement page does not mention counter resets); **Opus-specific caps were removed** in Opus 4.5 (Opus now draws the general weekly limit; Max keeps a separate *Sonnet-only* weekly limit); subscription context is **capped at 200K** even though the API exposes 1M; and the announced non-interactive Agent-SDK/headless billing split (separate API-rate credits, off the interactive cap) is **PAUSED** — "For now, nothing has changed: Claude Agent SDK, claude -p, and third-party app usage still draw from your subscription's usage limits" (support article 15036540).
-- **What you can measure vs. what you can't:** `/usage` reports session-% and weekly-% of cap
- (reading the `unified-*` headers); `ccusage`/`ccusage_go` report **dollars only and are blind to
- the cap**. Local JSONL transcripts give token classes (this account, the measurement: 33.5M cache-read /
- 7.0M write / 0.32M uncached, cache-read:I/O = 44.7:1) but **not** the `unified-*` headers, which
- are response headers a proxy must capture.
+## Billing routes at the snapshot
 
-Dollar arithmetic, where used, follows the core dossier's $22/day profile; the quota model is the governing axis for subscription work.
+| Route | What is charged or limited | What an optimizer may legitimately report |
+| --- | --- | --- |
+| Direct API key | Provider usage classes and applicable rates | Estimated/observed API cost with complete receipts |
+| Native host signed into a plan | Included usage windows and model/feature limits | Observed utilization change with uncertainty; no invented dollar equivalence |
+| Native host purchased usage credits | Published credit/rate card and account agreement | Actual credits and their applicable purchase cost |
+| Eligible Claude monthly API credits | Linked Console organization's eligible API usage | Credit consumed, remaining credit and any purchased-credit spill |
+| Enterprise negotiated route | Contract-specific rates, permissions and limits | Account-authorized contract values or explicitly unknown fields |
 
----
+Capture authentication route before launching a task. An environment API key can take precedence over subscription login, and a gateway can change billing ownership. Changing that route, enabling overage or linking an account is a user decision, not an optimization default.
 
-## Question and scope
+## Claude included plans and usage credits
 
-How do opaque subscription windows change the optimal techniques when accepted tasks per quota, not API dollars, is the binding metric?
+[Claude's current Pro/Max guidance](https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-or-max-plan) describes five-hour and weekly limits, shared usage across Claude applications, and additional model-specific limits such as Fable weekly usage. Long tasks, context, model and tool activity affect consumption. The public guidance does not publish a complete universal token-to-plan-percentage formula.
 
-## Method
+Current wrap-up allowance behavior can let an already-running operation finish after a window limit while still counting against weekly usage. This is not unlimited extra capacity. Availability and rollout details should be read from the current account surface; no account-specific entitlement was established here.
 
-The analysis separates published plan and limit facts from inferred quota weights, combines them with local usage-field measurements, and marks any denominator the provider does not expose as unknown.
+[Usage credits](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans) are an opt-in way to continue eligible Claude application usage after included limits. Spend caps, balances and auto-reload determine whether work continues. They are separate from the monthly API-credit benefit below. Do not enable extra usage, auto-reload or an alternative API key in response to a limit without authorization.
 
-## Findings
+The native [`/usage` documentation](https://code.claude.com/docs/en/costs) now distinguishes included usage and usage-credit rows. It can display a recent cached snapshot when the usage endpoint is rate-limited. An error fetching limits is not proof that inference is limited, and a displayed stale bar is not a fresh measurement.
 
-### The two billing modes, precisely
+## Claude monthly API credits: a new distinct benefit
 
-| | Subscription (Pro/Max) — the operator's mode | API key |
-|---|---|---|
-| Meter | Rolling **5-hour** session window + **weekly** window(s) | Per-token, pay-as-you-go |
-| Hard stop | Yes — wait for reset, or opt into credits | No |
-| Overage | **Usage credits at standard API rates** ($2,000/day redemption cap, optional monthly cap, auto-reload) | n/a |
-| Unit you optimize | **% of window per task** | $ per task (the core dossier) |
-| Cache-read treatment | Counts at cap weight **~0.1× (T3, unpublished)** | **Excluded from ITPM**, billed 10% (T1, official) |
-| Context window | **200K** (Pro/Max), 500K some Enterprise | up to 1M (Opus 4.5–4.8, Sonnet 4.6) |
-| Surfaces | **Pooled** across claude.ai + Claude Code + Desktop + IDE | per-key |
+The [current monthly-credit policy](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans) documents the following eligible balances:
 
-Sources: support.claude.com what-is-the-max-plan / how-usage-and-length-limits-work /
-models-usage-and-limits-in-claude-code / manage-extra-usage; platform.claude.com/docs/en/api/
-rate-limits. Plan prices: claude.com/pricing.
+| Plan | Monthly API credit | Scope |
+| --- | ---: | --- |
+| Max 5× | $100 | Linked Console organization |
+| Max 20× | $200 | Linked Console organization |
+| Team standard seat | $20 per seat | Team pool, subject to the documented $500 pool cap |
+| Team premium seat | $100 per seat | Same pool/cap |
+| Free, Pro, Enterprise | Not eligible for this benefit | Their other entitlements remain separate |
 
-The decisive consequence: **a dossier "saving" that only reduces dollars changes nothing for a
-subscriber who never hits the cap, and matters at API rates only on the overage tail.** What changes
-*tasks-per-cap* is anything that reduces the cap-weighted token mass — and the cap weights are not
-the dollar weights.
+The plan must have been active for at least seven days, and a user must opt in and link an eligible Console organization under the one-plan/one-organization rules. Credits expire monthly, do not roll over and are consumed before purchased credits. All eligible API keys in that linked organization share the balance; this is not a private per-process budget.
 
-### The cap-weighting question — official vs community vs unpublished
+Covered usage includes eligible API, Batch, Playground, Managed Agents and Agent SDK traffic. It excludes interactive Claude Code/Cowork/application extra usage and third-party cloud routes. The [SDK-with-plan guidance](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) distinguishes a self-run SDK or `claude -p` using the linked organization's API key from OAuth headless usage that still counts against plan limits. GitHub Action/IDE/Desktop-initiated usage can remain classified as Claude Code even with a headless flag.
 
-Three layers, kept strictly separate because they are different systems:
+Exhausting monthly credits can consume purchased credit or auto-reload when configured; otherwise eligible API usage stops. The benefit does not increase included application limits. Therefore “headless always stays inside the interactive cap” and “a subscription never subsidizes API usage” are both stale generalizations.
 
-1. **Official, published (T1) — but for the API limiter, not the cap.** Anthropic's rate-limits doc
- states that for most models only *uncached* input counts toward ITPM; `cache_creation_input_tokens`
- counts, `cache_read_input_tokens` does **not**, and reads bill at 10% of input. (platform.claude.com/
- docs/en/api/rate-limits.) This is the closest thing to a formula and it makes ~0.1×
- plausible for the cap — but it explicitly governs ITPM/OTPM/RPM, not the Pro/Max usage cap.
-2. **Community-triangulated (T3) — for the cap.** The subscription cap is reported through an
- undocumented `anthropic-ratelimit-unified-*` response-header family (5h-utilization, 7d-utilization,
- reset, overage-status…), reverse-engineered via transparent proxies. Fitting consumption to those
- headers, three independent datasets converge on **cache_read ≈ 0.1× input weight against the cap**
- (cnighswonger's cross-validated fit; ArkNill's 1.5–2.1M tokens/1%; seanGSISG's 1.62–1.72M/1%). The
- estimate moved from 0.0× to 0.1× between and as the dataset grew — so it is a
- best-estimate with a genuine error bar, not a constant. (github.com/anthropics/claude-code/issues/
- 45756 + github.com/ArkNill/claude-code-hidden-problem-analysis.)
-3. **Unpublished (INCOMPLETE).** The **token denominator** of a window is not published — Anthropic
- gives only relative multipliers (Pro 1×, Max 5×, Max 20×) and states limits "vary based on message
- length, conversation length, model, and effort level." Community estimates of ~18.8M token-equiv at
- 100% of the *old* Max-5× 5-hour window are account-specific and pre-doubling. There is **no official
- cache-read cap coefficient**, and #24147 has **never received an Anthropic-staff comment** (still
- open, last).
+## Codex / ChatGPT Work limits and credits
 
-**Honest synthesis:** model the cap as roughly `cache_read×0.1 + cache_creation×(1.25–2.0) +
-uncached_in×1.0 + output×(its OTPM weight)`, in *unknown* absolute units, where the denominator is
-opaque and shifted ~2× larger. The ratios are usable for *relative* lever comparison;
-absolute "tasks per cap" requires reading your own `unified-*` headers.
+The current [Codex pricing page](https://learn.chatgpt.com/docs/pricing) says ChatGPT Work and Codex share usage. Plus and Standard Business provide task-dependent five-hour message estimates; **Pro plans currently have no five-hour limit**, while weekly and other limits may apply. Estimates are not fixed message entitlements.
 
-### Where the cap actually goes — Anthropic's stated drains
+Token-based credits are a separate published metric. Current Standard rates per million tokens include:
 
-Boris Cherny (Anthropic) and the company's public statements (The Register/04-13)
-attribute the cap drain primarily to:
+| Model | Input credits | Cached-input credits | Output credits |
+| --- | ---: | ---: | ---: |
+| GPT-6 Astra | 250 | 25 | 1,250 |
+| GPT-6.1 Sol | 50 | 2.5 | 250 |
+| GPT-6 Sol | 50 | 5 | 250 |
+| GPT-6 Luna | 2.5 | 0.25 | 12.5 |
+| GPT-5.6 Sol | 100 | 10 | 500 |
 
-1. **Expensive cache *misses* on stale large-context sessions.** A 1M-context session that loses its
- cache on resume rewrites the whole prefix at 1.25–2× — the opposite of a 0.1× read. This makes the
- 1M context window, which the core dossier correctly noted has *no dollar premium* (00 graveyard #4), a
- **quota hazard**. Mitigation Anthropic itself suggests: `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000`.
-2. **Request volume** from subagents, plugins, skills, and background automation. In one measured
- account subagents were **61% of all calls** (seanGSISG). Each call carries its own prefix write.
+**Codex credit billing has no separate cache-write charge.** API-key usage follows API pricing, including GPT-5.6+ write classes. Do not apply the API calculator to a Codex credit receipt or use the credit rate card to infer opaque included-plan utilization.
 
-Neither headline drain is "cache reads weigh too much." Reads are cheap per token against the cap
-(~0.1×); they dominate the *bill line* only by sheer volume. **The cap killer is writes (misses) and
-call count.** That is the re-sort.
+Speed settings use different multipliers for different billing surfaces. Current Fast consumes included limits at 2.5× Standard but purchased/enterprise pay-as-you-go credits at 2×. Current GPT-6 Astra and GPT-6.1 Sol Ultrafast use 8× included limits and 6× paid credits. Speed is a separate latency/cost treatment; changing it is not context compression.
 
-### How the core dossier's levers re-rank under the quota metric
+Some Enterprise agreements remain on legacy cards or negotiated USD billing, and credit purchase discounts depend on the agreement. The model rate table alone cannot establish dollars per task. Current documentation also distinguishes model access through sign-in from API availability; retirement on one surface does not imply retirement on the other.
 
-| Lever (core-dossier view) | Dollar verdict (the core dossier) | Quota verdict (this file) | Change |
-|---|---|---|---|
-| Prefix stability / avoid cache busts (13 tech 1) | Good ($2.30–3.80/bust) | **Top lever** — every miss is a 1.25–2× write against the cap | ↑ promoted |
-| Smaller context window / earlier compaction | Modest $ (06, 12) | **Top lever** — `AUTO_COMPACT_WINDOW=400000` shrinks every miss | ↑ promoted |
-| Subagent fan-out (13 tech 4, 16) | "Cache arbitrage," cheap | **Quota-costly by volume** (≈61% of calls; each writes a prefix; pinned to 5m) | ↓ partial inversion |
-| 1M context window | No $ premium (graveyard #4) | **Quota hazard** on resume (miss = full rewrite) | ↓ inverted |
-| Cache-read volume (big context) | 32% of $ | Largest cap *line* but cheap per token (~0.1×) | ≈ same, reframed |
-| Thinking / effort (15) | 20% of $, top lever | Still counts (output/OTPM); effort still the dial | ≈ same |
-| 1h vs 5m TTL (13 tech 2) | NEGATIVE-COST on subscription | **Small win** (Cherny), and only *inside allowance* — overage reverts to 5m | ≈ same, caveated |
-| Register/style compression (10) | ~17% of $ ceiling | Touches only visible output share of OTPM — tiny against the cap | ↓ demoted |
+## How optimization priorities change
 
-The headline: **under a cap, input-architecture and request-count discipline dominate; style/output
-compression matters even less than in the dollar model**, because the cap is overwhelmingly an
-input-token (cache) phenomenon and visible output is a sliver of it.
+| Intervention | API/credit hypothesis | Included-plan hypothesis | Required evidence |
+| --- | --- | --- | --- |
+| Stable cache prefix | Lower read price and fewer costly writes where applicable | May reduce weighted usage | Native receipts or account observations; no universal percentage mapping |
+| Smaller useful tool results | Less repeated input and possibly fewer context limits | May improve task capacity | Quality/recovery and utilization measurements |
+| Earlier compaction | Less replay, more summary/reread expense | May avoid oversized turns but consume extra work | Long-task comparison at fixed model/effort |
+| More subagents | Parallel speed with duplicated setup/work | Can use shared limits faster | Whole-tree usage and accepted throughput |
+| Longer TTL / keepalive | Different write/read economics | Host may control or ignore TTL; weighting is not public | Supported configuration and observed billing route |
+| Lower model/effort | Different unit prices and capability | Different consumption and possibly entitlement | Separate optional treatment with non-inferiority tests |
 
----
+The old “prefix stability is the number-one quota lever because each miss costs exactly 1.25–2× cap weight” is not justified by public plan accounting. Those are API write multipliers. The old forced 400K compaction window, assumed free one-hour TTL inside every plan and fixed request-count overhead are withdrawn as general recommendations.
 
-### Q1. Adopt the quota metric — measure % of window per task, from the unified-* headers
+## Measure quota without inventing conversion
 
-You cannot optimize a cap you cannot see; `/usage` shows it, `ccusage` does not.
+For an authorized account experiment, record plan, model, effort, host version, connection mode, window reset times, concurrent background usage and fresh utilization snapshots around matched tasks. Record other Claude/ChatGPT surfaces sharing the balance. Use multiple tasks/windows because dashboard quantization, delayed updates and overlapping work can overwhelm a small difference.
 
-- **Evidence scope:** The core dossier's measurement file (01) and `ccusage` coverage (03 record 18)
- meter **dollars** from JSONL; neither reads the `unified-*` cap headers. "quota" is named in 13 but
- never instrumented.
-- **Layer:** infra / observability (the quota denominator).
-- **Mechanism:** Claude Code's built-in `/usage` reports current 5-hour-%, weekly-%, and extra-usage
- balance by reading the `anthropic-ratelimit-unified-*` response headers server-side. Community
- proxies (cnighswonger's `claude-code-cache-fix` v1.6.1+, ArkNill's `cc-relay`) capture the same
- headers per call into a log (`q5h_pct`, `q7d_pct`, `peak_hour`) so you can attribute cap-% to tasks.
- `ccusage`/`ccusage_go` compute dollar estimates from JSONL and are structurally **blind to the cap**.
-- **Expected savings:** none directly — it is the denominator that makes every other quota lever
- measurable. Without it, "tasks per cap" is unquantifiable (the INCOMPLETE above).
-- **Evidence tier:** T1 (`/usage` is shipped; headers observed by multiple proxies) + T3 (the proxy
- tools).
-- **Quality risk:** **NEUTRAL.** A transparent proxy that mis-handles `cache_control` could *harm*
- caching — verify it passes breakpoints through ([03 — Prior art and market scan](/research/context/techniques/03-prior-art-and-market-scan/) record 17).
-- **Availability:** CLAUDE-CODE-TODAY (`/usage`); GATEWAY for per-call header logging.
-- **Effort to adopt:** minutes (`/usage`); hours (proxy logging).
-- **Composability:** the denominator for Q2–Q7; pairs with the local JSONL decomposition (which gives
- token classes but not the cap headers).
-- **Validation protocol:** run `/usage` before and after a representative task; if you need per-task
- attribution, log `unified-*` headers via a pass-through proxy and confirm cache-read ratios are
- unchanged (the proxy isn't busting the cache).
+Report percentage points consumed per accepted task, tasks completed before the relevant limit, wall time including waiting, and any paid spill. Keep raw token/cost measurements alongside them. A token ratio alone cannot prove ten times as many included tasks; nor does opaque weighting prove that such a gain is impossible.
 
-### Q2. Prefix stability is the #1 quota lever — every miss is a 1.25–2× write against the cap
+When a limit is reached, distinguish waiting for reset, using already authorized paid credits and switching accounts/models. Only the first is a time trade without new billing authorization. Do not treat an undocumented header or reverse-engineered community weight as an official entitlement or stable API.
 
-Anthropic names cache misses as a top cap-drain; under quota, busting the prefix is far more costly
-than under dollars.
+## Decision and unknowns
 
-- **Evidence scope:** the core dossier covers the eight cache busters (13 tech 1) as a *dollar* lever
- ($2.30–3.80/bust); their **quota** cost (a miss converts a 0.1× read into a 1.25–2× write *against
- the cap*) is new, and Anthropic's own attribution of cap drain to misses is later evidence.
-- **Layer:** turn-structure / cache.
-- **Mechanism:** the cap weights writes at the write multiplier and reads at ~0.1×; so one avoided
- mid-session bust at a 150K prefix saves not ~$3 but ~150K × (1.25–2.0 − 0.1) cap-weighted tokens —
- the single largest discretionary cap event. Upstream bugs that mutate the prefix every turn (#47107
- git-status in system prompt; #47098 skills/CLAUDE.md regenerating) defeat *any* TTL; staying current
- and not toggling model/effort/fast-mode mid-task is the lever.
-- **Expected savings:** workload-dependent; on a cap, avoiding two casual busts/day at ~150K prefix is
- the dominant discretionary quota saving (far exceeds any style lever).
-- **Evidence tier:** T1 (cache multipliers + Anthropic's stated drain) + T3 (the ~0.1× read weight
- making the gap large).
-- **Quality risk:** **NEGATIVE-COST** — identical prompts, fewer misses.
-- **Availability:** CLAUDE-CODE-TODAY.
-- **Effort to adopt:** minutes (habit) — pick model+effort at session start; schedule `/compact` and
- upgrades at task boundaries; be on v2.1.108+.
-- **Composability:** precondition for Q3/Q5; same discipline as [13 — Infrastructure-level](/research/context/techniques/13-infrastructure-level/) tech 1 with a bigger payoff.
-- **Validation protocol:** log `unified-*` 5h-% across a session with vs without one mid-task `/model`
- round-trip; the bust turn shows a cap-% spike proportional to the prefix.
+Default to the user's existing route and selected model/effort. Show observed API cost or credit consumption accurately; show included utilization only when actually observed. Display unknown quota conversion as unknown, rather than manufacturing precision from API rates.
 
-### Q3. Shrink the context window to cut every miss — `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000`
-
-The cap cost of a miss scales with prefix size; a smaller working window shrinks every miss.
-
-- **Evidence scope:** Provider-specific environment control; the core dossier discusses
- compaction (06) but not the auto-compact window size as a quota knob, nor 1M-context as a hazard.
-- **Layer:** context architecture / cache.
-- **Mechanism:** Claude Code auto-compacts near the window limit; setting the window to 400K (vs the
- 1M ceiling) caps the prefix that a cache miss must rewrite, directly reducing cap-weighted
- `cache_creation` on every stale-session resume. On a Pro/Max subscription the context is already
- capped at 200K, so this primarily matters for API-key/large-context configurations and for keeping
- sessions from drifting to maximal prefixes.
-- **Expected savings:** quota-only; proportional to how often you resume stale large-context sessions.
- Anthropic ships it as the mitigation for the 1M-context cap hazard.
-- **Evidence tier:** T1 (Anthropic-suggested env var).
-- **Quality risk:** **RISKY if set too low** — aggressive compaction loses detail (06's QUALITY-TRADE).
- 400K is Anthropic's own suggested balance.
-- **Availability:** CLAUDE-CODE-TODAY (env var).
-- **Effort to adopt:** minutes.
-- **Composability:** stacks with Q2 (smaller prefix = cheaper miss) and /rewind-over-/compact (13).
-- **Validation protocol:** compare cap-% per task at 400K vs default window over a week of real work;
- watch for quality regressions on long-horizon tasks.
-
-### Q4. Request-volume discipline — subagent fan-out is quota-costly even when it is dollar-cheap
-
-The dollar model favors fan-out as cache arbitrage; against a cap, call count is itself a drain.
-
-- **Evidence scope:** **Quota-specific reinterpretation** of [13 — Infrastructure-level](/research/context/techniques/13-infrastructure-level/) tech 4 / 16. The dollar-model break-even is in
- dollars; the quota break-even is different because each spawn writes a prefix and subagents were
- ≈61% of calls in a measured account — a fact later.
-- **Layer:** turn-structure / multi-agent.
-- **Mechanism:** every subagent starts its own conversation and writes its own prefix (pinned to 5m
- TTL by design). Under dollars those writes are cheap and the quarantined reads save the main thread;
- under a cap, a swarm of subagents multiplies prefix writes and request count, and Anthropic names
- this as a top drain. The dollar-optimal fan-out can be quota-suboptimal.
-- **Expected savings:** negative if over-spawned; the lever is *restraint* — spawn when a subagent
- genuinely quarantines a large read it will reuse, not reflexively. Reuse the core dossier's break-even but
- re-evaluate it in cap-weighted tokens (writes count, reads at ~0.1×).
-- **Evidence tier:** T1 (subagent cache semantics) + T3 (the 61%-of-calls measurement).
-- **Quality risk:** **NEUTRAL-to-RISKY** — too few subagents re-rots the main context (12); too many
- drains the cap. The quality-safe point is the core dossier's, re-costed.
-- **Availability:** CLAUDE-CODE-TODAY.
-- **Effort to adopt:** minutes (judgment) — see also the fleet×quota interaction in 44.
-- **Composability:** interacts with Q2/Q5; the jackin❯ fleet case (N containers on one pooled cap) is
- in 44.
-- **Validation protocol:** measure cap-% for an inline vs heavily-delegated run of the same task; on a
- cap the heavily-delegated run may cost *more* despite lower dollars.
-
-### Q5. Force 1-hour TTL inside the allowance — small but real, and it vanishes in overage
-
-`ENABLE_PROMPT_CACHING_1H=1` keeps the main loop on 1h writes, but only while you are inside the
-included allowance.
-
-- **Evidence scope:** [13 — Infrastructure-level](/research/context/techniques/13-infrastructure-level/) tech 2 covers the 1h/5m split as a *dollar* lever; the
- quota-specific nuances (overage silently reverts to 5m; the v2.1.90/v2.1.106 bugs; Cherny's "small
- win" framing) are later and reframe it for the cap.
-- **Layer:** cache / config.
-- **Mechanism:** subscribers' main loop uses 1h TTL only while within allowance; crossing into Extra
- Usage flips the whole client to 5m (treated as pay-as-you-go). Two bugs forced eligible seats onto
- 5m (overage-latch, fixed v2.1.90; telemetry-disabled fallback, fixed v2.1.106). The env var is now
- respected; 1h wins only when content is re-read within the hour (the 5–60-min gap band), and even
- then Cherny calls the saving "nowhere near 12×… a small win."
-- **Expected savings:** small; real for multi-turn human coding with 5–60-min think/idle gaps; nil for
- one-shot or subagent calls.
-- **Evidence tier:** T1 (Anthropic email + Cherny comments).
-- **Quality risk:** **NEUTRAL.**
-- **Availability:** CLAUDE-CODE-TODAY (env var; be on v2.1.108+).
-- **Effort to adopt:** minutes.
-- **Composability:** pairs with Q2; pointless in overage (where Q6 governs).
-- **Validation protocol:** with the var set, confirm main-loop turns log `ephemeral_1h` in JSONL and
- cap-% across a gap-prone session is lower than with 5m.
-
-### Q6. The overage decision — wait for reset (free, costs time) vs spill to API-rate credits (costs $)
-
-At the cap you choose between wall-clock and dollars; this is where the quota model hands back to
-The core dossier's dollar model.
-
-- **Evidence scope:** The core dossier never models the cap edge because it never models the cap.
-- **Layer:** governance / scheduling.
-- **Mechanism:** at the 5-hour or weekly limit, you either wait for reset (5-hour = rolling, frees
- continuously; weekly = fixed account-anchored time) or enable usage credits and pay **standard API
- rates** for the spillover — at which point every core-dossier dollar lever (effort, routing, batch,
- Edit-diffs) applies to the overage tail. The $2,000/day redemption cap and optional monthly cap are
- the hard governors (see 47).
-- **Expected savings:** converts an otherwise-blocked session into either zero-dollar wait (time cost,
- see 43) or API-priced work (dollar cost, the core dossier model). The decision is a time-vs-dollar trade.
-- **Evidence tier:** T1 (extra-usage docs).
-- **Quality risk:** **NEUTRAL** (same models/prompts).
-- **Availability:** CLAUDE-CODE-TODAY (enable credits + caps).
-- **Effort to adopt:** minutes (set a monthly cap; decide the policy).
-- **Composability:** bridges to 43 (latency/time) and 47 (governance/spend caps).
-- **Validation protocol:** track how often you hit the cap and the marginal value of finishing now vs
- at reset; set the monthly credit cap to your tolerance.
-
-### Q7. Headless and SDK work remains inside the interactive cap
-
-Anthropic paused the announced usage split. The support article says, "For now, nothing has changed: Claude Agent SDK, claude -p, and third-party app usage still draw from your subscription's usage limits." The separate monthly credit is not live behavior; headless usage drains the same interactive cap. https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan
-
-- **Evidence scope:** current provider policy for non-interactive subscription usage.
-- **Layer:** infra / workload placement.
-- **Mechanism:** non-interactive usage through the Agent SDK, headless `claude -p`, Claude Code GitHub Actions, and third-party Agent-SDK apps draws from the subscription's existing usage limits.
-- **Expected savings:** none. Moving work to a headless or SDK path does not protect the interactive cap while the split remains paused.
-- **Evidence tier:** T1 (support.claude.com agent-SDK-with-your-plan).
-- **Quality risk:** **NEUTRAL.**
-- **Availability:** no off-cap subscription path is currently available.
-- **Effort to adopt:** none until provider policy changes.
-- **Composability:** batch and fleet execution still share the same subscription cap.
-- **Validation protocol:** confirm current policy in the provider support article before treating any non-interactive path as off-cap.
-
----
-
-### Local measurement (this account)
-
-From `~/.claude/projects/**/*.jsonl` (31 transcripts, 560 calls; method: parse `message.usage`):
-input-side **cache-read 82.0% / cache-write 17.2% / uncached 0.79%**; TTL split 5m 6.16M / 1h 0.85M;
-models Opus 4.8 (465 calls) + Haiku 4.5 (95 calls); effort=max. Cache-read:productive-I/O = **44.7:1**
-the measurement (vs #24147's 1,310:1 over 30 real-usage days — the ratio is workload- and
-duration-dependent; reads dominate either way). **What cannot be measured locally:** the
-`unified-*` cap headers are response headers absent from JSONL, so true cap-% requires `/usage` or a
-header-capturing proxy. This is the boundary of the INCOMPLETE.
-
-### Surprising findings
-
-- The most-cited "savings folklore" for subscribers (keepalive pingers, 1h-everywhere) is small or
- moot: Anthropic applies 1h selectively, calls the saving "a small win," and overage silently reverts
- to 5m. The real cap lever is *not busting the prefix and not over-spawning*.
-- The 1M context window — marketed as a capability and shown by the core dossier to carry **no dollar
- premium** — is a **quota hazard** because its cache misses are huge. The same feature is a win on
- one axis and a trap on another.
-- The popular dollar trackers (`ccusage`, `ccusage_go`) cannot see the cap at all; the only honest
- cap meter is `/usage` or a proxy that reads undocumented headers. The community had to reverse-
- engineer the limiter Anthropic's own client uses.
-- Anthropic has never replied on the canonical quota issue (#24147) in ~5 months; the substantive
- engagement is on sibling issues and remains short of a published formula.
-
-## Implications for jackin❯
-
-### Techniques
-
-For jackin❯, the subscription and quota economics evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.
-
-## Limitations and unknowns
-
-Quantitative conclusions are workload- and model-specific. Re-measure volatile provider inputs and validate transfers on representative jackin❯ tasks.
-
-## Sources
-
-| # | Number / claim | Source (access) |
-|---|---|---|
-| 1 | Pro $20/mo ($17 annual); Max-5x $100; Max-20x $200 | support.claude.com what-is-the-pro-plan / what-is-the-max-plan; claude.com/pricing |
-| 2 | 5-hour rolling session limit; weekly limit(s); Max has all-model + Sonnet-only weekly; fixed weekly reset anchor | support.claude.com what-is-the-max-plan / models-usage-and-limits-in-claude-code (5-hour reset evidenced by support article 12429409 — "session limits continue to reset every five hours" — and weekly structure by article 11049741; article 14552983 was restructured and no longer states window durations) |
-| 3 | Opus-specific caps removed (Opus 4.5); Opus draws general weekly limit | anthropic.com/news/claude-opus-4-5 |
-| 4 | 5-hour limits doubled + peak-hours throttle removed; counters reset | anthropic.com/news/higher-limits-spacex; morphllm.com/claude-code-usage-limits (doubling + throttle removal announced and effective 2026-05-06; the announcement page does not mention counter resets — that sub-claim rests only on the morphllm.com secondary source) |
-| 5 | Usage pooled across all surfaces; subscription context 200K (vs 1M API) | support.claude.com how-usage-and-length-limits-work |
-| 6 | Overage = usage credits at standard API rates; $2,000/day redemption cap; optional monthly cap + auto-reload | support.claude.com manage-extra-usage (the page is titled "Manage usage credits for paid Claude plans", article 12429409) |
-| 7 | API rule: cache_read excluded from ITPM, cache_creation counts, reads billed 10% (NOT the cap) | platform.claude.com/docs/en/api/rate-limits |
-| 8 | Cap cache_read weight ≈0.1× (3 datasets converge; moved 0.0→0.1×); cap metered via `anthropic-ratelimit-unified-*` headers (undocumented) | github.com/anthropics/claude-code/issues/45756; github.com/ArkNill/claude-code-hidden-problem-analysis |
-| 9 | 1h applied selectively to subscribers; subagents pinned 5m; 1h only inside allowance, overage→5m; ENABLE_PROMPT_CACHING_1H=1; "small win" | github.com/anthropics/claude-code/issues/46829 (bcherny; Anthropic email via lizthegrey) |
-| 10 | 1h-TTL bugs fixed v2.1.90 / v2.1.106 (be on v2.1.108+) | github.com/anthropics/claude-code/issues/46829 |
-| 11 | Anthropic drain attribution: stale large-context cache misses + subagent/plugin volume; subagents ≈61% of calls; AUTO_COMPACT_WINDOW=400000 | github.com/anthropics/claude-code/issues/45756; theregister.com |
-| 12 | #24147 still open, no Anthropic-staff comment ever | github.com/anthropics/claude-code/issues/24147 |
-| 13 | Agent-SDK/headless usage split off the cap into separate API-rate credit | support.claude.com use-the-claude-agent-sdk-with-your-claude-plan (split PAUSED — "For now, nothing has changed: Claude Agent SDK, claude -p, and third-party app usage still draw from your subscription's usage limits"; the separate credit is a suspended plan, not live behavior) |
-| 14 | Local: 33.5M read / 7.0M write / 0.32M uncached; 44.7:1 read:I/O; Opus 465 + Haiku 95 calls; effort=max | local JSONL scan `~/.claude/projects/**/*.jsonl` |
-| 15 | Subscription = Max (this environment) | `~/.claude/.credentials.json` → subscriptionType:max |
-
-## Related work
-
-- [Token-optimization techniques dossier](/research/context/techniques/)
-- [Validation harness](/research/context/techniques/16-validation-harness/)
-- [Context engine](/research/context/engine/)
+This refresh measured no personal account, reset window, subscription capacity or paid overage. Earlier account totals, undocumented multipliers, daily-cap anecdotes and universal headless/TTL claims are explicitly withdrawn as current evidence. The [source and coverage registers](/research/context/techniques/tools/#october-24-provider-evidence) preserve their dispositions and the current official replacements.

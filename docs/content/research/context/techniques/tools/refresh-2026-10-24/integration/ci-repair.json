@@ -1,0 +1,225 @@
+{
+  "recorded_utc": "2026-10-24T09:33:03.554777+00:00",
+  "failed_ci": {
+    "head": "f8201076af4bca7faf9f579f627e8056dbd7f83f",
+    "run_id": 40081824323,
+    "job_id": 120837286454,
+    "job_url": "https://github.com/jackin-project/jackin/actions/runs/40081824323/job/120837286454",
+    "conclusion": "failure",
+    "actual_cause": "Repository documentation audit rejected three bare repository filenames in late-main-overlay.md and verification.md; the referenced files exist, but these mentions require verifiable file links.",
+    "artifact": "logs/ci-f820-repository-links.log",
+    "log_sha256": "d1e19bac87422b6990d2e6bf5e6e928bd16fd3bb3ac75f84b81832a5ef3257e1",
+    "log_bytes": 57343,
+    "completed_run_record": "ci-f820-completed-run.json"
+  },
+  "timing_explanation": "The prior local repository-link check completed at08:47:52UTC. The late-main Markdown evidence was authored at08:49:28UTC, after that check. The58-file MDX/config manifest did not cover subsequently added evidence Markdown. The checker recursively reads filesystem Markdown/MDX; untracked-file status was not the cause.",
+  "repair": "Replaced the three bare filenames with explicit immutable links to the exact e737 source files. The56 MDX pages, two docs configuration files, researched implementation sources, findings and historical execution results are unchanged; the affected evidence Markdown references are corrected.",
+  "scope": "Earlier local passes retain their original scope; this CI failure is not hidden or relabeled. A complete documentation gate is now rerun on the assembled evidence tree, with final exact-head CI reported in the PR.",
+  "local_documentation_gate": {
+    "status": "all_seven_checks_passed_after_one_environment_repair",
+    "initial_attempt_passed": false,
+    "effective_gate_passed": true,
+    "started_utc": "2026-10-24T09:33:50.926664+00:00",
+    "completed_utc": "2026-10-24T09:36:22.399618+00:00",
+    "input_count": 699,
+    "input_scope": "All tracked repository Markdown/MDX plus two docs configuration files captured before the gate; late evidence Markdown is included. This is broader than the prior58-page/config correspondence. It is not a full dependency/environment manifest.",
+    "inputs_changed_during_gate": [],
+    "inputs_changed_at_collection": [],
+    "initial_result_record": "logs/ci-repair-local-results.json",
+    "retry_result_record": "logs/ci-repair-roadmap-retry.json",
+    "initial_exit_codes": [
+      0,
+      0,
+      0,
+      101,
+      0,
+      0,
+      0
+    ],
+    "retry_exit_code": 0,
+    "failure_explanation": "The initial roadmap audit was blocked before execution by a task-owned generated .rlib with mode0444 and two hardlinks. Only that target-directory entry was unlinked; the shared cached hardlink and all source/configuration were preserved. The identical roadmap command then passed. The six other checks had already passed.",
+    "outcomes": {
+      "static_routes": 1659,
+      "repository_links": "passed on complete evidence tree",
+      "roadmap_metadata_files": 18,
+      "research_metadata_files": 63,
+      "typescript": "passed",
+      "documentation_tests": 19,
+      "documentation_test_assertions": 32
+    },
+    "records": [
+      {
+        "artifact": "logs/ci-repair-local-results.json",
+        "sha256": "ddbec5eb5e7c086cd0ee9c8376052257c91e2ab7b2ba5d79ab75990894b8ba26",
+        "bytes": 126040,
+        "copy": "byte-identical command/result log"
+      },
+      {
+        "artifact": "logs/ci-repair-roadmap-retry.json",
+        "sha256": "0b451979ba522490c91d164be48ee16edfd60ece8c004f4272a5b7472e50ef9f",
+        "bytes": 1108,
+        "copy": "byte-identical command/result log"
+      },
+      {
+        "artifact": "logs/ci-repair-roadmap-retry.log",
+        "sha256": "5e103e34a3ce2664bbd2e064757968697c145ddd5ac81baef6f98320f07dd550",
+        "bytes": 551,
+        "copy": "byte-identical command/result log"
+      },
+      {
+        "artifact": "logs/ci-repair-local-1.log",
+        "sha256": "9d0d5dc7e8a124936d5c09a0baa23586c0a4a4a465b6f2ebc766bb3e289b71a8",
+        "bytes": 159,
+        "copy": "byte-identical command/result log"
+      },
+      {
+        "artifact": "logs/ci-repair-local-2.log",
+        "sha256": "98dcef43438ec1d6ee8660d7d7cc4aa4997676d98876c954a9ef45af51acbcf7",
+        "bytes": 350234,
+        "copy": "byte-identical command/result log"
+      },
+      {
+        "artifact": "logs/ci-repair-local-3.log",
+        "sha256": "401ba2ef82a047941a31fc71d2b5febb62732726e69ac94bbe0a67912eacef10",
+        "bytes": 467,
+        "copy": "byte-identical command/result log"
+      },
+      {
+        "artifact": "logs/ci-repair-local-4.log",
+        "sha256": "0a85dc50acc343a6ce092dda73f321fa1e950d870092cdb3640d650b20b38a93",
+        "bytes": 1140,
+        "copy": "byte-identical command/result log"
+      },
+      {
+        "artifact": "logs/ci-repair-local-5.log",
+        "sha256": "5d22082d04ca65704d2651fff721af73db70659f1da38e83feb65e8f10809783",
+        "bytes": 552,
+        "copy": "byte-identical command/result log"
+      },
+      {
+        "artifact": "logs/ci-repair-local-6.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "copy": "byte-identical command/result log"
+      },
+      {
+        "artifact": "logs/ci-repair-local-7.log",
+        "sha256": "4b90f94e60e1f171b2bdcf1298fa00e8e7d3c5d4b7bd7b8a6ee1d7a989f4661f",
+        "bytes": 1455,
+        "copy": "byte-identical command/result log"
+      }
+    ],
+    "post_gate_publication_prose_change": {
+      "recorded_utc": "2026-10-24T09:42:14.591959+00:00",
+      "changed_input": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/verification.md",
+      "reason": "Relabeled the08:46 pre-publication table as historical and linked this newer CI repair. This evidence-only summary edit is outside the58 MDX/config rendering inputs and is covered by the subsequent complete repository-link audit and required Markdown hook.",
+      "current_sha256": "69357c9f0ac255cbb32d613b0592ab8bfc9a61dfe7cfaa88859ba763db4ec26f"
+    }
+  },
+  "updated_utc": "2026-10-24T09:44:05.968403+00:00",
+  "rendered_verification": {
+    "scope": "New complete unchanged-script browser sweep against rebuilt HTML, plus exact-image correspondence and direct inspection of changed captures. Original architecture run remains historical.",
+    "recorded_utc": "2026-10-24T09:43:58.243211+00:00",
+    "execution_record": "ci-repair-render/execution-command.json",
+    "results": "ci-repair-render/rendered-pages-results.json",
+    "result_sha256": "0e8be575ec15bd709b69947f4efd3946eb3d6892383d69999a1971b7fdc718a6",
+    "artifact_manifest": "ci-repair-render/evidence-hashes.json",
+    "artifact_files": 8,
+    "page_viewport_checks": 112,
+    "internal_url_checks": 718,
+    "rendered_dom_fragment_checks": 657,
+    "scoped_sidebar_interactions": 2,
+    "errors": 0,
+    "source_config_inputs_unchanged": 58,
+    "representative_captures": 22,
+    "captures_byte_identical_to_prior_review": 20,
+    "changed_captures_directly_reviewed": 2,
+    "independent_mobile_review": "ci-repair-render/mobile-independent-review.json",
+    "comparison": "ci-repair-render/comparison.json",
+    "direct_visual_review": "ci-repair-render/visual-review.json",
+    "server_cleanup": "ci-repair-render/server-cleanup.json",
+    "artifact_origin": "The8 original scratch records and their inventory are copied byte-identically; screenshot binaries remain local intermediate evidence, with identities and review scope retained in the records.",
+    "limits": "Recorded DOM fields and selected screenshots, not full accessibility coverage or every interaction. Original58inputmanifest JSON normalization remains reversible."
+  },
+  "current_artifact_integrity": {
+    "checked_utc": "2026-10-24T09:43:58.250712+00:00",
+    "manifests": [
+      {
+        "manifest": "evaluation/artifact-sha256.json",
+        "manifest_sha256": "d4e37ed9b5bb9c0789e1637052a34281d3d77d30110ec6df246df4626a4cc3cd",
+        "files": 54,
+        "mismatches": 0
+      },
+      {
+        "manifest": "headroom-lemoncrow/artifact-sha256.json",
+        "manifest_sha256": "a622405ee367f3520f68dd11c3b56fe28d78f439569a9dc7c32212c8e734ddfe",
+        "files": 22,
+        "mismatches": 0
+      },
+      {
+        "manifest": "jackin-architecture/artifact-sha256.json",
+        "manifest_sha256": "acec8e9b888263b2bd04a0a0690ab5ea3ff2db1d865b0189e4c10dcf16122ebf",
+        "files": 56,
+        "mismatches": 0
+      },
+      {
+        "manifest": "integration/ci-repair-render/evidence-hashes.json",
+        "manifest_sha256": "0f2fb8a6d9e21046bd30358ebe35403257d8283301c8de22434aebc48b20b48f",
+        "files": 8,
+        "mismatches": 0
+      }
+    ],
+    "files": 140,
+    "mismatches": 0,
+    "history": "Earlier132-file and131-file records retain their original published-pack scopes; this new fourth manifest adds8 render records."
+  },
+  "final_post_evidence_repository_links": {
+    "command": [
+      "mbx",
+      "+1.99.1",
+      "xtask",
+      "docs",
+      "repo-links"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+    "started_utc": "2026-10-24T09:44:05.584512+00:00",
+    "finished_utc": "2026-10-24T09:44:05.968403+00:00",
+    "duration_seconds": 0.384,
+    "exit_code": 0,
+    "artifact": "logs/ci-repair-final-repo-links.log",
+    "log_sha256": "401ba2ef82a047941a31fc71d2b5febb62732726e69ac94bbe0a67912eacef10",
+    "scope": "Complete recursive documentation reference audit after the final evidence-Markdown label correction and curation of the new render records. All remaining evidence additions are JSON/log data; no later Markdown/MDX edit is planned."
+  },
+  "later_main_integration": {
+    "recorded_utc": "2026-10-24T09:49:06.963992+00:00",
+    "previous_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+    "main": "57612bbc595f91faf9ba89351d697aedb9fa2757",
+    "scope": "One upstream commit, four Rust files, sixteen comment/doc-comment additions and no deletions. Independently reviewed and coordinator verified; no executable statement, signature, Cargo/tooling, CI or documentation-site input change.",
+    "normal_merge": "Integrated by normal no-commit merge after a named task-owned stash preserved the28 staged research repair paths; every original research blob restored exactly and allfour inherited files match newmain.",
+    "source_audit_continuity": "None of the four files belongs to the original26-file audit or13-file c98 overlay. Earlier25/26 and13/13 findings keep their scope.",
+    "documentation_evidence_continuity": "All58 page/config inputs and all other previously checked documentation bytes are unchanged by this upstream update. The complete documentation gate and fresh browser sweep remain evidence for those unchanged inputs. The final required hook and remote CI will separately check the merged tree.",
+    "prior_repair_hook": "The pre-main repair tree33aa3231 passed the unmodified hook with28 scanned blobs. That successful historical hook is not substituted for the new merged-tree hook.",
+    "records": [
+      {
+        "artifact": "main-576-comment-overlay.json",
+        "sha256": "36507b31007a08058b2c7a19ca3092a6525d21be2281f8a940d41fbb5423a3cb",
+        "bytes": 4786
+      },
+      {
+        "artifact": "logs/comment-main-merge.json",
+        "sha256": "c088962806c0ce09620170a6dc603f055b012d2b34af9657562479b7fa211477",
+        "bytes": 6254
+      },
+      {
+        "artifact": "logs/ci-repair-pre-commit-before-main.json",
+        "sha256": "df173273eb534070c37c0a579d0926f3dcf39a2d6e33128c87dcdcc12b0de3c0",
+        "bytes": 1124
+      },
+      {
+        "artifact": "logs/ci-repair-pre-commit-before-main.log",
+        "sha256": "892a85b2bff5f3cd02c62d579237a1eceeeaadb73505b569918206f7851f8e00",
+        "bytes": 2851
+      }
+    ]
+  }
+}

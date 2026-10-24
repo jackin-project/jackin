@@ -1,0 +1,22 @@
+{
+  "executed_utc": "2026-10-24T02:05:01.851681+00:00",
+  "argv": [
+    "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo",
+    "metadata",
+    "--format-version",
+    "1",
+    "--offline"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/research/benchmarks/lean-linkage-probe",
+  "environment_overrides": {
+    "CARGO_HOME": "/workspace/scratch/1335a158b2a9/research/rtk-leanctx/cargo-lean",
+    "PATH": "/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin:/usr/local/bin:/usr/bin:/bin"
+  },
+  "exit_code": 101,
+  "classification": "Offline metadata resolution blocked by uncached rmcp; no download, compilation, or combined linkage conclusion.",
+  "executed_by": "/root/rtk_leanctx",
+  "reviewed_by": "/root/headroom_lemoncrow",
+  "manifest": "[package]\nname=\"lean-linkage-probe\"\nversion=\"0.0.0\"\nedition=\"2024\"\n[dependencies]\nlean-ctx-embed={path=\"/workspace/scratch/1335a158b2a9/research/rtk-leanctx/lean-ctx/rust/crates/lean-ctx-embed\"}\nrusqlite=\"=0.40.2\"\n",
+  "stdout": "",
+  "stderr": "error: no matching package named `rmcp` found\nlocation searched: crates.io index\nrequired by package `lean-ctx v3.11.4 (/workspace/scratch/1335a158b2a9/research/rtk-leanctx/lean-ctx/rust)`\n    ... which satisfies path dependency `lean-ctx` of package `lean-ctx-embed v0.1.0 (/workspace/scratch/1335a158b2a9/research/rtk-leanctx/lean-ctx/rust/crates/lean-ctx-embed)`\n    ... which satisfies path dependency `lean-ctx-embed` of package `lean-linkage-probe v0.0.0 (/workspace/scratch/1335a158b2a9/research/benchmarks/lean-linkage-probe)`\nnote: offline mode (via `--offline`) can sometimes cause surprising resolution failures\nhelp: if this error is too confusing you may wish to retry without `--offline`\n"
+}

@@ -1,0 +1,506 @@
+{
+  "snapshot_cutoff": "2026-10-24T01:15:00Z",
+  "access_date_utc": "2026-10-24",
+  "interpretation": "Release/package/source identities; publication dates are registry records, not benchmark execution dates. Unexecuted platform assets are not qualified by their presence.",
+  "products": [
+    {
+      "product": "headroom",
+      "repository": "headroomlabs-ai/headroom",
+      "repository_id": 1129940957,
+      "public": true,
+      "archived": false,
+      "default_branch": "main",
+      "release_url": "https://github.com/headroomlabs-ai/headroom/releases/tag/v0.41.0",
+      "release_id": 413248810,
+      "tag": "v0.41.0",
+      "commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "published_at": "2026-10-14T22:46:09Z",
+      "release_target_commitish": "76133cff59b71284399bf760c5578dc373c97231",
+      "license": "Apache-2.0 for inspected public source; separate optional/private/model/dependency terms need their own inventory",
+      "assets": [
+        {
+          "name": "headroom-ai-0.41.0.tgz",
+          "size": 97120,
+          "digest": "sha256:1352dcfd53c11a7014b921f941682cbcf888b5e79beb91dd02b46a48bab6d05a",
+          "created_at": "2026-10-14T23:15:07Z",
+          "updated_at": "2026-10-14T23:15:07Z",
+          "browser_download_url": "https://github.com/headroomlabs-ai/headroom/releases/download/v0.41.0/headroom-ai-0.41.0.tgz"
+        },
+        {
+          "name": "headroom-openclaw-0.41.0.tgz",
+          "size": 49706,
+          "digest": "sha256:cb686cc77a50910b4523e3eeb59e0533d69c6553366e8653e24df51a375f5af9",
+          "created_at": "2026-10-14T23:15:07Z",
+          "updated_at": "2026-10-14T23:15:07Z",
+          "browser_download_url": "https://github.com/headroomlabs-ai/headroom/releases/download/v0.41.0/headroom-openclaw-0.41.0.tgz"
+        },
+        {
+          "name": "headroom_ai-0.41.0-cp310-abi3-macosx_10_12_x86_64.whl",
+          "size": 15480090,
+          "digest": "sha256:7e48d3896846558aeb1d84be82469be5be8bb7efbd65601ea0650524460b067f",
+          "created_at": "2026-10-14T23:15:04Z",
+          "updated_at": "2026-10-14T23:15:06Z",
+          "browser_download_url": "https://github.com/headroomlabs-ai/headroom/releases/download/v0.41.0/headroom_ai-0.41.0-cp310-abi3-macosx_10_12_x86_64.whl"
+        },
+        {
+          "name": "headroom_ai-0.41.0-cp310-abi3-macosx_11_0_arm64.whl",
+          "size": 15471745,
+          "digest": "sha256:b842d36e161f9f0d1fc4d56de1d870e22a3e4d05c94d2272d9a306b38f406242",
+          "created_at": "2026-10-14T23:15:04Z",
+          "updated_at": "2026-10-14T23:15:05Z",
+          "browser_download_url": "https://github.com/headroomlabs-ai/headroom/releases/download/v0.41.0/headroom_ai-0.41.0-cp310-abi3-macosx_11_0_arm64.whl"
+        },
+        {
+          "name": "headroom_ai-0.41.0-cp310-abi3-manylinux_2_28_aarch64.whl",
+          "size": 15466560,
+          "digest": "sha256:04631aac0082605888594669bf0e983736321307c8c7f5306768e72d606a65ae",
+          "created_at": "2026-10-14T23:15:04Z",
+          "updated_at": "2026-10-14T23:15:05Z",
+          "browser_download_url": "https://github.com/headroomlabs-ai/headroom/releases/download/v0.41.0/headroom_ai-0.41.0-cp310-abi3-manylinux_2_28_aarch64.whl"
+        },
+        {
+          "name": "headroom_ai-0.41.0-cp310-abi3-manylinux_2_28_x86_64.whl",
+          "size": 15642717,
+          "digest": "sha256:f4db5e5119a73af3ed952b1c10caff2430831d899eb17d995a27574ae6e6b306",
+          "created_at": "2026-10-14T23:15:04Z",
+          "updated_at": "2026-10-14T23:15:05Z",
+          "browser_download_url": "https://github.com/headroomlabs-ai/headroom/releases/download/v0.41.0/headroom_ai-0.41.0-cp310-abi3-manylinux_2_28_x86_64.whl"
+        },
+        {
+          "name": "headroom_ai-0.41.0-cp310-abi3-win_amd64.whl",
+          "size": 15589221,
+          "digest": "sha256:18b43230c4dbbe9889fdb0863a7943059f4509fdf49ad20b19be394f2725db18",
+          "created_at": "2026-10-14T23:15:04Z",
+          "updated_at": "2026-10-14T23:15:05Z",
+          "browser_download_url": "https://github.com/headroomlabs-ai/headroom/releases/download/v0.41.0/headroom_ai-0.41.0-cp310-abi3-win_amd64.whl"
+        },
+        {
+          "name": "headroom_ai-0.41.0.tar.gz",
+          "size": 3336220,
+          "digest": "sha256:b24e6b33becfa767d7b82bce02b9ca06f05ce2a3daf1392f8e591947a9c5bf28",
+          "created_at": "2026-10-14T23:15:06Z",
+          "updated_at": "2026-10-14T23:15:06Z",
+          "browser_download_url": "https://github.com/headroomlabs-ai/headroom/releases/download/v0.41.0/headroom_ai-0.41.0.tar.gz"
+        }
+      ],
+      "pypi": {
+        "url": "https://pypi.org/pypi/headroom-ai/0.41.0/json",
+        "name": "headroom-ai",
+        "version": "0.41.0",
+        "requires_python": ">=3.10",
+        "artifacts": [
+          {
+            "filename": "headroom_ai-0.41.0-cp310-abi3-macosx_10_12_x86_64.whl",
+            "size": 15480090,
+            "digests": {
+              "blake2b_256": "f2d6b40067368fd2c195b382d4734290e4ed2c9aed5b7af10521b77739975b29",
+              "md5": "20cd32ff1379dd8d2043493f97443af7",
+              "sha256": "7e48d3896846558aeb1d84be82469be5be8bb7efbd65601ea0650524460b067f"
+            },
+            "upload_time_iso_8601": "2026-10-14T23:03:59.831945Z",
+            "url": "https://files.pythonhosted.org/packages/f2/d6/b40067368fd2c195b382d4734290e4ed2c9aed5b7af10521b77739975b29/headroom_ai-0.41.0-cp310-abi3-macosx_10_12_x86_64.whl"
+          },
+          {
+            "filename": "headroom_ai-0.41.0-cp310-abi3-macosx_11_0_arm64.whl",
+            "size": 15471745,
+            "digests": {
+              "blake2b_256": "d7378e62a5ecb8c433230586c3dbcbbbcfb519adb72e8a91d69f4dad5e0b3184",
+              "md5": "27adb40d29e7055d371fe4bef5901cae",
+              "sha256": "b842d36e161f9f0d1fc4d56de1d870e22a3e4d05c94d2272d9a306b38f406242"
+            },
+            "upload_time_iso_8601": "2026-10-14T23:04:03.357554Z",
+            "url": "https://files.pythonhosted.org/packages/d7/37/8e62a5ecb8c433230586c3dbcbbbcfb519adb72e8a91d69f4dad5e0b3184/headroom_ai-0.41.0-cp310-abi3-macosx_11_0_arm64.whl"
+          },
+          {
+            "filename": "headroom_ai-0.41.0-cp310-abi3-manylinux_2_28_aarch64.whl",
+            "size": 15466560,
+            "digests": {
+              "blake2b_256": "4fc513888daac2d77561423ffd6135c91f1a7799c66aba4232ad191fd2c44eed",
+              "md5": "869b58161e9c62d1714986b2f666d1c7",
+              "sha256": "04631aac0082605888594669bf0e983736321307c8c7f5306768e72d606a65ae"
+            },
+            "upload_time_iso_8601": "2026-10-14T23:04:06.357269Z",
+            "url": "https://files.pythonhosted.org/packages/4f/c5/13888daac2d77561423ffd6135c91f1a7799c66aba4232ad191fd2c44eed/headroom_ai-0.41.0-cp310-abi3-manylinux_2_28_aarch64.whl"
+          },
+          {
+            "filename": "headroom_ai-0.41.0-cp310-abi3-manylinux_2_28_x86_64.whl",
+            "size": 15642717,
+            "digests": {
+              "blake2b_256": "e537dfd7a44720ffb0d233384d1337efaf211e4e975dd5880fee57facb83c841",
+              "md5": "8a08ea2e5f41c7bbd4ec749b08c9475e",
+              "sha256": "f4db5e5119a73af3ed952b1c10caff2430831d899eb17d995a27574ae6e6b306"
+            },
+            "upload_time_iso_8601": "2026-10-14T23:04:09.218406Z",
+            "url": "https://files.pythonhosted.org/packages/e5/37/dfd7a44720ffb0d233384d1337efaf211e4e975dd5880fee57facb83c841/headroom_ai-0.41.0-cp310-abi3-manylinux_2_28_x86_64.whl"
+          },
+          {
+            "filename": "headroom_ai-0.41.0-cp310-abi3-win_amd64.whl",
+            "size": 15589221,
+            "digests": {
+              "blake2b_256": "24812d221e74e7e5fd43936a7142d697c9754f6c593f4192f8780ac2f785d02a",
+              "md5": "d486a2befdf81421c8fb0b9c4fbb550e",
+              "sha256": "18b43230c4dbbe9889fdb0863a7943059f4509fdf49ad20b19be394f2725db18"
+            },
+            "upload_time_iso_8601": "2026-10-14T23:04:13.456201Z",
+            "url": "https://files.pythonhosted.org/packages/24/81/2d221e74e7e5fd43936a7142d697c9754f6c593f4192f8780ac2f785d02a/headroom_ai-0.41.0-cp310-abi3-win_amd64.whl"
+          },
+          {
+            "filename": "headroom_ai-0.41.0.tar.gz",
+            "size": 3336220,
+            "digests": {
+              "blake2b_256": "0a60e8bf64510a80fe373b318c774e22398ea96f76440e7888454f9a4098bf69",
+              "md5": "ee1acbc12497205318e4976904ff4711",
+              "sha256": "b24e6b33becfa767d7b82bce02b9ca06f05ce2a3daf1392f8e591947a9c5bf28"
+            },
+            "upload_time_iso_8601": "2026-10-14T23:04:16.511316Z",
+            "url": "https://files.pythonhosted.org/packages/0a/60/e8bf64510a80fe373b318c774e22398ea96f76440e7888454f9a4098bf69/headroom_ai-0.41.0.tar.gz"
+          }
+        ]
+      },
+      "npm": [
+        {
+          "name": "headroom-ai",
+          "latest": {
+            "latest": "0.41.0"
+          },
+          "published_0.41.0": "2026-10-14T22:48:39.051Z",
+          "license": "Apache-2.0",
+          "dist": {
+            "shasum": "8666294da99c55b33bd02981c9801ba71560b3f7",
+            "tarball": "https://registry.npmjs.org/headroom-ai/-/headroom-ai-0.41.0.tgz",
+            "fileCount": 38,
+            "integrity": "sha512-PsKvvpPOrLqTWwalvR/xsor0Du9MzRiZitqzmD0xIoAyevgmVkhpLSiuXOkZL5bB9N6k9G7X1D5GoOjqfswjBA==",
+            "signatures": [
+              {
+                "sig": "MEQCIBRie/Ce8cKTM1nIDaeQr4vD6UwHP8TnN4VjzTGt3W7QAiAWFqq3gNa5wwma5efoUhHtYnb7TVISILhJ74JoCEDdFQ==",
+                "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+              },
+              {
+                "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+                "sig": "MEUCIQC4GDcCVTqYPjRUcx10PrxrFMzHxbdhYFrJyaYBr878cQIgO7I+wdc1AF2M9XPxVcC5vEpuTnjViaSw1FxsejHuNPs="
+              }
+            ],
+            "unpackedSize": 481316
+          }
+        },
+        {
+          "name": "headroom-opencode",
+          "latest": {
+            "latest": "0.41.0"
+          },
+          "published_0.41.0": "2026-10-14T22:48:43.261Z",
+          "license": "Apache-2.0",
+          "dist": {
+            "shasum": "fb27f4924fc2b0a6f60d62922df241666206c0df",
+            "tarball": "https://registry.npmjs.org/headroom-opencode/-/headroom-opencode-0.41.0.tgz",
+            "fileCount": 12,
+            "integrity": "sha512-D+lbpBanGur861ZHOvvioZSwMm6HoIbCGmoMzAgo737lj29FMwgzOOVEccppTf5c0UeEzNNHQ3BegOhkXtnLKw==",
+            "signatures": [
+              {
+                "sig": "MEUCIQC4J+uYlGytkcQeAdWLvh9FSnKSdWpoKB67JdsHB3I8owIgK3UFtuSaK8zbmy2u2SY3gFh7SL7LOXx6Ojp7Z+iLAag=",
+                "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+              },
+              {
+                "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+                "sig": "MEYCIQD89xnRkdcPQiSeifk2nzjAtlOXcL4rE9x7ZqbOXY1jCAIhAOzKPRfLV5dyb2EzKnVc3lv6h9m96TKTjDS/EWrieHyh"
+              }
+            ],
+            "unpackedSize": 1298793
+          }
+        },
+        {
+          "name": "headroom-openclaw",
+          "latest": {
+            "latest": "0.41.0"
+          },
+          "published_0.41.0": "2026-10-14T22:48:24.366Z",
+          "license": "Apache-2.0",
+          "dist": {
+            "shasum": "d4fa24d24b7d0b502830d0567b111c0ae289f1f4",
+            "tarball": "https://registry.npmjs.org/headroom-openclaw/-/headroom-openclaw-0.41.0.tgz",
+            "fileCount": 13,
+            "integrity": "sha512-itDgR+dwvd2rvEb7FM2u4YjlteiAzZfZrLs7jGE7Feu+/lbmBZf97r7SY3P53hgT+OcheBkQquK2gFvDx6vTEA==",
+            "signatures": [
+              {
+                "sig": "MEYCIQCqljpd2sGi1cTZ7CN8Pt2GtGRg+F6+aYbV29h4vlU+7AIhAIYUDhGA+Y9o/2Id8iwEBw5BY5riXfGLP+ifTAvfN4MM",
+                "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+              },
+              {
+                "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+                "sig": "MEUCIQCr6dmLfJS6UxD3K4d/Zt7v9uwo1H4SrhRTzdLyk+t9TwIgdLsYCHK56FQLlhaTbkc7bVpXV0PwoM/G5tJkEI7+5MI="
+              }
+            ],
+            "unpackedSize": 201431
+          }
+        }
+      ],
+      "rust": {
+        "internal_crate_version": "0.1.0",
+        "headroom_core_crates_io_query": "https://crates.io/api/v1/crates/headroom-core",
+        "query_result": "HTTP 404",
+        "declared_workspace_rust_version": "1.80",
+        "rust_toolchain_file": "1.95.0",
+        "executed_compiler": "1.99.1",
+        "resolved_tree_sitter_msrv": "1.90",
+        "actual_minimum_not_tested": true
+      },
+      "tested_wheel": {
+        "filename": "headroom_ai-0.41.0-cp310-abi3-manylinux_2_28_x86_64.whl",
+        "sha256": "f4db5e5119a73af3ed952b1c10caff2430831d899eb17d995a27574ae6e6b306",
+        "digest_matches_pypi_and_github": true
+      }
+    },
+    {
+      "product": "lemoncrow",
+      "repository": "lemoncrow-lab/lemoncrow",
+      "repository_id": 1226854189,
+      "public": true,
+      "archived": false,
+      "default_branch": "main",
+      "release_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.8.0",
+      "release_id": 417449666,
+      "tag": "v0.8.0",
+      "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "published_at": "2026-10-19T15:18:45Z",
+      "release_target_commitish": "main",
+      "license": "Apache-2.0 for inspected public source; separate optional/private/model/dependency terms need their own inventory",
+      "assets": [
+        {
+          "name": "engine_install.sh",
+          "size": 30216,
+          "digest": "sha256:2f53afd664af0aa86d83bef1c0e0061b7afa7b3be207eadfaa541957cb9e1ae2",
+          "created_at": "2026-10-19T15:18:33Z",
+          "updated_at": "2026-10-19T15:18:33Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/engine_install.sh"
+        },
+        {
+          "name": "hosted.sh",
+          "size": 13905,
+          "digest": "sha256:40407b5aef063ffc35b443e45b73beea3b70600ea40aff44c8ee2b8e3485f101",
+          "created_at": "2026-10-19T15:18:33Z",
+          "updated_at": "2026-10-19T15:18:33Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/hosted.sh"
+        },
+        {
+          "name": "install.sh",
+          "size": 31965,
+          "digest": "sha256:71140b88b69d44df5297987628188f0bf309242635240a5df25035ffae003504",
+          "created_at": "2026-10-19T15:20:16Z",
+          "updated_at": "2026-10-19T15:20:16Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/install.sh"
+        },
+        {
+          "name": "lemoncrow-distribution-darwin-arm64.tar.gz",
+          "size": 68941149,
+          "digest": "sha256:f8cf1cd0756d49fafc7d9e5bb55c7c1c555ed8183d2c98a633db7bbf8b871799",
+          "created_at": "2026-10-19T15:18:33Z",
+          "updated_at": "2026-10-19T15:18:41Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-distribution-darwin-arm64.tar.gz"
+        },
+        {
+          "name": "lemoncrow-distribution-darwin-arm64.tar.gz.sha256",
+          "size": 65,
+          "digest": "sha256:2b8d1bacb1da1ecdb7a69e2e4ca06f1fffdab231f54c93b3a963af0056814843",
+          "created_at": "2026-10-19T15:18:33Z",
+          "updated_at": "2026-10-19T15:18:33Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-distribution-darwin-arm64.tar.gz.sha256"
+        },
+        {
+          "name": "lemoncrow-distribution-darwin-x86_64.tar.gz",
+          "size": 68528183,
+          "digest": "sha256:9a7bdd0d3524b763e88106d77f6c0cd3af8f19dc02be9d50681eba0c7d2d9bcc",
+          "created_at": "2026-10-19T15:18:34Z",
+          "updated_at": "2026-10-19T15:18:43Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-distribution-darwin-x86_64.tar.gz"
+        },
+        {
+          "name": "lemoncrow-distribution-darwin-x86_64.tar.gz.sha256",
+          "size": 65,
+          "digest": "sha256:fc355271cf8d473321191e699faac646de257c258a88732e3236300d36df9d1d",
+          "created_at": "2026-10-19T15:18:34Z",
+          "updated_at": "2026-10-19T15:18:34Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-distribution-darwin-x86_64.tar.gz.sha256"
+        },
+        {
+          "name": "lemoncrow-distribution-linux-aarch64.tar.gz",
+          "size": 60999109,
+          "digest": "sha256:4bdf7a38201452479d69d690861e0b239f4fef4225ec8677de59862cf77a1c47",
+          "created_at": "2026-10-19T15:18:34Z",
+          "updated_at": "2026-10-19T15:18:43Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-distribution-linux-aarch64.tar.gz"
+        },
+        {
+          "name": "lemoncrow-distribution-linux-aarch64.tar.gz.sha256",
+          "size": 65,
+          "digest": "sha256:9312204c5acdd26e50c154982ffca78415c2df3612c310c0cdf78c89d7d7d35a",
+          "created_at": "2026-10-19T15:18:34Z",
+          "updated_at": "2026-10-19T15:18:34Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-distribution-linux-aarch64.tar.gz.sha256"
+        },
+        {
+          "name": "lemoncrow-distribution-linux-x86_64.tar.gz",
+          "size": 62699567,
+          "digest": "sha256:0b5d7eff918a9b1f79df61b0b399f89659270ce4c63714ccc3089407603c2728",
+          "created_at": "2026-10-19T15:18:35Z",
+          "updated_at": "2026-10-19T15:18:43Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-distribution-linux-x86_64.tar.gz"
+        },
+        {
+          "name": "lemoncrow-distribution-linux-x86_64.tar.gz.sha256",
+          "size": 65,
+          "digest": "sha256:10cfbbb1b871ecd68d2fc2791e1d67723b74b9927c7afe1221e60b4413bb3fae",
+          "created_at": "2026-10-19T15:18:35Z",
+          "updated_at": "2026-10-19T15:18:35Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-distribution-linux-x86_64.tar.gz.sha256"
+        },
+        {
+          "name": "lemoncrow-review-client.tar.gz",
+          "size": 93782,
+          "digest": "sha256:825be66e3c8afbb0bb4fb106acaabc40f397d85e6c2970ef3eca309b5cad48be",
+          "created_at": "2026-10-19T15:18:36Z",
+          "updated_at": "2026-10-19T15:18:36Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-review-client.tar.gz"
+        },
+        {
+          "name": "lemoncrow-review-client.tar.gz.sha256",
+          "size": 65,
+          "digest": "sha256:cacec33745e01a0076cec1043c62d37ad51c386ebc29ec196c49bdf090fbec09",
+          "created_at": "2026-10-19T15:18:37Z",
+          "updated_at": "2026-10-19T15:18:38Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-review-client.tar.gz.sha256"
+        },
+        {
+          "name": "lemoncrow-review-engine.tar.gz",
+          "size": 18839475,
+          "digest": "sha256:6017e630fcc634b0a2e61320d00a052606e6e70af2a0cb42698624bab094a390",
+          "created_at": "2026-10-19T15:18:39Z",
+          "updated_at": "2026-10-19T15:18:41Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-review-engine.tar.gz"
+        },
+        {
+          "name": "lemoncrow-review-engine.tar.gz.sha256",
+          "size": 65,
+          "digest": "sha256:84e491312719d4da80c87dcb659fb5cc161040a798478b945a47e5932d8fecae",
+          "created_at": "2026-10-19T15:18:42Z",
+          "updated_at": "2026-10-19T15:18:42Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-review-engine.tar.gz.sha256"
+        },
+        {
+          "name": "lemoncrow-runtime-client.tar.gz",
+          "size": 421254,
+          "digest": "sha256:73bb7c7d062f1f622dff50a851d36a71b1c8efa9ebebd7017d1d09cf81529e94",
+          "created_at": "2026-10-19T15:18:42Z",
+          "updated_at": "2026-10-19T15:18:42Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-runtime-client.tar.gz"
+        },
+        {
+          "name": "lemoncrow-runtime-client.tar.gz.sha256",
+          "size": 65,
+          "digest": "sha256:8e44e52a67efbb3cb8b2df951fe15436c8e4d9dbe2ed48fbafc8ffdc637f0682",
+          "created_at": "2026-10-19T15:18:42Z",
+          "updated_at": "2026-10-19T15:18:43Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/lemoncrow-runtime-client.tar.gz.sha256"
+        },
+        {
+          "name": "local_review.sh",
+          "size": 10881,
+          "digest": "sha256:617138d1ab271bde5fab369d4a013b4cf9218af4e8572d03be7bc6575461a57d",
+          "created_at": "2026-10-19T15:18:42Z",
+          "updated_at": "2026-10-19T15:18:43Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/local_review.sh"
+        },
+        {
+          "name": "local_runtime.sh",
+          "size": 11721,
+          "digest": "sha256:e785d96da1c438f7b6d3ccc0a3f14eda8641c9a5a51ee86cf5855112f9dd9f70",
+          "created_at": "2026-10-19T15:18:43Z",
+          "updated_at": "2026-10-19T15:18:43Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/local_runtime.sh"
+        },
+        {
+          "name": "local_server.sh",
+          "size": 41388,
+          "digest": "sha256:aca59b09e119b53d386df80e7a378ada14aa5a97c94bbe979dfaba2b121f9925",
+          "created_at": "2026-10-19T15:18:43Z",
+          "updated_at": "2026-10-19T15:18:44Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/local_server.sh"
+        },
+        {
+          "name": "review_engine.sh",
+          "size": 9569,
+          "digest": "sha256:7481ffb702ab2e17024527c2f3824520ed58c53d6bf4996355574db83125d1bf",
+          "created_at": "2026-10-19T15:18:43Z",
+          "updated_at": "2026-10-19T15:18:44Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/review_engine.sh"
+        },
+        {
+          "name": "runtime.sh",
+          "size": 16329,
+          "digest": "sha256:f6d9e7db46427d68a0e923824280e29052a690003510c051a35671e91210aa1a",
+          "created_at": "2026-10-19T15:18:43Z",
+          "updated_at": "2026-10-19T15:18:44Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/runtime.sh"
+        },
+        {
+          "name": "sessions.sh",
+          "size": 14196,
+          "digest": "sha256:0e415d6d926e84dd4161a30a073d17dce5351986225e40f5f51f2e618a0e162a",
+          "created_at": "2026-10-19T15:18:44Z",
+          "updated_at": "2026-10-19T15:18:44Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/sessions.sh"
+        },
+        {
+          "name": "uninstall.sh",
+          "size": 21052,
+          "digest": "sha256:fc53e183bc60f65456945a3b48aafb713ed9f874823992329f4f7f62feef5025",
+          "created_at": "2026-10-19T15:18:44Z",
+          "updated_at": "2026-10-19T15:18:44Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/uninstall.sh"
+        },
+        {
+          "name": "uninstall_product.sh",
+          "size": 2900,
+          "digest": "sha256:50d43ca04d7b29b4cd2938a7081fe0f817510d48994a70d5d9659f04458649b7",
+          "created_at": "2026-10-19T15:18:44Z",
+          "updated_at": "2026-10-19T15:18:44Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/uninstall_product.sh"
+        },
+        {
+          "name": "uninstall_review.sh",
+          "size": 3031,
+          "digest": "sha256:a19ce1adfa1fc0a06a91207a330ccf36ab12fa87be3f7a49477f2a14b3f5abf2",
+          "created_at": "2026-10-19T15:18:44Z",
+          "updated_at": "2026-10-19T15:18:44Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/uninstall_review.sh"
+        },
+        {
+          "name": "uninstall_runtime.sh",
+          "size": 5270,
+          "digest": "sha256:144dac1295bc16df3539a598339e4d86160fdda344632080d63ae58fcbdfe06a",
+          "created_at": "2026-10-19T15:18:44Z",
+          "updated_at": "2026-10-19T15:18:44Z",
+          "browser_download_url": "https://github.com/lemoncrow-lab/lemoncrow/releases/download/v0.8.0/uninstall_runtime.sh"
+        }
+      ],
+      "runtime_client": {
+        "archive_sha256": "73bb7c7d062f1f622dff50a851d36a71b1c8efa9ebebd7017d1d09cf81529e94",
+        "wheel": "vendor/lemoncrow_runtime_client-0.8.0-py3-none-any.whl",
+        "distribution": "lemoncrow-runtime-client",
+        "source_project_distribution": "lemoncrow-client",
+        "requires_python": ">=3.12,<3.14",
+        "requires_dist": [],
+        "source_equal_package_files": 87
+      },
+      "pypi_queries": [
+        {
+          "url": "https://pypi.org/pypi/lemoncrow/0.8.0/json",
+          "result": "HTTP 404"
+        },
+        {
+          "url": "https://pypi.org/pypi/lemoncrow-client/0.8.0/json",
+          "result": "HTTP 404"
+        }
+      ]
+    }
+  ]
+}

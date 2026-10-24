@@ -1,0 +1,165 @@
+{
+  "recorded_utc": "2026-10-24T09:10:45.097199+00:00",
+  "classification": "Seven generic-api-key findings are document SHA256 values in path-to-digest JSON maps, independently verified by three agents and the coordinator. No credential is present in those fields.",
+  "reason": "Path keys containing token-related vocabulary followed directly by a 64-character document digest resemble a generic API-key assignment. Publish each digest on its own indented line, with the same keys and values.",
+  "change": "Whitespace-only JSON serialization; schema, decoded values, document contents, source timestamps and original execution evidence unchanged. No scanner rule, baseline, ignore or validator setting changed.",
+  "reconstruction": "UTF-8 encode json.dumps(json.loads(published_bytes), indent=2, ensure_ascii=False) + newline; proven byte-identical to each original input. verify_publication_serialization.py rechecks this without modifying files.",
+  "files": [
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.json",
+      "original_snapshot_sha256": "17fe4617a4e10c54023a25212c98462ab39ccd63c3ebf6019c42c8441724d083",
+      "original_bytes": 15920,
+      "published_artifact_sha256": "4c9a5f401ea5c69ea1f511b5ed1b538de8f5779a8cc53e638f54e37380e22cf6",
+      "published_bytes": 16652,
+      "parsed_json_identical": true,
+      "original_bytes_exactly_reconstructed": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/render-input-manifest.json",
+      "original_snapshot_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "original_bytes": 7954,
+      "published_artifact_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+      "published_bytes": 8534,
+      "parsed_json_identical": true,
+      "original_bytes_exactly_reconstructed": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-build-input-manifest.json",
+      "original_snapshot_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "original_bytes": 7954,
+      "published_artifact_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+      "published_bytes": 8534,
+      "parsed_json_identical": true,
+      "original_bytes_exactly_reconstructed": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-build-input-manifest.json",
+      "original_snapshot_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "original_bytes": 7954,
+      "published_artifact_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+      "published_bytes": 8534,
+      "parsed_json_identical": true,
+      "original_bytes_exactly_reconstructed": true
+    }
+  ],
+  "independent_review_scope": {
+    "headroom_lemoncrow": "Six render-map candidates equal SHA256 of current, staged and pre-normalization audited-tree source; all58 input values match. Exact inverse serialization independently verified.",
+    "caveman_ponytail": "Provider-review candidate provenance checked against its referenced source; original review event scope retained.",
+    "rtk_leanctx": "Allfour originals parsed with duplicate-key rejection; standard indented JSON serialization reconstructs allfour exact originals. Reviewed provenance split."
+  },
+  "historical_scope": "Old event/artifact hashes describe their original snapshots. Current pack manifests are updated to published bytes. Earlier audits remain dated snapshots, not certifications of later normalization. The verification archive contains50 byte-identical records and one reversibly normalized input manifest.",
+  "formatting_trial": {
+    "command": [
+      "gitleaks",
+      "dir",
+      "/workspace/scratch/1335a158b2a9/research/coordinator/gitleaks-digest-format",
+      "--redact",
+      "--no-banner",
+      "--report-format",
+      "json",
+      "--report-path",
+      "/workspace/scratch/1335a158b2a9/tooling/logs/gitleaks-digest-format-findings.json"
+    ],
+    "exit_code": 0,
+    "started_utc": "2026-10-24T09:09:16.958984+00:00",
+    "finished_utc": "2026-10-24T09:09:17.343931+00:00",
+    "log_sha256": "5d0c044fd803101323eae9a39aedcacd409530b434636e9f101114921ce0c63f",
+    "scope": "Temporary candidate pretty-serialization only; primary files unchanged."
+  },
+  "diagnostic_evidence": [
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-staged-scans.json",
+      "artifact": "logs/publication-staged-scans.json",
+      "sha256": "24430be001849dabbd625613f5d93bf57ce43555f82aba56fb19a1615b4964ef",
+      "bytes": 2322,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-staged-scans-kingfisher.log",
+      "artifact": "logs/publication-staged-scans-kingfisher.log",
+      "sha256": "418be3fd0102daa6425122edd1c3f826671e3386951054bc33c194abdbd1487d",
+      "bytes": 1093,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-staged-scans-gitleaks.log",
+      "artifact": "logs/publication-staged-scans-gitleaks.log",
+      "sha256": "c75daefbb4202e7b20d723d3a323829bfaf5a71589c3f09abe921b7bc36c276d",
+      "bytes": 111,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-staged-diagnostic.json",
+      "artifact": "logs/publication-staged-diagnostic.json",
+      "sha256": "3719998609fb56a72270b6c2ba85732be5cdff2e7e316709094a9057e915365c",
+      "bytes": 2509,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-staged-diagnostic-kingfisher.log",
+      "artifact": "logs/publication-staged-diagnostic-kingfisher.log",
+      "sha256": "2916f5717ab5d07ae9664dc88b78d0dc78a7eb6830c3bf779d2a9275653bfdc3",
+      "bytes": 1094,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-staged-diagnostic-gitleaks.log",
+      "artifact": "logs/publication-staged-diagnostic-gitleaks.log",
+      "sha256": "aeae68b90ca987d446b9861b0e05ff76ed36ca294726b3bfe71974600520e2fc",
+      "bytes": 111,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/publication-staged-diagnostic-gitleaks-findings.json",
+      "artifact": "logs/publication-staged-diagnostic-gitleaks-findings.json",
+      "sha256": "5d820e4b124c97a1bf45d0eb9e73d9e59e8cea705bf0e54df04ca8e0c62060e4",
+      "bytes": 5498,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/gitleaks-digest-format.json",
+      "artifact": "logs/gitleaks-digest-format.json",
+      "sha256": "b1a96fdebee88a079685a0632e71606f0b1b541ac823748957702471763a9529",
+      "bytes": 2778,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/gitleaks-digest-format.log",
+      "artifact": "logs/gitleaks-digest-format.log",
+      "sha256": "5d0c044fd803101323eae9a39aedcacd409530b434636e9f101114921ce0c63f",
+      "bytes": 79,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/gitleaks-digest-format-findings.json",
+      "artifact": "logs/gitleaks-digest-format-findings.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "bytes": 3,
+      "copy": "byte-identical redacted record"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/research/coordinator/gitleaks-provider-review-provenance.json",
+      "artifact": "logs/gitleaks-provider-review-provenance.json",
+      "sha256": "3dbd1e9ca65d33c3e91c7792d1f877f9d054e5d056e59a12bd89e919c22821d7",
+      "bytes": 4026,
+      "copy": "byte-identical redacted record"
+    }
+  ],
+  "serialization_verification": {
+    "command": [
+      "python3",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/verify_publication_serialization.py"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+    "environment_overrides": {
+      "PYTHONDONTWRITEBYTECODE": "1"
+    },
+    "exit_code": 0,
+    "collected_utc": "2026-10-24T09:11:44.551214+00:00",
+    "timing_scope": "Collection after successful execution; no invented start time.",
+    "artifact": "logs/publication-serialization-check.json",
+    "sha256": "fcffac46b7aaf60f5eb51d4fdf0184aad0d690a12b6bbdfe6599eb859ccb4e5e",
+    "files": 4,
+    "all_checks_passed": true
+  }
+}

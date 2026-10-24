@@ -7,6 +7,8 @@ python3 session_cost.py session.jsonl [more.jsonl] [--prices rates.json]
 
 Prices are USD/MTok keyed by the exact message model: input, cache_read,
 cache_write_5m, cache_write_1h, output. Missing write TTLs remain unknown.
+Aggregate pricing requires one price profile per model across these receipts;
+split mixed tiers, dates, service modes, and routes before supplying --prices.
 List-price estimates are not invoices or subscription-quota measurements.
 """
 import argparse
@@ -26,6 +28,17 @@ def nonnegative(value, field):
 
 def normalize(usage):
     """Return disjoint token classes; never silently drop aggregate cache writes."""
+    if "iterations" in usage:
+        iterations = usage["iterations"]
+        if not isinstance(iterations, list) or not iterations:
+            raise ValueError("iterations must be a nonempty final usage array")
+        total = {k: 0 for k in FIELDS}
+        for item in iterations:
+            if not isinstance(item, dict) or "iterations" in item:
+                raise ValueError("invalid nested iteration receipt")
+            for key, value in normalize(item).items():
+                total[key] += value
+        return total  # Top-level usage excludes compaction; do not add it again.
     counts = {k: 0 for k in FIELDS}
     for target, source in (("input", "input_tokens"),
                            ("cache_read", "cache_read_input_tokens"),
