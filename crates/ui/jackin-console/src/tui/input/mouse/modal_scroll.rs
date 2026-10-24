@@ -114,8 +114,17 @@ pub fn try_scroll_picker_modal(
             return false;
         };
         let area = modal.rect(term_size);
-        return point_in_rect(mouse.column, mouse.row, area)
-            && scroll_list_modal_selection(state, delta);
+        let accepts_wheel = match modal {
+            Modal::GithubPicker { state: picker } => {
+                crate::tui::components::github_picker::selection_hit_at(
+                    area,
+                    picker,
+                    ratatui::layout::Position::new(mouse.column, mouse.row),
+                )
+            }
+            _ => point_in_rect(mouse.column, mouse.row, area),
+        };
+        return accepts_wheel && scroll_list_modal_selection(state, delta);
     }
 
     match (owner, &mut state.stage) {

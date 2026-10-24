@@ -42,6 +42,57 @@ fn painted_editor_label_position(
         .unwrap_or_else(|| panic!("actual editor TestBackend buffer lacks {label:?}"))
 }
 
+fn painted_github_picker_row_position(
+    state: &ManagerState<'_>,
+    terminal_area: Rect,
+    marker: &str,
+) -> ratatui::layout::Position {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let modal = state
+        .list_modal
+        .as_ref()
+        .expect("GitHub picker modal should be open before paint");
+    let Modal::GithubPicker { state: picker } = modal else {
+        panic!("GitHub picker modal expected before paint");
+    };
+    let modal_area = modal.rect(terminal_area);
+    let mut terminal = Terminal::new(TestBackend::new(terminal_area.width, terminal_area.height))
+        .expect("GitHub picker TestBackend should initialize");
+    terminal
+        .draw(|frame| {
+            crate::tui::components::github_picker::render(frame, modal_area, picker);
+        })
+        .expect("GitHub picker should render to TestBackend");
+
+    let buffer = terminal.backend().buffer();
+    (modal_area.y..modal_area.bottom())
+        .find_map(|row| {
+            let text = (modal_area.x..modal_area.right())
+                .map(|column| buffer[(column, row)].symbol())
+                .collect::<String>();
+            let byte = text.find(marker)?;
+            let column = termrock::text::display_cols(&text[..byte]);
+            Some(ratatui::layout::Position::new(
+                modal_area.x.saturating_add(
+                    u16::try_from(column).expect("painted GitHub row column fits u16"),
+                ),
+                row,
+            ))
+        })
+        .unwrap_or_else(|| panic!("actual GitHub picker TestBackend buffer lacks {marker:?}"))
+}
+
+fn github_choices(count: usize) -> Vec<crate::github_mounts::GithubChoice> {
+    (0..count)
+        .map(|index| crate::github_mounts::GithubChoice {
+            src: format!("/workspace/repository-{index:02}"),
+            branch: format!("branch-{index:02}-painted"),
+            url: format!("https://github.invalid/owner/repository-{index:02}"),
+        })
+        .collect()
+}
+
 #[test]
 fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::Result<()> {
     const CHILD: &str = "JACKIN_MOUSE_PRIVACY_WIRE_CHILD";
@@ -328,30 +379,141 @@ fn drag_ignored_when_list_modal_open() {
 fn list_github_picker_wheel_scrolls_modal_selection() {
     let mut state = list_state();
     state.list_modal = Some(Modal::GithubPicker {
-        state: crate::tui::components::github_picker::GithubPickerState::new(vec![
-            crate::github_mounts::GithubChoice {
-                src: "/one".into(),
-                branch: "main".into(),
-                url: "https://github.com/o/one".into(),
-            },
-            crate::github_mounts::GithubChoice {
-                src: "/two".into(),
-                branch: "main".into(),
-                url: "https://github.com/o/two".into(),
-            },
-        ]),
+        state: crate::tui::components::github_picker::GithubPickerState::new(github_choices(2)),
     });
+    let term = term_120x40();
+    let position = painted_github_picker_row_position(&state, term, "branch-01-painted");
 
     handle_mouse(
         &mut state,
-        mouse_kind_at(MouseEventKind::ScrollDown, 60, 20),
-        term_120x40(),
+        mouse_kind_at(MouseEventKind::ScrollDown, position.x, position.y),
+        term,
     );
 
     let Some(Modal::GithubPicker { state: picker }) = &state.list_modal else {
         panic!("github picker modal expected");
     };
     assert_eq!(picker.list_state.selected().copied(), Some(1));
+}
+
+#[test]
+fn list_github_picker_wheel_misses_preserve_selection_and_background() {
+    let mut state = list_state_with_saved(3);
+    state.selected = 1;
+    crate::tui::scroll_block::scroll_area_set_y(&mut state.list_names_scroll, 4);
+    state
+        .list_focus_owner
+        .focus_content(MountScrollFocus::Workspace);
+    state.list_modal = Some(Modal::GithubPicker {
+        state: crate::tui::components::github_picker::GithubPickerState::new(github_choices(3)),
+    });
+    let term = term_120x40();
+    let modal_area = state
+        .list_modal
+        .as_ref()
+        .expect("GitHub picker modal should be open")
+        .rect(term);
+    let original_selected = state.selected;
+    let original_focus = state.list_focus_owner.clone();
+    let original_scroll = state.list_names_scroll.offset_y();
+
+    for (column, row) in [(modal_area.x.saturating_add(2), modal_area.y), (0, 0)] {
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, column, row),
+            term,
+        );
+        let Some(Modal::GithubPicker { state: picker }) = &state.list_modal else {
+            panic!("GitHub picker modal expected after an unpainted wheel event");
+        };
+        assert_eq!(
+            picker.list_state.selected().copied(),
+            Some(0),
+            "an unpainted modal or outside cell must not scroll the picker"
+        );
+        assert_eq!(state.selected, original_selected);
+        assert_eq!(state.list_focus_owner, original_focus);
+        assert_eq!(state.list_names_scroll.offset_y(), original_scroll);
+    }
+
+    let painted_row = painted_github_picker_row_position(&state, term, "branch-00-painted");
+    state.keyboard_help = Some(termrock::widgets::KeyboardHelpState::modal());
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, painted_row.x, painted_row.y),
+        term,
+    );
+    let Some(Modal::GithubPicker { state: picker }) = &state.list_modal else {
+        panic!("hidden GitHub picker modal should remain stored");
+    };
+    assert_eq!(
+        picker.list_state.selected().copied(),
+        Some(0),
+        "a blocked owner must keep the hidden GitHub picker unchanged"
+    );
+    assert_eq!(state.selected, original_selected);
+    assert_eq!(state.list_focus_owner, original_focus);
+    assert_eq!(state.list_names_scroll.offset_y(), original_scroll);
+}
+
+#[test]
+fn list_github_picker_wheel_edges_do_not_wrap_or_scroll_background() {
+    let mut state = list_state_with_saved(3);
+    state.selected = 1;
+    crate::tui::scroll_block::scroll_area_set_y(&mut state.list_names_scroll, 4);
+    state
+        .list_focus_owner
+        .focus_content(MountScrollFocus::Workspace);
+    state.list_modal = Some(Modal::GithubPicker {
+        state: crate::tui::components::github_picker::GithubPickerState::new(github_choices(2)),
+    });
+    let term = term_120x40();
+    let original_selected = state.selected;
+    let original_focus = state.list_focus_owner.clone();
+    let original_scroll = state.list_names_scroll.offset_y();
+    let first_row = painted_github_picker_row_position(&state, term, "branch-00-painted");
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollUp, first_row.x, first_row.y),
+        term,
+    );
+    let Some(Modal::GithubPicker { state: picker }) = &state.list_modal else {
+        panic!("GitHub picker modal expected after first-row wheel event");
+    };
+    assert_eq!(picker.list_state.selected().copied(), Some(0));
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, first_row.x, first_row.y),
+        term,
+    );
+    let second_row = painted_github_picker_row_position(&state, term, "branch-01-painted");
+    let Some(Modal::GithubPicker { state: picker }) = &state.list_modal else {
+        panic!("GitHub picker modal expected after non-edge wheel event");
+    };
+    assert_eq!(
+        picker.list_state.selected().copied(),
+        Some(1),
+        "a valid non-edge wheel event should move to the next choice"
+    );
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, second_row.x, second_row.y),
+        term,
+    );
+    let Some(Modal::GithubPicker { state: picker }) = &state.list_modal else {
+        panic!("GitHub picker modal expected after last-row wheel event");
+    };
+    assert_eq!(
+        picker.list_state.selected().copied(),
+        Some(1),
+        "a valid last-row wheel event must be consumed without wrapping"
+    );
+    assert_eq!(state.selected, original_selected);
+    assert_eq!(state.list_focus_owner, original_focus);
+    assert_eq!(state.list_names_scroll.offset_y(), original_scroll);
 }
 
 #[test]
