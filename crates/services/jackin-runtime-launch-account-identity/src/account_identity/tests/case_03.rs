@@ -446,16 +446,21 @@ impl MarkerPairChild {
             return Ok(());
         }
         self.termination_attempted = true;
-        drop(self.stdin.take());
 
         let initial_check = match self.child.try_wait() {
-            Ok(Some(_)) => return self.confirm_stdout_drained(),
+            Ok(Some(_)) => {
+                drop(self.stdin.take());
+                return self.confirm_stdout_drained();
+            }
             Ok(None) => None,
             Err(error) => Some(error),
         };
         let kill_error = self.child.kill().err();
         match wait_child_bounded(&mut self.child, Duration::from_secs(2)) {
-            Ok(_) => self.confirm_stdout_drained(),
+            Ok(_) => {
+                drop(self.stdin.take());
+                self.confirm_stdout_drained()
+            }
             Err(reap_error) => {
                 let mut cleanup_error = anyhow::Error::from(reap_error)
                     .context("bounded marker-pair child reap did not confirm exit");
