@@ -210,6 +210,590 @@ fn assert_workdir_picker_background_unchanged(
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum RolePickerRoute {
+    List,
+    Editor,
+    EditorOverride,
+    CreatePrelude,
+    CreatePreludeOverride,
+    SettingsMounts,
+    SettingsEnv,
+}
+
+impl RolePickerRoute {
+    const ALL: [Self; 7] = [
+        Self::List,
+        Self::Editor,
+        Self::EditorOverride,
+        Self::CreatePrelude,
+        Self::CreatePreludeOverride,
+        Self::SettingsMounts,
+        Self::SettingsEnv,
+    ];
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RolePickerBackgroundSnapshot {
+    selected: usize,
+    list_focus_owner: crate::tui::focus::TabFocus<MountScrollFocus>,
+    list_scroll: u16,
+    pending_effects: usize,
+    stage: RolePickerBackgroundStage,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RolePickerBackgroundStage {
+    List,
+    Editor {
+        active_tab: EditorTab,
+        tab_focus_owner:
+            crate::tui::focus::TabFocus<crate::tui::screens::editor::model::EditorFocusTarget>,
+        tab_scroll: u16,
+    },
+    CreatePrelude,
+    Settings {
+        active_tab: SettingsTab,
+        focus_owner: crate::tui::focus::TabFocus<SettingsTab>,
+        mounts_scroll: u16,
+        env_scroll: u16,
+    },
+}
+
+fn role_picker_background_snapshot(state: &ManagerState<'_>) -> RolePickerBackgroundSnapshot {
+    let stage = match &state.stage {
+        ManagerStage::List => RolePickerBackgroundStage::List,
+        ManagerStage::Editor(editor) => RolePickerBackgroundStage::Editor {
+            active_tab: editor.active_tab,
+            tab_focus_owner: editor.focus_owner.clone(),
+            tab_scroll: editor.tab_scroll.offset_y(),
+        },
+        ManagerStage::CreatePrelude(_) => RolePickerBackgroundStage::CreatePrelude,
+        ManagerStage::Settings(settings) => RolePickerBackgroundStage::Settings {
+            active_tab: settings.active_tab,
+            focus_owner: settings.focus_owner.clone(),
+            mounts_scroll: settings.mounts.scroll.offset_y(),
+            env_scroll: settings.env.scroll.offset_y(),
+        },
+        _ => panic!("role picker fixtures use List, Editor, CreatePrelude, or Settings"),
+    };
+    RolePickerBackgroundSnapshot {
+        selected: state.selected,
+        list_focus_owner: state.list_focus_owner.clone(),
+        list_scroll: state.list_names_scroll.offset_y(),
+        pending_effects: state.pending_effects.len(),
+        stage,
+    }
+}
+
+fn role_picker_manager_state(route: RolePickerRoute, count: usize) -> ManagerState<'static> {
+    let mut state = list_state_with_saved(3);
+    state.selected = 1;
+    crate::tui::scroll_block::scroll_area_set_y(&mut state.list_names_scroll, 4);
+    state
+        .list_focus_owner
+        .focus_content(MountScrollFocus::Workspace);
+    let picker = crate::tui::state::RolePickerState::new(
+        (0..count)
+            .map(|index| jackin_core::RoleSelector::new(None, &format!("role-{index:02}-painted")))
+            .collect(),
+    );
+
+    match route {
+        RolePickerRoute::List => {
+            state.list_modal = Some(Modal::RolePicker { state: picker });
+        }
+        RolePickerRoute::Editor | RolePickerRoute::EditorOverride => {
+            let modal = if matches!(route, RolePickerRoute::EditorOverride) {
+                Modal::RoleOverridePicker { state: picker }
+            } else {
+                Modal::RolePicker { state: picker }
+            };
+            let mut editor =
+                EditorState::new_edit("role-picker-test".into(), WorkspaceConfig::default());
+            editor.active_tab = EditorTab::Roles;
+            editor.tab_content_height = 50;
+            crate::tui::scroll_block::scroll_area_set_y(&mut editor.tab_scroll, 4);
+            editor.modal = Some(modal);
+            state.stage = ManagerStage::Editor(editor);
+        }
+        RolePickerRoute::CreatePrelude | RolePickerRoute::CreatePreludeOverride => {
+            let modal = if matches!(route, RolePickerRoute::CreatePreludeOverride) {
+                Modal::RoleOverridePicker { state: picker }
+            } else {
+                Modal::RolePicker { state: picker }
+            };
+            state.stage = ManagerStage::CreatePrelude(crate::tui::state::CreatePreludeState {
+                modal: Some(modal),
+                ..Default::default()
+            });
+        }
+        RolePickerRoute::SettingsMounts | RolePickerRoute::SettingsEnv => {
+            let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
+            let tab = if matches!(route, RolePickerRoute::SettingsMounts) {
+                SettingsTab::Mounts
+            } else {
+                SettingsTab::Environments
+            };
+            settings.active_tab = tab;
+            settings.set_content_focused(tab, true);
+            match route {
+                RolePickerRoute::SettingsMounts => {
+                    crate::tui::scroll_block::scroll_area_set_y(&mut settings.mounts.scroll, 4);
+                    settings
+                        .mounts
+                        .modals
+                        .open(SettingsModal::MountRolePicker { state: picker });
+                }
+                RolePickerRoute::SettingsEnv => {
+                    crate::tui::scroll_block::scroll_area_set_y(&mut settings.env.scroll, 4);
+                    settings
+                        .env
+                        .modals
+                        .open(SettingsModal::EnvRolePicker { state: picker });
+                }
+                _ => unreachable!(),
+            }
+            state.stage = ManagerStage::Settings(settings);
+        }
+    }
+    state
+}
+
+fn role_picker_context<'state>(
+    state: &'state ManagerState<'_>,
+    route: RolePickerRoute,
+    term_size: Rect,
+) -> (Rect, &'state crate::tui::state::RolePickerState) {
+    match route {
+        RolePickerRoute::List => {
+            let modal = state
+                .list_modal
+                .as_ref()
+                .expect("list role picker should be open");
+            let Modal::RolePicker { state: picker } = modal else {
+                panic!("list role picker modal expected");
+            };
+            (modal.rect(term_size), picker)
+        }
+        RolePickerRoute::Editor | RolePickerRoute::EditorOverride => {
+            let ManagerStage::Editor(editor) = &state.stage else {
+                panic!("editor role picker stage expected");
+            };
+            let modal = editor
+                .modal
+                .as_ref()
+                .expect("editor role picker should be open");
+            let ((RolePickerRoute::Editor, Modal::RolePicker { state: picker })
+            | (RolePickerRoute::EditorOverride, Modal::RoleOverridePicker { state: picker })) =
+                (route, modal)
+            else {
+                panic!("expected the matching editor role picker modal");
+            };
+            (modal.rect(term_size), picker)
+        }
+        RolePickerRoute::CreatePrelude | RolePickerRoute::CreatePreludeOverride => {
+            let ManagerStage::CreatePrelude(prelude) = &state.stage else {
+                panic!("create-prelude role picker stage expected");
+            };
+            let modal = prelude
+                .modal
+                .as_ref()
+                .expect("prelude role picker should be open");
+            let ((RolePickerRoute::CreatePrelude, Modal::RolePicker { state: picker })
+            | (
+                RolePickerRoute::CreatePreludeOverride,
+                Modal::RoleOverridePicker { state: picker },
+            )) = (route, modal)
+            else {
+                panic!("expected the matching create-prelude role picker modal");
+            };
+            (modal.rect(term_size), picker)
+        }
+        RolePickerRoute::SettingsMounts => {
+            let ManagerStage::Settings(settings) = &state.stage else {
+                panic!("settings role picker stage expected");
+            };
+            let Some(SettingsModal::MountRolePicker { state: picker }) =
+                settings.mounts.modals.current()
+            else {
+                panic!("settings mounts role picker should be open");
+            };
+            (
+                crate::tui::components::modal_overlay::role_picker_overlay_rect(
+                    term_size,
+                    picker.filtered.len(),
+                ),
+                picker,
+            )
+        }
+        RolePickerRoute::SettingsEnv => {
+            let ManagerStage::Settings(settings) = &state.stage else {
+                panic!("settings role picker stage expected");
+            };
+            let Some(SettingsModal::EnvRolePicker { state: picker }) =
+                settings.env.modals.current()
+            else {
+                panic!("settings env role picker should be open");
+            };
+            (
+                crate::tui::components::modal_overlay::role_picker_overlay_rect(
+                    term_size,
+                    picker.filtered.len(),
+                ),
+                picker,
+            )
+        }
+    }
+}
+
+fn role_picker_context_mut<'state>(
+    state: &'state mut ManagerState<'_>,
+    route: RolePickerRoute,
+) -> &'state mut crate::tui::state::RolePickerState {
+    match route {
+        RolePickerRoute::List => {
+            let Some(Modal::RolePicker { state: picker }) = state.list_modal.as_mut() else {
+                panic!("list role picker modal expected");
+            };
+            picker
+        }
+        RolePickerRoute::Editor | RolePickerRoute::EditorOverride => {
+            let ManagerStage::Editor(editor) = &mut state.stage else {
+                panic!("editor role picker stage expected");
+            };
+            match (route, editor.modal.as_mut()) {
+                (RolePickerRoute::Editor, Some(Modal::RolePicker { state }))
+                | (RolePickerRoute::EditorOverride, Some(Modal::RoleOverridePicker { state })) => {
+                    state
+                }
+                _ => panic!("expected the matching editor role picker modal"),
+            }
+        }
+        RolePickerRoute::CreatePrelude | RolePickerRoute::CreatePreludeOverride => {
+            let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
+                panic!("create-prelude role picker stage expected");
+            };
+            match (route, prelude.modal.as_mut()) {
+                (RolePickerRoute::CreatePrelude, Some(Modal::RolePicker { state }))
+                | (
+                    RolePickerRoute::CreatePreludeOverride,
+                    Some(Modal::RoleOverridePicker { state }),
+                ) => state,
+                _ => panic!("expected the matching create-prelude role picker modal"),
+            }
+        }
+        RolePickerRoute::SettingsMounts => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                panic!("settings role picker stage expected");
+            };
+            let Some(SettingsModal::MountRolePicker { state }) =
+                settings.mounts.modals.current_mut()
+            else {
+                panic!("settings mounts role picker should be open");
+            };
+            state
+        }
+        RolePickerRoute::SettingsEnv => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                panic!("settings role picker stage expected");
+            };
+            let Some(SettingsModal::EnvRolePicker { state }) = settings.env.modals.current_mut()
+            else {
+                panic!("settings env role picker should be open");
+            };
+            state
+        }
+    }
+}
+
+fn role_picker_test_buffer(
+    state: &ManagerState<'_>,
+    route: RolePickerRoute,
+    term_size: Rect,
+) -> (Rect, ratatui::buffer::Buffer) {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let (area, picker) = role_picker_context(state, route, term_size);
+    let mut terminal = Terminal::new(TestBackend::new(term_size.width, term_size.height))
+        .expect("role picker TestBackend should initialize");
+    terminal
+        .draw(|frame| crate::tui::components::role_picker::render(frame, area, picker))
+        .expect("role picker should render to TestBackend");
+    (area, terminal.backend().buffer().clone())
+}
+
+fn painted_role_picker_position(
+    buffer: &ratatui::buffer::Buffer,
+    area: Rect,
+    marker: &str,
+) -> ratatui::layout::Position {
+    (area.y..area.bottom())
+        .find_map(|row| {
+            let text = (area.x..area.right())
+                .map(|column| buffer[(column, row)].symbol())
+                .collect::<String>();
+            let byte = text.find(marker)?;
+            let column = termrock::text::display_cols(&text[..byte]);
+            Some(ratatui::layout::Position::new(
+                area.x.saturating_add(
+                    u16::try_from(column).expect("painted role label column fits u16"),
+                ),
+                row,
+            ))
+        })
+        .unwrap_or_else(|| panic!("actual role picker TestBackend buffer lacks {marker:?}"))
+}
+
+fn role_picker_selected(state: &ManagerState<'_>, route: RolePickerRoute) -> Option<usize> {
+    role_picker_context(state, route, term_120x40())
+        .1
+        .list_state
+        .selected()
+        .copied()
+}
+
+#[test]
+fn role_picker_wheel_uses_painted_rows_for_all_owners() {
+    let term_size = term_120x40();
+    for route in RolePickerRoute::ALL {
+        let mut state = role_picker_manager_state(route, 20);
+        let background_before = role_picker_background_snapshot(&state);
+        let (area, buffer) = role_picker_test_buffer(&state, route, term_size);
+        let first_row = painted_role_picker_position(&buffer, area, "role-00-painted");
+        let row_blank = ratatui::layout::Position::new(
+            first_row.x + "role-00-painted".len() as u16,
+            first_row.y,
+        );
+        assert_eq!(buffer[(row_blank.x, row_blank.y)].symbol(), " ");
+
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, row_blank.x, row_blank.y),
+            term_size,
+        );
+        assert_eq!(role_picker_selected(&state, route), Some(1));
+        assert_eq!(
+            role_picker_background_snapshot(&state),
+            background_before,
+            "a role picker wheel must not scroll or focus its parent in {route:?}"
+        );
+
+        let selected_marker = "role-01-painted";
+        let (area, buffer) = role_picker_test_buffer(&state, route, term_size);
+        let selected_row = painted_role_picker_position(&buffer, area, selected_marker);
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, selected_row.x, selected_row.y),
+            term_size,
+        );
+        assert_eq!(role_picker_selected(&state, route), Some(2));
+        assert_eq!(
+            role_picker_background_snapshot(&state),
+            background_before,
+            "a role picker wheel must not scroll or focus its parent in {route:?}"
+        );
+
+        let selected_marker = "role-02-painted";
+        let (area, buffer) = role_picker_test_buffer(&state, route, term_size);
+        let selected_row = painted_role_picker_position(&buffer, area, selected_marker);
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollUp, selected_row.x, selected_row.y),
+            term_size,
+        );
+        assert_eq!(role_picker_selected(&state, route), Some(1));
+        assert_eq!(
+            role_picker_background_snapshot(&state),
+            background_before,
+            "a role picker wheel must not scroll or focus its parent in {route:?}"
+        );
+    }
+}
+
+#[test]
+fn role_picker_wheel_misses_and_edges_preserve_background_for_all_owners() {
+    let term_size = term_120x40();
+    for route in RolePickerRoute::ALL {
+        let mut state = role_picker_manager_state(route, 2);
+        let background_before = role_picker_background_snapshot(&state);
+        let (area, buffer) = role_picker_test_buffer(&state, route, term_size);
+        let title = painted_role_picker_position(&buffer, area, "Select Role");
+        let filter = painted_role_picker_position(&buffer, area, "Filter:");
+        let filter_spacer = ratatui::layout::Position::new(filter.x, filter.y + 1);
+        assert!(area.contains(filter_spacer));
+        assert_eq!(buffer[(filter_spacer.x, filter_spacer.y)].symbol(), " ");
+        let last_row = painted_role_picker_position(&buffer, area, "role-01-painted");
+        let unused_list_body = ratatui::layout::Position::new(last_row.x, last_row.y + 1);
+        assert!(unused_list_body.y < area.bottom());
+
+        for position in [
+            title,
+            filter,
+            filter_spacer,
+            unused_list_body,
+            ratatui::layout::Position::new(area.x, area.y),
+            ratatui::layout::Position::new(0, 0),
+        ] {
+            handle_mouse(
+                &mut state,
+                mouse_kind_at(MouseEventKind::ScrollDown, position.x, position.y),
+                term_size,
+            );
+            assert_eq!(
+                role_picker_selected(&state, route),
+                Some(0),
+                "an unpainted cell must not scroll the picker in {route:?}"
+            );
+            assert_eq!(
+                role_picker_background_snapshot(&state),
+                background_before,
+                "an unpainted cell must not scroll or focus the parent in {route:?}"
+            );
+        }
+
+        let first_row = painted_role_picker_position(&buffer, area, "role-00-painted");
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollUp, first_row.x, first_row.y),
+            term_size,
+        );
+        assert_eq!(role_picker_selected(&state, route), Some(0));
+        assert_eq!(role_picker_background_snapshot(&state), background_before);
+
+        let mut long_state = role_picker_manager_state(route, 20);
+        role_picker_context_mut(&mut long_state, route)
+            .list_state
+            .select(Some(19));
+        let long_background = role_picker_background_snapshot(&long_state);
+        let (long_area, long_buffer) = role_picker_test_buffer(&long_state, route, term_size);
+        let last_visible_row =
+            painted_role_picker_position(&long_buffer, long_area, "role-19-painted");
+        let right_inner_gutter =
+            ratatui::layout::Position::new(long_area.right().saturating_sub(2), last_visible_row.y);
+        assert!(long_area.x < right_inner_gutter.x);
+        assert!(right_inner_gutter.x < long_area.right().saturating_sub(1));
+        assert!(!crate::tui::components::role_picker::selection_hit_at(
+            long_area,
+            role_picker_context(&long_state, route, term_size).1,
+            right_inner_gutter,
+        ));
+        handle_mouse(
+            &mut long_state,
+            mouse_kind_at(
+                MouseEventKind::ScrollDown,
+                right_inner_gutter.x,
+                right_inner_gutter.y,
+            ),
+            term_size,
+        );
+        assert_eq!(role_picker_selected(&long_state, route), Some(19));
+        assert_eq!(
+            role_picker_background_snapshot(&long_state),
+            long_background
+        );
+        handle_mouse(
+            &mut long_state,
+            mouse_kind_at(
+                MouseEventKind::ScrollDown,
+                last_visible_row.x,
+                last_visible_row.y,
+            ),
+            term_size,
+        );
+        assert_eq!(role_picker_selected(&long_state, route), Some(19));
+        assert_eq!(
+            role_picker_background_snapshot(&long_state),
+            long_background
+        );
+
+        let mut filtered_state = role_picker_manager_state(route, 20);
+        let filtered_background = role_picker_background_snapshot(&filtered_state);
+        role_picker_context_mut(&mut filtered_state, route)
+            .list_state
+            .select(Some(19));
+        for ch in "05".chars() {
+            role_picker_context_mut(&mut filtered_state, route).handle_key(key(KeyCode::Char(ch)));
+        }
+        {
+            let picker = role_picker_context(&filtered_state, route, term_size).1;
+            assert_eq!(picker.filter, "05");
+            assert_eq!(picker.filtered.len(), 1);
+            assert_eq!(picker.list_state.selected().copied(), Some(0));
+        }
+
+        let shrunk_term = Rect::new(0, 0, 80, 24);
+        let (filtered_area, filtered_buffer) =
+            role_picker_test_buffer(&filtered_state, route, shrunk_term);
+        let filtered_row =
+            painted_role_picker_position(&filtered_buffer, filtered_area, "role-05-painted");
+        let filtered_picker = role_picker_context(&filtered_state, route, shrunk_term).1;
+        assert!(crate::tui::components::role_picker::selection_hit_at(
+            filtered_area,
+            filtered_picker,
+            filtered_row,
+        ));
+        assert_eq!(filtered_picker.list_state.selected().copied(), Some(0));
+        assert_eq!(
+            role_picker_background_snapshot(&filtered_state),
+            filtered_background
+        );
+
+        for ch in "z".chars() {
+            role_picker_context_mut(&mut filtered_state, route).handle_key(key(KeyCode::Char(ch)));
+        }
+        let no_match_filter = "05z";
+        {
+            let picker = role_picker_context(&filtered_state, route, shrunk_term).1;
+            assert_eq!(picker.filter, no_match_filter);
+            assert!(picker.filtered.is_empty());
+            assert_eq!(picker.list_state.selected().copied(), None);
+        }
+        let (empty_area, empty_buffer) =
+            role_picker_test_buffer(&filtered_state, route, shrunk_term);
+        let no_matches = painted_role_picker_position(&empty_buffer, empty_area, "no matches");
+        handle_mouse(
+            &mut filtered_state,
+            mouse_kind_at(MouseEventKind::ScrollDown, no_matches.x, no_matches.y),
+            shrunk_term,
+        );
+        let picker = role_picker_context(&filtered_state, route, shrunk_term).1;
+        assert_eq!(picker.filter, no_match_filter);
+        assert!(picker.filtered.is_empty());
+        assert_eq!(picker.list_state.selected().copied(), None);
+        assert_eq!(
+            role_picker_background_snapshot(&filtered_state),
+            filtered_background
+        );
+    }
+}
+
+#[test]
+fn role_picker_help_blocks_hidden_picker_for_all_owners() {
+    let term_size = term_120x40();
+    for route in RolePickerRoute::ALL {
+        let mut state = role_picker_manager_state(route, 20);
+        let background_before = role_picker_background_snapshot(&state);
+        let (area, buffer) = role_picker_test_buffer(&state, route, term_size);
+        let first_row = painted_role_picker_position(&buffer, area, "role-00-painted");
+        state.keyboard_help = Some(termrock::widgets::KeyboardHelpState::modal());
+
+        handle_mouse(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, first_row.x, first_row.y),
+            term_size,
+        );
+
+        assert!(state.keyboard_help.is_some(), "help must retain ownership");
+        assert_eq!(role_picker_selected(&state, route), Some(0));
+        assert_eq!(
+            role_picker_background_snapshot(&state),
+            background_before,
+            "keyboard help must block picker and parent input in {route:?}"
+        );
+    }
+}
+
 #[test]
 fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::Result<()> {
     const CHILD: &str = "JACKIN_MOUSE_PRIVACY_WIRE_CHILD";
@@ -806,6 +1390,8 @@ fn workdir_picker_wheel_edges_saturate_for_editor_and_create_prelude() {
 fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
     let mut state = list_state();
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
+    settings.active_tab = SettingsTab::Mounts;
+    settings.set_content_focused(SettingsTab::Mounts, true);
     crate::tui::scroll_block::scroll_area_set_y(&mut settings.mounts.scroll, 4);
     settings.mounts.modals.open(SettingsModal::MountRolePicker {
         state: crate::tui::state::RolePickerState::new(vec![
@@ -814,10 +1400,13 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
         ]),
     });
     state.stage = ManagerStage::Settings(settings);
+    let (area, buffer) =
+        role_picker_test_buffer(&state, RolePickerRoute::SettingsMounts, term_120x40());
+    let painted_row = painted_role_picker_position(&buffer, area, "scentbird/agent-jones");
 
     handle_mouse(
         &mut state,
-        mouse_kind_at(MouseEventKind::ScrollDown, 60, 20),
+        mouse_kind_at(MouseEventKind::ScrollDown, painted_row.x, painted_row.y),
         term_120x40(),
     );
 
