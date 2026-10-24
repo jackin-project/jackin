@@ -3,6 +3,45 @@
 
 use super::*;
 
+fn painted_editor_label_position(
+    editor: &EditorState<'_>,
+    config: &jackin_config::AppConfig,
+    terminal_area: Rect,
+    op_available: bool,
+    label: &str,
+) -> ratatui::layout::Position {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let mut terminal = Terminal::new(TestBackend::new(terminal_area.width, terminal_area.height))
+        .expect("editor TestBackend should initialize");
+    terminal
+        .draw(|frame| {
+            crate::tui::screens::editor::view::render_editor_with_footer(
+                frame,
+                frame.area(),
+                editor,
+                config,
+                op_available,
+            );
+        })
+        .expect("editor screen should render to TestBackend");
+
+    let buffer = terminal.backend().buffer();
+    (0..buffer.area.height)
+        .find_map(|row| {
+            let text = (0..buffer.area.width)
+                .map(|column| buffer[(column, row)].symbol())
+                .collect::<String>();
+            let byte = text.find(label)?;
+            let column = termrock::text::display_cols(&text[..byte]);
+            Some(ratatui::layout::Position::new(
+                u16::try_from(column).expect("painted editor label column fits u16"),
+                row,
+            ))
+        })
+        .unwrap_or_else(|| panic!("actual editor TestBackend buffer lacks {label:?}"))
+}
+
 #[test]
 fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::Result<()> {
     const CHILD: &str = "JACKIN_MOUSE_PRIVACY_WIRE_CHILD";
@@ -29,18 +68,26 @@ fn conformance_wire_mouse_coordinates_become_only_semantic_action() -> anyhow::R
         &testbed.endpoint(),
         jackin_diagnostics::ServiceIdentity::HOST_INTERACTIVE,
     )?;
+    let config = jackin_config::AppConfig::default();
     let mut state = list_state();
     state.stage = ManagerStage::Editor(EditorState::new_edit(
         "wire-private-workspace".into(),
         WorkspaceConfig::default(),
     ));
+    let terminal_area = term(100);
+    let position = {
+        let ManagerStage::Editor(editor) = &state.stage else {
+            anyhow::bail!("expected editor stage before paint");
+        };
+        painted_editor_label_position(editor, &config, terminal_area, state.op_available, "Mounts")
+    };
     let coordinate = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
-        column: 11,
-        row: SCREEN_HEADER_HEIGHT,
+        column: position.x,
+        row: position.y,
         modifiers: KeyModifiers::NONE,
     };
-    handle_mouse_with_config(&mut state, coordinate, term(100), None);
+    handle_mouse_with_config(&mut state, coordinate, terminal_area, Some(&config));
     let ManagerStage::Editor(editor) = &state.stage else {
         anyhow::bail!("mouse route left editor stage");
     };

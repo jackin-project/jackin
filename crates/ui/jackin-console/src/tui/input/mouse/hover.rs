@@ -200,20 +200,31 @@ fn hover_regions(
                 }
             }
             let area = settings.content_area(term_size);
-            for offset in 0..area.height {
-                let y = area.y.saturating_add(offset);
+            let pad_x = termrock::style::DesignSystem::default().spacing.pad_x;
+            let viewport = Rect::new(
+                area.x.saturating_add(1).saturating_add(pad_x),
+                area.y.saturating_add(1),
+                area.width.saturating_sub(2).saturating_sub(pad_x),
+                area.height.saturating_sub(2),
+            );
+            let modal_open = settings.error_popup.is_some()
+                || settings.mounts.modals.is_open()
+                || settings.env.modals.is_open()
+                || settings.auth.modals.is_open();
+            for offset in 0..viewport.height {
+                let y = viewport.y.saturating_add(offset);
                 if let Some(target) = settings_trust_hover_target_at_position(
                     settings.active_tab,
-                    settings.mounts.modals.is_open(),
+                    modal_open,
                     area,
-                    area.x,
+                    viewport.x,
                     y,
                     settings.trust.scroll.offset_y(),
                     settings.trust.pending.len(),
                 ) {
                     regions.push(HitRegion {
                         id: ConsoleHoverTarget::Settings(target),
-                        area: Rect::new(area.x, y, area.width, 1),
+                        area: Rect::new(viewport.x, y, viewport.width, 1),
                     });
                 }
             }

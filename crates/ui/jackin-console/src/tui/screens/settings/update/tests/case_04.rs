@@ -32,11 +32,60 @@ fn settings_trust_row_select_plan_bounds_checks_and_focuses_content() {
 fn settings_trust_row_at_position_skips_header_and_applies_scroll() {
     let area = Rect::new(0, 5, 80, 10);
 
-    assert_eq!(settings_trust_row_at_position(area, 1, 7, 0, 3), Some(0));
-    assert_eq!(settings_trust_row_at_position(area, 1, 8, 2, 5), Some(3));
-    assert_eq!(settings_trust_row_at_position(area, 1, 6, 0, 3), None);
-    assert_eq!(settings_trust_row_at_position(area, 1, 10, 0, 3), None);
+    assert_eq!(settings_trust_row_at_position(area, 3, 7, 0, 3), Some(0));
+    assert_eq!(settings_trust_row_at_position(area, 3, 8, 2, 10), Some(3));
+    assert_eq!(settings_trust_row_at_position(area, 3, 6, 0, 3), None);
+    assert_eq!(settings_trust_row_at_position(area, 3, 10, 0, 3), None);
+    assert_eq!(settings_trust_row_at_position(area, 2, 7, 0, 3), None);
+    assert_eq!(settings_trust_row_at_position(area, 79, 7, 0, 3), None);
     assert_eq!(settings_trust_row_at_position(area, 80, 6, 0, 3), None);
+}
+
+#[test]
+fn settings_trust_row_at_position_clamps_stale_scroll_to_current_paint() {
+    let area = Rect::new(10, 4, 40, 8);
+
+    assert_eq!(
+        settings_trust_row_at_position(area, 13, 6, u16::MAX, 2),
+        Some(0)
+    );
+    assert_eq!(
+        settings_trust_row_at_position(area, 13, 7, u16::MAX, 2),
+        Some(1)
+    );
+}
+
+#[test]
+fn settings_trust_row_at_position_clamps_large_scroll_to_last_visible_rows() {
+    let area = Rect::new(2, 3, 30, 6);
+
+    assert_eq!(
+        settings_trust_row_at_position(area, 5, 4, u16::MAX, 10),
+        Some(6)
+    );
+    assert_eq!(
+        settings_trust_row_at_position(area, 5, 7, u16::MAX, 10),
+        Some(9)
+    );
+}
+
+#[test]
+fn settings_trust_row_at_position_rejects_tiny_viewports_and_empty_state() {
+    assert_eq!(
+        settings_trust_row_at_position(Rect::new(4, 5, 4, 8), 5, 7, 0, 1),
+        None,
+        "no horizontal viewport remains after border and padded-content insets"
+    );
+    assert_eq!(
+        settings_trust_row_at_position(Rect::new(4, 5, 20, 2), 7, 6, 0, 1),
+        None,
+        "no vertical viewport remains inside a two-row pane"
+    );
+    assert_eq!(
+        settings_trust_row_at_position(Rect::new(4, 5, 20, 8), 7, 7, 0, 0),
+        None,
+        "the rendered empty marker is not a Trust row"
+    );
 }
 
 #[test]
@@ -44,19 +93,19 @@ fn settings_trust_hover_target_at_position_maps_trust_rows() {
     let area = Rect::new(0, 5, 80, 10);
 
     assert_eq!(
-        settings_trust_hover_target_at_position(SettingsTab::Trust, false, area, 1, 7, 0, 3),
+        settings_trust_hover_target_at_position(SettingsTab::Trust, false, area, 3, 7, 0, 3),
         Some(SettingsHoverTarget::TrustRow(0))
     );
     assert_eq!(
-        settings_trust_hover_target_at_position(SettingsTab::Trust, false, area, 1, 8, 2, 5),
+        settings_trust_hover_target_at_position(SettingsTab::Trust, false, area, 3, 8, 2, 10),
         Some(SettingsHoverTarget::TrustRow(3))
     );
     assert_eq!(
-        settings_trust_hover_target_at_position(SettingsTab::Mounts, false, area, 1, 7, 0, 3),
+        settings_trust_hover_target_at_position(SettingsTab::Mounts, false, area, 3, 7, 0, 3),
         None
     );
     assert_eq!(
-        settings_trust_hover_target_at_position(SettingsTab::Trust, true, area, 1, 7, 0, 3),
+        settings_trust_hover_target_at_position(SettingsTab::Trust, true, area, 3, 7, 0, 3),
         None
     );
 }

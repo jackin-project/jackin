@@ -63,10 +63,18 @@ pub fn try_select_settings_trust_row(
     let ManagerStage::Settings(settings) = &state.stage else {
         return false;
     };
-    if settings.active_tab != SettingsTab::Trust || settings.mounts.modals.is_open() {
+    if settings.active_tab != SettingsTab::Trust
+        || settings.mounts.modals.is_open()
+        || settings.env.modals.is_open()
+        || settings.auth.modals.is_open()
+        || settings.error_popup.is_some()
+    {
         return false;
     }
     let area = settings.content_area(term_size);
+    if !crate::tui::layout::point_in_rect(mouse.column, mouse.row, area) {
+        return false;
+    }
     if let Some(row) = settings_trust_row_at_position(
         area,
         mouse.column,
