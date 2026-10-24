@@ -2078,3 +2078,378 @@ fn claude_rate_limit_circuit_keeps_longer_provider_deadline() {
     );
     assert_eq!(durable.rate_limit_deadline_epoch, Some(9_000));
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum TombstoneStoreEvent {
+    Store {
+        capability: UsageAccountCapability,
+        phase: UsageRefreshPhase,
+        generation: u64,
+        result_free: bool,
+        cooldown_deadline_epoch: Option<i64>,
+    },
+    Purge(UsageAccountCapability),
+}
+
+struct TombstoneWriteFailureStore {
+    inner: MemoryStore,
+    fail_tombstone: AtomicUsize,
+    fail_purge_after_removal: AtomicUsize,
+    events: Mutex<Vec<TombstoneStoreEvent>>,
+}
+
+impl AccountStateStore for TombstoneWriteFailureStore {
+    fn load(
+        &self,
+        capability: &UsageAccountCapability,
+        now_epoch: i64,
+    ) -> Result<Option<AccountStateEnvelope>, StateStoreError> {
+        self.inner.load(capability, now_epoch)
+    }
+
+    fn store(
+        &self,
+        envelope: &AccountStateEnvelope,
+        now_epoch: i64,
+    ) -> Result<(), StateStoreError> {
+        self.events
+            .lock()
+            .unwrap()
+            .push(TombstoneStoreEvent::Store {
+                capability: envelope.capability.clone(),
+                phase: envelope.phase,
+                generation: envelope.generation,
+                result_free: envelope.terminal_result.is_none()
+                    && envelope.last_good.is_none()
+                    && envelope.terminal_error.is_none(),
+                cooldown_deadline_epoch: account_cooldown_deadline(envelope),
+            });
+        let is_tombstone = envelope.phase == UsageRefreshPhase::Idle
+            && envelope.terminal_result.is_none()
+            && envelope.last_good.is_none()
+            && envelope.terminal_error.is_none()
+            && account_cooldown_deadline(envelope).is_some_and(|deadline| deadline > now_epoch);
+        if is_tombstone && self.fail_tombstone.swap(0, Ordering::SeqCst) > 0 {
+            return Err(StateStoreError::Unavailable);
+        }
+        self.inner.store(envelope, now_epoch)
+    }
+
+    fn purge(&self, capability: &UsageAccountCapability) -> Result<(), StateStoreError> {
+        self.events
+            .lock()
+            .unwrap()
+            .push(TombstoneStoreEvent::Purge(capability.clone()));
+        self.inner.purge(capability)?;
+        if self.fail_purge_after_removal.swap(0, Ordering::SeqCst) > 0 {
+            return Err(StateStoreError::Unavailable);
+        }
+        Ok(())
+    }
+}
+
+fn completed_claude_attempt(
+    account: &UsageAccountCapability,
+    invoked_at_epoch: i64,
+    success_deadline_epoch: i64,
+) -> AccountStateEnvelope {
+    let completed_at_epoch = invoked_at_epoch.saturating_add(1);
+    let view = quota_view(completed_at_epoch, 80);
+    let mut envelope = AccountStateEnvelope::idle(account.clone());
+    envelope.generation = 1;
+    envelope.phase = UsageRefreshPhase::Completed;
+    envelope.terminal_result = Some(view.clone());
+    envelope.last_good = Some(view);
+    envelope.started_at_epoch = Some(invoked_at_epoch);
+    envelope.provider_invoked_at_epoch = Some(invoked_at_epoch);
+    envelope.completed_at_epoch = Some(completed_at_epoch);
+    envelope.success_deadline_epoch = Some(success_deadline_epoch);
+    envelope
+}
+
+fn assert_later_purge_store_order(
+    store: &TombstoneWriteFailureStore,
+    pending_preimage: &AccountStateEnvelope,
+    restored_pending: &AccountStateEnvelope,
+    pending_preimage_missing: bool,
+    terminal_preimage: &AccountStateEnvelope,
+    later_purge_preimage: &AccountStateEnvelope,
+) {
+    let events = store.events.lock().unwrap().clone();
+    assert_eq!(events.len(), 6);
+    assert!(matches!(
+        &events[0],
+        TombstoneStoreEvent::Store {
+            capability,
+            phase: UsageRefreshPhase::Updating,
+            generation,
+            result_free: true,
+            ..
+        } if capability == &pending_preimage.capability
+            && *generation > pending_preimage.generation
+    ));
+    let marker_generation = match &events[0] {
+        TombstoneStoreEvent::Store { generation, .. } => *generation,
+        event @ TombstoneStoreEvent::Purge(_) => {
+            panic!("expected pending marker write first, got {event:?}");
+        }
+    };
+    let expected_terminal_deadline =
+        account_cooldown_deadline(terminal_preimage).expect("terminal cooldown");
+    assert!(matches!(
+        &events[1],
+        TombstoneStoreEvent::Store {
+            capability,
+            phase: UsageRefreshPhase::Idle,
+            result_free: true,
+            cooldown_deadline_epoch: Some(deadline),
+            generation: _,
+        } if capability == &terminal_preimage.capability
+            && *deadline == expected_terminal_deadline
+    ));
+    assert_eq!(
+        events[2],
+        TombstoneStoreEvent::Purge(later_purge_preimage.capability.clone())
+    );
+    assert_eq!(
+        events[3],
+        TombstoneStoreEvent::Store {
+            capability: pending_preimage.capability.clone(),
+            phase: UsageRefreshPhase::Updating,
+            generation: if pending_preimage_missing {
+                marker_generation
+            } else {
+                pending_preimage.generation
+            },
+            result_free: true,
+            cooldown_deadline_epoch: account_cooldown_deadline(restored_pending),
+        }
+    );
+    assert_eq!(
+        events[4],
+        TombstoneStoreEvent::Store {
+            capability: terminal_preimage.capability.clone(),
+            phase: terminal_preimage.phase,
+            generation: terminal_preimage.generation,
+            result_free: false,
+            cooldown_deadline_epoch: account_cooldown_deadline(terminal_preimage),
+        }
+    );
+    assert_eq!(
+        events[5],
+        TombstoneStoreEvent::Store {
+            capability: later_purge_preimage.capability.clone(),
+            phase: later_purge_preimage.phase,
+            generation: later_purge_preimage.generation,
+            result_free: true,
+            cooldown_deadline_epoch: account_cooldown_deadline(later_purge_preimage),
+        }
+    );
+}
+
+fn assert_missing_pending_restart_fence(
+    pending: &UsageAccountCapability,
+    restored_pending: &AccountStateEnvelope,
+    clock: &Arc<ManualClock>,
+) {
+    let restart_store = Arc::new(MemoryStore::default());
+    restart_store.store(restored_pending, 1_001).unwrap();
+    let restart_executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_001, 80),
+    )));
+    // coerce restart fixture ports to coordinator trait objects
+    let restart_provider: Arc<dyn UsageProviderExecutor> =
+        Arc::<GateExecutor>::clone(&restart_executor);
+    // coerce restart fixture ports to coordinator trait objects
+    let restart_state_store: Arc<dyn AccountStateStore> = Arc::<MemoryStore>::clone(&restart_store);
+    // share fake clock with the restart fixture
+    let restart_clock: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(clock);
+    let restarted = UsageCoordinator::start_with_clock(
+        restart_provider,
+        restart_state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([(pending.clone(), "revision-a".into())])),
+        None,
+        restart_clock,
+    );
+    let recovered = restarted.current(pending, 1_001).unwrap();
+    assert_eq!(recovered.phase, UsageRefreshPhase::Failed);
+    assert_eq!(recovered.retry_at_epoch, Some(1_300));
+    let early = restarted
+        .request_refresh(pending, recovered.generation, true, 1_001)
+        .unwrap();
+    assert_eq!(early.generation, recovered.generation);
+    assert_eq!(restart_executor.calls.load(Ordering::SeqCst), 0);
+}
+
+fn assert_pending_join_and_finish(
+    coordinator: &UsageCoordinator,
+    executor: &GateExecutor,
+    pending: &UsageAccountCapability,
+    active_generation: u64,
+) {
+    let current = coordinator.current(pending, 1_001).unwrap();
+    assert_eq!(current.phase, UsageRefreshPhase::Updating);
+    let joiner = coordinator
+        .request_refresh(pending, current.generation, true, 1_001)
+        .unwrap();
+    assert_eq!(joiner.generation, active_generation);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+
+    executor.release(1);
+    executor.wait_idle();
+    assert_eq!(
+        join_ok(coordinator, pending, active_generation, 1_002).phase,
+        UsageRefreshPhase::Completed
+    );
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+}
+
+fn failed_later_purge_case(
+    revision_reset: bool,
+    pending_preimage_missing: bool,
+    terminal_retry_after: bool,
+) {
+    let executor = Arc::new(GateExecutor::new(ProviderProbeOutcome::success(
+        quota_view(1_000, 80),
+    )));
+    let store = Arc::new(TombstoneWriteFailureStore {
+        inner: MemoryStore::default(),
+        fail_tombstone: AtomicUsize::new(0),
+        fail_purge_after_removal: AtomicUsize::new(0),
+        events: Mutex::new(Vec::new()),
+    });
+    let pending = capability("a-pending-account");
+    let terminal = capability("m-terminal-cooldown-account");
+    let later_purge = UsageAccountCapability {
+        account_id: "z-later-purge-account".into(),
+        surface_id: "codex".into(),
+    };
+    let terminal_preimage = if terminal_retry_after {
+        let mut envelope = completed_claude_attempt(&terminal, 900, 1_300);
+        envelope.phase = UsageRefreshPhase::Failed;
+        envelope.terminal_result = None;
+        envelope.success_deadline_epoch = None;
+        envelope.terminal_error = Some(coordination_error(
+            UsageCoordinationErrorKind::RateLimited,
+            "provider rate limited",
+        ));
+        envelope.rate_limit_deadline_epoch = Some(1_700);
+        envelope.retry_deadline_epoch = Some(1_700);
+        envelope
+    } else {
+        completed_claude_attempt(&terminal, 900, 1_300)
+    };
+    let later_purge_preimage = AccountStateEnvelope::idle(later_purge.clone());
+    store.inner.store(&terminal_preimage, 1_001).unwrap();
+    store.inner.store(&later_purge_preimage, 1_001).unwrap();
+    let clock = Arc::new(ManualClock::at(1_000));
+    // coerce fixture ports to coordinator trait objects
+    let provider: Arc<dyn UsageProviderExecutor> = Arc::<GateExecutor>::clone(&executor);
+    // coerce fixture ports to coordinator trait objects
+    let state_store: Arc<dyn AccountStateStore> = Arc::<TombstoneWriteFailureStore>::clone(&store);
+    // coerce paired fake clock to the coordinator clock port
+    let clock_port: Arc<dyn MonotonicClock> = Arc::<ManualClock>::clone(&clock);
+    let coordinator = UsageCoordinator::start_with_clock(
+        provider,
+        state_store,
+        UsageCoordinatorConfig::default(),
+        Some(BTreeMap::from([
+            (pending.clone(), "revision-a".into()),
+            (terminal.clone(), "revision-a".into()),
+            (later_purge.clone(), "revision-a".into()),
+        ])),
+        None,
+        clock_port,
+    );
+
+    let active = coordinator
+        .request_refresh(&pending, 0, true, 1_001)
+        .unwrap();
+    executor.wait_started(1);
+    let pending_preimage = store.inner.load(&pending, 1_001).unwrap().unwrap();
+    assert_eq!(pending_preimage.phase, UsageRefreshPhase::Updating);
+    assert_eq!(
+        store.inner.load(&terminal, 1_001).unwrap(),
+        Some(terminal_preimage.clone())
+    );
+    if pending_preimage_missing {
+        assert!(
+            store
+                .inner
+                .states
+                .lock()
+                .unwrap()
+                .remove(&pending)
+                .is_some()
+        );
+    }
+
+    store.events.lock().unwrap().clear();
+    store.fail_purge_after_removal.store(1, Ordering::SeqCst);
+    let next_catalog = if revision_reset {
+        vec![catalog_entry(&pending, "revision-b")]
+    } else {
+        Vec::new()
+    };
+    let error = coordinator
+        .reconcile_catalog(next_catalog, 1_001)
+        .unwrap_err();
+    assert_eq!(error.kind, UsageCoordinationErrorKind::Unavailable);
+    let restored_pending = store
+        .inner
+        .load(&pending, 1_001)
+        .unwrap()
+        .expect("pending attempt marker must survive rollback");
+    assert_eq!(restored_pending.phase, UsageRefreshPhase::Updating);
+    assert!(restored_pending.terminal_result.is_none());
+    assert!(restored_pending.last_good.is_none());
+    assert!(restored_pending.terminal_error.is_none());
+    if pending_preimage_missing {
+        assert!(restored_pending.generation > pending_preimage.generation);
+    } else {
+        assert_eq!(restored_pending, pending_preimage.clone());
+    }
+    assert_eq!(
+        store.inner.load(&terminal, 1_001).unwrap(),
+        Some(terminal_preimage.clone())
+    );
+    assert_eq!(
+        store.inner.load(&later_purge, 1_001).unwrap(),
+        Some(later_purge_preimage.clone())
+    );
+
+    assert_later_purge_store_order(
+        &store,
+        &pending_preimage,
+        &restored_pending,
+        pending_preimage_missing,
+        &terminal_preimage,
+        &later_purge_preimage,
+    );
+
+    if pending_preimage_missing {
+        assert_missing_pending_restart_fence(&pending, &restored_pending, &clock);
+    }
+    assert_pending_join_and_finish(&coordinator, &executor, &pending, active.generation);
+}
+
+#[test]
+fn failed_later_purge_prewrites_lazy_success_tombstone_before_purge() {
+    failed_later_purge_case(false, false, false);
+}
+
+#[test]
+fn failed_later_purge_during_revision_reset_restores_pending_marker() {
+    failed_later_purge_case(true, false, false);
+}
+
+#[test]
+fn failed_later_purge_with_missing_pending_preimage_preserves_restart_fence() {
+    failed_later_purge_case(false, true, false);
+}
+
+#[test]
+fn failed_later_purge_prewrites_lazy_retry_after_tombstone_before_purge() {
+    failed_later_purge_case(false, false, true);
+}
