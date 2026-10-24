@@ -74,8 +74,6 @@ pub(super) fn workspace_launch_config(
     config: &jackin_config::AppConfig,
     selector: &jackin_core::RoleSelector,
     workspace: &jackin_config::ResolvedWorkspace,
-    workspace_name: Option<&WorkspaceName>,
-    role_key: &str,
     agent: jackin_core::Agent,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     opts: &crate::runtime::launch::LoadOptions,
@@ -83,9 +81,8 @@ pub(super) fn workspace_launch_config(
     dirty_exit_policy: &str,
     exec_bindings: Vec<jackin_protocol::ExecBinding>,
     state: &crate::instance::RoleState,
+    instances: &[jackin_config::ResolvedInstance],
 ) -> anyhow::Result<jackin_protocol::CapsuleConfig> {
-    let instances =
-        jackin_config::resolve_launch(config, workspace_name, role_key, None, Some(agent))?;
     let isolated_worktrees = materialized
         .mounts
         .iter()
@@ -115,26 +112,26 @@ pub(super) fn workspace_launch_config(
         isolated_worktrees,
         workspace_mounts,
         worktree_git_targets,
-        &instances,
+        instances,
     );
     launch_config.auth_modes =
-        crate::runtime::launch::capsule_setup::capsule_auth_modes(config, &instances)?;
+        crate::runtime::launch::capsule_setup::capsule_auth_modes(config, instances)?;
     launch_config.exec_bindings = exec_bindings;
     launch_config.models = crate::runtime::launch::capsule_setup::resolved_instance_models(
         config,
         &validated_repo.manifest,
-        &instances,
+        instances,
         agent,
         opts.model.as_deref(),
     )?;
     launch_config.efforts = crate::runtime::launch::capsule_setup::resolved_instance_efforts(
-        &instances,
+        instances,
         agent,
         opts.effort,
     );
     crate::runtime::launch::capsule_setup::apply_instance_dirs(
         &mut launch_config,
-        &instances,
+        instances,
         &state.auth.slots,
     )?;
     Ok(launch_config)
@@ -151,8 +148,12 @@ pub(super) fn resolve_provision_inputs(
     role_key: &str,
     agent: jackin_core::Agent,
     opts: &crate::runtime::launch::LoadOptions,
+    restore_instances: Option<Vec<jackin_config::ResolvedInstance>>,
 ) -> anyhow::Result<ProvisionInputs> {
-    let instances = jackin_config::resolve_launch(config, workspace, role_key, None, Some(agent))?;
+    let instances = match restore_instances {
+        Some(instances) => instances,
+        None => jackin_config::resolve_launch(config, workspace, role_key, None, Some(agent))?,
+    };
     anyhow::ensure!(
         !instances.is_empty(),
         "no agent instances are admitted for role {role_key:?}"

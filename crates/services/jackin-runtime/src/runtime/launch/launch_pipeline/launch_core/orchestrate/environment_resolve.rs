@@ -125,6 +125,7 @@ pub(crate) struct PrepareEnvironment<'a, D> {
     pub(crate) docker: &'a D,
     pub(crate) configured: EnvironmentConfigured,
     pub(crate) opts: &'a crate::runtime::launch::LoadOptions,
+    pub(crate) restore_instances: Option<Vec<jackin_config::ResolvedInstance>>,
 }
 
 pub(crate) async fn prewarm_sibling_auth_before_admission(

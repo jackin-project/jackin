@@ -109,6 +109,7 @@ where
         docker,
         configured,
         opts,
+        restore_instances,
     } = input;
     jackin_diagnostics::active_timing_started(
         jackin_diagnostics::DiagnosticStage::Credentials,
@@ -128,6 +129,7 @@ where
         role_key,
         agent,
         opts,
+        restore_instances,
     )?;
     let instances = provision.instances;
     let admitted = instances.clone();

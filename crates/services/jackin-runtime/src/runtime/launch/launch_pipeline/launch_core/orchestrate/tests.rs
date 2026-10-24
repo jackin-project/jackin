@@ -7,6 +7,53 @@ use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
 use jackin_test_support::{FakeDockerClient, FakeRunner};
 
+#[test]
+fn supplied_empty_saved_selection_fails_without_fresh_fallback() {
+    let mut config = AppConfig::default();
+    config.accounts.insert(
+        "default-b-account".into(),
+        jackin_config::AccountConfig {
+            enabled: true,
+            name: "Default B".into(),
+            provider: jackin_config::AiProvider::OpenAi,
+            credential: jackin_config::AccountCredential::ApiKey {
+                value: "default-b-key".into(),
+                base_url: None,
+                model: None,
+            },
+        },
+    );
+    config.agent_configurations.insert(
+        "codex-default-b".into(),
+        jackin_config::AgentConfiguration {
+            agent: jackin_core::Agent::Codex,
+            account: "default-b-account".into(),
+            model: None,
+            base_url: None,
+            display_label: None,
+            invoked_via_wrapper: None,
+        },
+    );
+    config.default_launch = Some(vec!["codex-default-b".into()]);
+    let opts = crate::runtime::launch::LoadOptions::default();
+    let result = super::helpers::resolve_provision_inputs(
+        &config,
+        None,
+        "role",
+        jackin_core::Agent::Codex,
+        &opts,
+        Some(Vec::new()),
+    );
+    let Err(error) = result else {
+        panic!("an admitted empty saved selection must be rejected")
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("no agent instances are admitted")
+    );
+}
+
 #[tokio::test]
 async fn detached_launch_does_not_finalize_an_unattached_running_instance() -> anyhow::Result<()> {
     let temp = tempfile::tempdir()?;

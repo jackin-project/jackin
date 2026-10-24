@@ -1582,6 +1582,7 @@ async fn load_role_with_admission(
             resolved_env,
             rebuild,
             restore_pinned_sha,
+            restore_instances: restore_account_admission.map(|admission| admission.instances),
             git_pull_join,
             account_revision,
             admission_config,
