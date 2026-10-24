@@ -17,6 +17,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod marker_pair;
+mod marker_transaction;
 use marker_pair::MarkerPairLease;
 
 const ACCOUNT_FINGERPRINT_FILE: &str = "account-config.sha256";
@@ -693,10 +694,9 @@ pub fn account_configuration_matches(
     workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> anyhow::Result<bool> {
-    let Some(lease) = MarkerPairLease::acquire_optional(root)? else {
+    let Some(lease) = marker_transaction::shared_lease_with_recovery(root)? else {
         return Ok(false);
     };
-    lease.ensure_no_reserved_journal(ACCOUNT_MARKERS_TRANSACTION_FILE)?;
     lease.ensure_root_identity()?;
     let stored = match std::fs::read_to_string(root.join(ACCOUNT_FINGERPRINT_FILE)) {
         Ok(value) => value,
@@ -770,74 +770,14 @@ fn publish_account_fingerprints(
     admission_fingerprint: &str,
 ) -> anyhow::Result<()> {
     let lease = MarkerPairLease::acquire(root)?;
-    lease.ensure_no_reserved_journal(ACCOUNT_MARKERS_TRANSACTION_FILE)?;
+    marker_transaction::recover_locked(&lease)?;
     lease.ensure_root_identity()?;
-    let selected_path = root.join(ACCOUNT_FINGERPRINT_FILE);
-    let admission_path = root.join(ACCOUNT_ADMISSION_FILE);
-    let selected_tmp = root.join(format!(
-        ".{ACCOUNT_FINGERPRINT_FILE}.{}.tmp",
-        CREDENTIAL_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let admission_tmp = root.join(format!(
-        ".{ACCOUNT_ADMISSION_FILE}.{}.tmp",
-        CREDENTIAL_SWAP_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    lease.ensure_root_identity()?;
-    let previous_selected = read_marker(&selected_path)?;
-    lease.ensure_root_identity()?;
-    let previous_admission = read_marker(&admission_path)?;
-    lease.ensure_root_identity()?;
-
-    let publish_result = (|| -> anyhow::Result<()> {
-        std::fs::write(&selected_tmp, selected_fingerprint)?;
-        lease.ensure_root_identity()?;
-        std::fs::write(&admission_tmp, admission_fingerprint)?;
-        lease.ensure_root_identity()?;
-        std::fs::rename(&selected_tmp, &selected_path)?;
-        lease.ensure_root_identity()?;
-        marker_pair::pause_after_selected_rename(root)?;
-        lease.ensure_root_identity()?;
-        std::fs::rename(&admission_tmp, &admission_path)?;
-        lease.ensure_root_identity()?;
-        revision.ensure_current(paths)?;
-        lease.ensure_root_identity()?;
-        Ok(())
-    })();
-
-    if let Err(error) = publish_result {
-        lease.ensure_root_identity().context(format!(
-            "account marker publication failed and its root identity changed: {error:#}"
-        ))?;
-        drop(std::fs::remove_file(&selected_tmp));
-        lease.ensure_root_identity()?;
-        drop(std::fs::remove_file(&admission_tmp));
-        lease.ensure_root_identity()?;
-        restore_marker(&selected_path, previous_selected.as_deref())?;
-        lease.ensure_root_identity()?;
-        restore_marker(&admission_path, previous_admission.as_deref())?;
-        return Err(error);
-    }
-    Ok(())
-}
-
-fn read_marker(path: &Path) -> anyhow::Result<Option<Vec<u8>>> {
-    match std::fs::read(path) {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.into()),
-    }
-}
-
-fn restore_marker(path: &Path, previous: Option<&[u8]>) -> anyhow::Result<()> {
-    match previous {
-        Some(bytes) => std::fs::write(path, bytes)?,
-        None => match std::fs::remove_file(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        },
-    }
-    Ok(())
+    marker_transaction::publish_locked(
+        &lease,
+        selected_fingerprint.as_bytes(),
+        admission_fingerprint.as_bytes(),
+        || revision.ensure_current(paths),
+    )
 }
 
 pub fn account_admission_matches(
@@ -846,10 +786,9 @@ pub fn account_admission_matches(
     workspace: Option<&WorkspaceName>,
     role: &str,
 ) -> anyhow::Result<bool> {
-    let Some(lease) = MarkerPairLease::acquire_optional(root)? else {
+    let Some(lease) = marker_transaction::shared_lease_with_recovery(root)? else {
         return Ok(false);
     };
-    lease.ensure_no_reserved_journal(ACCOUNT_MARKERS_TRANSACTION_FILE)?;
     lease.ensure_root_identity()?;
     let stored = match std::fs::read_to_string(root.join(ACCOUNT_ADMISSION_FILE)) {
         Ok(value) => value,
