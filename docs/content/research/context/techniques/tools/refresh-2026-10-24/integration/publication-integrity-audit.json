@@ -1,0 +1,2103 @@
+{
+  "recorded_utc": "2026-10-24T09:05:02.509205+00:00",
+  "reviewer": "/root/headroom_lemoncrow",
+  "audit_result": "PASS for the exact pre-reorder input tree only",
+  "audit_observations_utc": {
+    "integrity_and_independent_reconciliation_result": "2026-10-24T09:02:51.199723+00:00",
+    "final_git_scope_and_record_hash_result": "2026-10-24T09:03:12.040304+00:00",
+    "period_label": "2026-10-24 09:02–09:03 UTC",
+    "exact_process_start_time_recorded": false
+  },
+  "audited_input": {
+    "git_tree": "b9d36770704e7adf4045b4116247884d1cc0a27b",
+    "object_type": "tree",
+    "coordinator_supplied_tree_identity": true,
+    "tree_object_and_recorded_counts_verified_when_archiving": true,
+    "observed_HEAD": "9971e26249c2a601912419c84aad99980f88d28b",
+    "observed_MERGE_HEAD": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+    "observed_origin_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+    "comparison_base": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+    "baseline_research_commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+    "external_source_cutoff_utc": "2026-10-24T01:15:00Z"
+  },
+  "scope": "Independent read-only audit of the three declared complete-pack artifact SHA256 inventories, twelve canonical coverage ledgers, exact 905-row reconciliation, baseline Git identities, current MDX heading/anchor destinations, and the staged diff against e737. No scientific-quality, optimizer-efficacy, secret-scanner, paid-execution or future-tree claim.",
+  "record_creation_limit": {
+    "record_path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/publication-integrity-audit.json",
+    "this_new_record_was_in_audited_tree": false,
+    "original_audit_modified_files": false,
+    "archive_operation": "Only this new JSON record is written. Existing dated audits and source/hash records remain unchanged. No staging operation is performed.",
+    "subsequent_changes": "Coordinator reports a subsequent serializer-only CSV column reorder. Its changed census/inventory/summary bytes, this new record and any later publication tree require their own validation; this PASS is not transferred to them."
+  },
+  "method": {
+    "original_operation": "Inline Python read-only audit, independently selecting canonical arrays, joining exact baseline identities and comparing authored dispositions with the coverage CSV. It did not invoke the reconciler main function or create output/cache files. A child Node process parsed current Markdown/MDX through the site parser and github-slugger.",
+    "baseline_verification": "Read each of 71 original documents from the baseline Git commit; checked each recorded blob SHA256 and original heading source line.",
+    "destination_verification": "Read all 57 current Markdown/MDX destination documents through unified, remark-parse, remark-mdx and mdast-util-to-string; generated anchors with github-slugger and compared exact authored headings/anchors.",
+    "node_executable": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "archive_operation": "Read the coordinator-supplied immutable Git tree to enumerate exact manifest/file/ledger references and confirm the 131/12/905/405 recorded counts. This does not relabel later working-tree bytes as the earlier audited inputs.",
+    "network_requests": 0,
+    "provider_calls": 0
+  },
+  "artifact_manifests": [
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "manifest_sha256_in_audited_tree": "cb431957b47b793c3247e5f66b57eeaba3d5b3d550271cefc57f78905a27f4a2",
+      "declared_files": 54,
+      "actual_files": 54,
+      "missing_files": [],
+      "sha256_mismatches": [],
+      "size_mismatches": [],
+      "unlisted_files": [],
+      "duplicate_paths": []
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "manifest_sha256_in_audited_tree": "a622405ee367f3520f68dd11c3b56fe28d78f439569a9dc7c32212c8e734ddfe",
+      "declared_files": 22,
+      "actual_files": 22,
+      "missing_files": [],
+      "sha256_mismatches": [],
+      "size_mismatches": [],
+      "unlisted_files": [],
+      "duplicate_paths": []
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "manifest_sha256_in_audited_tree": "1adc6731456c778762a0a80780022f4a04cac139d41a72ae7599c5871dd8fb9b",
+      "declared_files": 55,
+      "actual_files": 55,
+      "missing_files": [],
+      "sha256_mismatches": [],
+      "size_mismatches": [],
+      "unlisted_files": [],
+      "duplicate_paths": []
+    }
+  ],
+  "artifact_file_references": [
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md",
+      "declared_sha256": "3e530537712a052a5aa4d9ff3ea4d4041a4df6866e1d07cb6fb15f40997fa66f",
+      "actual_sha256_in_audited_tree": "3e530537712a052a5aa4d9ff3ea4d4041a4df6866e1d07cb6fb15f40997fa66f",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 16670
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/accounting-fixture-results.json",
+      "declared_sha256": "9eff36dcd738f94b18b633bbcb2e7102721836ed45302d5206ee2cbbba15df84",
+      "actual_sha256_in_audited_tree": "9eff36dcd738f94b18b633bbcb2e7102721836ed45302d5206ee2cbbba15df84",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 2454
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/accounting-fixtures.json",
+      "declared_sha256": "e3d03aaf6b30438765fc8feb6d51551ccc3f80d15b990bbe398bb9bb89cd6466",
+      "actual_sha256_in_audited_tree": "e3d03aaf6b30438765fc8feb6d51551ccc3f80d15b990bbe398bb9bb89cd6466",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 3440
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json",
+      "declared_sha256": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705",
+      "actual_sha256_in_audited_tree": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 10961
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/article-source-register.json",
+      "declared_sha256": "1fb463433df8c6e9777f2e455241c6d88305718ccaf87da5b9a2524fff7b32b0",
+      "actual_sha256_in_audited_tree": "1fb463433df8c6e9777f2e455241c6d88305718ccaf87da5b9a2524fff7b32b0",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 9572
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+      "declared_sha256": "e1a17448554477b74685ee53807671ee2b2e16601120a936f02cd3155d546c83",
+      "actual_sha256_in_audited_tree": "e1a17448554477b74685ee53807671ee2b2e16601120a936f02cd3155d546c83",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 20793
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-rows.json",
+      "declared_sha256": "72e1f14bcc8b725eaf78fd24d6e3af0a197a72924c1cb7e57dd3f04f46738199",
+      "actual_sha256_in_audited_tree": "72e1f14bcc8b725eaf78fd24d6e3af0a197a72924c1cb7e57dd3f04f46738199",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 503769
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-dispositions.json",
+      "declared_sha256": "95ad23a13342f3db2dc5c28bdef6bce3360da18f0ac08cc99417258e40a65164",
+      "actual_sha256_in_audited_tree": "95ad23a13342f3db2dc5c28bdef6bce3360da18f0ac08cc99417258e40a65164",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 75987
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-integrity-operation-initial.json",
+      "declared_sha256": "f15281966aaaf7d1ec8336025b32a156e794e64e791e94bbffbcb9341fcb6d62",
+      "actual_sha256_in_audited_tree": "f15281966aaaf7d1ec8336025b32a156e794e64e791e94bbffbcb9341fcb6d62",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 927
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-integrity-operation-second.json",
+      "declared_sha256": "047286c60d66333ee6ac65b2e1698d4fc0d9e4b949e381564795a8ffe34dddad",
+      "actual_sha256_in_audited_tree": "047286c60d66333ee6ac65b2e1698d4fc0d9e4b949e381564795a8ffe34dddad",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 925
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-integrity-operation.json",
+      "declared_sha256": "fc1444f426df6ca8e61e8e17b39d0d0c4b2d1d98968d3fc1cbbdf964a6884f34",
+      "actual_sha256_in_audited_tree": "fc1444f426df6ca8e61e8e17b39d0d0c4b2d1d98968d3fc1cbbdf964a6884f34",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 810
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-integrity-results.json",
+      "declared_sha256": "2da22eed811a0b47d661955cd1342926516408c2c6dc523311a3e307d9cf8ca8",
+      "actual_sha256_in_audited_tree": "2da22eed811a0b47d661955cd1342926516408c2c6dc523311a3e307d9cf8ca8",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 1383
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-reconciliation-operation.json",
+      "declared_sha256": "40ade8ba6e2a2b8e5563c4f0218d1b9fe34891b361c40aeeb60c7629cf52e771",
+      "actual_sha256_in_audited_tree": "40ade8ba6e2a2b8e5563c4f0218d1b9fe34891b361c40aeeb60c7629cf52e771",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 726
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-reconciliation-review.md",
+      "declared_sha256": "b989f2408a5696555e5e6cca9a6023cf259a92f1e53e989ed3018f4505be0d36",
+      "actual_sha256_in_audited_tree": "b989f2408a5696555e5e6cca9a6023cf259a92f1e53e989ed3018f4505be0d36",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 5009
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/execution-manifest.json",
+      "declared_sha256": "b5888329a07622f15b6174c8f9c4b6323efc74f2ea19099be27be149201e5fbf",
+      "actual_sha256_in_audited_tree": "b5888329a07622f15b6174c8f9c4b6323efc74f2ea19099be27be149201e5fbf",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 12095
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/extract_public_rows.py",
+      "declared_sha256": "1f785475eb71f7182941e38a2800320246bafc99e3b0742174d25d484438999c",
+      "actual_sha256_in_audited_tree": "1f785475eb71f7182941e38a2800320246bafc99e3b0742174d25d484438999c",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 10233
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/fetch_public_sources.py",
+      "declared_sha256": "b07027e2714cf8889b7d977fbd6a2d18f19ced6df2e6308aca39fa778ab5f39a",
+      "actual_sha256_in_audited_tree": "b07027e2714cf8889b7d977fbd6a2d18f19ced6df2e6308aca39fa778ab5f39a",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 2556
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-coverage-dispositions.json",
+      "declared_sha256": "485fa19003c7eb1e9f34604975e1b0785645ce6af866edeab45f60f2447edde4",
+      "actual_sha256_in_audited_tree": "485fa19003c7eb1e9f34604975e1b0785645ce6af866edeab45f60f2447edde4",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 78538
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-numerical-dispositions.json",
+      "declared_sha256": "4b9350d4d402eae0806b89fc51f9b58fdfd6ea68a18868f47d26da57e7f7bdfb",
+      "actual_sha256_in_audited_tree": "4b9350d4d402eae0806b89fc51f9b58fdfd6ea68a18868f47d26da57e7f7bdfb",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 213627
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+      "declared_sha256": "e0cb3d00afea26022e043ec413b585eecd00d90e53c74bf28ccae6cfb538d5e5",
+      "actual_sha256_in_audited_tree": "e0cb3d00afea26022e043ec413b585eecd00d90e53c74bf28ccae6cfb538d5e5",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 20554
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/lemon-package-independent-operation.json",
+      "declared_sha256": "fd0030b66cdf866b7c78976d75ef1418cf1dc01c9457e321546f02903d9188c2",
+      "actual_sha256_in_audited_tree": "fd0030b66cdf866b7c78976d75ef1418cf1dc01c9457e321546f02903d9188c2",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 821
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/lemon-package-independent-results.json",
+      "declared_sha256": "358d3f4b4d39255a3d313aa658b8adfd0816e072fc6e3452ed716e6099482873",
+      "actual_sha256_in_audited_tree": "358d3f4b4d39255a3d313aa658b8adfd0816e072fc6e3452ed716e6099482873",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 13456
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/literature-independent-review.json",
+      "declared_sha256": "c8f67c210da9efd9b41c028376c02b7c83a70c8514798977aa8ccde4ad4d2293",
+      "actual_sha256_in_audited_tree": "c8f67c210da9efd9b41c028376c02b7c83a70c8514798977aa8ccde4ad4d2293",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 3526
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/literature-independent-review.md",
+      "declared_sha256": "be24113d1b620ece2a897939b9063b5d00fd8f1f82e9940db276f372dc6ed533",
+      "actual_sha256_in_audited_tree": "be24113d1b620ece2a897939b9063b5d00fd8f1f82e9940db276f372dc6ed533",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 3648
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity-initial.stderr",
+      "declared_sha256": "8d2ce958c3fc60cc335fef1a92aa59e3fa47ebcc529def1a4d8587d1bef29bca",
+      "actual_sha256_in_audited_tree": "8d2ce958c3fc60cc335fef1a92aa59e3fa47ebcc529def1a4d8587d1bef29bca",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 111509
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity-initial.stdout",
+      "declared_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "actual_sha256_in_audited_tree": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 0
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity-second.stderr",
+      "declared_sha256": "a4f2785775b6c9376016724e155f122315071aeb05c2176bc9bca7bd3c3d2689",
+      "actual_sha256_in_audited_tree": "a4f2785775b6c9376016724e155f122315071aeb05c2176bc9bca7bd3c3d2689",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 2094
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity-second.stdout",
+      "declared_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "actual_sha256_in_audited_tree": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 0
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity.stderr",
+      "declared_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "actual_sha256_in_audited_tree": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 0
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity.stdout",
+      "declared_sha256": "2da22eed811a0b47d661955cd1342926516408c2c6dc523311a3e307d9cf8ca8",
+      "actual_sha256_in_audited_tree": "2da22eed811a0b47d661955cd1342926516408c2c6dc523311a3e307d9cf8ca8",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 1383
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-reconciliation.stderr",
+      "declared_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "actual_sha256_in_audited_tree": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 0
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-reconciliation.stdout",
+      "declared_sha256": "555d0eb86fca28dacd5e7d542721f8f158d9eb579f8e5ee43e06866a07b9993a",
+      "actual_sha256_in_audited_tree": "555d0eb86fca28dacd5e7d542721f8f158d9eb579f8e5ee43e06866a07b9993a",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 110
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/fetch-plan.log",
+      "declared_sha256": "08f9b5107c91b83227caf104b5c7fdf4c2c0027cb8d8ea630c22d626023c140b",
+      "actual_sha256_in_audited_tree": "08f9b5107c91b83227caf104b5c7fdf4c2c0027cb8d8ea630c22d626023c140b",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 69041
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/lemon-package-independent.stderr",
+      "declared_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "actual_sha256_in_audited_tree": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 0
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/lemon-package-independent.stdout",
+      "declared_sha256": "358d3f4b4d39255a3d313aa658b8adfd0816e072fc6e3452ed716e6099482873",
+      "actual_sha256_in_audited_tree": "358d3f4b4d39255a3d313aa658b8adfd0816e072fc6e3452ed716e6099482873",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 13456
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/measurement-tests.log",
+      "declared_sha256": "7696ecfbdce4ec737a28c774c3c21a2cc0b89add88c53da24cecbc30de86dfff",
+      "actual_sha256_in_audited_tree": "7696ecfbdce4ec737a28c774c3c21a2cc0b89add88c53da24cecbc30de86dfff",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 2297
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/offline-reaggregation.log",
+      "declared_sha256": "cd644431f217bbad20922c860500fe3f673082cbea163da524b0bd5ccc570bdb",
+      "actual_sha256_in_audited_tree": "cd644431f217bbad20922c860500fe3f673082cbea163da524b0bd5ccc570bdb",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 257
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/runtime-independent-review.stderr",
+      "declared_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "actual_sha256_in_audited_tree": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 0
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/runtime-independent-review.stdout",
+      "declared_sha256": "0f17ce42ba8c2618ce1e717a277b90f3cecf0c21156706e6f62d473be9e30368",
+      "actual_sha256_in_audited_tree": "0f17ce42ba8c2618ce1e717a277b90f3cecf0c21156706e6f62d473be9e30368",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 5213
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/source-extraction-after-review.log",
+      "declared_sha256": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705",
+      "actual_sha256_in_audited_tree": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 10961
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/source-extraction.log",
+      "declared_sha256": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705",
+      "actual_sha256_in_audited_tree": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 10961
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-accounting-register.json",
+      "declared_sha256": "cef268f544a3da8e6d496943601e32d070c55a8f448353526db6763bdb955702",
+      "actual_sha256_in_audited_tree": "cef268f544a3da8e6d496943601e32d070c55a8f448353526db6763bdb955702",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 7480
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.json",
+      "declared_sha256": "17fe4617a4e10c54023a25212c98462ab39ccd63c3ebf6019c42c8441724d083",
+      "actual_sha256_in_audited_tree": "17fe4617a4e10c54023a25212c98462ab39ccd63c3ebf6019c42c8441724d083",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 15920
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.md",
+      "declared_sha256": "f1040376f6bfcaf75c3b8c98a89881ae3c43f36b0d1aee9057041ce72822df9b",
+      "actual_sha256_in_audited_tree": "f1040376f6bfcaf75c3b8c98a89881ae3c43f36b0d1aee9057041ce72822df9b",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 6375
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/reaggregate.py",
+      "declared_sha256": "7a6f9f4c03e3b71dfb98b42e34dd376345af6620139f65ff5f832f155e6b51c0",
+      "actual_sha256_in_audited_tree": "7a6f9f4c03e3b71dfb98b42e34dd376345af6620139f65ff5f832f155e6b51c0",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 7278
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/removed-numerical-claims.json",
+      "declared_sha256": "0cf0e68db6b651b63c59a0c8833ce2ad372304b8896ae094070ac6d0400229d2",
+      "actual_sha256_in_audited_tree": "0cf0e68db6b651b63c59a0c8833ce2ad372304b8896ae094070ac6d0400229d2",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 265673
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/review_lemon_package.py",
+      "declared_sha256": "12acd3fdc6b0785228112d06c1ffb3ec4c4479711ec62fe4e9314018d67e8c0c",
+      "actual_sha256_in_audited_tree": "12acd3fdc6b0785228112d06c1ffb3ec4c4479711ec62fe4e9314018d67e8c0c",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 2018
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/review_runtime_boundaries.py",
+      "declared_sha256": "e49ccba6a56036abc931fc0e7a3ed28d3cd7aca8e71475f37fd147cf557b2a07",
+      "actual_sha256_in_audited_tree": "e49ccba6a56036abc931fc0e7a3ed28d3cd7aca8e71475f37fd147cf557b2a07",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 5242
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review-operation.json",
+      "declared_sha256": "fe8ddd36ee9e7953c523ffba30aaacf87b8a06450853c88976f8a14412f835a4",
+      "actual_sha256_in_audited_tree": "fe8ddd36ee9e7953c523ffba30aaacf87b8a06450853c88976f8a14412f835a4",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 1248
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review-results.json",
+      "declared_sha256": "0f17ce42ba8c2618ce1e717a277b90f3cecf0c21156706e6f62d473be9e30368",
+      "actual_sha256_in_audited_tree": "0f17ce42ba8c2618ce1e717a277b90f3cecf0c21156706e6f62d473be9e30368",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 5213
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review.json",
+      "declared_sha256": "d7e8444d4689e076d3e4e31870b09fe7cd126838f6aea05ed737b3e92f67a1d9",
+      "actual_sha256_in_audited_tree": "d7e8444d4689e076d3e4e31870b09fe7cd126838f6aea05ed737b3e92f67a1d9",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 2875
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review.md",
+      "declared_sha256": "738ec9ceb4ff96a0d237ced69693356e1153de143e33fe8ecf14f660f9b6d568",
+      "actual_sha256_in_audited_tree": "738ec9ceb4ff96a0d237ced69693356e1153de143e33fe8ecf14f660f9b6d568",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 8775
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/source-register.json",
+      "declared_sha256": "19504f285f3d4bc1dc7af700489a4cb1c574ab869de237a7961d900a393d0514",
+      "actual_sha256_in_audited_tree": "19504f285f3d4bc1dc7af700489a4cb1c574ab869de237a7961d900a393d0514",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 104104
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py",
+      "declared_sha256": "b86b3bff05e90396875d0fb8d21fa03536dd2805c564ba822750169cf7e25285",
+      "actual_sha256_in_audited_tree": "b86b3bff05e90396875d0fb8d21fa03536dd2805c564ba822750169cf7e25285",
+      "sha256_matches": true,
+      "declared_bytes": null,
+      "actual_bytes_in_audited_tree": 9190
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+      "declared_sha256": "598b4ac9b020494c49713748e4f4e135794a4e04367c5d1f8b87df5fdc5edc76",
+      "actual_sha256_in_audited_tree": "598b4ac9b020494c49713748e4f4e135794a4e04367c5d1f8b87df5fdc5edc76",
+      "sha256_matches": true,
+      "declared_bytes": 10372,
+      "actual_bytes_in_audited_tree": 10372
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/command-results.json",
+      "declared_sha256": "76b1d3dbfa61056bfc06bc0d1e002838b55c07d014b00b6447361f66b193a7f3",
+      "actual_sha256_in_audited_tree": "76b1d3dbfa61056bfc06bc0d1e002838b55c07d014b00b6447361f66b193a7f3",
+      "sha256_matches": true,
+      "declared_bytes": 9745,
+      "actual_bytes_in_audited_tree": 9745
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/coverage-dispositions.json",
+      "declared_sha256": "63ac5024aebb7800101e854a9d49f951797539257afd7395cd28af25c108dc7a",
+      "actual_sha256_in_audited_tree": "63ac5024aebb7800101e854a9d49f951797539257afd7395cd28af25c108dc7a",
+      "sha256_matches": true,
+      "declared_bytes": 17468,
+      "actual_bytes_in_audited_tree": 17468
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/headroom-no-ml-feasibility.json",
+      "declared_sha256": "4a79cf262a53a189d435d4bd9254e9350ec4a289c9a0128728c62e9be0a53173",
+      "actual_sha256_in_audited_tree": "4a79cf262a53a189d435d4bd9254e9350ec4a289c9a0128728c62e9be0a53173",
+      "sha256_matches": true,
+      "declared_bytes": 12970,
+      "actual_bytes_in_audited_tree": 12970
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/issue-resolution-register.json",
+      "declared_sha256": "d6b3245631f41ea61ec63ee5fdd94eb5ab1c3bb6953f2561ffb4c059508f0845",
+      "actual_sha256_in_audited_tree": "d6b3245631f41ea61ec63ee5fdd94eb5ab1c3bb6953f2561ffb4c059508f0845",
+      "sha256_matches": true,
+      "declared_bytes": 1170,
+      "actual_bytes_in_audited_tree": 1170
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/lemoncrow-artifact-correspondence.json",
+      "declared_sha256": "d63cbce278f6b774ba54dee926c1e7ed8c2a7421a05acbc5f7da4d8136fa6730",
+      "actual_sha256_in_audited_tree": "d63cbce278f6b774ba54dee926c1e7ed8c2a7421a05acbc5f7da4d8136fa6730",
+      "sha256_matches": true,
+      "declared_bytes": 3956,
+      "actual_bytes_in_audited_tree": 3956
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-cargo-check-no-ml.log",
+      "declared_sha256": "7200b01a942e3401c68547e77378a1a11ec0b5b7f6a840330e8c90860f2405c0",
+      "actual_sha256_in_audited_tree": "7200b01a942e3401c68547e77378a1a11ec0b5b7f6a840330e8c90860f2405c0",
+      "sha256_matches": true,
+      "declared_bytes": 14402,
+      "actual_bytes_in_audited_tree": 14402
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-densify-pytest.log",
+      "declared_sha256": "f824d7bbb058ebdb3558d87ad97d12cdeb8afc62c7e7e93dee3315e8948c9790",
+      "actual_sha256_in_audited_tree": "f824d7bbb058ebdb3558d87ad97d12cdeb8afc62c7e7e93dee3315e8948c9790",
+      "sha256_matches": true,
+      "declared_bytes": 14710,
+      "actual_bytes_in_audited_tree": 14710
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-fidelity.log",
+      "declared_sha256": "c0c021d8b8b51ab724a13f60c86e1fade0cbb0549b551e3450c15c95a5f5d653",
+      "actual_sha256_in_audited_tree": "c0c021d8b8b51ab724a13f60c86e1fade0cbb0549b551e3450c15c95a5f5d653",
+      "sha256_matches": true,
+      "declared_bytes": 9403,
+      "actual_bytes_in_audited_tree": 9403
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-no-ml-tree.log",
+      "declared_sha256": "fdfde85b1ecf72a2f205fed17de65969bae6d17c8b7ff4c0bb09bfdde62888be",
+      "actual_sha256_in_audited_tree": "fdfde85b1ecf72a2f205fed17de65969bae6d17c8b7ff4c0bb09bfdde62888be",
+      "sha256_matches": true,
+      "declared_bytes": 15353,
+      "actual_bytes_in_audited_tree": 15353
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-python-package-identity.log",
+      "declared_sha256": "bd830a061155ffd20a535235ad4b1215450456b41ca31df051f2ed743af891c9",
+      "actual_sha256_in_audited_tree": "bd830a061155ffd20a535235ad4b1215450456b41ca31df051f2ed743af891c9",
+      "sha256_matches": true,
+      "declared_bytes": 823,
+      "actual_bytes_in_audited_tree": 823
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-wheel-tests-confirmed.log",
+      "declared_sha256": "ded6db631d20838be4d8f7ce20178bb4378933b08c9509f168068c0960b61d4d",
+      "actual_sha256_in_audited_tree": "ded6db631d20838be4d8f7ce20178bb4378933b08c9509f168068c0960b61d4d",
+      "sha256_matches": true,
+      "declared_bytes": 99,
+      "actual_bytes_in_audited_tree": 99
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/lemoncrow-boundaries.log",
+      "declared_sha256": "de5d2042e7fc63b86be0baa41ce976464d74f1d9147e200647510fef8b059b2f",
+      "actual_sha256_in_audited_tree": "de5d2042e7fc63b86be0baa41ce976464d74f1d9147e200647510fef8b059b2f",
+      "sha256_matches": true,
+      "declared_bytes": 1753,
+      "actual_bytes_in_audited_tree": 1753
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/lemoncrow-runtime-lite-pytest.log",
+      "declared_sha256": "f2b195a0665ff96d8e8fa2e2892848bd22d3948c8c2bff35c8edb4d99dd7dfcd",
+      "actual_sha256_in_audited_tree": "f2b195a0665ff96d8e8fa2e2892848bd22d3948c8c2bff35c8edb4d99dd7dfcd",
+      "sha256_matches": true,
+      "declared_bytes": 99,
+      "actual_bytes_in_audited_tree": 99
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/python-environment.txt",
+      "declared_sha256": "570dbf95cd4b601671cc5cac6e9ab30fc24be664eec87e3c42c2b2f1b5b9fd9a",
+      "actual_sha256_in_audited_tree": "570dbf95cd4b601671cc5cac6e9ab30fc24be664eec87e3c42c2b2f1b5b9fd9a",
+      "sha256_matches": true,
+      "declared_bytes": 1241,
+      "actual_bytes_in_audited_tree": 1241
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/headroom_fidelity.rs",
+      "declared_sha256": "e88a42f2497083a5286201e619feaa5c3d6980753bc546fd6565f073bee6ae63",
+      "actual_sha256_in_audited_tree": "e88a42f2497083a5286201e619feaa5c3d6980753bc546fd6565f073bee6ae63",
+      "sha256_matches": true,
+      "declared_bytes": 1907,
+      "actual_bytes_in_audited_tree": 1907
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/headroom_package_identity.py",
+      "declared_sha256": "906be2ed931d70b9dee01facbf3b5df99c0de1ac064a08bb928c42e2ba9898b3",
+      "actual_sha256_in_audited_tree": "906be2ed931d70b9dee01facbf3b5df99c0de1ac064a08bb928c42e2ba9898b3",
+      "sha256_matches": true,
+      "declared_bytes": 1000,
+      "actual_bytes_in_audited_tree": 1000
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/lemoncrow_artifact_correspondence.py",
+      "declared_sha256": "41ea24647963c73005d05b7f1796a3739d589c257c5c38d791f29327b3da5d82",
+      "actual_sha256_in_audited_tree": "41ea24647963c73005d05b7f1796a3739d589c257c5c38d791f29327b3da5d82",
+      "sha256_matches": true,
+      "declared_bytes": 1590,
+      "actual_bytes_in_audited_tree": 1590
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/lemoncrow_boundaries.py",
+      "declared_sha256": "d9633084147b8e96570499bd28918a90a80aa066daf34fe117983e222cd5fdc5",
+      "actual_sha256_in_audited_tree": "d9633084147b8e96570499bd28918a90a80aa066daf34fe117983e222cd5fdc5",
+      "sha256_matches": true,
+      "declared_bytes": 4506,
+      "actual_bytes_in_audited_tree": 4506
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/release-recheck.json",
+      "declared_sha256": "770c41deb24e1116200ae7b1cf630984eff59e25700c3792b3d14b5066c09862",
+      "actual_sha256_in_audited_tree": "770c41deb24e1116200ae7b1cf630984eff59e25700c3792b3d14b5066c09862",
+      "sha256_matches": true,
+      "declared_bytes": 1319,
+      "actual_bytes_in_audited_tree": 1319
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/release-register.json",
+      "declared_sha256": "7b9e34c3dbc5a6027f8593a5bf47c176f1ddbc9d9eeecf9f0f13b76e7da4de09",
+      "actual_sha256_in_audited_tree": "7b9e34c3dbc5a6027f8593a5bf47c176f1ddbc9d9eeecf9f0f13b76e7da4de09",
+      "sha256_matches": true,
+      "declared_bytes": 25469,
+      "actual_bytes_in_audited_tree": 25469
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/source-register.json",
+      "declared_sha256": "7996ef2aa2f9209e5570100cd2f4fad27aea84f4cfebcc989375521789f0761c",
+      "actual_sha256_in_audited_tree": "7996ef2aa2f9209e5570100cd2f4fad27aea84f4cfebcc989375521789f0761c",
+      "sha256_matches": true,
+      "declared_bytes": 20245,
+      "actual_bytes_in_audited_tree": 20245
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/README.md",
+      "declared_sha256": "67b299b5a8b32ffde308ce279644af3e20a6380d091764654aca93bfec5b1f78",
+      "actual_sha256_in_audited_tree": "67b299b5a8b32ffde308ce279644af3e20a6380d091764654aca93bfec5b1f78",
+      "sha256_matches": true,
+      "declared_bytes": 14828,
+      "actual_bytes_in_audited_tree": 14828
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+      "declared_sha256": "e6fa07755e790ec7ab58d899349527f4ae84919e22e617d978842254e23b3eea",
+      "actual_sha256_in_audited_tree": "e6fa07755e790ec7ab58d899349527f4ae84919e22e617d978842254e23b3eea",
+      "sha256_matches": true,
+      "declared_bytes": 1718,
+      "actual_bytes_in_audited_tree": 1718
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/coverage-dispositions.json",
+      "declared_sha256": "c017539c8321796469327b22220b464bd5d7a9fd585e58e395f4f9a490f2cea6",
+      "actual_sha256_in_audited_tree": "c017539c8321796469327b22220b464bd5d7a9fd585e58e395f4f9a490f2cea6",
+      "sha256_matches": true,
+      "declared_bytes": 526655,
+      "actual_bytes_in_audited_tree": 526655
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/documentation-checks.json",
+      "declared_sha256": "7f9926179ab4ff83452b5623381627cf858df1b33ca56dd15339c6cd3f1eeed4",
+      "actual_sha256_in_audited_tree": "7f9926179ab4ff83452b5623381627cf858df1b33ca56dd15339c6cd3f1eeed4",
+      "sha256_matches": true,
+      "declared_bytes": 2679,
+      "actual_bytes_in_audited_tree": 2679
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/corrected-command.json",
+      "declared_sha256": "9500584973d8211fc3f2daa48b7ca96e9103a7005884f074186b8f1453856b68",
+      "actual_sha256_in_audited_tree": "9500584973d8211fc3f2daa48b7ca96e9103a7005884f074186b8f1453856b68",
+      "sha256_matches": true,
+      "declared_bytes": 674,
+      "actual_bytes_in_audited_tree": 674
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/corrected-results.json",
+      "declared_sha256": "85c36739f5b372ca22310aa8ef6adebf0d9bbeaa7e630edc0fc1792160f2f68e",
+      "actual_sha256_in_audited_tree": "85c36739f5b372ca22310aa8ef6adebf0d9bbeaa7e630edc0fc1792160f2f68e",
+      "sha256_matches": true,
+      "declared_bytes": 571950,
+      "actual_bytes_in_audited_tree": 571950
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/first-command.json",
+      "declared_sha256": "5a3e15d776b6bada6cbb6f42ef81aa7d051f66d56313e4a6ebec5ac521b99a7b",
+      "actual_sha256_in_audited_tree": "5a3e15d776b6bada6cbb6f42ef81aa7d051f66d56313e4a6ebec5ac521b99a7b",
+      "sha256_matches": true,
+      "declared_bytes": 668,
+      "actual_bytes_in_audited_tree": 668
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/first-results.json",
+      "declared_sha256": "9a84739dd319a15a060d095e8de9ce2ae3b908858dd762139e4e7f84bbe2947c",
+      "actual_sha256_in_audited_tree": "9a84739dd319a15a060d095e8de9ce2ae3b908858dd762139e4e7f84bbe2947c",
+      "sha256_matches": true,
+      "declared_bytes": 571774,
+      "actual_bytes_in_audited_tree": 571774
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-build-input-manifest.json",
+      "declared_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "actual_sha256_in_audited_tree": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "sha256_matches": true,
+      "declared_bytes": 7954,
+      "actual_bytes_in_audited_tree": 7954
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-pages-results.json",
+      "declared_sha256": "cb444d08dfedac4b257ce891a92d23db6bf8b4be9c8ae805de5cf662ce081db4",
+      "actual_sha256_in_audited_tree": "cb444d08dfedac4b257ce891a92d23db6bf8b4be9c8ae805de5cf662ce081db4",
+      "sha256_matches": true,
+      "declared_bytes": 572584,
+      "actual_bytes_in_audited_tree": 572584
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-command.json",
+      "declared_sha256": "2e8a6d07eb9aceda8bafcd3bd93e46c77cd9ca84eb2a6cad3395595eb50dd264",
+      "actual_sha256_in_audited_tree": "2e8a6d07eb9aceda8bafcd3bd93e46c77cd9ca84eb2a6cad3395595eb50dd264",
+      "sha256_matches": true,
+      "declared_bytes": 1050,
+      "actual_bytes_in_audited_tree": 1050
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-environment.json",
+      "declared_sha256": "47a714756aaed9c5028e6a3272e89e30ec32ac4f1fd873972b8dda568b89d269",
+      "actual_sha256_in_audited_tree": "47a714756aaed9c5028e6a3272e89e30ec32ac4f1fd873972b8dda568b89d269",
+      "sha256_matches": true,
+      "declared_bytes": 4813,
+      "actual_bytes_in_audited_tree": 4813
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-mobile-independent-review.json",
+      "declared_sha256": "988434e3751dcccb728d56957e6cb31ffe75217dd0f072723da2326f58364392",
+      "actual_sha256_in_audited_tree": "988434e3751dcccb728d56957e6cb31ffe75217dd0f072723da2326f58364392",
+      "sha256_matches": true,
+      "declared_bytes": 13900,
+      "actual_bytes_in_audited_tree": 13900
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-review.md",
+      "declared_sha256": "07a45f9d1a908aea1087c5e4a46c360b43e3a4c64ad6bec3b17c65df89e83876",
+      "actual_sha256_in_audited_tree": "07a45f9d1a908aea1087c5e4a46c360b43e3a4c64ad6bec3b17c65df89e83876",
+      "sha256_matches": true,
+      "declared_bytes": 7693,
+      "actual_bytes_in_audited_tree": 7693
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-run-history.json",
+      "declared_sha256": "906486aa3b9d7f95aa5722ea0ad87f15a5eb94ea9e333b4d255f37c414e69524",
+      "actual_sha256_in_audited_tree": "906486aa3b9d7f95aa5722ea0ad87f15a5eb94ea9e333b4d255f37c414e69524",
+      "sha256_matches": true,
+      "declared_bytes": 5343,
+      "actual_bytes_in_audited_tree": 5343
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-screenshots.json",
+      "declared_sha256": "b867b9947f4dc3cc45b65d559334e9a95bb8a8f41dce59945ff4da50a0a7c965",
+      "actual_sha256_in_audited_tree": "b867b9947f4dc3cc45b65d559334e9a95bb8a8f41dce59945ff4da50a0a7c965",
+      "sha256_matches": true,
+      "declared_bytes": 28394,
+      "actual_bytes_in_audited_tree": 28394
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/snapshot.json",
+      "declared_sha256": "c11bf4b64ecfdc054b5f12d3819fed7703ccf196e29471aaed3c15cc75d59480",
+      "actual_sha256_in_audited_tree": "c11bf4b64ecfdc054b5f12d3819fed7703ccf196e29471aaed3c15cc75d59480",
+      "sha256_matches": true,
+      "declared_bytes": 1370,
+      "actual_bytes_in_audited_tree": 1370
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/render_pages_corrected.mjs",
+      "declared_sha256": "1afcbfb734bfe8d054401979601dd7cee1e031892bd187aa4990e34b19f2ae3c",
+      "actual_sha256_in_audited_tree": "1afcbfb734bfe8d054401979601dd7cee1e031892bd187aa4990e34b19f2ae3c",
+      "sha256_matches": true,
+      "declared_bytes": 18090,
+      "actual_bytes_in_audited_tree": 18090
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/render_pages_first.mjs",
+      "declared_sha256": "7735c9032ade7b17a246724e93ae96b3bd229ee827a9dbf2796b52dddcae4515",
+      "actual_sha256_in_audited_tree": "7735c9032ade7b17a246724e93ae96b3bd229ee827a9dbf2796b52dddcae4515",
+      "sha256_matches": true,
+      "declared_bytes": 16699,
+      "actual_bytes_in_audited_tree": 16699
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/host-document-register.json",
+      "declared_sha256": "7a9d024a3fe90cb51c89b5297f9067047574137f1b170d0ac843f5d0ed76d778",
+      "actual_sha256_in_audited_tree": "7a9d024a3fe90cb51c89b5297f9067047574137f1b170d0ac843f5d0ed76d778",
+      "sha256_matches": true,
+      "declared_bytes": 9351,
+      "actual_bytes_in_audited_tree": 9351
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/independent-review.md",
+      "declared_sha256": "2373309f6901b6dd5edf21d17edb633905eaac7f3a9f0e52b496c9bbd74171a6",
+      "actual_sha256_in_audited_tree": "2373309f6901b6dd5edf21d17edb633905eaac7f3a9f0e52b496c9bbd74171a6",
+      "sha256_matches": true,
+      "declared_bytes": 13335,
+      "actual_bytes_in_audited_tree": 13335
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/integration-coverage-dispositions.json",
+      "declared_sha256": "a76c452133dfd4edebbc92484dfc95a4a1f087e243fa092f5f0f25fa51658388",
+      "actual_sha256_in_audited_tree": "a76c452133dfd4edebbc92484dfc95a4a1f087e243fa092f5f0f25fa51658388",
+      "sha256_matches": true,
+      "declared_bytes": 404391,
+      "actual_bytes_in_audited_tree": 404391
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/integration-documentation-checks.json",
+      "declared_sha256": "bd88970a32dfcd387696963161d4715e014082682458a55a1a20cc11265cc955",
+      "actual_sha256_in_audited_tree": "bd88970a32dfcd387696963161d4715e014082682458a55a1a20cc11265cc955",
+      "sha256_matches": true,
+      "declared_bytes": 5281,
+      "actual_bytes_in_audited_tree": 5281
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/lean-facade-metadata-attempt.json",
+      "declared_sha256": "e8e65e75a0daf61a9d01dbaed86b823eeb0b39c16f4cd66360ac42c7435ef034",
+      "actual_sha256_in_audited_tree": "e8e65e75a0daf61a9d01dbaed86b823eeb0b39c16f4cd66360ac42c7435ef034",
+      "sha256_matches": true,
+      "declared_bytes": 1853,
+      "actual_bytes_in_audited_tree": 1853
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/lemon-join-review-results.json",
+      "declared_sha256": "0280f8b471c9237fd355916db8423dc48c28f2666b879caaa7f62fcad2615678",
+      "actual_sha256_in_audited_tree": "0280f8b471c9237fd355916db8423dc48c28f2666b879caaa7f62fcad2615678",
+      "sha256_matches": true,
+      "declared_bytes": 2520,
+      "actual_bytes_in_audited_tree": 2520
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/linkage-constraint-results.json",
+      "declared_sha256": "b3558e627377aa58b9a3447412225540266df7b3c258d98b376ec8e629074728",
+      "actual_sha256_in_audited_tree": "b3558e627377aa58b9a3447412225540266df7b3c258d98b376ec8e629074728",
+      "sha256_matches": true,
+      "declared_bytes": 9919,
+      "actual_bytes_in_audited_tree": 9919
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-browser-install.log",
+      "declared_sha256": "9f8e6201d6e299fcbebbf430ad0bb076123db76b609cc0bac31dd1f5a62ddf0a",
+      "actual_sha256_in_audited_tree": "9f8e6201d6e299fcbebbf430ad0bb076123db76b609cc0bac31dd1f5a62ddf0a",
+      "sha256_matches": true,
+      "declared_bytes": 5408,
+      "actual_bytes_in_audited_tree": 5408
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-corrected.log",
+      "declared_sha256": "4767513038d530ad63ebb6023319029ddcbb31497cb3481ae5d560006634e964",
+      "actual_sha256_in_audited_tree": "4767513038d530ad63ebb6023319029ddcbb31497cb3481ae5d560006634e964",
+      "sha256_matches": true,
+      "declared_bytes": 19558,
+      "actual_bytes_in_audited_tree": 19558
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-final-main.log",
+      "declared_sha256": "fa8716dd04e5da80ebaf4e59f10991115d4b6320329f06c36feef97c1dd87ff2",
+      "actual_sha256_in_audited_tree": "fa8716dd04e5da80ebaf4e59f10991115d4b6320329f06c36feef97c1dd87ff2",
+      "sha256_matches": true,
+      "declared_bytes": 19558,
+      "actual_bytes_in_audited_tree": 19558
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-final.log",
+      "declared_sha256": "2c607dd5aba9209a929947cf11bb736ab133744247b52d863a9f7c4316118a16",
+      "actual_sha256_in_audited_tree": "2c607dd5aba9209a929947cf11bb736ab133744247b52d863a9f7c4316118a16",
+      "sha256_matches": true,
+      "declared_bytes": 19558,
+      "actual_bytes_in_audited_tree": 19558
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-first.log",
+      "declared_sha256": "417eed1b3507cb388f1a089b5ab2f2a470777e5297874a888e7ef346d74ebf72",
+      "actual_sha256_in_audited_tree": "417eed1b3507cb388f1a089b5ab2f2a470777e5297874a888e7ef346d74ebf72",
+      "sha256_matches": true,
+      "declared_bytes": 19615,
+      "actual_bytes_in_audited_tree": 19615
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-comparison.json",
+      "declared_sha256": "6113859b5ee0608b102876caed94349599dce5b6eccf8b85c417175ba1d6b5b1",
+      "actual_sha256_in_audited_tree": "6113859b5ee0608b102876caed94349599dce5b6eccf8b85c417175ba1d6b5b1",
+      "sha256_matches": true,
+      "declared_bytes": 8950,
+      "actual_bytes_in_audited_tree": 8950
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md",
+      "declared_sha256": "396ba5b760acb74ffb94eed2818837ac1840d44e1b426d74f2b996baeaefccc8",
+      "actual_sha256_in_audited_tree": "396ba5b760acb74ffb94eed2818837ac1840d44e1b426d74f2b996baeaefccc8",
+      "sha256_matches": true,
+      "declared_bytes": 7582,
+      "actual_bytes_in_audited_tree": 7582
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-source-register.json",
+      "declared_sha256": "7020a4054fa4afb1b83b91bbfa5dd0083b05499b6f666061a953e479529edf1f",
+      "actual_sha256_in_audited_tree": "7020a4054fa4afb1b83b91bbfa5dd0083b05499b6f666061a953e479529edf1f",
+      "sha256_matches": true,
+      "declared_bytes": 5130,
+      "actual_bytes_in_audited_tree": 5130
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/policy-independent-review.md",
+      "declared_sha256": "7afc7f554856397db47a9c66a478a5ee75cb7de4509f99d8f1cdd2fdba13c1a1",
+      "actual_sha256_in_audited_tree": "7afc7f554856397db47a9c66a478a5ee75cb7de4509f99d8f1cdd2fdba13c1a1",
+      "sha256_matches": true,
+      "declared_bytes": 6653,
+      "actual_bytes_in_audited_tree": 6653
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/policy-review-source-register.json",
+      "declared_sha256": "fbace0c699f1236a276cde265070725b14678a5476cd36592da9eacd4fd93d61",
+      "actual_sha256_in_audited_tree": "fbace0c699f1236a276cde265070725b14678a5476cd36592da9eacd4fd93d61",
+      "sha256_matches": true,
+      "declared_bytes": 6375,
+      "actual_bytes_in_audited_tree": 6375
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/check_integration_docs.py",
+      "declared_sha256": "fd8fc910665aba828d0c74c47330a552a24d2decb421e471244c2dce56e314ee",
+      "actual_sha256_in_audited_tree": "fd8fc910665aba828d0c74c47330a552a24d2decb421e471244c2dce56e314ee",
+      "sha256_matches": true,
+      "declared_bytes": 3404,
+      "actual_bytes_in_audited_tree": 3404
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/fetch_retrieval_sources.py",
+      "declared_sha256": "e3dab8c259d29d31317bc948923bc46cd6aab7b9d2175130dfc7f7b5f4d4d489",
+      "actual_sha256_in_audited_tree": "e3dab8c259d29d31317bc948923bc46cd6aab7b9d2175130dfc7f7b5f4d4d489",
+      "sha256_matches": true,
+      "declared_bytes": 3866,
+      "actual_bytes_in_audited_tree": 3866
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/main_overlay_audit.py",
+      "declared_sha256": "e1c4192f99e770d55ff3a94a60da3f4acd7668bce1ad48c4c37eef10efc95aa4",
+      "actual_sha256_in_audited_tree": "e1c4192f99e770d55ff3a94a60da3f4acd7668bce1ad48c4c37eef10efc95aa4",
+      "sha256_matches": true,
+      "declared_bytes": 1755,
+      "actual_bytes_in_audited_tree": 1755
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/render_pages.mjs",
+      "declared_sha256": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54",
+      "actual_sha256_in_audited_tree": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54",
+      "sha256_matches": true,
+      "declared_bytes": 18942,
+      "actual_bytes_in_audited_tree": 18942
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/review_lemon_join.py",
+      "declared_sha256": "556d618800485b97b9a74f07b9c3e3b4b86ebe98c8ee515c05c5cd47677030b5",
+      "actual_sha256_in_audited_tree": "556d618800485b97b9a74f07b9c3e3b4b86ebe98c8ee515c05c5cd47677030b5",
+      "sha256_matches": true,
+      "declared_bytes": 5177,
+      "actual_bytes_in_audited_tree": 5177
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/source_audit.py",
+      "declared_sha256": "65277f8b6986430f0b81bd5606cbf1c23e6691d2f3733f0e421049d0fae9534e",
+      "actual_sha256_in_audited_tree": "65277f8b6986430f0b81bd5606cbf1c23e6691d2f3733f0e421049d0fae9534e",
+      "sha256_matches": true,
+      "declared_bytes": 6195,
+      "actual_bytes_in_audited_tree": 6195
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-build-input-manifest.json",
+      "declared_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "actual_sha256_in_audited_tree": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "sha256_matches": true,
+      "declared_bytes": 7954,
+      "actual_bytes_in_audited_tree": 7954
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-pages-results.json",
+      "declared_sha256": "e66726d44c9ce5813b8ad63cecb63c83f8be4eaaa591987f2e10546bd1ddd976",
+      "actual_sha256_in_audited_tree": "e66726d44c9ce5813b8ad63cecb63c83f8be4eaaa591987f2e10546bd1ddd976",
+      "sha256_matches": true,
+      "declared_bytes": 572587,
+      "actual_bytes_in_audited_tree": 572587
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-command.json",
+      "declared_sha256": "0d305d52be35b13f4a6b30797c60c6b1583b1a5a9120e7e73eb0a71c05f37560",
+      "actual_sha256_in_audited_tree": "0d305d52be35b13f4a6b30797c60c6b1583b1a5a9120e7e73eb0a71c05f37560",
+      "sha256_matches": true,
+      "declared_bytes": 1419,
+      "actual_bytes_in_audited_tree": 1419
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-environment.json",
+      "declared_sha256": "bb0fdb76703b50c1d1548ffad75d66ad383177686a6657037c57b423c7dc9f2e",
+      "actual_sha256_in_audited_tree": "bb0fdb76703b50c1d1548ffad75d66ad383177686a6657037c57b423c7dc9f2e",
+      "sha256_matches": true,
+      "declared_bytes": 6280,
+      "actual_bytes_in_audited_tree": 6280
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-main-build-comparison.json",
+      "declared_sha256": "a79926b16927b622f28632588573b8e43d3a6ca368cffffef780006efc0cec21",
+      "actual_sha256_in_audited_tree": "a79926b16927b622f28632588573b8e43d3a6ca368cffffef780006efc0cec21",
+      "sha256_matches": true,
+      "declared_bytes": 3866,
+      "actual_bytes_in_audited_tree": 3866
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-mobile-independent-review.json",
+      "declared_sha256": "b6b1558f35171f5a7d879a708e2b112a7db1cd283b1de5edf197ca4963fa7d9d",
+      "actual_sha256_in_audited_tree": "b6b1558f35171f5a7d879a708e2b112a7db1cd283b1de5edf197ca4963fa7d9d",
+      "sha256_matches": true,
+      "declared_bytes": 20383,
+      "actual_bytes_in_audited_tree": 20383
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-review.md",
+      "declared_sha256": "2a4daf90798774cec3300296202373993ffdf09c35b2a40b20e7f1f04a128323",
+      "actual_sha256_in_audited_tree": "2a4daf90798774cec3300296202373993ffdf09c35b2a40b20e7f1f04a128323",
+      "sha256_matches": true,
+      "declared_bytes": 9236,
+      "actual_bytes_in_audited_tree": 9236
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-run-history.json",
+      "declared_sha256": "100964aa295d23e8102be5f1e79690d5dfb4f66882aaf79dc518566dcbbdc483",
+      "actual_sha256_in_audited_tree": "100964aa295d23e8102be5f1e79690d5dfb4f66882aaf79dc518566dcbbdc483",
+      "sha256_matches": true,
+      "declared_bytes": 7250,
+      "actual_bytes_in_audited_tree": 7250
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-screenshots.json",
+      "declared_sha256": "8c6f4b4c7c7b2b57c3de550eba4cb6f8932eac915d7e9452146a2b6137779a89",
+      "actual_sha256_in_audited_tree": "8c6f4b4c7c7b2b57c3de550eba4cb6f8932eac915d7e9452146a2b6137779a89",
+      "sha256_matches": true,
+      "declared_bytes": 27591,
+      "actual_bytes_in_audited_tree": 27591
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/retrieval-source-register.json",
+      "declared_sha256": "59ae602716b85ea0a3f96dbb8eff85b40f7b8275cf37135f3db65c2ab1285f29",
+      "actual_sha256_in_audited_tree": "59ae602716b85ea0a3f96dbb8eff85b40f7b8275cf37135f3db65c2ab1285f29",
+      "sha256_matches": true,
+      "declared_bytes": 13672,
+      "actual_bytes_in_audited_tree": 13672
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/security-review.md",
+      "declared_sha256": "b9fb2b6a73fcb67c4fbd6e1c7b68d1616822deb603b0ed61016a3a8ccac59b4e",
+      "actual_sha256_in_audited_tree": "b9fb2b6a73fcb67c4fbd6e1c7b68d1616822deb603b0ed61016a3a8ccac59b4e",
+      "sha256_matches": true,
+      "declared_bytes": 7633,
+      "actual_bytes_in_audited_tree": 7633
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+      "declared_sha256": "12096b290b4df5cd838ac59ca6a84520cd775f474f39bbece6f55853026eea88",
+      "actual_sha256_in_audited_tree": "12096b290b4df5cd838ac59ca6a84520cd775f474f39bbece6f55853026eea88",
+      "sha256_matches": true,
+      "declared_bytes": 12452,
+      "actual_bytes_in_audited_tree": 12452
+    },
+    {
+      "manifest": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-register.json",
+      "declared_sha256": "4571adff0fef34b4c6274956b0b9c5e1078e687f913d4e307d0dbb97ac613ae4",
+      "actual_sha256_in_audited_tree": "4571adff0fef34b4c6274956b0b9c5e1078e687f913d4e307d0dbb97ac613ae4",
+      "sha256_matches": true,
+      "declared_bytes": 16918,
+      "actual_bytes_in_audited_tree": 16918
+    }
+  ],
+  "canonical_ledger_references": [
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/coverage-dispositions.json",
+      "selector": "old_headings",
+      "declared_sha256": "de618b2730617416c51825ececc2537ecdbea4b92973a96f38796a473cbc9ab0",
+      "actual_sha256_in_audited_tree": "de618b2730617416c51825ececc2537ecdbea4b92973a96f38796a473cbc9ab0",
+      "matches": true,
+      "declared_records": 26,
+      "independently_verified_record_count": 26
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-dispositions.json",
+      "selector": "rows",
+      "declared_sha256": "95ad23a13342f3db2dc5c28bdef6bce3360da18f0ac08cc99417258e40a65164",
+      "actual_sha256_in_audited_tree": "95ad23a13342f3db2dc5c28bdef6bce3360da18f0ac08cc99417258e40a65164",
+      "matches": true,
+      "declared_records": 110,
+      "independently_verified_record_count": 110
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-coverage-dispositions.json",
+      "selector": "rows",
+      "declared_sha256": "485fa19003c7eb1e9f34604975e1b0785645ce6af866edeab45f60f2447edde4",
+      "actual_sha256_in_audited_tree": "485fa19003c7eb1e9f34604975e1b0785645ce6af866edeab45f60f2447edde4",
+      "matches": true,
+      "declared_records": 66,
+      "independently_verified_record_count": 66
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/coverage-dispositions.json",
+      "selector": "pages[].headings",
+      "declared_sha256": "63ac5024aebb7800101e854a9d49f951797539257afd7395cd28af25c108dc7a",
+      "actual_sha256_in_audited_tree": "63ac5024aebb7800101e854a9d49f951797539257afd7395cd28af25c108dc7a",
+      "matches": true,
+      "declared_records": 23,
+      "independently_verified_record_count": 23
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coordinator-dispositions.json",
+      "selector": "rows",
+      "declared_sha256": "9b9c4acc46386aa3884900d9104326f20a85240cf17bf91c6f5c992db4ae195a",
+      "actual_sha256_in_audited_tree": "9b9c4acc46386aa3884900d9104326f20a85240cf17bf91c6f5c992db4ae195a",
+      "matches": true,
+      "declared_records": 69,
+      "independently_verified_record_count": 69
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/artifact-dispositions.json",
+      "selector": "rows",
+      "declared_sha256": "4cb5553366a0dd51b1cf8e984b1ea6e6d7615bef3fc02e5a3eedfdea3973173a",
+      "actual_sha256_in_audited_tree": "4cb5553366a0dd51b1cf8e984b1ea6e6d7615bef3fc02e5a3eedfdea3973173a",
+      "matches": true,
+      "declared_records": 19,
+      "independently_verified_record_count": 19
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/coverage-dispositions.json",
+      "selector": "headings",
+      "declared_sha256": "c017539c8321796469327b22220b464bd5d7a9fd585e58e395f4f9a490f2cea6",
+      "actual_sha256_in_audited_tree": "c017539c8321796469327b22220b464bd5d7a9fd585e58e395f4f9a490f2cea6",
+      "matches": true,
+      "declared_records": 164,
+      "independently_verified_record_count": 164
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/integration-coverage-dispositions.json",
+      "selector": "headings",
+      "declared_sha256": "a76c452133dfd4edebbc92484dfc95a4a1f087e243fa092f5f0f25fa51658388",
+      "actual_sha256_in_audited_tree": "a76c452133dfd4edebbc92484dfc95a4a1f087e243fa092f5f0f25fa51658388",
+      "matches": true,
+      "declared_records": 47,
+      "independently_verified_record_count": 47
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/coverage-dispositions.json",
+      "selector": "headings",
+      "declared_sha256": "628fcf9e43b7c83ac783e1917ccaa92ee3694d92fdecc07624bc46d630895197",
+      "actual_sha256_in_audited_tree": "628fcf9e43b7c83ac783e1917ccaa92ee3694d92fdecc07624bc46d630895197",
+      "matches": true,
+      "declared_records": 218,
+      "independently_verified_record_count": 218
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/coverage-dispositions.json",
+      "selector": "chapters[].headings",
+      "declared_sha256": "3582f00490938b9c4677003dea43143ca2a5ab573d3d37b595156ec9b1c83408",
+      "actual_sha256_in_audited_tree": "3582f00490938b9c4677003dea43143ca2a5ab573d3d37b595156ec9b1c83408",
+      "matches": true,
+      "declared_records": 87,
+      "independently_verified_record_count": 87
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/heading-dispositions.json",
+      "selector": "rows",
+      "declared_sha256": "f23eee4508322fc9976ee7cc90f39c261c3b53be1cee8eee447cc67fa9528cab",
+      "actual_sha256_in_audited_tree": "f23eee4508322fc9976ee7cc90f39c261c3b53be1cee8eee447cc67fa9528cab",
+      "matches": true,
+      "declared_records": 23,
+      "independently_verified_record_count": 23
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/coverage-dispositions.json",
+      "selector": "headings",
+      "declared_sha256": "7968a84180ce7ebe8310c542e6836cc7afeb66641e132303a66745d686abf75b",
+      "actual_sha256_in_audited_tree": "7968a84180ce7ebe8310c542e6836cc7afeb66641e132303a66745d686abf75b",
+      "matches": true,
+      "declared_records": 53,
+      "independently_verified_record_count": 53
+    }
+  ],
+  "coverage_input_hashes": {
+    "baseline_census": {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+      "sha256": "8e982f9d3b251157ca24510a6f79c3ee96646c5f62134b224690941e924d1260"
+    },
+    "coverage_inventory": {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+      "sha256": "833aa4fbea3963e7616e12ff5ca12b03a168fff01a959543a3cfeea1673f5511"
+    },
+    "coverage_summary": {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-summary.json",
+      "sha256": "ace4dd2bbd4306d48451dc4fcb274e59a0d60cbbb54125d8aed02c0a95e3074a"
+    },
+    "reconciler": {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/reconcile_coverage.py",
+      "sha256": "a569a808b67c1e85570a5979b0510ad6d7535d9988f883033af9b674edcdcd04"
+    }
+  },
+  "coverage_result": {
+    "census_rows": 905,
+    "inventory_rows": 905,
+    "canonical_records": 905,
+    "unique_canonical_ids": 905,
+    "canonical_ledgers": 12,
+    "baseline_documents_byte_verified": 71,
+    "baseline_mdx_documents": 56,
+    "actual_site_parser_documents": 57,
+    "actual_site_parser_heading_occurrences": 663,
+    "baseline_identity_errors": [],
+    "duplicate_ids": [],
+    "missing_ids": [],
+    "canonical_record_or_destination_mismatches": [],
+    "other_issues": [],
+    "existing_coverage_integrity_result_hashes_match": [
+      "reconciler_sha256",
+      "inventory_sha256",
+      "summary_sha256"
+    ],
+    "meaning": "Mapping, provenance and integrity checks; not proof of scientific efficacy or complete within-section claim coverage."
+  },
+  "actual_parser_input_documents": [
+    {
+      "path": "docs/content/research/context/engine/01-goals-and-non-goals.mdx",
+      "sha256_in_audited_tree": "c3bf982baf32039d9001b7dc210f62520a8c0a1208fa9a46a091aa8c11617afe"
+    },
+    {
+      "path": "docs/content/research/context/engine/02-architecture.mdx",
+      "sha256_in_audited_tree": "e5861bcf978a40be76c4dfcf6b061685cc0e27490c001ecd52ad5e1f9e45b78f"
+    },
+    {
+      "path": "docs/content/research/context/engine/03-observation-pipeline.mdx",
+      "sha256_in_audited_tree": "7aa84dc055165ba1cd5e4792b03ebf3e728e7f094e0ee1963651585031fea46d"
+    },
+    {
+      "path": "docs/content/research/context/engine/04-retrieval-layer.mdx",
+      "sha256_in_audited_tree": "bb9e532dcfb3f7c5acc938588ef18bfdd1935c2c01f5613b88ea5ad2cae76565"
+    },
+    {
+      "path": "docs/content/research/context/engine/05-output-and-prompt-layer.mdx",
+      "sha256_in_audited_tree": "6a589ebb7453eb9965dfd8675f56ce706b552789144068f10021a52a157a29ad"
+    },
+    {
+      "path": "docs/content/research/context/engine/06-routing-and-fleet-economics.mdx",
+      "sha256_in_audited_tree": "818a0125fb63e5616e79dd969ac1882584f1705b136ea3ae015738a8e5673b91"
+    },
+    {
+      "path": "docs/content/research/context/engine/07-memory-and-state.mdx",
+      "sha256_in_audited_tree": "78269f8b27f3cf5c763f6019e64dfbb44b10ab71cb6684ebc5e6ee71e8970219"
+    },
+    {
+      "path": "docs/content/research/context/engine/08-measurement-and-verification.mdx",
+      "sha256_in_audited_tree": "d06da083a4b0d74cca48ad09c98853cbfe380de404fb1a50423b34921ab2986e"
+    },
+    {
+      "path": "docs/content/research/context/engine/09-reuse-decision-matrix.mdx",
+      "sha256_in_audited_tree": "77c7a309a3efde3120af5480df9d4db981f994ecb720ab3d5d01e852b1b23379"
+    },
+    {
+      "path": "docs/content/research/context/engine/10-rollout-and-validation.mdx",
+      "sha256_in_audited_tree": "d6b82ce62050e1015c10033004fb6f42c6d88ae595d7b19e227401f4297af600"
+    },
+    {
+      "path": "docs/content/research/context/engine/index.mdx",
+      "sha256_in_audited_tree": "61b49162fd053da88cf71c427765e256565d755262afb6b95bd4afd4d46cc20d"
+    },
+    {
+      "path": "docs/content/research/context/index.mdx",
+      "sha256_in_audited_tree": "58b6dc219fa99c2815a559719c2d19691e729d3efa4983a0ae9588e5502d3a0b"
+    },
+    {
+      "path": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "sha256_in_audited_tree": "fe9d22f4883447687efc3c09de85c304721e29247ef1a196a53d6774e8f8821d"
+    },
+    {
+      "path": "docs/content/research/context/techniques/01-economics-and-measurement.mdx",
+      "sha256_in_audited_tree": "c016404c938559cc59eca72ae127f28a1afad64b2fe756a9ddce4a7dbd1ce03b"
+    },
+    {
+      "path": "docs/content/research/context/techniques/02-baseline-audit.mdx",
+      "sha256_in_audited_tree": "d6ae3c6f8f8add9a227789a9c6dd596a5fe2cc83bfdc1314c75c1ed512f66c12"
+    },
+    {
+      "path": "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "sha256_in_audited_tree": "ff9273765f582c862e9adfcc20916159665b38343403ffcb3cff420b11f5913e"
+    },
+    {
+      "path": "docs/content/research/context/techniques/04-style-and-language-compression.mdx",
+      "sha256_in_audited_tree": "3bee5529215cece5ff4c8ac88cd32487b81ac5649ee3a75eebe86f8b03970674"
+    },
+    {
+      "path": "docs/content/research/context/techniques/05-tokenizer-arbitrage.mdx",
+      "sha256_in_audited_tree": "a81201a9ee84d0283e3b222a4284d2188efea0f4c9aec2ea93e4f5612f7d51be"
+    },
+    {
+      "path": "docs/content/research/context/techniques/06-context-architecture.mdx",
+      "sha256_in_audited_tree": "68279fe1275233a74af12e73a779368f107da765d10d921e5a483049f88af555"
+    },
+    {
+      "path": "docs/content/research/context/techniques/07-caching-exploitation.mdx",
+      "sha256_in_audited_tree": "ed6d175ec092207536a56fb7c086d44b591f0f3eed9f1b0b559e619ce4453771"
+    },
+    {
+      "path": "docs/content/research/context/techniques/08-retrieval-memory-and-state.mdx",
+      "sha256_in_audited_tree": "a788edcf9659a1da7948ad2679b46b0c70ce9956d82d65f1c0576ce3fb9dcc61"
+    },
+    {
+      "path": "docs/content/research/context/techniques/09-output-discipline.mdx",
+      "sha256_in_audited_tree": "19eca137a66affc9509a1cecaa4b6d614184593e7cc160536d575cd0a0ec45bc"
+    },
+    {
+      "path": "docs/content/research/context/techniques/10-model-routing-and-delegation.mdx",
+      "sha256_in_audited_tree": "b2c464bf6a4d7b69428545fdd4a1b801e4f82c44ea87dd66fb840c23cef09b49"
+    },
+    {
+      "path": "docs/content/research/context/techniques/11-multi-agent-protocols.mdx",
+      "sha256_in_audited_tree": "d3b8cf627204076c96b835d8fd2648401d90b75712ae6a87a3e436c9189407eb"
+    },
+    {
+      "path": "docs/content/research/context/techniques/12-provider-features.mdx",
+      "sha256_in_audited_tree": "7958c1208276b1bb4fc74583057a85d43d48298e716c1acdd6dd18d301d28ad2"
+    },
+    {
+      "path": "docs/content/research/context/techniques/13-infrastructure-level.mdx",
+      "sha256_in_audited_tree": "90db0ab74692230a66538916e7143f3bdef06d07ddb1dc40550197919ed961d4"
+    },
+    {
+      "path": "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "sha256_in_audited_tree": "ec92fe0f50d134116d123b50700f23cae773c4631d5ccbd18d989d5780815e79"
+    },
+    {
+      "path": "docs/content/research/context/techniques/15-composed-stacks.mdx",
+      "sha256_in_audited_tree": "3c99dd3806b261f7ed6e5831389c18cd84533f0acbf527be9afbdbbe5d800770"
+    },
+    {
+      "path": "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "sha256_in_audited_tree": "2aa346836d78fd47d0cbcbac812e75d4d632ace3ee7a2b78c9d5f45abc42911f"
+    },
+    {
+      "path": "docs/content/research/context/techniques/17-adoption-roadmap.mdx",
+      "sha256_in_audited_tree": "a10ab63a8e7bb17c1d3e227c2ba2f801dbcb5a5e587e4ca0306b0700c5ed6463"
+    },
+    {
+      "path": "docs/content/research/context/techniques/18-extension-overview.mdx",
+      "sha256_in_audited_tree": "ad7d983c1a51af96b2b9a0e665c81f523658925972fe5b540973444f835ca2f1"
+    },
+    {
+      "path": "docs/content/research/context/techniques/19-subscription-and-quota-economics.mdx",
+      "sha256_in_audited_tree": "303da5e50e00bbd67ce8ebe7ac134795c8064a2697a628ccdf2b648a6e529e00"
+    },
+    {
+      "path": "docs/content/research/context/techniques/20-multimodal-token-economics.mdx",
+      "sha256_in_audited_tree": "00fee5bd2d9bef40eb6edebf155850bac0f32c4febdf20da6d8a66a75a8dc1c2"
+    },
+    {
+      "path": "docs/content/research/context/techniques/21-latency-and-time-economics.mdx",
+      "sha256_in_audited_tree": "ee5681470712a8aa3eddc9bd5c8101e15e0016080b175863be53cb74208fe554"
+    },
+    {
+      "path": "docs/content/research/context/techniques/22-fleet-and-multitenant-cache.mdx",
+      "sha256_in_audited_tree": "81161f1d10548efb6f5850812d08460e9d9d7d092d5f2f6daecea5d90bcbe52f"
+    },
+    {
+      "path": "docs/content/research/context/techniques/23-cross-agent-portability.mdx",
+      "sha256_in_audited_tree": "f8ddcb8eeee1318a348ce84004cbcf2f77335abd8ad865ea3972ad6c823e3e5f"
+    },
+    {
+      "path": "docs/content/research/context/techniques/24-fresh-literature-and-market-delta.mdx",
+      "sha256_in_audited_tree": "72408e209436fcc259b9f0ad20ae7706b787cfe6529dd995f267d907668c9da8"
+    },
+    {
+      "path": "docs/content/research/context/techniques/25-meta-cost-governance-and-online-quality.mdx",
+      "sha256_in_audited_tree": "93eb22ee095052fbb295b97829aaab74d203be288a1f3ac56c4fef891c4d570e"
+    },
+    {
+      "path": "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "sha256_in_audited_tree": "460f3449326357e92ec25c0b438944391c8c7cfd3e712f8d749d095e11431039"
+    },
+    {
+      "path": "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "sha256_in_audited_tree": "2ad96d089f5ae592003059192f1631e403c3611bf1574a6753a677948757aa6e"
+    },
+    {
+      "path": "docs/content/research/context/techniques/28-drift-delta.mdx",
+      "sha256_in_audited_tree": "240514952098385d59ac6d3e014b48b1391fadd970c87f7d139c44d5d8f8fa78"
+    },
+    {
+      "path": "docs/content/research/context/techniques/index.mdx",
+      "sha256_in_audited_tree": "39c29e600fc9d0b5d1d0fc31e6d978507cf9bc9e0ec0d51e9aebd91904f0d7f1"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/index.mdx",
+      "sha256_in_audited_tree": "b6fce18a3e2a4d7c29812635b4f1730e3a511c3064ef60e134cc6923cfab422c"
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md",
+      "sha256_in_audited_tree": "fea6d631ee87b842af593f91ee6c2a0144b98d508ea41304d381e273e8158e2d"
+    },
+    {
+      "path": "docs/content/research/context/tools/01-caveman-design.mdx",
+      "sha256_in_audited_tree": "7fba56b3baad6478611da43b51d4ffca7f25a6c8e0550b9bbdd7b2f65492d737"
+    },
+    {
+      "path": "docs/content/research/context/tools/02-headroom-design.mdx",
+      "sha256_in_audited_tree": "a16d26fe969cb3c7229c7c58404c193b111c140a201c7030225c98ad50ced57d"
+    },
+    {
+      "path": "docs/content/research/context/tools/03-rtk-design.mdx",
+      "sha256_in_audited_tree": "193f353419bfb7708735a6621c54aa5a4af9b4c2b148198a6deff469a288e6e6"
+    },
+    {
+      "path": "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "sha256_in_audited_tree": "a752496c1461bba8531414b0b4cb50aa662f66712ff4340c3ba554dbe3a9b12a"
+    },
+    {
+      "path": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "sha256_in_audited_tree": "86dc6b9cf8e313bc1ce147edb0914ef24442f9b0a6a78886a24b6cb2e383e1c0"
+    },
+    {
+      "path": "docs/content/research/context/tools/06-combining.mdx",
+      "sha256_in_audited_tree": "abe174002d0666b4eba51b4c1eb35422786a5c91ad291696f938450dd03f25bd"
+    },
+    {
+      "path": "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "sha256_in_audited_tree": "a942a16406cf8538e8c51a2c318c4ee2db17dd09234a71062d1fd1003ad002b4"
+    },
+    {
+      "path": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "sha256_in_audited_tree": "f5dc8a38f72e9b849d2d8fb65905870accd7904617bd86a82f61dc0dc5db0e54"
+    },
+    {
+      "path": "docs/content/research/context/tools/09-ponytail-design.mdx",
+      "sha256_in_audited_tree": "34ea1a0f098ad2b432ec7f31fe809284f71b00356bd80f1f0c24f49735b50b7d"
+    },
+    {
+      "path": "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "sha256_in_audited_tree": "65b956eb9a860414debbeb8f0efae950fe631abd7277bd5d840c06e1b58e8d86"
+    },
+    {
+      "path": "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "sha256_in_audited_tree": "9f33588611761829310a2a6a8e4e9fa3472799f61c1fe1f312bbff5e30527b00"
+    },
+    {
+      "path": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "sha256_in_audited_tree": "0441ab2a2544809260d6b1fcc9721e628eb5988d03fb31b4d8ec824db91ac1b9"
+    },
+    {
+      "path": "docs/content/research/context/tools/index.mdx",
+      "sha256_in_audited_tree": "a9cd2ed83bde199bbd660c1ed828b2fd0f3b51fb5aba8962840c9ead468d84c4"
+    }
+  ],
+  "staged_diff_result": {
+    "against": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+    "audited_tree": "b9d36770704e7adf4045b4116247884d1cc0a27b",
+    "changed_paths": 405,
+    "status_counts": {
+      "M": 60,
+      "A": 345
+    },
+    "changed_mdx_paths": 56,
+    "allowed_prefix": "docs/content/research/context/",
+    "allowed_additional_files": [
+      "docs/source.config.ts",
+      "docs/tsconfig.json"
+    ],
+    "outside_scope_paths": [],
+    "observed_unstaged_paths": [],
+    "observed_untracked_paths_within_scope": [],
+    "observed_unmerged_index_entries": 0,
+    "changed_path_list_sha256": "268a0d6410f9904a9483d61571ac039483d09298963f6c3c6190d01b1c6cc281",
+    "paths": [
+      "docs/content/research/context/engine/01-goals-and-non-goals.mdx",
+      "docs/content/research/context/engine/02-architecture.mdx",
+      "docs/content/research/context/engine/03-observation-pipeline.mdx",
+      "docs/content/research/context/engine/04-retrieval-layer.mdx",
+      "docs/content/research/context/engine/05-output-and-prompt-layer.mdx",
+      "docs/content/research/context/engine/06-routing-and-fleet-economics.mdx",
+      "docs/content/research/context/engine/07-memory-and-state.mdx",
+      "docs/content/research/context/engine/08-measurement-and-verification.mdx",
+      "docs/content/research/context/engine/09-reuse-decision-matrix.mdx",
+      "docs/content/research/context/engine/10-rollout-and-validation.mdx",
+      "docs/content/research/context/engine/index.mdx",
+      "docs/content/research/context/index.mdx",
+      "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "docs/content/research/context/techniques/01-economics-and-measurement.mdx",
+      "docs/content/research/context/techniques/02-baseline-audit.mdx",
+      "docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx",
+      "docs/content/research/context/techniques/04-style-and-language-compression.mdx",
+      "docs/content/research/context/techniques/05-tokenizer-arbitrage.mdx",
+      "docs/content/research/context/techniques/06-context-architecture.mdx",
+      "docs/content/research/context/techniques/07-caching-exploitation.mdx",
+      "docs/content/research/context/techniques/08-retrieval-memory-and-state.mdx",
+      "docs/content/research/context/techniques/09-output-discipline.mdx",
+      "docs/content/research/context/techniques/10-model-routing-and-delegation.mdx",
+      "docs/content/research/context/techniques/11-multi-agent-protocols.mdx",
+      "docs/content/research/context/techniques/12-provider-features.mdx",
+      "docs/content/research/context/techniques/13-infrastructure-level.mdx",
+      "docs/content/research/context/techniques/14-frontier-ideas.mdx",
+      "docs/content/research/context/techniques/15-composed-stacks.mdx",
+      "docs/content/research/context/techniques/16-validation-harness.mdx",
+      "docs/content/research/context/techniques/17-adoption-roadmap.mdx",
+      "docs/content/research/context/techniques/18-extension-overview.mdx",
+      "docs/content/research/context/techniques/19-subscription-and-quota-economics.mdx",
+      "docs/content/research/context/techniques/20-multimodal-token-economics.mdx",
+      "docs/content/research/context/techniques/21-latency-and-time-economics.mdx",
+      "docs/content/research/context/techniques/22-fleet-and-multitenant-cache.mdx",
+      "docs/content/research/context/techniques/23-cross-agent-portability.mdx",
+      "docs/content/research/context/techniques/24-fresh-literature-and-market-delta.mdx",
+      "docs/content/research/context/techniques/25-meta-cost-governance-and-online-quality.mdx",
+      "docs/content/research/context/techniques/26-extension-frontier.mdx",
+      "docs/content/research/context/techniques/27-extension-stacks-and-verdict.mdx",
+      "docs/content/research/context/techniques/28-drift-delta.mdx",
+      "docs/content/research/context/techniques/index.mdx",
+      "docs/content/research/context/techniques/tools/index.mdx",
+      "docs/content/research/context/techniques/tools/provider_usage.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/caveman-probe-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/caveman-sources.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/coverage-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/execution-manifest.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/caveman-gateway.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/caveman-go-cgo.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/caveman-go-initial-no-proxy.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/caveman-go-nocgo.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/caveman-go.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/caveman-node.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/caveman-warm.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/ponytail-completeness-gate.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/ponytail-node.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/logs/ponytail-scorers.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/package-correspondence.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/policy-extended-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/policy-probe-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/ponytail-sources.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/probe_caveman.go",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/probe_policy.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/probe_policy_extended.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/release-recheck.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/caveman-ponytail/run_verification.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/accounting-fixture-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/accounting-fixtures.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/article-source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/artifact-sha256.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-audit.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-rows.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-integrity-operation-initial.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-integrity-operation-second.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-integrity-operation.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-integrity-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-reconciliation-operation.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/coverage-reconciliation-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/execution-manifest.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/extract_public_rows.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/fetch_public_sources.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-coverage-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-numerical-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/frontier-source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/lemon-package-independent-operation.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/lemon-package-independent-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/literature-independent-review.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/literature-independent-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity-initial.stderr",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity-initial.stdout",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity-second.stderr",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity-second.stdout",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity.stderr",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-integrity.stdout",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-reconciliation.stderr",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/coverage-reconciliation.stdout",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/fetch-plan.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/lemon-package-independent.stderr",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/lemon-package-independent.stdout",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/measurement-tests.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/offline-reaggregation.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/runtime-independent-review.stderr",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/runtime-independent-review.stdout",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/source-extraction-after-review.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/logs/source-extraction.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-accounting-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/reaggregate.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/removed-numerical-claims.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/review_lemon_package.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/review_runtime_boundaries.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review-operation.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/verify_coverage_reconciliation.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/artifact-sha256.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/command-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/coverage-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/headroom-no-ml-feasibility.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/issue-resolution-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/lemoncrow-artifact-correspondence.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-cargo-check-no-ml.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-densify-pytest.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-fidelity.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-no-ml-tree.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-python-package-identity.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/headroom-wheel-tests-confirmed.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/lemoncrow-boundaries.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/lemoncrow-runtime-lite-pytest.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/logs/python-environment.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/headroom_fidelity.rs",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/headroom_package_identity.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/lemoncrow_artifact_correspondence.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/probes/lemoncrow_boundaries.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/release-recheck.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/release-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/headroom-lemoncrow/source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/artifact-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/artifact-integrity-audit.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/baseline-census.csv",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coordinator-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coordinator-material-inventory.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-inventory.csv",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/coverage-summary.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/delegation.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/final-release-recheck.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/historical-ci-audit.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/late-main-overlay.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/late-main-overlay.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/checkpoint-pre-commit-2.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/checkpoint-pre-commit-3.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/checkpoint-pre-commit.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/checkpoint-pre-push-committed.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-1.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-2.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-3.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-4.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-5.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-6.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-7.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-main-1.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-main-2.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-main-3.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-main-4.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-main-5.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-main-6.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-main-7.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-main-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-r2-1.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-r2-2.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-r2-3.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-r2-4.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-r2-5.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-r2-6.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-r2-7.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-r2-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-final-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-gate-1.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-gate-2.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-gate-3.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-gate-4.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-gate-5.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-gate-6.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-gate-7.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-gate-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-render-build.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-render-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-render-tests.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/docs-render-types.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/final-measurement.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/final-reaggregation.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/final-representation.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/kingfisher-identity-probe.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/main-merge-commit.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/main-merge-commit.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/merge-pre-push.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/merge-pre-push.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/mise-repair.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/offline-final-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/render-input-manifest.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/reconcile_coverage.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/requirements-reconciliation.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/verification.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/verification.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/artifact-sha256.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/command-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/coverage-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/documentation-checks.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/corrected-command.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/corrected-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/first-command.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/first-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-build-input-manifest.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-pages-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-command.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-environment.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-mobile-independent-review.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-run-history.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-screenshots.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/snapshot.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/render_pages_corrected.mjs",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/render_pages_first.mjs",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/host-document-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/independent-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/integration-coverage-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/integration-documentation-checks.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/lean-facade-metadata-attempt.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/lemon-join-review-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/linkage-constraint-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-browser-install.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-corrected.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-final-main.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-final.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/logs/rendered-first.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-comparison.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/policy-independent-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/policy-review-source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/check_integration_docs.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/fetch_retrieval_sources.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/main_overlay_audit.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/render_pages.mjs",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/review_lemon_join.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/source_audit.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-build-input-manifest.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-pages-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-command.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-environment.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-main-build-comparison.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-mobile-independent-review.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-run-history.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-screenshots.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/retrieval-source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/security-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-audit.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/citation-withdrawals.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/claim-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/coverage-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/documentation-checks.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/independent-review.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/independent-review.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/inspect_published_crates.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/published-crate-inspection.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/published-manifest-summary.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/sources/fff-search-0_11_0-registry.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/sources/mq-lang-0_9_3-registry.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/sources/mq-markdown-0_9_3-registry.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/market-literature/sources/sem-core-0_28_1-registry.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/accounting-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/cache-scenarios.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/cache-scenarios.stderr",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/cache_scenarios.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/coverage-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/execution-manifest.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/fetch_public_sources.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/host-contracts.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/host-pins.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/providers/source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/coverage-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/documentation-checks.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/execution-manifest.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fetch_sources.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/adversarial.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/csv_json_cells.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/csv_plain.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/edit_after.ts",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/edit_before.ts",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/edit_payload.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/json_ascii_escaped.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/json_compact.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/json_fields_rows.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/json_pretty2.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/json_pretty4.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/json_tabs.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/pipe_json_cells.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/pipe_plain.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/style_chinese_gate.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/style_english_gate.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/style_plain.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/style_symbols.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/style_telegraphic.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/style_verbose.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_ascii_operators.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_camel.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_id_base64.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_id_hyphenated.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_id_plain.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_path_alias.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_path_full.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_path_legend.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_snake.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_timestamp_epoch.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_timestamp_iso.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/surface_unicode_operators.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/tsv_json_cells.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/tsv_plain.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/fixtures/whole_file_payload.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/heading-dispositions.csv",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/independent-review/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/independent-review/accounting-review-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/independent-review/execution.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/independent-review/identity-crosscheck.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/independent-review/independent_rtk_review.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/independent-review/review_accounting.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/independent-review/rtk-independent-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/probe.stderr.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/probe.stdout.txt",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/representation_probe.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/source-register.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/tokenizer-provenance.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/README.md",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/artifact-correspondence.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/claim-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/environment.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/heading-dispositions.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/leanctx-cold-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/leanctx-mcp-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/leanctx-release-metadata.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/logs/leanctx-embed-check.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/logs/rtk-engine-test-corrected.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/logs/rtk-engine-test.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/logs/rtk-regressions-clean.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/logs/rtk-regressions.log",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/auto-claude.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/auto-scoped.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/auto-unknown.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/claude.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/cold-other-B.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/cold-same-A.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/coldseed.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/map-claude.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/map-scoped.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/other-B.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/resume-A.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/safe.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/mcp-wire/unknown.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/probe_leanctx.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/probe_rtk.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/probe_rtk_boundaries.py",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/registry-checks.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck-final.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/release-recheck.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/rtk-diff-boundary-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/rtk-full-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/rtk-oss-results.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/rtk-release-metadata.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/rtk-rewrite-lint.json",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/rtk-leanctx/source-register.json",
+      "docs/content/research/context/techniques/tools/session_cost.py",
+      "docs/content/research/context/techniques/tools/test_measurement_tools.py",
+      "docs/content/research/context/tools/01-caveman-design.mdx",
+      "docs/content/research/context/tools/02-headroom-design.mdx",
+      "docs/content/research/context/tools/03-rtk-design.mdx",
+      "docs/content/research/context/tools/04-leanctx-design.mdx",
+      "docs/content/research/context/tools/05-head-to-head.mdx",
+      "docs/content/research/context/tools/06-combining.mdx",
+      "docs/content/research/context/tools/07-evidence-and-claims.mdx",
+      "docs/content/research/context/tools/08-current-release-register.mdx",
+      "docs/content/research/context/tools/09-ponytail-design.mdx",
+      "docs/content/research/context/tools/10-lemoncrow-design.mdx",
+      "docs/content/research/context/tools/11-jackin-integration.mdx",
+      "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "docs/content/research/context/tools/index.mdx",
+      "docs/source.config.ts",
+      "docs/tsconfig.json"
+    ]
+  },
+  "failure_counts": {
+    "artifact_missing_files": 0,
+    "artifact_sha256_mismatches": 0,
+    "artifact_size_mismatches": 0,
+    "artifact_unlisted_files": 0,
+    "artifact_duplicate_paths": 0,
+    "artifact_unsafe_paths": 0,
+    "canonical_ledger_hash_mismatches": 0,
+    "baseline_identity_errors": 0,
+    "coverage_duplicate_ids": 0,
+    "coverage_missing_ids": 0,
+    "canonical_or_destination_mismatches": 0,
+    "staged_outside_scope_paths": 0,
+    "files_changed_during_original_audit": 0
+  },
+  "totals": {
+    "declared_manifests": 3,
+    "declared_artifact_files": 131,
+    "actual_artifact_files": 131,
+    "artifact_size_assertions": 77,
+    "canonical_ledger_hashes": 12,
+    "coverage_rows": 905,
+    "changed_paths": 405
+  },
+  "historical_audit_preserved": {
+    "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/artifact-integrity-audit.json",
+    "audited_utc": "2026-10-24T08:32:18.779183+00:00",
+    "declared_artifact_files_then": 101,
+    "disposition": "Retained unchanged as its earlier dated snapshot; not presented as the final 131-file audit."
+  },
+  "original_observation_hash_correspondence": {
+    "method": "Frozen-tree hashes compared with the values printed during the original 09:02–09:03 read-only audit.",
+    "matching_inputs": [
+      "baseline_census",
+      "coverage_inventory",
+      "coverage_summary",
+      "reconciler"
+    ],
+    "mismatches": []
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "cutoff_utc": "2026-10-24T01:15:00Z",
+  "rechecked_utc": "2026-10-24 02:19:22 UTC",
+  "releases": [
+    {
+      "repo": "rtk-ai/rtk",
+      "tag": "v1.0.1",
+      "published_at": "2026-10-14T13:31:42Z",
+      "target_commitish": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "id": 412754335,
+      "url": "https://github.com/rtk-ai/rtk/releases/tag/v1.0.1",
+      "prerelease": false,
+      "draft": false,
+      "tag_ref": {
+        "sha": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+        "type": "commit",
+        "url": "https://api.github.com/repos/rtk-ai/rtk/git/commits/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100"
+      }
+    },
+    {
+      "repo": "yvgude/lean-ctx",
+      "tag": "v3.11.4",
+      "published_at": "2026-10-11T21:31:12Z",
+      "target_commitish": "main",
+      "id": 409934698,
+      "url": "https://github.com/yvgude/lean-ctx/releases/tag/v3.11.4",
+      "prerelease": false,
+      "draft": false,
+      "tag_ref": {
+        "sha": "1074255e5c1ff1a8c41e8f790cb9b3c232a9d8b5",
+        "type": "tag",
+        "url": "https://api.github.com/repos/yvgude/lean-ctx/git/tags/1074255e5c1ff1a8c41e8f790cb9b3c232a9d8b5"
+      },
+      "annotated_tag_target": {
+        "sha": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+        "type": "commit",
+        "url": "https://api.github.com/repos/yvgude/lean-ctx/git/commits/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57"
+      }
+    }
+  ],
+  "scope": "Latest stable release metadata and tag refs only; no new binary download or task benchmark."
+}

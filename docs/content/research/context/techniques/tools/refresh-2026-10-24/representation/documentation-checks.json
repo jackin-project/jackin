@@ -1,0 +1,104 @@
+{
+  "at_utc": "2026-10-24T02:40:32Z",
+  "scope": "Owned16 MDX documents, representation JSON, internal chapter routes and RepoFile existence; no full-site build.",
+  "pages": [
+    {
+      "path": "docs/content/research/context/techniques/04-style-and-language-compression.mdx",
+      "body_lines": 95,
+      "description_length": 135,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/05-tokenizer-arbitrage.mdx",
+      "body_lines": 103,
+      "description_length": 131,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/06-context-architecture.mdx",
+      "body_lines": 78,
+      "description_length": 125,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/07-caching-exploitation.mdx",
+      "body_lines": 83,
+      "description_length": 136,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/09-output-discipline.mdx",
+      "body_lines": 99,
+      "description_length": 132,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/10-model-routing-and-delegation.mdx",
+      "body_lines": 75,
+      "description_length": 129,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/11-multi-agent-protocols.mdx",
+      "body_lines": 88,
+      "description_length": 130,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/12-provider-features.mdx",
+      "body_lines": 105,
+      "description_length": 130,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/13-infrastructure-level.mdx",
+      "body_lines": 88,
+      "description_length": 125,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/19-subscription-and-quota-economics.mdx",
+      "body_lines": 96,
+      "description_length": 143,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/20-multimodal-token-economics.mdx",
+      "body_lines": 113,
+      "description_length": 129,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/22-fleet-and-multitenant-cache.mdx",
+      "body_lines": 86,
+      "description_length": 127,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/23-cross-agent-portability.mdx",
+      "body_lines": 105,
+      "description_length": 141,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/28-drift-delta.mdx",
+      "body_lines": 62,
+      "description_length": 133,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/tools/01-caveman-design.mdx",
+      "body_lines": 128,
+      "description_length": 121,
+      "research_state_marker": true
+    },
+    {
+      "path": "docs/content/research/context/tools/09-ponytail-design.mdx",
+      "body_lines": 105,
+      "description_length": 143,
+      "research_state_marker": true
+    }
+  ],
+  "representation_json_files_parsed": 18,
+  "errors": []
+}

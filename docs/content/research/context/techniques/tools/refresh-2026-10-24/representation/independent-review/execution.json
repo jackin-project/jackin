@@ -1,0 +1,26 @@
+{
+  "reviewer": "/root/caveman_ponytail",
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "research/representation/independent_rtk_review.py"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9",
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "python",
+        "research/representation/review_accounting.py"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9",
+      "exit_code": 0
+    }
+  ],
+  "script_sha256": {
+    "independent_rtk_review.py": "48077767c75db430e442cbd198099ca91a4a706875aa2a2d0f54f57d48bbbf08",
+    "review_accounting.py": "2d5ade3d8271516ebcb833c1270bab52e18d2e5559bf402755883f4a78b898c1"
+  },
+  "limits": "No paid calls, model sessions, global installs or builds; tests use isolated product data dirs."
+}

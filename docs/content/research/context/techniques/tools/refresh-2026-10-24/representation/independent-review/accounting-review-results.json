@@ -1,0 +1,60 @@
+{
+  "reviewer": "/root/caveman_ponytail",
+  "at_utc": "2026-10-24T02:34:30Z",
+  "reviewed_files": {
+    "docs/content/research/context/techniques/tools/provider_usage.py": "9113f2eb8ec6caf072038be4699c627c2b0448700b7c038c87970b6f9e82c3a2",
+    "docs/content/research/context/techniques/tools/session_cost.py": "a89b4130b5e7e528f600bc48a3de3fe9514f9d51a58e3efe6fc048afebfc7560",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/accounting-fixtures.json": "e3d03aaf6b30438765fc8feb6d51551ccc3f80d15b990bbe398bb9bb89cd6466"
+  },
+  "source_contracts": [
+    "OpenAI prompt-caching#monitor-cache-performance: cached/write disjoint, lifetime parts sum write, ordinary=total-read-write",
+    "Claude compaction-threshold and compaction-on-demand: use final iterations once; top-level excludes compaction",
+    "Claude adaptive-thinking: thinking_tokens subset of output_tokens, final message_delta",
+    "Gemini thinking: output and thought disjoint; 62+171+297=530 documented example",
+    "Gemini caching: total_cached_tokens subset of input"
+  ],
+  "cases": [
+    {
+      "id": "openai-paid-write-partition",
+      "partition_matches": true,
+      "expected_decimal_usd": "0.0379",
+      "observed_usd": 0.0379,
+      "price_matches": true,
+      "reasoning_output_tokens": 300,
+      "scope": "Re-executed reviewed explicit fixture only; no model/API call"
+    },
+    {
+      "id": "claude-compaction-iterations",
+      "partition_matches": true,
+      "expected_decimal_usd": "0.0009",
+      "observed_usd": 0.0009,
+      "price_matches": true,
+      "reasoning_output_tokens": null,
+      "scope": "Re-executed reviewed explicit fixture only; no model/API call"
+    },
+    {
+      "id": "gemini-disjoint-generation",
+      "partition_matches": true,
+      "expected_decimal_usd": "0.004804",
+      "observed_usd": 0.004804,
+      "price_matches": true,
+      "reasoning_output_tokens": 297,
+      "scope": "Re-executed reviewed explicit fixture only; no model/API call"
+    },
+    {
+      "id": "claude-unknown-write-lifetime",
+      "partition_matches": true,
+      "expected_decimal_usd": null,
+      "observed_usd": null,
+      "price_matches": true,
+      "reasoning_output_tokens": null,
+      "scope": "Re-executed reviewed explicit fixture only; no model/API call"
+    }
+  ],
+  "result": "No accounting discrepancy found in these four scoped fixtures or reviewed normalization paths; incomplete/ambiguous receipts fail or remain unknown.",
+  "limits": [
+    "No broad upstream suite rerun",
+    "No actual provider invoice/receipt fetched",
+    "Exact rate selection, tiers and non-token fees remain explicit caller responsibility"
+  ]
+}

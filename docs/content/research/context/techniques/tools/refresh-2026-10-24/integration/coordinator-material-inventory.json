@@ -1,0 +1,2956 @@
+{
+  "baseline": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "meaning": "Line inventory preserves old content for section-level reconciliation. It is not an assertion that every line is a factual claim or has been independently measured.",
+  "rows": [
+    {
+      "document": "docs/content/research/context/index.mdx",
+      "old_line": 6,
+      "old_text": "This domain studies how agents spend context, retrieve memory, compress interaction, and route work without weakening output quality.",
+      "section_id": "S0151",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Refreshed three-dossier navigation and outcome-first recommendation; no inferred production qualification.",
+      "current_heading": "Scope and evidence",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/index.mdx",
+      "old_line": 8,
+      "old_text": "<Card title=\"Context engine\" href=\"/research/context/engine/\">Native observation, retrieval, routing, memory, and rollout design.</Card>",
+      "section_id": "S0151",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Refreshed three-dossier navigation and outcome-first recommendation; no inferred production qualification.",
+      "current_heading": "Scope and evidence",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/index.mdx",
+      "old_line": 10,
+      "old_text": "<Card title=\"Techniques\" href=\"/research/context/techniques/\">Economics, compression, caching, retrieval, delegation, and validation.</Card>",
+      "section_id": "S0151",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Refreshed three-dossier navigation and outcome-first recommendation; no inferred production qualification.",
+      "current_heading": "Scope and evidence",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/index.mdx",
+      "old_line": 12,
+      "old_text": "<Card title=\"Tools\" href=\"/research/context/tools/\">Comparative evidence for token-optimization and retrieval tools.</Card>",
+      "section_id": "S0151",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Refreshed three-dossier navigation and outcome-first recommendation; no inferred production qualification.",
+      "current_heading": "Scope and evidence",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 8,
+      "old_text": "Every headline number below survived local reproduction, primary-source re-fetch, or",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 9,
+      "old_text": "explicit ESTIMATE arithmetic; sources are in each file's Verification ledger.",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 11,
+      "old_text": "- **No honest 10x** exists at zero quality loss today; current defensible stack math lands at",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 12,
+      "old_text": " \u22482.5x (\u22482.4x code-heavy), or \u22485\u20136.2x only if the routing flip passes the harness.",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 13,
+      "old_text": "- **Output + cache writes dominate dollars**, even though cache reads dominate token volume; visible",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 14,
+      "old_text": " prose compression is useful but cannot touch thinking tokens.",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 15,
+      "old_text": "- **Negative-cost wins are context architecture wins:** tool search, context editing, observation",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 16,
+      "old_text": " masking, Edit-diffs, repo maps, and advisor escalation save tokens while improving quality.",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 17,
+      "old_text": "- **Every serious number needs local validation** because session mix, effort level, and tokenizer",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 18,
+      "old_text": " family change the economics materially.",
+      "section_id": "S0153",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 22,
+      "old_text": "Which token-reduction techniques have defensible equal-quality evidence, and what total reduction can they honestly support?",
+      "section_id": "S0154",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Question and method",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 26,
+      "old_text": "The verdict synthesizes the chapter-level evidence tiers, local measurements, and quality gates. Stack totals include only compatible token classes and keep modeled assumptions separate from measured results.",
+      "section_id": "S0155",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Question and method",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 32,
+      "old_text": "**Defensible today: \u22482.5x (\u22482.4x on code-heavy mixes). Defensible after validation on your task mix: \u22485\u20136.2x. A true 10x at",
+      "section_id": "S0157",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 33,
+      "old_text": "provably equal quality does not exist yet.** The paper path (Sonnet/Haiku main loops with",
+      "section_id": "S0157",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 34,
+      "old_text": "frontier-model escalation, effort-tiered, context-edited, batch-staged) reaches ~10x in",
+      "section_id": "S0157",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 35,
+      "old_text": "arithmetic but its quality parity on the hardest tasks is unmeasured (T4) \u2014 and the binding",
+      "section_id": "S0157",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 36,
+      "old_text": "constraints are structural: (1) **thinking bills as output and no style layer touches it** \u2014",
+      "section_id": "S0157",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 37,
+      "old_text": "only the effort parameter and not-being-the-frontier-model move it; (2) a **cache-read floor**",
+      "section_id": "S0157",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 38,
+      "old_text": "of context the agent genuinely needs; (3) quality risk concentrates exactly where the remaining",
+      "section_id": "S0157",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 39,
+      "old_text": "multipliers are. Full math: [15 \u2014 Composed Stacks: Conservative / Aggressive / Unbelievable](/research/context/techniques/15-composed-stacks/).",
+      "section_id": "S0157",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 43,
+      "old_text": "The measured heavy Fable 5 session decomposes as: **cache reads 32% / cache writes 29% /",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 44,
+      "old_text": "thinking ~20% / visible output ~17% / uncached input 2%** (02). An independent session",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 45,
+      "old_text": "was output-heavier (output 44% / cache writes 34% / cache reads 21%), so use the point estimate",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 46,
+      "old_text": "as a profile, not a law. Three consequences the market hasn't priced in:",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 48,
+      "old_text": "- **The optimization target is upside down.** Folklore optimizes visible prose (17%); the big",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 49,
+      "old_text": " four-fifths is cache traffic + thinking. One visible-output token = 5 input = **50 cache-read**",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 50,
+      "old_text": " tokens ($50 vs $1/MTok).",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 51,
+      "old_text": "- **Thinking is invisible and majority-of-output** (54.8% max-effort main loop; 44.8% across a",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 52,
+      "old_text": " 25-agent fleet \u2014 local). Claude Code transcripts redact it; it must be inferred as",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 53,
+      "old_text": " `output_tokens \u2212 count_tokens(visible)`.",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 54,
+      "old_text": "- **Defaults already bank ~4\u20135x**: caching alone measured \u221286.3% input-side ($71.59 paid vs",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 55,
+      "old_text": " $524.23 uncached-equivalent, this very session); MCP schemas defer by default; Edit-diffs are",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 56,
+      "old_text": " default. Most \"10x easy wins\" advice re-sells these defaults.",
+      "section_id": "S0158",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 60,
+      "old_text": "Quality-vs-effort curve for Fable 5 (the 76% transfer); thinking-share by effort level;",
+      "section_id": "S0159",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Adoption and smallest decisive tests",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 61,
+      "old_text": "persona-vs-instruction durability over 100+ turns; caveat-drop rates in terse output registers;",
+      "section_id": "S0159",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Adoption and smallest decisive tests",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 62,
+      "old_text": "composed-stack quality at n=30 ([16 \u2014 Validation Harness: the No-Quality-Loss Proof Protocol](/research/context/techniques/16-validation-harness/) \u00a77 closes all five).",
+      "section_id": "S0159",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Adoption and smallest decisive tests",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 64,
+      "old_text": "\u2014 Read 15 for the math, 17 for the sequence, 16 to prove any of it on your own tasks.",
+      "section_id": "S0159",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Adoption and smallest decisive tests",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 70,
+      "old_text": "**Day 1, riskless (\u22481.06\u20131.3x):** dedup the double-registered caveman hooks (\u2212966 tok/session,",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 71,
+      "old_text": "\u2212118/prompt); pin exploration subagents `model: haiku, effort: low` (\u00f710 on code-heavy text, up to",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 72,
+      "old_text": "\u00f713\u201314 on prose/markdown-heavy text \u2014 re-count the actual corpus); two CLAUDE.md guard-lines (Edit-not-Write; no restatement \u2014",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 73,
+      "old_text": "89.3% and 91.4% per-instance, measured); never switch model/effort mid-session (cache is",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 74,
+      "old_text": "model-scoped; \u22489-turn break-even per switch).",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 76,
+      "old_text": "**With validation (\u22482.5x):** effort high\u2192medium on routine work (T1: Opus 4.5 at medium matched",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 77,
+      "old_text": "Sonnet 4.5's best SWE-bench with **76% fewer output tokens** \u2014 the single strongest sanctioned",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 78,
+      "old_text": "number; transfer to Fable 5 must be validated, and this is the only lever that reaches",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 79,
+      "old_text": "thinking); context editing / observation masking (vendor: **84% token cut, +29% performance**;",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 80,
+      "old_text": "JetBrains T2: masking \u2248 \u221250% cost at parity); register compression on visible prose only",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 81,
+      "old_text": "(caveman-ultra measured **58.5%**, not the marketed 65\u201375%); route half the work",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 82,
+      "old_text": "Sonnet-main+advisor (T1: **+2.7pp AND \u221211.9% cost**; code-heavy routes get list-price ratios,",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 83,
+      "old_text": "not the prose tokenizer bonus); batch the offline 30% at 50% off.",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 85,
+      "old_text": "**The negative-cost set** (saves tokens AND improves output \u2014 adopt unconditionally): tool",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 86,
+      "old_text": "search/schema deferral (85% cut, accuracy 49%\u219274%), context editing, observation masking,",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 87,
+      "old_text": "Edit-diffs (aider: quality 20%\u219261%), advisor escalation, repo-maps/outlines instead of file",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 88,
+      "old_text": "dumps (\u221285/\u221292% local), effort max\u2192high. Common thread: **less junk in, less junk out** \u2014 the",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 89,
+      "old_text": "input-architecture layer is where cost and quality align, and it beats every style trick.",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 91,
+      "old_text": "**Make it infrastructure (jackin\u276f):** bake the pack into every launched container \u2014 env",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 92,
+      "old_text": "defaults in the launch env assembly, `[token_policy]` in role manifests, model/effort flags via",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 93,
+      "old_text": "CapsuleConfig, CI linter failing when always-loaded context grows. Automatic beats disciplined;",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 94,
+      "old_text": "insertion points are mapped in 17.",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 96,
+      "old_text": "For jackin\u276f, the executive summary evidence identifies which mechanisms are safe to adopt directly and which still require workload-specific validation.",
+      "section_id": "S0161",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Strongest recommendations now",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 102,
+      "old_text": "Full kill-tables live in files [04 \u2014 Style and Language Compression \u2014 Beyond Caveman](/research/context/techniques/04-style-and-language-compression/) through [13 \u2014 Infrastructure-level (self-hosted / gateway tier)](/research/context/techniques/13-infrastructure-level/); the ones that change decisions:",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 104,
+      "old_text": "1. **\"Caveman cuts ~75%\" \u2192 58.5% measured** (token-level, Fable tokenizer). The 75% (now \"65%\"",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 105,
+      "old_text": " on the repo) is character-level folklore. And it only touches visible prose \u2014 in tool-heavy",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 106,
+      "old_text": " agent sessions, free-text was **1.4\u20131.5% of visible output** (local); style compression's",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 107,
+      "old_text": " end-to-end ceiling there is ~0.4% of output tokens. In chat-heavy sessions it's real (~10%",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 108,
+      "old_text": " of dollars). Wenyan: 80.9% char cut collapses to 56.6% tokens \u2014 no advantage over ultra,",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 109,
+      "old_text": " higher risk.",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 110,
+      "old_text": "2. **\"Editing CLAUDE.md mid-session busts the cache\" \u2192 false**; it's read once at session start.",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 111,
+      "old_text": " Eight real invalidators are enumerated in 07.",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 112,
+      "old_text": "3. **\"Keepalive pingers save the cache\" \u2192 solved problem**: Claude Code main loop already",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 113,
+      "old_text": " writes 1h-TTL cache (320/320 calls observed) and \"the cache is refreshed for no additional",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 114,
+      "old_text": " cost each time\" it's read. Also: count_tokens does NOT warm the cache (documented).",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 115,
+      "old_text": "4. **\"1M context costs a premium\" \u2192 dead**; flat per-token pricing across the window on",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 116,
+      "old_text": " Fable 5/Opus 4.8/Sonnet 4.6 (live pricing page). Quality, not price, is the long-context tax.",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 117,
+      "old_text": "5. **\"YAML/TOON halve JSON\" \u2192 minification is most of it**: pretty\u2192minified JSON \u221229%, \u2192CSV",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 118,
+      "old_text": " \u221234% further; TOON \u2248 CSV+4%; indent width and CSV-vs-TSV are token-identical. Biggest",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 119,
+      "old_text": " structured-data lever is the format spread: pretty XML\u2192CSV = 2.45x.",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 120,
+      "old_text": "6. **\"RouteLLM saves 85%\" \u2192 MT-Bench-only** (45% MMLU, 35% GSM8K); per-request gateway routing",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 121,
+      "old_text": " also breaks Claude's model-scoped cache.",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 122,
+      "old_text": "7. **\"LLMLingua 20x in front of the API\" \u2192 QUALITY-TRADE trap for coding**: a cache-breaking",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 123,
+      "old_text": " proxy must beat ~5.5x compression to break even vs 0.1x reads; a 2026 RCT on Sonnet 4.5",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 124,
+      "old_text": " found keep-20% compression *increased* cost 1.8%; code tolerates ~10% prompt reduction (T2).",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 125,
+      "old_text": "8. **\"Compaction is free\" \u2192 billed as a separate full-price iteration** (~$1.98 per pass at the",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 126,
+      "old_text": " docs' own example scale), excluded from top-level usage fields.",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 127,
+      "old_text": "9. **\"Mem0/semantic caches for agents\" \u2192 evidence is FAQ/consumer workloads**; files-only",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 128,
+      "old_text": " baselines beat Mem0 on LoCoMo; zero coding-agent evidence. Base64/gzip \"compression\" costs",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 129,
+      "old_text": " 2.7\u20134.3x MORE tokens (measured).",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 130,
+      "old_text": "10. **Tokenizer counts are not portable**: Fable 5 = Opus 4.8 tokenizer \u2260 Sonnet 4.6 = Haiku 4.5",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 131,
+      "old_text": " (exact family equality, measured); the ~30% premium is an ASCII/English tax, but code/CJK can be",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 132,
+      "old_text": " near-neutral while SCREAMING_SNAKE is extreme. Cross-model budgets must re-count, and an open docs contradiction",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 133,
+      "old_text": " on prior-turn thinking retention (12 \u00a7TL;DR) is worth real money on long sessions.",
+      "section_id": "S0163",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Claims retired or narrowed",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 137,
+      "old_text": "Evidence and repository references are cited inline beside the claims they support.",
+      "section_id": "S0164",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Workload-specific ceilings",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 141,
+      "old_text": "- [Token-optimization techniques dossier](/research/context/techniques/)",
+      "section_id": "S0165",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 142,
+      "old_text": "- [Validation harness](/research/context/techniques/16-validation-harness/)",
+      "section_id": "S0165",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/00-executive-summary.mdx",
+      "old_line": 143,
+      "old_text": "- [Context engine](/research/context/engine/)",
+      "section_id": "S0165",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retired unsupported historical session shares, universal multipliers and automatic model/effort changes; replaced with explicit arithmetic, current native baseline and qualification.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 6,
+      "old_text": "**Research state:** Needs refresh",
+      "section_id": "S0728",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Research question",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 8,
+      "old_text": "**Verification cutoff:** 2026-08-12. Revalidate provider models, prices, quotas, and cache behavior after this date.",
+      "section_id": "S0728",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Research question",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 10,
+      "old_text": "This dossier evaluates coding-agent token-efficiency techniques. Every external claim has a source in its chapter, every local number names its method, and every recommendation remains subject to the [validation harness](/research/context/techniques/16-validation-harness/).",
+      "section_id": "S0728",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Research question",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 14,
+      "old_text": "Which context, caching, retrieval, output, routing, infrastructure, and governance techniques reduce coding-agent resource use without weakening task quality?",
+      "section_id": "S0728",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Research question",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 16,
+      "old_text": "The dossier distinguishes API-priced work from subscription-quota work. It also treats latency, operator time, and quality risk as separate decision axes rather than reducing every choice to token price.",
+      "section_id": "S0728",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Research question",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 20,
+      "old_text": "- **A defensible 10\u00d7 reduction at equal quality is not supported.** The modeled ceiling is about **2.4\u20132.5\u00d7** with validated techniques, or **5\u20136.2\u00d7** if a lower-tier-main-plus-advisor routing pattern passes the workload-specific harness. Frontier-model thinking and genuinely required cache reads remain binding floors.",
+      "section_id": "S0729",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 21,
+      "old_text": "- In the measured heavy session, dollar share was **32% cache reads, 29% cache writes, about 20% thinking, 17% visible output, and 2% uncached input**. Cache reads dominate token volume; output and cache writes dominate dollars. A separate session was more output-heavy, so the exact split is workload-specific.",
+      "section_id": "S0729",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 22,
+      "old_text": "- Existing defaults already provide much of the available input-side reduction: prompt caching measured **86.3%**, tool schemas can defer, and edit-style diffs avoid full rewrites.",
+      "section_id": "S0729",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 23,
+      "old_text": "- Concise output helps, but its reach is bounded. Caveman ultra reduced visible prose by **58.5%** in the local sample, while tool-heavy sessions exposed a much smaller total-session ceiling.",
+      "section_id": "S0729",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 24,
+      "old_text": "- Strong high-confidence levers are context architecture, tool deferral, context editing, effort control, model pinning for delegated work, cache-prefix stability, and edit-over-rewrite behavior.",
+      "section_id": "S0729",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 25,
+      "old_text": "- Subscription users need a quota model as well as a dollar model. Prefix stability, context-window pressure, and request volume can matter more than API-price savings when a usage window is the binding constraint.",
+      "section_id": "S0729",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 26,
+      "old_text": "- Images, screenshots, and PDFs have distinct token economics. Measured high-resolution image costs differed by about **3.0\u20133.1\u00d7** across model families; PDFs cost roughly **2\u00d7** equivalent text in the tested samples.",
+      "section_id": "S0729",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 27,
+      "old_text": "- Cache-compression and semantic-cache mechanisms can help self-hosted fleets, but most do not reduce hosted-provider billed tokens and can introduce correctness or isolation risks.",
+      "section_id": "S0729",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 31,
+      "old_text": "- Provider behavior and prices come from the primary sources recorded in each chapter's verification ledger.",
+      "section_id": "S0730",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Fresh evidence",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 32,
+      "old_text": "- Local token counts use the checked-in scripts under [measurement tools](/research/context/techniques/tools/) and the provider token-counting endpoint.",
+      "section_id": "S0730",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Fresh evidence",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 33,
+      "old_text": "- Cost conclusions compose savings per token class; they do not multiply unrelated headline percentages.",
+      "section_id": "S0730",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Fresh evidence",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 34,
+      "old_text": "- Quality claims are bounded by the paired-task [validation harness](/research/context/techniques/16-validation-harness/), objective checkers, canaries, latency measurements, and rollback criteria.",
+      "section_id": "S0730",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Fresh evidence",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 35,
+      "old_text": "- Current tool versions and their evidence boundaries live in the separate [token-optimization tools dossier](/research/context/tools/).",
+      "section_id": "S0730",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Fresh evidence",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 39,
+      "old_text": "- Local session decomposition is environment-specific and does not establish a universal workload distribution.",
+      "section_id": "S0731",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 40,
+      "old_text": "- The exact subscription-cap denominator and cache-read weighting are unpublished; community estimates remain indirect evidence.",
+      "section_id": "S0731",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 41,
+      "old_text": "- The effort-to-thinking-share curve needs measurements across multiple effort levels on the same tasks.",
+      "section_id": "S0731",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 42,
+      "old_text": "- Model-specific tokenizer, price, quota, and feature claims require revalidation at the chapter cutoff before implementation.",
+      "section_id": "S0731",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 43,
+      "old_text": "- Modeled stack totals remain estimates until reproduced on representative jackin\u276f tasks with the validation harness.",
+      "section_id": "S0731",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Current decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 49,
+      "old_text": "- [00 \u2014 Executive summary](/research/context/techniques/00-executive-summary/) gives the current verdict, strongest techniques, and rejected claims.",
+      "section_id": "S0733",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Orientation and measurement",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 50,
+      "old_text": "- [01 \u2014 Economics and measurement](/research/context/techniques/01-economics-and-measurement/) defines token classes, prices, cache multipliers, and the modeled workload.",
+      "section_id": "S0733",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Orientation and measurement",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 51,
+      "old_text": "- [02 \u2014 Baseline audit](/research/context/techniques/02-baseline-audit/) records the local environment and measurement baseline.",
+      "section_id": "S0733",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Orientation and measurement",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 52,
+      "old_text": "- [03 \u2014 Prior art and market scan](/research/context/techniques/03-prior-art-and-market-scan/) compares published approaches and evidence quality.",
+      "section_id": "S0733",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Orientation and measurement",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 56,
+      "old_text": "- [04 \u2014 Style and language compression](/research/context/techniques/04-style-and-language-compression/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 57,
+      "old_text": "- [05 \u2014 Tokenizer effects and data formats](/research/context/techniques/05-tokenizer-arbitrage/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 58,
+      "old_text": "- [06 \u2014 Context architecture](/research/context/techniques/06-context-architecture/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 59,
+      "old_text": "- [07 \u2014 Prompt caching](/research/context/techniques/07-caching-exploitation/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 60,
+      "old_text": "- [08 \u2014 Retrieval, memory, and state](/research/context/techniques/08-retrieval-memory-and-state/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 61,
+      "old_text": "- [09 \u2014 Output discipline](/research/context/techniques/09-output-discipline/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 62,
+      "old_text": "- [10 \u2014 Model routing and delegation](/research/context/techniques/10-model-routing-and-delegation/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 63,
+      "old_text": "- [11 \u2014 Multi-agent protocols](/research/context/techniques/11-multi-agent-protocols/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 64,
+      "old_text": "- [12 \u2014 Provider-native features](/research/context/techniques/12-provider-features/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 65,
+      "old_text": "- [13 \u2014 Gateway and self-hosted infrastructure](/research/context/techniques/13-infrastructure-level/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 66,
+      "old_text": "- [14 \u2014 Frontier mechanisms](/research/context/techniques/14-frontier-ideas/)",
+      "section_id": "S0734",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Core techniques",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 70,
+      "old_text": "- [15 \u2014 Composed stacks](/research/context/techniques/15-composed-stacks/) combines techniques with per-class arithmetic.",
+      "section_id": "S0735",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Decision and validation",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 71,
+      "old_text": "- [16 \u2014 Validation harness](/research/context/techniques/16-validation-harness/) defines the no-quality-loss proof protocol.",
+      "section_id": "S0735",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Decision and validation",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 72,
+      "old_text": "- [17 \u2014 Adoption sequence](/research/context/techniques/17-adoption-roadmap/) orders automatic and operator-dependent changes.",
+      "section_id": "S0735",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Decision and validation",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 76,
+      "old_text": "- [18 \u2014 Coverage and gap map](/research/context/techniques/18-extension-overview/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 77,
+      "old_text": "- [19 \u2014 Subscription and quota economics](/research/context/techniques/19-subscription-and-quota-economics/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 78,
+      "old_text": "- [20 \u2014 Multimodal token economics](/research/context/techniques/20-multimodal-token-economics/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 79,
+      "old_text": "- [21 \u2014 Latency and human-time economics](/research/context/techniques/21-latency-and-time-economics/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 80,
+      "old_text": "- [22 \u2014 Fleet and multi-tenant cache economics](/research/context/techniques/22-fleet-and-multitenant-cache/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 81,
+      "old_text": "- [23 \u2014 Cross-agent portability](/research/context/techniques/23-cross-agent-portability/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 82,
+      "old_text": "- [24 \u2014 Literature and market evidence map](/research/context/techniques/24-fresh-literature-and-market-delta/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 83,
+      "old_text": "- [25 \u2014 Optimization governance and online quality](/research/context/techniques/25-meta-cost-governance-and-online-quality/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 84,
+      "old_text": "- [26 \u2014 Frontier mechanisms for unresolved gaps](/research/context/techniques/26-extension-frontier/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 85,
+      "old_text": "- [27 \u2014 Current verdict and stack updates](/research/context/techniques/27-extension-stacks-and-verdict/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 86,
+      "old_text": "- [28 \u2014 Provider-sensitive claim verification](/research/context/techniques/28-drift-delta/)",
+      "section_id": "S0736",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Additional decision axes",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 90,
+      "old_text": "- [Token-optimization tools](/research/context/tools/) compares current external tools, versions, reach, and evidence.",
+      "section_id": "S0737",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 91,
+      "old_text": "- [jackin\u276f context engine](/research/context/engine/) turns validated mechanisms into a native subsystem design.",
+      "section_id": "S0737",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/techniques/index.mdx",
+      "old_line": 92,
+      "old_text": "- [Measurement tools](/research/context/techniques/tools/) reproduce token counts and session-cost calculations.",
+      "section_id": "S0737",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Removed unsupported headline multipliers and session/model/media generalizations; retained all chapter navigation and linked current provider/measurement evidence.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 8,
+      "old_text": "Cutoff: **2026-09-23 UTC**. There is no defensible universal winner. Headroom offers the most directly useful Rust transform surface; LeanCTX offers a preview Rust retrieval facade; LemonCrow offers an integrated runtime worth evaluating; RTK specializes in commands; Caveman and Ponytail offer different instruction-level interventions. Release identity is fixed in [08 \u2014 Register](/research/context/tools/08-current-release-register/).",
+      "section_id": "S0805",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Summary",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 12,
+      "old_text": "Which component solves each part of Jackin's token problem, and which integration form preserves ownership and correctness?",
+      "section_id": "S0806",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Question and method",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 16,
+      "old_text": "Compare interception reach, effect on behavior, recovery, cache risk, dependencies, licensing, and available APIs. Require exact treatment matching before transferring any outcome claim. A preference for Rust is relevant to packaging and maintenance, not a substitute for task evidence.",
+      "section_id": "S0807",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Question and method",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 22,
+      "old_text": "| Axis | Caveman | RTK | LeanCTX | Ponytail | Headroom | LemonCrow |",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 23,
+      "old_text": "|---|---|---|---|---|---|---|",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 24,
+      "old_text": "| Primary intervention | Narration skill plus separate input stack | Command output | Retrieval/context runtime | Implementation choices | Typed input transforms/proxy | Integrated retrieval/tools/runtime |",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 25,
+      "old_text": "| Prevent unnecessary work | Policy-dependent | No | Retrieval/reuse | Direct objective | Not its primary scope | Search/read cycle reduction |",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 26,
+      "old_text": "| Reduce shell observations | Engine/integration-dependent | Main scope | Shell path | Indirect only | At a routed result/request seam | Own Bash tool / integration |",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 27,
+      "old_text": "| Progressive source retrieval | Separate input surfaces | Not automatic native-tool coverage | Core capability | No | Optional source shaping | Core capability |",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 28,
+      "old_text": "| Provider interception required | No for skill; input path varies | No | No for MCP | No | No for library; yes for proxy | No for local tool integration |",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 29,
+      "old_text": "| Recovery | Engine-specific references | Current recall/tee modes | Archive / exact reads | Not applicable | CCR / selected originals | Spill / targeted reads |",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 30,
+      "old_text": "| Rust embedding | No verified Rust engine API | CLI, no verified library target | Preview lean-ctx-embed | Not a Rust runtime | Public headroom-core source APIs | Python, use process boundary |",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 31,
+      "old_text": "| Initial Jackin role | Optional narration | Qualified command arm | Read-only backend | Adapted policy | Selected transform worker | Read-only comparator |",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 33,
+      "old_text": "Sources: the current [Caveman](/research/context/tools/01-caveman-design/), [RTK](/research/context/tools/03-rtk-design/), [LeanCTX](/research/context/tools/04-leanctx-design/), [Ponytail](/research/context/tools/09-ponytail-design/), [Headroom](/research/context/tools/02-headroom-design/), and [LemonCrow](/research/context/tools/10-lemoncrow-design/) source reviews.",
+      "section_id": "S0809",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Capability and interception matrix",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 37,
+      "old_text": "| Capability | Preferred first move | When to build or extract |",
+      "section_id": "S0810",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "APIs and dependency feasibility",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 38,
+      "old_text": "|---|---|---|",
+      "section_id": "S0810",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "APIs and dependency feasibility",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 39,
+      "old_text": "| Configuration, compatibility, evidence, isolation | Build in Jackin, extending existing components | These contracts depend on Jackin's host and capsule model |",
+      "section_id": "S0810",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "APIs and dependency feasibility",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 40,
+      "old_text": "| Structured transforms | Source-pin selected headroom-core APIs in an isolated worker | Upstream cannot meet a demonstrated feature, fidelity, or deployment boundary |",
+      "section_id": "S0810",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "APIs and dependency feasibility",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 41,
+      "old_text": "| Shell filters | Evaluate RTK executable and request a pure-filter upstream API | Only selected licensed kernels, with copied regression fixtures and provenance |",
+      "section_id": "S0810",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "APIs and dependency feasibility",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 42,
+      "old_text": "| Repository retrieval | Native exact tools versus restricted LeanCTX and LemonCrow arms | A backend fails measured recall, freshness, isolation, or host integration requirements |",
+      "section_id": "S0810",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "APIs and dependency feasibility",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 43,
+      "old_text": "| Narration and reuse policy | Small role-specific assets or adapted instructions | Native delivery is simpler than installing another runtime |",
+      "section_id": "S0810",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "APIs and dependency feasibility",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 44,
+      "old_text": "| Provider proxy | Optional independent experiment | Only when tool-boundary reach is insufficient and cache/auth conformance passes |",
+      "section_id": "S0810",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "APIs and dependency feasibility",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 46,
+      "old_text": "Embedding all three Rust-capable packages is not automatically viable. RTK depends on bundled `rusqlite` 0.31 and Headroom on 0.40 in their reviewed manifests; packages linking incompatible native SQLite bindings may conflict in one dependency graph. Run a resolver/build spike rather than assuming different Rust packages always coexist. Process separation avoids that link boundary but introduces lifecycle costs. [RTK manifest](https://github.com/rtk-ai/rtk/blob/v0.49.0/Cargo.toml), [Headroom manifest](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/Cargo.toml).",
+      "section_id": "S0810",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "APIs and dependency feasibility",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 50,
+      "old_text": "If routine narration dominates, compare a minimal native brevity policy with Caveman's skill. If redundant implementation dominates, compare a restrained reuse-first policy with Ponytail. Do not optimize line count instead of requirement coverage.",
+      "section_id": "S0811",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Reuse decisions",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 52,
+      "old_text": "If large structured command results dominate, test qualified RTK families or selected Headroom transforms. If repeated repository exploration dominates, prioritize exact selection and compare LeanCTX with LemonCrow. If already-selected observations remain too large, evaluate compression next. Broad provider compression is a different boundary and should not be the starting assumption.",
+      "section_id": "S0811",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Reuse decisions",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 56,
+      "old_text": "A full LemonCrow result includes its tools and persona; it cannot qualify a read-only Jackin backend. A Ponytail result cannot qualify a rewritten policy. A Headroom proxy result cannot qualify a direct Rust transform. Percentages from these configurations must never be added together to forecast a combined stack.",
+      "section_id": "S0812",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Evidence and economic limits",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 60,
+      "old_text": "The recommended target is **automatic, compatibility-qualified selection**, not an empty abstraction and not unconditional compression. Package reviewed components with Jackin; enable only transformations that satisfy a recorded host/version/content contract. Keep raw operation available and explain every bypass or disabled component.",
+      "section_id": "S0813",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Implications for jackin\u276f",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 62,
+      "old_text": "Retain native agent execution, editing, approvals, and authentication by default. Use replaceable backends rather than rebuilding entire products. The [implementation plan](/research/context/tools/11-jackin-integration/) gives concrete responsibilities and gates.",
+      "section_id": "S0813",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Implications for jackin\u276f",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 66,
+      "old_text": "The comparison does not establish that any candidate is fastest, cheapest, or safe for every task. API presence was inspected, not compiled. Independent current-release accepted-task evidence remains missing; [07 \u2014 Evidence](/research/context/tools/07-evidence-and-claims/) defines how to close that gap.",
+      "section_id": "S0814",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Reuse decisions",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 70,
+      "old_text": "Per-tool pages contain tagged source and release evidence. The matrix's recommendations are deductions from those boundaries, not measurements.",
+      "section_id": "S0815",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Reuse decisions",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 74,
+      "old_text": "- [Composition](/research/context/tools/06-combining/)",
+      "section_id": "S0816",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 75,
+      "old_text": "- [Release register](/research/context/tools/08-current-release-register/)",
+      "section_id": "S0816",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/05-head-to-head.mdx",
+      "old_line": 76,
+      "old_text": "- [Engine reuse matrix](/research/context/engine/09-reuse-decision-matrix/)",
+      "section_id": "S0816",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Reassessed six actual interception boundaries; RTK API now exists, licenses differ, Headroom no longer unconditional preference, component recovery does not prove task quality.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 8,
+      "old_text": "Cutoff: **2026-09-23 UTC**. Compose capabilities only when their ownership boundaries are explicit. One transformation owner per observation is the default. A separate narration policy can coexist with retrieval, but the combination is a new treatment. This refresh covers the six named products, not an unverified adjacent-tool popularity list.",
+      "section_id": "S0817",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Summary",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 12,
+      "old_text": "How can Jackin combine useful capabilities without inheriting every product's installers, policies, state stores, and proxy behavior?",
+      "section_id": "S0818",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Question and method",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 16,
+      "old_text": "Map where each intervention touches execution, agent-visible output, source selection, instructions, provider requests, and recovery. Assess collisions at those boundaries before measuring combined outcomes.",
+      "section_id": "S0819",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Question and method",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 22,
+      "old_text": "```text",
+      "section_id": "S0821",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 23,
+      "old_text": "Jackin configuration and qualification registry",
+      "section_id": "S0821",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 24,
+      "old_text": "  |-- versioned, role-aware instructions",
+      "section_id": "S0821",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 25,
+      "old_text": "  |-- native agent execution and edits",
+      "section_id": "S0821",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 26,
+      "old_text": "  |-- selected post-execution transforms where the host supports replacement",
+      "section_id": "S0821",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 27,
+      "old_text": "  |-- one restricted repository-retrieval backend per experiment",
+      "section_id": "S0821",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 28,
+      "old_text": "  |-- scoped artifact/recovery service and usage evidence",
+      "section_id": "S0821",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 29,
+      "old_text": "  `-- optional provider proxy in a separately qualified profile",
+      "section_id": "S0821",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 32,
+      "old_text": "The [six-tool matrix](/research/context/tools/05-head-to-head/) establishes each product's reach. The [current Claude hook reference](https://code.claude.com/docs/en/hooks) distinguishes replacement of a result from merely appending context. The [Codex MCP reference](https://developers.openai.com/codex/mcp/) offers a separate server/tool configuration surface; it is not evidence of identical native-result interception.",
+      "section_id": "S0821",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 36,
+      "old_text": "| Combination | Default decision | Reason |",
+      "section_id": "S0822",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Composition rules",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 37,
+      "old_text": "|---|---|---|",
+      "section_id": "S0822",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Composition rules",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 38,
+      "old_text": "| Caveman-style narration plus restricted retrieval | Evaluate after individual arms | Different boundaries, but behavior and prompt overhead can interact |",
+      "section_id": "S0822",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Composition rules",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 39,
+      "old_text": "| Ponytail plus LemonCrow persona | Do not stack by default | Both influence implementation strategy; attribution is lost |",
+      "section_id": "S0822",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Composition rules",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 40,
+      "old_text": "| RTK rewrite plus LeanCTX/LemonCrow shell replacement | Reject unless an explicit experiment owns the chain | Duplicate execution/routing policy and repeated output reduction |",
+      "section_id": "S0822",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Composition rules",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 41,
+      "old_text": "| Headroom transform applied to an already-reduced result | Bypass by default | The second pass may remove recovery hints or misinterpret summaries |",
+      "section_id": "S0822",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Composition rules",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 42,
+      "old_text": "| Multiple provider proxies | Reject in the automatic profile | Overlapping cache/auth/streaming and failure ownership |",
+      "section_id": "S0822",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Composition rules",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 43,
+      "old_text": "| Shared source index plus session-local exposure ledger | Permissible with isolation tests | Immutable data can be shared; what a model has seen cannot |",
+      "section_id": "S0822",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Composition rules",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 47,
+      "old_text": "Give each result a producer, workspace identity, content hash, capture-completeness flag, transform/version, and recovery handle. The authoritative preserved object is the exact result captured at that boundary, not an imagined complete command log.",
+      "section_id": "S0823",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Recovery before reduction",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 49,
+      "old_text": "Keep the raw object before reducing it. If storage fails, return the original observed result; do not silently emit an unrecoverable lossy summary. Bound storage, pin artifacts needed by active or resumable sessions, and make eviction explicit. Raw recovery must bypass all reducers and keep source provenance.",
+      "section_id": "S0823",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Recovery before reduction",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 51,
+      "old_text": "Reversibility is operational, not cognitive: a model may confidently misinterpret a summary without asking for its original. Failures, security findings, exact diffs, executable instructions, and final acceptance evidence need stricter raw-preservation rules.",
+      "section_id": "S0823",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Recovery before reduction",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 55,
+      "old_text": "Transform a new eligible observation once and freeze that representation within the session. Do not silently rewrite previously sent history to improve a local counter. Keep tool schemas and policy prefixes stable when possible.",
+      "section_id": "S0824",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Cache stability and context epochs",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 57,
+      "old_text": "Deduplication requires a **context epoch**, not just a file hash. Clear or rebuild exposure state after compaction, resume, model reset, or subagent creation unless retained content is proven. Never equate another agent's successful read with this agent knowing the content.",
+      "section_id": "S0824",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Cache stability and context epochs",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 61,
+      "old_text": "Scope mutable state by capsule, worktree, session, and context epoch. Share only explicitly immutable or concurrency-safe data. Do not make tool completion wait behind a machine-wide advisory-counter lock. Unknown completion after a mutation must be resolved through operation identity and state inspection, not automatic retry.",
+      "section_id": "S0825",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Cache stability and context epochs",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 63,
+      "old_text": "LemonCrow's [current bounded state implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/gateway/adapters/mcp/smart_state.py) illustrates why lock scope and timeout both matter. A finite timeout is not a latency target for every tool call.",
+      "section_id": "S0825",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Cache stability and context epochs",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 67,
+      "old_text": "Generate capsule-local configuration rather than invoking six installers against the operator's home. Preserve existing hooks and approvals. Disable upstream updaters, telemetry, public listeners, and optional model downloads unless the selected profile explicitly permits them.",
+      "section_id": "S0826",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 69,
+      "old_text": "Expose operator controls for effective profile, active components, bypass reasons, versions, recovery, and rollback. The command names in future designs are proposals until implemented. No optimizer should be allowed to change the chosen model or reasoning effort to manufacture token savings.",
+      "section_id": "S0826",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 73,
+      "old_text": "A composable API does not establish good combined outcomes. Run factorial ablations only after each individual candidate works. A passive shadow transform can estimate output differences but cannot predict the alternative agent trajectory and must never re-execute a mutating command.",
+      "section_id": "S0827",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 77,
+      "old_text": "Product boundaries come from the six design pages; host interfaces and current state implementation are linked inline.",
+      "section_id": "S0828",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Ownership map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 81,
+      "old_text": "- [Evidence and acceptance](/research/context/tools/07-evidence-and-claims/)",
+      "section_id": "S0829",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 82,
+      "old_text": "- [Jackin integration](/research/context/tools/11-jackin-integration/)",
+      "section_id": "S0829",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/06-combining.mdx",
+      "old_line": 83,
+      "old_text": "- [Context engine](/research/context/engine/)",
+      "section_id": "S0829",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Retained single-owner principles and expanded actual host boundaries, durable authorized recovery, epochs, exact off, auxiliary requests and combined-arm tests.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 8,
+      "old_text": "Authoritative research cutoff: **2026-09-23 UTC**. The comparison fixes six products to the stable GitHub releases below. Release metadata was retrieved through the live repository API; cached search and release-page results were not used to select versions.",
+      "section_id": "S0845",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Summary",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 12,
+      "old_text": "Which exact releases define the comparison, and what does verification establish?",
+      "section_id": "S0846",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 16,
+      "old_text": "Check release objects, publication dates, and selected tagged source. Keep product, binary, crate, SDK, and host versions separate. This is a research baseline, not an automatically updating dependency lockfile. Unreviewed adjacent products are outside this refresh; no stale adoption leaderboard is retained.",
+      "section_id": "S0847",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 20,
+      "old_text": "| Tool | Reviewed stable release | Published, UTC | Component distinction |",
+      "section_id": "S0848",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 21,
+      "old_text": "|---|---|---|---|",
+      "section_id": "S0848",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 22,
+      "old_text": "| Caveman | [v2.7.0](https://github.com/JuliusBrussee/caveman/releases/tag/v2.7.0) | 2026-09-15 | Release names bin-v1.1.7; some npm publications are marked pending |",
+      "section_id": "S0848",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 23,
+      "old_text": "| RTK | [v0.49.0](https://github.com/rtk-ai/rtk/releases/tag/v0.49.0) | 2026-09-11 | CLI package, not a verified library target |",
+      "section_id": "S0848",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 24,
+      "old_text": "| LeanCTX | [v3.10.2](https://github.com/yvgude/lean-ctx/releases/tag/v3.10.2) | 2026-09-16 | Engine 3.10.2; unpublished lean-ctx-embed facade 0.1.0 |",
+      "section_id": "S0848",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 25,
+      "old_text": "| Ponytail | [v4.10.0](https://github.com/DietrichGebert/ponytail/releases/tag/v4.10.0) | 2026-09-14 | Skill/plugin assets and host adapters, not a Rust engine |",
+      "section_id": "S0848",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 26,
+      "old_text": "| Headroom | [v0.38.0](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.38.0) | 2026-09-21 | Product 0.38.0; source headroom-core crate 0.1.0 |",
+      "section_id": "S0848",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 27,
+      "old_text": "| LemonCrow | [v0.7.4](https://github.com/lemoncrow-lab/lemoncrow/releases/tag/v0.7.4) | 2026-09-14 | Python runtime with source engine and packaged distributions |",
+      "section_id": "S0848",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 29,
+      "old_text": "Release API entry points: [Caveman](https://api.github.com/repos/JuliusBrussee/caveman/releases), [RTK](https://api.github.com/repos/rtk-ai/rtk/releases/latest), [LeanCTX](https://api.github.com/repos/yvgude/lean-ctx/releases/latest), [Ponytail](https://api.github.com/repos/DietrichGebert/ponytail/releases/latest), [Headroom](https://api.github.com/repos/headroomlabs-ai/headroom/releases/latest), and [LemonCrow](https://api.github.com/repos/lemoncrow-lab/lemoncrow/releases/latest). These discovery URLs are mutable; the per-row release and design-page source links identify the reviewed snapshot.",
+      "section_id": "S0848",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 33,
+      "old_text": "- RTK's release contains content-addressed recall and structural diff-parser corrections. Do not describe it as raw-rerun-only or apply the superseded prefix-parser verdict to it. [Tagged changelog](https://github.com/rtk-ai/rtk/blob/v0.49.0/CHANGELOG.md).",
+      "section_id": "S0849",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "What was verified",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 34,
+      "old_text": "- LeanCTX's current embedding facade is `lean-ctx-embed`, preview and unpublished. [Tagged manifest](https://github.com/yvgude/lean-ctx/blob/v3.10.2/rust/crates/lean-ctx-embed/Cargo.toml).",
+      "section_id": "S0849",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "What was verified",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 35,
+      "old_text": "- Headroom has public Rust transform exports. Source reuse is a real option; published stable SDK support and build portability remain separate checks. [Tagged exports](https://github.com/headroomlabs-ai/headroom/blob/v0.38.0/crates/headroom-core/src/transforms/mod.rs).",
+      "section_id": "S0849",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "What was verified",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 36,
+      "old_text": "- LemonCrow's tagged tree includes its engine source and bounded advisory-state lock. [Engine package](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/pro/__init__.py), [lock implementation](https://github.com/lemoncrow-lab/lemoncrow/blob/v0.7.4/src/lemoncrow/gateway/adapters/mcp/smart_state.py).",
+      "section_id": "S0849",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "What was verified",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 37,
+      "old_text": "- Caveman's skill/client and engine licenses differ. [License map](https://github.com/JuliusBrussee/caveman/blob/v2.7.0/LICENSING.md).",
+      "section_id": "S0849",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "What was verified",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 38,
+      "old_text": "- Ponytail's full policy includes testing/minimal-diff preferences that must not override Jackin's requirements. [Current policy](https://github.com/DietrichGebert/ponytail/blob/v4.10.0/AGENTS.md).",
+      "section_id": "S0849",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "What was verified",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 42,
+      "old_text": "Pin the selected repository commit, binary digest, dependency lock, configuration hash, agent version, and provider/auth path during qualification. Resolve a tag to its commit before building; do not use an unchecked moving branch or `/latest` during capsule startup. A changed component invalidates only the affected qualification records, but never inherits a prior performance percentage automatically.",
+      "section_id": "S0850",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 46,
+      "old_text": "This review establishes release identity and selected source behavior, not complete builds, signatures, network behavior, or task outcomes. No six-way paid benchmark was executed. All six currently lack a release-matched independent accepted-task result established by this review. GitHub stars and download counts are deliberately excluded from ranking.",
+      "section_id": "S0851",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 50,
+      "old_text": "Release records and tagged source references are inline. [07 \u2014 Evidence](/research/context/tools/07-evidence-and-claims/) records why plausible-looking studies may not qualify.",
+      "section_id": "S0852",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Components and distribution boundaries",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 54,
+      "old_text": "- [Tools dossier](/research/context/tools/)",
+      "section_id": "S0853",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 55,
+      "old_text": "- [Six-tool comparison](/research/context/tools/05-head-to-head/)",
+      "section_id": "S0853",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/08-current-release-register.mdx",
+      "old_line": 56,
+      "old_text": "- [Jackin integration](/research/context/tools/11-jackin-integration/)",
+      "section_id": "S0853",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced September versions with peeled current release commits and published-package/component licenses; distinguish current metadata, source tests, binary checks and unexecuted task outcomes.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 6,
+      "old_text": "**Research state:** Incomplete",
+      "section_id": "S0894",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 8,
+      "old_text": "Research execution started **2026-10-23**. The source cutoff is **2026-10-23T15:31:31Z**. Later registry accesses are recorded at their actual timestamps; they verify the frozen snapshot rather than silently replace it with newer releases.",
+      "section_id": "S0894",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Summary",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 12,
+      "old_text": "This page reconciles recovered scope and evidence limits. A source inspection, published-artifact record, passing component test, synthetic fixture, and accepted-agent-task experiment are different evidence classes.",
+      "section_id": "S0894",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 14,
+      "old_text": "This bounded checkpoint covers the historical baseline and accounting-instrument audit, plus pinned Caveman and Ponytail source review and local component probes. Other context chapters retain separately dated research and are not refreshed by this checkpoint. It does not complete every topic disposition or establish accepted-task savings.",
+      "section_id": "S0894",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Summary",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 18,
+      "old_text": "The comparison baseline is Jackin commit <code>fb9a51ca4eb2e51b92abe1c994ac5e469458cd95</code> ([baseline tree](https://github.com/jackin-project/jackin/tree/fb9a51ca4eb2e51b92abe1c994ac5e469458cd95)). Historical [PR #1105](https://github.com/jackin-project/jackin/pull/1105) merged on 2026-09-27; its final head was <code>130d4e38e3e6ebd0f371930ea9b0fb8807b2e946</code> and its merge commit was <code>49708bdb0c9848e19e913013e0b7c3de954c3ea0</code>. The exact [original research brief](https://github.com/jackin-project/jackin/blob/485bcd913db426f396868bb0e5be3f122f4902c9/prompts/research/context-tools.md) was recovered. The October 14 cleanup at [c8a3264a](https://github.com/jackin-project/jackin/commit/c8a3264a) deliberately removed that prompt; this work does not restore it.",
+      "section_id": "S0895",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Recovered scope and history",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 20,
+      "old_text": "A path census located 55 MDX pages and three Python measurement tools under this research area. A temporary 517-row work ledger was marked entirely in progress; it did not establish completed dispositions for all topics. This checkpoint does not claim otherwise. The [evidence ledger](/research/context/tools/07-evidence-and-claims/) records study eligibility, and the [release register](/research/context/tools/08-current-release-register/) records component identities.",
+      "section_id": "S0895",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Recovered scope and history",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 22,
+      "old_text": "The broader question spans six products\u2014Caveman, Ponytail, RTK, LeanCTX, Headroom, and LemonCrow\u2014and separates delivered instructions, shell filtering, native observations, retrieval, history and memory, provider proxies, local inference, and representation. The techniques also cover baseline behavior, token classes, output style, precise reads and edits, schemas, caching, delegation, multimodal context, quotas, latency, fleets, online quality, effort, and model routing. Effort and model routing remain separate interventions.",
+      "section_id": "S0895",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Recovered scope and history",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 24,
+      "old_text": "Jackin integration topics include configuration and role ownership, images and agent homes, hooks and MCP, execution and approvals, usage and authentication, session lifecycle, worktrees, state retention, and cleanup. This bounded checkpoint records research context; it does not activate optimizers, install host-global agent configuration, change model policy, or run paid or subscription task benchmarks.",
+      "section_id": "S0895",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Recovered scope and history",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 28,
+      "old_text": "Earlier chat content was unavailable because Personal Context reports were disabled. No claim is made to have reread inaccessible conversations.",
+      "section_id": "S0896",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Inaccessible material",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 30,
+      "old_text": "The files named <code>report-source.md</code> and <code>context-optimizers-deep-research.pdf</code> were not found in Git history or two filename/title searches. That search result does not prove no other copy exists. Earlier local transcripts and the complete six-by-seven style sample set were not present in the recovered repository; only one abridged example remained, so the earlier assertion of a complete reproduction pack is unsupported.",
+      "section_id": "S0896",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Inaccessible material",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 32,
+      "old_text": "Historical command and test statements require the exact run, job, and source head they describe. A green job does not prove commands absent from its output. The pinned Caveman and Ponytail component results are described with their selected inputs and limits in the <RepoFile path=\"docs/content/research/context/techniques/tools/refresh-2026-10-23/caveman-ponytail/README.md\">reproduction method and provenance</RepoFile>. They are not accepted-task evidence and do not refresh the remaining chapters.",
+      "section_id": "S0896",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Inaccessible material",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 36,
+      "old_text": "Product release metadata, source inspection, selected component tests, synthetic fixtures, and paired accepted-task outcomes answer different questions. This checkpoint provides the first four types for a bounded set of work; it does not supply the fifth. Missing private transcripts cannot be replaced with estimates presented as measurements.",
+      "section_id": "S0897",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Completion boundaries",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 40,
+      "old_text": "- [Tools and decision](/research/context/tools/)",
+      "section_id": "S0898",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 41,
+      "old_text": "- [Baseline reconciliation](/research/context/techniques/02-baseline-audit/)",
+      "section_id": "S0898",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 42,
+      "old_text": "- [Evidence ledger](/research/context/tools/07-evidence-and-claims/)",
+      "section_id": "S0898",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 43,
+      "old_text": "- [Release register](/research/context/tools/08-current-release-register/)",
+      "section_id": "S0898",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 44,
+      "old_text": "- [Techniques](/research/context/techniques/)",
+      "section_id": "S0898",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/12-scope-and-reconciliation.mdx",
+      "old_line": 45,
+      "old_text": "- [Engine design](/research/context/engine/)",
+      "section_id": "S0898",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Expanded bounded October23 checkpoint to complete recovered scope; missing historical materials stay missing; corrected exact CI denominator comparisons and recorded real delegation.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 6,
+      "old_text": "**Research state:** Current",
+      "section_id": "S0899",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 8,
+      "old_text": "**Cutoff: 2026-09-23 UTC.** This dossier compares the six stable releases in the [release register](/research/context/tools/08-current-release-register/). It distinguishes source-verified capabilities from executed conformance tests and independent accepted-task outcomes. No paid six-way benchmark or complete upstream build was run for this refresh.",
+      "section_id": "S0899",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 12,
+      "old_text": "What should Jackin automatically install, embed, adapt, or implement to reduce token usage without sacrificing correct outcomes, native-agent behavior, or capsule isolation?",
+      "section_id": "S0899",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 16,
+      "old_text": "**Use a Jackin-owned integration and measurement layer with replaceable upstream components. Do not make any complete optimizer runtime mandatory or install all six together.** Prefer reuse over rewriting when a supported boundary works; own the contracts that third-party products cannot know about Jackin's sessions and worktrees.",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 18,
+      "old_text": "| Product | Reviewed release | Best candidate contribution | Initial integration decision |",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 19,
+      "old_text": "|---|---|---|---|",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 20,
+      "old_text": "| Caveman | 2.7.0 | Optional concise narration | Reviewed instruction asset; full engine separately license-gated |",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 21,
+      "old_text": "| RTK | 0.49.0 | Command-specific filters and recall | Pinned executable or upstream kernel extraction; no blanket rewrite |",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 22,
+      "old_text": "| LeanCTX | 3.10.2 | Progressive repository retrieval | Restricted per-worktree MCP; evaluate lean-ctx-embed separately |",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 23,
+      "old_text": "| Ponytail | 4.10.0 | Reuse-first implementation policy | Adapt selectively; preserve Jackin's engineering and testing obligations |",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 24,
+      "old_text": "| Headroom | 0.38.0 | Rust typed compression transforms | First library-reuse spike: selected headroom-core transforms in a worker |",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 25,
+      "old_text": "| LemonCrow | 0.7.4 | Integrated ranked retrieval/runtime | Read-only comparator, then separately evaluate full replacement |",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 27,
+      "old_text": "These are architecture recommendations, not a measured performance ranking. Sources and limits appear in each design page.",
+      "section_id": "S0900",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 31,
+      "old_text": "Release objects and tagged source were checked directly. Current RTK includes recall and diff-parser corrections. LemonCrow includes its engine source and a bounded advisory lock. LeanCTX exposes an unpublished preview crate named `lean-ctx-embed`. Headroom exposes public Rust transforms. Those facts change the reuse options; they do not establish whole-task savings.",
+      "section_id": "S0901",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 33,
+      "old_text": "JetBrains' three articles do not test LemonCrow or today's six releases. The [evidence ledger](/research/context/tools/07-evidence-and-claims/) records admissibility rather than recycling old percentages into a current leaderboard. No independent, release-matched accepted-task result for all six was established.",
+      "section_id": "S0901",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Decision",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 37,
+      "old_text": "| Page | Decision supported |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 38,
+      "old_text": "|---|---|",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 39,
+      "old_text": "| [Caveman](/research/context/tools/01-caveman-design/) | Skill versus engine, component versions, licensing |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 40,
+      "old_text": "| [Headroom](/research/context/tools/02-headroom-design/) | Reuse Rust transforms versus deploy a full proxy |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 41,
+      "old_text": "| [RTK](/research/context/tools/03-rtk-design/) | Qualified command filtering and current recall |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 42,
+      "old_text": "| [LeanCTX](/research/context/tools/04-leanctx-design/) | MCP versus preview Rust embedding |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 43,
+      "old_text": "| [Ponytail](/research/context/tools/09-ponytail-design/) | Useful policy versus over-minimization |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 44,
+      "old_text": "| [LemonCrow](/research/context/tools/10-lemoncrow-design/) | Current auditable source and runtime experiments |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 45,
+      "old_text": "| [Comparison](/research/context/tools/05-head-to-head/) | Best fit by boundary, not one universal winner |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 46,
+      "old_text": "| [Composition](/research/context/tools/06-combining/) | Ownership, recovery, cache and concurrency rules |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 47,
+      "old_text": "| [Evidence](/research/context/tools/07-evidence-and-claims/) | Independent validation and reproducible acceptance protocol |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 48,
+      "old_text": "| [Release register](/research/context/tools/08-current-release-register/) | Exact source baseline and freshness limits |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 49,
+      "old_text": "| [Jackin integration](/research/context/tools/11-jackin-integration/) | Automatic setup, embed/build choices, implementation gates |",
+      "section_id": "S0902",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Reading map",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 53,
+      "old_text": "Default enablement still needs a current Jackin experiment. Source availability is not successful build reproduction; a health endpoint is not proof of active compression; token estimates are not subscription-quota receipts. The unchanged agent/model/reasoning configuration must remain the control.",
+      "section_id": "S0903",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Evidence and confidence",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 57,
+      "old_text": "- [Context engine specification](/research/context/engine/)",
+      "section_id": "S0904",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 58,
+      "old_text": "- [Engine reuse matrix](/research/context/engine/09-reuse-decision-matrix/)",
+      "section_id": "S0904",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Related work",
+      "numerical_candidate": true
+    },
+    {
+      "document": "docs/content/research/context/tools/index.mdx",
+      "old_line": 59,
+      "old_text": "- [Token-optimization techniques](/research/context/techniques/)",
+      "section_id": "S0904",
+      "disposition": "reassessed-and-replaced",
+      "reason": "Replaced old preferred-backend ranking with current component evidence, effective auto/experimental/off targets, confidence and concrete next qualification.",
+      "current_heading": "Related work",
+      "numerical_candidate": false
+    }
+  ]
+}

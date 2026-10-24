@@ -1,0 +1,76 @@
+{
+  "evidence_class": "Executed synthetic arithmetic and exact-byte fixtures; no provider inference, tokenizer, quota, latency, or task-quality measurement.",
+  "sources": {
+    "openai": "https://developers.openai.com/api/docs/guides/prompt-caching",
+    "claude": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+    "gemini": "https://ai.google.dev/gemini-api/docs/caching",
+    "gemini_prices": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "break_even": [
+    {
+      "write_multiple": "1.25",
+      "read_multiple": "0.025",
+      "additional_reads_for_strict_saving": 1,
+      "assumptions": "One full write, identical eligible prefix, no expiry or other costs."
+    },
+    {
+      "write_multiple": "2",
+      "read_multiple": "0.025",
+      "additional_reads_for_strict_saving": 2,
+      "assumptions": "One full write, identical eligible prefix, no expiry or other costs."
+    },
+    {
+      "write_multiple": "1.25",
+      "read_multiple": "0.05",
+      "additional_reads_for_strict_saving": 1,
+      "assumptions": "One full write, identical eligible prefix, no expiry or other costs."
+    },
+    {
+      "write_multiple": "2.5",
+      "read_multiple": "0.05",
+      "additional_reads_for_strict_saving": 2,
+      "assumptions": "One full write, identical eligible prefix, no expiry or other costs."
+    },
+    {
+      "write_multiple": "1.25",
+      "read_multiple": "0.1",
+      "additional_reads_for_strict_saving": 1,
+      "assumptions": "One full write, identical eligible prefix, no expiry or other costs."
+    },
+    {
+      "write_multiple": "2.5",
+      "read_multiple": "0.1",
+      "additional_reads_for_strict_saving": 2,
+      "assumptions": "One full write, identical eligible prefix, no expiry or other costs."
+    }
+  ],
+  "gemini_argon_small_delta": {
+    "assumptions": "10,000-token prior request eligible; new aggregate includes output/thoughts/tool results; only input charges shown, October introductory USD rates; documented 2,050-token reprocessing rule.",
+    "baseline": {
+      "new_tokens": 2100,
+      "cached_tokens": 10000,
+      "uncached_tokens": 2100,
+      "input_usd": "0.0052"
+    },
+    "shorter_delta": {
+      "new_tokens": 1000,
+      "cached_tokens": 7950,
+      "uncached_tokens": 3050,
+      "input_usd": "0.006895"
+    },
+    "input_cost_change_percent": "32.59615384615384615384615380"
+  },
+  "fleet": {
+    "assumptions": "Ten requests, one exact eligible prefix, one authorized cache scope, no TTL expiry; normalized prefix units. Concurrent cold writes are a comparison scenario, not guaranteed observed behavior.",
+    "ten_independent_writes": "12.50",
+    "one_pioneer_nine_reads_at_005": "1.70",
+    "extra_prewarm_then_ten_reads_at_005": "1.75",
+    "ten_isolated_workspaces_minimum_writes": 10
+  },
+  "byte_prefix_fixture": {
+    "stable_bytes": 4300,
+    "dynamic_first_shared_bytes": 20,
+    "stable_first_shared_bytes": 4320,
+    "limitation": "Bytes are not provider tokens; changing instruction authority/order can change semantics. This is not a recommended production rewrite."
+  }
+}

@@ -1,0 +1,63 @@
+hook toolchain: Rust 1.99.1; cargo=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/cargo; rustc=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc; rustdoc=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustdoc; clippy=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/clippy-driver; rustfmt=/workspace/scratch/98bebb933422/termrock_analysis/toolchain/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustfmt
+  files - Fetching git status
+  files - Fetching staged files
+  files - Fetching staged files (391 files)
+✔ files - Fetching staged files (391 files)
+❯ gitleaks
+❯ cargo_deny
+  cargo_deny – 2 files – **/Cargo.toml **/Cargo.lock **/deny.toml **/.deny.toml **/deny.exceptions.toml **/.deny.exceptions.toml – cargo-deny --locked --workspace check
+  gitleaks – 391 files –  – gitleaks dir --redact --verbose --no-banner .
+  cargo_deny – advisories ok, bans ok, licenses ok, sources ok
+✔ cargo_deny
+❯ rumdl
+  rumdl – 24 files – **/*.md **/*.markdown – rumdl check --no-cache .github/AGENTS.md …
+  rumdl – docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-review.md:9:71: [MD057] Relative link 'probes/render_pages.mjs' does not exist
+  rumdl – docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-review.md:25:1: [MD012] Multiple consecutive blank lines between content [*]
+  rumdl – docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-review.md:40:1: [MD012] Multiple consecutive blank lines between content [*]
+  rumdl – 24 files – **/*.md **/*.markdown – rumdl check --no-cache .github/AGENTS.md …
+  rumdl – Issues: Found 3 issues in 2/23 files (24ms)
+  rumdl – Run `rumdl fmt` to automatically fix 2 of the 3 issues
+✗ rumdl
+✗ rumdl – ERROR
+❯ jactionlint  [                  ] 0/2
+  jactionlint – 7 files – .github/workflows/*.y*ml .github/actions/**/action.y*ml .github/dependabot.y*ml – jactionlint --format gcc --strict-exit --no-online --shellcheck=shellcheck --pyflakes= .github/actions/declared-task-0/action.yml …
+❯ jactionlint  [========>         ] 1/2
+❯ kingfisher-staged
+  kingfisher-staged – 391 files –  – kingfisher scan . --staged --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml
+  kingfisher-staged –  INFO kingfisher: Launching with 8 concurrent scan jobs. Use --jobs to override.
+  gitleaks – 2:13AM INF scanned ~43197378 bytes (43.20 MB) in 2.4s
+  gitleaks – 2:13AM INF no leaks found
+✔ gitleaks
+  jactionlint – 7 files – .github/workflows/*.y*ml .github/actions/**/action.y*ml .github/dependabot.y*ml – jactionlint --format gcc --strict-exit --no-online --shellcheck=shellcheck --pyflakes= .github/actions/velnor-verify-rust-manifest/action.yml …
+  kingfisher-staged –  INFO kingfisher::rule_loader: Loaded 488 rules
+  kingfisher-staged –  INFO kingfisher::scanner::rule_loading: Using Vectorscan rule cache cache_dir=/root/.cache/kingfisher/rule-cache
+  kingfisher-staged – 391 files –  – kingfisher scan . --staged --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml
+  kingfisher-staged – ==========================================
+  kingfisher-staged – Scan Summary:
+  kingfisher-staged – ==========================================
+  kingfisher-staged –  |Findings....................: 0
+  kingfisher-staged –  |__Successful Validations....: 0
+  kingfisher-staged –  |__Failed Validations........: 0
+  kingfisher-staged –  |__Skipped Validations.......: 0
+  kingfisher-staged –  |Rules Applied...............: 488
+  kingfisher-staged –  |__Blobs Scanned.............: 391
+  kingfisher-staged –  |Bytes Scanned...............: 12.48 MiB
+  kingfisher-staged –  |Scan Duration...............: 161ms 613us 171ns
+  kingfisher-staged –  |Scan Date...................: 2026-10-24 02:13:22 -07:00
+  kingfisher-staged –  |Kingfisher Version..........: 2.14.0
+  kingfisher-staged –  |__Latest Version............: Update check disabled (--no-update-check)
+✔ kingfisher-staged
+❯ jactionlint  [==================] 2/2
+❯ jactionlint
+✔ jactionlint
+
+rumdl stderr:
+docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-qa-review.md:9:71: [MD057] Relative link 'probes/render_pages.mjs' does not exist
+docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-review.md:25:1: [MD012] Multiple consecutive blank lines between content [*]
+docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-qa-review.md:40:1: [MD012] Multiple consecutive blank lines between content [*]
+
+Issues: Found 3 issues in 2/23 files (24ms)
+Run `rumdl fmt` to automatically fix 2 of the 3 issues
+hk ERROR To fix, run: hk fix -S rumdl
+
+See /tmp/jackin-pre-commit.sD8o0a/worktree/.git/hk/output.log for full command output

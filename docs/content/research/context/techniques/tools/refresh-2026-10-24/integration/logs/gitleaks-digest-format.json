@@ -1,0 +1,55 @@
+{
+  "command": [
+    "gitleaks",
+    "dir",
+    "/workspace/scratch/1335a158b2a9/research/coordinator/gitleaks-digest-format",
+    "--redact",
+    "--no-banner",
+    "--report-format",
+    "json",
+    "--report-path",
+    "/workspace/scratch/1335a158b2a9/tooling/logs/gitleaks-digest-format-findings.json"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+  "started_utc": "2026-10-24T09:09:16.958984+00:00",
+  "finished_utc": "2026-10-24T09:09:17.343931+00:00",
+  "duration_seconds": 0.385,
+  "exit_code": 0,
+  "log": "/workspace/scratch/1335a158b2a9/tooling/logs/gitleaks-digest-format.log",
+  "log_sha256": "5d0c044fd803101323eae9a39aedcacd409530b434636e9f101114921ce0c63f",
+  "files": [
+    {
+      "source": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.json",
+      "before_sha256": "17fe4617a4e10c54023a25212c98462ab39ccd63c3ebf6019c42c8441724d083",
+      "formatted_file": "/workspace/scratch/1335a158b2a9/research/coordinator/gitleaks-digest-format/0.json",
+      "after_sha256": "4c9a5f401ea5c69ea1f511b5ed1b538de8f5779a8cc53e638f54e37380e22cf6",
+      "json_equal": true,
+      "changed": true
+    },
+    {
+      "source": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/render-input-manifest.json",
+      "before_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "formatted_file": "/workspace/scratch/1335a158b2a9/research/coordinator/gitleaks-digest-format/1.json",
+      "after_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+      "json_equal": true,
+      "changed": true
+    },
+    {
+      "source": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-build-input-manifest.json",
+      "before_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "formatted_file": "/workspace/scratch/1335a158b2a9/research/coordinator/gitleaks-digest-format/2.json",
+      "after_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+      "json_equal": true,
+      "changed": true
+    },
+    {
+      "source": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-build-input-manifest.json",
+      "before_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "formatted_file": "/workspace/scratch/1335a158b2a9/research/coordinator/gitleaks-digest-format/3.json",
+      "after_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+      "json_equal": true,
+      "changed": true
+    }
+  ],
+  "scope": "Temporary candidate pretty-serialization only; primary files unchanged."
+}

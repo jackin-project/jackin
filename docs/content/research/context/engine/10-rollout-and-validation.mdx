@@ -1,92 +1,113 @@
 ---
-title: "10 — Validation and controls"
-description: "Validation layers, kill switches, configuration boundaries, acceptance gates, and stop conditions for the context engine."
+title: "10 — Rollout and validation"
+description: "Concrete automatic, experimental and off profiles, implementation stages, research gates, resource budgets, and reversible activation."
 ---
+
+**Research state:** Current
 
 ## Summary
 
-Each context-engine mechanism needs representative workload evidence, reversible controls, and a role-specific acceptance gate. Measurement establishes the baseline; mutating layers remain disabled for a role until their own validation arms clear that bar.
+Snapshot **2026-10-24 01:15:00 UTC**. The target is a useful automatic profile with reviewed components configured by Jackin. Today, preserve native optimizations and implement the small ownership/recovery contracts; no external transform has the complete qualification needed for automatic activation. Progress through one real host/content treatment to a qualified default, rather than stopping at measurement or enabling an unverified whole product.
 
 ## Question and scope
 
-What evidence and controls prove each context-engine mechanism safe for a role's workload?
+What exactly should ship, in what order, with which evidence and rollback behavior? This chapter proposes separate implementation work. This research PR adds no production optimizer, dependency, installer or active manifest setting.
 
 ## Method
 
-### Validation program
-
-1. **Per-mechanism A/Bs** use the [techniques 16 — Validation Harness: the No-Quality-Loss Proof Protocol](/research/context/techniques/16-validation-harness/) protocol, batch-lane execution, and canaries in every arm.
-2. **The cross-tool harness** compares Native / engine-observation / engine-retrieval / engine-full / RTK / headroom-MCP / lean-ctx(faithful) / caveman+RTK / pxpipe. The pxpipe arm is limited to gist-tolerant workloads and allowlisted models, and is never stacked with headroom on the history region ([current rising-tools comparison](/research/context/tools/06-combining/)).
-3. **Continuous**: online canaries, bust alerts, bounce-rate regression tripwires, `ctx doctor --gate` in CI, monthly platform-drift re-audit (prefix mass, schema mass — the ±70k/5-days lesson).
-4. **Docs gates per PR**: roadmap item freshness, current design decisions reflected here, and behavioral invariants maintained under developer-reference/specs.
+Reconcile every old rollout layer and threshold with current source, component probes and the [canonical evaluation protocol](/research/context/tools/07-evidence-and-claims/). The frozen Jackin audit base is `6e266406b49da2ab3c55355f3b7d33d1643ee6cd`; the separate <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/main-overlay-review.md">main integration overlay</RepoFile> inspects `c98f5f5fdd831e6075e38fde93b9713575406140` and preserves its new installation/account-marker guards. Numerical budgets below are proposed research targets, not measured platform capacity or current product performance.
 
 ## Findings
 
-### Validation layers
+### Concrete profile decision
 
-**Measurement (no mutation).** The measurement layer comprises the ledger, JSONL ingestion (`message.id` dedup), observation attribution, cache-bust detector, thinking estimator, `ctx doctor`, CI token-budget linter, and TUI panel. `JACKIN_CTX_MEASURE_ONLY` limits the engine to observation. Each role needs baseline windows for its Bash-vs-native-read split, cache health, and thinking share.
+| Profile | Packaged/configured behavior | Activation and current readiness |
+|---|---|---|
+| `auto` | Preserve native execution/editing/provider/model policy; deliver one restrained owned asset; select a pinned diagnostic reducer only for qualified host/version/family; provide recovery | Native behavior exists. Owned asset consolidation, selector and recovery are proposed. First substantial candidate: RTK OSS `pipe --filter <named-family>` subprocess, initially one qualified test/diagnostic format, after all gates. |
+| `experimental` | Explicitly choose one upstream transform, restricted retrieval backend or exact policy; keep versions and component effects visible | Headroom Rust/Python, Caveman engine/skill, LeanCTX and LemonCrow Lite are separately selectable candidates; component evidence exists, full Jackin qualification does not. |
+| `off` / raw | Disable new reductions, retrieval steering and owned optimization policy; use native authorized observations and current security | Required control/migration work. Keep recovery for earlier transformed observations; disable does not erase the conversation's past. |
 
-**Protection controls.** Guard lines, subagent model/effort pins, report-register contracts, `excludeDynamicSections`, spawn stagger/pre-warm, the INV-8 conflict probe, and cache-bust alerts form the negative-cost protection set. Screening still verifies their assumptions. Model pins are load-bearing because Claude Code 2.1.198 makes Explore inherit the session model rather than default to Haiku.
+The automatic profile is a target implementation, not a claim that named `[optimization]` settings are already accepted. A capability without a passing qualification record remains inactive and reports why. Do not add a full proxy, remote telemetry, model download, paid warmer or silent model/effort change to make the default seem more effective.
 
-**Observation pipeline.** Shims, classifier, TOML filter corpus, crushers, never-worse guard, CCR archive, and recovery footers are compared against measure-only and RTK-binary arms. Acceptance requires at least a 20% tool-result-token cut on shell-visible traffic at success/bounce parity.
+The operator can choose an alternate qualified backend or disable one component. Selecting an experimental backend is explicit; it does not grant broader filesystem/credential/network authority. Full-product arms are distinct from restricted filters/retrieval and may require separate host/policy qualification.
 
-**Retrieval.** Embedded fff, sem, and mq; registered `ctx_*` verbs; read-stub cache and delta-fills; and role doctrine are compared with the observation-only baseline and the headroom-MCP and lean-ctx faithful external arms. Acceptance requires at least a 20% net-of-injection reduction in tokens per solved read-heavy task, with improving native-read share and bounce rate.
+### Implementation stages and repository anchors
 
-**Output controls.** Register levels, opt-in codebooks, canary gates, an online judge, and a holdout require a register-versus-agentic-quality benchmark before activation.
+| Stage | Concrete deliverable | Exit evidence |
+|---|---|---|
+| 0. Native truth | Verify current launch/configuration, actual model/effort/auth/permissions and usage attribution | Twelve registry entries distinguished from six launch cases; no claim of host parity until actual launch/activation passes |
+| 1. Owned low-impact policy | Versioned asset manifest, duplicate-free delivery, explicit off and effective config | Same required policy content, precedence and tests; no unrequested global writes; activation/off survives resume |
+| 2. Scope and recovery | Rust admission/observation types, bounded artifact broker, epoch lifecycle and authorized recovery | Store acknowledgement, same-byte round trip, missing/corrupt/restart/pressure tests, two worktrees and two consumers |
+| 3. One host/one filter | Claude synchronous typed replacement candidate plus RTK OSS `pipe --filter <named-family>` worker for one qualified test/diagnostic format; Codex separate conformance arm | Actual model-bound result observed; producer executes once; unknown/malformed/failed worker returns original; native edits remain valid |
+| 4. Current task comparison | Native, component and relevant full-product arms using fixed main model/effort | Shared statistical/cost/latency gates, raw independent graders and all-attempt accounting |
+| 5. Automatic qualified rollout | Package checksummed artifact/configuration and activate approved combinations | Canary/holdout, effective version/owner, resource limits, clean disable and referenced-original continuity |
+| 6. Wider scope | Other hosts, retrieval and alternative libraries/processes one at a time | Each host/version/tool/content and lifecycle gets its own evidence; combined arms after separate qualification |
 
-**Routing and lanes.** Effort tiering per task class depends on a measured per-level curve. Advisor wiring, batch lanes, quota probing, tasks-per-cap display, and budget governors each require confirmation-grade (n=30) validation per role.
+Extend existing <RepoFile path="crates/core/jackin-core/src/manifest.rs">role/config schema</RepoFile>, <RepoFile path="crates/adapters/jackin-image/src/derived_image.rs">image packaging</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/runtime_setup.rs">runtime setup</RepoFile>, <RepoFile path="crates/apps/jackin-capsule/src/session/agent_cmd.rs">session admission</RepoFile> and <RepoFile path="crates/services/jackin-usage-token-monitor/src/session.rs">usage collection</RepoFile>. Add explicit contracts to those owners; do not create a parallel launcher or put heavy engines into the control loop. No stage is claimed complete merely because its documentation exists.
 
-**Memory.** Knowledge notes, handoff files, and net accounting require observation and retrieval ledgers as their comparison baseline.
+### Qualification layers
 
-### Role manifest surface (sketch)
+**Artifact/build:** pin release commit, exact package/binary, feature set, toolchain and notices. Verify package correspondence where possible. Build supported targets and inspect native dependencies, runtime/allocator ownership, startup effects and egress. Source availability, a crates.io name and a passing library test are different evidence.
 
-New versioned `[context]` table in `jackin.role.toml` (one schema bump, 5 artifacts per PRERELEASE):
+**Host:** prove discovery, hook trust, synchronous replacement semantics, native read/edit receipts, denied operations, streamed/late results, cancellation, subagents and resume. The existing Claude/Codex status hooks are not replacement adapters. Codex's feedback substitution and unsupported output fields cannot be treated as Claude's typed update contract. [Integration matrix](/research/context/tools/11-jackin-integration/).
+
+**Fidelity/recovery:** use real compiler/test/lint/Git producers and adversarial malformed, Unicode, CRLF/no-final-newline, duplicate-key, binary/rename, truncation and success-diagnostic fixtures. Inject worker timeout/crash, storage failure, missing/corrupt records and context resets. Transform failure uses the already-captured authorized observation; security/integrity failure never bypasses policy or triggers producer rerun.
+
+**Task outcomes:** apply the shared proposed gates: zero new critical correctness/security/permission/isolation/recovery regressions; acceptance lower one-sided 95% bound above −1 percentage point; for a new complex optimizer, upper one-sided 95% all-attempt cost-per-accepted-task ratio at most 0.80; p95 task latency no more than 10% worse unless a separately declared tradeoff profile is evaluated. The quality margin is uncertainty tolerance, not an allowance for known damage. Subscription arms use actual accepted work/window. Insufficient precision keeps a complex treatment provisional/experimental; the cost gate is not waived for convenience.
+
+Twelve to thirty diverse pilot tasks estimate defects and variability; confirmation is planned from paired/task-cluster precision. Existing native optimizations and low-impact owned-delivery fixes do not need an artificial 20% benefit to be preserved. Do not mix these proposed criteria with observed qualification. [Canonical protocol](/research/context/tools/07-evidence-and-claims/).
+
+### Initial absolute local budgets
+
+These are deliberately bounded starting targets for the first treatment, chosen to keep optional work small relative to interactive tool use. Revise a target only as an explicitly declared new profile before evaluating it; do not silently widen it after a failure.
+
+| Resource | First diagnostic-filter qualification target | Restricted retrieval pilot target |
+|---|---|---|
+| Eligible observation/source corpus | At most 1 MiB per observation; larger/exact/excluded content stays native | Fixed corpus up to 10,000 files / 250 MiB admitted source; larger corpora measured separately |
+| Cold readiness | Worker initialization at most 500 ms; native path remains available | Background indexing at most 60 s on the declared corpus; native tools remain available immediately |
+| Warm added latency | p95 at most 50 ms; hard transform deadline 100 ms | p95 query latency at most 200 ms; explicit 500 ms query deadline for the initial arm |
+| Peak worker RSS | At most 128 MiB | At most 512 MiB |
+| Local storage | 256 MiB recovery budget per consumer; refuse new loss before evicting referenced originals | At most 1 GiB index in addition to declared recovery budget |
+
+Record CPU, RSS, disk and hardware/OS/cache state, including startup and concurrent consumers. These targets are not a substitute for p95 complete-task latency. A backend that misses them may still be useful in a separately declared large-repository or latency-tolerant profile; it is not silently promoted to this default.
+
+### Configuration surface and ownership
+
+A future schema can express the following intent; it is **not valid current Jackin configuration**:
 
 ```toml
-[context]
-mode = "standard"        # off | measure | standard | aggressive (register+routing active)
-languages = ["rust", "toml", "markdown"]   # grammar/features linked into indexes
+# Proposed schema, requiring a separate implementation and migration.
+[optimization]
+profile = "auto" # auto | experimental | off
 
-[context.output]
-register = "terse"       # off | terse | compact | register
-codebook = false
-
-[context.routing]
-effort_default = "high"
-subagent_model = "haiku"  # exploration-class agents
-advisor = true
-batch_lane = true
-
-[context.filters]
-extra = ["filters/role.toml"]   # role-repo TOML filters, content-hash trusted
+[optimization.components]
+diagnostics = "qualified"
+retrieval = "native"
+policy = "restrained"
 ```
 
-Environment kill switches override per launch; `jackin load --ctx=off` provides instant bisection. The the-architect role supplies external comparison arms through RTK, headroom MCP, fff/codedb MCP servers, and caveman guidance. The pxpipe proxy arm remains separate and limited to gist-tolerant task slices; it never shares a lane with headroom because both mutate message history ([current rising-tools comparison](/research/context/tools/06-combining/)).
+Effective policy combines operator choice, role, actual host/version, provider/auth route, content family and qualification record. Unknown fields currently fail in `RoleManifest`; documentation must not instruct users to paste this sketch into a current role. Reuse current model/effort selection unchanged.
+
+Package artifacts in reviewed images with checksums/notices and own only generated registrations. No moving-latest startup fetch, upstream global installer, automatic public service or inherited update daemon. Validate existing config and preserve unrelated entries; expose a conflict instead of overwriting them. Current host-specific homes and worker roots must be honored.
 
 ## Implications for jackin❯
 
-Each mechanism must remain independently disableable and must clear its role-specific acceptance gate. Shared baselines establish comparison data; they do not authorize unvalidated mutating layers.
+The first meaningful delivery is a small functioning automatic capability with proven activation and complete-task value, not a multi-product installer or dashboard. That is reached through low-impact owned policy, scope/recovery and one filter family. If the first filter fails the task gate, keep native behavior and evaluate the next bounded candidate; do not lower correctness criteria to preserve a previous recommendation.
+
+Rollback disables the responsible adapter, restores its owned config and stops new lossy observations. It leaves actual security controls, native execution and selected model policy intact. Preserve active recovery handles and audit records through the declared horizon; the broker may need to outlive the transform worker. A later authorized cleanup can remove unreferenced artifacts. Off cannot retroactively undo already-delivered compressed history.
 
 ## Limitations and unknowns
 
-### Risks
+No production rollout, real host conformance or paid task experiment occurred in this PR. Current local builds/fixtures establish several narrow feasibility and defect facts; they do not satisfy these promotion stages. Full cross-platform packaging, signed artifact verification for every component, concurrent resource capacity and long-session retention remain explicit implementation gates.
 
-| Risk | Mitigation |
-|---|---|
-| Upstream churn (all deps pre-1.0) | Exact pins + Renovate reviewed bumps; vendored corpora are snapshots; port-not-depend for unstable kernels |
-| Engine's own overhead exceeds savings on small workloads | Measure-only default; net-of-injection ledger; per-role activation; size gates on retrieval |
-| Filtered output drops a needed line | never-worse guard, verbatim-class policy, CCR recovery on all exit codes, bounce auto-upgrade, re-run-rate metric |
-| Steering fails (agent ignores verbs) | Honest doctrine + transparent shims/dedup work without steering; adherence metered, not assumed |
-| Conflict with operator-installed tools (RTK hook, headroom proxy, pxpipe proxy, caveman plugin) | Setup-time conflict probe (INV-8); role docs name the one-of-each rule; prompt-mutating middlemen (headroom, pxpipe) additionally exclusive on the history region |
-| Schema change risk (`[context]` table) | Versioned manifest migration per PRERELEASE; `deny_unknown_fields` honored |
-| Quality regression from registers/effort | Canary veto, holdout, online judge auto-demotion, confirmation-grade n=30 for routing |
+The old overlapping phase thresholds, aggressive automatic routing, shims-as-universal-boundary and numeric compression promises are retired. The proposed staged path remains concrete even while unverified transforms stay inactive.
 
 ## Sources
 
-Evidence and repository references are cited inline beside the claims they support.
+Current product evidence is in the [dossiers](/research/context/tools/), current Jackin source and dispatch probe in the <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/README.md">architecture record</RepoFile>, and statistical definitions in the canonical protocol. Resource budgets and schema above are explicit design proposals.
 
 ## Related work
 
-- [Context engine dossier](/research/context/engine/)
-- [Token-optimization techniques](/research/context/techniques/)
-- [Token-optimization tools](/research/context/tools/)
+- [Goals](/research/context/engine/01-goals-and-non-goals/)
+- [Measurement](/research/context/engine/08-measurement-and-verification/)
+- [Integration strategy](/research/context/tools/11-jackin-integration/)

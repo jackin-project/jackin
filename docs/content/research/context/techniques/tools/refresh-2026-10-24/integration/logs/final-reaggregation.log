@@ -1,0 +1,8 @@
+{
+  "status": "all extracted arithmetic matches",
+  "sections": 11,
+  "upstream_grader_probe": "recorded result only; use extract_public_rows.py to execute pinned pure functions",
+  "provider_calls": 0,
+  "agent_runs": 0,
+  "paid_experiments_repeated": 0
+}

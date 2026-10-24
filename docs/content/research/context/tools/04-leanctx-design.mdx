@@ -59,6 +59,8 @@ The facade's engine dependency disables defaults, avoiding the engine's optional
 
 The same file's `configure_process_env` uses a static `Once`: **the first engine sets all four process-wide data/config/state/cache environment paths**. Its default is `temp_dir()/lean-ctx-embed`, not a unique directory per instance. Different later `.data_dir(...)` values do not give independently configured processes. Session/cache objects are instance-owned, but substantial surrounding state remains process-global; the facade has no caller-owned context-epoch/reset contract. These are source-inspected facts, not a reproduced two-engine runtime test.
 
+The safe builder also calls unsafe `std::env::set_var`, justified in source by running before its own runtime threads start. That does not establish that an embedding host has no existing threads reading the environment. [Rust's documented safety contract](https://doc.rust-lang.org/std/env/fn.set_var.html) makes this an additional non-Windows embedding prerequisite; no race or undefined behavior was reproduced here. Injected configuration or child-process environment setup avoids relying on an unproven host-wide condition.
+
 Ask upstream for injected instance-scoped stores/configuration, caller-owned runtime/cancellation, granular lexical-only features, and an explicit delivery-epoch API before making it a shared in-process Jackin backend. A per-worktree/session subprocess with explicit directories is the current practical isolation boundary. A separate process also avoids assuming compatible `libsqlite3-sys`, native linkage and allocator behavior in Jackin's dependency graph.
 
 ## Cached content versus model exposure

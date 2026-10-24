@@ -1,0 +1,22 @@
+test_compaction_iterations_replace_top_level (test_measurement_tools.AccountingTests.test_compaction_iterations_replace_top_level) ... ok
+test_gemini_interactions_thought_is_disjoint (test_measurement_tools.AccountingTests.test_gemini_interactions_thought_is_disjoint) ... ok
+test_incomplete_receipt_rejected (test_measurement_tools.AccountingTests.test_incomplete_receipt_rejected) ... ok
+test_invalid_breakdown_fails (test_measurement_tools.AccountingTests.test_invalid_breakdown_fails) ... ok
+test_missing_message_id_not_silently_dropped (test_measurement_tools.AccountingTests.test_missing_message_id_not_silently_dropped) ... ok
+test_missing_write_breakdown_not_zero (test_measurement_tools.AccountingTests.test_missing_write_breakdown_not_zero) ... ok
+test_nonmonotone_duplicate_rejected (test_measurement_tools.AccountingTests.test_nonmonotone_duplicate_rejected) ... ok
+test_offline_request_preserves_exact_text (test_measurement_tools.AccountingTests.test_offline_request_preserves_exact_text) ... ok
+test_openai_paid_write_classes_are_disjoint (test_measurement_tools.AccountingTests.test_openai_paid_write_classes_are_disjoint) ... ok
+test_openai_paid_writes_cannot_be_silently_absent (test_measurement_tools.AccountingTests.test_openai_paid_writes_cannot_be_silently_absent) ... ok
+test_png_fixture_header_and_dimensions (test_measurement_tools.AccountingTests.test_png_fixture_header_and_dimensions) ... ok
+test_reasoning_subset_and_missing_split (test_measurement_tools.AccountingTests.test_reasoning_subset_and_missing_split) ... ok
+test_repeated_blocks_not_rebilled (test_measurement_tools.AccountingTests.test_repeated_blocks_not_rebilled) ... ok
+test_sessions_and_models_stay_separate (test_measurement_tools.AccountingTests.test_sessions_and_models_stay_separate) ... ok
+test_streaming_counters_use_final_total (test_measurement_tools.AccountingTests.test_streaming_counters_use_final_total) ... ok
+test_write_detail_does_not_double_count (test_measurement_tools.AccountingTests.test_write_detail_does_not_double_count) ... ok
+test_zero_cost_is_zero_and_unknown_price_is_unknown (test_measurement_tools.AccountingTests.test_zero_cost_is_zero_and_unknown_price_is_unknown) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.010s
+
+OK

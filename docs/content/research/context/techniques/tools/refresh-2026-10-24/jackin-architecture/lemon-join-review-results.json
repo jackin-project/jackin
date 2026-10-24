@@ -1,0 +1,59 @@
+{
+  "reviewer": "/root/headroom_lemoncrow",
+  "author": "/root/rtk_leanctx",
+  "executed_utc": "2026-10-24T02:36:45.222383+00:00",
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/review_lemon_join.py",
+    "--baseline-dir",
+    "/workspace/scratch/1335a158b2a9/research/benchmarks/sources/lemoncrow/harbor/results/baseline",
+    "--evaluation-dir",
+    "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+  "python_version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "source_commit": "8aaee7ffa5b6f5f7e4a4a9a520af89ed527c7ec1",
+  "sources": [
+    {
+      "path": "/workspace/scratch/1335a158b2a9/research/benchmarks/sources/lemoncrow/harbor/results/baseline/tbench_opus48_claudecode_2.1.205_tasks.csv",
+      "sha256": "4380b0a5140595a49a8c86232873487ac31a95cc147e0f05800d9024b7cda28e",
+      "bytes": 58604,
+      "rows": 445
+    },
+    {
+      "path": "/workspace/scratch/1335a158b2a9/research/benchmarks/sources/lemoncrow/harbor/results/baseline/tbench_opus48_claudecode_2.1.205_turns.csv",
+      "sha256": "4e073818e743a3f2f480a7c8b15129047b1ce1c31e39ca1324181ff05c6fdaf1",
+      "bytes": 61411,
+      "rows": 445
+    }
+  ],
+  "join": {
+    "unique_trial_keys_each_file": true,
+    "identical_key_sets": true,
+    "task_names_match": true,
+    "input_and_output_totals_match_each_row": true,
+    "ordinary_nonnegative_each_row": true
+  },
+  "aggregate": {
+    "trials": 445,
+    "tasks": 89,
+    "pass": 351,
+    "fail": 91,
+    "other_reward": 3,
+    "missing_reported_cost": 34,
+    "prompt_tokens": 174804998,
+    "cache_reads": 161931526,
+    "cache_writes": 12803162,
+    "ordinary_input": 70310,
+    "table_input_minus_table_cache": 12873472,
+    "table_cache_equals_reads_rows": 445,
+    "table_cache_equals_reads_plus_writes_rows": 1
+  },
+  "known_reported_cost_decimal_excludes_34_unknown": "286.92",
+  "author_comparison": {
+    "path": "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json",
+    "sha256": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705",
+    "all_compared_fields_match": true
+  },
+  "limits": "CSV class accounting only. No paid trial, invoice validation, candidate denominator, provider usage receipt, or task grading was reproduced."
+}

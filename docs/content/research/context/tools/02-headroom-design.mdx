@@ -87,6 +87,8 @@ The checked-in [index proof table](https://github.com/headroomlabs-ai/headroom/b
 
 The newer [tool-search comparison](https://github.com/headroomlabs-ai/headroom/blob/76133cff59b71284399bf760c5578dc373c97231/benchmarks/tool_search_vs_native/README.md) reports October 6 runs with Claude Code 2.1.290 and Sonnet 5.5. It is first-party, one pricing-fix scenario with fake MCP services, repeated runs and selected configurations; the release tag containing it is not the tested source identity. It is valuable evidence that schema deferral, small-result compression and prefix rewriting can add turns and cost. It does not independently qualify selected Rust transforms or current Jackin tasks.
 
+An independent direct-verifier probe also accepted non-string metadata `False`→`0` through Python scalar equality; JSON-string comparison rejected `1.0`→`1`. This identifies a strict-type guard hardening opportunity, not an observed compression-pipeline mutation. <RepoFile path="docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/runtime-independent-review-results.json">Independent source/package-matched probe</RepoFile>.
+
 Recent releases and the issue/fix history show active maintenance and practical upstream contribution opportunities. They do not establish turnaround guarantees or eliminate local ownership. Propose a supported small Rust feature set, fallible durable CCR writes, duplicate-key rejection, and Python/Rust line-integrity parity before maintaining a fork.
 
 ## Implications for jackin❯

@@ -6,182 +6,208 @@
       "old_heading": "## Summary",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Summary",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Replaces the older blanket BSL objection with current Apache-2.0 component licensing and separates product4.0.1, runtime bin-v4.0.2 and the npm CLI runtime pin; accepted-task savings remain unproved."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "## Question and scope",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Question and scope",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Retains the integration question while explicitly requiring preserved permissions, reliable recovery, stable prefixes and an effective off path for separately selected components."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "## Method",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Method",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Refreshes release/package correspondence, selected Node/Go tests and generated recovery probes; logs distinguish fresh execution, source inspection and historical artifacts."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "## Findings",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Findings",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Preserves findings coverage through package identity, selectable components, defaults, recovery, implementation feasibility and benchmark provenance rather than a single product-wide savings number."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "### Release identity, packages, and licensing",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### Release identity, packages, and licensing",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Revalidates product/runtime tags and independent npm/PyPI versions, corrects source-workspace versus published-package identity, and replaces obsolete BSL terms with current component notices."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "### What each component changes",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### What each component changes",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Separates instruction policy, Engine, proxy, TOON, pixel, schema shrinking, memory, browser, clients, warming and Cloud routing; each changes a different execution boundary."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "### Effective defaults, overhead, and exposure",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### Effective defaults, overhead, and exposure",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Fresh emitted-text counts and state probes supplement source-inspected full-plugin model choices, wrapper/record defaults, default-on warmer and telemetry controls; model selection and warming are separate treatments."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "### Recovery, storage, concurrency, and failures",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### Recovery, storage, concurrency, and failures",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Generated exact-recovery, missing-handle, closed-store and capacity probes support narrow contracts; native512MiB no-eviction storage differs from middleware TTL storage and requires capsule/session authorization."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "### Reuse feasibility and measured local work",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### Reuse feasibility and measured local work",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Fresh CGO-enabled focused package tests passed; no-CGO listing failures remain explicit. Public Go API/process reuse is feasible in principle, while no supported Rust crate or installed-host correctness is claimed."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "### What the published studies establish",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### What the published studies establish",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Distinguishes upstream current Engine headline, historical wrap trials and style studies by fixtures, denominators and version; none becomes a measured complete-task bill saving."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
-      "old_heading": "## Implications for jackin\u276f",
+      "old_heading": "## Implications for jackin❯",
       "disposition": "retained and freshly reassessed",
-      "new_heading": "## Implications for jackin\u276f",
-      "workstream": "caveman_ponytail"
+      "new_heading": "## Implications for jackin❯",
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Proposes native concise guidance and a separately qualified deterministic Engine boundary with exact recovery, while full proxy, schema, memory, model routing and warming remain independently gated."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "## Limitations and smallest decisive next experiment",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Limitations and smallest decisive next experiment",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Names missing installed-host, paid-quality, concurrency and provider evidence and specifies a minimal fixed-model task comparison including rare decisive records, malformed output and recovery failures."
     },
     {
       "document": "docs/content/research/context/tools/01-caveman-design.mdx",
       "old_heading": "## Related work",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Related work",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Retains navigation to Ponytail, comparison, composition, release identities and Jackin integration so component findings feed the central decision without a broad product endorsement."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "## Summary",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Summary",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Updates the summary to delivered5.3.2 policy, default map and metrics, credits stronger completeness safeguards, and distinguishes exact upstream behavior from a Jackin adaptation."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "## Question and scope",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Question and scope",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Retains reuse-first coding as the question while requiring complete callers, architecture and tests and checking runtime state isolation across sessions/worktrees."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "## Method",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Method",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Pins stable source and npm package correspondence, runs selected Node/harness tests and isolated activation/state probes, and explicitly excludes paid model trials and global installation."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "## Findings",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Findings",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Preserves the original findings scope through separately selectable interventions, exact policy, activation/map, state, installation/telemetry and benchmark evidence."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "### Four independently selectable interventions",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### Four independently selectable interventions",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Distinguishes skill instructions, executable host hooks, default code-map retrieval and Band/metrics so a text-only treatment is not attributed full-plugin runtime behavior."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "### What the current policy actually says",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### What the current policy actually says",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Corrects obsolete unconditional minimal-file/test interpretations: current policy requires complete affected behavior and treats a small self-check as a minimum; architecture/test anchoring remains a hypothesis."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "### Activation, instruction cost, and the map",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### Activation, instruction cost, and the map",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Fresh activation counts and map omissions establish bounded selection behavior; the2,000-character counter is an approximate body budget, not a strict total-output cap, and map timeout/version boundaries are explicit."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "### State isolation and concurrent sessions",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### State isolation and concurrent sessions",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Isolated probes reproduce same-project mode sharing and resume/clear reactivation while preserving off at compact; actual host event delivery and plugin-data scope remain unqualified."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "### Installation, uninstall, telemetry, and maintenance",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### Installation, uninstall, telemetry, and maintenance",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Reopens MIT distribution, uninstall ownership, default local ledger/name capture, opt-in webhook, resume accounting loss and source-inspected non-atomic ledger risk; no concurrent-loss reproduction is claimed."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "### Executed checks and benchmark evidence",
       "disposition": "retained and freshly reassessed",
       "new_heading": "### Executed checks and benchmark evidence",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Fresh22Node tests and18offline scorer pairs validate selected implementation/harness paths; JetBrains4.8.4 and first-party Ponytail5 studies retain version, task, repetition, exclusion and quality limits."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
-      "old_heading": "## Implications for jackin\u276f",
+      "old_heading": "## Implications for jackin❯",
       "disposition": "retained and freshly reassessed",
-      "new_heading": "## Implications for jackin\u276f",
-      "workstream": "caveman_ponytail"
+      "new_heading": "## Implications for jackin❯",
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Keeps an independently authored native reuse/completeness policy separate from exact upstream map-disabled, full-plugin and map-only experiments; session-scoped state and notices are integration requirements."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "## Limitations and smallest decisive next experiment",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Limitations and smallest decisive next experiment",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Specifies fixed-model tasks requiring multi-file migration, architecture, security/accessibility and full prescribed tests; identifies absent native-host, broad-map, quality and concurrency evidence."
     },
     {
       "document": "docs/content/research/context/tools/09-ponytail-design.mdx",
       "old_heading": "## Related work",
       "disposition": "retained and freshly reassessed",
       "new_heading": "## Related work",
-      "workstream": "caveman_ponytail"
+      "workstream": "caveman_ponytail",
+      "evidence_or_reason": "Retains links to Caveman, comparison, composition, current releases and integration so policy-specific evidence is interpreted alongside execution-boundary alternatives."
     }
   ],
   "material_claim_dispositions": [
@@ -199,8 +225,8 @@
     },
     {
       "product": "Caveman",
-      "old_claim": "15.229\u201328.475 ms",
-      "current_disposition": "13.479\u201322.041 ms",
+      "old_claim": "15.229–28.475 ms",
+      "current_disposition": "13.479–22.041 ms",
       "reason": "New 11-call synthetic fixture; no first-use/process claim."
     },
     {
@@ -229,8 +255,8 @@
     },
     {
       "product": "Ponytail",
-      "old_claim": "57.55 first / 41.95\u201358.53 ms subsequent",
-      "current_disposition": "36.54 first / 32.38\u201341.68 ms subsequent",
+      "old_claim": "57.55 first / 41.95–58.53 ms subsequent",
+      "current_disposition": "36.54 first / 32.38–41.68 ms subsequent",
       "reason": "Fresh 11 activation processes, map disabled."
     },
     {

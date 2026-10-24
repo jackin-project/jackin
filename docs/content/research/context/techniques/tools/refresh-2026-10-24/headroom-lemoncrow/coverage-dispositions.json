@@ -9,57 +9,68 @@
         {
           "old_heading": "Summary",
           "disposition": "changed",
-          "reason": "Refreshed 0.38.0 to 0.41.0; retain candidate but remove strongest/preferred presumption after concrete fidelity/recovery findings."
+          "reason": "Refreshed 0.38.0 to 0.41.0; retain candidate but remove strongest/preferred presumption after concrete fidelity/recovery findings.",
+          "current_heading": "Summary"
         },
         {
           "old_heading": "Question and scope",
           "disposition": "expanded",
-          "reason": "Retain reusable-core question; separately evaluate Python densify, caller-owned tool results and whole proxy."
+          "reason": "Retain reusable-core question; separately evaluate Python densify, caller-owned tool results and whole proxy.",
+          "current_heading": "Question and scope"
         },
         {
           "old_heading": "Method",
           "disposition": "expanded",
-          "reason": "Source-only review now supplemented by no-ML build, installed-wheel checks, executed selected tests and controlled faults."
+          "reason": "Source-only review now supplemented by no-ML build, installed-wheel checks, executed selected tests and controlled faults.",
+          "current_heading": "Method"
         },
         {
           "old_heading": "Findings",
           "disposition": "reconciled",
-          "reason": "Preserve reusable APIs and dependency cautions while adding release packaging, effective defaults and current evidence."
+          "reason": "Preserve reusable APIs and dependency cautions while adding release packaging, effective defaults and current evidence.",
+          "current_heading": "Findings"
         },
         {
           "old_heading": "The Rust surface is real",
           "disposition": "confirmed-and-expanded",
-          "reason": "Exports confirmed at 0.41.0; distinguish library/worker/proxy from Python SDK; no rewrite on language grounds."
+          "reason": "Exports confirmed at 0.41.0; distinguish library/worker/proxy from Python SDK; no rewrite on language grounds.",
+          "current_heading": "Independently selectable boundaries"
         },
         {
           "old_heading": "Feature and dependency reality",
           "disposition": "confirmed-and-tested",
-          "reason": "ML remains default feature, no-default-features check passed Linux; report remaining 185 normal dependencies and MSRV discrepancy. Fidelity independently tested beyond parity."
+          "reason": "ML remains default feature, no-default-features check passed Linux; report remaining 185 normal dependencies and MSRV discrepancy. Fidelity independently tested beyond parity.",
+          "current_heading": "No-ML build: demonstrated feasibility, substantial remaining dependencies"
         },
         {
           "old_heading": "Evidence and operational interpretation",
           "disposition": "confirmed-and-expanded",
-          "reason": "No current independent task winner; historical synthetic index table and newer one-scenario first-party study scoped separately."
+          "reason": "No current independent task winner; historical synthetic index table and newer one-scenario first-party study scoped separately.",
+          "current_heading": "Benchmark provenance and maintenance"
         },
         {
           "old_heading": "Implications for jackin❯",
           "disposition": "changed",
-          "reason": "Reuse-before-rewrite retained; no unconditional preferred backend. Acknowledged raw storage, typed domain and SDK comparison now required."
+          "reason": "Reuse-before-rewrite retained; no unconditional preferred backend. Acknowledged raw storage, typed domain and SDK comparison now required.",
+          "current_heading": "Implications for jackin❯"
         },
         {
           "old_heading": "Limitations and unknowns",
           "disposition": "changed",
-          "reason": "Previous did-not-compile claim retired by successful build; new untested platform/model/task/epoch and aborted test limits stated."
+          "reason": "Previous did-not-compile claim retired by successful build; new untested platform/model/task/epoch and aborted test limits stated.",
+          "current_heading": "Limitations and unknowns"
         },
         {
           "old_heading": "Sources",
           "disposition": "expanded",
-          "reason": "Pinned release commit, 21 primary anchors plus registry/artifact/command records."
+          "reason": "Pinned release commit, 21 primary anchors plus registry/artifact/command records.",
+          "current_heading": "Sources"
         },
         {
           "old_heading": "Related work",
           "disposition": "retained",
-          "reason": "Current synthesis, composition, integration and engine links retained."
+          "reason": "Current synthesis, composition, integration and engine links retained.",
+          "current_heading": "Related work"
         }
       ],
       "old_lines_with_numerals": [
@@ -105,62 +116,74 @@
         {
           "old_heading": "Summary",
           "disposition": "changed",
-          "reason": "0.7.4 full-source status is historical; 0.8.0 public Runtime Lite and advanced private engine separated. No current winner."
+          "reason": "0.7.4 full-source status is historical; 0.8.0 public Runtime Lite and advanced private engine separated. No current winner.",
+          "current_heading": "Summary"
         },
         {
           "old_heading": "Question and scope",
           "disposition": "retained-and-expanded",
-          "reason": "Retain worktree/native-edit/quality question; specify restricted retrieval rather than automatically adopting complete tool replacement."
+          "reason": "Retain worktree/native-edit/quality question; specify restricted retrieval rather than automatically adopting complete tool replacement.",
+          "current_heading": "Question and scope"
         },
         {
           "old_heading": "Method",
           "disposition": "expanded",
-          "reason": "Added release artifact byte correspondence, 45 selected tests and independent real-worktree/spill probes."
+          "reason": "Added release artifact byte correspondence, 45 selected tests and independent real-worktree/spill probes.",
+          "current_heading": "Method"
         },
         {
           "old_heading": "Findings",
           "disposition": "reconciled",
-          "reason": "Current component and artifact boundaries now lead; historical fuller engine facts retain explicit scope."
+          "reason": "Current component and artifact boundaries now lead; historical fuller engine facts retain explicit scope.",
+          "current_heading": "Findings"
         },
         {
           "old_heading": "Integrated rather than additive in its full configuration",
           "disposition": "confirmed-with-scope",
-          "reason": "Full upstream tool replacement is a separate treatment; restricted Lite retrieval changes exposed schema and behavior."
+          "reason": "Full upstream tool replacement is a separate treatment; restricted Lite retrieval changes exposed schema and behavior.",
+          "current_heading": "What Runtime Lite sees and changes"
         },
         {
           "old_heading": "Current source and license",
           "disposition": "historical-claim-preserved-current-changed",
-          "reason": "0.7.4 and Sep24 publication remain Apache; 0.8.0 removes advanced internals from public mirror. Neutral pro directory presence is not advanced-engine completeness. Current Runtime wheel matched 87 source files."
+          "reason": "0.7.4 and Sep24 publication remain Apache; 0.8.0 removes advanced internals from public mirror. Neutral pro directory presence is not advanced-engine completeness. Current Runtime wheel matched 87 source files.",
+          "current_heading": "Current components and source boundary"
         },
         {
           "old_heading": "Current state handling",
           "disposition": "split-and-tested",
-          "reason": "Five-second full-path advisory lock remains; current Lite has explicit roots/nonsticky routing and tested worktree isolation. Legacy global cwd debt remains. Failed spill and missing exposure epoch are new blockers."
+          "reason": "Five-second full-path advisory lock remains; current Lite has explicit roots/nonsticky routing and tested worktree isolation. Legacy global cwd debt remains. Failed spill and missing exposure epoch are new blockers.",
+          "current_heading": "Worktrees: improved Lite routing, a different legacy/full path"
         },
         {
           "old_heading": "Evidence",
           "disposition": "confirmed-and-expanded",
-          "reason": "Historical auto/persona task results do not qualify Lite0.8.0. Provider credit gate is a spec; stable release explicitly lacks complete G11 pass."
+          "reason": "Historical auto/persona task results do not qualify Lite0.8.0. Provider credit gate is a spec; stable release explicitly lacks complete G11 pass.",
+          "current_heading": "Evidence does not establish a current winner"
         },
         {
           "old_heading": "Implications for jackin❯",
           "disposition": "sharpened",
-          "reason": "Per-root retrieval candidate retained; server-side deny list and native read/edit receipts explicitly required; no language-only rejection."
+          "reason": "Per-root retrieval candidate retained; server-side deny list and native read/edit receipts explicitly required; no language-only rejection.",
+          "current_heading": "Implications for jackin❯"
         },
         {
           "old_heading": "Limitations and unknowns",
           "disposition": "changed",
-          "reason": "Previous no multi-worktree test statement superseded by bounded executed fixtures; full build/task/host/platform claims remain unqualified."
+          "reason": "Previous no multi-worktree test statement superseded by bounded executed fixtures; full build/task/host/platform claims remain unqualified.",
+          "current_heading": "Limitations and unknowns"
         },
         {
           "old_heading": "Sources",
           "disposition": "expanded",
-          "reason": "Pinned current commit, 21 primary anchors, artifact proof and executable probes."
+          "reason": "Pinned current commit, 21 primary anchors, artifact proof and executable probes.",
+          "current_heading": "Sources"
         },
         {
           "old_heading": "Related work",
           "disposition": "retained",
-          "reason": "LeanCTX/evidence/integration retained; composition cross-link added."
+          "reason": "LeanCTX/evidence/integration retained; composition cross-link added.",
+          "current_heading": "Related work"
         }
       ],
       "old_lines_with_numerals": [

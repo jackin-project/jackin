@@ -1,0 +1,69 @@
+{
+  "reviewer": "/root/rtk_leanctx",
+  "reviewed_utc": "2026-10-24T08:30:32.873232+00:00",
+  "page": "docs/content/research/context/techniques/24-fresh-literature-and-market-delta.mdx",
+  "page_sha256": "72408e209436fcc259b9f0ad20ae7706b787cfe6529dd995f267d907668c9da8",
+  "complete_page_read": true,
+  "focused_primary_sources": [
+    {
+      "capture_file": "agentdiet-full.plain.txt",
+      "primary_url": "https://arxiv.org/html/2509.23586v2",
+      "sha256": "9558fd6df7f153598970b56d148460964c44f5a05abddf3f25b686425a824171",
+      "bytes": 79784,
+      "read_scope": "Sections5\u20136, Table4, metrics/setup and latency/validity limits.",
+      "capture_origin": "Previously retrieved by the market/literature workstream; independently read here."
+    },
+    {
+      "capture_file": "turncost-full.plain.txt",
+      "primary_url": "https://arxiv.org/html/2610.15093v1",
+      "sha256": "a33612ee13cbbf37dcdb14caac7a17ddabfa5f3b76f544f4a883efe4ebba1f30",
+      "bytes": 51224,
+      "read_scope": "Methods, replay/sample/cache assumptions and limitations; not every result independently recomputed.",
+      "capture_origin": "Previously retrieved by the market/literature workstream; independently read here."
+    },
+    {
+      "capture_file": "wrong-sar.abstract.txt",
+      "primary_url": "https://arxiv.org/abs/2504.11154v1",
+      "sha256": "ff16bc355d1c895af0c0e042b3ab3e1bbe2615816046c67a7305c7dc089fd5d6",
+      "bytes": 1537,
+      "read_scope": "Primary title and abstract identity.",
+      "capture_origin": "Previously retrieved by the market/literature workstream; independently read here."
+    },
+    {
+      "capture_file": "wrong-flock.abstract.txt",
+      "primary_url": "https://arxiv.org/abs/2408.11348v1",
+      "sha256": "1cb53af2573df098bd4af25ccf22826ce20aa572781e5b7382010f1a3d357548",
+      "bytes": 1654,
+      "read_scope": "Primary title and abstract identity.",
+      "capture_origin": "Previously retrieved by the market/literature workstream; independently read here."
+    },
+    {
+      "capture_file": "trace-router-v1.txt",
+      "primary_url": "https://arxiv.org/abs/2607.22465v1",
+      "sha256": "a64714746bbe0fe05c7d508779897b3172b141f3ea06d66aa205206b91d9074f",
+      "bytes": 42932,
+      "read_scope": "Versioned primary abstract/title/submission history.",
+      "capture_origin": "Previously retrieved by the market/literature workstream; independently read here."
+    },
+    {
+      "capture_file": "trace-router.txt",
+      "primary_url": "https://arxiv.org/abs/2607.22465v4",
+      "sha256": "fb4941c304cfbe3edce05b5ce285fe7761cca379ae3e6340df2342e31281c25d",
+      "bytes": 44732,
+      "read_scope": "Current primary abstract/title/submission history.",
+      "capture_origin": "Previously retrieved by the market/literature workstream; independently read here."
+    },
+    {
+      "capture_file": "orca-router.abstract.txt",
+      "primary_url": "https://arxiv.org/abs/2605.30736v1",
+      "sha256": "38eb477f5382f75d979632f349c197e787a50eabf0f6f76b86ff4ee667e55ac9",
+      "bytes": 1190,
+      "read_scope": "Hybrid offline-online router abstract boundary.",
+      "capture_origin": "Previously retrieved by the market/literature workstream; independently read here."
+    }
+  ],
+  "result": "No blocking discrepancy in the reviewed study/version/denominator boundaries.",
+  "suggestion": "Explicit AgentDiet quantitative-latency absence; accepted into author material-claim ledger, while page makes no latency claim.",
+  "provider_calls": 0,
+  "model_replications": 0
+}

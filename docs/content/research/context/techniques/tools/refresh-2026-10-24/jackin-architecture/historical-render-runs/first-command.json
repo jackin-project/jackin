@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/render_pages.mjs",
+    "--out",
+    "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run"
+  ],
+  "cwd": "/workspace/scratch/1335a158b2a9",
+  "started_utc": "2026-10-24T08:35:26.425014+00:00",
+  "duration_seconds": 29.867,
+  "exit_code": 1,
+  "log": "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run/execution.log",
+  "scope": "Task-local Chromium; loopback-only static documentation; all context pages desktop/mobile; no provider/user session."
+}

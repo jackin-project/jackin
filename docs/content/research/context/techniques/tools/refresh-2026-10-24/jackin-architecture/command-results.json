@@ -1,0 +1,40 @@
+{
+  "source_audit": {
+    "argv": [
+      "python3",
+      "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/probes/source_audit.py",
+      "--repo",
+      "/workspace/scratch/1335a158b2a9/jackin",
+      "--commit",
+      "6e266406b49da2ab3c55355f3b7d33d1643ee6cd"
+    ],
+    "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+    "output": "source-audit.json",
+    "exit_code": 0,
+    "evidence_class": "pinned source inspection and isolated shell case dispatch, no native launch"
+  },
+  "initial_audit_attempt": {
+    "exit_code": 1,
+    "classification": "Our safety assertion matched backticks in an inert source comment; corrected check excludes comment-only lines. No upstream script execution or product failure occurred on that attempt."
+  },
+  "linkage_probes": {
+    "record": "linkage-constraint-results.json",
+    "operation": "cargo metadata --offline; exact per-case argv, manifests, environment and stderr in record",
+    "compilation": false,
+    "network_downloads": false
+  },
+  "full_facade_attempt": {
+    "record": "lean-facade-metadata-attempt.json",
+    "executed_by": "/root/rtk_leanctx",
+    "scope": "Offline minimal consumer imports actual facade path; blocked before full resolution on missing rmcp"
+  },
+  "inspection_method": {
+    "commands": [
+      "git show <immutable-commit>:<source-path>",
+      "rg -n <contract-pattern> <source-files>",
+      "sed -n <range>p <source-file>"
+    ],
+    "source_identity_record": "source-register.json",
+    "note": "Interactive inspection read the registered files; these parameterized descriptions are not presented as exact executed argv. The reproducible source_audit command records its exact reads."
+  }
+}

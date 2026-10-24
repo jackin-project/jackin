@@ -1,0 +1,365 @@
+{
+  "reviewer": "/root/rtk_leanctx",
+  "commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+  "archive_sha256": "73bb7c7d062f1f622dff50a851d36a71b1c8efa9ebebd7017d1d09cf81529e94",
+  "wheel_member": "vendor/lemoncrow_runtime_client-0.8.0-py3-none-any.whl",
+  "wheel_sha256": "525830d6c37f251b97c805446c741ea46a744886d5f1d2a02ec75f5d9a202f6c",
+  "files_match_immutable_git_objects": 87,
+  "files": [
+    {
+      "member": "lemoncrow_client/__init__.py",
+      "sha256": "d8f46bd715d07f88cd101024b1b2c17fd2193cd17d89f55a0bb571e2b5809422"
+    },
+    {
+      "member": "lemoncrow_client/__main__.py",
+      "sha256": "6f747ea10c5aa64142ce302e766730bbacf1ffce8fb51bc8682cbfd4fed1eafd"
+    },
+    {
+      "member": "lemoncrow_client/auth_cli.py",
+      "sha256": "5b0ebf128f9fef9dd8b3863a0deb519c4caac3fb187a02d09202c9cd03d4430d"
+    },
+    {
+      "member": "lemoncrow_client/authward.py",
+      "sha256": "530a17bb86acc40a43e7ada710a0341eea4e5d7d1fa784318182a54537ef4093"
+    },
+    {
+      "member": "lemoncrow_client/autosync.py",
+      "sha256": "55dd6a98ce5dc49e979f3707c1f697f33d4191b77466b4611e7663a69ae6e7e5"
+    },
+    {
+      "member": "lemoncrow_client/blobs.py",
+      "sha256": "fe9f8e48d6d6c01a0642059e6d7b7c656c1d840ee630eac33c1d439551a08144"
+    },
+    {
+      "member": "lemoncrow_client/capture_polling.py",
+      "sha256": "b2430aa8becb820a32efc069ee2e2b629bce38e70751b0b34919347f84e9515c"
+    },
+    {
+      "member": "lemoncrow_client/cli.py",
+      "sha256": "72cb926aa47a45b6de5cf9ee54eb87d5a9fadb0c4d1978617671170a2cc02123"
+    },
+    {
+      "member": "lemoncrow_client/config.py",
+      "sha256": "22ae716ffe69e758ee4c04550701939a4e68073794b3416119efcb3e60bcf92d"
+    },
+    {
+      "member": "lemoncrow_client/credentials.py",
+      "sha256": "636bcc2da023e7716f669298890c4112374dde4bb2b68f5781af2cbc98196b46"
+    },
+    {
+      "member": "lemoncrow_client/development.py",
+      "sha256": "559c6c3910072c0c3a0cb9de817fef103641d6133fd1808a1eaf6f534326c731"
+    },
+    {
+      "member": "lemoncrow_client/dispatcher.py",
+      "sha256": "522cb44e69ce00f0fb786244cb319c41fb76dc61ff11118cd0921af76516c9bd"
+    },
+    {
+      "member": "lemoncrow_client/errors.py",
+      "sha256": "1d9bc56e6f2236c571d0e85c304e5129f17fe094df19859e408cfd11d914cb69"
+    },
+    {
+      "member": "lemoncrow_client/generation.py",
+      "sha256": "7dc69781a3c7b2263032573147edbf3c3e9710448b28f9b0583aa25fb1ce74e8"
+    },
+    {
+      "member": "lemoncrow_client/git_sync.py",
+      "sha256": "558188e4aa094fa8fa714767ffa2eac40afaeb66eca99c2e94b77ddbab0efbad"
+    },
+    {
+      "member": "lemoncrow_client/gitindex.py",
+      "sha256": "9470bbcd83125bc4251de2f13250266fc12114126d6044dd9dfbb65bdc5e550d"
+    },
+    {
+      "member": "lemoncrow_client/host_install.py",
+      "sha256": "0bf9e1dd255ebfe6516895c0e491fc65fcd0bacc4dea2b2465c8a772462a5667"
+    },
+    {
+      "member": "lemoncrow_client/host_repair.py",
+      "sha256": "dbba82c6dc9855f3aaf98347fa183b26f656055e3abcfc382d541877c337d58c"
+    },
+    {
+      "member": "lemoncrow_client/host_trial.py",
+      "sha256": "94757c0f7524906272133fbb1c4ebd1b4549ff21f20799715dd9492df747806b"
+    },
+    {
+      "member": "lemoncrow_client/liveview.py",
+      "sha256": "e817fbbd7e94f3397fe04987beb4c7c5b37bc53eb40649236a8740f3f8f34a99"
+    },
+    {
+      "member": "lemoncrow_client/manifest.py",
+      "sha256": "54f8f8b13c401b69a2f343fc443e6cfd3953c3200924bad1d04bffa15bc1be56"
+    },
+    {
+      "member": "lemoncrow_client/mcpserver.py",
+      "sha256": "bf06e504078aac60499ebe84e44fb2d614bcaf389258bd5c3cde6bcc345347ad"
+    },
+    {
+      "member": "lemoncrow_client/memory_budget.py",
+      "sha256": "5b5b2e2060ed222bebe564fb070e7c1001a6d5f34c6ed93b46a99633e1331092"
+    },
+    {
+      "member": "lemoncrow_client/pi_host.py",
+      "sha256": "195b06c247c51c37be9cbf5bb431b7da895a67a1d860efe9b351a13776a777ae"
+    },
+    {
+      "member": "lemoncrow_client/pi_integration.py",
+      "sha256": "b28a807a3db12c969bf7f8c9b20f22d3a047e3a92996582775b738d96492a78b"
+    },
+    {
+      "member": "lemoncrow_client/product_ownership.py",
+      "sha256": "659b228b472943a8accb14a5bf525e361984cadd2be90afa96ec323d910a0b3a"
+    },
+    {
+      "member": "lemoncrow_client/protocol.py",
+      "sha256": "1b6172c1ef6ed2163fa5a6029e63d795f01be9115f32ec05333a277daacb929f"
+    },
+    {
+      "member": "lemoncrow_client/recovery.py",
+      "sha256": "1931eb92ce674bd80972a481c70b1ce546ad295e6f89cfb3cfc8c0fe68cd3a7f"
+    },
+    {
+      "member": "lemoncrow_client/resolution_cache.py",
+      "sha256": "eb8a0b30e8caccb8a74866de12d0558ab4bc2fca9615a4ef1dc0063bb6e53231"
+    },
+    {
+      "member": "lemoncrow_client/routing.py",
+      "sha256": "41500de95f951a4b4b18fd4aee068c8c56ff5865c2e9c6039a444f2b09928b23"
+    },
+    {
+      "member": "lemoncrow_client/runtime_attribution.py",
+      "sha256": "443eb94731fbbd0d3ce3802d061e3f67817f911586f053092e0888bcaf634262"
+    },
+    {
+      "member": "lemoncrow_client/search_dedup.py",
+      "sha256": "8fbd2fc89c1c41fb002d7b9f7a1c99ced3264c985a34aa8724ab255957370c43"
+    },
+    {
+      "member": "lemoncrow_client/search_markdown.py",
+      "sha256": "89d7df6354a545efd6ee4ae5cd2b6f8ce4a2cf51fa9bb2569de68fe406b725c0"
+    },
+    {
+      "member": "lemoncrow_client/session.py",
+      "sha256": "b5a04a62ec1d4f58ff2dd6eaa2df17fc2ea26308b3da42f01cce30afa1cc6696"
+    },
+    {
+      "member": "lemoncrow_client/state.py",
+      "sha256": "39c4f931fd11f3b037b533ada106488a255b7ca2e5a37e31f347831656459114"
+    },
+    {
+      "member": "lemoncrow_client/surface.py",
+      "sha256": "0098e4ebed09f7229272cf50a0e07b5dbec9e8156723d868606a77d71939a9c4"
+    },
+    {
+      "member": "lemoncrow_client/toolbroker.py",
+      "sha256": "a798549cc6ab5170d25a51606d4cd9f43248e115cea9d6d979f20eceee9346ed"
+    },
+    {
+      "member": "lemoncrow_client/toolsurface.json",
+      "sha256": "b51b34e747f31e8bfcbd02f48be410408c1db573c02bcad011fb7888c58b773b"
+    },
+    {
+      "member": "lemoncrow_client/trace.py",
+      "sha256": "25bffe7d4d9c951b0728d771eaabd710c5d643b0a8e2a40549acab2df211ecd9"
+    },
+    {
+      "member": "lemoncrow_client/transport.py",
+      "sha256": "f738f725e10409b690335e844c2bf68887422e53dd05549d84f284bd8505556e"
+    },
+    {
+      "member": "lemoncrow_client/walkcache.py",
+      "sha256": "9b8bea458132093082ad258eac5b87ba1d47d49a69a61f8d1a6e6daf8d2e30e2"
+    },
+    {
+      "member": "lemoncrow_client/webtransport.py",
+      "sha256": "43ccbeff8435900bceb3951679a84eb7e7fdaf6712d91d1346948bf0e024b9e4"
+    },
+    {
+      "member": "lemoncrow_client/workspace_paths.py",
+      "sha256": "b1437565e2764fe367aa4d461198e41032ad4694cf2be0477477db7bb4ed4c8a"
+    },
+    {
+      "member": "lemoncrow_client/worktrees.py",
+      "sha256": "12d65a9b41e6fc81099a7d9a847592718fd536126607e86635b81b1f93bdc287"
+    },
+    {
+      "member": "lemoncrow_client/assets/pi_lite.mjs",
+      "sha256": "81dd63ad6807fdefdde6f263b4f345bed06052f1c5644c701c2276ff4828c68f"
+    },
+    {
+      "member": "lemoncrow_client/kit/__init__.py",
+      "sha256": "8a8e4f6d40b8eb88eb9c28a3f4b2e9634e94f8cd52997d72f3d9386775e9181b"
+    },
+    {
+      "member": "lemoncrow_client/kit/astgrep.py",
+      "sha256": "fb2e66eb047498f6c8e47564f882fb862ec3e3bcda52783225a98c3394aefe2d"
+    },
+    {
+      "member": "lemoncrow_client/kit/bash_output.py",
+      "sha256": "5ffa438ccaa7636f67a6aae74e3c5a1c5706f7129d98e207eb9b9127264980a2"
+    },
+    {
+      "member": "lemoncrow_client/kit/bash_output_compression.py",
+      "sha256": "d00e7e12005c7322816ca195514a23251cbe03b29edc8071c5f55ab856ddf7d5"
+    },
+    {
+      "member": "lemoncrow_client/kit/bash_output_profiles.py",
+      "sha256": "f53ae0874a56db652d36c76914e7ebb9f1459483700aa7ba2eee62f0de51f443"
+    },
+    {
+      "member": "lemoncrow_client/kit/command_policy.py",
+      "sha256": "d8348540ad809c333bff478a424cefe18c71fb54f15607e5085a1287987cc3af"
+    },
+    {
+      "member": "lemoncrow_client/kit/contract_guard.py",
+      "sha256": "f771f718f6ec96046a705a12f1aeaee93a89a2e32bfd5be6da0656818f75589d"
+    },
+    {
+      "member": "lemoncrow_client/kit/edit.py",
+      "sha256": "db31773431917587c91aaf7b9da2b6e0b02c6775c41eb8c63c33aa1530668707"
+    },
+    {
+      "member": "lemoncrow_client/kit/fsio.py",
+      "sha256": "016314512fa28a6e1b7fabcbc949b3c63e1474ed66718d71d23192ceb477acd9"
+    },
+    {
+      "member": "lemoncrow_client/kit/notices.py",
+      "sha256": "c30fdbeb1c1228a1f0624f51002a5cfae7f713fe70cd485ccd572d8c61bbdc1e"
+    },
+    {
+      "member": "lemoncrow_client/kit/output_delta.py",
+      "sha256": "96e842c267ad7dad06ffaa429c83853eec0fc08dad176e8c363693e0c960b359"
+    },
+    {
+      "member": "lemoncrow_client/kit/present.py",
+      "sha256": "7d76954aa07a3bdf0574dd389dcb6c853648c3279558ada96943d6e38ee4a0c1"
+    },
+    {
+      "member": "lemoncrow_client/kit/read_path.py",
+      "sha256": "ef3b8dde61e15d4b6fc20d7d0e82b05c3e516fb74dea8418d015b86f46da1785"
+    },
+    {
+      "member": "lemoncrow_client/kit/redaction.py",
+      "sha256": "fc2a746c0563a4a12f9a8deb8e14f3087befd5a05a79ce697a7b356259705938"
+    },
+    {
+      "member": "lemoncrow_client/kit/search.py",
+      "sha256": "e416b86b3671256397c332584774291e90cbaff77e7c85c79f325723aff77527"
+    },
+    {
+      "member": "lemoncrow_client/kit/security_rules.py",
+      "sha256": "86a2de8aa2a3ce41f89d7c64749721f56d36e06bfccd0f195c59013530a2bd19"
+    },
+    {
+      "member": "lemoncrow_client/kit/security_scan.py",
+      "sha256": "a7250fe34910ff1e1f07a1b562cb132739f80a415429eddf52c7d3860891e36d"
+    },
+    {
+      "member": "lemoncrow_client/kit/security_taint.py",
+      "sha256": "a0bd979199e2cea25bac470305e38b87d7de5b48e5b8113a234d55cb34e6fa5c"
+    },
+    {
+      "member": "lemoncrow_client/kit/spill.py",
+      "sha256": "fecb82ab17fce69f52e8056210d40ce066ac7ebb035cdbf6b0343258a40f446c"
+    },
+    {
+      "member": "lemoncrow_client/kit/sql.py",
+      "sha256": "1ab6bf3683e1593324021714a911e43da349f0f51da9adf4fd4c76e6c8f7a591"
+    },
+    {
+      "member": "lemoncrow_client/lite/__init__.py",
+      "sha256": "b976853ce8b8d59fd0105dc97a10b5f6ab0610ba04426ca9499e174c341bad8d"
+    },
+    {
+      "member": "lemoncrow_client/lite/imports.py",
+      "sha256": "f50facd93845b6e9dfc4a9b92c0d9a261b363f98bc3b78603b2ae743329110b2"
+    },
+    {
+      "member": "lemoncrow_client/lite/index.py",
+      "sha256": "6c35f9edf410901f203eb29ac5c02853a7f22825cbeb2efc9d9551e420de1bf9"
+    },
+    {
+      "member": "lemoncrow_client/lite/mcp.py",
+      "sha256": "e219be12c152a6cadd40e44d2e5d1b1f0683e7e435faeee61a6881cfe04e72d4"
+    },
+    {
+      "member": "lemoncrow_client/lite/policy.py",
+      "sha256": "8e6afb5e9eef40898bd62772b9a2f45efd1767ceba1f0219677da48fc7a8f0f4"
+    },
+    {
+      "member": "lemoncrow_client/lite/semantic.py",
+      "sha256": "6dad0f905d74a1d0c4977d6706867fe8d69e18fb2890cabbc758e6ecd55babd6"
+    },
+    {
+      "member": "lemoncrow_client/localtools/__init__.py",
+      "sha256": "ab2bf179888eb1953a68eb98107f66b175d242dcf01481ad277f1e456bd923ab"
+    },
+    {
+      "member": "lemoncrow_client/localtools/arguments.py",
+      "sha256": "2a1ca96b4c06b1eaf3775084f080b67ce73070c40f66695c78f7dd8140f14c2d"
+    },
+    {
+      "member": "lemoncrow_client/localtools/astgrep.py",
+      "sha256": "281c5e8e1ef8c737325a396ff5d2cf9c800b7bf1b74af51cde88d2ed1b36eab2"
+    },
+    {
+      "member": "lemoncrow_client/localtools/editing.py",
+      "sha256": "5b678d3e6d77733275d576d1bb44085e6e130a1e36857f7ed92a9a417925cd4b"
+    },
+    {
+      "member": "lemoncrow_client/localtools/indexing.py",
+      "sha256": "1fd3941e0c5eda0919faf7219dc131cb5c00d2d800290fb7a5d31c784e927741"
+    },
+    {
+      "member": "lemoncrow_client/localtools/search.py",
+      "sha256": "2896f7b13325a131258b5efc36e916d6a27e9740f98b0ab87155ace165b179a2"
+    },
+    {
+      "member": "lemoncrow_client/localtools/shell.py",
+      "sha256": "cf0a25c3eb273d9065a3185fed8e9dfd2a601bd35ad9b9fe4b968ba277f1b30e"
+    },
+    {
+      "member": "lemoncrow_client/localtools/sqltool.py",
+      "sha256": "27fc290ca56e29b40a640488687200f30799e04b6831b708d50f73151f3422a7"
+    },
+    {
+      "member": "lemoncrow_client/localtools/vcs.py",
+      "sha256": "4bf98caec7af035f17d905e4e4cf43890ccc38fcca22de65540aeec0a78019b3"
+    },
+    {
+      "member": "lemoncrow_client/localtools/web.py",
+      "sha256": "0dc013b1cfe6e5e9740868054dc716156ea1c4c829504a243f7a1e40587e0773"
+    },
+    {
+      "member": "lemoncrow_client/remote/__init__.py",
+      "sha256": "78ce974831048c35b647d53802bb2efb8f760d53c6c8c4a5e55b153244177578"
+    },
+    {
+      "member": "lemoncrow_client/remote/cli.py",
+      "sha256": "7ff5dc4dac3b6f21ffd4cbe3666d15f0123198dd73e426eab3ce74310a345fc4"
+    },
+    {
+      "member": "lemoncrow_client/remote/gateway.py",
+      "sha256": "5fe984d69551b344d2303f887ccebc42dc47fc8b27db55d96cc74b06cbf88b72"
+    },
+    {
+      "member": "lemoncrow_client/remote/service.py",
+      "sha256": "6b5ff0a9960319c0bb92d71eac8a082fb42f73e6b237431c0d6761b1fc0da23d"
+    },
+    {
+      "member": "lemoncrow_client/remote/state.py",
+      "sha256": "458f5842ba8d7db2c5047cc530b381953a7af0dead0f74765f8e263fd790e4b0"
+    },
+    {
+      "member": "lemoncrow_client/remote/tunnel.py",
+      "sha256": "24cde7889e09080a3bc68cf39525938301c42695dcb7d4ecd52fe00152562c1f"
+    }
+  ],
+  "metadata": [
+    "Name: lemoncrow-runtime-client",
+    "Version: 0.8.0",
+    "Requires-Python: <3.14,>=3.12"
+  ],
+  "installed": false,
+  "extracted_to_filesystem": false
+}

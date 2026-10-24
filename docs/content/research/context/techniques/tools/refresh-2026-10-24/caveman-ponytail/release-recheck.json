@@ -219,5 +219,171 @@
     "assets": [],
     "accessed_on_utc": "2026-10-24",
     "second_resolution_access_time": "not captured"
+  },
+  "final_recheck": {
+    "check_window_start_utc": "2026-10-24 02:36:11 UTC",
+    "check_window_end_utc": "2026-10-24 02:37:05 UTC",
+    "source_cutoff_utc": "2026-10-24T01:15:00Z",
+    "method": "GitHub connector public GET for releases/tag refs; public unauthenticated npm GET for latest manifests",
+    "caveman_releases": {
+      "url": "https://api.github.com/repos/JuliusBrussee/caveman/releases?per_page=8",
+      "releases": [
+        {
+          "tag_name": "bin-v4.0.2",
+          "published_at": "2026-10-23T05:22:07Z",
+          "prerelease": false,
+          "draft": false,
+          "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/bin-v4.0.2",
+          "target_commitish": "main",
+          "asset_count": 58
+        },
+        {
+          "tag_name": "v4.0.1",
+          "published_at": "2026-10-13T18:34:04Z",
+          "prerelease": false,
+          "draft": false,
+          "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/v4.0.1",
+          "target_commitish": "main",
+          "asset_count": 3
+        },
+        {
+          "tag_name": "v4.0.0",
+          "published_at": "2026-10-13T16:32:02Z",
+          "prerelease": false,
+          "draft": false,
+          "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/v4.0.0",
+          "target_commitish": "main",
+          "asset_count": 3
+        },
+        {
+          "tag_name": "bin-v4.0.1",
+          "published_at": "2026-10-13T18:21:34Z",
+          "prerelease": false,
+          "draft": false,
+          "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/bin-v4.0.1",
+          "target_commitish": "main",
+          "asset_count": 58
+        },
+        {
+          "tag_name": "bin-v4.0.0",
+          "published_at": "2026-10-13T16:21:19Z",
+          "prerelease": false,
+          "draft": false,
+          "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/bin-v4.0.0",
+          "target_commitish": "main",
+          "asset_count": 58
+        },
+        {
+          "tag_name": "v3.2.0",
+          "published_at": "2026-10-08T05:42:14Z",
+          "prerelease": false,
+          "draft": false,
+          "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/v3.2.0",
+          "target_commitish": "main",
+          "asset_count": 3
+        },
+        {
+          "tag_name": "middleware-ts-v1.0.1",
+          "published_at": "2026-10-08T05:16:11Z",
+          "prerelease": false,
+          "draft": false,
+          "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/middleware-ts-v1.0.1",
+          "target_commitish": "main",
+          "asset_count": 1
+        },
+        {
+          "tag_name": "bin-v2.1.0",
+          "published_at": "2026-10-08T05:26:41Z",
+          "prerelease": false,
+          "draft": false,
+          "html_url": "https://github.com/JuliusBrussee/caveman/releases/tag/bin-v2.1.0",
+          "target_commitish": "main",
+          "asset_count": 51
+        }
+      ]
+    },
+    "ponytail_release": {
+      "url": "https://api.github.com/repos/DietrichGebert/ponytail/releases/latest",
+      "tag_name": "v5.3.2",
+      "published_at": "2026-10-16T23:15:15Z",
+      "prerelease": false,
+      "draft": false,
+      "html_url": "https://github.com/DietrichGebert/ponytail/releases/tag/v5.3.2",
+      "target_commitish": "main",
+      "asset_count": 0
+    },
+    "tag_resolution": [
+      {
+        "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/ref/tags/v4.0.1",
+        "ref": "refs/tags/v4.0.1",
+        "ref_object": {
+          "sha": "d0be14f2dc92a99d12e717465d6908723ab9bfdb",
+          "type": "tag",
+          "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/tags/d0be14f2dc92a99d12e717465d6908723ab9bfdb"
+        },
+        "peeled_object": {
+          "sha": "d262ab3882952a59312ff3537cd86d894523c5ab",
+          "type": "commit",
+          "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/commits/d262ab3882952a59312ff3537cd86d894523c5ab"
+        }
+      },
+      {
+        "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/ref/tags/bin-v4.0.2",
+        "ref": "refs/tags/bin-v4.0.2",
+        "ref_object": {
+          "sha": "62a906068603b51922e1aa609424f2548950cfab",
+          "type": "tag",
+          "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/tags/62a906068603b51922e1aa609424f2548950cfab"
+        },
+        "peeled_object": {
+          "sha": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+          "type": "commit",
+          "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/commits/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6"
+        }
+      },
+      {
+        "url": "https://api.github.com/repos/DietrichGebert/ponytail/git/ref/tags/v5.3.2",
+        "ref": "refs/tags/v5.3.2",
+        "ref_object": {
+          "sha": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+          "type": "commit",
+          "url": "https://api.github.com/repos/DietrichGebert/ponytail/git/commits/16352ac229eb08a9598dcae48fe9f2b342567d86"
+        },
+        "peeled_object": {
+          "sha": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+          "type": "commit",
+          "url": "https://api.github.com/repos/DietrichGebert/ponytail/git/commits/16352ac229eb08a9598dcae48fe9f2b342567d86"
+        }
+      }
+    ],
+    "npm": {
+      "caveman_cli": {
+        "url": "https://registry.npmjs.org/@caveman-ai%2fcli/latest",
+        "accessed_at_utc": "2026-10-24T02:36:42Z",
+        "name": "@caveman-ai/cli",
+        "version": "4.0.1",
+        "gitHead": null,
+        "license": "Apache-2.0",
+        "dist": {
+          "tarball": "https://registry.npmjs.org/@caveman-ai/cli/-/cli-4.0.1.tgz",
+          "shasum": "5572d3985c34efd34b0c0a4c9a2c4170e5019b28",
+          "integrity": "sha512-ik1hgVGrhkha9YcZKSijfcS97nKjwYKyI4rvs7+7spTsNyBWClhgC2lAzgDkj3n5OvFcaROzNOHQ3jcS3AYCxw=="
+        }
+      },
+      "ponytail_package": {
+        "url": "https://registry.npmjs.org/@dietrichgebert%2fponytail/latest",
+        "accessed_at_utc": "2026-10-24T02:36:42Z",
+        "name": "@dietrichgebert/ponytail",
+        "version": "5.3.2",
+        "gitHead": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+        "license": "MIT",
+        "dist": {
+          "tarball": "https://registry.npmjs.org/@dietrichgebert/ponytail/-/ponytail-5.3.2.tgz",
+          "shasum": "95842ed4d5dadf4191a8d1d26eba9b9cff56d2fa",
+          "integrity": "sha512-AjJnMi54AXO55kXi0ISNPacLuTjb7e9V4lV2oidyxBOnVoPih8CIAmnfHgwX2VyPsDqwQhJthJ9bNu30MaHuOg=="
+        }
+      }
+    },
+    "disposition": "Unchanged: product v4.0.1 / runtime bin-v4.0.2 / Ponytail v5.3.2; no later stable identity observed in this bounded recheck. Does not re-execute binaries or verify signatures."
   }
 }

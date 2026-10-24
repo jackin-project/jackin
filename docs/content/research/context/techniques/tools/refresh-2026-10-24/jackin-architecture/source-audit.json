@@ -1,0 +1,343 @@
+{
+  "executed_at_utc": "2026-10-24T02:10:36.450734+00:00",
+  "commit": "6e266406b49da2ab3c55355f3b7d33d1643ee6cd",
+  "repo": "/workspace/scratch/1335a158b2a9/jackin",
+  "evidence_class": "pinned source inspection plus isolated shell case selection",
+  "not_executed": [
+    "full entrypoint",
+    "container launch",
+    "native agent",
+    "hook replacement",
+    "provider request",
+    "security runtime"
+  ],
+  "source_files": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "3d314492e199ee07ddd01b8f2dc420f09c5a4f5c8e5c29a3046636ce0025f431",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/Cargo.toml"
+    },
+    {
+      "path": "crates/core/jackin-core/src/agent.rs",
+      "sha256": "9e23e84d8fb0aa6c5629e18f8c51d82d99281b3808795f9f657e2e29f49b4067",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/core/jackin-core/src/agent.rs"
+    },
+    {
+      "path": "crates/core/jackin-core/src/manifest.rs",
+      "sha256": "c2d41f53f597aa05c765f1b550cafb480ffb323a04d421985e010ea2861deba3",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/core/jackin-core/src/manifest.rs"
+    },
+    {
+      "path": "crates/core/jackin-core/src/container_paths.rs",
+      "sha256": "b857c791e2e765b04c3c6db1e43ab627d37bd6384fb04c1254e4736ba1512817",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/core/jackin-core/src/container_paths.rs"
+    },
+    {
+      "path": "crates/core/jackin-protocol/src/lib.rs",
+      "sha256": "e9892ee7d08005ea8f57c71624a039c7cd0c3877b6c73e6ce9a466c0e846e40b",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/core/jackin-protocol/src/lib.rs"
+    },
+    {
+      "path": "crates/services/jackin-runtime-launch-capsule-setup/src/capsule_setup.rs",
+      "sha256": "0eb95a3a082184f1ed81e6bf2ee30f0651e6a3ca326e4c16d23747732f851715",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-runtime-launch-capsule-setup/src/capsule_setup.rs"
+    },
+    {
+      "path": "crates/adapters/jackin-image/src/derived_image.rs",
+      "sha256": "d498a292ffeb9edd9c502aa56e6a9b1fcbd909dc0c4e54659c55a1f29dc73922",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/adapters/jackin-image/src/derived_image.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/session/agent_cmd.rs",
+      "sha256": "7d235a2a7c49eeca244725840cbc3e4aadd13755db1b7a0588d0a538858d46e0",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/session/agent_cmd.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer.rs",
+      "sha256": "d429a0bb0f22cc721499ff65e75084de9df9566bee9729104c2c754585909dbe",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/agent_status/hook_installer.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer/claude.rs",
+      "sha256": "e4d9e11f87c72bdef100e85d4f4432b7855c4d57991d7736e3e24b8282cf2300",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/agent_status/hook_installer/claude.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/agent_status/hook_installer/codex.rs",
+      "sha256": "f713d52e18108c767414c7c03cac1f83e47d1786770c40ac7ffa3266388b24d3",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/agent_status/hook_installer/codex.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/runtime_setup/agent_auth.rs",
+      "sha256": "37d13fb49c3dcd7ee2f71fe350f3e5d85e22a8f6bf47aa16c5575d51fa7576fc",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/runtime_setup/agent_auth.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/daemon/control/auth.rs",
+      "sha256": "d22cd21a5a34370112747b3a51d0777bb74ebc40ff14bfde8bb3df9e9a171b39",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/daemon/control/auth.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation.rs",
+      "sha256": "0a244bab7778063364b2af38d7f6d87566c05c93fc5f4adf9e630f6d0e86a2bb",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/process_isolation.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation/linux.rs",
+      "sha256": "6c9e6043351c5cff01aa89ab66e459fd5d064f6678c6579feede37eea72731c8",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/process_isolation/linux.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation/linux/rules.rs",
+      "sha256": "bbe30da97e9b710661b6bd34cea5c4ef5d577b94a929a91b94290f55045bec50",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/process_isolation/linux/rules.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/process_isolation/linux/paths.rs",
+      "sha256": "27b5b9b14566f7e129422f89f744f22b82f3e3793ac3959a99fe9b779c111337",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/process_isolation/linux/paths.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/exec.rs",
+      "sha256": "6f24ada8ac73cd01a41548fe8db2a346a0b439f4682a0f0f1d601c06752b9241",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/exec.rs"
+    },
+    {
+      "path": "crates/apps/jackin-capsule/src/mcp_server.rs",
+      "sha256": "e57e771c5f68337f9144033a44e3507f3cee47fb8a63104ddff8cee87305925c",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/apps/jackin-capsule/src/mcp_server.rs"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/session.rs",
+      "sha256": "80c14c887af0c259cc4cb969205bbc07a9a7d2fcdb2d415d9058e1708c71153e",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/session.rs"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/monitor.rs",
+      "sha256": "ca497885f6b7aca2e6fcb0346976db577e82d748f29192652574fcf66c825282",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/monitor.rs"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/totals.rs",
+      "sha256": "5c4ebbc42aeac13c3e192650df9b99321df811bd3c8162a57a16f851ed8ed54b",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/totals.rs"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/claude.rs",
+      "sha256": "b55e58d0ab35bf35ca0944203094a3f2ed24ae7c80e770092393c25f7a04373b",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/claude.rs"
+    },
+    {
+      "path": "crates/services/jackin-usage-token-monitor/src/codex.rs",
+      "sha256": "372bf68b043be3a118783712ee0e9fd7564bb2e28bccdbe8ffe9306480b00053",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/crates/services/jackin-usage-token-monitor/src/codex.rs"
+    },
+    {
+      "path": "docker/runtime/entrypoint.sh",
+      "sha256": "99c092f761fbc2f7ef3d0fe7d4c466f1f5358c91a3df82b29c78b52891daab5b",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/docker/runtime/entrypoint.sh"
+    },
+    {
+      "path": "docker/runtime/agent-status/hooks/codex/report-hook.sh",
+      "sha256": "c74d61ecf5a267d69ebc30ab055a05606b49f8bc39a2ee8d4553ead679ad8ac1",
+      "url": "https://github.com/jackin-project/jackin/blob/6e266406b49da2ab3c55355f3b7d33d1643ee6cd/docker/runtime/agent-status/hooks/codex/report-hook.sh"
+    }
+  ],
+  "agent_registry": [
+    "claude",
+    "codex",
+    "amp",
+    "kimi",
+    "opencode",
+    "grok",
+    "antigravity",
+    "gemini",
+    "cursor",
+    "muse",
+    "omp",
+    "hermes"
+  ],
+  "entrypoint_case_sha256": "7d6e801d2c95b50307408d752397a028dffd8f2846e403c1fa65b4c200e1aaad",
+  "entrypoint_selection": [
+    {
+      "agent": "claude",
+      "exit_code": 0,
+      "launch_argv": [
+        "claude",
+        "--settings",
+        "{\"skipDangerousModePermissionPrompt\":true}",
+        "--dangerously-skip-permissions",
+        "--verbose"
+      ],
+      "stderr": ""
+    },
+    {
+      "agent": "codex",
+      "exit_code": 0,
+      "launch_argv": [
+        "codex",
+        "--enable",
+        "goals",
+        "--dangerously-bypass-approvals-and-sandbox"
+      ],
+      "stderr": ""
+    },
+    {
+      "agent": "amp",
+      "exit_code": 0,
+      "launch_argv": [
+        "amp",
+        "--dangerously-allow-all"
+      ],
+      "stderr": ""
+    },
+    {
+      "agent": "kimi",
+      "exit_code": 0,
+      "launch_argv": [
+        "kimi",
+        "--yolo"
+      ],
+      "stderr": ""
+    },
+    {
+      "agent": "opencode",
+      "exit_code": 0,
+      "launch_argv": [
+        "opencode"
+      ],
+      "stderr": ""
+    },
+    {
+      "agent": "grok",
+      "exit_code": 0,
+      "launch_argv": [
+        "grok",
+        "--always-approve"
+      ],
+      "stderr": ""
+    },
+    {
+      "agent": "antigravity",
+      "exit_code": 2,
+      "launch_argv": [],
+      "stderr": "[entrypoint] unknown JACKIN_AGENT: antigravity\n"
+    },
+    {
+      "agent": "gemini",
+      "exit_code": 2,
+      "launch_argv": [],
+      "stderr": "[entrypoint] unknown JACKIN_AGENT: gemini\n"
+    },
+    {
+      "agent": "cursor",
+      "exit_code": 2,
+      "launch_argv": [],
+      "stderr": "[entrypoint] unknown JACKIN_AGENT: cursor\n"
+    },
+    {
+      "agent": "muse",
+      "exit_code": 2,
+      "launch_argv": [],
+      "stderr": "[entrypoint] unknown JACKIN_AGENT: muse\n"
+    },
+    {
+      "agent": "omp",
+      "exit_code": 2,
+      "launch_argv": [],
+      "stderr": "[entrypoint] unknown JACKIN_AGENT: omp\n"
+    },
+    {
+      "agent": "hermes",
+      "exit_code": 2,
+      "launch_argv": [],
+      "stderr": "[entrypoint] unknown JACKIN_AGENT: hermes\n"
+    }
+  ],
+  "codex_status_hook_events": [
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop"
+  ],
+  "claude_status_hook_events": [
+    {
+      "event": "UserPromptSubmit",
+      "async": true
+    },
+    {
+      "event": "PreToolUse",
+      "async": true
+    },
+    {
+      "event": "PostToolUse",
+      "async": true
+    },
+    {
+      "event": "PostToolUseFailure",
+      "async": true
+    },
+    {
+      "event": "PermissionRequest",
+      "async": false
+    },
+    {
+      "event": "PermissionDenied",
+      "async": true
+    },
+    {
+      "event": "Notification",
+      "async": true
+    },
+    {
+      "event": "Stop",
+      "async": true
+    },
+    {
+      "event": "StopFailure",
+      "async": true
+    },
+    {
+      "event": "SubagentStart",
+      "async": true
+    },
+    {
+      "event": "SubagentStop",
+      "async": true
+    },
+    {
+      "event": "SessionEnd",
+      "async": true
+    }
+  ],
+  "active_usage_poller_branches": [
+    [
+      "Claude",
+      "claude"
+    ],
+    [
+      "Codex",
+      "codex"
+    ],
+    [
+      "Kimi",
+      "kimi"
+    ],
+    [
+      "Opencode",
+      "opencode"
+    ],
+    [
+      "Amp",
+      "amp"
+    ]
+  ],
+  "session_identity_source": "pub struct SessionIdentity {\n    pub uid: u32,\n    pub gid: u32,\n}",
+  "host_binary_paths_on_current_path": {
+    "claude": null,
+    "codex": null
+  }
+}

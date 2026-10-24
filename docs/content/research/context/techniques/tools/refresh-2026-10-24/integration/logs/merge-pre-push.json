@@ -1,0 +1,14 @@
+{
+  "command": [
+    "git",
+    "hook",
+    "run",
+    "pre-push"
+  ],
+  "started_utc": "2026-10-24T08:30:28.786423+00:00",
+  "finished_utc": "2026-10-24T08:30:34.780793+00:00",
+  "duration_seconds": 5.994,
+  "exit_code": 0,
+  "head": "9971e26249c2a601912419c84aad99980f88d28b",
+  "log": "/workspace/scratch/1335a158b2a9/tooling/logs/merge-pre-push.log"
+}

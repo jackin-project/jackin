@@ -1,0 +1,51 @@
+{
+  "ragged_rows": [
+    {
+      "id": "a",
+      "note": null
+    },
+    {
+      "id": "b"
+    }
+  ],
+  "duplicate_key_json": "{\"permission\":\"deny\",\"permission\":\"allow\"}",
+  "nested_uniform": [
+    {
+      "id": "a",
+      "values": [
+        1,
+        null,
+        {
+          "x": "comma,quote\""
+        }
+      ]
+    },
+    {
+      "id": "b",
+      "values": []
+    }
+  ],
+  "duplicate_header": {
+    "fields": [
+      "id",
+      "id"
+    ],
+    "rows": [
+      [
+        "first",
+        "last"
+      ]
+    ]
+  },
+  "wrong_row_width": {
+    "fields": [
+      "id",
+      "name"
+    ],
+    "rows": [
+      [
+        "a"
+      ]
+    ]
+  }
+}

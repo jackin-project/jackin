@@ -1,0 +1,39 @@
+{
+  "files": 4,
+  "passed": true,
+  "checks": [
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.json",
+      "published_digest_matches": true,
+      "published_size_matches": true,
+      "original_digest_reconstructed": true,
+      "original_size_reconstructed": true,
+      "parsed_values_identical": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/render-input-manifest.json",
+      "published_digest_matches": true,
+      "published_size_matches": true,
+      "original_digest_reconstructed": true,
+      "original_size_reconstructed": true,
+      "parsed_values_identical": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-build-input-manifest.json",
+      "published_digest_matches": true,
+      "published_size_matches": true,
+      "original_digest_reconstructed": true,
+      "original_size_reconstructed": true,
+      "parsed_values_identical": true
+    },
+    {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-build-input-manifest.json",
+      "published_digest_matches": true,
+      "published_size_matches": true,
+      "original_digest_reconstructed": true,
+      "original_size_reconstructed": true,
+      "parsed_values_identical": true
+    }
+  ],
+  "scope": "Read-only verification of published bytes and exact original JSON serialization; no document/build/browser experiment rerun."
+}

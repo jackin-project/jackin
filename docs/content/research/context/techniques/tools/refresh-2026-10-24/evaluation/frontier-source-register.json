@@ -1,0 +1,393 @@
+{
+  "source_cutoff_utc": "2026-10-24T01:15:00Z",
+  "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+  "time_limit": "Public documents were accessed after the cutoff on October24. Immutable paper versions predate the cutoff. Mutable pages do not prove identical bytes at that earlier moment.",
+  "new_primary_sources": [
+    {
+      "title": "[2304.08467] Learning to Compress Prompts with Gist Tokens",
+      "access_url": "https://arxiv.org/abs/2304.08467",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "c4fab08331a17bb905cf4e83a165643b8052dd848b4e2b0a883c6d84c625fffa",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2304.08467v3",
+      "paper_version": "v3"
+    },
+    {
+      "title": "[2307.06945] In-context Autoencoder for Context Compression in a Large Language Model",
+      "access_url": "https://arxiv.org/abs/2307.06945",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "6dd45ea68348d3144ea1efffa700ab07ee862e02f622cf11de04578387b38e41",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2307.06945v4",
+      "paper_version": "v4"
+    },
+    {
+      "title": "[2305.14788] Adapting Language Models to Compress Contexts",
+      "access_url": "https://arxiv.org/abs/2305.14788",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "4a459c78ccb65103b8ed63a6c30c896e88600f13f10d113de390f4453e02b033",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2305.14788v2",
+      "paper_version": "v2"
+    },
+    {
+      "title": "[2401.03462] Long Context Compression with Activation Beacon",
+      "access_url": "https://arxiv.org/abs/2401.03462",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "26eedba5ede707e10390c4372f6e9ca813bbed5f269f2fe3c0d0511f143cfd7e",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2401.03462v3",
+      "paper_version": "v3"
+    },
+    {
+      "title": "[2408.03094] 500xCompressor: Generalized Prompt Compression for Large Language Models",
+      "access_url": "https://arxiv.org/abs/2408.03094",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "aa88bef5219f25ee05f1285389fa43100899440295e515f5668d3868808a45a3",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2408.03094v1",
+      "paper_version": "v1"
+    },
+    {
+      "title": "[2310.07240] CacheGen: KV Cache Compression and Streaming for Fast Large Language Model Serving",
+      "access_url": "https://arxiv.org/abs/2310.07240",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "aaad251e63f03822b491ac4aa9a33faeed11242efb2a7f78eef5b60125e20324",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2310.07240v6",
+      "paper_version": "v6"
+    },
+    {
+      "title": "[2403.12968] LLMLingua-2: Data Distillation for Efficient and Faithful Task-Agnostic Prompt Compression",
+      "access_url": "https://arxiv.org/abs/2403.12968",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "4e07e3e12d70bc7f5987e707bd93f09ac23b7bb2eddf8bbcdc0a7600acfe0a98",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2403.12968v2",
+      "paper_version": "v2"
+    },
+    {
+      "title": "[2412.15605] Don't Do RAG: When Cache-Augmented Generation is All You Need for Knowledge Tasks",
+      "access_url": "https://arxiv.org/abs/2412.15605",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "a6d7e8bc5a63ffe32f630491bb01a46552f76b6f162f1211ddac4b0583d9da65",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2412.15605v2",
+      "paper_version": "v2"
+    },
+    {
+      "title": "Models & Pricing | DeepSeek API Docs",
+      "access_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "c43034f5a096969983b675b56205f031ab61429678c3aa4dd1e810b5321a3b03",
+      "scope": "Primary documented mechanism/interface inspected; no experimental reproduction."
+    },
+    {
+      "title": "Managing context on the Claude Developer Platform | Claude by Anthropic",
+      "access_url": "https://www.anthropic.com/news/context-management",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "f81029f210e89aa8ed4813d57f1fefb63874cae1e33b7cb42b827ada84df9f12",
+      "scope": "Primary documented mechanism/interface inspected; no experimental reproduction."
+    },
+    {
+      "title": "[2410.12388] Prompt Compression for Large Language Models: A Survey",
+      "access_url": "https://arxiv.org/abs/2410.12388",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "c243b7edb58d917add826d78d480ee32172a72bd863c1000ddc80c1d354737bc",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2410.12388v2",
+      "paper_version": "v2"
+    },
+    {
+      "title": "Overview | LMCache",
+      "access_url": "https://docs.lmcache.ai/mp/index.html",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "1a74583fcab0c44c64de3fe2105da1a483758a2e42134ba3ddd2f52db1c2b8bc",
+      "scope": "Primary documented mechanism/interface inspected; no experimental reproduction."
+    },
+    {
+      "title": "Glossary - Claude Platform Docs",
+      "access_url": "https://platform.claude.com/docs/en/about-claude/glossary",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "99c612479a1f35d786ee7ba87cdfa2c9e6ab70beebeadb4f4700330b823dd6ce",
+      "scope": "Primary documented mechanism/interface inspected; no experimental reproduction."
+    },
+    {
+      "title": "Customize a model with fine-tuning in Amazon Bedrock - Amazon Bedrock",
+      "access_url": "https://docs.aws.amazon.com/bedrock/latest/userguide/custom-model-fine-tuning.html",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "8a9726f2270c5c278fa7e0d7960b66fcfec661032fc2e524354c80958a8dbb94",
+      "scope": "Primary documented mechanism/interface inspected; no experimental reproduction."
+    },
+    {
+      "title": "Create a Message - Claude API Reference",
+      "access_url": "https://platform.claude.com/docs/en/api/messages/create",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "0e7a5577ca76e2d9c6bfac4e5665829fa08a0e2d41a06786df47b2d54f975dce",
+      "scope": "Primary documented mechanism/interface inspected; no experimental reproduction."
+    },
+    {
+      "title": "[2502.18600v2] Chain of Draft: Thinking Faster by Writing Less",
+      "access_url": "https://arxiv.org/abs/2502.18600v2",
+      "access_date_utc": "2026-10-24",
+      "recorded_utc": "2026-10-24T08:15:03.778933+00:00",
+      "exact_access_timestamp_retained": false,
+      "capture_format": "Search-service rendered source, not original HTTP body",
+      "rendered_source_sha256": "ebc2a3691eec100328ae8ce3254f3e2e5a8159d589553ef1c040561635ae6874",
+      "scope": "Paper abstract and version metadata reopened; reported result treated as study-specific, no training/serving/task reproduction.",
+      "versioned_url": "https://arxiv.org/abs/2502.18600v2",
+      "paper_version": "v2"
+    }
+  ],
+  "complete_api_capture": {
+    "url": "https://platform.claude.com/docs/en/api/messages/create.md",
+    "resolved_url": "https://platform.claude.com/docs/en/api/messages/create.md",
+    "status": 200,
+    "last_modified": null,
+    "accessed_utc": "2026-10-24T08:12:25.268256+00:00",
+    "bytes": 142411,
+    "sha256": "5ed4512aa9516a3b22f59aac28e29f42585cd04aeaa74fa88a2da20ec3e8b64c",
+    "scope": "Complete public create-message documentation capture; inspected for request content and learned-state input interfaces."
+  },
+  "reused_provider_capture_metadata": {
+    "claude-cache": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching.md",
+      "accessed_at_utc": "2026-10-24T01:35:50Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 162332,
+      "sha256": "877d675a151da3dc66132fcb0226551a6484ad70c3f8a610e11f363a9b3d8aaa"
+    },
+    "claude-code-cache": {
+      "url": "https://code.claude.com/docs/en/prompt-caching.md",
+      "accessed_at_utc": "2026-10-24T01:35:51Z",
+      "status": 200,
+      "final_url": "https://code.claude.com/docs/en/prompt-caching.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": "Sat, 24 Oct 2026 01:35:51 GMT",
+      "bytes": 44402,
+      "sha256": "dbc4fb385c4c03ecfda0b23926f2ad22662649fa3e2282f90c516c80bcaa540e"
+    },
+    "openai-cache": {
+      "url": "https://developers.openai.com/api/docs/guides/prompt-caching.md",
+      "accessed_at_utc": "2026-10-24T01:35:50Z",
+      "status": 200,
+      "final_url": "https://developers.openai.com/api/docs/guides/prompt-caching.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": "Sat, 24 Oct 2026 00:16:13 GMT",
+      "bytes": 55725,
+      "sha256": "715eacd5f0fe6bd7b238b74b770a6eb5b9a5260f464b5d54066b0bf580d3e995"
+    },
+    "gemini-cache": {
+      "url": "https://ai.google.dev/gemini-api/docs/caching",
+      "accessed_at_utc": "2026-10-24T01:35:51Z",
+      "status": 200,
+      "final_url": "https://ai.google.dev/gemini-api/docs/caching",
+      "content_type": "text/html; charset=utf-8",
+      "last_modified": "Fri, 23 Oct 2026 10:19:59 GMT",
+      "bytes": 91647,
+      "sha256": "994764b3946f94d365ea42680183d9ffeece643c4a7cb9c90fcab96cd1c93d6e"
+    },
+    "claude-effort": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/effort.md",
+      "accessed_at_utc": "2026-10-24T01:35:50Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/effort.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 42999,
+      "sha256": "c0b2147dcb5b60c6d9eb9b097c509257bfd408e3851395fa5e55c35a2b387c83"
+    },
+    "claude-task-budgets": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/task-budgets.md",
+      "accessed_at_utc": "2026-10-24T01:46:12Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/task-budgets.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 28853,
+      "sha256": "9e3a53827df18eaf61fbe8f4243e57a45fdfa5f49effa48e1ef241e8a8615051"
+    },
+    "claude-preserved-thinking": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/preserved-thinking.md",
+      "accessed_at_utc": "2026-10-24T01:42:43Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/preserved-thinking.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 116200,
+      "sha256": "8b7cd54f0eda1ef0324d8463c928340206415b1dadf0fad233bac91cae75e487"
+    },
+    "claude-context-editing": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/context-editing.md",
+      "accessed_at_utc": "2026-10-24T01:35:50Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/context-editing.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 103383,
+      "sha256": "17ec0a50255d9eaa539acc596ce246acbb72416d8d16b2ffebb8b40e7d1865c4"
+    },
+    "claude-compaction": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/compaction.md",
+      "accessed_at_utc": "2026-10-24T01:35:50Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/compaction.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 12237,
+      "sha256": "b8c66a81d710b7fdeb2868b4e73288f45d7fb560f5f69cc0e26154f89654f161"
+    },
+    "claude-code-subagents": {
+      "url": "https://code.claude.com/docs/en/sub-agents.md",
+      "accessed_at_utc": "2026-10-24T01:35:51Z",
+      "status": 200,
+      "final_url": "https://code.claude.com/docs/en/sub-agents.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": "Sat, 24 Oct 2026 01:35:51 GMT",
+      "bytes": 116355,
+      "sha256": "d66f847bed2cd73de0a45f29bf9c8dff7782dc7b66dc63d8285176ae6a176cdb"
+    },
+    "claude-code-headless": {
+      "url": "https://code.claude.com/docs/en/headless.md",
+      "accessed_at_utc": "2026-10-24T02:08:58Z",
+      "status": 200,
+      "final_url": "https://code.claude.com/docs/en/headless.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": "Sat, 24 Oct 2026 02:08:58 GMT",
+      "bytes": 37648,
+      "sha256": "ed2edc127790a5d3db14e1224887002e322880ff4e1bba92b121750c6ccfb05d"
+    },
+    "claude-monthly-api-credits": {
+      "url": "https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans",
+      "accessed_at_utc": "2026-10-24T01:44:37Z",
+      "status": 200,
+      "final_url": "https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans",
+      "content_type": "text/html; charset=utf-8",
+      "last_modified": null,
+      "bytes": 230436,
+      "sha256": "b1391a1ae238e08da37327cb714765892036fc8be3e4501973c25531f8515201"
+    },
+    "claude-subscription-sdk": {
+      "url": "https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan",
+      "accessed_at_utc": "2026-10-24T01:41:56Z",
+      "status": 200,
+      "final_url": "https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan",
+      "content_type": "text/html; charset=utf-8",
+      "last_modified": null,
+      "bytes": 192839,
+      "sha256": "88992e69c8c897b5d9c15e7a0b7e9dc1635aa7b5144ddf876751e3ae670a7032"
+    },
+    "openai-codex-pricing": {
+      "url": "https://developers.openai.com/codex/pricing.md",
+      "accessed_at_utc": "2026-10-24T01:35:50Z",
+      "status": 200,
+      "final_url": "https://learn.chatgpt.com/docs/pricing.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 45736,
+      "sha256": "e3e0a5ac79441fac79cf1e50d31c0bdbd8d27e0f30452a8307f87ab64495bdf3"
+    },
+    "claude-counting": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/token-counting.md",
+      "accessed_at_utc": "2026-10-24T01:35:50Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/token-counting.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 44259,
+      "sha256": "012ebe6155984b65d290bf4d16251f9fce90be46c00188928e6f727e9329aaba"
+    },
+    "claude-pdf": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/pdf-support.md",
+      "accessed_at_utc": "2026-10-24T02:08:58Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/pdf-support.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 62655,
+      "sha256": "312c870b2623533077ab17d816962af9537ac3838bbab7b3116884e25e861f92"
+    },
+    "claude-vision": {
+      "url": "https://platform.claude.com/docs/en/build-with-claude/vision.md",
+      "accessed_at_utc": "2026-10-24T02:08:58Z",
+      "status": 200,
+      "final_url": "https://platform.claude.com/docs/en/build-with-claude/vision.md",
+      "content_type": "text/markdown; charset=utf-8",
+      "last_modified": null,
+      "bytes": 48488,
+      "sha256": "b9349cf448dee20a0a901131fb8e995de3bdd08328ace51fdfd591e7802a23f0"
+    },
+    "lmcache-overview": {
+      "url": "https://docs.lmcache.ai/getting_started/overview.html",
+      "accessed_at_utc": "2026-10-24T01:46:12Z",
+      "error": "HTTP Error 404: Not Found"
+    },
+    "lmcache-multiprocess": {
+      "url": "https://docs.lmcache.ai/mp/index.html",
+      "accessed_at_utc": "2026-10-24T01:51:47Z",
+      "status": 200,
+      "final_url": "https://docs.lmcache.ai/mp/index.html",
+      "content_type": "text/html; charset=utf-8",
+      "last_modified": "Fri, 23 Oct 2026 08:48:54 GMT",
+      "bytes": 130796,
+      "sha256": "b0da979e83c714c60193844f765501f2c0fffe0ca4d7d7712bc85fa138d84beb"
+    }
+  },
+  "source_snapshots": "Retained in scratch only; no full upstream source/paper copies in this curated pack.",
+  "no_execution": [
+    "No paid provider calls",
+    "No quota probe",
+    "No OCR experiment",
+    "No learned compressor/model download",
+    "No GPU/self-hosted deployment",
+    "No policy activation"
+  ]
+}

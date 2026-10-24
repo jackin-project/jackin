@@ -4,7 +4,7 @@ Research source cutoff: **2026-10-24T01:15:00Z**. Executable verification and fi
 
 ## Frozen components
 
-| Component | Source | Executed artifact SHA-256 |
+| Component | Source | Release archive SHA-256 |
 |---|---|---|
 | RTK full 1.0.1 | `rtk-ai/rtk`, `4ef8730cf3a0dea11c8d64a9b90bc0616fe52100` | `5b919c3bccb799b67a61866d0e617410a4fcdf173e2614440e59de2fa2003436` |
 | RTK OSS 1.0.1 | Same tag/commit, default features disabled upstream | `a44e8ffc43981100b4ddf1710399a1649a6c874591aa6d0c0727fe6cbd983c41` |
@@ -12,7 +12,11 @@ Research source cutoff: **2026-10-24T01:15:00Z**. Executable verification and fi
 
 All three archives target Linux x86_64 musl; hashes matched GitHub release asset digests. Both RTK editions report `rtk 1.0.1`; LeanCTX reports 3.11.4. Full RTK archive includes Apache and engine BUSL license texts, while the OSS archive has the Apache text. LeanCTX's native archive contains the executable; its release offers notices/SBOM separately. This establishes artifact identity, not byte-for-byte source reproducibility or other-platform correctness.
 
+An independent reviewer verified that the executed OSS binary matches the archive member, SHA-256 `38b915f2a52ce4b7ef7d6dc3966aaeccb9f754731b2933571bf85026bcba8677`; see [identity cross-check](../representation/independent-review/identity-crosscheck.json).
+
 `source-register.json` pins each inspected code path and its SHA-256, including confirmation that the inspected worktree bytes match the frozen tag. `registry-checks.json` records official registry responses. RTK 1.0.1 and rtk-engine were absent from crates.io; LeanCTX engine 3.11.4 and npm lean-ctx-bin 3.11.4 were present; Rust lean-ctx-embed was absent. `release-metadata` files retain the official asset inventory, without reproducing release prose. LeanCTX's release `target_commitish=main` is not substituted for its resolved tag commit.
+
+`release-recheck-final.json` records the final public latest-stable/tag/asset metadata recheck at **2026-10-24T08:18:35Z**. Both resolved release identities and the three executed Linux archive digests remained unchanged. It does not replace the frozen cutoff or imply another binary/task execution. `heading-dispositions.json` maps every old product03/04 heading—**23 rows, S0782–S0804**—to its current anchor and evidence; material claim changes remain in `claim-dispositions.json`.
 
 ## Environment and authorization
 
@@ -63,6 +67,10 @@ Standalone porcelain output lost its trailing newline. Real cargo-check success 
 
 The additional boundary probe shows the corrected region parser and Git compactor are not interchangeable. `diff -` preserved the no-newline marker on the producer patch; `pipe --filter git-diff` dropped it. A truncated patch fell back through `diff -` with a terminal newline added, while the Git filter returned condensed partial data without an incomplete-hunk warning. Explicit non-diff input to the Git filter produced empty success. Non-UTF-8 and over-cap filtering rejected with exit 1. Generic passthrough retained tested arbitrary bytes. Missing recall failed visibly.
 
+`rtk-rewrite-lint.json` records a later bounded probe of the same OSS binary: `rtk rewrite 'npm run lint'` emitted `rtk lint` with rewrite/ask exit 3. Only the rewrite operation ran; no npm, linter or host approval flow was executed. Pinned source shows the empty lint arguments select ESLint rather than the project script, so script flags/chains need a separate equivalence check.
+
+An [independent four-case probe](../representation/independent-review/rtk-independent-results.json) corroborated the malformed-diff and arbitrary-byte boundaries. Its additional **synthetic stdin** fixture combined 60 valid grep-style matches with `SCAN INCOMPLETE: protected directory unreadable`. `pipe --filter grep` returned 311 bytes and exit 0 while omitting that diagnostic. The probe did not run grep or induce a real permission failure; it demonstrates why preserved producer status and raw recovery remain caller responsibilities.
+
 ### LeanCTX
 
 With steering rules off, 12 tools still occupied 10,608 bytes of compact JSON schema; the list includes ctx_patch, ctx_shell and shell. Initialization instructions were empty, but first full reads received a 202-byte nudge and second responses a 115-byte project overview. Schemas and annotation bytes are not provider tokens or bills.
@@ -80,3 +88,5 @@ Restart after the marker returned content. In the separate no-marker cold arm, t
 - Probe timing samples are not randomized/interleaved performance estimates; RSS, CPU attribution, indexing/model warmup and long-run disk growth remain unmeasured.
 
 The next Rust feasibility check should use a clean archive, explicit isolated target/cache, `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_INCREMENTAL=0` and two jobs, with adequate disk. The next correctness check should exercise two facade instances with different roots/state/epochs after a successful build. The next host check should create a stub, reset/compact/resume or spawn another consumer, and independently inspect actual delivered observations and raw recovery. Only then should complete-task arms be run at fixed model/effort with the canonical evaluation protocol.
+
+`release-recheck.json` records the 02:19 UTC October 24 final metadata check. RTK remains v1.0.1 at `4ef8730cf3a0dea11c8d64a9b90bc0616fe52100`; LeanCTX remains v3.11.4, whose annotated tag resolves to `3afe2bbffe0834ec58517ffd493e5a51c5c1ca57`. No new binary or task run was substituted during that check. A separate minimal dependency-constraint probe and the incomplete full-facade offline metadata attempt are preserved in the architecture evidence pack; they are different from a successful embedded build.

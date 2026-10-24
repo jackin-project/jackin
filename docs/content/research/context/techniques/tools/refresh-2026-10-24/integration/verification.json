@@ -1,0 +1,1778 @@
+{
+  "schema_version": 1,
+  "assembled_utc": "2026-10-24T08:39:48.311565+00:00",
+  "source_cutoff_utc": "2026-10-24T01:15:00Z",
+  "scope": "Final local documentation/offline verification, historical setup failures, hook coverage limits, merge provenance and independent review. This file does not attest to a future publication commit or remote CI.",
+  "command_groups": [
+    {
+      "id": "docs-gate-results",
+      "title": "Initial documentation gate",
+      "interpretation": "Four failed commands: build, repository links, research routes and TypeScript. Install, roadmap audit and19Bun tests succeeded.",
+      "original_result_record": {
+        "artifact": "logs/docs-gate-results.json",
+        "sha256": "85cd74bbb8ba627d26598e9782b5dcecb9d199e9bb69d4c06ae298aeb0f484cf"
+      },
+      "commands": [
+        {
+          "command": [
+            "bun",
+            "install",
+            "--frozen-lockfile"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:15:01.524582+00:00",
+          "finished_utc": "2026-10-24T08:15:02.226515+00:00",
+          "duration_seconds": 0.702,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-1.log",
+          "curated_log": "logs/docs-gate-1.log",
+          "log_sha256": "7c316722fd6c353c420f478da35564dc69d45bbc5474d7659014197d44dc737a",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "bun",
+            "run",
+            "build"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:15:02.226762+00:00",
+          "finished_utc": "2026-10-24T08:15:22.226134+00:00",
+          "duration_seconds": 19.999,
+          "exit_code": 1,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-2.log",
+          "curated_log": "logs/docs-gate-2.log",
+          "log_sha256": "3aa912e4809dd4d997d9dcebbc7072b7f345871d78762628eae9ed691c6b893a",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "docs",
+            "repo-links"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:15:22.226669+00:00",
+          "finished_utc": "2026-10-24T08:15:51.334500+00:00",
+          "duration_seconds": 29.108,
+          "exit_code": 1,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-3.log",
+          "curated_log": "logs/docs-gate-3.log",
+          "log_sha256": "8dd18066920b9e04595b813b8ccec72d6a607ec03a7f05b527593e418fb36a69",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "roadmap",
+            "audit"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:15:51.334738+00:00",
+          "finished_utc": "2026-10-24T08:15:51.578706+00:00",
+          "duration_seconds": 0.244,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-4.log",
+          "curated_log": "logs/docs-gate-4.log",
+          "log_sha256": "3a680a5229d9f24ce9716101725e5c9ea28906f7183e48febcbb99c2a808b984",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "research",
+            "check"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:15:51.579093+00:00",
+          "finished_utc": "2026-10-24T08:15:51.857354+00:00",
+          "duration_seconds": 0.278,
+          "exit_code": 1,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-5.log",
+          "curated_log": "logs/docs-gate-5.log",
+          "log_sha256": "3df266500177ae98f67411eefc05bff051cf700c5eb73e73c2a2ce4231291d4f",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "bunx",
+            "tsc",
+            "--noEmit"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:15:51.857595+00:00",
+          "finished_utc": "2026-10-24T08:15:52.471933+00:00",
+          "duration_seconds": 0.614,
+          "exit_code": 1,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-6.log",
+          "curated_log": "logs/docs-gate-6.log",
+          "log_sha256": "8f0c21243e82e287d1f59ba711e01057d457b6aa20ebcd0a88a5e245d3d7d851",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "bun",
+            "test"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:15:52.472241+00:00",
+          "finished_utc": "2026-10-24T08:15:52.485712+00:00",
+          "duration_seconds": 0.013,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-7.log",
+          "curated_log": "logs/docs-gate-7.log",
+          "log_sha256": "485c5f6f5538713c0247853c92f610ee6d392246a376923f1430fce4be1b149c",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        }
+      ],
+      "summary": {
+        "commands": 7,
+        "exit_zero": 3,
+        "exit_nonzero": 4
+      }
+    },
+    {
+      "id": "docs-render-results",
+      "title": "Intermediate build/type/test rerun",
+      "interpretation": "Three commands passed after metadata/fixture-scope repairs; this was not the complete seven-command gate.",
+      "original_result_record": {
+        "artifact": "logs/docs-render-results.json",
+        "sha256": "170c5c6e7408db179dd16eccd67fd2714154b4dcbace4d00dc2fda8e775252e6"
+      },
+      "commands": [
+        {
+          "command": [
+            "bun",
+            "run",
+            "build"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:22:19.345309+00:00",
+          "finished_utc": "2026-10-24T08:23:15.294722+00:00",
+          "duration_seconds": 55.949,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-build.log",
+          "curated_log": "logs/docs-render-build.log",
+          "log_sha256": "ff65cadf8889a31a4cf381b2b39b999114ffbe5cc0f77e6928133ddc7ea2e9ee",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "bunx",
+            "tsc",
+            "--noEmit"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:23:15.295029+00:00",
+          "finished_utc": "2026-10-24T08:23:16.048628+00:00",
+          "duration_seconds": 0.754,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-types.log",
+          "curated_log": "logs/docs-render-types.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "bun",
+            "test"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:23:16.049077+00:00",
+          "finished_utc": "2026-10-24T08:23:16.065099+00:00",
+          "duration_seconds": 0.016,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-tests.log",
+          "curated_log": "logs/docs-render-tests.log",
+          "log_sha256": "cc2f047ef33c722b0639ba015b0d52ce52aedac738d7ee5636e47d8a153f41a0",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        }
+      ],
+      "summary": {
+        "commands": 3,
+        "exit_zero": 3,
+        "exit_nonzero": 0
+      }
+    },
+    {
+      "id": "docs-final-results",
+      "title": "First complete final gate",
+      "interpretation": "Six commands passed; repository-file-link audit still failed on three literal filename references.",
+      "original_result_record": {
+        "artifact": "logs/docs-final-results.json",
+        "sha256": "5166e27da4167198b17c73ca7cca1882eadd5da4c845b504ce30fe72c10c9b15"
+      },
+      "commands": [
+        {
+          "command": [
+            "bun",
+            "install",
+            "--frozen-lockfile"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:30:30.513212+00:00",
+          "finished_utc": "2026-10-24T08:30:31.018587+00:00",
+          "duration_seconds": 0.505,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-1.log",
+          "curated_log": "logs/docs-final-1.log",
+          "log_sha256": "ea074989be57c12cf2c219aa3aec493bfb738a3e4f5874dfa88807abc775cecc",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "bun",
+            "run",
+            "build"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:30:31.018973+00:00",
+          "finished_utc": "2026-10-24T08:31:06.139588+00:00",
+          "duration_seconds": 35.121,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-2.log",
+          "curated_log": "logs/docs-final-2.log",
+          "log_sha256": "03b6795ebd83caea6cf3697862d9f68b4e3d4f8b97ace38bc98722cffe6e17c6",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "docs",
+            "repo-links"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:31:06.140023+00:00",
+          "finished_utc": "2026-10-24T08:31:06.482969+00:00",
+          "duration_seconds": 0.343,
+          "exit_code": 1,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-3.log",
+          "curated_log": "logs/docs-final-3.log",
+          "log_sha256": "fe3ea040b3b5ef1ae24decb9e3211afd31675086810004d3b3894dc049e52b88",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "roadmap",
+            "audit"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:31:06.484090+00:00",
+          "finished_utc": "2026-10-24T08:31:31.841692+00:00",
+          "duration_seconds": 25.358,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-4.log",
+          "curated_log": "logs/docs-final-4.log",
+          "log_sha256": "e32ecb0bc52c42cb6494a579ec9559631dabd4f9ebc912cb05b0931ae047c493",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "research",
+            "check"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:31:31.842060+00:00",
+          "finished_utc": "2026-10-24T08:31:32.127072+00:00",
+          "duration_seconds": 0.285,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-5.log",
+          "curated_log": "logs/docs-final-5.log",
+          "log_sha256": "1a9db3ab0d5e6f1d993d6f8315013c9fb001b828136a64eb7c2213189433ddef",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "bunx",
+            "tsc",
+            "--noEmit"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:31:32.127464+00:00",
+          "finished_utc": "2026-10-24T08:31:32.742872+00:00",
+          "duration_seconds": 0.615,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-6.log",
+          "curated_log": "logs/docs-final-6.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "command": [
+            "bun",
+            "test"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:31:32.743237+00:00",
+          "finished_utc": "2026-10-24T08:31:32.757660+00:00",
+          "duration_seconds": 0.014,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-7.log",
+          "curated_log": "logs/docs-final-7.log",
+          "log_sha256": "57e8d799f03eb1a69fb16a322944a7af3fbb760d9f4c968c5a261911f96a2a1f",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        }
+      ],
+      "summary": {
+        "commands": 7,
+        "exit_zero": 6,
+        "exit_nonzero": 1
+      }
+    },
+    {
+      "id": "docs-final-r2-results",
+      "title": "Corrected complete final gate",
+      "interpretation": "All seven commands passed after the three RepoFile/reference corrections.",
+      "original_result_record": {
+        "artifact": "logs/docs-final-r2-results.json",
+        "sha256": "b8704bc8f34fad2bc301630d760c3b6c9b32b1361fc6ee5206cf42e6adc6fa30"
+      },
+      "commands": [
+        {
+          "command": [
+            "bun",
+            "install",
+            "--frozen-lockfile"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:33:28.244950+00:00",
+          "finished_utc": "2026-10-24T08:33:28.740454+00:00",
+          "duration_seconds": 0.496,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-1.log",
+          "curated_log": "logs/docs-final-r2-1.log",
+          "log_sha256": "6c2ec13614f3bf4da0ce3fe8014194a14e1c8be50068603e4437360be1f9f4d2",
+          "tested_input_manifest": "logs/render-input-manifest.json"
+        },
+        {
+          "command": [
+            "bun",
+            "run",
+            "build"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:33:28.740758+00:00",
+          "finished_utc": "2026-10-24T08:34:06.823113+00:00",
+          "duration_seconds": 38.082,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-2.log",
+          "curated_log": "logs/docs-final-r2-2.log",
+          "log_sha256": "3dc556c97968896f83db559cc52d12cf550fe67029e0748358961f23227cb407",
+          "tested_input_manifest": "logs/render-input-manifest.json"
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "docs",
+            "repo-links"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:34:06.823498+00:00",
+          "finished_utc": "2026-10-24T08:34:07.231962+00:00",
+          "duration_seconds": 0.408,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-3.log",
+          "curated_log": "logs/docs-final-r2-3.log",
+          "log_sha256": "fb0e28a6eddc65e366019194e37a2ce6a1d98f136094ab4b0c66f9bf8b4ae3d0",
+          "tested_input_manifest": "logs/render-input-manifest.json"
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "roadmap",
+            "audit"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:34:07.232576+00:00",
+          "finished_utc": "2026-10-24T08:34:07.507473+00:00",
+          "duration_seconds": 0.275,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-4.log",
+          "curated_log": "logs/docs-final-r2-4.log",
+          "log_sha256": "3a680a5229d9f24ce9716101725e5c9ea28906f7183e48febcbb99c2a808b984",
+          "tested_input_manifest": "logs/render-input-manifest.json"
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "research",
+            "check"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:34:07.508012+00:00",
+          "finished_utc": "2026-10-24T08:34:07.796664+00:00",
+          "duration_seconds": 0.289,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-5.log",
+          "curated_log": "logs/docs-final-r2-5.log",
+          "log_sha256": "1a9db3ab0d5e6f1d993d6f8315013c9fb001b828136a64eb7c2213189433ddef",
+          "tested_input_manifest": "logs/render-input-manifest.json"
+        },
+        {
+          "command": [
+            "bunx",
+            "tsc",
+            "--noEmit"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:34:07.797452+00:00",
+          "finished_utc": "2026-10-24T08:34:08.532948+00:00",
+          "duration_seconds": 0.736,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-6.log",
+          "curated_log": "logs/docs-final-r2-6.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "tested_input_manifest": "logs/render-input-manifest.json"
+        },
+        {
+          "command": [
+            "bun",
+            "test"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:34:08.533376+00:00",
+          "finished_utc": "2026-10-24T08:34:08.551362+00:00",
+          "duration_seconds": 0.018,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-7.log",
+          "curated_log": "logs/docs-final-r2-7.log",
+          "log_sha256": "6aa582fa1cd9fa6cfb6b0387bdef4b21d9eb8cec66550798b4c37a15b4a8e2ac",
+          "tested_input_manifest": "logs/render-input-manifest.json"
+        }
+      ],
+      "summary": {
+        "commands": 7,
+        "exit_zero": 7,
+        "exit_nonzero": 0
+      }
+    },
+    {
+      "id": "offline-final-results",
+      "title": "Offline research reruns",
+      "interpretation": "17accounting tests,11numeric aggregation sections and14representation checks passed; no provider requests or paid agent replay.",
+      "original_result_record": {
+        "artifact": "logs/offline-final-results.json",
+        "sha256": "fa248a61ff55d988c2ddf031a13685d5363498b1ab35fa0712af2f40e28a0eaa"
+      },
+      "commands": [
+        {
+          "name": "measurement",
+          "command": [
+            "python3",
+            "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/test_measurement_tools.py"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+          "environment_overrides": {},
+          "started_utc": "2026-10-24T08:24:10.604383+00:00",
+          "finished_utc": "2026-10-24T08:24:10.696377+00:00",
+          "duration_seconds": 0.092,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/final-measurement.log",
+          "curated_log": "logs/final-measurement.log",
+          "log_sha256": "837075977bcb1b6c115c621296c75d898d5a9d4c21f4316b80fa8af2bbe05dae",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "name": "reaggregation",
+          "command": [
+            "python3",
+            "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/reaggregate.py"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+          "environment_overrides": {},
+          "started_utc": "2026-10-24T08:24:10.696518+00:00",
+          "finished_utc": "2026-10-24T08:24:10.748965+00:00",
+          "duration_seconds": 0.052,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/final-reaggregation.log",
+          "curated_log": "logs/final-reaggregation.log",
+          "log_sha256": "cd644431f217bbad20922c860500fe3f673082cbea163da524b0bd5ccc570bdb",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        },
+        {
+          "name": "representation",
+          "command": [
+            "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+            "/workspace/scratch/1335a158b2a9/jackin/docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/representation_probe.py",
+            "--out",
+            "/workspace/scratch/1335a158b2a9/research/coordinator/representation-rerun"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+          "environment_overrides": {
+            "PYTHONPATH": "/workspace/scratch/1335a158b2a9/research/representation/python-libs",
+            "TIKTOKEN_CACHE_DIR": "/workspace/scratch/1335a158b2a9/research/representation/tokenizer-cache"
+          },
+          "started_utc": "2026-10-24T08:24:10.749075+00:00",
+          "finished_utc": "2026-10-24T08:24:11.443119+00:00",
+          "duration_seconds": 0.694,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/final-representation.log",
+          "curated_log": "logs/final-representation.log",
+          "log_sha256": "c6c98d77ea9b22575f1483f42031edd77f6f83e5c4e8c5433c5a22f90412846c",
+          "tested_input_manifest": null,
+          "input_identity_limit": "No complete contemporaneous file-hash manifest retained for this earlier run; current hashes are not retroactively assigned to it."
+        }
+      ],
+      "summary": {
+        "commands": 3,
+        "exit_zero": 3,
+        "exit_nonzero": 0
+      }
+    },
+    {
+      "id": "docs-final-main-results",
+      "title": "Latest complete documentation gate after later main integration",
+      "interpretation": "All7commands exited0 on the worktree integrating main e737f4b5eb7c1a0d15ba6595fc260407ad178452. This does not assert a future final commit hook or CI result.",
+      "original_result_record": {
+        "artifact": "logs/docs-final-main-results.json",
+        "sha256": "f57dca90392b2f75a8db093c52bc98f8f6a5b386e6f34dd09dd8b5241c632d5a"
+      },
+      "commands": [
+        {
+          "command": [
+            "bun",
+            "install",
+            "--frozen-lockfile"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:46:41.257289+00:00",
+          "finished_utc": "2026-10-24T08:46:41.699747+00:00",
+          "duration_seconds": 0.442,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-1.log",
+          "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+          "curated_log": "logs/docs-final-main-1.log",
+          "log_sha256": "9d361f00f186aa4a6021fe87042f23c1ffb2a5840433ee52d7a4e4857fb89c17",
+          "tested_input_manifest": "logs/render-input-manifest.json",
+          "input_scope": "The same58targeted context/config hashes were checked unchanged after integration of e737; not a complete repository/environment manifest."
+        },
+        {
+          "command": [
+            "bun",
+            "run",
+            "build"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:46:41.700219+00:00",
+          "finished_utc": "2026-10-24T08:47:28.384195+00:00",
+          "duration_seconds": 46.684,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-2.log",
+          "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+          "curated_log": "logs/docs-final-main-2.log",
+          "log_sha256": "a44639be0a089783f48e2d2f82f23de26dadcbbd4497b5ac220c7d94126a6767",
+          "tested_input_manifest": "logs/render-input-manifest.json",
+          "input_scope": "The same58targeted context/config hashes were checked unchanged after integration of e737; not a complete repository/environment manifest."
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "docs",
+            "repo-links"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:47:28.384644+00:00",
+          "finished_utc": "2026-10-24T08:47:52.139381+00:00",
+          "duration_seconds": 23.755,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-3.log",
+          "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+          "curated_log": "logs/docs-final-main-3.log",
+          "log_sha256": "c3a1d164c07059844de8c109d0f177d595964a39710e00a38b5d10a9bc7a6d91",
+          "tested_input_manifest": "logs/render-input-manifest.json",
+          "input_scope": "The same58targeted context/config hashes were checked unchanged after integration of e737; not a complete repository/environment manifest."
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "roadmap",
+            "audit"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:47:52.139845+00:00",
+          "finished_utc": "2026-10-24T08:47:56.812693+00:00",
+          "duration_seconds": 4.673,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-4.log",
+          "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+          "curated_log": "logs/docs-final-main-4.log",
+          "log_sha256": "f617daaf94f62abda4f6535429ff86412bde62c5594bfd176369bfca9464128c",
+          "tested_input_manifest": "logs/render-input-manifest.json",
+          "input_scope": "The same58targeted context/config hashes were checked unchanged after integration of e737; not a complete repository/environment manifest."
+        },
+        {
+          "command": [
+            "mbx",
+            "+1.99.1",
+            "xtask",
+            "research",
+            "check"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:47:56.813010+00:00",
+          "finished_utc": "2026-10-24T08:47:57.144638+00:00",
+          "duration_seconds": 0.332,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-5.log",
+          "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+          "curated_log": "logs/docs-final-main-5.log",
+          "log_sha256": "e7e3f725756a3c5b0a544d7665c5537b46be33526ddb964de52fc1c32c2ba56e",
+          "tested_input_manifest": "logs/render-input-manifest.json",
+          "input_scope": "The same58targeted context/config hashes were checked unchanged after integration of e737; not a complete repository/environment manifest."
+        },
+        {
+          "command": [
+            "bunx",
+            "tsc",
+            "--noEmit"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:47:57.145034+00:00",
+          "finished_utc": "2026-10-24T08:47:57.738227+00:00",
+          "duration_seconds": 0.593,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-6.log",
+          "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+          "curated_log": "logs/docs-final-main-6.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "tested_input_manifest": "logs/render-input-manifest.json",
+          "input_scope": "The same58targeted context/config hashes were checked unchanged after integration of e737; not a complete repository/environment manifest."
+        },
+        {
+          "command": [
+            "bun",
+            "test"
+          ],
+          "cwd": "/workspace/scratch/1335a158b2a9/jackin/docs",
+          "started_utc": "2026-10-24T08:47:57.738852+00:00",
+          "finished_utc": "2026-10-24T08:47:57.751864+00:00",
+          "duration_seconds": 0.013,
+          "exit_code": 0,
+          "log": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-7.log",
+          "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+          "curated_log": "logs/docs-final-main-7.log",
+          "log_sha256": "cb45ce0b2222d1327f9bd819b1a6d031c2c6c0e84e8671e0b53fb72d44a29b37",
+          "tested_input_manifest": "logs/render-input-manifest.json",
+          "input_scope": "The same58targeted context/config hashes were checked unchanged after integration of e737; not a complete repository/environment manifest."
+        }
+      ],
+      "summary": {
+        "commands": 7,
+        "exit_zero": 7,
+        "exit_nonzero": 0
+      }
+    }
+  ],
+  "frozen_final_inputs": {
+    "artifact": "logs/render-input-manifest.json",
+    "sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+    "files": 58,
+    "mdx_files": 56,
+    "other_files": [
+      "docs/source.config.ts",
+      "docs/tsconfig.json"
+    ],
+    "current_comparison_utc": "2026-10-24T08:39:48.311565+00:00",
+    "mismatches": [],
+    "scope_limit": "Coordinator froze these58targeted inputs for the corrected final build/render sweep. This is not a complete repository,dependency or environment manifest and is not retroactively assigned to earlier failed runs.",
+    "latest_comparison_utc": "2026-10-24T08:49:03.588840+00:00",
+    "later_main_comparison": {
+      "integration_main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+      "mismatches": [],
+      "files": 58
+    },
+    "final_assembly_comparison_utc": "2026-10-24T08:53:31.325332+00:00",
+    "sha256_role": "Original build/render input-manifest byte identity at execution; preserved despite the reversible whitespace-only publication representation.",
+    "published_artifact_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+    "published_bytes": 8534,
+    "publication_serialization_record": "publication-json-formatting.json"
+  },
+  "offline_output_correspondence": {
+    "checked_utc": "2026-10-24T08:39:48.311565+00:00",
+    "method": "Read-only byte/SHA256 comparison of the already executed rerun and checked-in outputs; not another test execution.",
+    "result_files": {
+      "checked_in": {
+        "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/results.json",
+        "bytes": 14199,
+        "sha256": "168c4d5c731ed0cba9f4aff6c7a434fef31a7eb5d5736c0a16c8081b47cc9523"
+      },
+      "rerun": {
+        "path": "/workspace/scratch/1335a158b2a9/research/coordinator/representation-rerun/results.json",
+        "bytes": 14199,
+        "sha256": "168c4d5c731ed0cba9f4aff6c7a434fef31a7eb5d5736c0a16c8081b47cc9523"
+      }
+    },
+    "results_byte_identical": true,
+    "checked_in_fixture_count": 35,
+    "rerun_fixture_count": 35,
+    "fixture_hashes_identical": true,
+    "fixture_sha256": {
+      "surface_snake.txt": "a65554a452f4128d14c2914c6c9d28eb3c178f1fb6a4e5eb40784d56e4230fff",
+      "edit_before.ts": "8462bbcf187515734b11aaf458d2a52a9669955d7cb44fb652eb1cf45c3e05f8",
+      "surface_timestamp_epoch.txt": "e58341b7d2d37202d0a7604d98e32cab8de9767ea7cc1e658ff15fc4c5af08db",
+      "csv_json_cells.txt": "8a580d0226402a874c64007606ad894eb36d2d9d319367d1b0d4559124676aa8",
+      "tsv_plain.txt": "6e191b69ae25285da1eaebcd1b4e1275371018098f65db42c4fe5b4188864aaf",
+      "surface_id_plain.txt": "6afcba820d4fd0850b7f941ef45cd2086227df41910110fc4729a86ed4139822",
+      "whole_file_payload.json": "aea918a712f11046afe510e07d1838f2ed0841d91b5a312078b85219f5fe68a7",
+      "edit_payload.json": "f3179b8b5f721e51f033975be3981959cdc52d68c93f27ccb3ce744a17ba9ec4",
+      "surface_camel.txt": "f28163b348224642b0423e33316fac6ebea806776fad997a55086264230bc7df",
+      "tsv_json_cells.txt": "0a9b0f075617304fb0b932334a9422973ba0d8e2ce2b4146504495f429fe97df",
+      "surface_path_legend.txt": "b08c6e7ac7ca328f57eb26535cd736939bf0447c48cb7ea07d43048a45a47d9d",
+      "pipe_json_cells.txt": "9a9e6401d67584655a9e947488ef0c4acc883211b06f9d850de3cb352b86391e",
+      "pipe_plain.txt": "2cd1a99948d4fdfaee9ff30dba0ca266a1a5433ee094451901fd354c09236cd4",
+      "json_tabs.json": "d770a3e6114e18c32e263056627412086de14d7dc3e568795fe59c48aeb63549",
+      "style_telegraphic.txt": "61b86bdbc27b65a2e0b0a0c1a6351ab2e96852a3edf9ef6a9096e1e2997ccd98",
+      "surface_ascii_operators.txt": "58825827f73c52d4ad746e4145abd98f08ca7bfe3724eb275cba1d2dd6fd0318",
+      "surface_id_base64.txt": "a25528ffb84f8c260e560bb0aea96a12490c6b719ab022be0e8ffd2b76f7a7d5",
+      "csv_plain.txt": "ab026391ecbf29b87b9087723f0dbddcf2061973b33e2ed29f2bebb33eec2f54",
+      "json_ascii_escaped.json": "0ac04dfa32fa7d3310c58f07c03422927ee0a7b2c23e95e83270ebda590450e2",
+      "style_plain.txt": "8917ef57d03ffc1e59944976a632a5f950d613c55de6e16fe4483cc36f546520",
+      "surface_timestamp_iso.txt": "ac3360b9e668c8b731bdfd5d7e320bef97824e07ecbbdb98138848d6a380eec1",
+      "style_symbols.txt": "faff99c8c905e6bd68f350805377502d987d2155d186846d7a7b90f25570223f",
+      "json_compact.json": "bab1de7d15a34d23e9214bff56b5943f697a51640c31562c3ef74c7cbeab5e9e",
+      "surface_unicode_operators.txt": "42f3f5b1849e753833b9924ffeb8d9fd9f11a00a21ec8e6f04a1d2ec33a391b2",
+      "surface_path_alias.txt": "859598e629d3a19768490f518b7f9b2439e65bf249f548a84b0f144313d46b4c",
+      "style_chinese_gate.txt": "7031c021fa011229faebc1a39d3a2d9b6b82e2239c9844e5b171ef1651d301c7",
+      "json_pretty4.json": "f3f1d70981f6d15d27de66556766ff9640003e45370db129d2ba6550b3e23b35",
+      "style_verbose.txt": "3997c3a3f2506c1eaf67e08a6e6b5f56ec56fef19e7021cb0d1942dcc6d88a3f",
+      "style_english_gate.txt": "07f93d558c26fed5d62f50d7026adca48448029544fc03ace3867d15dca62650",
+      "edit_after.ts": "ce72ad5ce9c193dd80bf1fdfbd207fba2d1507bf8db2c9638811c05b31b65185",
+      "json_pretty2.json": "641158f0c34a85f2f662e548d14daebf3ccb92a10fbbb277ea39d600c2ffa611",
+      "surface_path_full.txt": "3bb83ae5d2dff50818afc5ed9a31a0d57d71b01222723033607827f75dec85f4",
+      "json_fields_rows.json": "f020d02197bfe4fa84d3c5cf9f23b68fe215691d35d2d9080fb73a5e23d7ba73",
+      "adversarial.json": "74b7825f37b393b26b0babf56ac4f9972bbcb1faf9e22f047996b8f3189a807e",
+      "surface_id_hyphenated.txt": "e33e8f84f40eeb400785037f97467542324441e2e66aa16f3fb96cad67adb068"
+    }
+  },
+  "current_offline_input_snapshot": {
+    "captured_utc": "2026-10-24T08:39:48.311565+00:00",
+    "files": [
+      {
+        "path": "docs/content/research/context/techniques/tools/test_measurement_tools.py",
+        "bytes": 7112,
+        "sha256": "b18cf43e5eee137bf0eaa0f8f1abf06fcd210eafa79c8e20dff0e13edb0f3363"
+      },
+      {
+        "path": "docs/content/research/context/techniques/tools/count_tokens.py",
+        "bytes": 2440,
+        "sha256": "3d135dd69a083107c5f80d5e144c01bd7050c9b9330e704c0a2ac252fcac5da6"
+      },
+      {
+        "path": "docs/content/research/context/techniques/tools/image_tokens.py",
+        "bytes": 2085,
+        "sha256": "0bac3a0379b8bac955a7fe67e360f108bfba3fda848c3f5709eb5c6b4274225b"
+      },
+      {
+        "path": "docs/content/research/context/techniques/tools/session_cost.py",
+        "bytes": 7526,
+        "sha256": "a89b4130b5e7e528f600bc48a3de3fe9514f9d51a58e3efe6fc048afebfc7560"
+      },
+      {
+        "path": "docs/content/research/context/techniques/tools/provider_usage.py",
+        "bytes": 5613,
+        "sha256": "9113f2eb8ec6caf072038be4699c627c2b0448700b7c038c87970b6f9e82c3a2"
+      },
+      {
+        "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/reaggregate.py",
+        "bytes": 7278,
+        "sha256": "7a6f9f4c03e3b71dfb98b42e34dd376345af6620139f65ff5f832f155e6b51c0"
+      },
+      {
+        "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/benchmark-rows.json",
+        "bytes": 503769,
+        "sha256": "72e1f14bcc8b725eaf78fd24d6e3af0a197a72924c1cb7e57dd3f04f46738199"
+      },
+      {
+        "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/aggregation-results.json",
+        "bytes": 10961,
+        "sha256": "94cd01a9e36328b8903be3c1558a54e42ddb28093bcd164ca5bbce344a9a1705"
+      },
+      {
+        "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/representation/representation_probe.py",
+        "bytes": 11661,
+        "sha256": "42c5ebfe4546e9afd93b6d393fa611f180082b5756577a89a966bf274113b00e"
+      }
+    ],
+    "scope_limit": "Current inspected code/data hashes at artifact assembly; original offline command JSON did not retain a contemporaneous complete input manifest. The byte-identical rerun outputs are independently checked above."
+  },
+  "hook_runs": {
+    "main_merge_commit": {
+      "command": [
+        "git",
+        "commit",
+        "-s",
+        "-m",
+        "chore(merge): sync main into context refresh"
+      ],
+      "started_utc": "2026-10-24T08:21:33.908758+00:00",
+      "finished_utc": "2026-10-24T08:28:52.536414+00:00",
+      "duration_seconds": 438.628,
+      "exit_code": 0,
+      "staged_files": 84,
+      "head": "50146c4cd66e96cd66f18277a1a212642898e01f",
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/main-merge-commit.log",
+      "environment": "Pinned task-local tools; MISE_EXEC_AUTO_INSTALL=false; required hook steps unchanged.",
+      "curated_log": "logs/main-merge-commit.log",
+      "log_sha256": "09664388663413005d9e17f75d81660a5e0b359de7b009fd91b176383c62710e",
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+      "cwd_provenance": "Coordinator execution context; original JSON did not include a cwd field.",
+      "hook_process_result": "Commit command exited0 after required hook commands were invoked; Kingfisher did not enumerate content and is not a completed secret scan."
+    },
+    "published_merge_pre_push": {
+      "command": [
+        "git",
+        "hook",
+        "run",
+        "pre-push"
+      ],
+      "started_utc": "2026-10-24T08:30:28.786423+00:00",
+      "finished_utc": "2026-10-24T08:30:34.780793+00:00",
+      "duration_seconds": 5.994,
+      "exit_code": 0,
+      "head": "9971e26249c2a601912419c84aad99980f88d28b",
+      "log": "/workspace/scratch/1335a158b2a9/tooling/logs/merge-pre-push.log",
+      "curated_log": "logs/merge-pre-push.log",
+      "log_sha256": "ab4cdd6e17687ed5a80600a668327c2d6c372350dc5de0cd05a41b14b37a7ecd",
+      "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+      "cwd_provenance": "Coordinator execution context; original JSON did not include a cwd field.",
+      "hook_process_result": "Pre-push wrapper exited0; Betterleaks logged a nonzero history scan with no leaks, plus an exhaustive-rename-detection warning."
+    },
+    "earlier_unstructured_runs": [
+      {
+        "id": "checkpoint-pre-commit-initial",
+        "log": "logs/checkpoint-pre-commit.log",
+        "command": null,
+        "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+        "started_utc": null,
+        "finished_utc": null,
+        "exit_code": null,
+        "status": "failed attempt",
+        "evidence": "Raw log retains optional mise installation failures and the final hook changed staged source rejection; exact outer argv/status/time not retained.",
+        "log_sha256": "3f6e378d4d8adbef30d47ad42703e685dbe97f727cc6a2f2760b5aa2c434fdd6",
+        "time_limit": "Log-local clock entries are retained as printed; filesystem mtimes are not substituted for start/finish times."
+      },
+      {
+        "id": "checkpoint-pre-commit-second",
+        "log": "logs/checkpoint-pre-commit-2.log",
+        "command": null,
+        "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+        "started_utc": null,
+        "finished_utc": null,
+        "exit_code": null,
+        "status": "failed tool setup",
+        "evidence": "Raw log ends with four optional cargo-tool installation failures; exact outer argv/status/time not retained.",
+        "log_sha256": "1a47efe4abfacb03664233252893bc080a3ff0c26ba729e723f59ca09d70797b",
+        "time_limit": "Log-local clock entries are retained as printed; filesystem mtimes are not substituted for start/finish times."
+      },
+      {
+        "id": "mise-repair",
+        "log": "logs/mise-repair.log",
+        "command": null,
+        "cwd": null,
+        "started_utc": null,
+        "finished_utc": null,
+        "exit_code": null,
+        "status": "failed tool setup",
+        "evidence": "Raw log retains optional tool collisions and Zig archive extraction failure; this is not a required-check pass.",
+        "log_sha256": "78517ef6927053ca7fb2ad7fcb3973f22df41aad04ed535c5b3f716e7e58a30b",
+        "time_limit": "Log-local clock entries are retained as printed; filesystem mtimes are not substituted for start/finish times."
+      },
+      {
+        "id": "checkpoint-pre-commit-third",
+        "log": "logs/checkpoint-pre-commit-3.log",
+        "command": null,
+        "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+        "started_utc": null,
+        "finished_utc": null,
+        "exit_code": 0,
+        "status": "wrapper success; incomplete Kingfisher enumeration",
+        "exit_code_provenance": "Coordinator confirms exit0 observed in original tool output; no structured outer command/timing record remains.",
+        "staged_files": 87,
+        "evidence": "Gitleaks scanned31.72MB; Kingfisher commit-tree failed128 and scanned0blobs/0bytes despite a green hook label. Other named hook commands have individual completion labels.",
+        "log_sha256": "5e43817d4c5d02ea64af8507fca491b6c5bfefb71613a6928ec31d8e19e0561c",
+        "time_limit": "Log-local clock entries are retained as printed; filesystem mtimes are not substituted for start/finish times."
+      },
+      {
+        "id": "checkpoint-pre-push-committed",
+        "log": "logs/checkpoint-pre-push-committed.log",
+        "command": null,
+        "cwd": "/workspace/scratch/1335a158b2a9/jackin",
+        "started_utc": null,
+        "finished_utc": null,
+        "exit_code": 0,
+        "status": "wrapper success; nonzero Betterleaks history scan",
+        "exit_code_provenance": "Coordinator confirms exit0 observed in original tool output; exact outer command/start/end were not retained.",
+        "compared_files": 87,
+        "evidence": "Betterleaks1.9.0 scanned approximately158.38MB and found no leaks; exhaustive rename detection was skipped by Git and reported as a warning.",
+        "log_sha256": "46656e88f88a9151f88fd754b65920303234eb601ef85222b40d26de6f639335",
+        "time_limit": "Log-local clock entries are retained as printed; filesystem mtimes are not substituted for start/finish times."
+      }
+    ]
+  },
+  "merge_identity": {
+    "local_validation": {
+      "commit": "50146c4cd66e96cd66f18277a1a212642898e01f",
+      "tree": "d4c970e041674a204a3e9f287763c2e6151225eb",
+      "ordered_parents": [
+        "e0fd8035bf344b51dcdf0700606846770fe399ee",
+        "c98f5f5fdd831e6075e38fde93b9713575406140"
+      ],
+      "author_date": "2026-10-24T01:21:33-07:00",
+      "committer_date": "2026-10-24T01:21:33-07:00",
+      "subject": "chore(merge): sync main into context refresh"
+    },
+    "published_merge": {
+      "commit": "9971e26249c2a601912419c84aad99980f88d28b",
+      "tree": "d4c970e041674a204a3e9f287763c2e6151225eb",
+      "ordered_parents": [
+        "e0fd8035bf344b51dcdf0700606846770fe399ee",
+        "c98f5f5fdd831e6075e38fde93b9713575406140"
+      ],
+      "author_date": "2026-10-24T15:29:45+07:00",
+      "committer_date": "2026-10-24T15:29:45+07:00",
+      "subject": "chore(merge): sync main into context refresh"
+    },
+    "equivalence_checked_utc": "2026-10-24T08:39:48.311565+00:00",
+    "same_tree": true,
+    "same_ordered_parents": true,
+    "local_validation_branch": "chore/context-refresh-2026-10-24-local-validation 50146c4cd66e96cd66f18277a1a212642898e01f",
+    "publication_provenance": "Coordinator published the equivalent merge through the GitHub API without force-push; local Git objects independently confirm tree and ordered-parent equality. Commit identities differ and are not relabeled as identical commits.",
+    "scope": "First main integration snapshot. Later main advancement is recorded separately; this does not assert c98 is the final current main."
+  },
+  "tooling": {
+    "observed_versions": {
+      "Rust": "1.99.1",
+      "Bun": "1.4.4 (38afee6c8)",
+      "Vite": "8.3.4",
+      "Kingfisher": "2.14.0",
+      "Betterleaks": "1.9.0",
+      "representation_Python": "3.12.14",
+      "representation_tiktoken": "0.12.0"
+    },
+    "auto_install_control": "MISE_EXEC_AUTO_INSTALL=false suppresses automatic provisioning of unrelated optional tools. Pinned required hook commands still run; no hook-source or check-disable change is claimed.",
+    "policy_limit": "Invoking a required scanner is not proof that it scanned content; Kingfisher enumeration failures remain explicitly incomplete.",
+    "setup_record_sha256": "3a6ede8210773e582f8a6fc25cb9b11adb74f3bc69c03163afcc490c523805b7",
+    "task_env_sha256": "8ae16eb063bded3f1eee996f48ab1b4caae7e4b433d48635cb41a4bb338ec993"
+  },
+  "repair_history": [
+    {
+      "failure": "Initial build consumed benchmark/wire JSON as Fumadocs metadata.",
+      "change": "docs/source.config.ts restricts metadata files to**/meta.json.",
+      "verified_by": "Corrected build commands exited0; final build generated1659static routes."
+    },
+    {
+      "failure": "TypeScript compiled independent immutable before/after fixture programs in one global scope and reported duplicate variables.",
+      "change": "docs/tsconfig.json excludes content/research/**/fixtures/**; fixture bytes were not edited.",
+      "verified_by": "Final tsc --noEmit exited0;35regenerated fixtures and result JSON match checked-in bytes."
+    },
+    {
+      "failure": "Initial research audit found six stale routes and repository-link audit found missing in-progress artifacts and three literal filename references.",
+      "change": "Corrected six routes, completed referenced artifacts, and fixed03genericCargo-manifest wording,06AGENTS.md RepoFile and08genericAGENTSinstruction wording.",
+      "verified_by": "Corrected final repo-links,roadmap and research audits all exited0."
+    },
+    {
+      "failure": "Kingfisher temporary staged snapshot could not create a commit and scanned no content.",
+      "change": "Read-only diagnosis plus isolated commit-tree probe: Git disables global/system identity, so explicit verified session identity is supplied in process environment; no repository/global/hook source change.",
+      "verified_by": "logs/kingfisher-identity-probe.json shows128without identity and0with identity for the same tree/parent. This is not itself a scan; final nonzero scan belongs to final publication verification."
+    }
+  ],
+  "nonfatal_diagnostics": [
+    {
+      "source": "docs-final-r2-2.log",
+      "classification": "Build warnings with exit0",
+      "detail": "CSS optimizer did not recognize ::highlight(fd-search); chunk-size warnings also appeared. Visual/browser qualification is separate."
+    },
+    {
+      "source": "docs-final-r2-3.log,docs-final-r2-4.log,docs-final-r2-5.log and hook logs",
+      "classification": "Error-level text from malformed upstream Cargo fixture enumeration while outer checks exited0",
+      "detail": "Paths are velnor-new fixtures/parity/malformed and malformed-ignored. Preserve these diagnostics; do not infer failure or success solely from the word error."
+    },
+    {
+      "source": "checkpoint-pre-push-committed.log and merge-pre-push.log",
+      "classification": "Git warning with nonzero history scan and exit0",
+      "detail": "Exhaustive rename detection skipped due to many files; Betterleaks scanned nonzero bytes and reported no leaks. This warning is distinct from Kingfisher scanning0bytes."
+    }
+  ],
+  "kingfisher_identity_probe": {
+    "artifact": "logs/kingfisher-identity-probe.json",
+    "sha256": "03c942cf10cd93fd88135bb0217373f78fa26f44d73d731030df17f2533a2953",
+    "result": "Explicit identity allows the isolated commit-tree operation; not content-scan or final-hook evidence."
+  },
+  "independent_pr_requirements_review": {
+    "reviewer": "/root/caveman_ponytail",
+    "date_utc": "2026-10-24",
+    "scope": "Full PR draft and255instruction rows plus historical/publication metadata; compared with already collected evidence. Not a new source search, benchmark or final-CI certification.",
+    "reviewed_pr_draft": {
+      "path": "research/coordinator/pr-body-final-draft.md",
+      "sha256": "07724ea858b0ccd20038f4afd00e9f6413e82763828d51841d3a20440f8db405",
+      "verification_paragraph_was_placeholder": true
+    },
+    "reviewed_requirements": {
+      "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/requirements-reconciliation.json",
+      "sha256": "805f989cfc242d5f70259373477427b376058c9845be72ff29623d0608724576",
+      "rows": 255,
+      "baseline_census_rows": 905,
+      "missing_local_evidence_paths": 0
+    },
+    "outcome": "No additional material scope/evidence conflict found in that draft; subsequent verification log audit identified the incomplete Kingfisher enumeration and records it here.",
+    "other_review_register": "../market-literature/independent-review.json"
+  },
+  "render_verification": {
+    "owner": "/root/headroom_lemoncrow",
+    "independent_mobile_reviewer": "/root/caveman_ponytail",
+    "state": "completed; bounded pass on the assembled e737 worktree build, not a future publication commit",
+    "command": {
+      "argv": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+        "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/render_pages.mjs",
+        "--repo",
+        "/workspace/scratch/1335a158b2a9/jackin",
+        "--manifest",
+        "/workspace/scratch/1335a158b2a9/tooling/logs/render-input-manifest.json",
+        "--browser",
+        "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/chrome-for-testing/chrome-headless-shell-linux64/chrome-headless-shell",
+        "--playwright-module",
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.js",
+        "--origin",
+        "http://127.0.0.1:4188",
+        "--out",
+        "/workspace/scratch/1335a158b2a9/research/jackin-architecture/rendered-qa/run-final-main"
+      ],
+      "cwd": "/workspace/scratch/1335a158b2a9",
+      "started_utc": "2026-10-24T08:48:53.083261+00:00",
+      "duration_seconds": 31.055,
+      "exit_code": 0,
+      "env_overrides": {},
+      "script_sha256": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54",
+      "assembled_git_context": {
+        "HEAD": "9971e26249c2a601912419c84aad99980f88d28b",
+        "MERGE_HEAD": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+        "origin/main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+      },
+      "context_note": "Working tree includes the clean main merge not yet committed when this command started. Exact source/HTML hashes are in the result."
+    },
+    "script_started_utc": "2026-10-24T08:48:53.896Z",
+    "script_finished_utc": "2026-10-24T08:49:24.078Z",
+    "summary": {
+      "routes": 56,
+      "pageViewportChecks": 112,
+      "passedPageChecks": 112,
+      "failedPageChecks": 0,
+      "uniqueInternalLinks": 718,
+      "failedInternalLinks": 0,
+      "screenshots": 22,
+      "consoleOrPageErrors": 0,
+      "globalOverflowChecksFailed": 0,
+      "failedNavigationChecks": 0
+    },
+    "dom_fragment_checks": {
+      "checked": 657,
+      "passed": 657
+    },
+    "actual_sidebar_navigation_checks": {
+      "checked": 2,
+      "passed": 2,
+      "scope": "Context overview at each viewport; not every navigation branch."
+    },
+    "viewports": [
+      {
+        "name": "desktop",
+        "width": 1440,
+        "height": 1000
+      },
+      {
+        "name": "mobile",
+        "width": 390,
+        "height": 844
+      }
+    ],
+    "build_input_manifest": {
+      "path": "/workspace/scratch/1335a158b2a9/tooling/logs/render-input-manifest.json",
+      "sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "compared": 58,
+      "mismatches": []
+    },
+    "ending_input_mismatches": [],
+    "actual_runtime": {
+      "node": "v24.19.0",
+      "playwright": "1.62.1",
+      "browser": "156.0.8078.47"
+    },
+    "late_main_build_comparison": {
+      "source_hashes_unchanged": true,
+      "changed_html_route_count": 56,
+      "input_manifest_sha256_unchanged": true,
+      "reason_for_rerun": "All 56 output HTML hashes changed after rebuilding the assembled late-main worktree despite the same 58 targeted source/config hashes. The earlier successful sweep was preserved and the same script was rerun against the new output."
+    },
+    "visual_review": {
+      "representative_images": 22,
+      "desktop_images": 11,
+      "mobile_images": 11,
+      "final_images_byte_identical_to_preceding_reviewed_run": 19,
+      "changed_images_directly_reinspected": 3,
+      "changed_desktop_images_reinspected_by_owner": 1,
+      "changed_mobile_images_independently_reinspected": 2,
+      "mobile_final_mapping": {
+        "byte_identical": 9,
+        "directly_reinspected": 2
+      },
+      "outcome": "No remaining scoped visual blocker. Readable text/navigation and no observed overlap or page-wide spill. Wide tables are locally bounded; static images do not establish horizontal-scroll interaction.",
+      "history": "The independent reviewer transparently withdrew an initial missing-icon observation after reopening unchanged originals; no page or capture repair was needed.",
+      "images_committed": false
+    },
+    "prior_runs_retained": 4,
+    "server_cleanup": {
+      "executed_utc": "2026-10-24T08:50:06.695073+00:00",
+      "scope": "Terminate only the exact task-owned loopback static-server argv after final-main verification; no other process touched.",
+      "expected_argv": [
+        "python3",
+        "-m",
+        "http.server",
+        "4188",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "/workspace/scratch/1335a158b2a9/jackin/docs/.output/public"
+      ],
+      "matched_pids": [
+        555815
+      ],
+      "signal": "SIGTERM",
+      "loopback_port_4188_closed": true
+    },
+    "artifacts": [
+      {
+        "artifact": "../jackin-architecture/rendered-pages-results.json",
+        "sha256": "e66726d44c9ce5813b8ad63cecb63c83f8be4eaaa591987f2e10546bd1ddd976",
+        "bytes": 572587
+      },
+      {
+        "artifact": "../jackin-architecture/rendered-qa-command.json",
+        "sha256": "0d305d52be35b13f4a6b30797c60c6b1583b1a5a9120e7e73eb0a71c05f37560",
+        "bytes": 1419
+      },
+      {
+        "artifact": "../jackin-architecture/rendered-qa-environment.json",
+        "sha256": "bb0fdb76703b50c1d1548ffad75d66ad383177686a6657037c57b423c7dc9f2e",
+        "bytes": 6280
+      },
+      {
+        "artifact": "../jackin-architecture/rendered-qa-review.md",
+        "sha256": "989eae4a6ae3b1a42492237f5a73b0648c2c22db35539823b5745ef0ae774b1a",
+        "bytes": 10047,
+        "previous_published_reference": {
+          "sha256": "2a4daf90798774cec3300296202373993ffdf09c35b2a40b20e7f1f04a128323",
+          "bytes": 9236
+        },
+        "publication_reference_updated_utc": "2026-10-24T09:17:24.120296+00:00",
+        "publication_change": "Publication-formatting provenance note and removal of two duplicate blank lines; historical rendered-page execution remains unchanged."
+      },
+      {
+        "artifact": "../jackin-architecture/rendered-qa-screenshots.json",
+        "sha256": "8c6f4b4c7c7b2b57c3de550eba4cb6f8932eac915d7e9452146a2b6137779a89",
+        "bytes": 27591
+      },
+      {
+        "artifact": "../jackin-architecture/rendered-qa-mobile-independent-review.json",
+        "sha256": "b6b1558f35171f5a7d879a708e2b112a7db1cd283b1de5edf197ca4963fa7d9d",
+        "bytes": 20383
+      },
+      {
+        "artifact": "../jackin-architecture/rendered-qa-main-build-comparison.json",
+        "sha256": "a79926b16927b622f28632588573b8e43d3a6ca368cffffef780006efc0cec21",
+        "bytes": 3866
+      },
+      {
+        "artifact": "../jackin-architecture/rendered-qa-run-history.json",
+        "sha256": "100964aa295d23e8102be5f1e79690d5dfb4f66882aaf79dc518566dcbbdc483",
+        "bytes": 7250
+      },
+      {
+        "artifact": "../jackin-architecture/rendered-build-input-manifest.json",
+        "sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+        "bytes": 8534,
+        "original_execution_snapshot_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+        "original_execution_snapshot_bytes": 7954,
+        "publication_serialization_record": "publication-json-formatting.json"
+      },
+      {
+        "artifact": "../jackin-architecture/probes/render_pages.mjs",
+        "sha256": "73360d99deed684868f0c27add8b1e2535e09f922413028265e85ef98300ff54",
+        "bytes": 18942
+      },
+      {
+        "artifact": "../jackin-architecture/logs/rendered-final-main.log",
+        "sha256": "fa8716dd04e5da80ebaf4e59f10991115d4b6320329f06c36feef97c1dd87ff2",
+        "bytes": 19558
+      },
+      {
+        "artifact": "../jackin-architecture/historical-render-runs/pre-release-merge/snapshot.json",
+        "sha256": "c11bf4b64ecfdc054b5f12d3819fed7703ccf196e29471aaed3c15cc75d59480",
+        "bytes": 1370
+      }
+    ],
+    "limits": [
+      "Chromium desktop/mobile viewport checks, not physical devices or a complete accessibility audit.",
+      "Per-page navigation verifies visible desktop navigation or a visible mobile trigger; actual scoped sidebar-link interaction is tested on the context overview at each viewport, not every menu branch.",
+      "External HTTP requests blocked; external link availability is outside this local rendering sweep.",
+      "All rendered context-page fragments checked against DOM; other internal targets receive HTTP-status checks only.",
+      "Screenshots require separate human/model visual inspection; this JSON does not claim that inspection.",
+      "No application source mutation, provider call, user session or public server.",
+      "Representative visual coverage is 22 captures, not every pixel on all pages. No full accessibility, physical-device or wide-table interaction audit was performed.",
+      "The pending main merge was in the tested worktree. Recorded HEAD is the preceding branch commit; MERGE_HEAD and source/HTML hashes identify the assembled content."
+    ]
+  },
+  "publication_scope": {
+    "pr": "https://github.com/jackin-project/jackin/pull/1205",
+    "branch": "chore/context-refresh-2026-10-24",
+    "merge_authorized": false,
+    "final_hooks": "Final publication pre-commit/pre-push and meaningful nonzero Kingfisher scan are reported in final PR metadata after these artifacts are staged. Earlier wrapper success does not substitute for them.",
+    "final_ci": "No future exact-head CI result is asserted in this tree. Final PR metadata identifies the actual published commit and job/check denominators.",
+    "self_reference": "A commit cannot contain its own final commit hash; tree/input hashes and external final PR metadata serve different provenance roles."
+  },
+  "raw_record_manifest": [
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/checkpoint-pre-commit-2.log",
+      "artifact": "logs/checkpoint-pre-commit-2.log",
+      "bytes": 16543,
+      "sha256": "1a47efe4abfacb03664233252893bc080a3ff0c26ba729e723f59ca09d70797b",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/checkpoint-pre-commit-3.log",
+      "artifact": "logs/checkpoint-pre-commit-3.log",
+      "bytes": 4801,
+      "sha256": "5e43817d4c5d02ea64af8507fca491b6c5bfefb71613a6928ec31d8e19e0561c",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/checkpoint-pre-commit.log",
+      "artifact": "logs/checkpoint-pre-commit.log",
+      "bytes": 103889,
+      "sha256": "3f6e378d4d8adbef30d47ad42703e685dbe97f727cc6a2f2760b5aa2c434fdd6",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/checkpoint-pre-push-committed.log",
+      "artifact": "logs/checkpoint-pre-push-committed.log",
+      "bytes": 898,
+      "sha256": "46656e88f88a9151f88fd754b65920303234eb601ef85222b40d26de6f639335",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-1.log",
+      "artifact": "logs/docs-final-1.log",
+      "bytes": 158,
+      "sha256": "ea074989be57c12cf2c219aa3aec493bfb738a3e4f5874dfa88807abc775cecc",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-2.log",
+      "artifact": "logs/docs-final-2.log",
+      "bytes": 350333,
+      "sha256": "03b6795ebd83caea6cf3697862d9f68b4e3d4f8b97ace38bc98722cffe6e17c6",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-3.log",
+      "artifact": "logs/docs-final-3.log",
+      "bytes": 1336,
+      "sha256": "fe3ea040b3b5ef1ae24decb9e3211afd31675086810004d3b3894dc049e52b88",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-4.log",
+      "artifact": "logs/docs-final-4.log",
+      "bytes": 948,
+      "sha256": "e32ecb0bc52c42cb6494a579ec9559631dabd4f9ebc912cb05b0931ae047c493",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-5.log",
+      "artifact": "logs/docs-final-5.log",
+      "bytes": 473,
+      "sha256": "1a9db3ab0d5e6f1d993d6f8315013c9fb001b828136a64eb7c2213189433ddef",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-6.log",
+      "artifact": "logs/docs-final-6.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-7.log",
+      "artifact": "logs/docs-final-7.log",
+      "bytes": 1464,
+      "sha256": "57e8d799f03eb1a69fb16a322944a7af3fbb760d9f4c968c5a261911f96a2a1f",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-1.log",
+      "artifact": "logs/docs-final-r2-1.log",
+      "bytes": 158,
+      "sha256": "6c2ec13614f3bf4da0ce3fe8014194a14e1c8be50068603e4437360be1f9f4d2",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-2.log",
+      "artifact": "logs/docs-final-r2-2.log",
+      "bytes": 350335,
+      "sha256": "3dc556c97968896f83db559cc52d12cf550fe67029e0748358961f23227cb407",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-3.log",
+      "artifact": "logs/docs-final-r2-3.log",
+      "bytes": 857,
+      "sha256": "fb0e28a6eddc65e366019194e37a2ce6a1d98f136094ab4b0c66f9bf8b4ae3d0",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-4.log",
+      "artifact": "logs/docs-final-r2-4.log",
+      "bytes": 472,
+      "sha256": "3a680a5229d9f24ce9716101725e5c9ea28906f7183e48febcbb99c2a808b984",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-5.log",
+      "artifact": "logs/docs-final-r2-5.log",
+      "bytes": 473,
+      "sha256": "1a9db3ab0d5e6f1d993d6f8315013c9fb001b828136a64eb7c2213189433ddef",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-6.log",
+      "artifact": "logs/docs-final-r2-6.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-7.log",
+      "artifact": "logs/docs-final-r2-7.log",
+      "bytes": 1455,
+      "sha256": "6aa582fa1cd9fa6cfb6b0387bdef4b21d9eb8cec66550798b4c37a15b4a8e2ac",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-r2-results.json",
+      "artifact": "logs/docs-final-r2-results.json",
+      "bytes": 2718,
+      "sha256": "b8704bc8f34fad2bc301630d760c3b6c9b32b1361fc6ee5206cf42e6adc6fa30",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-results.json",
+      "artifact": "logs/docs-final-results.json",
+      "bytes": 2698,
+      "sha256": "5166e27da4167198b17c73ca7cca1882eadd5da4c845b504ce30fe72c10c9b15",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-1.log",
+      "artifact": "logs/docs-gate-1.log",
+      "bytes": 159,
+      "sha256": "7c316722fd6c353c420f478da35564dc69d45bbc5474d7659014197d44dc737a",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-2.log",
+      "artifact": "logs/docs-gate-2.log",
+      "bytes": 75775,
+      "sha256": "3aa912e4809dd4d997d9dcebbc7072b7f345871d78762628eae9ed691c6b893a",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-3.log",
+      "artifact": "logs/docs-gate-3.log",
+      "bytes": 3782,
+      "sha256": "8dd18066920b9e04595b813b8ccec72d6a607ec03a7f05b527593e418fb36a69",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-4.log",
+      "artifact": "logs/docs-gate-4.log",
+      "bytes": 472,
+      "sha256": "3a680a5229d9f24ce9716101725e5c9ea28906f7183e48febcbb99c2a808b984",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-5.log",
+      "artifact": "logs/docs-gate-5.log",
+      "bytes": 1696,
+      "sha256": "3df266500177ae98f67411eefc05bff051cf700c5eb73e73c2a2ce4231291d4f",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-6.log",
+      "artifact": "logs/docs-gate-6.log",
+      "bytes": 70784,
+      "sha256": "8f0c21243e82e287d1f59ba711e01057d457b6aa20ebcd0a88a5e245d3d7d851",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-7.log",
+      "artifact": "logs/docs-gate-7.log",
+      "bytes": 1455,
+      "sha256": "485c5f6f5538713c0247853c92f610ee6d392246a376923f1430fce4be1b149c",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-gate-results.json",
+      "artifact": "logs/docs-gate-results.json",
+      "bytes": 2691,
+      "sha256": "85cd74bbb8ba627d26598e9782b5dcecb9d199e9bb69d4c06ae298aeb0f484cf",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-build.log",
+      "artifact": "logs/docs-render-build.log",
+      "bytes": 349408,
+      "sha256": "ff65cadf8889a31a4cf381b2b39b999114ffbe5cc0f77e6928133ddc7ea2e9ee",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-results.json",
+      "artifact": "logs/docs-render-results.json",
+      "bytes": 1113,
+      "sha256": "170c5c6e7408db179dd16eccd67fd2714154b4dcbace4d00dc2fda8e775252e6",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-tests.log",
+      "artifact": "logs/docs-render-tests.log",
+      "bytes": 1455,
+      "sha256": "cc2f047ef33c722b0639ba015b0d52ce52aedac738d7ee5636e47d8a153f41a0",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-render-types.log",
+      "artifact": "logs/docs-render-types.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/final-measurement.log",
+      "artifact": "logs/final-measurement.log",
+      "bytes": 116,
+      "sha256": "837075977bcb1b6c115c621296c75d898d5a9d4c21f4316b80fa8af2bbe05dae",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/final-reaggregation.log",
+      "artifact": "logs/final-reaggregation.log",
+      "bytes": 257,
+      "sha256": "cd644431f217bbad20922c860500fe3f673082cbea163da524b0bd5ccc570bdb",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/final-representation.log",
+      "artifact": "logs/final-representation.log",
+      "bytes": 1048,
+      "sha256": "c6c98d77ea9b22575f1483f42031edd77f6f83e5c4e8c5433c5a22f90412846c",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/kingfisher-identity-probe.json",
+      "artifact": "logs/kingfisher-identity-probe.json",
+      "bytes": 2155,
+      "sha256": "03c942cf10cd93fd88135bb0217373f78fa26f44d73d731030df17f2533a2953",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/main-merge-commit.json",
+      "artifact": "logs/main-merge-commit.json",
+      "bytes": 536,
+      "sha256": "9fa577d3a7cbb8ba39be55b2963537cdd2781ad8810122f04f994505abfb5f16",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/main-merge-commit.log",
+      "artifact": "logs/main-merge-commit.log",
+      "bytes": 12492,
+      "sha256": "09664388663413005d9e17f75d81660a5e0b359de7b009fd91b176383c62710e",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/merge-pre-push.json",
+      "artifact": "logs/merge-pre-push.json",
+      "bytes": 356,
+      "sha256": "7b6ee4c0b63194457b2cdabca346724e1c20419f7af02763169139c6cfc20299",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/merge-pre-push.log",
+      "artifact": "logs/merge-pre-push.log",
+      "bytes": 1020,
+      "sha256": "ab4cdd6e17687ed5a80600a668327c2d6c372350dc5de0cd05a41b14b37a7ecd",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/mise-repair.log",
+      "artifact": "logs/mise-repair.log",
+      "bytes": 12441,
+      "sha256": "78517ef6927053ca7fb2ad7fcb3973f22df41aad04ed535c5b3f716e7e58a30b",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/offline-final-results.json",
+      "artifact": "logs/offline-final-results.json",
+      "bytes": 2000,
+      "sha256": "fa248a61ff55d988c2ddf031a13685d5363498b1ab35fa0712af2f40e28a0eaa",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/render-input-manifest.json",
+      "artifact": "logs/render-input-manifest.json",
+      "bytes": 8534,
+      "sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+      "copy": "Whitespace-only publication serialization. Decoded JSON is unchanged; standard indented JSON serialization reconstructs exact original source bytes and SHA256. See publication-json-formatting.json.",
+      "original_source_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "original_source_bytes": 7954,
+      "published_artifact_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+      "publication_serialization_record": "publication-json-formatting.json"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-results.json",
+      "artifact": "logs/docs-final-main-results.json",
+      "bytes": 3209,
+      "sha256": "f57dca90392b2f75a8db093c52bc98f8f6a5b386e6f34dd09dd8b5241c632d5a",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-1.log",
+      "artifact": "logs/docs-final-main-1.log",
+      "bytes": 159,
+      "sha256": "9d361f00f186aa4a6021fe87042f23c1ffb2a5840433ee52d7a4e4857fb89c17",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-2.log",
+      "artifact": "logs/docs-final-main-2.log",
+      "bytes": 350231,
+      "sha256": "a44639be0a089783f48e2d2f82f23de26dadcbbd4497b5ac220c7d94126a6767",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-3.log",
+      "artifact": "logs/docs-final-main-3.log",
+      "bytes": 1348,
+      "sha256": "c3a1d164c07059844de8c109d0f177d595964a39710e00a38b5d10a9bc7a6d91",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-4.log",
+      "artifact": "logs/docs-final-main-4.log",
+      "bytes": 557,
+      "sha256": "f617daaf94f62abda4f6535429ff86412bde62c5594bfd176369bfca9464128c",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-5.log",
+      "artifact": "logs/docs-final-main-5.log",
+      "bytes": 473,
+      "sha256": "e7e3f725756a3c5b0a544d7665c5537b46be33526ddb964de52fc1c32c2ba56e",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-6.log",
+      "artifact": "logs/docs-final-main-6.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    },
+    {
+      "source_path": "/workspace/scratch/1335a158b2a9/tooling/logs/docs-final-main-7.log",
+      "artifact": "logs/docs-final-main-7.log",
+      "bytes": 1455,
+      "sha256": "cb45ce0b2222d1327f9bd819b1a6d031c2c6c0e84e8671e0b53fb72d44a29b37",
+      "copy": "byte-identical original; no redaction or history rewriting"
+    }
+  ],
+  "unexecuted": [
+    "Paid or subscription agent benchmarks.",
+    "Broad current six-product accepted-task comparison.",
+    "Live native-host result replacement/read-before-edit conformance.",
+    "Actual subscription quota depletion/weighting experiments.",
+    "Future publication-head CI or final-hook success not yet recorded here."
+  ],
+  "late_main_update": {
+    "main_commit": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+    "announced_utc": "2026-10-24T08:45:58.803531+00:00",
+    "source": "Coordinator observed later main advancement and assigned a separate overlay review and final merged-tree gate.",
+    "scope": "Velnor0.1.52 release/tap plumbing,Cargo files andinstallation documentation; authoritative details belong to late-main-overlay artifacts.",
+    "status": "Independent overlay review, all seven documentation commands and the final browser/visual rerun are complete for their recorded assembled-worktree inputs. Final publication hooks/CI remain separate.",
+    "prior_gate_scope": "Earlier documentation and hook records apply to their recorded first-integration inputs and remain unchanged.",
+    "documentation_command_record": "logs/docs-final-main-results.json",
+    "overlay_review": {
+      "artifacts": [
+        {
+          "artifact": "late-main-overlay.json",
+          "sha256": "b8d3b2aca2f6bbf74ca62ea68f67956a29d1f6744d0f8337b3e91b9c27bd5098",
+          "bytes": 83197
+        },
+        {
+          "artifact": "late-main-overlay.md",
+          "sha256": "cba096803497c680cbe909111bb2b58ae192bd356c955d5ee0fa555518f0756f",
+          "bytes": 4232
+        }
+      ],
+      "recorded_utc": "2026-10-24T08:49:28.303211+00:00",
+      "owner": "rtk_leanctx independent workstream",
+      "evidence_class": "immutable Git source, configuration and hash comparison; no new runtime or build qualification",
+      "original_audit_files": 26,
+      "unchanged_original_audit_files": 25,
+      "changed_original_audit_file": "Cargo.toml: only velnor-actions-contract 0.1.48 to 0.1.52 and its exact source revision change.",
+      "prior_overlay_files": 13,
+      "unchanged_prior_overlay_files": 13,
+      "changed_main_files": 26,
+      "changed_rust_source_files": 0,
+      "changed_context_research_files": 0,
+      "all_changed_main_files_match_merge_index": true,
+      "locked_dependency_scope": "The full lock-package multiset changes only Velnor. Complete rusqlite 0.40.2, libsqlite3-sys 0.38.2 and tokio 1.53.3 package records remain unchanged.",
+      "ci_configuration_scope": {
+        "jobs": 40,
+        "rust_crate_jobs": 32,
+        "required_verdict_dependencies": 37,
+        "rust_task_ids": 191,
+        "graph_triggers_and_gate_unchanged": true,
+        "site_build_typecheck_test_lane": false,
+        "meaning": "Source/configuration comparison only; no future CI success is inferred."
+      },
+      "limits": "No new compiler, test or runtime qualification by this overlay reviewer; final-head research-only PR diff remains a publication check."
+    },
+    "render_command_record": "../jackin-architecture/rendered-qa-command.json",
+    "tested_worktree_git_context": {
+      "HEAD": "9971e26249c2a601912419c84aad99980f88d28b",
+      "MERGE_HEAD": "e737f4b5eb7c1a0d15ba6595fc260407ad178452",
+      "origin/main": "e737f4b5eb7c1a0d15ba6595fc260407ad178452"
+    }
+  },
+  "latest_completed_documentation_gate": "docs-final-main-results",
+  "updated_utc": "2026-10-24T09:12:05.413775+00:00",
+  "verification_freeze_utc": "2026-10-24T08:53:31.325332+00:00",
+  "assembly_integrity": {
+    "checked_utc": "2026-10-24T08:53:31.325332+00:00",
+    "raw_original_copy_hash_and_size_checks": 51,
+    "raw_original_copy_mismatches": [],
+    "referenced_render_and_overlay_hash_size_checks": 14,
+    "referenced_artifact_mismatches": [],
+    "targeted_source_config_hash_checks": 58,
+    "targeted_source_config_mismatches": [],
+    "local_markdown_link_targets_checked": 31,
+    "missing_local_markdown_targets": [],
+    "scope": "Read-only parsing, SHA256/byte comparison and path existence checks for assembled verification evidence. Not a new build, test, browser sweep, hook, CI or full repository link audit."
+  },
+  "publication_serialization": {
+    "annotated_utc": "2026-10-24T09:12:05.413775+00:00",
+    "formatting_record": {
+      "artifact": "publication-json-formatting.json",
+      "sha256": "9cfba1b8ec4fcad2f3f36cdd94229c57c599f9fd0928e27daa2dffcea7ddd6c2",
+      "recorded_utc": "2026-10-24T09:10:45.097199+00:00"
+    },
+    "scope": "Four JSON files have whitespace-only publication representations. Original decoded keys/values, review dates, execution timestamps, model evidence and source-file digests are unchanged. No build, browser sweep, review, scanner or CI rerun is implied by this annotation.",
+    "reason": "Confirmed false positives where a path-like JSON key is adjacent to a document SHA256. No scanner configuration, baseline, ignore or validator setting changed.",
+    "archive_exception": {
+      "entries": 51,
+      "byte_identical_original_records": 50,
+      "reversibly_normalized_input_manifests": 1,
+      "manifest_entry_index": 42,
+      "artifact": "logs/render-input-manifest.json",
+      "original_source_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+      "original_source_bytes": 7954,
+      "published_artifact_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+      "published_bytes": 8534
+    },
+    "reconstruction": "UTF-8 encode json.dumps(json.loads(published_bytes), indent=2, ensure_ascii=False) + newline. The result equals the original execution/review snapshot bytes, not merely its parsed JSON data.",
+    "verifier": "verify_publication_serialization.py",
+    "validation": {
+      "checked_utc": "2026-10-24T09:12:05.413775+00:00",
+      "byte_identical_archive_records": 50,
+      "exact_reconstruction_checks": 4,
+      "checks": [
+        {
+          "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/evaluation/provider-representation-review.json",
+          "published_sha256": "4c9a5f401ea5c69ea1f511b5ed1b538de8f5779a8cc53e638f54e37380e22cf6",
+          "original_snapshot_sha256": "17fe4617a4e10c54023a25212c98462ab39ccd63c3ebf6019c42c8441724d083",
+          "original_bytes_exactly_reconstructed": true
+        },
+        {
+          "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/render-input-manifest.json",
+          "published_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+          "original_snapshot_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+          "original_bytes_exactly_reconstructed": true
+        },
+        {
+          "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/historical-render-runs/pre-release-merge/rendered-build-input-manifest.json",
+          "published_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+          "original_snapshot_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+          "original_bytes_exactly_reconstructed": true
+        },
+        {
+          "path": "docs/content/research/context/techniques/tools/refresh-2026-10-24/jackin-architecture/rendered-build-input-manifest.json",
+          "published_sha256": "9be3dacd76bad6bea648b3c6cd4e6c282f3ba3f54d74422c36d17f47207cf290",
+          "original_snapshot_sha256": "bf1fb18b6aeaff69adc7c7c73ebe1779307713d9d8cf87e074d661d8ec33a2f0",
+          "original_bytes_exactly_reconstructed": true
+        }
+      ],
+      "original_execution_input_manifest_source_byte_comparison": true,
+      "archive_current_total_bytes": 1747186,
+      "scope": "Read-only byte/JSON/hash correspondence, not a new execution of the historical commands."
+    },
+    "historical_assembly": {
+      "verification_json_before_annotation_sha256": "ff5cce7002f3d929fabb92f1b9df6b2a2909e9ae233adac9afe511a6689799d1",
+      "assembly_integrity_checked_utc": "2026-10-24T08:53:31.325332+00:00",
+      "preserved": true,
+      "meaning": "The original 51-record byte-identity and 14-reference checks remain true at their recorded earlier time. They are not relabeled as current-byte checks after normalization."
+    },
+    "historical_hashes_preserved": "The frozen manifest sha256, render command/results inputManifest sha256, earlier review hashes and previous integrity audit observations retain their original snapshot meanings."
+  },
+  "publication_annotation_utc": "2026-10-24T09:12:05.413775+00:00"
+}

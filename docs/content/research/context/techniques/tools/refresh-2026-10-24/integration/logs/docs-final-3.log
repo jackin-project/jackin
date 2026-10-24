@@ -1,0 +1,16 @@
+error: unclosed table, expected `]`
+ --> ../../tooling/cargo/git/checkouts/velnor-new-e7471f4f9af9fd1a/9191fea/fixtures/parity/malformed/input/Cargo.toml:4:14
+  |
+4 | [dependencies
+  |              ^
+error: unclosed table, expected `]`
+ --> ../../tooling/cargo/git/checkouts/velnor-new-e7471f4f9af9fd1a/9191fea/fixtures/parity/malformed-ignored/input/Cargo.toml:4:14
+  |
+4 | [dependencies
+  |              ^
+error: repository file references must be verifiable links (3 problem(s)):
+  docs/content/research/context/techniques/03-prior-art-and-market-scan.mdx:85: link existing repo file `Cargo.toml` with <RepoFile path="Cargo.toml" />
+  docs/content/research/context/techniques/06-context-architecture.mdx:35: link existing repo file `AGENTS.md` with <RepoFile path="AGENTS.md" />
+  docs/content/research/context/techniques/08-retrieval-memory-and-state.mdx:28: link existing repo file `AGENTS.md` with <RepoFile path="AGENTS.md" />
+mbx[gc]: 4.7 GiB free on the disk holding /workspace/scratch/1335a158b2a9/jackin/../tooling/mbx-cache, under the 5.0 GiB minimum; collecting private state and managed targets past their budgets, then shared cache objects if the cache disk is short
+mbx[gc]: evicted 1060 shared cache objects and 169 action results below gc.max_size because the disk was under gc.min_free_size (314.3 MiB logical freed)

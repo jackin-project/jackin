@@ -1,0 +1,927 @@
+{
+  "cutoff_utc": "2026-10-24T01:15:00Z",
+  "purpose": "Pre-publication recheck of the frozen six-product identities. No new runtime or provider execution.",
+  "pins": [
+    {
+      "repository": "JuliusBrussee/caveman",
+      "tag": "v4.0.1",
+      "expected_commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "resolved_commit": "d262ab3882952a59312ff3537cd86d894523c5ab",
+      "unchanged": true,
+      "ref_chain": [
+        {
+          "sha": "d0be14f2dc92a99d12e717465d6908723ab9bfdb",
+          "type": "tag",
+          "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/tags/d0be14f2dc92a99d12e717465d6908723ab9bfdb"
+        },
+        {
+          "sha": "d262ab3882952a59312ff3537cd86d894523c5ab",
+          "type": "commit",
+          "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/commits/d262ab3882952a59312ff3537cd86d894523c5ab"
+        }
+      ]
+    },
+    {
+      "repository": "JuliusBrussee/caveman",
+      "tag": "bin-v4.0.2",
+      "expected_commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "resolved_commit": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+      "unchanged": true,
+      "ref_chain": [
+        {
+          "sha": "62a906068603b51922e1aa609424f2548950cfab",
+          "type": "tag",
+          "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/tags/62a906068603b51922e1aa609424f2548950cfab"
+        },
+        {
+          "sha": "b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6",
+          "type": "commit",
+          "url": "https://api.github.com/repos/JuliusBrussee/caveman/git/commits/b4531dfc05a3ef0ba93b57e8bfa5f48564a4b4d6"
+        }
+      ]
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "tag": "v1.0.1",
+      "expected_commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "resolved_commit": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+      "unchanged": true,
+      "ref_chain": [
+        {
+          "sha": "4ef8730cf3a0dea11c8d64a9b90bc0616fe52100",
+          "type": "commit",
+          "url": "https://api.github.com/repos/rtk-ai/rtk/git/commits/4ef8730cf3a0dea11c8d64a9b90bc0616fe52100"
+        }
+      ]
+    },
+    {
+      "repository": "yvgude/lean-ctx",
+      "tag": "v3.11.4",
+      "expected_commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "resolved_commit": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+      "unchanged": true,
+      "ref_chain": [
+        {
+          "sha": "1074255e5c1ff1a8c41e8f790cb9b3c232a9d8b5",
+          "type": "tag",
+          "url": "https://api.github.com/repos/yvgude/lean-ctx/git/tags/1074255e5c1ff1a8c41e8f790cb9b3c232a9d8b5"
+        },
+        {
+          "sha": "3afe2bbffe0834ec58517ffd493e5a51c5c1ca57",
+          "type": "commit",
+          "url": "https://api.github.com/repos/yvgude/lean-ctx/git/commits/3afe2bbffe0834ec58517ffd493e5a51c5c1ca57"
+        }
+      ]
+    },
+    {
+      "repository": "DietrichGebert/ponytail",
+      "tag": "v5.3.2",
+      "expected_commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "resolved_commit": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "unchanged": true,
+      "ref_chain": [
+        {
+          "sha": "16352ac229eb08a9598dcae48fe9f2b342567d86",
+          "type": "commit",
+          "url": "https://api.github.com/repos/DietrichGebert/ponytail/git/commits/16352ac229eb08a9598dcae48fe9f2b342567d86"
+        }
+      ]
+    },
+    {
+      "repository": "headroomlabs-ai/headroom",
+      "tag": "v0.41.0",
+      "expected_commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "resolved_commit": "76133cff59b71284399bf760c5578dc373c97231",
+      "unchanged": true,
+      "ref_chain": [
+        {
+          "sha": "76133cff59b71284399bf760c5578dc373c97231",
+          "type": "commit",
+          "url": "https://api.github.com/repos/headroomlabs-ai/headroom/git/commits/76133cff59b71284399bf760c5578dc373c97231"
+        }
+      ]
+    },
+    {
+      "repository": "lemoncrow-lab/lemoncrow",
+      "tag": "v0.8.0",
+      "expected_commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "resolved_commit": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+      "unchanged": true,
+      "ref_chain": [
+        {
+          "sha": "d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d",
+          "type": "commit",
+          "url": "https://api.github.com/repos/lemoncrow-lab/lemoncrow/git/commits/d96bad0e59dbc799d54ac5ca1a6a4fe9b8a8ab8d"
+        }
+      ]
+    }
+  ],
+  "observed_release_lists": [
+    {
+      "repository": "JuliusBrussee/caveman",
+      "source_url": "https://api.github.com/repos/JuliusBrussee/caveman/releases?per_page=20",
+      "releases": [
+        {
+          "tag": "bin-v4.0.2",
+          "published_at": "2026-10-23T05:22:07Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.0.1",
+          "published_at": "2026-10-13T18:34:04Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.0.0",
+          "published_at": "2026-10-13T16:32:02Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "bin-v4.0.1",
+          "published_at": "2026-10-13T18:21:34Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "bin-v4.0.0",
+          "published_at": "2026-10-13T16:21:19Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.2.0",
+          "published_at": "2026-10-08T05:42:14Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "middleware-ts-v1.0.1",
+          "published_at": "2026-10-08T05:16:11Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "bin-v2.1.0",
+          "published_at": "2026-10-08T05:26:41Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "bin-v2.0.2",
+          "published_at": "2026-10-04T01:50:00Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.1.0",
+          "published_at": "2026-10-04T04:30:46Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.0.0",
+          "published_at": "2026-09-30T19:25:17Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "sdk-ts-v1.2.0",
+          "published_at": "2026-09-30T22:22:05Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "sdk-python-v1.2.0",
+          "published_at": "2026-09-30T22:27:49Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "middleware-ts-v1.0.0",
+          "published_at": "2026-09-30T22:30:31Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "middleware-python-v1.0.0",
+          "published_at": "2026-09-30T22:34:52Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "contracts-v2.0.0",
+          "published_at": "2026-09-30T22:27:43Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "bin-v2.0.0",
+          "published_at": "2026-09-30T20:16:59Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v2.7.0",
+          "published_at": "2026-09-15T04:01:16Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "bin-v1.1.7",
+          "published_at": "2026-09-15T01:20:27Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v2.6.0",
+          "published_at": "2026-09-04T00:19:58Z",
+          "draft": false,
+          "prerelease": false
+        }
+      ]
+    },
+    {
+      "repository": "rtk-ai/rtk",
+      "source_url": "https://api.github.com/repos/rtk-ai/rtk/releases?per_page=20",
+      "releases": [
+        {
+          "tag": "dev-1.1.0-rc.573",
+          "published_at": "2026-10-23T16:29:28Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.1.0-rc.571",
+          "published_at": "2026-10-23T14:05:54Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.1.0-rc.570",
+          "published_at": "2026-10-23T13:34:30Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.569",
+          "published_at": "2026-10-23T13:19:48Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.568",
+          "published_at": "2026-10-23T13:02:20Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.567",
+          "published_at": "2026-10-20T23:58:52Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.566",
+          "published_at": "2026-10-20T23:19:27Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.563",
+          "published_at": "2026-10-20T12:52:25Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.562",
+          "published_at": "2026-10-20T00:07:16Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.560",
+          "published_at": "2026-10-19T23:05:17Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.559",
+          "published_at": "2026-10-19T22:29:46Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.558",
+          "published_at": "2026-10-19T17:12:22Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.556",
+          "published_at": "2026-10-19T14:47:50Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.555",
+          "published_at": "2026-10-19T00:38:06Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.554",
+          "published_at": "2026-10-18T23:42:58Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.552",
+          "published_at": "2026-10-17T13:25:08Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.551",
+          "published_at": "2026-10-17T00:42:07Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.550",
+          "published_at": "2026-10-16T19:43:12Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "dev-1.0.2-rc.549",
+          "published_at": "2026-10-15T17:56:44Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "v1.0.1",
+          "published_at": "2026-10-14T13:31:42Z",
+          "draft": false,
+          "prerelease": false
+        }
+      ]
+    },
+    {
+      "repository": "yvgude/lean-ctx",
+      "source_url": "https://api.github.com/repos/yvgude/lean-ctx/releases?per_page=20",
+      "releases": [
+        {
+          "tag": "v3.11.4",
+          "published_at": "2026-10-11T21:31:12Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.11.3",
+          "published_at": "2026-10-11T14:01:15Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.11.2",
+          "published_at": "2026-10-09T21:50:14Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.11.1",
+          "published_at": "2026-10-09T10:28:29Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.11.0",
+          "published_at": "2026-10-08T06:23:58Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.10.5",
+          "published_at": "2026-09-27T18:53:24Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.10.4",
+          "published_at": "2026-09-26T09:20:12Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.10.3",
+          "published_at": "2026-09-25T21:29:46Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.10.2",
+          "published_at": "2026-09-16T19:29:23Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.10.1",
+          "published_at": "2026-09-06T02:25:51Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.10.0",
+          "published_at": "2026-08-29T10:44:09Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.9.20",
+          "published_at": "2026-08-26T05:47:35Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.9.19",
+          "published_at": "2026-08-18T14:09:23Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.9.18",
+          "published_at": "2026-08-08T18:06:23Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.9.17",
+          "published_at": "2026-08-04T21:43:49Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.9.16",
+          "published_at": "2026-08-04T16:02:45Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.9.15",
+          "published_at": "2026-08-04T07:50:00Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.9.14",
+          "published_at": "2026-08-03T19:17:08Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.9.13",
+          "published_at": "2026-07-29T06:35:47Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v3.9.12",
+          "published_at": "2026-07-17T19:48:16Z",
+          "draft": false,
+          "prerelease": false
+        }
+      ]
+    },
+    {
+      "repository": "DietrichGebert/ponytail",
+      "source_url": "https://api.github.com/repos/DietrichGebert/ponytail/releases?per_page=20",
+      "releases": [
+        {
+          "tag": "v5.3.2",
+          "published_at": "2026-10-16T23:15:15Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v5.3.1",
+          "published_at": "2026-10-16T13:40:26Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v5.3.0",
+          "published_at": "2026-10-16T07:52:12Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v5.2.0",
+          "published_at": "2026-10-13T01:48:47Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v5.1.1",
+          "published_at": "2026-10-12T23:18:11Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v5.1.0",
+          "published_at": "2026-10-08T16:20:18Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v5.0.0",
+          "published_at": "2026-10-08T03:51:52Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.13.0",
+          "published_at": "2026-10-05T18:54:43Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.12.0",
+          "published_at": "2026-10-05T03:44:34Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.11.0",
+          "published_at": "2026-10-04T22:55:27Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.10.3",
+          "published_at": "2026-10-03T02:36:24Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.10.2",
+          "published_at": "2026-10-03T01:31:28Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.10.1",
+          "published_at": "2026-10-02T15:11:38Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.10.0",
+          "published_at": "2026-09-14T14:38:56Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.9.0",
+          "published_at": "2026-08-07T21:15:11Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.8.4",
+          "published_at": "2026-06-29T05:26:41Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.8.3",
+          "published_at": "2026-06-24T02:38:23Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.8.2",
+          "published_at": "2026-06-24T02:27:30Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.8.1",
+          "published_at": "2026-06-23T16:29:54Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v4.8.0",
+          "published_at": "2026-06-23T00:52:07Z",
+          "draft": false,
+          "prerelease": false
+        }
+      ]
+    },
+    {
+      "repository": "headroomlabs-ai/headroom",
+      "source_url": "https://api.github.com/repos/headroomlabs-ai/headroom/releases?per_page=20",
+      "releases": [
+        {
+          "tag": "v0.41.0",
+          "published_at": "2026-10-14T22:46:09Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.40.0",
+          "published_at": "2026-10-06T03:06:48Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.39.1",
+          "published_at": "2026-09-26T20:31:39Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.39.0",
+          "published_at": "2026-09-25T19:29:55Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.38.0",
+          "published_at": "2026-09-21T23:48:52Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.37.0",
+          "published_at": "2026-08-27T21:18:26Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.36.5",
+          "published_at": "2026-08-22T23:23:07Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.36.4",
+          "published_at": "2026-08-22T06:31:17Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.36.3",
+          "published_at": "2026-08-21T21:58:02Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.36.2",
+          "published_at": "2026-08-21T06:10:16Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.36.1",
+          "published_at": "2026-08-21T00:33:01Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.36.0",
+          "published_at": "2026-08-20T04:15:16Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.35.0",
+          "published_at": "2026-08-13T03:47:18Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.34.0",
+          "published_at": "2026-08-05T02:45:36Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.33.0",
+          "published_at": "2026-07-29T23:10:22Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.32.0",
+          "published_at": "2026-07-17T04:38:48Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.31.0",
+          "published_at": "2026-07-09T15:19:44Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.30.0",
+          "published_at": "2026-07-03T19:22:40Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.29.0",
+          "published_at": "2026-07-03T06:30:28Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.28.0",
+          "published_at": "2026-06-29T21:31:30Z",
+          "draft": false,
+          "prerelease": false
+        }
+      ]
+    },
+    {
+      "repository": "lemoncrow-lab/lemoncrow",
+      "source_url": "https://api.github.com/repos/lemoncrow-lab/lemoncrow/releases?per_page=20",
+      "releases": [
+        {
+          "tag": "v0.8.0",
+          "published_at": "2026-10-19T15:18:45Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.8.0-rc4",
+          "published_at": "2026-10-19T12:12:47Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "v0.8.0-rc3",
+          "published_at": "2026-10-19T08:29:15Z",
+          "draft": false,
+          "prerelease": true
+        },
+        {
+          "tag": "v0.7.4",
+          "published_at": "2026-09-14T01:25:16Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.7.3",
+          "published_at": "2026-09-07T14:33:56Z",
+          "draft": false,
+          "prerelease": false
+        },
+        {
+          "tag": "v0.7.2",
+          "published_at": "2026-09-07T13:23:04Z",
+          "draft": false,
+          "prerelease": false
+        }
+      ]
+    }
+  ],
+  "rtk_latest_stable": {
+    "tag": "v1.0.1",
+    "published_at": "2026-10-14T13:31:42Z",
+    "prerelease": false,
+    "url": "https://github.com/rtk-ai/rtk/releases/tag/v1.0.1",
+    "assets": [
+      {
+        "name": "checksums.txt",
+        "size": 2236,
+        "digest": "sha256:3dc6975d97c9faa43aa997a5d68a3255ceccea43ffa2d9d9ac22950b1b2d93a2"
+      },
+      {
+        "name": "rtk-1.0.1-1.x86_64.rpm",
+        "size": 5427090,
+        "digest": "sha256:d5c0f7d9bbfa5d5c74336e1e01df17ca99cfb0f19c07b47375acb22a7e612e7b"
+      },
+      {
+        "name": "rtk-aarch64-apple-darwin.tar.gz",
+        "size": 5870140,
+        "digest": "sha256:4aae2f60cfc49c9e81b8c8c57020aa0cb824da608c78b4f0cf5c0988e19e824e"
+      },
+      {
+        "name": "rtk-aarch64-unknown-linux-gnu.tar.gz",
+        "size": 6171573,
+        "digest": "sha256:cd627c4091ad90b5e5aca83ca5af66ee4b8aa8537a736533fa90544f461f1c2b"
+      },
+      {
+        "name": "rtk-oss-1.0.1-1.x86_64.rpm",
+        "size": 4673026,
+        "digest": "sha256:32f14e75a61e4b659e15690b78f62f58530f467008a36778665b2317e6b18114"
+      },
+      {
+        "name": "rtk-oss-aarch64-apple-darwin.tar.gz",
+        "size": 4999666,
+        "digest": "sha256:4a4d9d09656ff29423336aa506e680afc3f7b6dafe84f0194a1c9a523a3c80e1"
+      },
+      {
+        "name": "rtk-oss-aarch64-unknown-linux-gnu.tar.gz",
+        "size": 5246576,
+        "digest": "sha256:ee24a43dac9162de55fea8460b5efcd56d401ec28b5117c921bffa8a57bc136e"
+      },
+      {
+        "name": "rtk-oss-x86_64-apple-darwin.tar.gz",
+        "size": 5428609,
+        "digest": "sha256:2cf4d6dd2cabccbc74aa6aba2a48e60aad85b1a31e3d740e6ca0b2fa0060b06a"
+      },
+      {
+        "name": "rtk-oss-x86_64-pc-windows-msvc.zip",
+        "size": 5708680,
+        "digest": "sha256:0e53e2eca471e15fbd3636e64e6bc0b182cbc278ed0339c80450a2dd03f4cd6b"
+      },
+      {
+        "name": "rtk-oss-x86_64-unknown-linux-musl.tar.gz",
+        "size": 5766270,
+        "digest": "sha256:a44e8ffc43981100b4ddf1710399a1649a6c874591aa6d0c0727fe6cbd983c41"
+      },
+      {
+        "name": "rtk-oss.x86_64.rpm",
+        "size": 4673026,
+        "digest": "sha256:32f14e75a61e4b659e15690b78f62f58530f467008a36778665b2317e6b18114"
+      },
+      {
+        "name": "rtk-oss_1.0.1-1_amd64.deb",
+        "size": 4319864,
+        "digest": "sha256:1d7d52ea6aac3137cf015d0667aa5378505fef8eba4ef03564f5f6819462a800"
+      },
+      {
+        "name": "rtk-oss_amd64.deb",
+        "size": 4319864,
+        "digest": "sha256:1d7d52ea6aac3137cf015d0667aa5378505fef8eba4ef03564f5f6819462a800"
+      },
+      {
+        "name": "rtk-proxy-aarch64-apple-darwin.tar.gz",
+        "size": 7616700,
+        "digest": "sha256:3022be214b6a97455d6b9466c4ba81830854d2ae0cbdeef6f7757c7a2d32064d"
+      },
+      {
+        "name": "rtk-proxy-aarch64-unknown-linux-gnu.tar.gz",
+        "size": 8303588,
+        "digest": "sha256:2c8864b98e7fb701867ead0664b192072e2780b2b1dd9e9fde0d3a528b06f089"
+      },
+      {
+        "name": "rtk-proxy-x86_64-apple-darwin.tar.gz",
+        "size": 7807075,
+        "digest": "sha256:b31e7073f471e756a48868a3a13676475c2a25d4dc3b791b2a9961b9755848f6"
+      },
+      {
+        "name": "rtk-proxy-x86_64-pc-windows-msvc.zip",
+        "size": 6971674,
+        "digest": "sha256:6d3e239580f349b70cea67549e97f4ca777b75ed468d5432bdbfdd4a30fcd4ed"
+      },
+      {
+        "name": "rtk-proxy-x86_64-unknown-linux-musl.tar.gz",
+        "size": 8560842,
+        "digest": "sha256:808bae5d092dbeeca4f317ba06a2bca51acb32d040473e13101004a3bc888470"
+      },
+      {
+        "name": "rtk-x86_64-apple-darwin.tar.gz",
+        "size": 6375200,
+        "digest": "sha256:4b716b2f45d677de41c99f77d9a71199ad060b98ec2f78ef712885312b3a6578"
+      },
+      {
+        "name": "rtk-x86_64-pc-windows-msvc.zip",
+        "size": 6730722,
+        "digest": "sha256:64b4807c50b61dddf2ac1e86751dbda9117ab94ed02bf266e6584da571c39896"
+      },
+      {
+        "name": "rtk-x86_64-unknown-linux-musl.tar.gz",
+        "size": 6778173,
+        "digest": "sha256:5b919c3bccb799b67a61866d0e617410a4fcdf173e2614440e59de2fa2003436"
+      },
+      {
+        "name": "rtk.x86_64.rpm",
+        "size": 5427090,
+        "digest": "sha256:d5c0f7d9bbfa5d5c74336e1e01df17ca99cfb0f19c07b47375acb22a7e612e7b"
+      },
+      {
+        "name": "rtk_1.0.1-1_amd64.deb",
+        "size": 5011900,
+        "digest": "sha256:b7f7ed3ce136aa842f56599b5ca88b956bd788a111ec7bd085909f9aeb0d1bc4"
+      },
+      {
+        "name": "rtk_amd64.deb",
+        "size": 5011900,
+        "digest": "sha256:b7f7ed3ce136aa842f56599b5ca88b956bd788a111ec7bd085909f9aeb0d1bc4"
+      }
+    ]
+  },
+  "result": "All seven selected product/runtime tag commits unchanged. No newer stable product in the inspected release responses; RTK's prerelease-heavy first page was separately checked against releases/latest. Caveman product and bin release families remain separate.",
+  "limitations": "This validates current API/tag metadata, not a fresh rebuild, signature verification, immutable proof of earlier mutable-page bytes, or complete re-download of every artifact. Product-level artifact/source verification remains in its original execution records.",
+  "retrieval_window_utc": {
+    "first_release_list_responses_observed": "2026-10-24T08:25:27Z",
+    "record_closed": "2026-10-24T08:27:06Z"
+  }
+}
