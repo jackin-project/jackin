@@ -379,7 +379,7 @@ sigstore-trust-root = { version = "=0.15.0" }
 sigstore-bundle = "=0.15.0"
 sigstore-types = "=0.15.0"
 sigstore-crypto = "=0.15.0"
-velnor-actions-contract = { version = "=0.1.51", git = "https://github.com/tailrocks/velnor-new", rev = "b9d8cd2e08125fe42a4eb52dea409afa56006b7c" }
+velnor-actions-contract = { version = "=0.1.52", git = "https://github.com/tailrocks/velnor-new", rev = "1bd31f8203ecf40d141c331e5195eb422e0904d3" }
 tokio = { version = "=1.53.3", default-features = false }
 tokio-util = "0.7"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
