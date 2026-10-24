@@ -3,6 +3,10 @@
   "recipes": [
     "actionlint",
     "plan",
+    "preview-tap-merge",
+    "preview-tap-prepare",
+    "preview-tap-selection",
+    "preview-tap-writer",
     "publish-baseline",
     "required",
     "rust-jackin",
@@ -31,6 +35,10 @@
     "rust-jackin-tui",
     "rust-jackin-usage",
     "rust-jackin-usage-ffi",
-    "rust-jackin-xtask"
+    "rust-jackin-xtask",
+    "stable-tap-merge",
+    "stable-tap-prepare",
+    "stable-tap-selection",
+    "stable-tap-writer"
   ]
 }
