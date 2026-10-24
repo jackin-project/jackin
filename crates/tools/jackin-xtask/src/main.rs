@@ -38,6 +38,7 @@ mod release_archive;
 mod release_package;
 mod release_sbom;
 mod report;
+mod research_measurement;
 mod schema;
 mod suppressions;
 mod telemetry_bench;
@@ -57,6 +58,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Prepare offline requests and account for explicit measurement receipts.
+    #[command(subcommand)]
+    Measurement(research_measurement::ResearchMeasurementCommand),
     AffectedCrates(affected_crates::AffectedCratesArgs),
     Ci(ci::CiArgs),
     #[command(name = "ci-audit")]
@@ -198,6 +202,7 @@ fn run_lint(command: Option<LintCommand>, strict: bool) -> anyhow::Result<()> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
+        Command::Measurement(command) => research_measurement::run(command),
         Command::AffectedCrates(args) => affected_crates::run(args),
         Command::ClippyAffected(args) => clippy_affected::run(args),
         Command::Construct(cmd) => construct::run(cmd),

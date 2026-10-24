@@ -4995,6 +4995,7 @@ name = "jackin-xtask"
 version = "0.6.4"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "chrono",
  "clap",
  "flate2",
@@ -5006,6 +5007,7 @@ dependencies = [
  "portable-pty",
  "proc-macro2",
  "quick-xml",
+ "reqwest",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -5013,6 +5015,7 @@ dependencies = [
  "syn 3.0.9",
  "tar",
  "tempfile",
+ "tokio",
  "toml",
  "uuid",
  "velnor-actions-contract",
