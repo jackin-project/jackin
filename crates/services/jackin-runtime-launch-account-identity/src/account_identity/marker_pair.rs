@@ -36,15 +36,19 @@ pub(super) struct MarkerPairLease {
 
 impl MarkerPairLease {
     pub(super) fn acquire(root: &Path) -> anyhow::Result<Self> {
-        Self::acquire_inner(root, false)?
+        Self::acquire_inner(root, false, FlockOperation::NonBlockingLockExclusive)?
             .ok_or_else(|| anyhow::anyhow!("marker root is absent: {}", root.display()))
     }
 
     pub(super) fn acquire_optional(root: &Path) -> anyhow::Result<Option<Self>> {
-        Self::acquire_inner(root, true)
+        Self::acquire_inner(root, true, FlockOperation::NonBlockingLockShared)
     }
 
-    fn acquire_inner(root: &Path, missing_is_false: bool) -> anyhow::Result<Option<Self>> {
+    fn acquire_inner(
+        root: &Path,
+        missing_is_false: bool,
+        operation: FlockOperation,
+    ) -> anyhow::Result<Option<Self>> {
         let named_before = match std::fs::symlink_metadata(root) {
             Ok(metadata) => metadata,
             Err(error) if missing_is_false && error.kind() == std::io::ErrorKind::NotFound => {
@@ -87,7 +91,7 @@ impl MarkerPairLease {
             root.display()
         );
 
-        flock(&directory, FlockOperation::NonBlockingLockExclusive).with_context(|| {
+        flock(&directory, operation).with_context(|| {
             format!(
                 "marker root is busy or locking is unsupported: {}",
                 root.display()

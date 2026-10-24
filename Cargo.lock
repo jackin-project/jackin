@@ -3159,6 +3159,7 @@ dependencies = [
  "jackin-telemetry",
  "nix 0.31.3",
  "rusqlite",
+ "rustix 1.1.5",
  "serde_json",
  "tempfile",
  "tracing",

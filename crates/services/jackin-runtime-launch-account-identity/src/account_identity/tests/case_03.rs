@@ -532,6 +532,97 @@ fn marker_pair_independent_opens_are_nonblocking_and_drop_releases() {
 }
 
 #[test]
+fn marker_pair_shared_readers_allow_matchers_and_hold_off_publishers() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("container");
+    let (base, admitted) = admitted_fingerprint_fixture();
+    let old_config = with_environment(&base, "MARKER_PAIR_SHARED_READERS", "old");
+    let paths = prepare_marker_root(&root, &old_config, &admitted);
+    let old_revision = AccountConfigRevision::acquire(&paths).unwrap();
+    record_pair(
+        &root,
+        &paths,
+        &old_revision,
+        &old_config,
+        &old_config,
+        &admitted,
+    )
+    .unwrap();
+    drop(old_revision);
+
+    let mut new_config = with_environment(&base, "MARKER_PAIR_SHARED_READERS", "new");
+    new_config
+        .agent_configurations
+        .get_mut("b-instance")
+        .unwrap()
+        .model = Some("marker-pair-shared-readers-new-model".to_owned());
+    let old_fingerprint =
+        account_configuration_fingerprint(&old_config, None, TEST_ROLE, &admitted).unwrap();
+    let new_fingerprint =
+        account_configuration_fingerprint(&new_config, None, TEST_ROLE, &admitted).unwrap();
+    assert_ne!(old_fingerprint, new_fingerprint);
+    persist_config(&paths, &new_config);
+    let new_revision = AccountConfigRevision::acquire(&paths).unwrap();
+    let before = marker_bytes(&root);
+
+    let first_reader = MarkerPairLease::acquire_optional(&root).unwrap().unwrap();
+    let second_reader = MarkerPairLease::acquire_optional(&root).unwrap().unwrap();
+    assert!(account_configuration_matches(&root, &old_config, None, TEST_ROLE).unwrap());
+    assert!(account_admission_matches(&root, &old_config, None, TEST_ROLE).unwrap());
+    assert!(
+        record_pair(
+            &root,
+            &paths,
+            &new_revision,
+            &new_config,
+            &new_config,
+            &admitted,
+        )
+        .is_err()
+    );
+    assert_eq!(marker_bytes(&root), before);
+
+    drop(first_reader);
+    assert!(account_configuration_matches(&root, &old_config, None, TEST_ROLE).unwrap());
+    assert!(account_admission_matches(&root, &old_config, None, TEST_ROLE).unwrap());
+    assert!(
+        record_pair(
+            &root,
+            &paths,
+            &new_revision,
+            &new_config,
+            &new_config,
+            &admitted,
+        )
+        .is_err()
+    );
+    assert_eq!(marker_bytes(&root), before);
+
+    drop(second_reader);
+    record_pair(
+        &root,
+        &paths,
+        &new_revision,
+        &new_config,
+        &new_config,
+        &admitted,
+    )
+    .unwrap();
+    assert!(!account_configuration_matches(&root, &old_config, None, TEST_ROLE).unwrap());
+    assert!(!account_admission_matches(&root, &old_config, None, TEST_ROLE).unwrap());
+    assert!(account_configuration_matches(&root, &new_config, None, TEST_ROLE).unwrap());
+    assert!(account_admission_matches(&root, &new_config, None, TEST_ROLE).unwrap());
+    assert_eq!(
+        marker_bytes(&root),
+        (
+            new_fingerprint.as_bytes().to_vec(),
+            new_fingerprint.as_bytes().to_vec()
+        )
+    );
+    assert_ne!(marker_bytes(&root), before);
+}
+
+#[test]
 fn marker_pair_child_contention_rejects_all_operations_until_release() {
     let temp = MarkerPairTestRoot::new().unwrap();
     let root = temp.path().join("container");
