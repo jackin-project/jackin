@@ -106,24 +106,29 @@ impl<R: RoleChoice> RolePickerState<R> {
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    buffer::Buffer,
+    layout::{Constraint, Direction, Layout, Position, Rect},
     style::Style,
     text::{Line, Span},
+    widgets::StatefulWidget,
 };
 
 use termrock::layout::render_dialog_shell;
 use termrock::widgets::PanelChrome;
-use termrock::widgets::{List, ListRow, TextInput, TextInputState, Validation};
+use termrock::widgets::{List, ListRow, Panel, TextInput, TextInputState, Validation};
 
-pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
-    let inner = render_dialog_shell(
-        frame,
-        area,
-        Some("Select Role"),
-        PanelChrome::Focused,
-        &termrock::style::DesignSystem::default(),
-    );
+const ROLE_PICKER_TITLE: &str = "Select Role";
 
+fn role_picker_inner_area(area: Rect) -> Rect {
+    let theme = termrock::style::DesignSystem::default();
+    Panel::new(&theme)
+        .emphasis(PanelChrome::Focused)
+        .title(ROLE_PICKER_TITLE)
+        .block()
+        .inner(area)
+}
+
+fn role_picker_layout(inner: Rect) -> (Rect, Rect, Rect) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -132,13 +137,79 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
             Constraint::Min(1),
         ])
         .split(inner);
+    (rows[0], rows[1], rows[2])
+}
+
+fn role_picker_rows_area(inner: Rect) -> Rect {
+    role_picker_layout(inner).2
+}
+
+fn role_picker_rows<R: RoleChoice>(
+    state: &RolePickerState<R>,
+    theme: &termrock::style::DesignSystem,
+) -> Vec<ListRow<'static, usize>> {
+    state
+        .filtered
+        .iter()
+        .enumerate()
+        .map(|(id, role)| {
+            ListRow::item(
+                id,
+                Line::from(vec![Span::styled(
+                    role.key(),
+                    Style::default().fg(theme
+                        .style(termrock::style::Role::Text)
+                        .fg
+                        .unwrap_or_default()),
+                )]),
+            )
+        })
+        .collect()
+}
+
+pub(in crate::tui) fn selection_hit_at<R: RoleChoice>(
+    area: Rect,
+    state: &RolePickerState<R>,
+    position: Position,
+) -> bool {
+    if area.width == 0 || area.height == 0 || state.filtered.is_empty() {
+        return false;
+    }
+
+    let list_area = role_picker_rows_area(role_picker_inner_area(area));
+    if list_area.width == 0 || list_area.height == 0 {
+        return false;
+    }
 
     let theme = termrock::style::DesignSystem::default();
+    let rows = role_picker_rows(state, &theme);
+    let mut list_state = ListState::new(state.list_state.selected().copied());
+    let mut buffer = Buffer::empty(list_area);
+    (&List::new(&rows, &theme)).render(list_area, &mut buffer, &mut list_state);
+
+    list_state
+        .regions()
+        .iter()
+        .any(|region| region.area.contains(position))
+}
+
+pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
+    let theme = termrock::style::DesignSystem::default();
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some(ROLE_PICKER_TITLE),
+        PanelChrome::Focused,
+        &theme,
+    );
+
+    let (filter_area, _spacer_area, list_area) = role_picker_layout(inner);
+
     let mut filter = TextInputState::new(&state.filter).with_allow_empty(true);
     let filter_columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(7), Constraint::Min(1)])
-        .split(rows[0]);
+        .split(filter_area);
     frame.render_widget(
         ratatui::widgets::Paragraph::new("Filter: "),
         filter_columns[0],
@@ -158,30 +229,14 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
                 termrock::style::DesignSystem::default().style(termrock::style::Role::TextMuted),
             )))
             .alignment(ratatui::layout::Alignment::Center),
-            rows[2],
+            list_area,
         );
         return;
     }
-    let items: Vec<ListRow<'_, usize>> = state
-        .filtered
-        .iter()
-        .enumerate()
-        .map(|(id, role)| {
-            ListRow::item(
-                id,
-                Line::from(vec![Span::styled(
-                    role.key(),
-                    Style::default().fg(termrock::style::DesignSystem::default()
-                        .style(termrock::style::Role::Text)
-                        .fg
-                        .unwrap_or_default()),
-                )]),
-            )
-        })
-        .collect();
+    let items = role_picker_rows(state, &theme);
     frame.render_stateful_widget(
         &List::new(&items, &theme),
-        rows[2],
+        list_area,
         &mut ListState::new(state.list_state.selected().copied()),
     );
 }

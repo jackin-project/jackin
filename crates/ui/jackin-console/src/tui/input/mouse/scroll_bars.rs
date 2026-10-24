@@ -3,10 +3,11 @@
 
 use super::{
     EditorTab, LIST_FOOTER_HEIGHT, ManagerStage, ManagerState, MountScrollFocus, MouseEvent, Rect,
-    SCREEN_HEADER_HEIGHT, ScrollbarAxis, SettingsTab, TAB_STRIP_HEIGHT, apply_scrollbar_drag,
-    editor_scroll_area, editor_scroll_focus_plan, list_scroll_areas, settings_modal_open,
-    workspace_list_scroll_focus_plan,
+    ScrollbarAxis, SettingsTab, apply_scrollbar_drag, editor_scroll_area, editor_scroll_focus_plan,
+    list_scroll_areas, settings_modal_open, workspace_list_scroll_focus_plan,
 };
+
+use crate::tui::layout::{SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT};
 
 pub fn try_drag_horizontal_scrollbar(
     state: &mut ManagerState<'_>,

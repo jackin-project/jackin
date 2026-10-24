@@ -9,7 +9,7 @@ pub(super) fn make_state_at(path: PathBuf) -> FileBrowserState {
     ))
 }
 
-pub(super) fn row_string(buffer: &ratatui::buffer::Buffer, y: u16) -> String {
+pub(super) fn row_string(buffer: &Buffer, y: u16) -> String {
     (0..buffer.area.width)
         .map(|x| buffer[(x, y)].symbol())
         .collect()

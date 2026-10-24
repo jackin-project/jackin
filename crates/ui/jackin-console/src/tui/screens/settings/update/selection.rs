@@ -205,25 +205,40 @@ pub fn settings_trust_row_at_position(
     scroll_y: u16,
     row_count: usize,
 ) -> Option<usize> {
-    if !crate::tui::layout::point_in_rect(col, row, area) {
+    let viewport = settings_trust_viewport_content_area(area);
+    if row_count == 0 || !crate::tui::layout::point_in_rect(col, row, viewport) {
         return None;
     }
-    let line = usize::from(row.saturating_sub(area.y + 1)) + usize::from(scroll_y);
-    let row = line.checked_sub(1)?;
-    (row < row_count).then_some(row)
+    let content_lines = row_count.saturating_add(1);
+    let effective_scroll_y =
+        termrock::scroll::effective_offset(content_lines, usize::from(viewport.height), scroll_y);
+    let line =
+        usize::from(row.saturating_sub(viewport.y)).saturating_add(usize::from(effective_scroll_y));
+    let row_index = line.checked_sub(1)?;
+    (row_index < row_count).then_some(row_index)
+}
+
+fn settings_trust_viewport_content_area(area: Rect) -> Rect {
+    let pad_x = termrock::style::DesignSystem::default().spacing.pad_x;
+    Rect::new(
+        area.x.saturating_add(1).saturating_add(pad_x),
+        area.y.saturating_add(1),
+        area.width.saturating_sub(2).saturating_sub(pad_x),
+        area.height.saturating_sub(2),
+    )
 }
 
 #[must_use]
 pub fn settings_trust_hover_target_at_position(
     active_tab: SettingsTab,
-    mounts_modal_open: bool,
+    modal_open: bool,
     area: Rect,
     col: u16,
     row: u16,
     scroll_y: u16,
     row_count: usize,
 ) -> Option<SettingsHoverTarget> {
-    if active_tab != SettingsTab::Trust || mounts_modal_open {
+    if active_tab != SettingsTab::Trust || modal_open {
         return None;
     }
     settings_trust_row_at_position(area, col, row, scroll_y, row_count)

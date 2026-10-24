@@ -3,10 +3,12 @@
 
 use ratatui::{
     Frame,
+    buffer::Buffer,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
 };
+use termrock::interaction::HitRegion;
 
 pub const AUTH_LABEL_COL_WIDTH: usize = 14;
 pub const SECRET_LABEL_COL_WIDTH: usize = 22;
@@ -77,6 +79,61 @@ pub fn render_tab_strip(
     tab_bar_focused: bool,
     hovered: Option<usize>,
 ) {
+    let (tabs, mut tabs_state) = tab_strip_parts(labels, tab_bar_focused, hovered);
+    let system = termrock::style::DesignSystem::default();
+    frame.render_stateful_widget(
+        termrock::widgets::Tabs::new(&tabs, &system).gap(termrock::widgets::TAB_GAP),
+        area,
+        &mut tabs_state,
+    );
+}
+
+pub(crate) fn tab_strip_hit_regions(
+    area: Rect,
+    labels: &[(&str, bool)],
+    tab_bar_focused: bool,
+    hovered: Option<usize>,
+) -> Vec<HitRegion<usize>> {
+    if area.is_empty() {
+        return Vec::new();
+    }
+
+    let (tabs, mut tabs_state) = tab_strip_parts(labels, tab_bar_focused, hovered);
+    let system = termrock::style::DesignSystem::default();
+    let mut buffer = Buffer::empty(area);
+    termrock::widgets::Tabs::new(&tabs, &system)
+        .gap(termrock::widgets::TAB_GAP)
+        .paint(area, &mut buffer, &mut tabs_state);
+
+    let trigger = tabs_state.overflow_trigger;
+    let id_limit = labels.len();
+    tabs_state
+        .regions
+        .into_iter()
+        .filter(|region| region.id < id_limit)
+        .flat_map(|region| {
+            let Some(region_area) = intersect_rect(region.area, area) else {
+                return Vec::<HitRegion<usize>>::new();
+            };
+            subtract_rect(region_area, trigger.unwrap_or_default())
+                .into_iter()
+                .map(move |area| HitRegion {
+                    id: region.id,
+                    area,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn tab_strip_parts<'a>(
+    labels: &[(&'a str, bool)],
+    tab_bar_focused: bool,
+    hovered: Option<usize>,
+) -> (
+    Vec<termrock::widgets::Tab<'a, usize>>,
+    termrock::widgets::TabsState<usize>,
+) {
     let tabs = labels
         .iter()
         .enumerate()
@@ -86,12 +143,59 @@ pub fn render_tab_strip(
     tabs_state.selected = tabs.iter().find(|tab| tab.active).map(|tab| tab.id);
     tabs_state.hovered = hovered;
     tabs_state.focused = tab_bar_focused;
-    frame.render_stateful_widget(
-        &termrock::widgets::Tabs::new(&tabs, &termrock::style::DesignSystem::default())
-            .gap(termrock::widgets::TAB_GAP),
-        area,
-        &mut tabs_state,
-    );
+    (tabs, tabs_state)
+}
+
+fn intersect_rect(rect: Rect, bounds: Rect) -> Option<Rect> {
+    let x = rect.x.max(bounds.x);
+    let y = rect.y.max(bounds.y);
+    let right = rect.right().min(bounds.right());
+    let bottom = rect.bottom().min(bounds.bottom());
+    let width = right.saturating_sub(x);
+    let height = bottom.saturating_sub(y);
+    let intersection = Rect::new(x, y, width, height);
+    (!intersection.is_empty()).then_some(intersection)
+}
+
+fn subtract_rect(rect: Rect, cut: Rect) -> Vec<Rect> {
+    let Some(cut) = intersect_rect(rect, cut) else {
+        return vec![rect];
+    };
+
+    let mut pieces = Vec::with_capacity(4);
+    if cut.y > rect.y {
+        pieces.push(Rect::new(
+            rect.x,
+            rect.y,
+            rect.width,
+            cut.y.saturating_sub(rect.y),
+        ));
+    }
+    if cut.bottom() < rect.bottom() {
+        pieces.push(Rect::new(
+            rect.x,
+            cut.bottom(),
+            rect.width,
+            rect.bottom().saturating_sub(cut.bottom()),
+        ));
+    }
+    if cut.x > rect.x {
+        pieces.push(Rect::new(
+            rect.x,
+            cut.y,
+            cut.x.saturating_sub(rect.x),
+            cut.height,
+        ));
+    }
+    if cut.right() < rect.right() {
+        pieces.push(Rect::new(
+            cut.right(),
+            cut.y,
+            rect.right().saturating_sub(cut.right()),
+            cut.height,
+        ));
+    }
+    pieces
 }
 
 pub(crate) fn padded_width(text: &str) -> usize {
