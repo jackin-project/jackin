@@ -8,7 +8,17 @@ mod unix;
 mod macos_wait;
 
 #[cfg(unix)]
+mod secure_install;
+
+#[cfg(unix)]
 pub use unix::current_dir;
+
+/// Pinned descriptor-relative inspection for private installation trees.
+///
+/// This capability checks the supplied directory and descendants. It does not
+/// select or authenticate the external pathname used to obtain the root.
+#[cfg(unix)]
+pub use secure_install::{CheckedInstallFile, CheckedInstallRoot, InstallFileKind};
 
 /// On macOS, inspect the current process's fixed SIGCHLD action, expose
 /// non-consuming direct-child selectors, and provide a diagnostic-only

@@ -5001,6 +5001,7 @@ dependencies = [
  "fs4",
  "hex",
  "jackin-process",
+ "jackin-process-directory",
  "nix 0.31.3",
  "portable-pty",
  "proc-macro2",
